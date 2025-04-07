@@ -14,6 +14,7 @@
 #include <fs.h>
 #include <hash.h>
 #include <masternode/node.h>
+#include <pos/kernel.h>
 #include <pow.h>
 #include <reverse_iterator.h>
 #include <shutdown.h>
@@ -111,6 +112,8 @@ CBlockIndex* BlockManager::AddToBlockIndex(const CBlockHeader& block, const uint
         pindexNew->pprev = &(*miPrev).second;
         pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
         pindexNew->BuildSkip();
+        // calculate modifier for both pow/pos to prevent precomputing on pos phase-in
+        pindexNew->nStakeModifier = ComputeStakeModifier(pindexNew->pprev, pindexNew->prevoutStake.hash);
     }
     pindexNew->nTimeMax = (pindexNew->pprev ? std::max(pindexNew->pprev->nTimeMax, pindexNew->nTime) : pindexNew->nTime);
     pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + GetBlockProof(*pindexNew);
@@ -768,7 +771,7 @@ bool ReadBlockFromDisk(CBlock& block, const FlatFilePos& pos, const Consensus::P
     }
 
     // Check the header
-    if (!CheckProofOfWork(block.GetHash(), block.nBits, consensusParams)) {
+    if (block.IsProofOfWork() && !CheckProofOfWork(block.GetHash(), block.nBits, consensusParams)) {
         return error("ReadBlockFromDisk: Errors in block header at %s", pos.ToString());
     }
 

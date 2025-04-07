@@ -218,6 +218,13 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
 
+        consensus.lastPowBlock = 1000;
+        consensus.posTargetTimespan = consensus.nPowTargetTimespan;
+        consensus.posTargetSpacing = consensus.nPowTargetSpacing;
+        consensus.posTimestampMask = 5;
+        consensus.stakeValueRange = { 0 * COIN, MAX_MONEY };
+        consensus.stakeAgeRange = { 10 * 60, 60 * 60 * 24 * 30 };
+
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0x00000000000000000000000000000000000000000000a39050764808db046f5c"); // 2216986
 
@@ -416,6 +423,13 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
 
+        consensus.lastPowBlock = 1000;
+        consensus.posTargetTimespan = consensus.nPowTargetTimespan;
+        consensus.posTargetSpacing = consensus.nPowTargetSpacing;
+        consensus.posTimestampMask = 5;
+        consensus.stakeValueRange = { 0 * COIN, MAX_MONEY };
+        consensus.stakeAgeRange = { 10 * 60, 60 * 60 * 24 * 30 };
+
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0x000000000000000000000000000000000000000000000000031f769ba78b4bee"); // 1189000
 
@@ -588,6 +602,13 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nThresholdMin = 60;       // 60% of 100
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
+
+        consensus.lastPowBlock = 1000;
+        consensus.posTargetTimespan = consensus.nPowTargetTimespan;
+        consensus.posTargetSpacing = consensus.nPowTargetSpacing;
+        consensus.posTimestampMask = 5;
+        consensus.stakeValueRange = { 0 * COIN, MAX_MONEY };
+        consensus.stakeAgeRange = { 10 * 60, 60 * 60 * 24 * 30 };
 
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0x000000000000000000000000000000000000000000000000000000000000000");
@@ -825,6 +846,13 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nThresholdMin = 200 / 5 * 3;       // 60% of window size
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
+
+        consensus.lastPowBlock = 1000;
+        consensus.posTargetTimespan = consensus.nPowTargetTimespan;
+        consensus.posTargetSpacing = consensus.nPowTargetSpacing;
+        consensus.posTimestampMask = 5;
+        consensus.stakeValueRange = { 0 * COIN, MAX_MONEY };
+        consensus.stakeAgeRange = { 10 * 60, 60 * 60 * 24 * 30 };
 
         // The best chain should have at least this much work.
         consensus.nMinimumChainWork = uint256S("0x00");

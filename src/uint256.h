@@ -31,6 +31,8 @@ public:
     /* construct 0 value by default */
     constexpr base_blob() : m_data() {}
 
+    explicit base_blob(const uint8_t *p, size_t l);
+
     /* constructor for constants between 1 and 255 */
     constexpr explicit base_blob(uint8_t v) : m_data{v} {}
 

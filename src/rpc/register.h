@@ -17,6 +17,7 @@ void RegisterMiscRPCCommands(CRPCTable &tableRPC);
 void RegisterMiningRPCCommands(CRPCTable &tableRPC);
 void RegisterRawTransactionRPCCommands(CRPCTable &tableRPC);
 void RegisterSignMessageRPCCommands(CRPCTable&);
+void RegisterStakingRPCCommands(CRPCTable&);
 void RegisterTxoutProofRPCCommands(CRPCTable&);
 void RegisterMasternodeRPCCommands(CRPCTable &tableRPC);
 void RegisterCoinJoinRPCCommands(CRPCTable &tableRPC);
@@ -34,6 +35,7 @@ static inline void RegisterAllCoreRPCCommands(CRPCTable &t)
     RegisterMiningRPCCommands(t);
     RegisterRawTransactionRPCCommands(t);
     RegisterSignMessageRPCCommands(t);
+    RegisterStakingRPCCommands(t);
     RegisterTxoutProofRPCCommands(t);
     RegisterMasternodeRPCCommands(t);
     RegisterCoinJoinRPCCommands(t);

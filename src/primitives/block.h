@@ -7,11 +7,15 @@
 #define BITCOIN_PRIMITIVES_BLOCK_H
 
 #include <list>
+#include <key.h>
 #include <primitives/transaction.h>
+#include <script/standard.h>
 #include <serialize.h>
 #include <uint256.h>
 #include <cstddef>
 #include <type_traits>
+
+using valtype = std::vector<unsigned char>;
 
 /** Nodes collect new transactions into a block, hash them into a hash tree,
  * and scan through nonce values to make the block's hash satisfy proof-of-work
@@ -58,6 +62,16 @@ public:
     int64_t GetBlockTime() const
     {
         return (int64_t)nTime;
+    }
+
+    bool IsProofOfStake() const
+    {
+        return (nNonce == 0);
+    }
+
+    bool IsProofOfWork() const
+    {
+        return !IsProofOfStake();
     }
 };
 
@@ -189,6 +203,9 @@ public:
     // network and disk
     std::vector<CTransactionRef> vtx;
 
+    // block signature
+    std::vector<unsigned char> vchBlockSig;
+
     // memory only
     mutable bool fChecked;
 
@@ -207,6 +224,10 @@ public:
     {
         READWRITEAS(CBlockHeader, obj);
         READWRITE(obj.vtx);
+        if (obj.vtx.size() > 1 && obj.vtx[1]->IsCoinStake())
+        {
+            READWRITE(obj.vchBlockSig);
+        }
     }
 
     void SetNull()
@@ -214,6 +235,7 @@ public:
         CBlockHeader::SetNull();
         vtx.clear();
         fChecked = false;
+        vchBlockSig.clear();
     }
 
     CBlockHeader GetBlockHeader() const
@@ -228,6 +250,18 @@ public:
         return block;
     }
 
+    bool IsProofOfStake() const
+    {
+        return (vtx.size() > 1 && vtx[1]->IsCoinStake());
+    }
+
+    bool IsProofOfWork() const
+    {
+        return !IsProofOfStake();
+    }
+
+    bool SignBlockWithKey(const CKey& key);
+    bool CheckBlockSignature() const;
     std::string ToString() const;
 };
 

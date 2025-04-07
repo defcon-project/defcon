@@ -6,6 +6,7 @@
 #ifndef BITCOIN_CONSENSUS_PARAMS_H
 #define BITCOIN_CONSENSUS_PARAMS_H
 
+#include <consensus/amount.h>
 #include <uint256.h>
 #include <llmq/params.h>
 
@@ -171,6 +172,15 @@ struct Params {
     int64_t DifficultyAdjustmentInterval() const { return nPowTargetTimespan / nPowTargetSpacing; }
     uint256 nMinimumChainWork;
     uint256 defaultAssumeValid;
+
+    /** these parameters are specific to the pacplatform extensions */
+    uint256 posLimit;
+    int lastPowBlock{0};
+    int64_t posTargetSpacing{0};
+    int64_t posTargetTimespan{0};
+    uint32_t posTimestampMask{0};
+    std::vector<CAmount> stakeValueRange;
+    std::vector<int64_t> stakeAgeRange;
 
     /** these parameters are only used on devnet and can be configured from the outside */
     int nMinimumDifficultyBlocks{0};

@@ -185,9 +185,12 @@ CAmount PlatformShare(const CAmount reward)
 *   - Other blocks are 10% lower in outgoing value, so in total, no extra coins are created
 *   - When non-superblocks are detected, the normal schedule should be maintained
 */
-bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const int nBlockHeight, const CAmount blockReward, std::string& strErrorRet, const bool check_superblock)
+bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const int nBlockHeight, const CAmount blockReward, CAmount stakeValueIn, std::string& strErrorRet, const bool check_superblock)
 {
     bool isBlockRewardValueMet = (block.vtx[0]->GetValueOut() <= blockReward);
+    if (block.IsProofOfStake()) {
+        isBlockRewardValueMet = ((block.vtx[1]->GetValueOut() - stakeValueIn) <= blockReward);
+    }
 
     strErrorRet = "";
 
@@ -203,7 +206,10 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const int nBlo
         return IsOldBudgetBlockValueValid(block, nBlockHeight, blockReward, strErrorRet);
     }
 
-    LogPrint(BCLog::MNPAYMENTS, "block.vtx[0]->GetValueOut() %lld <= blockReward %lld\n", block.vtx[0]->GetValueOut(), blockReward);
+    if (block.IsProofOfWork())
+        LogPrint(BCLog::MNPAYMENTS, "block.vtx[0]->GetValueOut() %lld <= blockReward %lld\n", block.vtx[0]->GetValueOut(), blockReward);
+    else
+        LogPrint(BCLog::MNPAYMENTS, "block.vtx[1]->GetValueOut() %lld - stakeValueIn %lld <= blockReward %lld\n", block.vtx[1]->GetValueOut(), stakeValueIn, blockReward);
 
     CAmount nSuperblockMaxValue =  blockReward + CSuperblock::GetPaymentsLimit(m_chainman.ActiveChain(), nBlockHeight);
     bool isSuperblockMaxValueMet = (block.vtx[0]->GetValueOut() <= nSuperblockMaxValue);
@@ -331,6 +337,7 @@ void CMNPaymentsProcessor::FillBlockPayments(CMutableTransaction& txNew, const C
                                              std::vector<CTxOut>& voutMasternodePaymentsRet, std::vector<CTxOut>& voutSuperblockPaymentsRet)
 {
     int nBlockHeight = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
+    bool isProofOfStake = nBlockHeight > Params().GetConsensus().lastPowBlock;
 
     // only create superblocks if spork is enabled AND if superblock is actually triggered
     // (height should be validated inside)
@@ -349,8 +356,10 @@ void CMNPaymentsProcessor::FillBlockPayments(CMutableTransaction& txNew, const C
 
     std::string voutMasternodeStr;
     for (const auto& txout : voutMasternodePaymentsRet) {
-        // subtract MN payment from miner reward
-        txNew.vout[0].nValue -= txout.nValue;
+        if (!isProofOfStake) {
+            // subtract MN payment from miner reward
+            txNew.vout[0].nValue -= txout.nValue;
+        }
         if (!voutMasternodeStr.empty())
             voutMasternodeStr += ",";
         voutMasternodeStr += txout.ToString();
