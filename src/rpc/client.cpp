@@ -243,6 +243,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "verifyislock", 3, "maxHeight" },
     { "submitchainlock", 2, "blockHeight" },
     { "mnauth", 0, "nodeId" },
+    { "setstaking", 0, "walletId" },
 };
 // clang-format on
 

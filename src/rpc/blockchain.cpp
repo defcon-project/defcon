@@ -27,6 +27,8 @@
 #include <node/context.h>
 #include <node/utxo_snapshot.h>
 #include <merkleblock.h>
+#include <pos/kernel.h>
+#include <pos/stake.h>
 #include <primitives/transaction.h>
 #include <rpc/index_util.h>
 #include <rpc/server.h>
@@ -158,6 +160,13 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
     UniValue result = blockheaderToJSON(tip, blockindex, clhandler);
 
     result.pushKV("size", (int)::GetSerializeSize(block, PROTOCOL_VERSION));
+    result.pushKV("mint", ValueFromAmount(blockindex->nMint));
+    result.pushKV("moneysupply", ValueFromAmount(blockindex->nMoneySupply));
+    result.pushKV("flags", strprintf("%s", blockindex->IsProofOfStake()? "proof-of-stake" : "proof-of-work"));
+    result.pushKV("proofhash", blockindex->IsProofOfStake()? blockindex->hashProof.GetHex() : blockindex->GetBlockHash().GetHex());
+    result.pushKV("modifier", strprintf("%s", blockindex->nStakeModifier.ToString()));
+    result.pushKV("blocksignature", HexStr(block.vchBlockSig));
+
     UniValue txs(UniValue::VARR);
     if (txDetails) {
         CBlockUndo blockUndo;
@@ -1457,6 +1466,8 @@ RPCHelpMan getblockchaininfo()
     obj.pushKV("blocks", height);
     obj.pushKV("headers", chainman.m_best_header ? chainman.m_best_header->nHeight : -1);
     obj.pushKV("bestblockhash", tip.GetBlockHash().GetHex());
+    obj.pushKV("mint", ValueFromAmount(tip.nMint));
+    obj.pushKV("moneysupply", ValueFromAmount(tip.nMoneySupply));
     obj.pushKV("difficulty", GetDifficulty(&tip));
     obj.pushKV("time", tip.GetBlockTime());
     obj.pushKV("mediantime", tip.GetMedianTimePast());

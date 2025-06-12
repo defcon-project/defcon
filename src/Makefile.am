@@ -291,6 +291,10 @@ BITCOIN_CORE_H = \
   policy/packages.h \
   policy/policy.h \
   policy/settings.h \
+  pos/minter.h \
+  pos/kernel.h \
+  pos/multiwallet.h \
+  pos/stake.h \
   pow.h \
   protocol.h \
   psbt.h \
@@ -525,6 +529,10 @@ libbitcoin_server_a_SOURCES = \
   policy/packages.cpp \
   policy/policy.cpp \
   policy/settings.cpp \
+  pos/minter.cpp \
+  pos/kernel.cpp \
+  pos/multiwallet.cpp \
+  pos/stake.cpp \
   pow.cpp \
   rest.cpp \
   rpc/blockchain.cpp \
@@ -543,6 +551,7 @@ libbitcoin_server_a_SOURCES = \
   rpc/server.cpp \
   rpc/server_util.cpp \
   rpc/signmessage.cpp \
+  rpc/staking.cpp \
   rpc/txoutproof.cpp \
   script/sigcache.cpp \
   shutdown.cpp \

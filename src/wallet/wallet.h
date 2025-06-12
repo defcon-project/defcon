@@ -117,6 +117,16 @@ class ReserveDestination;
 
 extern RecursiveMutex cs_main;
 
+enum {
+    NOT_STAKING = 0,
+    IS_STAKING = 1,
+    NOT_STAKING_BALANCE = -1,
+    NOT_STAKING_DEPTH = -2,
+    NOT_STAKING_LOCKED = -3,
+    NOT_STAKING_LIMITED = -4,
+    NOT_STAKING_DISABLED = -5,
+};
+
 /** (client) version numbers for particular wallet features */
 struct CompactTallyItem
 {
@@ -597,6 +607,7 @@ public:
     void setConfirmed() { m_confirm.status = CWalletTx::CONFIRMED; }
     const uint256& GetHash() const { return tx->GetHash(); }
     bool IsCoinBase() const { return tx->IsCoinBase(); }
+    bool IsCoinStake() const { return tx->IsCoinStake(); }
     bool IsPlatformTransfer() const { return tx->IsPlatformTransfer(); }
     bool IsImmatureCoinBase() const;
 
@@ -1183,6 +1194,17 @@ public:
                   bool bip32derivs = true,
                   size_t* n_signed = nullptr,
                   bool finalize = true) const;
+
+    /**
+       Proof of Stake Variables
+     */
+    size_t nMaxStakeCombine{3};
+    CAmount nReserveBalance{0};
+    CAmount nStakeCombineThreshold{1000};
+    CAmount nStakeSplitThreshold = 2 * nStakeCombineThreshold;
+    int64_t nLastCoinStakeSearchTime{0};
+    std::atomic<int> m_is_staking{NOT_STAKING};
+    mutable int m_greatest_txn_depth = 0;
 
     /**
      * Create a new transaction paying the recipients with a set of coins

@@ -4895,6 +4895,7 @@ void PeerManagerImpl::ProcessMessage(
             for (unsigned int n = 0; n < nCount; n++) {
                 vRecv >> headers[n];
                 ReadCompactSize(vRecv); // ignore tx count; assume it is 0.
+                ReadCompactSize(vRecv); // needed for vchBlockSig.
             }
         } else if (msg_type == NetMsgType::HEADERS2) {
             std::list<int32_t> last_unique_versions;
