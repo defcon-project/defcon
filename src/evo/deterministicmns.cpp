@@ -191,7 +191,7 @@ CDeterministicMNCPtr CDeterministicMNList::GetMNPayee(gsl::not_null<const CBlock
             if (dmn->pdmnState->nLastPaidHeight == nHeight) {
                 // We found the last MN Payee.
                 // If the last payee is an EvoNode, we need to check its consecutive payments and pay him again if needed
-                if (dmn->nType == MnType::Evo && dmn->pdmnState->nConsecutivePayments < dmn_types::Evo.voting_weight) {
+                if (dmn->nType == MnType::Evo && dmn->pdmnState->nConsecutivePayments < dmn_types::BuildMnStruct(MnType::Evo).voting_weight) {
                     best = dmn;
                 }
             }
@@ -232,8 +232,8 @@ std::vector<CDeterministicMNCPtr> CDeterministicMNList::GetProjectedMNPayees(gsl
             if (dmn->pdmnState->nLastPaidHeight == nHeight) {
                 // We found the last MN Payee.
                 // If the last payee is an EvoNode, we need to check its consecutive payments and pay him again if needed
-                if (dmn->nType == MnType::Evo && dmn->pdmnState->nConsecutivePayments < dmn_types::Evo.voting_weight) {
-                    remaining_evo_payments = dmn_types::Evo.voting_weight - dmn->pdmnState->nConsecutivePayments;
+                if (dmn->nType == MnType::Evo && dmn->pdmnState->nConsecutivePayments < dmn_types::BuildMnStruct(MnType::Evo).voting_weight) {
+                    remaining_evo_payments = dmn_types::BuildMnStruct(MnType::Evo).voting_weight - dmn->pdmnState->nConsecutivePayments;
                     for ([[maybe_unused]] auto _ : irange::range(remaining_evo_payments)) {
                         result.emplace_back(dmn);
                         evo_to_be_skipped = dmn;

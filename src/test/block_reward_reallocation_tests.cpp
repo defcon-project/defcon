@@ -124,7 +124,7 @@ static CMutableTransaction CreateProRegTx(const CChain& active_chain, const CTxM
     CMutableTransaction tx;
     tx.nVersion = 3;
     tx.nType = TRANSACTION_PROVIDER_REGISTER;
-    FundTransaction(active_chain, tx, utxos, scriptPayout, dmn_types::Regular.collat_amount);
+    FundTransaction(active_chain, tx, utxos, scriptPayout, dmn_types::BuildMnStruct(MnType::Regular).collat_amount);
     proTx.inputsHash = CalcTxInputsHash(CTransaction(tx));
     SetTxPayload(tx, proTx);
     SignTransaction(mempool, tx, coinbaseKey);

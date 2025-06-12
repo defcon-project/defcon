@@ -5,7 +5,9 @@
 #ifndef BITCOIN_EVO_DMN_TYPES_H
 #define BITCOIN_EVO_DMN_TYPES_H
 
+#include <chainparams.h>
 #include <consensus/amount.h>
+#include <consensus/consensus.h>
 
 #include <limits>
 #include <string_view>
@@ -24,43 +26,17 @@ namespace dmn_types {
 
 struct mntype_struct
 {
-    const int32_t voting_weight;
-    const CAmount collat_amount;
-    const std::string_view description;
+    int32_t voting_weight;
+    CAmount collat_amount;
+    std::string_view description;
 };
 
-constexpr auto Regular = mntype_struct{
-    .voting_weight = 1,
-    .collat_amount = 1000 * COIN,
-    .description = "Regular",
-};
-constexpr auto Evo = mntype_struct{
-    .voting_weight = 4,
-    .collat_amount = 4000 * COIN,
-    .description = "Evo",
-};
-constexpr auto Invalid = mntype_struct{
-    .voting_weight = 0,
-    .collat_amount = MAX_MONEY,
-    .description = "Invalid",
-};
-
-[[nodiscard]] static constexpr bool IsCollateralAmount(CAmount amount)
-{
-    return amount == Regular.collat_amount ||
-        amount == Evo.collat_amount;
-}
+mntype_struct BuildMnStruct(MnType mn_type);
+bool IsCollateralAmount(CAmount amount);
 
 } // namespace dmn_types
 
-[[nodiscard]] constexpr const dmn_types::mntype_struct GetMnType(MnType type)
-{
-    switch (type) {
-        case MnType::Regular: return dmn_types::Regular;
-        case MnType::Evo: return dmn_types::Evo;
-        default: return dmn_types::Invalid;
-    }
-}
+dmn_types::mntype_struct GetMnType(MnType type);
 
 [[nodiscard]] constexpr bool IsValidMnType(MnType type) { return type < MnType::COUNT; }
 

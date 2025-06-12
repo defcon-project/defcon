@@ -461,6 +461,7 @@ libbitcoin_server_a_SOURCES = \
   evo/evodb.cpp \
   evo/mnauth.cpp \
   evo/mnhftx.cpp \
+  evo/dmn_types.cpp \
   evo/providertx.cpp \
   evo/simplifiedmns.cpp \
   evo/specialtx.cpp \
@@ -595,6 +596,7 @@ libbitcoin_wallet_a_SOURCES = \
   coinjoin/client.cpp \
   coinjoin/interfaces.cpp \
   coinjoin/util.cpp \
+  evo/dmn_types.cpp \
   wallet/bip39.cpp \
   wallet/coincontrol.cpp \
   wallet/context.cpp \
