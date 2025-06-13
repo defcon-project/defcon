@@ -22,6 +22,7 @@
 #include <hash.h>
 #include <logging.h>
 #include <logging/timer.h>
+#include <masternode/collateral.h>
 #include <node/blockstorage.h>
 #include <node/coinstats.h>
 #include <node/interface_ui.h>
@@ -763,6 +764,11 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     for (const CTxIn& txin : tx.vin) {
         if (!coins_cache.HaveCoinInCache(txin.prevout)) {
             coins_to_uncache.push_back(txin.prevout);
+        }
+
+        // Check to see if any collaterals are spent early
+        if (!CheckPrematureCollateralMovement(txin.prevout, m_active_chainstate.m_chain.Height(), chainparams.GetConsensus())) {
+            return state.Invalid(TxValidationResult::TX_CONSENSUS, "txn-spends-premature-collateral");
         }
 
         // Note: this call may add txin.prevout to the coins cache
@@ -2377,6 +2383,13 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
             if (!MoneyRange(nFees)) {
                 LogPrintf("ERROR: %s: accumulated fee in the block out of range.\n", __func__);
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-txns-accumulated-fee-outofrange");
+            }
+
+            // Check to see if any collaterals are spent early
+            for (size_t j = 0; j < tx.vin.size(); j++) {
+                if (!CheckPrematureCollateralMovement(tx.vin[j].prevout, pindex->nHeight, m_params.GetConsensus())) {
+                    return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "txn-spends-premature-collateral");
+                }
             }
 
             // Check that transaction is BIP68 final

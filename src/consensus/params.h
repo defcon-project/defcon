@@ -185,6 +185,7 @@ struct Params {
     int32_t regularVoteWeight;
     CAmount evoMnCollateral;
     int32_t evoVoteWeight;
+    int minStaticCollateral;
 
     /** these parameters are only used on devnet and can be configured from the outside */
     int nMinimumDifficultyBlocks{0};

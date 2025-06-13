@@ -13,6 +13,7 @@
 #include <governance/governance.h>
 #include <key_io.h>
 #include <logging.h>
+#include <masternode/collateral.h>
 #include <masternode/sync.h>
 #include <primitives/block.h>
 #include <script/standard.h>
@@ -239,6 +240,10 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const int nBlo
         return true;
     }
 
+    // cache the tip_mn_list for use with collateral compliance checking
+    const auto tip_mn_list = m_dmnman.GetListAtChainTip();
+    MaintainCollateralCache(tip_mn_list);
+
     // we are synced and possibly on a superblock now
 
     if (!AreSuperblocksEnabled(m_sporkman)) {
@@ -253,8 +258,6 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const int nBlo
     }
 
     if (!check_superblock) return true;
-
-    const auto tip_mn_list = m_dmnman.GetListAtChainTip();
 
     if (!m_govman.IsSuperblockTriggered(tip_mn_list, nBlockHeight)) {
         // we are on a valid superblock height but a superblock was not triggered
