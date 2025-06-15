@@ -425,7 +425,7 @@ bool validateBitcoinURI(const QString& uri)
 
 QString formatBitcoinURI(const SendCoinsRecipient &info)
 {
-    QString ret = QString("dash:%1").arg(info.address);
+    QString ret = QString("pacplatform:%1").arg(info.address);
     int paramCount = 0;
 
     if (info.amount)
