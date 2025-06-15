@@ -123,6 +123,7 @@ private:
     WalletFrame* walletFrame = nullptr;
 
     UnitDisplayStatusBarControl* unitDisplayControl = nullptr;
+    QLabel* labelStakingIcon = nullptr;
     QLabel* labelWalletEncryptionIcon = nullptr;
     QLabel* labelWalletHDStatusIcon = nullptr;
     GUIUtil::ClickableLabel* labelConnectionsIcon = nullptr;
@@ -155,6 +156,8 @@ private:
     QAction* receiveCoinsMenuAction = nullptr;
     QAction* optionsAction = nullptr;
     QAction* toggleHideAction = nullptr;
+    QAction* toggleStakingAction = nullptr;
+    QMenu* toggleStakingMenu{nullptr};
     QAction* encryptWalletAction = nullptr;
     QAction* backupWalletAction = nullptr;
     QAction* changePassphraseAction = nullptr;
@@ -290,6 +293,10 @@ public Q_SLOTS:
     /** Set the UI status indicators based on the currently selected wallet.
     */
     void updateWalletStatus();
+
+    /** Set the UI status indicators based on the currently selected wallet.
+    */
+    void setStakingStatus();
 
 private:
     /** Set the encryption status as shown in the UI.

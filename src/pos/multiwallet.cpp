@@ -26,3 +26,60 @@ void MultiwalletInitialize()
 
     LogPrint(BCLog::POS, "%s - found %d stakable wallets\n", __func__, stakable_sz);
 }
+
+void ToggleWalletStaking(const std::string& name)
+{
+    LOCK(stakable_mutex);
+
+    for (int y = 0; y < stakable_sz; y++)
+    {
+        CWallet* this_wallet = stakable_wallets[y].GetWallet();
+        if (!this_wallet)
+            continue;
+        if (name == this_wallet->GetName()) {
+            bool current = stakable_wallets[y].CanStake();
+            if (!current) {
+                stakable_wallets[y].StakingEnabled();
+                LogPrint(BCLog::POS, "%s - enabling staking for wallet '%s'\n", __func__, name);
+            } else {
+                stakable_wallets[y].StakingDisabled();
+                LogPrint(BCLog::POS, "%s - disabling staking for wallet '%s'\n", __func__, name);
+            }
+            break;
+        }
+    }
+}
+
+int ReturnActiveStakingWallets()
+{
+    LOCK(stakable_mutex);
+
+    int active_wallets = 0;
+    for (int y = 0; y < stakable_sz; y++)
+    {
+        CWallet* this_wallet = stakable_wallets[y].GetWallet();
+        if (!this_wallet)
+            continue;
+        if (stakable_wallets[y].CanStake())
+            active_wallets += 1;
+    }
+    return active_wallets;
+}
+
+bool IsWalletStaking(const std::string& name)
+{
+    LOCK(stakable_mutex);
+
+    for (int y = 0; y < stakable_sz; y++)
+    {
+        CWallet* this_wallet = stakable_wallets[y].GetWallet();
+        if (!this_wallet)
+            continue;
+        if (name == this_wallet->GetName()) {
+            return stakable_wallets[y].CanStake();
+        }
+    }
+
+    //uhm?
+    return false;
+}

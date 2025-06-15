@@ -28,6 +28,9 @@
         <file alias="fontbigger">res/icons/fontbigger.png</file>
         <file alias="fontsmaller">res/icons/fontsmaller.png</file>
         <file alias="proxy">res/icons/proxy.png</file>
+        <file alias="staking_inactive">res/icons/staking_inactive.png</file>
+        <file alias="staking_stalled">res/icons/staking_stalled.png</file>
+        <file alias="staking_active">res/icons/staking_active.png</file>
     </qresource>
     <qresource prefix="/css">
         <file alias="general">res/css/general.css</file>

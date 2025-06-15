@@ -37,6 +37,8 @@
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <node/interface_ui.h>
+#include <pos/minter.h>
+#include <pos/multiwallet.h>
 #include <qt/governancelist.h>
 #include <qt/masternodelist.h>
 #include <util/system.h>
@@ -164,6 +166,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const NetworkStyle* networkStyle,
     frameBlocksLayout->setContentsMargins(3,0,3,0);
     frameBlocksLayout->setSpacing(3);
     unitDisplayControl = new UnitDisplayStatusBarControl();
+    labelStakingIcon = new QLabel();
     labelWalletEncryptionIcon = new QLabel();
     labelWalletHDStatusIcon = new QLabel();
     labelConnectionsIcon = new GUIUtil::ClickableLabel();
@@ -182,6 +185,7 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const NetworkStyle* networkStyle,
     frameBlocksLayout->addWidget(labelConnectionsIcon);
     frameBlocksLayout->addStretch();
     frameBlocksLayout->addWidget(labelBlocksIcon);
+    frameBlocksLayout->addWidget(labelStakingIcon);
     frameBlocksLayout->addStretch();
 
     // Hide the spinner/synced icon by default to avoid
@@ -229,6 +233,11 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const NetworkStyle* networkStyle,
 #ifdef Q_OS_MAC
     m_app_nap_inhibitor = new CAppNapInhibitor;
 #endif
+
+    QTimer* timerStakingIcon = new QTimer(labelStakingIcon);
+    connect(timerStakingIcon, SIGNAL(timeout()), this, SLOT(setStakingStatus()));
+    timerStakingIcon->start(1500);
+    setStakingStatus();
 
     incomingTransactionsTimer = new QTimer(this);
     incomingTransactionsTimer->setSingleShot(true);
@@ -395,6 +404,10 @@ void BitcoinGUI::createActions()
     toggleHideAction = new QAction(tr("&Show / Hide"), this);
     toggleHideAction->setStatusTip(tr("Show or hide the main Window"));
 
+    toggleStakingAction = new QAction(tr("Toggle staking..."), this);
+    toggleStakingAction->setStatusTip(tr("Toggle staking status on a given wallet"));
+    toggleStakingMenu = new QMenu(this);
+
     encryptWalletAction = new QAction(tr("&Encrypt Wallet…"), this);
     encryptWalletAction->setStatusTip(tr("Encrypt the private keys that belong to your wallet"));
     backupWalletAction = new QAction(tr("&Backup Wallet…"), this);
@@ -501,6 +514,28 @@ void BitcoinGUI::createActions()
 #ifdef ENABLE_WALLET
     if(walletFrame)
     {
+        connect(toggleStakingMenu, &QMenu::aboutToShow, [this] {
+            toggleStakingMenu->clear();
+            for (const std::pair<const std::string, bool>& i : m_wallet_controller->listWalletDir()) {
+                const std::string& path = i.first;
+
+                QString name;
+                if (IsWalletStaking(path)) {
+                    name = path.empty() ? QString("["+tr("default wallet")+"]") : QString::fromStdString(path + std::string(" (Y)"));
+                } else {
+                    name = path.empty() ? QString("["+tr("default wallet")+"]") : QString::fromStdString(path);
+                }
+                QAction* action = toggleStakingMenu->addAction(name);
+
+                connect(action, &QAction::triggered, [this, path] {
+                    ToggleWalletStaking(path);
+                });
+            }
+            if (toggleStakingMenu->isEmpty()) {
+                QAction* action = toggleStakingMenu->addAction(tr("No wallets available"));
+                action->setEnabled(false);
+            }
+        });
         connect(encryptWalletAction, &QAction::triggered, walletFrame, &WalletFrame::encryptWallet);
         connect(backupWalletAction, &QAction::triggered, walletFrame, &WalletFrame::backupWallet);
         connect(changePassphraseAction, &QAction::triggered, walletFrame, &WalletFrame::changePassphrase);
@@ -599,6 +634,7 @@ void BitcoinGUI::createMenuBar()
     if(walletFrame)
     {
         settings->addAction(encryptWalletAction);
+        settings->addAction(toggleStakingAction);
         settings->addAction(changePassphraseAction);
         settings->addAction(unlockWalletAction);
         settings->addAction(lockWalletAction);
@@ -897,6 +933,8 @@ void BitcoinGUI::setWalletController(WalletController* wallet_controller)
     m_create_wallet_action->setEnabled(true);
     m_open_wallet_action->setEnabled(true);
     m_open_wallet_action->setMenu(m_open_wallet_menu);
+    toggleStakingAction->setEnabled(true);
+    toggleStakingAction->setMenu(toggleStakingMenu);
 
     GUIUtil::ExceptionSafeConnect(wallet_controller, &WalletController::walletAdded, this, &BitcoinGUI::addWallet);
     connect(wallet_controller, &WalletController::walletRemoved, this, &BitcoinGUI::removeWallet);
@@ -1007,6 +1045,7 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
 #endif // ENABLE_WALLET
     receiveCoinsMenuAction->setEnabled(enabled);
 
+    toggleStakingAction->setEnabled(enabled);
     encryptWalletAction->setEnabled(enabled);
     backupWalletAction->setEnabled(enabled);
     changePassphraseAction->setEnabled(enabled);
@@ -1868,6 +1907,30 @@ void BitcoinGUI::setHDStatus(int hdEnabled)
         labelWalletHDStatusIcon->show();
     }
     labelWalletHDStatusIcon->setVisible(hdEnabled);
+}
+
+void BitcoinGUI::setStakingStatus()
+{
+    int active_wallets = ReturnActiveStakingWallets();
+    if (active_wallets > 0) {
+        if (fIsStaking && !fTryToSync) {
+            labelStakingIcon->show();
+            labelStakingIcon->setPixmap(QIcon(":/icons/staking_active").pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+            labelStakingIcon->setToolTip(tr("Staking is active"));
+        } else if (!fIsStaking && fTryToSync) {
+            labelStakingIcon->show();
+            labelStakingIcon->setPixmap(QIcon(":/icons/staking_stalled").pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+            labelStakingIcon->setToolTip(tr("Staking is stalled"));
+        } else {
+            labelStakingIcon->show();
+            labelStakingIcon->setPixmap(QIcon(":/icons/staking_inactive").pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+            labelStakingIcon->setToolTip(tr("Staking is inactive"));
+        }
+    } else {
+        labelStakingIcon->show();
+        labelStakingIcon->setPixmap(QIcon(":/icons/staking_inactive").pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+        labelStakingIcon->setToolTip(tr("Staking is inactive"));
+    }
 }
 
 void BitcoinGUI::setEncryptionStatus(int status)

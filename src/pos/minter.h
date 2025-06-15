@@ -16,6 +16,7 @@
 class CWallet;
 class CBlock;
 
+extern std::atomic<bool> fTryToSync;
 extern std::atomic<bool> fIsStaking;
 
 bool CheckStake(ChainstateManager& chainman, CBlock *pblock);
