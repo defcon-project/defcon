@@ -432,6 +432,8 @@ QString TransactionTableModel::formatTxType(const TransactionRecord *wtx) const
         return tr("Payment to yourself");
     case TransactionRecord::Generated:
         return tr("Mined");
+    case TransactionRecord::Staked:
+        return tr("Staked");
     case TransactionRecord::PlatformTransfer:
         return tr("Platform Transfer");
 
@@ -476,6 +478,7 @@ QString TransactionTableModel::formatTxToAddress(const TransactionRecord *wtx, b
     case TransactionRecord::RecvWithCoinJoin:
     case TransactionRecord::SendToAddress:
     case TransactionRecord::Generated:
+    case TransactionRecord::Staked:
     case TransactionRecord::CoinJoinSend:
     case TransactionRecord::PlatformTransfer:
         return formatAddressLabel(wtx->strAddress, wtx->label, tooltip) + watchAddress;
@@ -500,6 +503,7 @@ QVariant TransactionTableModel::addressColor(const TransactionRecord *wtx) const
     {
     case TransactionRecord::RecvWithAddress:
     case TransactionRecord::SendToAddress:
+    case TransactionRecord::Staked:
     case TransactionRecord::Generated:
     case TransactionRecord::PlatformTransfer:
     case TransactionRecord::CoinJoinSend:
@@ -539,6 +543,7 @@ QString TransactionTableModel::formatTxAmount(const TransactionRecord *wtx, bool
 QVariant TransactionTableModel::amountColor(const TransactionRecord *rec) const
 {
     switch (rec->type) {
+    case TransactionRecord::Staked:
     case TransactionRecord::Generated:
     case TransactionRecord::RecvWithCoinJoin:
     case TransactionRecord::RecvWithAddress:

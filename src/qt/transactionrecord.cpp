@@ -39,7 +39,7 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wal
     auto node = interfaces::MakeNode();
     auto& coinJoinOptions = node->coinJoinOptions();
 
-    if (nNet > 0 || wtx.is_coinbase || wtx.is_platform_transfer)
+    if (nNet > 0 || wtx.is_coinbase || wtx.is_coinstake || wtx.is_platform_transfer)
     {
         //
         // Credit
@@ -51,8 +51,16 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wal
             if(mine)
             {
                 TransactionRecord sub(hash, nTime);
-                sub.idx = i; // vout index
-                sub.credit = txout.nValue;
+                if(wtx.is_coinstake)
+                {
+                    sub.idx = 1; // vout index
+                    sub.credit = nNet;
+                }
+                else
+                {
+                    sub.idx = i; // vout index
+                    sub.credit = txout.nValue;
+                }
                 sub.involvesWatchAddress = mine & ISMINE_WATCH_ONLY;
                 if (wtx.txout_address_is_mine[i])
                 {
@@ -74,6 +82,11 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wal
                     // Generated
                     sub.type = TransactionRecord::Generated;
                 }
+                else if (wtx.is_coinstake)
+                {
+                    // Staked
+                    sub.type = TransactionRecord::Staked;
+                }
                 if (wtx.is_platform_transfer)
                 {
                     // Withdrawal from platform
@@ -81,6 +94,9 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wal
                 }
 
                 parts.append(sub);
+
+                if(wtx.is_coinstake)
+                    break; // Single output for coinstake
             }
         }
     }
@@ -292,7 +308,7 @@ void TransactionRecord::updateStatus(const interfaces::WalletTxStatus& wtx, cons
         }
     }
     // For generated transactions, determine maturity
-    else if(type == TransactionRecord::Generated)
+    else if(type == TransactionRecord::Generated || type == TransactionRecord::Staked)
     {
         if (wtx.blocks_to_maturity > 0)
         {
