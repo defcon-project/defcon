@@ -48,6 +48,10 @@ void CStakeWallet::AvailableCoinsForStaking(std::vector<COutput> &vCoins, int64_
                     continue;
                 }
 
+                if (txout.nValue == params.regularMnCollateral || txout.nValue == params.evoMnCollateral) {
+                    continue;
+                }
+
                 CKeyID keyID;
                 COutPoint kernel(wtxid, i);
                 const CScript pscriptPubKey = txout.scriptPubKey;
