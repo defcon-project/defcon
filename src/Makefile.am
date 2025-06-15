@@ -252,6 +252,7 @@ BITCOIN_CORE_H = \
   logging.h \
   logging/timer.h \
   mapport.h \
+  masternode/collateral.h \
   masternode/node.h \
   masternode/meta.h \
   masternode/payments.h \
@@ -461,6 +462,7 @@ libbitcoin_server_a_SOURCES = \
   evo/evodb.cpp \
   evo/mnauth.cpp \
   evo/mnhftx.cpp \
+  evo/dmn_types.cpp \
   evo/providertx.cpp \
   evo/simplifiedmns.cpp \
   evo/specialtx.cpp \
@@ -500,6 +502,7 @@ libbitcoin_server_a_SOURCES = \
   llmq/snapshot.cpp \
   llmq/utils.cpp \
   mapport.cpp \
+  masternode/collateral.cpp \
   masternode/node.cpp \
   masternode/meta.cpp \
   masternode/payments.cpp \
@@ -595,6 +598,7 @@ libbitcoin_wallet_a_SOURCES = \
   coinjoin/client.cpp \
   coinjoin/interfaces.cpp \
   coinjoin/util.cpp \
+  evo/dmn_types.cpp \
   wallet/bip39.cpp \
   wallet/coincontrol.cpp \
   wallet/context.cpp \
