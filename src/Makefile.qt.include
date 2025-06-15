@@ -3,10 +3,10 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-bin_PROGRAMS += qt/dash-qt
+bin_PROGRAMS += qt/pacplatform-qt
 
 if BUILD_BITCOIN_GUI
-  bin_PROGRAMS += dash-gui
+  bin_PROGRAMS += pacplatform-gui
 endif
 
 EXTRA_LIBRARIES += qt/libbitcoinqt.a
@@ -413,19 +413,19 @@ bitcoin_qt_ldadd += $(LIBBITCOIN_CLI) $(LIBBITCOIN_COMMON) $(LIBBITCOIN_UTIL) $(
 bitcoin_qt_ldflags = $(LDFLAGS_WRAP_EXCEPTIONS) $(RELDFLAGS) $(AM_LDFLAGS) $(QT_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) $(PTHREAD_FLAGS)
 bitcoin_qt_libtoolflags = $(AM_LIBTOOLFLAGS) --tag CXX
 
-qt_dash_qt_CPPFLAGS = $(bitcoin_qt_cppflags)
-qt_dash_qt_CXXFLAGS = $(bitcoin_qt_cxxflags)
-qt_dash_qt_SOURCES = $(bitcoin_qt_sources)
-qt_dash_qt_LDADD = $(bitcoin_qt_ldadd)
-qt_dash_qt_LDFLAGS = $(bitcoin_qt_ldflags)
-qt_dash_qt_LIBTOOLFLAGS = $(bitcoin_qt_libtoolflags)
+qt_pacplatform_qt_CPPFLAGS = $(bitcoin_qt_cppflags)
+qt_pacplatform_qt_CXXFLAGS = $(bitcoin_qt_cxxflags)
+qt_pacplatform_qt_SOURCES = $(bitcoin_qt_sources)
+qt_pacplatform_qt_LDADD = $(bitcoin_qt_ldadd)
+qt_pacplatform_qt_LDFLAGS = $(bitcoin_qt_ldflags)
+qt_pacplatform_qt_LIBTOOLFLAGS = $(bitcoin_qt_libtoolflags)
 
-dash_gui_CPPFLAGS = $(bitcoin_qt_cppflags)
-dash_gui_CXXFLAGS = $(bitcoin_qt_cxxflags)
-dash_gui_SOURCES = $(bitcoin_qt_sources)
-dash_gui_LDADD = $(bitcoin_qt_ldadd)
-dash_gui_LDFLAGS = $(bitcoin_qt_ldflags)
-dash_gui_LIBTOOLFLAGS = $(bitcoin_qt_libtoolflags)
+pacplatform_gui_CPPFLAGS = $(bitcoin_qt_cppflags)
+pacplatform_gui_CXXFLAGS = $(bitcoin_qt_cxxflags)
+pacplatform_gui_SOURCES = $(bitcoin_qt_sources)
+pacplatform_gui_LDADD = $(bitcoin_qt_ldadd)
+pacplatform_gui_LDFLAGS = $(bitcoin_qt_ldflags)
+pacplatform_gui_LIBTOOLFLAGS = $(bitcoin_qt_libtoolflags)
 
 #locale/foo.ts -> locale/foo.qm
 QT_QM=$(QT_TS:.ts=.qm)
@@ -459,7 +459,7 @@ CLEANFILES += $(CLEAN_QT)
 dash_qt_clean: FORCE
 	rm -f $(CLEAN_QT) $(qt_libbitcoinqt_a_OBJECTS) $(qt_dash_qt_OBJECTS) qt/dash-qt$(EXEEXT) $(LIBBITCOINQT)
 
-dash_qt : qt/dash-qt$(EXEEXT)
+dash_qt : qt/pacplatform-qt$(EXEEXT)
 
 ui_%.h: %.ui
 	@test -f $(UIC)
