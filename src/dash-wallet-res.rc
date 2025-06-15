@@ -14,14 +14,14 @@ BEGIN
     BEGIN
         BLOCK "040904E4" // U.S. English - multilingual (hex)
         BEGIN
-            VALUE "CompanyName",        "Dash Core"
-            VALUE "FileDescription",    "dash-wallet (CLI tool for " PACKAGE_NAME " wallets)"
+            VALUE "CompanyName",        "Pacplatform Core"
+            VALUE "FileDescription",    "pacplatform-wallet (CLI tool for " PACKAGE_NAME " wallets)"
             VALUE "FileVersion",        PACKAGE_VERSION
-            VALUE "InternalName",       "dash-wallet"
+            VALUE "InternalName",       "pacplatform-wallet"
             VALUE "LegalCopyright",     COPYRIGHT_STR
             VALUE "LegalTrademarks1",   "Distributed under the MIT software license, see the accompanying file COPYING or http://www.opensource.org/licenses/mit-license.php."
-            VALUE "OriginalFilename",   "dash-wallet.exe"
-            VALUE "ProductName",        "dash-wallet"
+            VALUE "OriginalFilename",   "pacplatform-wallet.exe"
+            VALUE "ProductName",        "pacplatform-wallet"
             VALUE "ProductVersion",     PACKAGE_VERSION
         END
     END
