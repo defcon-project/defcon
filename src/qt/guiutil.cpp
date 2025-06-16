@@ -295,7 +295,7 @@ void setupAddressWidget(QValidatedLineEdit *widget, QWidget *parent, bool fAllow
 
     // We don't want translators to use own addresses in translations
     // and this is the only place, where this address is supplied.
-    widget->setPlaceholderText(QObject::tr("Enter a Dash address (e.g. %1)").arg(
+    widget->setPlaceholderText(QObject::tr("Enter a Pacplatform address (e.g. %1)").arg(
         QString::fromStdString(DummyAddress(Params()))));
     widget->setValidator(new BitcoinAddressEntryValidator(parent, fAllowURI));
     widget->setCheckValidator(new BitcoinAddressCheckValidator(parent));
@@ -351,7 +351,7 @@ void AddButtonShortcut(QAbstractButton* button, const QKeySequence& shortcut)
 bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out)
 {
     // return if URI is not valid or is no dash: URI
-    if(!uri.isValid() || uri.scheme() != QString("dash"))
+    if(!uri.isValid() || uri.scheme() != QString("pacplatform"))
         return false;
 
     SendCoinsRecipient rv;
