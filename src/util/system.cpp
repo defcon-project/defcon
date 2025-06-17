@@ -99,7 +99,7 @@ const std::string gCoinJoinName = "CoinJoin";
 */
 int nWalletBackups = 10;
 
-const char * const BITCOIN_CONF_FILENAME = "dash.conf";
+const char * const BITCOIN_CONF_FILENAME = "pacplatform.conf";
 const char * const BITCOIN_SETTINGS_FILENAME = "settings.json";
 
 ArgsManager gArgs;
@@ -849,7 +849,7 @@ fs::path GetDefaultDataDir()
     // Unix-like: ~/.dashcore
 #ifdef WIN32
     // Windows
-    return GetSpecialFolderPath(CSIDL_APPDATA) / "DashCore";
+    return GetSpecialFolderPath(CSIDL_APPDATA) / "Pacplatform";
 #else
     fs::path pathRet;
     char* pszHome = getenv("HOME");
@@ -859,10 +859,10 @@ fs::path GetDefaultDataDir()
         pathRet = fs::path(pszHome);
 #ifdef MAC_OSX
     // macOS
-    return pathRet / "Library/Application Support/DashCore";
+    return pathRet / "Library/Application Support/Pacplatform";
 #else
     // Unix-like
-    return pathRet / ".dashcore";
+    return pathRet / ".pacplatform";
 #endif
 #endif
 }
