@@ -19,8 +19,6 @@ std::thread m_staking_thread;
 std::atomic<bool> fStopMinerProc(false);
 std::atomic<bool> fTryToSync(false);
 std::atomic<bool> fIsStaking(false);
-
-int nMinerSleep = 5000;
 std::atomic<int64_t> nTimeLastStake(0);
 
 bool CheckStake(ChainstateManager& chainman, CBlock *pblock)
@@ -112,6 +110,7 @@ void PoSMiner(NodeContext& node)
 
         UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
 
+        bool foundBlock{false};
         CScript coinbaseScript;
         for (int y = 0; y < stakable_sz; y++)
         {
@@ -121,6 +120,8 @@ void PoSMiner(NodeContext& node)
                 continue;
             CWallet* this_wallet = stakable_wallets[y].GetWallet();
             if (!this_wallet)
+                continue;
+            if (foundBlock)
                 continue;
 
             int num_nodes;
@@ -167,6 +168,9 @@ void PoSMiner(NodeContext& node)
                 UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::LARGEDELAY});
                 continue;
             }
+
+            //abandon orphaned coinstakes
+            this_wallet->AbandonOrphanedCoinstakes();
 
             int64_t nTime = GetAdjustedTime();
             int64_t nMask = params.GetConsensus().posTimestampMask;
@@ -233,6 +237,7 @@ void PoSMiner(NodeContext& node)
                 if (stakable_wallets[y].SignBlock(chainman.ActiveChainstate(), pblocktemplate.get(), nBestHeight + 1, nSearchTime)) {
                     CBlock *pblock = &pblocktemplate->block;
                     if (CheckStake(chainman, pblock)) {
+                        foundBlock = true;
                         nTimeLastStake = GetTime();
                         UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
                         continue;
