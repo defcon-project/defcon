@@ -6,18 +6,18 @@ reset-files.bash
 *.tar.gz
 
 *.exe
-src/dash
-src/dashd
-src/dash-cli
-src/dash-gui
-src/dash-node
-src/dash-tx
-src/dash-wallet
+src/pacplatform
+src/pacplatformd
+src/pacplatform-cli
+src/pacplatform-gui
+src/pacplatform-node
+src/pacplatform-tx
+src/pacplatform-wallet
 src/test/fuzz/fuzz
-src/test/test_dash
-src/qt/test/test_dash-qt
+src/test/test_pacplatform
+src/qt/test/test_pacplatform-qt
 src/qt/res/css/colors/*
-src/bench/bench_dash
+src/bench/bench_pacplatform
 
 # autoreconf
 Makefile.in
@@ -93,15 +93,15 @@ libconftest.dylib*
 *.qm
 Makefile
 !depends/Makefile
-dash-qt
-Dash-Qt.app
+pacplatform-qt
+Pacplatform-Qt.app
 
 # Qt Creator
 Makefile.am.user
 
 # Unit-tests
 Makefile.test
-dash-qt_test
+pacplatform-qt_test
 
 # Resources cpp
 qrc_*.cpp
@@ -118,7 +118,7 @@ releases
 *.gcno
 *.gcda
 /*.info
-test_dash.coverage/
+test_pacplatform.coverage/
 total.coverage/
 fuzz.coverage/
 coverage_percent.txt
@@ -142,13 +142,13 @@ test/.mypy_cache/
 
 libdashconsensus.pc
 contrib/devtools/split-debug.sh
-src/qt/dash-qt.bash
+src/qt/pacplatform-qt.bash
 qa/pull-tester/tests-config.sh
 
 #development symlinks
-dash-cli
-dashd
-dash-qt
+pacplatform-cli
+pacplatformd
+pacplatform-qt
 make
 
 /docker/bin

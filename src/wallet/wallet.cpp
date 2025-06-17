@@ -1184,6 +1184,20 @@ bool CWallet::AbandonTransaction(const uint256& hashTx)
     return true;
 }
 
+void CWallet::AbandonOrphanedCoinstakes()
+{
+    LOCK(cs_wallet);
+
+    for (std::pair<const uint256, CWalletTx>& item : mapWallet) {
+        const uint256& wtxid = item.first;
+        CWalletTx& wtx = item.second;
+        assert(wtx.GetHash() == wtxid);
+        if (wtx.GetDepthInMainChain() == 0 && !wtx.isAbandoned() && wtx.IsCoinStake()) {
+            AbandonTransaction(wtxid);
+        }
+    }
+}
+
 bool CWallet::ResendTransaction(const uint256& hashTx)
 {
     LOCK(cs_wallet);
@@ -2139,7 +2153,11 @@ void CWallet::ReacceptWalletTransactions()
         int nDepth = wtx.GetDepthInMainChain();
 
         if (!wtx.IsCoinBase() && (nDepth == 0 && !wtx.IsLockedByInstantSend() && !wtx.isAbandoned())) {
-            mapSorted.insert(std::make_pair(wtx.nOrderPos, &wtx));
+            if (wtx.IsCoinStake()) {
+                AbandonTransaction(wtxid);
+            } else {
+                mapSorted.insert(std::make_pair(wtx.nOrderPos, &wtx));
+            }
         }
     }
 
@@ -2160,7 +2178,7 @@ bool CWalletTx::CanBeResent() const
         !isAbandoned() &&
         // Don't try to submit coinbase transactions. These would fail anyway but would
         // cause log spam.
-        !IsCoinBase() &&
+        !IsCoinBase() && !IsCoinStake() &&
         // Don't try to submit conflicted or confirmed transactions.
         GetDepthInMainChain() == 0 &&
         // Don't try to submit transactions locked via InstantSend.
