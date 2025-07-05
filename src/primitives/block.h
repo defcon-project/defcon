@@ -260,8 +260,6 @@ public:
         return !IsProofOfStake();
     }
 
-    bool SignBlockWithKey(const CKey& key);
-    bool CheckBlockSignature() const;
     std::string ToString() const;
 };
 

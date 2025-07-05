@@ -19,52 +19,6 @@ uint256 CBlockHeader::GetHash() const
     return HashX11((const char *)vch.data(), (const char *)vch.data() + vch.size());
 }
 
-bool CBlock::SignBlockWithKey(const CKey& key)
-{
-    std::vector<valtype> vSolutions;
-    const CTxOut& txout = vtx[1]->vout[1];
-    TxoutType whichType = Solver(txout.scriptPubKey, vSolutions);
-
-    CKeyID keyID;
-    if (whichType == TxoutType::PUBKEYHASH)
-        keyID = CKeyID(uint160(vSolutions[0]));
-    else if (whichType == TxoutType::PUBKEY)
-        keyID = CPubKey(vSolutions[0]).GetID();
-    else
-        return false;
-
-    if (!key.Sign(GetHash(), vchBlockSig))
-        return false;
-
-    return true;
-}
-
-bool CBlock::CheckBlockSignature() const
-{
-    std::vector<valtype> vSolutions;
-    const CTxOut& txout = vtx[1]->vout[1];
-    TxoutType whichType = Solver(txout.scriptPubKey, vSolutions);
-    valtype& vchPubKey = vSolutions[0];
-
-    if (whichType == TxoutType::PUBKEY) {
-        CPubKey key(vchPubKey);
-        if (vchBlockSig.empty())
-            return false;
-        return key.Verify(GetHash(), vchBlockSig);
-    } else if (whichType == TxoutType::PUBKEYHASH) {
-        CKeyID keyID;
-        keyID = CKeyID(uint160(vchPubKey));
-        CPubKey pubkey(vchPubKey);
-        if (!pubkey.IsValid())
-            return false;
-        if (vchBlockSig.empty())
-            return false;
-        return pubkey.Verify(GetHash(), vchBlockSig);
-    }
-
-    return false;
-}
-
 std::string CBlock::ToString() const
 {
     std::stringstream s;

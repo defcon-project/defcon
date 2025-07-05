@@ -6,6 +6,7 @@
 
 #include <chainparams.h>
 #include <consensus/merkle.h>
+#include <node/miner.h>
 #include <pos/minter.h>
 #include <pow.h>
 #include <rpc/util.h>
@@ -416,7 +417,7 @@ bool CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktem
             LogPrint(BCLog::POS, "%s: signing blockhash %s\n", __func__, blockhash.ToString());
 
             // Append a signature to the block
-            return pblock->SignBlockWithKey(key);
+            return SignBlockWithKey(*pblock, key);
         }
     }
 

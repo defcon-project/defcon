@@ -26,6 +26,7 @@
 #include <node/blockstorage.h>
 #include <node/coinstats.h>
 #include <node/interface_ui.h>
+#include <node/miner.h>
 #include <node/utxo_snapshot.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
@@ -3890,7 +3891,7 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
         return false;
 
     // check block signature
-    if (fCheckMerkleRoot && fCheckSignature && (block.IsProofOfStake() && !block.CheckBlockSignature()))
+    if (fCheckMerkleRoot && fCheckSignature && (block.IsProofOfStake() && !CheckBlockSignature(block)))
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sign", "bad block signature");
 
     // Check the merkle root.
