@@ -600,3 +600,49 @@ void IncrementExtraNonce(CBlock* pblock, const CBlockIndex* pindexPrev, unsigned
     pblock->vtx[0] = MakeTransactionRef(std::move(txCoinbase));
     pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
 }
+
+bool SignBlockWithKey(CBlock& block, const CKey& key)
+{
+    std::vector<valtype> vSolutions;
+    const CTxOut& txout = block.vtx[1]->vout[1];
+    TxoutType whichType = Solver(txout.scriptPubKey, vSolutions);
+
+    CKeyID keyID;
+    if (whichType == TxoutType::PUBKEYHASH)
+        keyID = CKeyID(uint160(vSolutions[0]));
+    else if (whichType == TxoutType::PUBKEY)
+        keyID = CPubKey(vSolutions[0]).GetID();
+    else
+        return false;
+
+    if (!key.Sign(block.GetHash(), block.vchBlockSig))
+        return false;
+
+    return true;
+}
+
+bool CheckBlockSignature(const CBlock block)
+{
+    std::vector<valtype> vSolutions;
+    const CTxOut& txout = block.vtx[1]->vout[1];
+    TxoutType whichType = Solver(txout.scriptPubKey, vSolutions);
+    valtype& vchPubKey = vSolutions[0];
+
+    if (whichType == TxoutType::PUBKEY) {
+        CPubKey key(vchPubKey);
+        if (block.vchBlockSig.empty())
+            return false;
+        return key.Verify(block.GetHash(), block.vchBlockSig);
+    } else if (whichType == TxoutType::PUBKEYHASH) {
+        CKeyID keyID;
+        keyID = CKeyID(uint160(vchPubKey));
+        CPubKey pubkey(vchPubKey);
+        if (!pubkey.IsValid())
+            return false;
+        if (block.vchBlockSig.empty())
+            return false;
+        return pubkey.Verify(block.GetHash(), block.vchBlockSig);
+    }
+
+    return false;
+}
