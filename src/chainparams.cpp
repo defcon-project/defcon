@@ -386,24 +386,24 @@ public:
         consensus.nGovernanceMinQuorum = 1;
         consensus.nGovernanceFilterElements = 500;
         consensus.nMasternodeMinimumConfirmations = 1;
-        consensus.BIP34Height = 76;
+        consensus.BIP34Height = 1;
         consensus.BIP34Hash = uint256S("0x000008ebb1db2598e897d17275285767717c6acfeac4c73def49fbea1ddcbcb6");
-        consensus.BIP65Height = 2431; // 0000039cf01242c7f921dcb4806a5994bc003b48c1973ae0c89b67809c2bb2ab
-        consensus.BIP66Height = 2075; // 0000002acdd29a14583540cb72e1c5cc83783560e38fa7081495d474fe1671f7
-        consensus.BIP147Height = 4300; // 0000000040c1480d413c9203664253ab18da284130c329bf88fcfc84312bcbe0
-        consensus.CSVHeight = 8064; // 00000005eb94d027e34649373669191188858a22c70f4a6d29105e559124cec7
+        consensus.BIP65Height = 1;
+        consensus.BIP66Height = 1;
+        consensus.BIP147Height = 1;
+        consensus.CSVHeight = 1;
         consensus.DIP0001Height = 500;
-        consensus.DIP0003Height = 1500;
-        consensus.DIP0003EnforcementHeight = 3000;
+        consensus.DIP0003Height = 2500;
+        consensus.DIP0003EnforcementHeight = 5000;
         consensus.DIP0003EnforcementHash = uint256S("00000055ebc0e974ba3a3fb785c5ad4365a39637d4df168169ee80d313612f8f");
-        consensus.DIP0008Height = 5000;
-        consensus.BRRHeight = 387500; // 0000001537dbfd09dea69f61c1f8b2afa27c8dc91c934e144797761c9f10367b
-        consensus.DIP0020Height = 414100; // 000000cf961868662fbfbb5d1af6f1caa1809f6a4e390efe5f8cd3031adea668
-        consensus.DIP0024Height = 769700; // 0000008d84e4efd890ae95c70a7a6126a70a80e5c19e4cb264a5b3469aeef172
-        consensus.DIP0024QuorumsHeight = 770730; // 0000003c43b3ae7fffe61278ca5537a0e256ebf4d709d45f0ab040271074d51e
-        consensus.V19Height = 850100; // 000004728b8ff2a16b9d4eebb0fd61eeffadc9c7fe4b0ec0b5a739869401ab5b
-        consensus.V20Height = 905100; // 0000020c5e0f86f385cbf8e90210de9a9fd63633f01433bf47a6b3227a2851fd
-        consensus.MN_RRHeight = 1066900; // 000000d05d445958a9a4ad6bdc0f4bfb25af124b2326060703373ff2d3b397e9
+        consensus.DIP0008Height = 7500;
+        consensus.BRRHeight = 1;
+        consensus.DIP0020Height = std::numeric_limits<int>::max();
+        consensus.DIP0024Height = std::numeric_limits<int>::max();
+        consensus.DIP0024QuorumsHeight = std::numeric_limits<int>::max();
+        consensus.V19Height = std::numeric_limits<int>::max();
+        consensus.V20Height = std::numeric_limits<int>::max();
+        consensus.MN_RRHeight = std::numeric_limits<int>::max();
         consensus.MinBIP9WarningHeight = 1066900 + 2016;  // mn_rr activation height + miner confirmation window
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); // ~uint256(0) >> 20
         consensus.nPowTargetTimespan = 24 * 60 * 60; // Dash: 1 day
@@ -428,16 +428,16 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
 
-        consensus.lastPowBlock = 300;
+        consensus.lastPowBlock = 500;
         consensus.posTargetTimespan = consensus.nPowTargetTimespan;
         consensus.posTargetSpacing = consensus.nPowTargetSpacing;
         consensus.posTimestampMask = 5;
         consensus.stakeValueRange = { 0 * COIN, MAX_MONEY };
         consensus.stakeAgeRange = { 10 * 60, 60 * 60 * 24 * 30 };
         consensus.posLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        consensus.regularMnCollateral = 1000 * COIN;
+        consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
-        consensus.evoMnCollateral = 4000 * COIN;
+        consensus.evoMnCollateral = 4000000 * COIN;
         consensus.evoVoteWeight = 4;
         consensus.minStaticCollateral = 8064;
 
@@ -525,10 +525,9 @@ public:
 
         // getchaintxstats 17280 000000eef20eb0062abd4e799967e98bdebb165dd1c567ab4118c1c86c6e948f
         chainTxData = ChainTxData{
-                1732068833, // * UNIX timestamp of last known number of transactions (Block 905100)
-                6701197,    // * total number of transactions between genesis and that timestamp
-                            //   (the tx=... number in the ChainStateFlushed debug.log lines)
-                0.01528131540752872,       // * estimated number of transactions per second after that timestamp
+                1744906312,
+                1,
+                0.01,
         };
     }
 };
