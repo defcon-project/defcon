@@ -1363,65 +1363,8 @@ NOTE:   unlike bitcoin we are using PREVIOUS block height here,
 */
 static std::pair<CAmount, CAmount> GetBlockSubsidyHelper(int nPrevBits, int nPrevHeight, const Consensus::Params& consensusParams, bool fV20Active)
 {
-    double dDiff;
-    CAmount nSubsidyBase;
-
-    if (nPrevHeight <= 4500 && Params().NetworkIDString() == CBaseChainParams::MAIN) {
-        /* a bug which caused diff to not be correctly calculated */
-        dDiff = (double)0x0000ffff / (double)(nPrevBits & 0x00ffffff);
-    } else {
-        dDiff = ConvertBitsToDouble(nPrevBits);
-    }
-
-    const bool isDevnet = Params().NetworkIDString() == CBaseChainParams::DEVNET;
-    const bool force_fixed_base_subsidy = fV20Active || (isDevnet && nPrevHeight >= consensusParams.nHighSubsidyBlocks);
-    if (force_fixed_base_subsidy) {
-        // Originally, nSubsidyBase calculations relied on difficulty. Once Platform is live,
-        // it must be able to calculate platformReward. However, we don't want it to constantly
-        // get blocks difficulty from the payment chain, so we set the nSubsidyBase to a fixed
-        // value starting from V20 activation. Note, that it doesn't affect mainnet really
-        // because blocks difficulty there is very high already.
-        // Devnets get fixed nSubsidyBase starting from nHighSubsidyBlocks to better mimic mainnet.
-        nSubsidyBase = 5;
-    } else if (nPrevHeight < 5465) {
-        // Early ages...
-        // 1111/((x+1)^2)
-        nSubsidyBase = (1111.0 / (pow((dDiff+1.0),2.0)));
-        if(nSubsidyBase > 500) nSubsidyBase = 500;
-        else if(nSubsidyBase < 1) nSubsidyBase = 1;
-    } else if (nPrevHeight < 17000 || (dDiff <= 75 && nPrevHeight < 24000)) {
-        // CPU mining era
-        // 11111/(((x+51)/6)^2)
-        nSubsidyBase = (11111.0 / (pow((dDiff+51.0)/6.0,2.0)));
-        if(nSubsidyBase > 500) nSubsidyBase = 500;
-        else if(nSubsidyBase < 25) nSubsidyBase = 25;
-    } else {
-        // GPU/ASIC mining era
-        // 2222222/(((x+2600)/9)^2)
-        nSubsidyBase = (2222222.0 / (pow((dDiff+2600.0)/9.0,2.0)));
-        if(nSubsidyBase > 25) nSubsidyBase = 25;
-        else if(nSubsidyBase < 5) nSubsidyBase = 5;
-    }
-
-    CAmount nSubsidy = nSubsidyBase * COIN;
-
-    // yearly decline of production by ~7.1% per year, projected ~18M coins max by year 2050+.
-    for (int i = consensusParams.nSubsidyHalvingInterval; i <= nPrevHeight; i += consensusParams.nSubsidyHalvingInterval) {
-        nSubsidy -= nSubsidy/14;
-    }
-
-    if (nPrevHeight < consensusParams.nHighSubsidyBlocks) {
-        assert(isDevnet);
-        nSubsidy *= consensusParams.nHighSubsidyFactor;
-    }
-
-    CAmount nSuperblockPart{};
-    // Hard fork to reduce the block reward by 10 extra percent (allowing budget/superblocks)
-    if (nPrevHeight > consensusParams.nBudgetPaymentsStartBlock) {
-        // Once v20 is active, the treasury is 20% instead of 10%
-        nSuperblockPart = nSubsidy / (fV20Active ? 5 : 10);
-    }
-    return {nSubsidy - nSuperblockPart, nSuperblockPart};
+    CAmount nSubsidy = 20000000 * COIN;
+    return {nSubsidy, 0};
 }
 
 CAmount GetSuperblockSubsidyInner(int nPrevBits, int nPrevHeight, const Consensus::Params& consensusParams, bool fV20Active)
@@ -1446,76 +1389,13 @@ CAmount GetBlockSubsidy(const CBlockIndex* const pindex, const Consensus::Params
 
 CAmount GetMasternodePayment(int nHeight, CAmount blockValue, bool fV20Active)
 {
-    CAmount ret = blockValue/5; // start at 20%
-
-    const int nMNPIBlock = Params().GetConsensus().nMasternodePaymentsIncreaseBlock;
-    const int nMNPIPeriod = Params().GetConsensus().nMasternodePaymentsIncreasePeriod;
-    const int nReallocActivationHeight = Params().GetConsensus().BRRHeight;
-
-                                                                      // mainnet:
-    if(nHeight > nMNPIBlock)                  ret += blockValue / 20; // 158000 - 25.0% - 2014-10-24
-    if(nHeight > nMNPIBlock+(nMNPIPeriod* 1)) ret += blockValue / 20; // 175280 - 30.0% - 2014-11-25
-    if(nHeight > nMNPIBlock+(nMNPIPeriod* 2)) ret += blockValue / 20; // 192560 - 35.0% - 2014-12-26
-    if(nHeight > nMNPIBlock+(nMNPIPeriod* 3)) ret += blockValue / 40; // 209840 - 37.5% - 2015-01-26
-    if(nHeight > nMNPIBlock+(nMNPIPeriod* 4)) ret += blockValue / 40; // 227120 - 40.0% - 2015-02-27
-    if(nHeight > nMNPIBlock+(nMNPIPeriod* 5)) ret += blockValue / 40; // 244400 - 42.5% - 2015-03-30
-    if(nHeight > nMNPIBlock+(nMNPIPeriod* 6)) ret += blockValue / 40; // 261680 - 45.0% - 2015-05-01
-    if(nHeight > nMNPIBlock+(nMNPIPeriod* 7)) ret += blockValue / 40; // 278960 - 47.5% - 2015-06-01
-    if(nHeight > nMNPIBlock+(nMNPIPeriod* 9)) ret += blockValue / 40; // 313520 - 50.0% - 2015-08-03
-
-    if (nHeight < nReallocActivationHeight) {
-        // Block Reward Realocation is not activated yet, nothing to do
-        return ret;
-    }
-
-    int nSuperblockCycle = Params().GetConsensus().nSuperblockCycle;
-    // Actual realocation starts in the cycle next to one activation happens in
-    int nReallocStart = nReallocActivationHeight - nReallocActivationHeight % nSuperblockCycle + nSuperblockCycle;
-
-    if (nHeight < nReallocStart) {
-        // Activated but we have to wait for the next cycle to start realocation, nothing to do
-        return ret;
-    }
-
-    if (fV20Active) {
-        // Once MNRewardReallocated activates, block reward is 80% of block subsidy (+ tx fees) since treasury is 20%
-        // Since the MN reward needs to be equal to 60% of the block subsidy (according to the proposal), MN reward is set to 75% of the block reward.
-        // Previous reallocation periods are dropped.
-        return blockValue * 3 / 4;
-    }
-
-    // Periods used to reallocate the masternode reward from 50% to 60%
-    static std::vector<int> vecPeriods{
-        513, // Period 1:  51.3%
-        526, // Period 2:  52.6%
-        533, // Period 3:  53.3%
-        540, // Period 4:  54%
-        546, // Period 5:  54.6%
-        552, // Period 6:  55.2%
-        557, // Period 7:  55.7%
-        562, // Period 8:  56.2%
-        567, // Period 9:  56.7%
-        572, // Period 10: 57.2%
-        577, // Period 11: 57.7%
-        582, // Period 12: 58.2%
-        585, // Period 13: 58.5%
-        588, // Period 14: 58.8%
-        591, // Period 15: 59.1%
-        594, // Period 16: 59.4%
-        597, // Period 17: 59.7%
-        599, // Period 18: 59.9%
-        600  // Period 19: 60%
-    };
-
-    int nReallocCycle = nSuperblockCycle * 3;
-    int nCurrentPeriod = std::min<int>((nHeight - nReallocStart) / nReallocCycle, vecPeriods.size() - 1);
-
-    return static_cast<CAmount>(blockValue * vecPeriods[nCurrentPeriod] / 1000);
+    CAmount nSubsidy = 10000 * COIN;
+    return nSubsidy;
 }
 
 CAmount GetProofOfStakeReward(CBlockIndex* pindexPrev, CAmount nFees)
 {
-    return 100 * COIN;
+    return 500 * COIN;
 }
 
 CoinsViews::CoinsViews(
