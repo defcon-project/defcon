@@ -14,84 +14,6 @@
 
 extern std::atomic<bool> fStopMinerProc;
 
-void CStakeWallet::AvailableCoinsForStaking(std::vector<COutput> &vCoins, int64_t nTime, int nHeight) const
-{
-    vCoins.clear();
-    wallet->m_greatest_txn_depth = 0;
-    {
-        int nRequiredDepth = COINBASE_MATURITY + 1;
-
-        for (const auto &walletEntry : wallet->mapWallet)
-        {
-            const CWalletTx* wtx = &walletEntry.second;
-            CTransactionRef tx = wtx->tx;
-
-            int nDepth;
-            {
-                LOCK(wallet->cs_wallet);
-                nDepth = wtx->GetDepthInMainChain();
-                if (nDepth > wallet->m_greatest_txn_depth) {
-                    wallet->m_greatest_txn_depth = nDepth;
-                }
-            }
-
-            //if coinbase/stake, ensure it has reached maturity
-            bool nGenerated = wtx->IsCoinBase() || wtx->IsCoinStake();
-            if (nGenerated && (nDepth < nRequiredDepth)) {
-                continue;
-            }
-
-            const uint256 &wtxid = walletEntry.first;
-            for (size_t i = 0; i < tx->vout.size(); ++i)
-            {
-                const auto &txout = tx->vout[i];
-                if (txout.nValue < params.stakeValueRange[0] || txout.nValue > params.stakeValueRange[1]) {
-                    continue;
-                }
-
-                if (txout.nValue == params.regularMnCollateral || txout.nValue == params.evoMnCollateral) {
-                    continue;
-                }
-
-                CKeyID keyID;
-                COutPoint kernel(wtxid, i);
-                const CScript pscriptPubKey = txout.scriptPubKey;
-                if (pscriptPubKey.IsPayToPublicKeyHash()) {
-                    keyID = CKeyID(uint160(Span{pscriptPubKey}.subspan(3, 20)));
-                } else if (pscriptPubKey.IsPayToScriptHash()) {
-                    keyID = CKeyID(uint160(Span{pscriptPubKey}.subspan(5, 20)));
-                } else {
-                    continue;
-                }
-
-                {
-                    LOCK(wallet->cs_wallet);
-                    if (wallet->IsSpent(wtxid, i) || wallet->IsLockedCoin(wtxid, i)) {
-                        continue;
-                    }
-                }
-
-                {
-                    LOCK(wallet->cs_wallet);
-                    isminetype mine = wallet->IsMine(txout);
-                    if (!(mine & ISMINE_SPENDABLE)) {
-                        continue;
-                    }
-                }
-
-                bool fSpendableIn = true;
-                bool fSolvableIn = true;
-
-                int input_bytes = 0; // unnecessary
-                vCoins.emplace_back(wtx, i, nDepth, input_bytes, fSpendableIn, fSolvableIn, true);
-            }
-        }
-    }
-
-    Shuffle(vCoins.begin(), vCoins.end(), FastRandomContext());
-    return;
-}
-
 uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 {
     // Choose coins to use
@@ -126,12 +48,14 @@ uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight, std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet, CAmount& nValueRet) const
 {
     std::vector<COutput> vCoins;
-    AvailableCoinsForStaking(vCoins, nTime, nHeight);
+    wallet->AvailableCoins(vCoins, nullptr, params.stakeValueRange[0], params.stakeValueRange[1]);
 
     setCoinsRet.clear();
     nValueRet = 0;
+    int nRequiredDepth = COINBASE_MATURITY + 1;
 
-    for (const auto& output : vCoins) {
+    for (const auto& output : vCoins)
+    {
         const CWalletTx* pcoin = output.tx;
         int i = output.i;
 
@@ -140,24 +64,41 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
             break;
         }
 
-        // Skip inputs that dont meet age requirements
+        // Determine depth
+        int nDepth;
+        {
+            LOCK(wallet->cs_wallet);
+            nDepth = pcoin->GetDepthInMainChain();
+        }
+
+        // If coinbase/stake, ensure it has reached maturity
+        bool nGenerated = pcoin->IsCoinBase() || pcoin->IsCoinStake();
+        if (nGenerated && (nDepth < nRequiredDepth)) {
+            continue;
+        }
+
+        // Skip inputs that dont meet age, value requirements or are collaterals
+        CAmount inputValue = pcoin->tx->vout[i].nValue;
         int64_t inputAge = GetTime() - pcoin->GetTxTime();
+        if (inputValue < params.stakeValueRange[0] || inputValue > params.stakeValueRange[1]) {
+            continue;
+        }
+        if (inputValue == params.regularMnCollateral || inputValue == params.evoMnCollateral) {
+            continue;
+        }
         if (inputAge < params.stakeAgeRange[0] || inputAge > params.stakeAgeRange[1]) {
             continue;
         }
 
-        CAmount n = pcoin->tx->vout[i].nValue;
-
-        std::pair<int64_t, std::pair<const CWalletTx*, unsigned int>> coin = std::make_pair(n, std::make_pair(pcoin, i));
-
-        if (n >= nTargetValue) {
+        std::pair<int64_t, std::pair<const CWalletTx*, unsigned int>> coin = std::make_pair(inputValue, std::make_pair(pcoin, i));
+        if (inputValue >= nTargetValue) {
             // If input value is greater or equal to target then simply insert
             //    it into the current subset and exit
             setCoinsRet.insert(coin.second);
             nValueRet += coin.first;
             break;
         } else {
-            if (n < nTargetValue + CENT) {
+            if (inputValue < nTargetValue + CENT) {
                 setCoinsRet.insert(coin.second);
                 nValueRet += coin.first;
             }
