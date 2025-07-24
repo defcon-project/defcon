@@ -5,9 +5,7 @@
 #include <pos/minter.h>
 
 #include <masternode/sync.h>
-#include <pos/stake.h>
 #include <pos/multiwallet.h>
-#include <shutdown.h>
 #include <timedata.h>
 #include <net.h>
 
