@@ -395,7 +395,7 @@ public:
         consensus.DIP0001Height = 500;
         consensus.DIP0003Height = 2500;
         consensus.DIP0003EnforcementHeight = 5000;
-        consensus.DIP0003EnforcementHash = uint256S("00000055ebc0e974ba3a3fb785c5ad4365a39637d4df168169ee80d313612f8f");
+        consensus.DIP0003EnforcementHash = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
         consensus.DIP0008Height = 7500;
         consensus.BRRHeight = 1;
         consensus.DIP0020Height = std::numeric_limits<int>::max();
