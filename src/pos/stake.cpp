@@ -264,7 +264,7 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
     }
 
     // Get block reward
-    CAmount nReward = GetProofOfStakeReward(pindexPrev, nFees);
+    CAmount nReward = GetProofOfStakeReward();
     if (nReward < 0) {
         return false;
     }
