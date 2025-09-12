@@ -100,6 +100,7 @@ public:
         CoinJoinCreateDenominations,
         CoinJoinSend,
         PlatformTransfer,
+        MasternodeReward,
     };
 
     /** Number of confirmation recommended for accepting a transaction */

@@ -283,6 +283,11 @@ public:
         return (vin.size() > 0 && (!vin[0].prevout.IsNull()) && vout.size() >= 2 && vout[0].IsEmpty());
     }
 
+    bool IsMasternodeReward() const
+    {
+        return (vin.size() == 1 && vin[0].prevout.IsNull() && vout.size() > 1 && vout[0].IsEmpty() && !vout[1].IsEmpty());
+    }
+
     friend bool operator==(const CTransaction& a, const CTransaction& b)
     {
         return a.hash == b.hash;

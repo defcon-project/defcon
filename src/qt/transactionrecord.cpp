@@ -81,6 +81,9 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wal
                 {
                     // Generated
                     sub.type = TransactionRecord::Generated;
+                    if (i == 1) {
+                        sub.type = TransactionRecord::MasternodeReward;
+                    }
                 }
                 else if (wtx.is_coinstake)
                 {
@@ -308,7 +311,7 @@ void TransactionRecord::updateStatus(const interfaces::WalletTxStatus& wtx, cons
         }
     }
     // For generated transactions, determine maturity
-    else if(type == TransactionRecord::Generated || type == TransactionRecord::Staked)
+    else if(type == TransactionRecord::Generated || type == TransactionRecord::Staked || type == TransactionRecord::MasternodeReward)
     {
         if (wtx.blocks_to_maturity > 0)
         {
