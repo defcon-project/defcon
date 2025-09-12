@@ -220,7 +220,7 @@ void Notificator::notifyMacUserNotificationCenter(const QString &title, const QS
 
 void Notificator::notify(Class cls, const QString &title, const QString &text, const QIcon &icon, int millisTimeout)
 {
-    if (text.toStdString().find("Staked") != std::string::npos)
+    if (text.toStdString().find("Staked") != std::string::npos || text.toStdString().find("Masternode Reward") != std::string::npos)
         return;
 
     switch(mode)
