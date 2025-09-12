@@ -433,7 +433,7 @@ public:
         consensus.posTargetSpacing = consensus.nPowTargetSpacing;
         consensus.posTimestampMask = 5;
         consensus.stakeValueRange = { 0 * COIN, MAX_MONEY };
-        consensus.stakeAgeRange = { 10 * 60, 60 * 60 * 24 * 30 };
+        consensus.stakeAgeRange = { 10 * 60, 60 * 60 * 24 * 30 * 6};
         consensus.posLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
