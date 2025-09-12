@@ -212,10 +212,11 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const int nBlo
     else
         LogPrint(BCLog::MNPAYMENTS, "block.vtx[1]->GetValueOut() %lld - stakeValueIn %lld <= blockReward %lld\n", block.vtx[1]->GetValueOut(), stakeValueIn, blockReward);
 
-    CAmount nSuperblockMaxValue =  blockReward + CSuperblock::GetPaymentsLimit(m_chainman.ActiveChain(), nBlockHeight);
-    bool isSuperblockMaxValueMet = (block.vtx[0]->GetValueOut() <= nSuperblockMaxValue);
+    CAmount nSuperblockMaxValue = blockReward + CSuperblock::GetPaymentsLimit(m_chainman.ActiveChain(), nBlockHeight);
+    CAmount firstVoutPayoutMinusMnPayment = block.vtx[0]->GetValueOut() - GetMasternodePayment(nBlockHeight);
+    bool isSuperblockMaxValueMet = firstVoutPayoutMinusMnPayment <= nSuperblockMaxValue;
 
-    LogPrint(BCLog::GOBJECT, "block.vtx[0]->GetValueOut() %lld <= nSuperblockMaxValue %lld\n", block.vtx[0]->GetValueOut(), nSuperblockMaxValue);
+    LogPrint(BCLog::GOBJECT, "firstVoutPayoutMinusMnPayment %lld <= nSuperblockMaxValue %lld\n", firstVoutPayoutMinusMnPayment, nSuperblockMaxValue);
 
     if (!CSuperblock::IsValidBlockHeight(nBlockHeight)) {
         // can't possibly be a superblock, so lets just check for block reward limits

@@ -92,7 +92,11 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
     //
     // From
     //
-    if (wtx.is_coinbase)
+    if (wtx.is_masternode_reward)
+    {
+        strHTML += "<b>" + tr("Source") + ":</b> " + tr("Masternode Reward") + "<br>";
+    }
+    else if (wtx.is_coinbase)
     {
         strHTML += "<b>" + tr("Source") + ":</b> " + tr("Generated") + "<br>";
     }
@@ -290,7 +294,7 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
         strHTML += "<br>";
         if (wtx.is_coinstake)
             strHTML += tr("Staked");
-        else if (wtx.is_coinbase)
+        else if (wtx.is_coinbase || wtx.is_masternode_reward)
             strHTML += tr("Generated");
         strHTML += tr(" coins must mature %1 blocks before they can be spent. When you created this block, it was broadcast to the network to be added to the block chain. If it fails to get into the chain, its state will change to \"not accepted\" and it won't be spendable. This may occasionally happen if another node creates a block within a few seconds of yours.").arg(QString::number(numBlocksToMaturity)) + "<br>";
     }

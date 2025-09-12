@@ -1364,6 +1364,8 @@ NOTE:   unlike bitcoin we are using PREVIOUS block height here,
 static std::pair<CAmount, CAmount> GetBlockSubsidyHelper(int nPrevBits, int nPrevHeight, const Consensus::Params& consensusParams, bool fV20Active)
 {
     CAmount nSubsidy = 20000000 * COIN;
+    if (nPrevHeight + 1 > consensusParams.lastPowBlock)
+        nSubsidy = GetProofOfStakeReward();
     return {nSubsidy, 0};
 }
 
@@ -1382,7 +1384,6 @@ CAmount GetBlockSubsidyInner(int nPrevBits, int nPrevHeight, const Consensus::Pa
 CAmount GetBlockSubsidy(const CBlockIndex* const pindex, const Consensus::Params& consensusParams)
 {
     if (pindex->pprev == nullptr) return Params().GenesisBlock().vtx[0]->GetValueOut();
-    if (pindex->pprev->nHeight + 1 > consensusParams.lastPowBlock) return GetProofOfStakeReward(pindex->pprev);
     const bool isV20Active{DeploymentActiveAt(*pindex, consensusParams, Consensus::DEPLOYMENT_V20)};
     return GetBlockSubsidyInner(pindex->pprev->nBits, pindex->pprev->nHeight, consensusParams, isV20Active);
 }
@@ -1393,7 +1394,12 @@ CAmount GetMasternodePayment(int nHeight, CAmount blockValue, bool fV20Active)
     return nSubsidy;
 }
 
-CAmount GetProofOfStakeReward(CBlockIndex* pindexPrev, CAmount nFees)
+CAmount GetMasternodePayment(int nHeight)
+{
+    return GetMasternodePayment(nHeight, 0, false);
+}
+
+CAmount GetProofOfStakeReward()
 {
     return 500 * COIN;
 }

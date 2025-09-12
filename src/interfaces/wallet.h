@@ -414,6 +414,7 @@ struct WalletTx
     bool is_coinbase;
     bool is_coinstake;
     bool is_platform_transfer{false};
+    bool is_masternode_reward{false};
     bool is_denominate;
 };
 

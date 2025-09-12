@@ -153,7 +153,8 @@ CAmount GetBlockSubsidyInner(int nPrevBits, int nPrevHeight, const Consensus::Pa
 CAmount GetSuperblockSubsidyInner(int nPrevBits, int nPrevHeight, const Consensus::Params& consensusParams, bool fV20Active);
 CAmount GetBlockSubsidy(const CBlockIndex* const pindex, const Consensus::Params& consensusParams);
 CAmount GetMasternodePayment(int nHeight, CAmount blockValue, bool fV20Active);
-CAmount GetProofOfStakeReward(CBlockIndex* pindexPrev, CAmount nFees = 0);
+CAmount GetMasternodePayment(int nHeight);
+CAmount GetProofOfStakeReward();
 
 bool AbortNode(BlockValidationState& state, const std::string& strMessage, const bilingual_str& userMessage = bilingual_str{});
 

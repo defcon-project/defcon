@@ -436,6 +436,8 @@ QString TransactionTableModel::formatTxType(const TransactionRecord *wtx) const
         return tr("Staked");
     case TransactionRecord::PlatformTransfer:
         return tr("Platform Transfer");
+    case TransactionRecord::MasternodeReward:
+        return tr("Masternode Reward");
 
     case TransactionRecord::CoinJoinMixing:
         return tr("%1 Mixing").arg(QString::fromStdString(gCoinJoinName));
@@ -481,6 +483,7 @@ QString TransactionTableModel::formatTxToAddress(const TransactionRecord *wtx, b
     case TransactionRecord::Staked:
     case TransactionRecord::CoinJoinSend:
     case TransactionRecord::PlatformTransfer:
+    case TransactionRecord::MasternodeReward:
         return formatAddressLabel(wtx->strAddress, wtx->label, tooltip) + watchAddress;
     case TransactionRecord::SendToOther:
         return QString::fromStdString(wtx->strAddress) + watchAddress;
@@ -505,6 +508,7 @@ QVariant TransactionTableModel::addressColor(const TransactionRecord *wtx) const
     case TransactionRecord::SendToAddress:
     case TransactionRecord::Staked:
     case TransactionRecord::Generated:
+    case TransactionRecord::MasternodeReward:
     case TransactionRecord::PlatformTransfer:
     case TransactionRecord::CoinJoinSend:
     case TransactionRecord::RecvWithCoinJoin:
@@ -548,6 +552,7 @@ QVariant TransactionTableModel::amountColor(const TransactionRecord *rec) const
     case TransactionRecord::RecvWithCoinJoin:
     case TransactionRecord::RecvWithAddress:
     case TransactionRecord::RecvFromOther:
+    case TransactionRecord::MasternodeReward:
     case TransactionRecord::PlatformTransfer:
         return GUIUtil::getThemedQColor(GUIUtil::ThemedColor::GREEN);
     case TransactionRecord::CoinJoinSend:
