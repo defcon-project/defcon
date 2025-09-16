@@ -190,6 +190,9 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, 
         }
     }
 
+    // never assume txfee has been initialised
+    txfee = 0;
+
     if (!tx.IsCoinStake()) {
         const CAmount value_out = tx.GetValueOut();
         if (nValueIn < value_out) {
