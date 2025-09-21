@@ -1913,10 +1913,13 @@ void BitcoinGUI::setStakingStatus()
 {
     int active_wallets = ReturnActiveStakingWallets();
     if (active_wallets > 0) {
+        char walletMessage[32];
+        memset(walletMessage, 0, sizeof(walletMessage));
+        sprintf(walletMessage, "Staking on %d wallets", active_wallets);
         if (fIsStaking && !fTryToSync) {
             labelStakingIcon->show();
             labelStakingIcon->setPixmap(QIcon(":/icons/staking_active").pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
-            labelStakingIcon->setToolTip(tr("Staking is active"));
+            labelStakingIcon->setToolTip(tr(walletMessage));
         } else if (!fIsStaking && fTryToSync) {
             labelStakingIcon->show();
             labelStakingIcon->setPixmap(QIcon(":/icons/staking_stalled").pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
