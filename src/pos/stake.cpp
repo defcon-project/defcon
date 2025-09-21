@@ -48,7 +48,11 @@ uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight, std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet, CAmount& nValueRet) const
 {
     std::vector<COutput> vCoins;
-    wallet->AvailableCoins(vCoins, nullptr, params.stakeValueRange[0], params.stakeValueRange[1]);
+
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->AvailableCoins(vCoins, nullptr, params.stakeValueRange[0], params.stakeValueRange[1]);
+    }
 
     setCoinsRet.clear();
     nValueRet = 0;

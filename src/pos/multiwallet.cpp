@@ -27,6 +27,28 @@ void MultiwalletInitialize()
     LogPrint(BCLog::POS, "%s - found %d stakable wallets\n", __func__, stakable_sz);
 }
 
+void MultiwalletMaintenance()
+{
+    LOCK(stakable_mutex);
+
+    std::vector<CStakeWallet> temp_wallets;
+    temp_wallets = stakable_wallets;
+
+    stakable_sz = 0;
+    stakable_wallets.clear();
+    const Consensus::Params& params = Params().GetConsensus();
+
+    for (auto p : GetWallets())
+    {
+        CStakeWallet wallet(p.get(), (Consensus::Params&) params);
+        if (temp_wallets[stakable_sz].CanStake()) {
+            wallet.StakingEnabled();
+        }
+        stakable_wallets.push_back(wallet);
+        stakable_sz++;
+    }
+}
+
 void ToggleWalletStaking(const std::string& name)
 {
     LOCK(stakable_mutex);
