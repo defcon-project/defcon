@@ -73,6 +73,7 @@
 #include <QVBoxLayout>
 #include <QWindow>
 
+bool uiReadyForStaking = false;
 
 const std::string BitcoinGUI::DEFAULT_UIPLATFORM =
 #if defined(Q_OS_MAC)
@@ -530,6 +531,10 @@ void BitcoinGUI::createActions()
                 connect(action, &QAction::triggered, [this, path] {
                     ToggleWalletStaking(path);
                 });
+
+                if (!uiReadyForStaking) {
+                    action->setEnabled(false);
+                }
             }
             if (toggleStakingMenu->isEmpty()) {
                 QAction* action = toggleStakingMenu->addAction(tr("No wallets available"));
@@ -1617,10 +1622,12 @@ void BitcoinGUI::setAdditionalDataSyncProgress(double nSyncProgress)
     if(m_node.masternodeSync().isSynced()) {
         stopSpinner();
         labelBlocksIcon->setPixmap(GUIUtil::getIcon("synced", GUIUtil::ThemedColor::GREEN).pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+        uiReadyForStaking = true;
     } else {
         progressBar->setFormat(tr("Synchronizing additional data: %p%"));
         progressBar->setMaximum(1000000000);
         progressBar->setValue(nSyncProgress * 1000000000.0 + 0.5);
+        uiReadyForStaking = false;
     }
 
     strSyncStatus = QString(m_node.masternodeSync().getSyncStatus().c_str());
