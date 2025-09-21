@@ -350,19 +350,20 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
         .name = "llmq_50_60",
         .useRotation = false,
         .size = 50,
-        .minSize = 40,
-        .threshold = 30,
+        .minSize = 2,
+        .threshold = 2,
 
         .dkgInterval = 24, // one DKG per hour
         .dkgPhaseBlocks = 2,
         .dkgMiningWindowStart = 10, // dkgPhaseBlocks * 5 = after finalization
         .dkgMiningWindowEnd = 18,
-        .dkgBadVotesThreshold = 40,
+        .dkgBadVotesThreshold = 2,
 
         .signingActiveQuorumCount = 24, // a full day worth of LLMQs
-        .keepOldConnections = 25,
-        .keepOldKeys = 48,
-        .recoveryMembers = 25,
+
+        .keepOldConnections = 3,
+        .keepOldKeys = 4,
+        .recoveryMembers = 3,
     },
 
     /**
