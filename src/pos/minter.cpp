@@ -108,6 +108,8 @@ void PoSMiner(NodeContext& node)
 
         UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
 
+        MultiwalletMaintenance();
+
         bool foundBlock{false};
         CScript coinbaseScript;
         for (int y = 0; y < stakable_sz; y++)
