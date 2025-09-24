@@ -295,6 +295,10 @@ bool CMNPaymentsProcessor::IsBlockPayeeValid(const CTransaction& txNew, const CB
         return false;
     }
 
+    // cache the tip_mn_list for use with collateral compliance checking
+    const auto tip_mn_list = m_dmnman.GetListAtChainTip();
+    MaintainCollateralCache(tip_mn_list);
+
     if (!m_mn_sync.IsSynced() || !m_govman.IsValid()) {
         // governance data is either incomplete or non-existent
         LogPrint(BCLog::MNPAYMENTS, "CMNPaymentsProcessor::%s -- WARNING! Not enough data, skipping superblock payee checks\n", __func__);

@@ -11,8 +11,11 @@
 #include <logging.h>
 #include <masternode/node.h>
 #include <masternode/payments.h>
+#include <node/blockstorage.h>
 
+void MaintainCollateralCache(COutPoint& outpoint, int nHeight);
 void MaintainCollateralCache(const CDeterministicMNList& mnList);
+void PrescanOnClientInitialise(const CBlockIndex* pscan, const Consensus::Params& params);
 bool CheckPrematureCollateralMovement(const COutPoint& txout, int nHeight, const Consensus::Params& params);
 
 #endif // BITCOIN_MASTERNODE_COLLATERAL_H

@@ -4260,6 +4260,16 @@ MempoolAcceptResult ChainstateManager::ProcessTransaction(const CTransactionRef&
         state.Invalid(TxValidationResult::TX_NO_MEMPOOL, "no-mempool");
         return MempoolAcceptResult::Failure(state);
     }
+
+    for (const CTxIn& txin : tx->vin) {
+        // Check to see if any collaterals are spent early
+        if (!CheckPrematureCollateralMovement(txin.prevout, m_active_chainstate->m_chain.Height(), Params().GetConsensus())) {
+            TxValidationState state;
+            state.Invalid(TxValidationResult::TX_CONSENSUS, "txn-spends-premature-collateral");
+            return MempoolAcceptResult::Failure(state);
+        }
+    }
+
     auto result = AcceptToMemoryPool(active_chainstate, tx, GetTime(), bypass_limits, test_accept);
     active_chainstate.GetMempool()->check(active_chainstate.CoinsTip(), active_chainstate.m_chain.Height() + 1);
     return result;
