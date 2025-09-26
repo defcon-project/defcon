@@ -387,24 +387,24 @@ public:
         consensus.nGovernanceFilterElements = 500;
         consensus.nMasternodeMinimumConfirmations = 1;
         consensus.BIP34Height = 1;
-        consensus.BIP34Hash = uint256S("0x000008ebb1db2598e897d17275285767717c6acfeac4c73def49fbea1ddcbcb6");
+        consensus.BIP34Hash = uint256();
         consensus.BIP65Height = 1;
         consensus.BIP66Height = 1;
         consensus.BIP147Height = 1;
         consensus.CSVHeight = 1;
-        consensus.DIP0001Height = 500;
-        consensus.DIP0003Height = 2500;
-        consensus.DIP0003EnforcementHeight = 5000;
-        consensus.DIP0003EnforcementHash = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
-        consensus.DIP0008Height = 7500;
-        consensus.BRRHeight = 1;
-        consensus.DIP0020Height = std::numeric_limits<int>::max();
-        consensus.DIP0024Height = std::numeric_limits<int>::max();
-        consensus.DIP0024QuorumsHeight = std::numeric_limits<int>::max();
-        consensus.V19Height = std::numeric_limits<int>::max();
-        consensus.V20Height = std::numeric_limits<int>::max();
+        consensus.DIP0001Height = 2;
+        consensus.DIP0003Height = 500;
+        consensus.DIP0003EnforcementHeight = 750;
+        consensus.DIP0003EnforcementHash = uint256S("0x6c1f0ef2d276f6b15e1ae16bc8518431133ecec295ef16f5c954206662801ac0");
+        consensus.DIP0008Height = 775;
+        consensus.BRRHeight = std::numeric_limits<int>::max();
+        consensus.DIP0020Height = 2;
+        consensus.DIP0024Height = 2;
+        consensus.DIP0024QuorumsHeight = 2;
+        consensus.V19Height = 2;
+        consensus.V20Height = 2;
         consensus.MN_RRHeight = std::numeric_limits<int>::max();
-        consensus.MinBIP9WarningHeight = 1066900 + 2016;  // mn_rr activation height + miner confirmation window
+        consensus.MinBIP9WarningHeight = 2 + 2016;
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); // ~uint256(0) >> 20
         consensus.nPowTargetTimespan = 24 * 60 * 60; // Dash: 1 day
         consensus.nPowTargetSpacing = 2.5 * 60; // Dash: 2.5 minutes
@@ -428,12 +428,12 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
 
-        consensus.lastPowBlock = 500;
+        consensus.lastPowBlock = 499;
         consensus.posTargetTimespan = consensus.nPowTargetTimespan;
         consensus.posTargetSpacing = consensus.nPowTargetSpacing;
         consensus.posTimestampMask = 5;
         consensus.stakeValueRange = { 0 * COIN, MAX_MONEY };
-        consensus.stakeAgeRange = { 10 * 60, 60 * 60 * 24 * 30 * 6};
+        consensus.stakeAgeRange = { 60 * 60, 60 * 60 * 24 * 30 * 6};
         consensus.posLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
@@ -447,10 +447,10 @@ public:
         // By default assume that the signatures in ancestors of this block are valid.
         consensus.defaultAssumeValid = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
 
-        pchMessageStart[0] = 0xce;
-        pchMessageStart[1] = 0xe2;
-        pchMessageStart[2] = 0xca;
-        pchMessageStart[3] = 0xff;
+        pchMessageStart[0] = 0xde;
+        pchMessageStart[1] = 0xf2;
+        pchMessageStart[2] = 0xda;
+        pchMessageStart[3] = 0x0f;
         nDefaultPort = 19999;
         nDefaultPlatformP2PPort = 22000;
         nDefaultPlatformHTTPPort = 22001;
@@ -458,13 +458,13 @@ public:
         m_assumed_blockchain_size = 5;
         m_assumed_chain_state_size = 1;
 
-        genesis = CreateGenesisBlock(1744906312, 0, 0x207ffff0, 1, 50 * COIN);
+        genesis = CreateGenesisBlock(1758849000, 1, 0x207ffff0, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
-        assert(consensus.hashGenesisBlock == uint256S("0x1d8a19675abfb47d491dae73561f0f42980a2da0f3391da9f3d3ef28fa564c3c"));
+        assert(consensus.hashGenesisBlock == uint256S("0x3fac45352da845d75a71c3c2f63ee76ff4725f0bf0034c8c2d61b4f28584cf9b"));
         assert(genesis.hashMerkleRoot == uint256S("0xe0028eb9648db56b1ac77cf090b99048a8007e2bb64b68f092c03c7f56a662c7"));
 
         vFixedSeeds.clear();
-        vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_test), std::end(chainparams_seed_test));
+        //vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_test), std::end(chainparams_seed_test));
 
         vSeeds.clear();
         // nodes with support for servicebits filtering should be at the top
@@ -500,7 +500,7 @@ public:
         fRequireStandard = false;
         fRequireRoutableExternalIP = true;
         m_is_test_chain = true;
-        fAllowMultipleAddressesFromGroup = false;
+        fAllowMultipleAddressesFromGroup = true;
         nLLMQConnectionRetryTimeout = 60;
         m_is_mockable_chain = false;
 
@@ -525,7 +525,7 @@ public:
 
         // getchaintxstats 17280 000000eef20eb0062abd4e799967e98bdebb165dd1c567ab4118c1c86c6e948f
         chainTxData = ChainTxData{
-                1744906312,
+                1758849000,
                 1,
                 0.01,
         };
