@@ -6,8 +6,8 @@ define(_CLIENT_VERSION_BUILD, 2)
 define(_CLIENT_VERSION_IS_RELEASE, true)
 define(_COPYRIGHT_YEAR, 2025)
 define(_COPYRIGHT_HOLDERS,[The %s developers])
-define(_COPYRIGHT_HOLDERS_SUBSTITUTION,[[Pacplatform]])
-AC_INIT([Pacplatform],m4_join([.], _CLIENT_VERSION_MAJOR, _CLIENT_VERSION_MINOR, _CLIENT_VERSION_BUILD),[https://github.com/pacplatform/pacplatform/issues],[pacplatform],[https://pacplatform.org/])
+define(_COPYRIGHT_HOLDERS_SUBSTITUTION,[[Defcon]])
+AC_INIT([Defcon],m4_join([.], _CLIENT_VERSION_MAJOR, _CLIENT_VERSION_MINOR, _CLIENT_VERSION_BUILD),[https://github.com/defcon/defcon/issues],[defcon],[https://defcon.org/])
 AC_CONFIG_SRCDIR([src/validation.cpp])
 AC_CONFIG_HEADERS([src/config/bitcoin-config.h])
 AC_CONFIG_AUX_DIR([build-aux])
@@ -19,14 +19,14 @@ if test "x$PKG_CONFIG" = x; then
   AC_MSG_ERROR([pkg-config not found])
 fi
 
-BITCOIN_DAEMON_NAME=pacplatformd
-BITCOIN_GUI_NAME=pacplatform-qt
-BITCOIN_CLI_NAME=pacplatform-cli
-BITCOIN_TX_NAME=pacplatform-tx
-BITCOIN_WALLET_TOOL_NAME=pacplatform-wallet
+BITCOIN_DAEMON_NAME=defcond
+BITCOIN_GUI_NAME=defcon-qt
+BITCOIN_CLI_NAME=defcon-cli
+BITCOIN_TX_NAME=defcon-tx
+BITCOIN_WALLET_TOOL_NAME=defcon-wallet
 dnl Multi Process
-BITCOIN_MP_NODE_NAME=pacplatform-node
-BITCOIN_MP_GUI_NAME=pacplatform-gui
+BITCOIN_MP_NODE_NAME=defcon-node
+BITCOIN_MP_GUI_NAME=defcon-gui
 
 dnl Unless the user specified ARFLAGS, force it to be cr
 dnl This is also the default as-of libtool 2.4.7
@@ -277,7 +277,7 @@ AC_ARG_WITH([mpgen],
 
 AC_ARG_ENABLE([multiprocess],
   [AS_HELP_STRING([--enable-multiprocess],
-  [build multiprocess pacplatform-node, pacplatform-wallet, and pacplatform-gui executables in addition to monolithic pacplatformd and pacplatform-qt executables. Requires libmultiprocess library. Experimental (default is no)])],
+  [build multiprocess defcon-node, defcon-wallet, and defcon-gui executables in addition to monolithic defcond and defcon-qt executables. Requires libmultiprocess library. Experimental (default is no)])],
   [enable_multiprocess=$enableval],
   [enable_multiprocess=no])
 
@@ -687,25 +687,25 @@ CORE_CPPFLAGS="$CORE_CPPFLAGS -DHAVE_BUILD_INFO -DGSL_NO_IOSTREAMS"
 
 AC_ARG_WITH([utils],
   [AS_HELP_STRING([--with-utils],
-  [build pacplatform-cli pacplatform-tx pacplatform-wallet (default=yes)])],
+  [build defcon-cli defcon-tx defcon-wallet (default=yes)])],
   [build_bitcoin_utils=$withval],
   [build_bitcoin_utils=yes])
 
 AC_ARG_ENABLE([util-cli],
   [AS_HELP_STRING([--enable-util-cli],
-  [build pacplatform-cli])],
+  [build defcon-cli])],
   [build_bitcoin_cli=$enableval],
   [build_bitcoin_cli=$build_bitcoin_utils])
 
 AC_ARG_ENABLE([util-tx],
   [AS_HELP_STRING([--enable-util-tx],
-  [build pacplatform-tx])],
+  [build defcon-tx])],
   [build_bitcoin_tx=$enableval],
   [build_bitcoin_tx=$build_bitcoin_utils])
 
 AC_ARG_ENABLE([util-wallet],
   [AS_HELP_STRING([--enable-util-wallet],
-  [build pacplatform-wallet])],
+  [build defcon-wallet])],
   [build_bitcoin_wallet=$enableval],
   [build_bitcoin_wallet=$build_bitcoin_utils])
 
@@ -717,7 +717,7 @@ AC_ARG_WITH([libs],
 
 AC_ARG_WITH([daemon],
   [AS_HELP_STRING([--with-daemon],
-  [build pacplatformd daemon (default=yes)])],
+  [build defcond daemon (default=yes)])],
   [build_bitcoind=$withval],
   [build_bitcoind=yes])
 
@@ -1643,19 +1643,19 @@ if test x$build_multiprocess != xno; then
   AC_SUBST(MPGEN_PREFIX)
 fi
 
-AC_MSG_CHECKING([whether to build pacplatformd])
+AC_MSG_CHECKING([whether to build defcond])
 AM_CONDITIONAL([BUILD_BITCOIND], [test x$build_bitcoind = xyes])
 AC_MSG_RESULT($build_bitcoind)
 
-AC_MSG_CHECKING([whether to build pacplatform-cli])
+AC_MSG_CHECKING([whether to build defcon-cli])
 AM_CONDITIONAL([BUILD_BITCOIN_CLI], [test x$build_bitcoin_cli = xyes])
 AC_MSG_RESULT($build_bitcoin_cli)
 
-AC_MSG_CHECKING([whether to build pacplatform-tx])
+AC_MSG_CHECKING([whether to build defcon-tx])
 AM_CONDITIONAL([BUILD_BITCOIN_TX], [test x$build_bitcoin_tx = xyes])
 AC_MSG_RESULT($build_bitcoin_tx)
 
-AC_MSG_CHECKING([whether to build pacplatform-wallet])
+AC_MSG_CHECKING([whether to build defcon-wallet])
 AM_CONDITIONAL([BUILD_BITCOIN_WALLET], [test x$build_bitcoin_wallet = xyes])
 AC_MSG_RESULT($build_bitcoin_wallet)
 
@@ -1770,7 +1770,7 @@ if test x$bitcoin_enable_qt != xno; then
     AC_MSG_WARN("xgettext is required to update qt translations")
   fi
 
-  AC_MSG_CHECKING([whether to build test_pacplatform-qt])
+  AC_MSG_CHECKING([whether to build test_defcon-qt])
   if test x$use_gui_tests$bitcoin_enable_qt_test = xyesyes; then
     AC_MSG_RESULT([yes])
     BUILD_TEST_QT="yes"
@@ -1781,7 +1781,7 @@ fi
 
 AM_CONDITIONAL([ENABLE_ZMQ], [test "x$use_zmq" = "xyes"])
 
-AC_MSG_CHECKING([whether to build test_pacplatform])
+AC_MSG_CHECKING([whether to build test_defcon])
 if test x$use_tests = xyes; then
   if test "x$enable_fuzz" = "xyes"; then
     AC_MSG_RESULT([no, because fuzzing is enabled])
@@ -1986,7 +1986,7 @@ echo "  with zmq            = $use_zmq"
 if test x$enable_fuzz = xno; then
     echo "  with test           = $use_tests"
 else
-    echo "  with test           = not building test_pacplatform because fuzzing is enabled"
+    echo "  with test           = not building test_defcon because fuzzing is enabled"
 fi
 echo "  with fuzz binary    = $enable_fuzz_binary"
 echo "  with bench          = $use_bench"

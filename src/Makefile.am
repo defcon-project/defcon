@@ -110,22 +110,22 @@ TESTS =
 BENCHMARKS =
 
 if BUILD_BITCOIND
-  bin_PROGRAMS += pacplatformd
+  bin_PROGRAMS += defcond
 endif
 
 if BUILD_BITCOIN_NODE
-  bin_PROGRAMS += pacplatform-node
+  bin_PROGRAMS += defcon-node
 endif
 
 if BUILD_BITCOIN_CLI
-  bin_PROGRAMS += pacplatform-cli
+  bin_PROGRAMS += defcon-cli
 endif
 if BUILD_BITCOIN_TX
-  bin_PROGRAMS += pacplatform-tx
+  bin_PROGRAMS += defcon-tx
 endif
 if ENABLE_WALLET
 if BUILD_BITCOIN_WALLET
-  bin_PROGRAMS += pacplatform-wallet
+  bin_PROGRAMS += defcon-wallet
 endif
 endif
 
@@ -899,47 +899,47 @@ bitcoin_bin_ldadd = \
 
 bitcoin_bin_ldadd += $(BACKTRACE_LIB) $(BDB_LIBS) $(MINIUPNPC_LIBS) $(NATPMP_LIBS) $(SQLITE_LIBS) $(EVENT_PTHREADS_LIBS) $(EVENT_LIBS) $(ZMQ_LIBS) $(GMP_LIBS)
 
-pacplatformd_SOURCES = $(bitcoin_daemon_sources) init/bitcoind.cpp
-pacplatformd_CPPFLAGS = $(bitcoin_bin_cppflags)
-pacplatformd_CXXFLAGS = $(bitcoin_bin_cxxflags)
-pacplatformd_LDFLAGS = $(bitcoin_bin_ldflags)
-pacplatformd_LDADD = $(LIBBITCOIN_SERVER) $(bitcoin_bin_ldadd)
+defcond_SOURCES = $(bitcoin_daemon_sources) init/bitcoind.cpp
+defcond_CPPFLAGS = $(bitcoin_bin_cppflags)
+defcond_CXXFLAGS = $(bitcoin_bin_cxxflags)
+defcond_LDFLAGS = $(bitcoin_bin_ldflags)
+defcond_LDADD = $(LIBBITCOIN_SERVER) $(bitcoin_bin_ldadd)
 
-pacplatform_node_SOURCES = $(bitcoin_daemon_sources) init/bitcoin-node.cpp
-pacplatform_node_CPPFLAGS = $(bitcoin_bin_cppflags)
-pacplatform_node_CXXFLAGS = $(bitcoin_bin_cxxflags)
-pacplatform_node_LDFLAGS = $(bitcoin_bin_ldflags)
-pacplatform_node_LDADD = $(LIBBITCOIN_SERVER) $(bitcoin_bin_ldadd) $(LIBBITCOIN_IPC) $(LIBMULTIPROCESS_LIBS)
+defcon_node_SOURCES = $(bitcoin_daemon_sources) init/bitcoin-node.cpp
+defcon_node_CPPFLAGS = $(bitcoin_bin_cppflags)
+defcon_node_CXXFLAGS = $(bitcoin_bin_cxxflags)
+defcon_node_LDFLAGS = $(bitcoin_bin_ldflags)
+defcon_node_LDADD = $(LIBBITCOIN_SERVER) $(bitcoin_bin_ldadd) $(LIBBITCOIN_IPC) $(LIBMULTIPROCESS_LIBS)
 
 # dash-cli binary #
-pacplatform_cli_SOURCES = bitcoin-cli.cpp
-pacplatform_cli_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
-pacplatform_cli_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
-pacplatform_cli_LDFLAGS = $(LDFLAGS_WRAP_EXCEPTIONS) $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) $(PTHREAD_FLAGS)
+defcon_cli_SOURCES = bitcoin-cli.cpp
+defcon_cli_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES) $(EVENT_CFLAGS)
+defcon_cli_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+defcon_cli_LDFLAGS = $(LDFLAGS_WRAP_EXCEPTIONS) $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) $(PTHREAD_FLAGS)
 
 if TARGET_WINDOWS
-pacplatform_cli_SOURCES += dash-cli-res.rc
+defcon_cli_SOURCES += dash-cli-res.rc
 endif
 
-pacplatform_cli_LDADD = \
+defcon_cli_LDADD = \
   $(LIBBITCOIN_CLI) \
   $(LIBUNIVALUE) \
   $(LIBBITCOIN_UTIL) \
   $(LIBBITCOIN_CRYPTO)
-pacplatform_cli_LDADD += $(BACKTRACE_LIB) $(EVENT_LIBS) $(GMP_LIBS)
+defcon_cli_LDADD += $(BACKTRACE_LIB) $(EVENT_LIBS) $(GMP_LIBS)
 #
 
 # dash-tx binary #
-pacplatform_tx_SOURCES = bitcoin-tx.cpp
-pacplatform_tx_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
-pacplatform_tx_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
-pacplatform_tx_LDFLAGS = $(LDFLAGS_WRAP_EXCEPTIONS) $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) $(PTHREAD_FLAGS)
+defcon_tx_SOURCES = bitcoin-tx.cpp
+defcon_tx_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)
+defcon_tx_CXXFLAGS = $(AM_CXXFLAGS) $(PIE_FLAGS)
+defcon_tx_LDFLAGS = $(LDFLAGS_WRAP_EXCEPTIONS) $(RELDFLAGS) $(AM_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) $(PTHREAD_FLAGS)
 
 if TARGET_WINDOWS
-pacplatform_tx_SOURCES += dash-tx-res.rc
+defcon_tx_SOURCES += dash-tx-res.rc
 endif
 
-pacplatform_tx_LDADD = \
+defcon_tx_LDADD = \
   $(LIBUNIVALUE) \
   $(LIBBITCOIN_COMMON) \
   $(LIBBITCOIN_UTIL) \
@@ -948,18 +948,18 @@ pacplatform_tx_LDADD = \
   $(LIBDASHBLS) \
   $(LIBSECP256K1)
 
-pacplatform_tx_LDADD += $(BACKTRACE_LIB) $(GMP_LIBS)
+defcon_tx_LDADD += $(BACKTRACE_LIB) $(GMP_LIBS)
 #
 
 # dash-wallet binary #
-pacplatform_wallet_SOURCES = bitcoin-wallet.cpp
-pacplatform_wallet_CPPFLAGS = $(bitcoin_bin_cppflags)
-pacplatform_wallet_CXXFLAGS = $(bitcoin_bin_cxxflags)
-pacplatform_wallet_LDFLAGS = $(bitcoin_bin_ldflags)
-pacplatform_wallet_LDADD = $(LIBBITCOIN_WALLET_TOOL) $(bitcoin_bin_ldadd)
+defcon_wallet_SOURCES = bitcoin-wallet.cpp
+defcon_wallet_CPPFLAGS = $(bitcoin_bin_cppflags)
+defcon_wallet_CXXFLAGS = $(bitcoin_bin_cxxflags)
+defcon_wallet_LDFLAGS = $(bitcoin_bin_ldflags)
+defcon_wallet_LDADD = $(LIBBITCOIN_WALLET_TOOL) $(bitcoin_bin_ldadd)
 
 if TARGET_WINDOWS
-pacplatform_wallet_SOURCES += dash-wallet-res.rc
+defcon_wallet_SOURCES += dash-wallet-res.rc
 endif
 #
 
