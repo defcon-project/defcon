@@ -77,10 +77,10 @@ QString BitcoinUnits::description(int unit)
     {
         switch(unit)
         {
-            case DASH: return QString("Pacplatform");
-            case mDASH: return QString("Milli-Pacplatform (1 / 1" THIN_SP_UTF8 "000)");
-            case uDASH: return QString("Micro-Pacplatform (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
-            case duffs: return QString("Ten Nano-Pacplatform (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
+            case DASH: return QString("Defcon");
+            case mDASH: return QString("Milli-Defcon (1 / 1" THIN_SP_UTF8 "000)");
+            case uDASH: return QString("Micro-Defcon (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
+            case duffs: return QString("Ten Nano-Defcon (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
             default: return QString("???");
         }
     }

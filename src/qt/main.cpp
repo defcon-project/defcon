@@ -15,7 +15,7 @@
 
 /** Translate string to current locale using Qt. */
 extern const std::function<std::string(const char*)> G_TRANSLATION_FUN = [](const char* psz) {
-    return QCoreApplication::translate("pacplatform", psz).toStdString();
+    return QCoreApplication::translate("defcon", psz).toStdString();
 };
 UrlDecodeFn* const URL_DECODE = urlDecode;
 

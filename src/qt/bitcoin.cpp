@@ -156,8 +156,8 @@ static bool InitSettings()
 
     std::vector<std::string> errors;
     if (!gArgs.ReadSettingsFile(&errors)) {
-        std::string error = QT_TRANSLATE_NOOP("pacplatform", "Settings file could not be read");
-        std::string error_translated = QCoreApplication::translate("pacplatform", error.c_str()).toStdString();
+        std::string error = QT_TRANSLATE_NOOP("defcon", "Settings file could not be read");
+        std::string error_translated = QCoreApplication::translate("defcon", error.c_str()).toStdString();
         InitError(Untranslated(strprintf("%s:\n%s\n", error, MakeUnorderedList(errors))));
 
         QMessageBox messagebox(QMessageBox::Critical, PACKAGE_NAME, QString::fromStdString(strprintf("%s.", error_translated)), QMessageBox::Reset | QMessageBox::Abort);
@@ -179,8 +179,8 @@ static bool InitSettings()
 
     errors.clear();
     if (!gArgs.WriteSettingsFile(&errors)) {
-        std::string error = QT_TRANSLATE_NOOP("pacplatform", "Settings file could not be written");
-        std::string error_translated = QCoreApplication::translate("pacplatform", error.c_str()).toStdString();
+        std::string error = QT_TRANSLATE_NOOP("defcon", "Settings file could not be written");
+        std::string error_translated = QCoreApplication::translate("defcon", error.c_str()).toStdString();
         InitError(Untranslated(strprintf("%s:\n%s\n", error, MakeUnorderedList(errors))));
 
         QMessageBox messagebox(QMessageBox::Critical, PACKAGE_NAME, QString::fromStdString(strprintf("%s.", error_translated)), QMessageBox::Ok);
@@ -209,7 +209,7 @@ void DebugMessageHandler(QtMsgType type, const QMessageLogContext& context, cons
 }
 
 static int qt_argc = 1;
-static const char* qt_argv = "pacplatform-qt";
+static const char* qt_argv = "defcon-qt";
 
 BitcoinApplication::BitcoinApplication():
     QApplication(qt_argc, const_cast<char **>(&qt_argv)),
@@ -464,7 +464,7 @@ static void SetupUIArgs(ArgsManager& argsman)
     argsman.AddArg("-splash", strprintf(QObject::tr("Show splash screen on startup (default: %u)").toStdString(), DEFAULT_SPLASHSCREEN), ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
     argsman.AddArg("-uiplatform", strprintf("Select platform to customize UI for (one of windows, macosx, other; default: %s)", BitcoinGUI::DEFAULT_UIPLATFORM), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::GUI);
     argsman.AddArg("-debug-ui", "Updates the UI's stylesheets in realtime with changes made to the css files in -custom-css-dir and forces some widgets to show up which are usually only visible under certain circumstances. (default: 0)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::GUI);
-    argsman.AddArg("-windowtitle=<name>", _("Sets a window title which is appended to \"Pacplatform - \"").translated, ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
+    argsman.AddArg("-windowtitle=<name>", _("Sets a window title which is appended to \"Defcon - \"").translated, ArgsManager::ALLOW_ANY, OptionsCategory::GUI);
 }
 
 int GuiMain(int argc, char* argv[])

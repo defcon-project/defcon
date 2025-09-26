@@ -974,7 +974,7 @@ void SendCoinsDialog::coinControlChangeEdited(const QString& text)
         }
         else if (!IsValidDestination(dest)) // Invalid address
         {
-            ui->labelCoinControlChangeLabel->setText(tr("Warning: Invalid Pacplatform address"));
+            ui->labelCoinControlChangeLabel->setText(tr("Warning: Invalid Defcon address"));
         }
         else // Valid address
         {
