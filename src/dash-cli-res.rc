@@ -14,14 +14,14 @@ BEGIN
     BEGIN
         BLOCK "040904E4" // U.S. English - multilingual (hex)
         BEGIN
-            VALUE "CompanyName",        "Pacplatform"
-            VALUE "FileDescription",    "pacplatform-cli (JSON-RPC client for " PACKAGE_NAME ")"
+            VALUE "CompanyName",        "Defcon"
+            VALUE "FileDescription",    "defcon-cli (JSON-RPC client for " PACKAGE_NAME ")"
             VALUE "FileVersion",        PACKAGE_VERSION
-            VALUE "InternalName",       "pacplatform-cli"
+            VALUE "InternalName",       "defcon-cli"
             VALUE "LegalCopyright",     COPYRIGHT_STR
             VALUE "LegalTrademarks1",   "Distributed under the MIT software license, see the accompanying file COPYING or http://www.opensource.org/licenses/mit-license.php."
-            VALUE "OriginalFilename",   "pacplatform-cli.exe"
-            VALUE "ProductName",        "pacplatform-cli"
+            VALUE "OriginalFilename",   "defcon-cli.exe"
+            VALUE "ProductName",        "defcon-cli"
             VALUE "ProductVersion",     PACKAGE_VERSION
         END
     END

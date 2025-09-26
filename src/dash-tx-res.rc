@@ -14,14 +14,14 @@ BEGIN
     BEGIN
         BLOCK "040904E4" // U.S. English - multilingual (hex)
         BEGIN
-            VALUE "CompanyName",        "Pacplatform"
-            VALUE "FileDescription",    "pacplatform-tx (CLI Pacplatform transaction editor utility)"
+            VALUE "CompanyName",        "Defcon"
+            VALUE "FileDescription",    "defcon-tx (CLI Defcon transaction editor utility)"
             VALUE "FileVersion",        PACKAGE_VERSION
-            VALUE "InternalName",       "pacplatform-tx"
+            VALUE "InternalName",       "defcon-tx"
             VALUE "LegalCopyright",     COPYRIGHT_STR
             VALUE "LegalTrademarks1",   "Distributed under the MIT software license, see the accompanying file COPYING or http://www.opensource.org/licenses/mit-license.php."
-            VALUE "OriginalFilename",   "pacplatform-tx.exe"
-            VALUE "ProductName",        "pacplatform-tx"
+            VALUE "OriginalFilename",   "defcon-tx.exe"
+            VALUE "ProductName",        "defcon-tx"
             VALUE "ProductVersion",     PACKAGE_VERSION
         END
     END
