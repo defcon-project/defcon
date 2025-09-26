@@ -526,16 +526,18 @@ void BitcoinGUI::createActions()
                 } else {
                     name = path.empty() ? QString("["+tr("default wallet")+"]") : QString::fromStdString(path);
                 }
-                QAction* action = toggleStakingMenu->addAction(name);
 
-                connect(action, &QAction::triggered, [this, path] {
-                    ToggleWalletStaking(path);
-                });
-
-                if (!uiReadyForStaking) {
-                    action->setEnabled(false);
+                if (i.second) {
+                    QAction* action = toggleStakingMenu->addAction(name);
+                    connect(action, &QAction::triggered, [this, path] {
+                        ToggleWalletStaking(path);
+                    });
+                    if (!uiReadyForStaking) {
+                        action->setEnabled(false);
+                    }
                 }
             }
+
             if (toggleStakingMenu->isEmpty()) {
                 QAction* action = toggleStakingMenu->addAction(tr("No wallets available"));
                 action->setEnabled(false);

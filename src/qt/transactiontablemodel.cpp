@@ -536,7 +536,7 @@ QString TransactionTableModel::formatTxAmount(const TransactionRecord *wtx, bool
     QString str = BitcoinUnits::format(walletModel->getOptionsModel()->getDisplayUnit(), wtx->credit + wtx->debit, false, separators);
     if(showUnconfirmed)
     {
-        if(!wtx->status.countsForBalance)
+        if(!wtx->status.countsForBalance && !wtx->MasternodeReward)
         {
             str = QString("[") + str + QString("]");
         }

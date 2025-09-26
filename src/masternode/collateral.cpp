@@ -7,16 +7,47 @@
 Mutex cs_mncache;
 std::map<COutPoint, int> mapCollaterals GUARDED_BY(cs_mncache);
 
+void MaintainCollateralCache(COutPoint& outpoint, int nHeight)
+{
+    LOCK(cs_mncache);
+
+    COutPoint mnOutpoint(outpoint);
+    int mnRegHeight(nHeight);
+    if (mapCollaterals.find(mnOutpoint) == mapCollaterals.end()) {
+        mapCollaterals.insert({mnOutpoint, mnRegHeight});
+    }
+}
+
 void MaintainCollateralCache(const CDeterministicMNList& mnList)
 {
     LOCK(cs_mncache);
 
-    mapCollaterals.clear();
     mnList.ForEachMN(false, [&](auto& dmn) {
         COutPoint mnOutpoint(dmn.collateralOutpoint);
         int mnRegHeight(dmn.pdmnState->nRegisteredHeight);
-        mapCollaterals.insert({mnOutpoint, mnRegHeight});
+        if (mapCollaterals.find(mnOutpoint) == mapCollaterals.end()) {
+            mapCollaterals.insert({mnOutpoint, mnRegHeight});
+        }
     });
+}
+
+void PrescanOnClientInitialise(const CBlockIndex* pscan, const Consensus::Params& params)
+{
+    CBlock scanBlock;
+    while (!fReindex) {
+        if (pscan->nHeight <= params.DIP0003Height) break;
+        if (ReadBlockFromDisk(scanBlock, pscan, params)) {
+            for (int i=0; i<scanBlock.vtx.size(); i++) {
+                CTransactionRef tx(scanBlock.vtx[i]);
+                if (tx->IsSpecialTxVersion() && tx->nType == TRANSACTION_PROVIDER_REGISTER) {
+                    const auto opt_proTx = GetTxPayload<CProRegTx>(*tx);
+                    COutPoint collateralOutpoint(opt_proTx->collateralOutpoint);
+                    MaintainCollateralCache(collateralOutpoint, pscan->nHeight);
+                }
+            }
+        }
+        pscan = pscan->pprev;
+    }
 }
 
 bool CheckPrematureCollateralMovement(const COutPoint& txout, int nHeight, const Consensus::Params& params)
