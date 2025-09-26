@@ -94,7 +94,7 @@ BitcoinAddressCheckValidator::BitcoinAddressCheckValidator(QObject *parent) :
 QValidator::State BitcoinAddressCheckValidator::validate(QString &input, int &pos) const
 {
     Q_UNUSED(pos);
-    // Validate the passed Pacplatform address
+    // Validate the passed Defcon address
     if (IsValidDestinationString(input.toStdString())) {
         return QValidator::Acceptable;
     }

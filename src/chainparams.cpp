@@ -265,11 +265,11 @@ public:
         // release ASAP to avoid it where possible.
 
         // Dash addresses start with 'P'
-        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,55);
+        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,30);
         // Dash script addresses start with '5'
-        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,10);
+        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,22);
         // Dash private keys start with '7' or 'X'
-        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,204);
+        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,158);
         // Dash BIP32 pubkeys start with 'pacp'
         base58Prefixes[EXT_PUBLIC_KEY] = {0x03, 0xdd, 0x3e, 0x31};
         // Dash BIP32 prvkeys start with 'pacv'
@@ -303,7 +303,7 @@ public:
         nPoolMaxParticipants = 20;
         nFulfilledRequestExpireTime = 60*60; // fulfilled requests expire in 1 hour
 
-        vSporkAddresses = {"PJGcRTT1eq3EuiyLsTkToEP1YbZMphk1k6"};
+        vSporkAddresses = {"DMahxes3q2ARHMd3KmZbHtzTnRMxafUrdJ"};
         nMinSporkKeys = 1;
 
         nCreditPoolPeriodBlocks = 576;
@@ -471,11 +471,11 @@ public:
         //vSeeds.emplace_back("testnet-seed.dashdot.io"); // Just a static list of stable node(s), only supports x9
 
         // Dash addresses start with 'P'
-        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,55);
+        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,30);
         // Dash script addresses start with '5'
-        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,10);
+        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,22);
         // Dash private keys start with '7' or 'X'
-        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,204);
+        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,158);
         // Dash BIP32 pubkeys start with 'pacp'
         base58Prefixes[EXT_PUBLIC_KEY] = {0x03, 0xdd, 0x3e, 0x31};
         // Dash BIP32 prvkeys start with 'pacv'
@@ -508,7 +508,7 @@ public:
         nPoolMaxParticipants = 20;
         nFulfilledRequestExpireTime = 5*60; // fulfilled requests expire in 5 minutes
 
-        vSporkAddresses = {"PJGcRTT1eq3EuiyLsTkToEP1YbZMphk1k6"};
+        vSporkAddresses = {"DMahxes3q2ARHMd3KmZbHtzTnRMxafUrdJ"};
         nMinSporkKeys = 1;
 
         nCreditPoolPeriodBlocks = 576;
