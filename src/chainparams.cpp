@@ -486,14 +486,9 @@ public:
 
         // long living quorum params
         AddLLMQ(Consensus::LLMQType::LLMQ_50_60);
-        AddLLMQ(Consensus::LLMQType::LLMQ_60_75);
-        AddLLMQ(Consensus::LLMQType::LLMQ_400_60);
-        AddLLMQ(Consensus::LLMQType::LLMQ_400_85);
-        AddLLMQ(Consensus::LLMQType::LLMQ_100_67);
-        AddLLMQ(Consensus::LLMQType::LLMQ_25_67);
         consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_50_60;
-        consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_60_75;
-        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_25_67;
+        consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_50_60;
+        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_50_60;
         consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_50_60;
 
         fDefaultConsistencyChecks = false;
@@ -508,7 +503,7 @@ public:
         nPoolMaxParticipants = 20;
         nFulfilledRequestExpireTime = 5*60; // fulfilled requests expire in 5 minutes
 
-        vSporkAddresses = {"DMahxes3q2ARHMd3KmZbHtzTnRMxafUrdJ"};
+        vSporkAddresses = {"D5qvHCyJfE5uU2TYykYAj4q9ZNTcrSWQ1e"};
         nMinSporkKeys = 1;
 
         nCreditPoolPeriodBlocks = 576;
