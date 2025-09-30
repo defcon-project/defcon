@@ -219,54 +219,6 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
         return false;
     }
 
-    // Attempt to add more inputs
-    // Only advantage here is to setup the next stake using this output as a kernel to have a higher chance of staking
-    size_t nStakesCombined = 0;
-    it = setCoins.begin();
-    while (it != setCoins.end())
-    {
-        if (nStakesCombined >= wallet->nMaxStakeCombine) {
-            break;
-        }
-
-        // Stop adding more inputs if already too many inputs
-        if (txNew.vin.size() >= 100) {
-            break;
-        }
-
-        // Stop adding more inputs if value is already pretty significant
-        if (nCredit >= wallet->nStakeCombineThreshold) {
-            break;
-        }
-
-        std::set<std::pair<const CWalletTx*, unsigned int>>::iterator itc = it++;
-        auto pcoin = *itc;
-        CTxOut prevOut = pcoin.first->tx->vout[pcoin.second];
-
-        // Only add coins of the same key/address as kernel
-        if (prevOut.scriptPubKey != scriptPubKeyKernel) {
-            continue;
-        }
-
-        // Stop adding inputs if reached reserve limit
-        if (nCredit + prevOut.nValue > nBalance - wallet->nReserveBalance) {
-            break;
-        }
-
-        // Do not add additional significant input
-        if (prevOut.nValue >= wallet->nStakeCombineThreshold) {
-            continue;
-        }
-
-        txNew.vin.push_back(CTxIn(pcoin.first->GetHash(), pcoin.second));
-        nCredit += pcoin.first->tx->vout[pcoin.second].nValue;
-        vwtxPrev.push_back(pcoin.first);
-
-        LogPrint(BCLog::POS, "%s: Combining kernel %s, %d.\n", __func__, pcoin.first->GetHash().ToString(), pcoin.second);
-        nStakesCombined++;
-        setCoins.erase(itc);
-    }
-
     // Get block reward
     CAmount nReward = GetProofOfStakeReward();
     if (nReward < 0) {
