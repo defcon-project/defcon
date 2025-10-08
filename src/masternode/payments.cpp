@@ -199,17 +199,10 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const int nBlo
 
     strErrorRet = "";
 
-    if (nBlockHeight < m_consensus_params.nBudgetPaymentsStartBlock) {
-        // old budget system is not activated yet, just make sure we do not exceed the regular block reward
-        if(!isBlockRewardValueMet) {
-            strErrorRet = strprintf("coinbase pays too much at height %d (actual=%d vs limit=%d), exceeded block reward, old budgets are not activated yet",
-                                    nBlockHeight, block.vtx[0]->GetValueOut(), blockReward);
-        }
-        return isBlockRewardValueMet;
-    } else if (nBlockHeight < m_consensus_params.nSuperblockStartBlock) {
-        // superblocks are not enabled yet, check if we can pass old budget rules
-        return IsOldBudgetBlockValueValid(block, nBlockHeight, blockReward, strErrorRet);
-    }
+    //  defcon's staking block structure
+    //  vtx[0] contains masternode/superblock output
+    //  vtx[1] contains staking output
+    //  both of which get checked below
 
     if (block.IsProofOfWork())
         LogPrint(BCLog::MNPAYMENTS, "block.vtx[0]->GetValueOut() %lld <= blockReward %lld\n", block.vtx[0]->GetValueOut(), blockReward);
