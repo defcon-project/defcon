@@ -399,8 +399,8 @@ public:
         consensus.DIP0008Height = 1200;
         consensus.BRRHeight = std::numeric_limits<int>::max();
         consensus.DIP0020Height = std::numeric_limits<int>::max();
-        consensus.DIP0024Height = 1200;
-        consensus.DIP0024QuorumsHeight = 1200;
+        consensus.DIP0024Height = std::numeric_limits<int>::max();
+        consensus.DIP0024QuorumsHeight = std::numeric_limits<int>::max();
         consensus.V19Height = std::numeric_limits<int>::max();
         consensus.V20Height = std::numeric_limits<int>::max();
         consensus.MN_RRHeight = std::numeric_limits<int>::max();
@@ -485,15 +485,13 @@ public:
         nExtCoinType = 1;
 
         // long living quorum params
-        AddLLMQ(Consensus::LLMQType::LLMQ_TEST);
-        AddLLMQ(Consensus::LLMQType::LLMQ_TEST_INSTANTSEND);
-        AddLLMQ(Consensus::LLMQType::LLMQ_TEST_V17);
-        AddLLMQ(Consensus::LLMQType::LLMQ_TEST_DIP0024);
-        AddLLMQ(Consensus::LLMQType::LLMQ_TEST_PLATFORM);
-        consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_TEST;
-        consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_TEST_DIP0024;
-        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_TEST_PLATFORM;
-        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_TEST;
+        AddLLMQ(Consensus::LLMQType::LLMQ_50_60);
+        AddLLMQ(Consensus::LLMQType::LLMQ_60_75);
+        AddLLMQ(Consensus::LLMQType::LLMQ_25_67);
+        consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_50_60;
+        consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_60_75;
+        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_25_67;
+        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_50_60;
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
