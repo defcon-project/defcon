@@ -137,13 +137,10 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     pblocktemplate->vTxFees.push_back(-1); // updated at end
     pblocktemplate->vTxSigOps.push_back(-1); // updated at end
 
-    CBlockIndex* pindexPrev = nullptr;
-    {
-        LOCK(cs_main);
-        pindexPrev = m_chainstate.m_chain.Tip();
-        assert(pindexPrev != nullptr);
-        nHeight = pindexPrev->nHeight + 1;
-    }
+    LOCK2(cs_main, m_mempool.cs);
+    CBlockIndex* pindexPrev = m_chainstate.m_chain.Tip();
+    assert(pindexPrev != nullptr);
+    nHeight = pindexPrev->nHeight + 1;
 
     const bool fDIP0001Active_context{DeploymentActiveAfter(pindexPrev, chainparams.GetConsensus(), Consensus::DEPLOYMENT_DIP0001)};
     const bool fDIP0003Active_context{DeploymentActiveAfter(pindexPrev, chainparams.GetConsensus(), Consensus::DEPLOYMENT_DIP0003)};
@@ -184,10 +181,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     int nPackagesSelected = 0;
     int nDescendantsUpdated = 0;
 
-    {
-        LOCK(m_mempool.cs);
-        addPackageTxs(nPackagesSelected, nDescendantsUpdated, pindexPrev);
-    }
+    addPackageTxs(nPackagesSelected, nDescendantsUpdated, pindexPrev);
 
     int64_t nTime1 = GetTimeMicros();
 
