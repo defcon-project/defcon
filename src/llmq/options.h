@@ -27,7 +27,7 @@ enum class QvvecSyncMode {
 static constexpr bool DEFAULT_ENABLE_QUORUM_DATA_RECOVERY{true};
 
 // If true, we will connect to all new quorums and watch their communication
-static constexpr bool DEFAULT_WATCH_QUORUMS{false};
+static constexpr bool DEFAULT_WATCH_QUORUMS{true};
 
 bool IsAllMembersConnectedEnabled(const Consensus::LLMQType llmqType, const CSporkManager& sporkman);
 bool IsQuorumPoseEnabled(const Consensus::LLMQType llmqType, const CSporkManager& sporkman);

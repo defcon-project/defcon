@@ -190,10 +190,8 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, 
         }
     }
 
-    // never assume txfee has been initialised
-    txfee = 0;
-
-    if (!tx.IsCoinStake()) {
+    if (!tx.IsCoinStake())
+    {
         const CAmount value_out = tx.GetValueOut();
         if (nValueIn < value_out) {
             return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-in-belowout",
@@ -202,14 +200,11 @@ bool Consensus::CheckTxInputs(const CTransaction& tx, TxValidationState& state, 
 
         // Tally transaction fees
         const CAmount txfee_aux = nValueIn - value_out;
-        if (txfee_aux < 0) {
-            return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-fee-negative");
-        }
-
-        txfee += txfee_aux;
-        if (!MoneyRange(txfee)) {
+        if (!MoneyRange(txfee_aux)) {
             return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-fee-outofrange");
         }
+
+        txfee = txfee_aux;
     }
 
     return true;

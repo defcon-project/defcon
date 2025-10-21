@@ -240,7 +240,7 @@ void CInstantSendDb::WriteBlockInstantSendLocks(const gsl::not_null<std::shared_
     LOCK(cs_db);
     CDBBatch batch(*db);
     for (const auto& tx : pblock->vtx) {
-        if (tx->IsCoinBase() || tx->vin.empty()) {
+        if (tx->IsCoinBase() || tx->IsCoinStake() || tx->vin.empty()) {
             // coinbase and TXs with no inputs can't be locked
             continue;
         }
@@ -258,7 +258,7 @@ void CInstantSendDb::RemoveBlockInstantSendLocks(const gsl::not_null<std::shared
     LOCK(cs_db);
     CDBBatch batch(*db);
     for (const auto& tx : pblock->vtx) {
-        if (tx->IsCoinBase() || tx->vin.empty()) {
+        if (tx->IsCoinBase() || tx->IsCoinStake() || tx->vin.empty()) {
             // coinbase and TXs with no inputs can't be locked
             continue;
         }
@@ -1117,7 +1117,7 @@ void CInstantSendManager::BlockConnected(const std::shared_ptr<const CBlock>& pb
     if (m_mn_sync.IsBlockchainSynced()) {
         const bool has_chainlock = clhandler.HasChainLock(pindex->nHeight, pindex->GetBlockHash());
         for (const auto& tx : pblock->vtx) {
-            if (tx->IsCoinBase() || tx->vin.empty()) {
+            if (tx->IsCoinBase() || tx->IsCoinStake() || tx->vin.empty()) {
                 // coinbase and TXs with no inputs can't be locked
                 continue;
             }

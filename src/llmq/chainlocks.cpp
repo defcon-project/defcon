@@ -333,7 +333,7 @@ void CChainLocksHandler::TrySignChainTip(const llmq::CInstantSendManager& isman)
 
 void CChainLocksHandler::TransactionAddedToMempool(const CTransactionRef& tx, int64_t nAcceptTime)
 {
-    if (tx->IsCoinBase() || tx->vin.empty()) {
+    if (tx->IsCoinBase() || tx->IsCoinStake() || tx->vin.empty()) {
         return;
     }
 
@@ -364,7 +364,7 @@ void CChainLocksHandler::BlockConnected(const std::shared_ptr<const CBlock>& pbl
     int64_t curTime = GetTime<std::chrono::seconds>().count();
 
     for (const auto& tx : pblock->vtx) {
-        if (tx->IsCoinBase() || tx->vin.empty()) {
+        if (tx->IsCoinBase() || tx->IsCoinStake() || tx->vin.empty()) {
             continue;
         }
 
@@ -411,7 +411,7 @@ CChainLocksHandler::BlockTxs::mapped_type CChainLocksHandler::GetBlockTxs(const 
 
             ret = std::make_shared<std::unordered_set<uint256, StaticSaltedHasher>>();
             for (const auto& tx : block.vtx) {
-                if (tx->IsCoinBase() || tx->vin.empty()) {
+                if (tx->IsCoinBase() || tx->IsCoinStake() || tx->vin.empty()) {
                     continue;
                 }
                 ret->emplace(tx->GetHash());

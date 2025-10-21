@@ -15,7 +15,7 @@
 #include <string>
 #include <stdexcept>
 
-static constexpr int TESTNET_LLMQ_25_67_ACTIVATION_HEIGHT = 847000;
+
 
 namespace llmq
 {
@@ -130,9 +130,12 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
     {
         case Consensus::LLMQType::LLMQ_DEVNET:
             return true;
+        case Consensus::LLMQType::LLMQ_25_67:
         case Consensus::LLMQType::LLMQ_50_60:
-            return !fDIP0024IsActive || !fHaveDIP0024Quorums || Params().NetworkIDString() == CBaseChainParams::TESTNET ||
+        case Consensus::LLMQType::LLMQ_60_75: {
+            return Params().NetworkIDString() == CBaseChainParams::TESTNET ||
                    Params().NetworkIDString() == CBaseChainParams::DEVNET;
+        }
         case Consensus::LLMQType::LLMQ_TEST_INSTANTSEND:
             return !fDIP0024IsActive || !fHaveDIP0024Quorums ||
                     consensusParams.llmqTypeDIP0024InstantSend == Consensus::LLMQType::LLMQ_TEST_INSTANTSEND;
@@ -149,13 +152,10 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
         case Consensus::LLMQType::LLMQ_100_67:
             return DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_DIP0020);
 
-        case Consensus::LLMQType::LLMQ_60_75:
         case Consensus::LLMQType::LLMQ_DEVNET_DIP0024:
         case Consensus::LLMQType::LLMQ_TEST_DIP0024: {
             return fDIP0024IsActive;
         }
-        case Consensus::LLMQType::LLMQ_25_67:
-            return pindexPrev->nHeight >= TESTNET_LLMQ_25_67_ACTIVATION_HEIGHT;
 
         default:
             throw std::runtime_error(strprintf("%s: Unknown LLMQ type %d", __func__, ToUnderlying(llmqType)));

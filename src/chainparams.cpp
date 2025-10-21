@@ -371,18 +371,18 @@ public:
         strNetworkID = CBaseChainParams::TESTNET;
         consensus.nSubsidyHalvingInterval = 210240;
         consensus.BIP16Height = 0;
-        consensus.nMasternodePaymentsStartBlock = 4010; // not true, but it's ok as long as it's less then nMasternodePaymentsIncreaseBlock
-        consensus.nMasternodePaymentsIncreaseBlock = 4030;
+        consensus.nMasternodePaymentsStartBlock = 240;
+        consensus.nMasternodePaymentsIncreaseBlock = 350;
         consensus.nMasternodePaymentsIncreasePeriod = 10;
         consensus.nInstantSendConfirmationsRequired = 2;
         consensus.nInstantSendKeepLock = 6;
-        consensus.nBudgetPaymentsStartBlock = 4100;
+        consensus.nBudgetPaymentsStartBlock = 1000;
         consensus.nBudgetPaymentsCycleBlocks = 50;
         consensus.nBudgetPaymentsWindowBlocks = 10;
-        consensus.nSuperblockStartBlock = 4200; // NOTE: Should satisfy nSuperblockStartBlock > nBudgetPeymentsStartBlock
-        consensus.nSuperblockStartHash = uint256(); // do not check this on testnet
-        consensus.nSuperblockCycle = 24; // Superblocks can be issued hourly on testnet
-        consensus.nSuperblockMaturityWindow = 8;
+        consensus.nSuperblockStartBlock = 1500;
+        consensus.nSuperblockStartHash = uint256();
+        consensus.nSuperblockCycle = 20;
+        consensus.nSuperblockMaturityWindow = 10;
         consensus.nGovernanceMinQuorum = 1;
         consensus.nGovernanceFilterElements = 500;
         consensus.nMasternodeMinimumConfirmations = 1;
@@ -393,16 +393,16 @@ public:
         consensus.BIP147Height = 1;
         consensus.CSVHeight = 1;
         consensus.DIP0001Height = 2;
-        consensus.DIP0003Height = 500;
-        consensus.DIP0003EnforcementHeight = 750;
-        consensus.DIP0003EnforcementHash = uint256S("0x6c1f0ef2d276f6b15e1ae16bc8518431133ecec295ef16f5c954206662801ac0");
-        consensus.DIP0008Height = 775;
+        consensus.DIP0003Height = 1000;
+        consensus.DIP0003EnforcementHeight = 1100;
+        consensus.DIP0003EnforcementHash = uint256();
+        consensus.DIP0008Height = 1200;
         consensus.BRRHeight = std::numeric_limits<int>::max();
-        consensus.DIP0020Height = 2;
-        consensus.DIP0024Height = 2;
-        consensus.DIP0024QuorumsHeight = 2;
-        consensus.V19Height = 2;
-        consensus.V20Height = 2;
+        consensus.DIP0020Height = std::numeric_limits<int>::max();
+        consensus.DIP0024Height = std::numeric_limits<int>::max();
+        consensus.DIP0024QuorumsHeight = std::numeric_limits<int>::max();
+        consensus.V19Height = std::numeric_limits<int>::max();
+        consensus.V20Height = std::numeric_limits<int>::max();
         consensus.MN_RRHeight = std::numeric_limits<int>::max();
         consensus.MinBIP9WarningHeight = 2 + 2016;
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); // ~uint256(0) >> 20
@@ -428,13 +428,13 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
 
-        consensus.lastPowBlock = 499;
+        consensus.lastPowBlock = 999;
         consensus.posTargetTimespan = consensus.nPowTargetTimespan;
         consensus.posTargetSpacing = consensus.nPowTargetSpacing;
         consensus.posTimestampMask = 5;
         consensus.stakeValueRange = { 0 * COIN, MAX_MONEY };
-        consensus.stakeAgeRange = { 60 * 60, 60 * 60 * 24 * 30 * 6};
-        consensus.posLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        consensus.stakeAgeRange = { 0 * 60, 60 * 60 * 24 * 30 * 6};
+        consensus.posLimit = uint256S("0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
         consensus.evoMnCollateral = 4000000 * COIN;
@@ -447,10 +447,10 @@ public:
         // By default assume that the signatures in ancestors of this block are valid.
         consensus.defaultAssumeValid = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
 
-        pchMessageStart[0] = 0xde;
-        pchMessageStart[1] = 0xf2;
-        pchMessageStart[2] = 0xda;
-        pchMessageStart[3] = 0x0f;
+        pchMessageStart[0] = 0xaa;
+        pchMessageStart[1] = 0xbb;
+        pchMessageStart[2] = 0xcc;
+        pchMessageStart[3] = 0xdd;
         nDefaultPort = 19999;
         nDefaultPlatformP2PPort = 22000;
         nDefaultPlatformHTTPPort = 22001;
@@ -464,7 +464,7 @@ public:
         assert(genesis.hashMerkleRoot == uint256S("0xe0028eb9648db56b1ac77cf090b99048a8007e2bb64b68f092c03c7f56a662c7"));
 
         vFixedSeeds.clear();
-        //vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_test), std::end(chainparams_seed_test));
+        vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_test), std::end(chainparams_seed_test));
 
         vSeeds.clear();
         // nodes with support for servicebits filtering should be at the top
@@ -486,16 +486,18 @@ public:
 
         // long living quorum params
         AddLLMQ(Consensus::LLMQType::LLMQ_50_60);
+        AddLLMQ(Consensus::LLMQType::LLMQ_60_75);
+        AddLLMQ(Consensus::LLMQType::LLMQ_25_67);
         consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_50_60;
-        consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_50_60;
-        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_50_60;
+        consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_60_75;
+        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_25_67;
         consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_50_60;
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
         fRequireRoutableExternalIP = true;
         m_is_test_chain = true;
-        fAllowMultipleAddressesFromGroup = true;
+        fAllowMultipleAddressesFromGroup = false;
         nLLMQConnectionRetryTimeout = 60;
         m_is_mockable_chain = false;
 

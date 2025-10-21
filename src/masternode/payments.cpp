@@ -125,10 +125,14 @@ CAmount PlatformShare(const CAmount reward)
     for (const auto& txout : voutMasternodePayments) {
         bool found = ranges::any_of(txNew.vout, [&txout](const auto& txout2) {return txout == txout2;});
         if (!found) {
-            CTxDestination dest;
-            if (!ExtractDestination(txout.scriptPubKey, dest))
-                assert(false);
-            LogPrintf("CMNPaymentsProcessor::%s -- ERROR! Failed to find expected payee %s in block at height %s\n", __func__, EncodeDestination(dest), nBlockHeight);
+            std::string str_payout;
+            if (CTxDestination dest; ExtractDestination(txout.scriptPubKey, dest)) {
+                str_payout = EncodeDestination(dest);
+            } else {
+                str_payout = HexStr(txout.scriptPubKey);
+            }
+            LogPrintf("CMNPaymentsProcessor::%s -- ERROR! Failed to find expected payee %s in block at height %s\n",
+                      __func__, str_payout, nBlockHeight);
             return false;
         }
     }
@@ -195,17 +199,10 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const int nBlo
 
     strErrorRet = "";
 
-    if (nBlockHeight < m_consensus_params.nBudgetPaymentsStartBlock) {
-        // old budget system is not activated yet, just make sure we do not exceed the regular block reward
-        if(!isBlockRewardValueMet) {
-            strErrorRet = strprintf("coinbase pays too much at height %d (actual=%d vs limit=%d), exceeded block reward, old budgets are not activated yet",
-                                    nBlockHeight, block.vtx[0]->GetValueOut(), blockReward);
-        }
-        return isBlockRewardValueMet;
-    } else if (nBlockHeight < m_consensus_params.nSuperblockStartBlock) {
-        // superblocks are not enabled yet, check if we can pass old budget rules
-        return IsOldBudgetBlockValueValid(block, nBlockHeight, blockReward, strErrorRet);
-    }
+    //  defcon's staking block structure
+    //  vtx[0] contains masternode/superblock output
+    //  vtx[1] contains staking output
+    //  both of which get checked below
 
     if (block.IsProofOfWork())
         LogPrint(BCLog::MNPAYMENTS, "block.vtx[0]->GetValueOut() %lld <= blockReward %lld\n", block.vtx[0]->GetValueOut(), blockReward);

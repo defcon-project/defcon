@@ -130,9 +130,10 @@ const CBlockIndex* CChainState::FindForkInGlobalIndex(const CBlockLocator& locat
     for (const uint256& hash : locator.vHave) {
         const CBlockIndex* pindex{m_blockman.LookupBlockIndex(hash)};
         if (pindex) {
-            if (m_chain.Contains(pindex)) {
+            if (m_chain.Contains(pindex))
                 return pindex;
-            }
+            if (pindex->GetAncestor(m_chain.Height()) == m_chain.Tip())
+                return m_chain.Tip();
         }
     }
     return m_chain.Genesis();
@@ -1363,7 +1364,7 @@ NOTE:   unlike bitcoin we are using PREVIOUS block height here,
 */
 static std::pair<CAmount, CAmount> GetBlockSubsidyHelper(int nPrevBits, int nPrevHeight, const Consensus::Params& consensusParams, bool fV20Active)
 {
-    CAmount nSubsidy = 20000000 * COIN;
+    CAmount nSubsidy = 10000000 * COIN;
     if (nPrevHeight + 1 > consensusParams.lastPowBlock)
         nSubsidy = GetProofOfStakeReward();
     return {nSubsidy, 0};
