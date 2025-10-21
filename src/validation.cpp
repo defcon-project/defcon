@@ -130,9 +130,10 @@ const CBlockIndex* CChainState::FindForkInGlobalIndex(const CBlockLocator& locat
     for (const uint256& hash : locator.vHave) {
         const CBlockIndex* pindex{m_blockman.LookupBlockIndex(hash)};
         if (pindex) {
-            if (m_chain.Contains(pindex)) {
+            if (m_chain.Contains(pindex))
                 return pindex;
-            }
+            if (pindex->GetAncestor(m_chain.Height()) == m_chain.Tip())
+                return m_chain.Tip();
         }
     }
     return m_chain.Genesis();
