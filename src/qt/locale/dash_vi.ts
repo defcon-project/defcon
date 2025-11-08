@@ -204,8 +204,8 @@
         <translation>Xác nhận mã hoá ví</translation>
     </message>
     <message>
-        <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR PAC&lt;/b&gt;!</source>
-        <translation>Chú ý: Nếu bạn mã hoá ví và mất mật khẩu, bạn sẽ &lt;b&gt;MẤT TẤT CẢ PAC CỦA BẠN&lt;/b&gt;!</translation>
+        <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR DFCN&lt;/b&gt;!</source>
+        <translation>Chú ý: Nếu bạn mã hoá ví và mất mật khẩu, bạn sẽ &lt;b&gt;MẤT TẤT CẢ DFCN CỦA BẠN&lt;/b&gt;!</translation>
     </message>
     <message>
         <source>Are you sure you wish to encrypt your wallet?</source>
@@ -1480,8 +1480,8 @@
         <translation>Số tiền và số vòng:</translation>
     </message>
     <message>
-        <source>0 PAC / 0 Rounds</source>
-        <translation>0 PAC / 0 Vòng</translation>
+        <source>0 DFCN / 0 Rounds</source>
+        <translation>0 DFCN / 0 Vòng</translation>
     </message>
     <message>
         <source>Submitted Denom:</source>

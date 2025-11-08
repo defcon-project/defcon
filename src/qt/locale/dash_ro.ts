@@ -168,8 +168,8 @@
         <translation>Confirmaţi criptarea portofelului</translation>
     </message>
     <message>
-        <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR PAC&lt;/b&gt;!</source>
-        <translation>Avertisment: dacă criptezi portofelul și pierzi fraza de acces, vei &lt;b&gt;PIERDE TOATE MONEDELE TALE PAC&lt;/b&gt;!</translation>
+        <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR DFCN&lt;/b&gt;!</source>
+        <translation>Avertisment: dacă criptezi portofelul și pierzi fraza de acces, vei &lt;b&gt;PIERDE TOATE MONEDELE TALE DFCN&lt;/b&gt;!</translation>
     </message>
     <message>
         <source>Are you sure you wish to encrypt your wallet?</source>
@@ -1392,8 +1392,8 @@
         <translation>Suma și Runde:</translation>
     </message>
     <message>
-        <source>0 PAC / 0 Rounds</source>
-        <translation>0 PAC / 0 Runde</translation>
+        <source>0 DFCN / 0 Rounds</source>
+        <translation>0 DFCN / 0 Runde</translation>
     </message>
     <message>
         <source>Submitted Denom:</source>
