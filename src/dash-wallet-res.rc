@@ -14,7 +14,7 @@ BEGIN
     BEGIN
         BLOCK "040904E4" // U.S. English - multilingual (hex)
         BEGIN
-            VALUE "CompanyName",        "Defcon Core"
+            VALUE "CompanyName",        "DeFCoN"
             VALUE "FileDescription",    "defcon-wallet (CLI tool for " PACKAGE_NAME " wallets)"
             VALUE "FileVersion",        PACKAGE_VERSION
             VALUE "InternalName",       "defcon-wallet"
