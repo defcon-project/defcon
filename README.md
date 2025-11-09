@@ -1,7 +1,7 @@
-defcon integration/staging tree
+DeFCoN integration/staging tree
 ===============================
 
-Copyright (c) 2025 Defcon Developers
+Copyright (c) 2025 DeFCoN Developers
 
 
 How do I build the software?

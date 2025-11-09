@@ -14,7 +14,7 @@
 #include <string>
 #include <type_traits>
 
-const std::string CURRENCY_UNIT = "DASH"; // One formatted unit
+const std::string CURRENCY_UNIT = "DFCN"; // One formatted unit
 const std::string CURRENCY_ATOM = "duff"; // One indivisible minimum value unit
 
 /* Used to determine type of fee estimation requested */

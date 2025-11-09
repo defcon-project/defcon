@@ -1076,7 +1076,7 @@ void RegisterGovernanceRPCCommands(CRPCTable &t)
 static const CRPCCommand commands[] =
 { //  category              actor (function)
   //  --------------------- -----------------------
-    /* Dash features */
+    /* DeFCoN features */
     { "dash",               &getgovernanceinfo,         },
     { "dash",               &getsuperblockbudget,       },
     { "dash",               &gobject,                   },

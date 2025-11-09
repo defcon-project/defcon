@@ -1443,9 +1443,9 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     // Warn about relative -datadir path.
     if (args.IsArgSet("-datadir") && !args.GetPathArg("-datadir").is_absolute()) {
         LogPrintf("Warning: relative datadir option '%s' specified, which will be interpreted relative to the " /* Continued */
-                  "current working directory '%s'. This is fragile, because if Defcon is started in the future "
+                  "current working directory '%s'. This is fragile, because if DeFCoN is started in the future "
                   "from a different location, it will be unable to locate the current data files. There could "
-                  "also be data loss if Defcon is started while in a temporary directory.\n",
+                  "also be data loss if DeFCoN is started while in a temporary directory.\n",
                   args.GetArg("-datadir", ""), fs::PathToString(fs::current_path()));
     }
 
@@ -2266,7 +2266,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     const auto BadPortWarning = [](const char* prefix, uint16_t port) {
         return strprintf(_("%s request to listen on port %u. This port is considered \"bad\" and "
-                           "thus it is unlikely that any Defcon peers connect to it. See "
+                           "thus it is unlikely that any DeFCoN peers connect to it. See "
                            "doc/p2p-bad-ports.md for details and a full list."),
                          prefix,
                          port);
