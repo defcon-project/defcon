@@ -327,7 +327,7 @@
         <translation>&amp;Получаване</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
         <translation>Заявка за плащане (генерира QR кодове и Pacplatform: URI)</translation>
     </message>
     <message>
@@ -585,8 +585,8 @@
         <translation>Отвори конзолата за отстраняване на грешки и диагностика</translation>
     </message>
     <message>
-        <source>Open a dash: URI</source>
-        <translation>Отвори dash: URI</translation>
+        <source>Open a defcon: URI</source>
+        <translation>Отвори defcon: URI</translation>
     </message>
     <message>
         <source>Create a new wallet</source>
@@ -1855,16 +1855,16 @@
         <translation>Грешка в заявката за плащане</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
-        <translation>Не може да стартира dash: кликни за плащане на притежателя</translation>
+        <source>Cannot start defcon: click-to-pay handler</source>
+        <translation>Не може да стартира defcon: кликни за плащане на притежателя</translation>
     </message>
     <message>
         <source>URI handling</source>
         <translation>Обработка на URI</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>'dash://' не е валиден URI. Използвайте 'dash:' вместо това.</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>'defcon://' не е валиден URI. Използвайте 'defcon:' вместо това.</translation>
     </message>
     <message>
         <source>URI cannot be parsed! This can be caused by an invalid Pacplatform address or malformed URI parameters.</source>
@@ -2867,8 +2867,8 @@
         <translation>Съобщение:</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
-        <translation>Съобщението което беше прикрепено към dash: URI ще бъде запазено с транзакцията за ваше сведение. Забележка: Това съобщение няма да бъде изпратено през Pacplatform мрежата.</translation>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <translation>Съобщението което беше прикрепено към defcon: URI ще бъде запазено с транзакцията за ваше сведение. Забележка: Това съобщение няма да бъде изпратено през Pacplatform мрежата.</translation>
     </message>
     <message>
         <source>This is an unauthenticated payment request.</source>

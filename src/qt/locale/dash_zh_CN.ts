@@ -353,7 +353,7 @@
         <translation>接收(&amp;R)</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
         <translation>请求付款(生成二维码和Pacplatform付款协议的URI)</translation>
     </message>
     <message>
@@ -619,8 +619,8 @@
         <translation>打开调试和诊断控制台</translation>
     </message>
     <message>
-        <source>Open a dash: URI</source>
-        <translation>打开一个dash: URI</translation>
+        <source>Open a defcon: URI</source>
+        <translation>打开一个defcon: URI</translation>
     </message>
     <message>
         <source>Create a new wallet</source>
@@ -2348,7 +2348,7 @@ https://explore.transifex.com/dash/dash/</translation>
         <translation>支付请求出错</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
+        <source>Cannot start defcon: click-to-pay handler</source>
         <translation>无法启动Pacplatform程序：click-to-pay handler</translation>
     </message>
     <message>
@@ -2356,8 +2356,8 @@ https://explore.transifex.com/dash/dash/</translation>
         <translation>URI 处理</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>'dash://' 不是一个有效链接. 请使用'dash:'</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>'defcon://' 不是一个有效链接. 请使用'defcon:'</translation>
     </message>
     <message>
         <source>Cannot process payment request as BIP70 is no longer supported.
@@ -3965,7 +3965,7 @@ For more information on using this console, type %6.
         <translation>消息：</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
         <translation>附加在Pacplatform付款协议URI中的信息，会和交易内容一并存储，可供您参考。提示：此信息不会发送到Pacplatform网络上。</translation>
     </message>
     <message>

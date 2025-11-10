@@ -327,7 +327,7 @@
         <translation>&amp;Ontvangen</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
         <translation>Vraag betaling aan (genereert QR-codes en Pacplatform: URI's)</translation>
     </message>
     <message>
@@ -1952,7 +1952,7 @@ Om te mixen moeten andere gebruikers exact dezelfde denominaties inbrengen.</tra
         <translation>Fout bij betalingsverzoek</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
+        <source>Cannot start defcon: click-to-pay handler</source>
         <translation>Kan Pacplatform niet starten: click-to-pay handler</translation>
     </message>
     <message>
@@ -1960,8 +1960,8 @@ Om te mixen moeten andere gebruikers exact dezelfde denominaties inbrengen.</tra
         <translation>URI-afhandeling</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>'dash://' is geen geldige URI. Gebruik in plaats daarvan 'dash:'.</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>'defcon://' is geen geldige URI. Gebruik in plaats daarvan 'defcon:'.</translation>
     </message>
     <message>
         <source>URI cannot be parsed! This can be caused by an invalid Pacplatform address or malformed URI parameters.</source>
@@ -3121,8 +3121,8 @@ Nota: Het bericht zal niet verzonden worden met de betaling over het Pacplatform
         <translation>Bericht:</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
-        <translation>Een boodschap die was bijgevoegd aan de dash: URI die met de transactie voor uw referentie wordt opgeslagen. Opmerking: Dit bericht zal niet over het Pacplatform netwerk worden verzonden.</translation>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <translation>Een boodschap die was bijgevoegd aan de defcon: URI die met de transactie voor uw referentie wordt opgeslagen. Opmerking: Dit bericht zal niet over het Pacplatform netwerk worden verzonden.</translation>
     </message>
     <message>
         <source>This is an unauthenticated payment request.</source>

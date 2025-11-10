@@ -353,8 +353,8 @@
         <translation>&amp;Получить</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
-        <translation>Запросить платежи (создать QR-коды и dash: URI)</translation>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
+        <translation>Запросить платежи (создать QR-коды и defcon: URI)</translation>
     </message>
     <message>
         <source>Ctrl+Q</source>
@@ -619,8 +619,8 @@
         <translation>Открыть консоль отладки и диагностики</translation>
     </message>
     <message>
-        <source>Open a dash: URI</source>
-        <translation>Открыть dash: URI</translation>
+        <source>Open a defcon: URI</source>
+        <translation>Открыть defcon: URI</translation>
     </message>
     <message>
         <source>Create a new wallet</source>
@@ -2364,16 +2364,16 @@ https://explore.transifex.com/dash/dash/</translation>
         <translation>Ошибка запроса платежа</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
-        <translation>Не удаётся запустить обработчик dash: click-to-pay</translation>
+        <source>Cannot start defcon: click-to-pay handler</source>
+        <translation>Не удаётся запустить обработчик defcon: click-to-pay</translation>
     </message>
     <message>
         <source>URI handling</source>
         <translation>Обработка URI</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>'dash://' не является валидным URI. Используйте 'dash:'.</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>'defcon://' не является валидным URI. Используйте 'defcon:'.</translation>
     </message>
     <message>
         <source>Cannot process payment request as BIP70 is no longer supported.
@@ -3985,8 +3985,8 @@ For more information on using this console, type %6.
         <translation>Сообщение:</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
-        <translation>К dash: URI было прикреплено сообщение, которое будет сохранено вместе с транзакцией для вашего сведения. Обратите внимание: сообщение не будет отправлено через сеть Pacplatform.</translation>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <translation>К defcon: URI было прикреплено сообщение, которое будет сохранено вместе с транзакцией для вашего сведения. Обратите внимание: сообщение не будет отправлено через сеть Pacplatform.</translation>
     </message>
     <message>
         <source>This is an unauthenticated payment request.</source>

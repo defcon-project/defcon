@@ -327,7 +327,7 @@
         <translation>&amp;Recibir</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
         <translation>Solicitar pagos (genera códigos QR y URIs de Pacplatform)</translation>
     </message>
     <message>
@@ -1951,16 +1951,16 @@
         <translation>Error en solicitud de pago</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
-        <translation>No se pudo iniciar dash: manejador de pago-por-clic</translation>
+        <source>Cannot start defcon: click-to-pay handler</source>
+        <translation>No se pudo iniciar defcon: manejador de pago-por-clic</translation>
     </message>
     <message>
         <source>URI handling</source>
         <translation>Gestión de URI</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>'dash://' no es un URI válido. Usa 'dash:'.</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>'defcon://' no es un URI válido. Usa 'defcon:'.</translation>
     </message>
     <message>
         <source>URI cannot be parsed! This can be caused by an invalid Pacplatform address or malformed URI parameters.</source>
@@ -3119,7 +3119,7 @@
         <translation>Mensaje:</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
         <translation>Un mensaje que se adjuntó al Pacplatform: URI que será almacenada con la transacción para su referencia. Nota: Este mensaje no se enviará a través de la red Pacplatform.</translation>
     </message>
     <message>

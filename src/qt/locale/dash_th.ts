@@ -323,7 +323,7 @@
         <translation>&amp;รับ</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
         <translation>เรียกเก็บการชำระเงิน (สร้างคิว อาร์ โค้ด QR codes และแหล่งที่มาของ Pacplatform: URIs)</translation>
     </message>
     <message>
@@ -577,7 +577,7 @@
         <translation>เปิดคอนโซลการตรวจแก้จุดบกพร่องและการวินิจฉัย</translation>
     </message>
     <message>
-        <source>Open a dash: URI</source>
+        <source>Open a defcon: URI</source>
         <translation>เปิด Pacplatform: URI</translation>
     </message>
     <message>
@@ -1958,7 +1958,7 @@
         <translation>คำขอการชำระเงินผิดพลาด</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
+        <source>Cannot start defcon: click-to-pay handler</source>
         <translation>ไม่สามารถเริ่มต้น Pacplatform: คลิกเพื่อจ่ายเงิน</translation>
     </message>
     <message>
@@ -1966,8 +1966,8 @@
         <translation>การจัดการ URI</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>'dash://' ไม่ใช่ URI ที่ถูกต้องใช้ 'dash:' แทน</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>'defcon://' ไม่ใช่ URI ที่ถูกต้องใช้ 'defcon:' แทน</translation>
     </message>
     <message>
         <source>URI cannot be parsed! This can be caused by an invalid Pacplatform address or malformed URI parameters.</source>
@@ -3122,7 +3122,7 @@
         <translation>ข้อความ: </translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
         <translation>ข้อความที่แนบมาไปยัง Pacplatform: URI ซึ่งจะถูกเก็บไว้กับธุรกรรมเพื่อเป็นข้อมูลอ้างอิงของคุณ  หมายเหตุ: ข้อความนี้จะถูกส่งไปยังเครือข่าย Pacplatform </translation>
     </message>
     <message>

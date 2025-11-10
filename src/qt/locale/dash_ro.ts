@@ -256,7 +256,7 @@
         <translation>P&amp;rimeşte</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
         <translation>Cereţi plăţi (generează coduri QR şi Pacplatform-uri: URls)</translation>
     </message>
     <message>
@@ -1506,7 +1506,7 @@
         <translation>Eroare la cererea de plată</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
+        <source>Cannot start defcon: click-to-pay handler</source>
         <translation>Pacplatform nu poate porni: click-to-pay handler</translation>
     </message>
     <message>
@@ -2348,7 +2348,7 @@
         <translation>Mesaj:</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
         <translation>un mesaj a fost ataşat la Pacplatform: URI care va fi stocat cu tranzacţia pentru referinţa dvs. Notă: Acest mesaj nu va fi trimis către reţeaua Pacplatform.</translation>
     </message>
     <message>

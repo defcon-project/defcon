@@ -353,8 +353,8 @@
         <translation>&amp;Empfangen</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
-        <translation>Zahlungen anfordern (erzeugt QR-Codes und "dash:"-URIs)</translation>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
+        <translation>Zahlungen anfordern (erzeugt QR-Codes und "defcon:"-URIs)</translation>
     </message>
     <message>
         <source>Ctrl+Q</source>
@@ -619,7 +619,7 @@
         <translation>Debugging- und Diagnose-Konsole öffnen</translation>
     </message>
     <message>
-        <source>Open a dash: URI</source>
+        <source>Open a defcon: URI</source>
         <translation>Ein Pacplatform öffnen: URI</translation>
     </message>
     <message>
@@ -2348,7 +2348,7 @@ https://explore.transifex.com/dash/dash/</translation>
         <translation>Fehlerhafte Zahlungsanforderung</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
+        <source>Cannot start defcon: click-to-pay handler</source>
         <translation>Pacplatform kann nicht gestartet werden: click-to-pay handler</translation>
     </message>
     <message>
@@ -2356,8 +2356,8 @@ https://explore.transifex.com/dash/dash/</translation>
         <translation>URI-Verarbeitung</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>'dash://' ist keine gültige URI. Verwende 'dash:' stattdessen.</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>'defcon://' ist keine gültige URI. Verwende 'defcon:' stattdessen.</translation>
     </message>
     <message>
         <source>Cannot process payment request as BIP70 is no longer supported.
@@ -3965,8 +3965,8 @@ Für mehr Information, wie diese Konsole zu nutzen ist, %6 tippen.
         <translation>Nachricht:</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
-        <translation>Eine an die "dash:"-URI angefügte Nachricht, die zusammen mit der Transaktion gespeichert wird. Hinweis: Diese Nachricht wird nicht über das Pacplatform-Netzwerk gesendet.</translation>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <translation>Eine an die "defcon:"-URI angefügte Nachricht, die zusammen mit der Transaktion gespeichert wird. Hinweis: Diese Nachricht wird nicht über das Pacplatform-Netzwerk gesendet.</translation>
     </message>
     <message>
         <source>This is an unauthenticated payment request.</source>

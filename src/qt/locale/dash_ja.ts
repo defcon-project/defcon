@@ -327,8 +327,8 @@
         <translation>受取 (&amp;R)</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
-        <translation>送金を要求 (QRコードとdash:URIを生成)</translation>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
+        <translation>送金を要求 (QRコードとdefcon:URIを生成)</translation>
     </message>
     <message>
         <source>&amp;Options…</source>
@@ -1951,7 +1951,7 @@
         <translation>支払いリクエストのエラー</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
+        <source>Cannot start defcon: click-to-pay handler</source>
         <translation>Pacplatform を起動できません: click-to-pay ハンドラー</translation>
     </message>
     <message>
@@ -1959,8 +1959,8 @@
         <translation>URI のハンドリング</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>「dash://」は有効なURIではありません。代わりに「dash:」を使ってください。</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>「defcon://」は有効なURIではありません。代わりに「defcon:」を使ってください。</translation>
     </message>
     <message>
         <source>URI cannot be parsed! This can be caused by an invalid Pacplatform address or malformed URI parameters.</source>
@@ -3119,7 +3119,7 @@
         <translation>メッセージ：</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
         <translation>Pacplatform: URIに添付されていたメッセージです。これは参照用としてトランザクションとともに保存されます。注意：このメッセージはPacplatformネットワークを経由して送信されるわけではありません。</translation>
     </message>
     <message>

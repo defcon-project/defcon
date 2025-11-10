@@ -296,8 +296,8 @@
         <translation>&amp;Nhận</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
-        <translation>Yêu cầu thanh toán (sinh mã QR và dash: URIs)</translation>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
+        <translation>Yêu cầu thanh toán (sinh mã QR và defcon: URIs)</translation>
     </message>
     <message>
         <source>&amp;Options…</source>
@@ -1602,8 +1602,8 @@
         <translation>Yêu cầu thanh toán bị lỗi</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
-        <translation>Không thể khởi động dash: trình xử lý click-to-pay</translation>
+        <source>Cannot start defcon: click-to-pay handler</source>
+        <translation>Không thể khởi động defcon: trình xử lý click-to-pay</translation>
     </message>
     <message>
         <source>URI handling</source>
@@ -2506,8 +2506,8 @@
         <translation>Thông điệp:</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
-        <translation>Một thông điệp được đính với dash: URI đó sẽ được lưu trữ với các giao dịch cho các bạn tham khảo. Lưu ý: Thông điệp này sẽ không được gửi qua mạng Pacplatform. </translation>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <translation>Một thông điệp được đính với defcon: URI đó sẽ được lưu trữ với các giao dịch cho các bạn tham khảo. Lưu ý: Thông điệp này sẽ không được gửi qua mạng Pacplatform. </translation>
     </message>
     <message>
         <source>This is an unauthenticated payment request.</source>

@@ -327,7 +327,7 @@
         <translation>&amp;Prijať</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
         <translation>Vyžiadať platby (vygeneruje QR kódy a Pacplatform: URI)</translation>
     </message>
     <message>
@@ -1951,7 +1951,7 @@
         <translation>Chyba pri vyžiadaní platby</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
+        <source>Cannot start defcon: click-to-pay handler</source>
         <translation>Pacplatform sa nedá spustiť: click-to-pay handler</translation>
     </message>
     <message>
@@ -1959,8 +1959,8 @@
         <translation>Spracovanie URI</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>„dash://“ nie je platný URI. Namiesto toho použite „dash:“.</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>„defcon://“ nie je platný URI. Namiesto toho použite „defcon:“.</translation>
     </message>
     <message>
         <source>URI cannot be parsed! This can be caused by an invalid Pacplatform address or malformed URI parameters.</source>
@@ -3119,8 +3119,8 @@
         <translation>Správa:</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
-        <translation>Správa ktorá bola pripojená ku dash: URI ktorá sa uchová spolu s transakciou pre vašu referenciu. Poznámka: Táto správa nebude poslaná cez sieť Pacplatform.</translation>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <translation>Správa ktorá bola pripojená ku defcon: URI ktorá sa uchová spolu s transakciou pre vašu referenciu. Poznámka: Táto správa nebude poslaná cez sieť Pacplatform.</translation>
     </message>
     <message>
         <source>This is an unauthenticated payment request.</source>

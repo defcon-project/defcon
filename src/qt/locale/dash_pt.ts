@@ -327,7 +327,7 @@
         <translation>&amp;Receber</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
         <translation>Solicitações de pagamentos (gera códigos QR e Pacplatform: URIs)</translation>
     </message>
     <message>
@@ -1951,7 +1951,7 @@
         <translation>Erro no pedido de pagamento</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
+        <source>Cannot start defcon: click-to-pay handler</source>
         <translation>Não foi possível iniciar Pacplatform: manipulador click-to-pay</translation>
     </message>
     <message>
@@ -1959,8 +1959,8 @@
         <translation>Manipulação de URI</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>'dash://' não é uma URL válida. Use 'dash:' como alternativa.</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>'defcon://' não é uma URL válida. Use 'defcon:' como alternativa.</translation>
     </message>
     <message>
         <source>URI cannot be parsed! This can be caused by an invalid Pacplatform address or malformed URI parameters.</source>
@@ -3119,7 +3119,7 @@
         <translation>Mensagem:</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
         <translation>A mensagem que foi anexada ao Pacplatform: URI na qual será gravada na transação para sua referência. Nota: Essa mensagem não será gravada publicamente na rede Pacplatform.</translation>
     </message>
     <message>

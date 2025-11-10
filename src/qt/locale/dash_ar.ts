@@ -327,7 +327,7 @@
         <translation>استقبل</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
         <translation>أطلب دفعات (يولد كودات الرمز المربع وبيت كوين: العناوين المعطاة)</translation>
     </message>
     <message>
@@ -1951,7 +1951,7 @@
         <translation>خطأ في طلب الدفع</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
+        <source>Cannot start defcon: click-to-pay handler</source>
         <translation>لا يمكن بدء داش: معالج الدفع مقابل الدفع</translation>
     </message>
     <message>
@@ -1959,8 +1959,8 @@
         <translation>التعامل مع العنوان</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>'dash: //' ليس URI صالحًا. استخدم "شرطة:" بدلاً من ذلك.</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>'defcon: //' ليس URI صالحًا. استخدم "شرطة:" بدلاً من ذلك.</translation>
     </message>
     <message>
         <source>URI cannot be parsed! This can be caused by an invalid Pacplatform address or malformed URI parameters.</source>
@@ -3119,7 +3119,7 @@
         <translation>الرسائل</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
         <translation>رسالة تم إرفاقها بخط العطف: عنوان الذي سيتم تخزينه مع المعاملة كمرجع لك. ملاحظة: لن يتم إرسال هذه الرسالة عبر شبكة داش.</translation>
     </message>
     <message>

@@ -452,8 +452,8 @@
     </message>
     <message>
         <location line="+1"/>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
-        <translation>Request payments (generates QR codes and dash: URIs)</translation>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
+        <translation>Request payments (generates QR codes and defcon: URIs)</translation>
     </message>
     <message>
         <location line="+16"/>
@@ -784,8 +784,8 @@
     </message>
     <message>
         <location line="+27"/>
-        <source>Open a dash: URI</source>
-        <translation>Open a dash: URI</translation>
+        <source>Open a defcon: URI</source>
+        <translation>Open a defcon: URI</translation>
     </message>
     <message>
         <location line="+12"/>
@@ -2987,8 +2987,8 @@ https://explore.transifex.com/dash/dash/</translation>
     </message>
     <message>
         <location line="+1"/>
-        <source>Cannot start dash: click-to-pay handler</source>
-        <translation>Cannot start dash: click-to-pay handler</translation>
+        <source>Cannot start defcon: click-to-pay handler</source>
+        <translation>Cannot start defcon: click-to-pay handler</translation>
     </message>
     <message>
         <location line="+50"/>
@@ -3000,8 +3000,8 @@ https://explore.transifex.com/dash/dash/</translation>
     </message>
     <message>
         <location line="-29"/>
-        <source>&apos;dash://&apos; is not a valid URI. Use &apos;dash:&apos; instead.</source>
-        <translation>&apos;dash://&apos; is not a valid URI. Use &apos;dash:&apos; instead.</translation>
+        <source>&apos;defcon://&apos; is not a valid URI. Use &apos;defcon:&apos; instead.</source>
+        <translation>&apos;defcon://&apos; is not a valid URI. Use &apos;defcon:&apos; instead.</translation>
     </message>
     <message>
         <location line="+17"/>
@@ -5084,8 +5084,8 @@ For more information on using this console, type %6.
     </message>
     <message>
         <location line="+10"/>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
-        <translation>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</translation>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <translation>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</translation>
     </message>
     <message>
         <location line="+433"/>

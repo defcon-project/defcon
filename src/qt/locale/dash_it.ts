@@ -353,8 +353,8 @@
         <translation>&amp;Ricevi</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
-        <translation>Richieste di pagamenti (genera codici QR e dash: URLs)</translation>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
+        <translation>Richieste di pagamenti (genera codici QR e defcon: URLs)</translation>
     </message>
     <message>
         <source>Ctrl+Q</source>
@@ -619,8 +619,8 @@
         <translation>Aprire la console di debug e diagnostica</translation>
     </message>
     <message>
-        <source>Open a dash: URI</source>
-        <translation>Apri un dash: URI</translation>
+        <source>Open a defcon: URI</source>
+        <translation>Apri un defcon: URI</translation>
     </message>
     <message>
         <source>Create a new wallet</source>
@@ -2348,16 +2348,16 @@ https://explore.transifex.com/dash/dash/</translation>
         <translation>Errore di richiesta di pagamento</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
-        <translation>Impossibile avviare dash: gestore click-to-pay</translation>
+        <source>Cannot start defcon: click-to-pay handler</source>
+        <translation>Impossibile avviare defcon: gestore click-to-pay</translation>
     </message>
     <message>
         <source>URI handling</source>
         <translation>Gestione URI</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>"dash: //" non è un URI valido. Utilizza  "dash:".</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>"defcon: //" non è un URI valido. Utilizza  "defcon:".</translation>
     </message>
     <message>
         <source>Cannot process payment request as BIP70 is no longer supported.
@@ -3965,7 +3965,7 @@ Per ulteriori informazioni sull'utilizzo di questa console, digitare %6.
         <translation>Messaggio:</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
         <translation>Un messaggio allegato con l'URI dash che verrà memorizzato nella transazione per il tuo referente. Nota: questo messaggio non verrà inviato attraverso il network Pacplatform.</translation>
     </message>
     <message>
