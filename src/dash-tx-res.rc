@@ -14,8 +14,8 @@ BEGIN
     BEGIN
         BLOCK "040904E4" // U.S. English - multilingual (hex)
         BEGIN
-            VALUE "CompanyName",        "Defcon"
-            VALUE "FileDescription",    "defcon-tx (CLI Defcon transaction editor utility)"
+            VALUE "CompanyName",        "DeFCoN"
+            VALUE "FileDescription",    "defcon-tx (CLI DeFCoN transaction editor utility)"
             VALUE "FileVersion",        PACKAGE_VERSION
             VALUE "InternalName",       "defcon-tx"
             VALUE "LegalCopyright",     COPYRIGHT_STR

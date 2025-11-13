@@ -15,7 +15,7 @@
 static void EnsureAddressIndexAvailable()
 {
     if (!fAddressIndex) {
-        throw JSONRPCError(RPC_INVALID_REQUEST, "Address index is disabled. You should run Dash Core with -addressindex (requires reindex)");
+        throw JSONRPCError(RPC_INVALID_REQUEST, "Address index is disabled. You should run DeFCoN with -addressindex (requires reindex)");
     }
 }
 
@@ -78,7 +78,7 @@ bool GetSpentIndex(CBlockTreeDB& block_tree_db, const CTxMemPool& mempool, const
     AssertLockHeld(::cs_main);
 
     if (!fSpentIndex) {
-        throw JSONRPCError(RPC_INVALID_REQUEST, "Spent index is disabled. You should run Dash Core with -spentindex (requires reindex)");
+        throw JSONRPCError(RPC_INVALID_REQUEST, "Spent index is disabled. You should run DeFCoN with -spentindex (requires reindex)");
     }
 
     if (mempool.getSpentIndex(key, value))
@@ -96,7 +96,7 @@ bool GetTimestampIndex(CBlockTreeDB& block_tree_db, const uint32_t high, const u
     AssertLockHeld(::cs_main);
 
     if (!fTimestampIndex) {
-        throw JSONRPCError(RPC_INVALID_REQUEST, "Timestamp index is disabled. You should run Dash Core with -timestampindex (requires reindex)");
+        throw JSONRPCError(RPC_INVALID_REQUEST, "Timestamp index is disabled. You should run DeFCoN with -timestampindex (requires reindex)");
     }
 
     if (!block_tree_db.ReadTimestampIndex(high, low, hashes))

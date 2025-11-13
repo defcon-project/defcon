@@ -137,7 +137,7 @@ Intro::Intro(QWidget *parent, int64_t blockchain_size_gb, int64_t chain_state_si
         .arg(PACKAGE_NAME)
         .arg(m_blockchain_size_gb)
         .arg(2025)
-        .arg("Defcon")
+        .arg("DeFCoN")
     );
     ui->lblExplanation2->setText(ui->lblExplanation2->text().arg(PACKAGE_NAME));
 
@@ -358,7 +358,7 @@ void Intro::UpdatePruneLabels(bool prune_checked)
     static constexpr uint32_t expected_block_data_size = 2250000;  // includes undo data
     const uint64_t expected_backup_days = m_prune_target_gb * 1e9 / (uint64_t(expected_block_data_size) * 86400 / nPowTargetSpacing);
     ui->sizeWarningLabel->setText(
-        tr("%1 will download and store a copy of the Defcon block chain.").arg(PACKAGE_NAME) + " " +
+        tr("%1 will download and store a copy of the DeFCoN block chain.").arg(PACKAGE_NAME) + " " +
         storageRequiresMsg.arg(m_required_space_gb) + " " +
         tr("The wallet will also be stored in this directory.")
     );

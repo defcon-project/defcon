@@ -51,9 +51,9 @@ QString BitcoinUnits::name(int unit)
     {
         switch(unit)
         {
-            case DASH: return QString("DEF");
-            case mDASH: return QString("mDEF");
-            case uDASH: return QString::fromUtf8("μDEF");
+            case DASH: return QString("DFCN");
+            case mDASH: return QString("mDFCN");
+            case uDASH: return QString::fromUtf8("μDFCN");
             case duffs: return QString("duffs");
             default: return QString("???");
         }
@@ -62,9 +62,9 @@ QString BitcoinUnits::name(int unit)
     {
         switch(unit)
         {
-            case DASH: return QString("tDEF");
-            case mDASH: return QString("mtDEF");
-            case uDASH: return QString::fromUtf8("μtDEF");
+            case DASH: return QString("tDFCN");
+            case mDASH: return QString("mtDFCN");
+            case uDASH: return QString::fromUtf8("μtDFCN");
             case duffs: return QString("tduffs");
             default: return QString("???");
         }
@@ -77,10 +77,10 @@ QString BitcoinUnits::description(int unit)
     {
         switch(unit)
         {
-            case DASH: return QString("Defcon");
-            case mDASH: return QString("Milli-Defcon (1 / 1" THIN_SP_UTF8 "000)");
-            case uDASH: return QString("Micro-Defcon (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
-            case duffs: return QString("Ten Nano-Defcon (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
+            case DASH: return QString("DFCN");
+            case mDASH: return QString("Milli-DFCN (1 / 1" THIN_SP_UTF8 "000)");
+            case uDASH: return QString("Micro-DFCN (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
+            case duffs: return QString("Ten Nano-DFCN (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
             default: return QString("???");
         }
     }
@@ -88,10 +88,10 @@ QString BitcoinUnits::description(int unit)
     {
         switch(unit)
         {
-            case DASH: return QString("TestDEFs");
-            case mDASH: return QString("Milli-TestDEF (1 / 1" THIN_SP_UTF8 "000)");
-            case uDASH: return QString("Micro-TestDEF (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
-            case duffs: return QString("Ten Nano-TestDEF (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
+            case DASH: return QString("TestDFCNs");
+            case mDASH: return QString("Milli-TestDFCN (1 / 1" THIN_SP_UTF8 "000)");
+            case uDASH: return QString("Micro-TestDFCN (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
+            case duffs: return QString("Ten Nano-TestDFCN (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
             default: return QString("???");
         }
     }

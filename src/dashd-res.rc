@@ -14,8 +14,8 @@ BEGIN
     BEGIN
         BLOCK "040904E4" // U.S. English - multilingual (hex)
         BEGIN
-            VALUE "CompanyName",        "Defcon"
-            VALUE "FileDescription",    "defcond (Defcon node with a JSON-RPC server)"
+            VALUE "CompanyName",        "DeFCoN"
+            VALUE "FileDescription",    "defcond (DeFCoN node with a JSON-RPC server)"
             VALUE "FileVersion",        PACKAGE_VERSION
             VALUE "InternalName",       "defcond"
             VALUE "LegalCopyright",     COPYRIGHT_STR

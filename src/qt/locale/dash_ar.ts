@@ -211,7 +211,7 @@
         <translation>تأكيد تشفير المحفظة</translation>
     </message>
     <message>
-        <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR PAC&lt;/b&gt;!</source>
+        <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR DFCN&lt;/b&gt;!</source>
         <translation>تحذير: إذا قمت بتشفير محفظتك وفقدت كلمة المرور الخاص بك, ستفقد كل عملات داش الخاصة بك</translation>
     </message>
     <message>
@@ -327,7 +327,7 @@
         <translation>استقبل</translation>
     </message>
     <message>
-        <source>Request payments (generates QR codes and dash: URIs)</source>
+        <source>Request payments (generates QR codes and defcon: URIs)</source>
         <translation>أطلب دفعات (يولد كودات الرمز المربع وبيت كوين: العناوين المعطاة)</translation>
     </message>
     <message>
@@ -1148,7 +1148,7 @@
         <translation>%1 معلومات</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 Basics&lt;/h3&gt; %1 gives you true financial privacy by obscuring the origins of your funds. All the Pacplatform in your wallet is comprised of different "inputs" which you can think of as separate, discrete coins.&lt;br&gt; %1 uses an innovative process to mix your inputs with the inputs of two or more other people, without having your coins ever leave your wallet. You retain control of your money at all times.&lt;hr&gt; &lt;b&gt;The %1 process works like this:&lt;/b&gt;&lt;ol type="1"&gt; &lt;li&gt;%1 begins by breaking your transaction inputs down into standard denominations. These denominations are 0.001 PAC, 0.01 PAC, 0.1 PAC, 1 PAC and 10 PAC -- sort of like the paper money you use every day.&lt;/li&gt; &lt;li&gt;Your wallet then sends requests to specially configured software nodes on the network, called "masternodes." These masternodes are informed then that you are interested in mixing a certain denomination. No identifiable information is sent to the masternodes, so they never know "who" you are.&lt;/li&gt; &lt;li&gt;When two or more other people send similar messages, indicating that they wish to mix the same denomination, a mixing session begins. The masternode mixes up the inputs and instructs all three users' wallets to pay the now-transformed input back to themselves. Your wallet pays that denomination directly to itself, but in a different address (called a change address).&lt;/li&gt; &lt;li&gt;In order to fully obscure your funds, your wallet must repeat this process a number of times with each denomination. Each time the process is completed, it's called a "round." Each round of %1 makes it exponentially more difficult to determine where your funds originated.&lt;/li&gt; &lt;li&gt;This mixing process happens in the background without any intervention on your part. When you wish to make a transaction, your funds will already be mixed. No additional waiting is required.&lt;/li&gt; &lt;/ol&gt; &lt;hr&gt;&lt;b&gt;IMPORTANT:&lt;/b&gt; Your wallet only contains 1000 of these "change addresses." Every time a mixing event happens, up to 9 of your addresses are used up. This means those 1000 addresses last for about 100 mixing events. When 900 of them are used, your wallet must create more addresses. It can only do this, however, if you have automatic backups enabled.&lt;br&gt; Consequently, users who have backups disabled will also have %1 disabled. &lt;hr&gt;For more information, see the &lt;a style="%2" href="%3"&gt;%1 documentation&lt;/a&gt;.</source>
+        <source>&lt;h3&gt;%1 Basics&lt;/h3&gt; %1 gives you true financial privacy by obscuring the origins of your funds. All the Pacplatform in your wallet is comprised of different "inputs" which you can think of as separate, discrete coins.&lt;br&gt; %1 uses an innovative process to mix your inputs with the inputs of two or more other people, without having your coins ever leave your wallet. You retain control of your money at all times.&lt;hr&gt; &lt;b&gt;The %1 process works like this:&lt;/b&gt;&lt;ol type="1"&gt; &lt;li&gt;%1 begins by breaking your transaction inputs down into standard denominations. These denominations are 0.001 DFCN, 0.01 DFCN, 0.1 DFCN, 1 DFCN and 10 DFCN -- sort of like the paper money you use every day.&lt;/li&gt; &lt;li&gt;Your wallet then sends requests to specially configured software nodes on the network, called "masternodes." These masternodes are informed then that you are interested in mixing a certain denomination. No identifiable information is sent to the masternodes, so they never know "who" you are.&lt;/li&gt; &lt;li&gt;When two or more other people send similar messages, indicating that they wish to mix the same denomination, a mixing session begins. The masternode mixes up the inputs and instructs all three users' wallets to pay the now-transformed input back to themselves. Your wallet pays that denomination directly to itself, but in a different address (called a change address).&lt;/li&gt; &lt;li&gt;In order to fully obscure your funds, your wallet must repeat this process a number of times with each denomination. Each time the process is completed, it's called a "round." Each round of %1 makes it exponentially more difficult to determine where your funds originated.&lt;/li&gt; &lt;li&gt;This mixing process happens in the background without any intervention on your part. When you wish to make a transaction, your funds will already be mixed. No additional waiting is required.&lt;/li&gt; &lt;/ol&gt; &lt;hr&gt;&lt;b&gt;IMPORTANT:&lt;/b&gt; Your wallet only contains 1000 of these "change addresses." Every time a mixing event happens, up to 9 of your addresses are used up. This means those 1000 addresses last for about 100 mixing events. When 900 of them are used, your wallet must create more addresses. It can only do this, however, if you have automatic backups enabled.&lt;br&gt; Consequently, users who have backups disabled will also have %1 disabled. &lt;hr&gt;For more information, see the &lt;a style="%2" href="%3"&gt;%1 documentation&lt;/a&gt;.</source>
         <translation>%1 يمنحك   &lt;h3&gt;%1 أساسيات&lt;/h3&gt; خصوصية مالية حقيقية من خلال حجب أصول أموالك. تتكون كل الداش في محفظتك من "مدخلات" مختلفة يمكنك التفكير فيها على أنها عملات معدنية منفصلة ومنفصلة.&lt;br&gt;  %1 يستخدم عملية مبتكرة لخلط مدخلاتك مع مدخلات شخصين آخرين أو أكثر ، دون أن تترك عملاتك محفظتك. أنت تحتفظ بالسيطرة على أموالك في جميع الأوقات.&lt;hr&gt;&lt;b&gt; تعمل  %1 عملية على النحو التالي:&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt; يبدأ بتقسيم إدخالات معاملتك إلى فئات قياسية. هذه الفئات هي 0.001 داش و 0.01 داش و 0.1 داش و 1 داش و 10 داش - نوع من النقود الورقية التي تستخدمها كل يوم.&lt;/li&gt;&lt;li&gt; ثم ترسل محفظتك طلبات إلى عقد البرامج التي تم تكوينها خصيصًا على الشبكة ، والتي تسمى "العقد الرئيسية". يتم إبلاغ هذه الرموز الرئيسية بعد ذلك أنك مهتم بخلط فئة معينة. لا يتم إرسال أي معلومات يمكن التعرف عليها إلى رموز ماسترنود ، لذلك فهم لا يعرفون أبدًا "من أنت".&lt;/li&gt;&lt;li&gt; عندما يرسل شخصان آخران أو أكثر رسائل متشابهة ، للإشارة إلى رغبتهم في مزج نفس الفئة ، تبدأ جلسة خلط. يخلط الرمز الرئيسي بين المدخلات ويوجه جميع محافظ المستخدمين الثلاثة لدفع المدخلات التي تم تحويلها الآن لأنفسهم. تدفع محفظتك تلك الفئة مباشرة لنفسها ، ولكن في عنوان مختلف (يسمى تغيير العنوان). &lt;/li&gt;&lt;li&gt;من أجل إخفاء أموالك بالكامل ، يجب أن تكرر محفظتك هذه العملية عدة مرات مع كل فئة. في كل مرة يتم فيها الانتهاء من العملية ، يطلق عليها "جولة". كل جولة  1% تجعل تحديد مصدر أموالك أكثر صعوبة.&lt;/li&gt;&lt;li&gt; تحدث عملية الخلط هذه في الخلفية دون أي تدخل من جانبك. عندما ترغب في إجراء معاملة ، ستكون أموالك مختلطة بالفعل. لا حاجة إلى انتظار إضافي.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt; هام: &lt;/b&gt;تحتوي محفظتك فقط على 1000 من "عناوين التغيير" هذه. في كل مرة يحدث فيها اختلاط ، يتم استخدام ما يصل إلى 9 عناوين. هذا يعني أن تلك العناوين الـ 1000 تدوم لحوالي 100 حدث خلط. عندما يتم استخدام 900 منهم ، يجب أن تنشئ محفظتك المزيد من العناوين. لا يمكنه القيام بذلك إلا إذا تم تمكين النسخ الاحتياطية التلقائية. &lt;br&gt;وبالتالي ، فإن المستخدمين الذين تم تعطيل النسخ الاحتياطية لديهم  %1 سيتم أيضًا تعطيل.&lt;hr&gt; لمزيد من المعلومات ، &lt;a style="%2" href="%3"&gt; %1 راجع وثائق&lt;/a&gt;.</translation>
     </message>
 </context>
@@ -1805,7 +1805,7 @@
         <translation>الكمية و الجولات</translation>
     </message>
     <message>
-        <source>0 PAC / 0 Rounds</source>
+        <source>0 DFCN / 0 Rounds</source>
         <translation>0 داش / 0 جولات</translation>
     </message>
     <message>
@@ -1951,7 +1951,7 @@
         <translation>خطأ في طلب الدفع</translation>
     </message>
     <message>
-        <source>Cannot start dash: click-to-pay handler</source>
+        <source>Cannot start defcon: click-to-pay handler</source>
         <translation>لا يمكن بدء داش: معالج الدفع مقابل الدفع</translation>
     </message>
     <message>
@@ -1959,8 +1959,8 @@
         <translation>التعامل مع العنوان</translation>
     </message>
     <message>
-        <source>'dash://' is not a valid URI. Use 'dash:' instead.</source>
-        <translation>'dash: //' ليس URI صالحًا. استخدم "شرطة:" بدلاً من ذلك.</translation>
+        <source>'defcon://' is not a valid URI. Use 'defcon:' instead.</source>
+        <translation>'defcon: //' ليس URI صالحًا. استخدم "شرطة:" بدلاً من ذلك.</translation>
     </message>
     <message>
         <source>URI cannot be parsed! This can be caused by an invalid Pacplatform address or malformed URI parameters.</source>
@@ -3119,7 +3119,7 @@
         <translation>الرسائل</translation>
     </message>
     <message>
-        <source>A message that was attached to the dash: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
         <translation>رسالة تم إرفاقها بخط العطف: عنوان الذي سيتم تخزينه مع المعاملة كمرجع لك. ملاحظة: لن يتم إرسال هذه الرسالة عبر شبكة داش.</translation>
     </message>
     <message>
@@ -3904,7 +3904,7 @@
     </message>
 </context>
 <context>
-    <name>pacplatform</name>
+    <name>defcon</name>
     <message>
         <source>Error: Listening for incoming connections failed (listen returned error %s)</source>
         <translation>خطأ: فشل الاستماع إلى الاتصالات الواردة (تم إرجاع الخطأ %s)</translation>
