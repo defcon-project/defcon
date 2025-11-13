@@ -3906,7 +3906,7 @@ Nota: Het bericht zal niet verzonden worden met de betaling over het Pacplatform
     </message>
 </context>
 <context>
-    <name>pacplatform</name>
+    <name>defcon</name>
     <message>
         <source>Error: Listening for incoming connections failed (listen returned error %s)</source>
         <translation>Fout: luisteren naar binnenkomende verbindingen mislukt (luisteren gaf foutmelding %s)</translation>

@@ -3904,7 +3904,7 @@
     </message>
 </context>
 <context>
-    <name>pacplatform</name>
+    <name>defcon</name>
     <message>
         <source>Error: Listening for incoming connections failed (listen returned error %s)</source>
         <translation>오류: 들어오는 연결을 수신하는 데 실패했습니다 (수신 반환 오류 %s)</translation>

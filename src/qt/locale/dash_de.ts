@@ -4835,7 +4835,7 @@ Gehen Sie zu "Datei" &gt; "Wallet öffnen" um Wallet zu laden
     </message>
 </context>
 <context>
-    <name>pacplatform</name>
+    <name>defcon</name>
     <message>
         <source>Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable -fallbackfee.</source>
         <translation>Gebührenberechnung fehlgeschlagen. Fallbackfee ist deaktiviert. Warte ein paar Blöcke oder aktiviere -fallbackfee.</translation>

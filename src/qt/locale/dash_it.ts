@@ -4835,7 +4835,7 @@ Vai su File &gt; Apri Wallet per caricare un Wallet.
     </message>
 </context>
 <context>
-    <name>pacplatform</name>
+    <name>defcon</name>
     <message>
         <source>Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable -fallbackfee.</source>
         <translation>Stima della tariffa non riuscita. La commissione di riserva è disabilitata. Attendi qualche blocco o abilita -fallbackfee.</translation>

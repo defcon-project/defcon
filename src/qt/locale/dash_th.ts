@@ -3878,7 +3878,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
 </context>
 <context>
-    <name>pacplatform</name>
+    <name>defcon</name>
     <message>
         <source>Error: Listening for incoming connections failed (listen returned error %s)</source>
         <translation>ข้อผิดพลาด: ฟังการเชื่อมต่อขาเข้าล้มเหลว (ฟังข้อผิดพลาด %s)</translation>

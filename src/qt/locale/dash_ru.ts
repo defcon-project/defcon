@@ -4855,7 +4855,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
 </context>
 <context>
-    <name>pacplatform</name>
+    <name>defcon</name>
     <message>
         <source>Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable -fallbackfee.</source>
         <translation>Расчет комиссии невозможен. Комиссия по умолчанию не установлена. подождите пару блоков либо укажите -fallbackfee.</translation>

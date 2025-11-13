@@ -4658,7 +4658,7 @@ Przejdź do Plik &gt; Otwórz portfel, aby załadować portfel.
     </message>
 </context>
 <context>
-    <name>pacplatform</name>
+    <name>defcon</name>
     <message>
         <source>Fee estimation failed. Fallbackfee is disabled. Wait a few blocks or enable -fallbackfee.</source>
         <translation>Oszacowanie opłaty nie powiodło się. Opłata domyślna jest wyłączona. Poczekaj kilka bloków lub włącz -fallbackfee.</translation>

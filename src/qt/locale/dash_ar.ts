@@ -3904,7 +3904,7 @@
     </message>
 </context>
 <context>
-    <name>pacplatform</name>
+    <name>defcon</name>
     <message>
         <source>Error: Listening for incoming connections failed (listen returned error %s)</source>
         <translation>خطأ: فشل الاستماع إلى الاتصالات الواردة (تم إرجاع الخطأ %s)</translation>
