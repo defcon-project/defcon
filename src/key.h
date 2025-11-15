@@ -7,6 +7,7 @@
 #ifndef BITCOIN_KEY_H
 #define BITCOIN_KEY_H
 
+#include <bls/bls.h>
 #include <pubkey.h>
 #include <serialize.h>
 #include <support/allocators/secure.h>
@@ -166,6 +167,32 @@ public:
     ECDHSecret ComputeBIP324ECDHSecret(const EllSwiftPubKey& their_ellswift,
                                        const EllSwiftPubKey& our_ellswift,
                                        bool initiating) const;
+
+///////////////////////////
+// BLS
+////////////////////////////
+
+public:
+    //! Check whether the 32-byte array pointed to by vch is valid keydata.
+    bool CheckBLS(std::vector<unsigned char, secure_allocator<unsigned char>>& vch);
+
+    //! Generate a new private BLS key using a cryptographic PRNG.
+    void MakeNewBLSKey();
+
+    //! Generate a new private BLS key using a deterministic source
+    void MakeNewDeterministicBLSKey(const std::vector<uint8_t>& hash);
+    CPrivKey GetBLSPrivateKey() const;
+
+    /**
+     * Compute the public key from a private key.
+     * This is expensive.
+     */
+    CPubKey GetPubKeyForBLS() const;
+
+    /**
+     * Create a BLS signature.
+     */
+    bool SignBLS(const uint256 &hash, std::vector<uint8_t> &vchSig) const;
 };
 
 struct CExtKey {

@@ -245,6 +245,11 @@ bool CKey::VerifyPubKey(const CPubKey& pubkey) const {
     GetRandBytes(rnd);
     uint256 hash{Hash(str, rnd)};
     std::vector<unsigned char> vchSig;
+    //this allows comp/uncomp ecdsa and bls
+    if (pubkey.size() == 48) {
+        SignBLS(hash, vchSig);
+        return pubkey.VerifyBLS(hash, vchSig);
+    }
     Sign(hash, vchSig);
     return pubkey.Verify(hash, vchSig);
 }
@@ -420,4 +425,73 @@ void ECC_Stop() {
     if (ctx) {
         secp256k1_context_destroy(ctx);
     }
+}
+
+///////////////////////////
+// BLS
+////////////////////////////
+
+bool CKey::CheckBLS(std::vector<unsigned char, secure_allocator<unsigned char>>& vch)
+{
+    CBLSSecretKey testKey;
+    testKey.SetBytes(vch, false);
+    return testKey.IsValid();
+}
+
+void CKey::MakeNewBLSKey()
+{
+    do {
+        GetStrongRandBytes(MakeUCharSpan(keydata));
+    } while (!CheckBLS(keydata));
+    fValid = true;
+}
+
+void CKey::MakeNewDeterministicBLSKey(const std::vector<uint8_t>& hash)
+{
+    uint8_t count = 0;
+    std::vector<unsigned char, secure_allocator<unsigned char>> rand;
+    rand.resize(CHash256::OUTPUT_SIZE);
+    do {
+        CHash256().Write(MakeUCharSpan(hash)).Write(Span{&count,1}).Finalize(rand);
+        count++;
+        if (count == 255) {
+            fValid = false;
+            return;
+        }
+    } while (!CheckBLS(rand));
+    Set(rand.begin(), rand.end(), true);
+    fValid = true;
+}
+
+CPubKey CKey::GetPubKeyForBLS() const
+{
+    CBLSSecretKey testKey;
+    testKey.SetBytes(keydata, false);
+    CBLSPublicKey pubKey = testKey.GetPublicKey();
+    std::vector<uint8_t> pubBytes = pubKey.ToByteVector(false);
+    return CPubKey(pubBytes);
+}
+
+CPrivKey CKey::GetBLSPrivateKey() const
+{
+    assert(fValid);
+    CPrivKey privkey(keydata.size());
+    for (size_t i = 0; i < keydata.size(); i++)
+        privkey[i] = keydata[i];
+    return privkey;
+}
+
+bool CKey::SignBLS(const uint256 &hash, std::vector<uint8_t> &vchSig) const
+{
+    if (!fValid) {
+        return false;
+    }
+    CBLSSecretKey testKey;
+    testKey.SetBytes(keydata, false);
+    CBLSSignature sig = testKey.Sign(hash, false);
+    if (sig.IsValid()) {
+        vchSig.push_back(*sig.ToBytes(false).data());
+        return true;
+    }
+    return false;
 }
