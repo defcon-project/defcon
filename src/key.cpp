@@ -246,7 +246,7 @@ bool CKey::VerifyPubKey(const CPubKey& pubkey) const {
     uint256 hash{Hash(str, rnd)};
     std::vector<unsigned char> vchSig;
     //this allows comp/uncomp ecdsa and bls
-    if (pubkey.size() == 48) {
+    if (pubkey.IsBLS()) {
         SignBLS(hash, vchSig);
         return pubkey.VerifyBLS(hash, vchSig);
     }

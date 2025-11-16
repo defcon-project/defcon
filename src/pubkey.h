@@ -168,6 +168,9 @@ public:
         }
     }
 
+    //! Lookup for key type
+    bool IsBLS() const { return size() == BLS_PUBLIC_KEY_SIZE; }
+
     //! Get the KeyID of this public key (hash of its serialization)
     CKeyID GetID() const
     {
