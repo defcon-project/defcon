@@ -323,3 +323,18 @@ bool CExtPubKey::Derive(CExtPubKey &out, unsigned int _nChild) const {
     }
     return (!secp256k1_ecdsa_signature_normalize(secp256k1_context_static, nullptr, &sig));
 }
+
+///////////////////////////
+// BLS
+////////////////////////////
+
+bool CPubKey::VerifyBLS(const uint256 &hash, const std::vector<uint8_t> &vchSig) const {
+
+    CBLSSignature sig;
+    sig.SetBytes(vchSig, false);
+
+    CBLSPublicKey pubKey;
+    pubKey.SetBytes(vch, false);
+
+    return sig.VerifyInsecure(pubKey, hash, false);
+}
