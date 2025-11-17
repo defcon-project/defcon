@@ -6045,3 +6045,48 @@ ScriptPubKeyMan* CWallet::AddWalletDescriptor(WalletDescriptor& desc, const Flat
 
     return spk_man;
 }
+
+bool CWallet::ReadFromBLSWallet(const std::string& keydata)
+{
+    BlsWalletEntry entry;
+    if (!entry.sk.SetHexStr(keydata, false)) {
+        return false;
+    }
+    entry.id = blsKeyRecords.size();
+    entry.pk = entry.sk.GetPublicKey();
+    blsKeyRecords.push_back(entry);
+    return true;
+}
+
+bool CWallet::WriteToBLSWallet(const std::string& keydata)
+{
+    if (!ReadFromBLSWallet(keydata)) {
+        return false;
+    }
+    WalletBatch batch(GetDatabase());
+    for (unsigned int i = 0; i < blsKeyRecords.size(); i++) {
+        std::string blsPrivateKey = blsKeyRecords[i].sk.ToString();
+        batch.WriteBLSKey(i, blsPrivateKey);
+    }
+    return true;
+}
+
+bool CWallet::BLSWalletInit()
+{
+    unsigned int i = 0;
+    std::string blsPrivateKey;
+    WalletBatch batch(GetDatabase());
+    while (true) {
+        if (!batch.ReadBLSKey(i, blsPrivateKey)) {
+            break;
+        }
+        if (!ReadFromBLSWallet(blsPrivateKey)) {
+            break;
+        }
+        ++i;
+    }
+    if (blsKeyRecords.size()) {
+        WalletLogPrintf("%s: loaded %d BLS keys successfully.\n", __func__, blsKeyRecords.size());
+    }
+    return true;
+}

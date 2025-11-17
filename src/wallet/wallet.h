@@ -23,6 +23,7 @@
 #include <util/strencodings.h>
 #include <util/ui_change_type.h>
 #include <validationinterface.h>
+#include <wallet/blswallet.h>
 #include <wallet/coincontrol.h>
 #include <wallet/crypter.h>
 #include <wallet/coinselection.h>
@@ -749,6 +750,8 @@ private:
     std::atomic<double> m_scanning_progress{0};
     friend class WalletRescanReserver;
 
+    std::vector<BlsWalletEntry> blsKeyRecords;
+
     //! the current wallet version: clients below this version are not able to load the wallet
     int nWalletVersion GUARDED_BY(cs_wallet){FEATURE_BASE};
 
@@ -941,6 +944,7 @@ public:
           m_name(name),
           m_database(std::move(database))
     {
+          BLSWalletInit();
     }
 
     ~CWallet()
@@ -1557,6 +1561,11 @@ public:
 
     //! Add a descriptor to the wallet, return a ScriptPubKeyMan & associated output type
     ScriptPubKeyMan* AddWalletDescriptor(WalletDescriptor& desc, const FlatSigningProvider& signing_provider, const std::string& label, bool internal);
+
+    //! BLS Key Functions
+    bool ReadFromBLSWallet(const std::string& keydata);
+    bool WriteToBLSWallet(const std::string& keydata);
+    bool BLSWalletInit();
 };
 
 /**

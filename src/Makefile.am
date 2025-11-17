@@ -396,6 +396,7 @@ BITCOIN_CORE_H = \
   wallet/bdb.h \
   wallet/bip39.h \
   wallet/bip39_english.h \
+  wallet/blswallet.h \
   wallet/coincontrol.h \
   wallet/coinselection.h \
   wallet/context.h \
