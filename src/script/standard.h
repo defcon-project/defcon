@@ -60,6 +60,7 @@ enum class TxoutType
     NONSTANDARD,
     // 'standard' transaction types:
     PUBKEY,
+    BLSPUBKEY,
     PUBKEYHASH,
     SCRIPTHASH,
     MULTISIG,

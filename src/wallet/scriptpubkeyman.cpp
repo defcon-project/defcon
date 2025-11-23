@@ -103,6 +103,12 @@ IsMineResult IsMineInner(const LegacyScriptPubKeyMan& keystore, const CScript& s
             ret = std::max(ret, IsMineResult::SPENDABLE);
         }
         break;
+    case TxoutType::BLSPUBKEY:
+        keyID = CPubKey(vSolutions[0]).GetID();
+        if (vSolutions[0].size() == CPubKey::BLS_PUBLIC_KEY_SIZE && (keystore.HaveKey(keyID))) {
+            ret = std::max(ret, IsMineResult::SPENDABLE);
+        }
+        break;
     case TxoutType::PUBKEYHASH:
         keyID = CKeyID(uint160(vSolutions[0]));
         if (!PermitsUncompressed(sigversion)) {

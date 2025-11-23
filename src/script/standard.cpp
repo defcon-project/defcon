@@ -34,6 +34,7 @@ std::string GetTxnOutputType(TxoutType t)
     switch (t) {
     case TxoutType::NONSTANDARD: return "nonstandard";
     case TxoutType::PUBKEY: return "pubkey";
+    case TxoutType::BLSPUBKEY: return "blspubkey";
     case TxoutType::PUBKEYHASH: return "pubkeyhash";
     case TxoutType::SCRIPTHASH: return "scripthash";
     case TxoutType::MULTISIG: return "multisig";
@@ -50,6 +51,15 @@ static bool MatchPayToPubkey(const CScript& script, valtype& pubkey)
     }
     if (script.size() == CPubKey::COMPRESSED_SIZE + 2 && script[0] == CPubKey::COMPRESSED_SIZE && script.back() == OP_CHECKSIG) {
         pubkey = valtype(script.begin() + 1, script.begin() + CPubKey::COMPRESSED_SIZE + 1);
+        return CPubKey::ValidSize(pubkey);
+    }
+    return false;
+}
+
+static bool MatchPayToBLSPubkey(const CScript& script, valtype& pubkey)
+{
+    if (script.size() == CPubKey::BLS_PUBLIC_KEY_SIZE + 1 && script[0] == CPubKey::BLS_PUBLIC_KEY_SIZE && script.back() == OP_CHECKSIG) {
+        pubkey = valtype(script.begin() + 1, script.begin() + CPubKey::BLS_PUBLIC_KEY_SIZE + 1);
         return CPubKey::ValidSize(pubkey);
     }
     return false;
@@ -146,6 +156,11 @@ TxoutType Solver(const CScript& scriptPubKey, std::vector<std::vector<unsigned c
     if (MatchPayToPubkey(scriptPubKey, data)) {
         vSolutionsRet.push_back(std::move(data));
         return TxoutType::PUBKEY;
+    }
+
+    if (MatchPayToBLSPubkey(scriptPubKey, data)) {
+        vSolutionsRet.push_back(std::move(data));
+        return TxoutType::BLSPUBKEY;
     }
 
     if (MatchPayToPubkeyHash(scriptPubKey, data)) {

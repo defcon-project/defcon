@@ -2,6 +2,7 @@
 #define WALLET_BLSWALLET_H
 
 #include <bls/bls.h>
+#include <pubkey.h>
 
 struct BlsWalletEntry {
     unsigned int id;

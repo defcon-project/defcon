@@ -6054,6 +6054,29 @@ bool CWallet::ReadFromBLSWallet(const std::string& keydata)
     }
     entry.id = blsKeyRecords.size();
     entry.pk = entry.sk.GetPublicKey();
+
+    //////////////////////////////////////////////////////////
+    std::vector<uint8_t> pubBytes = entry.pk.ToByteVector(false);
+    if (pubBytes.size() != CPubKey::BLS_PUBLIC_KEY_SIZE) {
+        WalletLogPrintf("%s: pubkey invalid.\n", __func__);
+        return false;
+    }
+    std::vector<uint8_t> privBytes = entry.sk.ToByteVector(false);
+    if (privBytes.size() != 32) {
+        WalletLogPrintf("%s: pubkey invalid.\n", __func__);
+        return false;
+    }
+
+    CKey key;
+    key.Set(privBytes.begin(), privBytes.end(), false);
+    CPubKey pub(pubBytes);
+
+    auto spk_man = GetLegacyScriptPubKeyMan();
+    if (!spk_man->LoadKey(key, pub)) {
+        WalletLogPrintf("%s: error loading into map.\n", __func__);
+        return false;
+    }
+    //////////////////////////////////////////////////////////
     blsKeyRecords.push_back(entry);
     return true;
 }
