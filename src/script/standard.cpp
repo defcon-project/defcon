@@ -58,7 +58,7 @@ static bool MatchPayToPubkey(const CScript& script, valtype& pubkey)
 
 static bool MatchPayToBLSPubkey(const CScript& script, valtype& pubkey)
 {
-    if (script.size() == CPubKey::BLS_PUBLIC_KEY_SIZE + 1 && script[0] == CPubKey::BLS_PUBLIC_KEY_SIZE && script.back() == OP_CHECKSIG) {
+    if (script.size() == CPubKey::BLS_PUBLIC_KEY_SIZE + 2 && script[0] == CPubKey::BLS_PUBLIC_KEY_SIZE && script.back() == OP_CHECKSIG) {
         pubkey = valtype(script.begin() + 1, script.begin() + CPubKey::BLS_PUBLIC_KEY_SIZE + 1);
         return CPubKey::ValidSize(pubkey);
     }
@@ -193,6 +193,14 @@ bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
             return false;
 
         addressRet = PKHash(pubKey);
+        return true;
+    }
+    case TxoutType::BLSPUBKEY: {
+        CPubKey pubKey(vSolutions[0]);
+        addressRet = PKHash(pubKey);
+        if (!pubKey.IsValid())
+            return false;
+
         return true;
     }
     case TxoutType::PUBKEYHASH: {

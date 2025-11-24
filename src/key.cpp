@@ -469,7 +469,7 @@ CPubKey CKey::GetPubKeyForBLS() const
     testKey.SetBytes(keydata, false);
     CBLSPublicKey pubKey = testKey.GetPublicKey();
     std::vector<uint8_t> pubBytes = pubKey.ToByteVector(false);
-    return CPubKey(pubBytes);
+    return CPubKey(pubBytes.begin(), pubBytes.end());
 }
 
 CPrivKey CKey::GetBLSPrivateKey() const

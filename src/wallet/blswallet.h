@@ -6,12 +6,14 @@
 
 struct BlsWalletEntry {
     unsigned int id;
+    CKeyID keyID;
     CBLSSecretKey sk;
     CBLSPublicKey pk;
     BlsWalletEntry() {
         id = 0;
         sk.Reset();
         pk.Reset();
+        keyID = CKeyID();
     };
 };
 

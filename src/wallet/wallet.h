@@ -750,7 +750,7 @@ private:
     std::atomic<double> m_scanning_progress{0};
     friend class WalletRescanReserver;
 
-    std::vector<BlsWalletEntry> blsKeyRecords;
+    std::vector<BlsWalletEntry> blsKeyRecords GUARDED_BY(cs_wallet);
 
     //! the current wallet version: clients below this version are not able to load the wallet
     int nWalletVersion GUARDED_BY(cs_wallet){FEATURE_BASE};
@@ -944,7 +944,6 @@ public:
           m_name(name),
           m_database(std::move(database))
     {
-          BLSWalletInit();
     }
 
     ~CWallet()
@@ -1563,6 +1562,7 @@ public:
     ScriptPubKeyMan* AddWalletDescriptor(WalletDescriptor& desc, const FlatSigningProvider& signing_provider, const std::string& label, bool internal);
 
     //! BLS Key Functions
+    void PrintBLSKey(std::vector<uint8_t>& in, std::string in2);
     bool ReadFromBLSWallet(const std::string& keydata);
     bool WriteToBLSWallet(const std::string& keydata);
     bool BLSWalletInit();

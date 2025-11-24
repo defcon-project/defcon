@@ -199,7 +199,7 @@ public:
     //! Check whether this is a compressed public key.
     bool IsCompressed() const
     {
-        return size() == COMPRESSED_SIZE;
+        return size() != BLS_PUBLIC_KEY_SIZE && size() == COMPRESSED_SIZE;
     }
 
     /**

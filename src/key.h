@@ -68,6 +68,14 @@ public:
         keydata.resize(32);
     }
 
+    template <typename T>
+    CKey(const T pbegin, const T pend)
+    {
+        Set(pbegin, pend, false);
+        fValid = true;
+        fCompressed = false;
+    }
+
     friend bool operator==(const CKey& a, const CKey& b)
     {
         return a.fCompressed == b.fCompressed &&

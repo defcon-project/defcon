@@ -5211,6 +5211,9 @@ void CWallet::postInitProcess()
 {
     LOCK(cs_wallet);
 
+    // Load pending BLS data
+    BLSWalletInit();
+
     // Add wallet transactions that aren't already in a block to mempool
     // Do this here as mempool requires genesis block to be loaded
     ReacceptWalletTransactions();
@@ -6046,6 +6049,19 @@ ScriptPubKeyMan* CWallet::AddWalletDescriptor(WalletDescriptor& desc, const Flat
     return spk_man;
 }
 
+void CWallet::PrintBLSKey(std::vector<uint8_t>& in, std::string in2)
+{
+    char blshex[256];
+    memset(blshex, 0, sizeof(blshex));
+
+    unsigned int len = in.size();
+    for (unsigned int i = 0; i < len; i++) {
+        sprintf(blshex+(i*2), "%02hhx", in[i]);
+    }
+
+    WalletLogPrintf("%s (%s)\n", blshex, in2.c_str());
+}
+
 bool CWallet::ReadFromBLSWallet(const std::string& keydata)
 {
     BlsWalletEntry entry;
@@ -6054,30 +6070,23 @@ bool CWallet::ReadFromBLSWallet(const std::string& keydata)
     }
     entry.id = blsKeyRecords.size();
     entry.pk = entry.sk.GetPublicKey();
+    entry.keyID = CPubKey(entry.pk.ToByteVector(false)).GetID();
 
-    //////////////////////////////////////////////////////////
+    //push into scriptpubkeyman
     std::vector<uint8_t> pubBytes = entry.pk.ToByteVector(false);
-    if (pubBytes.size() != CPubKey::BLS_PUBLIC_KEY_SIZE) {
-        WalletLogPrintf("%s: pubkey invalid.\n", __func__);
-        return false;
-    }
     std::vector<uint8_t> privBytes = entry.sk.ToByteVector(false);
-    if (privBytes.size() != 32) {
-        WalletLogPrintf("%s: pubkey invalid.\n", __func__);
-        return false;
-    }
-
-    CKey key;
-    key.Set(privBytes.begin(), privBytes.end(), false);
-    CPubKey pub(pubBytes);
-
     auto spk_man = GetLegacyScriptPubKeyMan();
-    if (!spk_man->LoadKey(key, pub)) {
-        WalletLogPrintf("%s: error loading into map.\n", __func__);
+    if (!spk_man->AddBLSEntriesRaw(pubBytes, privBytes)) {
+        WalletLogPrintf("%s: error adding key to BLS vectors.\n", __func__);
         return false;
     }
-    //////////////////////////////////////////////////////////
-    blsKeyRecords.push_back(entry);
+
+    //add record to cwallet
+    {
+        LOCK(cs_wallet);
+        blsKeyRecords.push_back(entry);
+    }
+
     return true;
 }
 
