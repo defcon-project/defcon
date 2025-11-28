@@ -6072,14 +6072,21 @@ bool CWallet::ReadFromBLSWallet(const std::string& keydata)
     entry.pk = entry.sk.GetPublicKey();
     entry.keyID = CPubKey(entry.pk.ToByteVector(false)).GetID();
 
-    //push into scriptpubkeyman
+    //flag this keyID as BLS
+    AddBLSRelated(entry.keyID);
+
+    //convert into new keytype
     std::vector<uint8_t> pubBytes = entry.pk.ToByteVector(false);
+    CPubKey pubkey(pubBytes.begin(), pubBytes.end());
     std::vector<uint8_t> privBytes = entry.sk.ToByteVector(false);
+    CKey key(privBytes.begin(), privBytes.end());
+
+    //push into scriptpubkeyman
     auto spk_man = GetLegacyScriptPubKeyMan();
-    if (!spk_man->AddBLSEntriesRaw(pubBytes, privBytes)) {
-        WalletLogPrintf("%s: error adding key to BLS vectors.\n", __func__);
-        return false;
-    }
+    spk_man->AddBLSEntries(pubkey, key);
+
+    //push into fillablesigningprovider
+    spk_man->FillableSigningProvider::AddKeyPubKey(key, pubkey);
 
     //add record to cwallet
     {

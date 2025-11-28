@@ -17,4 +17,7 @@ struct BlsWalletEntry {
     };
 };
 
+void AddBLSRelated(const CKeyID& keyID);
+bool IsBLSRelated(const CKeyID& keyID);
+
 #endif // WALLET_BLSWALLET_H
