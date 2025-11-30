@@ -3868,6 +3868,13 @@ public:
 
     UniValue operator()(const CNoDestination &dest) const { return UniValue(UniValue::VOBJ); }
 
+    UniValue operator()(const CPubKey& pubkey) const {
+        UniValue obj(UniValue::VOBJ);
+        obj.pushKV("pubkey", HexStr(pubkey));
+        obj.pushKV("iscompressed", false);
+        return obj;
+    }
+
     UniValue operator()(const PKHash& pkhash) const {
         CKeyID keyID{ToKeyID(pkhash)};
         UniValue obj(UniValue::VOBJ);
@@ -4010,6 +4017,10 @@ RPCHelpMan getaddressinfo()
     ret.pushKV("ismine", bool(mine & ISMINE_SPENDABLE));
 
     bool solvable = provider && IsSolvable(*provider, scriptPubKey);
+//    if (!solvable) {
+//        solvable = pwallet->IsSolvableBLS(scriptPubKey);
+//    }
+
     ret.pushKV("solvable", solvable);
 
     if (solvable) {
@@ -4719,6 +4730,50 @@ static RPCHelpMan upgradewallet()
     };
 }
 
+static RPCHelpMan listblsaddresses()
+{
+    return RPCHelpMan{"listblsaddresses",
+        "\nLists groups of addresses which have had their common ownership\n"
+        "made public by common use as inputs or as the resulting change\n"
+        "in past transactions\n",
+        {},
+        RPCResult{
+            RPCResult::Type::ARR, "", "",
+            {
+                {RPCResult::Type::ARR, "", "",
+                {
+                    {RPCResult::Type::ARR_FIXED, "", "",
+                    {
+                        {RPCResult::Type::NUM, "id", "Position of address in wallet"},
+                        {RPCResult::Type::STR, "address", "The BLS public address"},
+                    }},
+                }},
+            }},
+        RPCExamples{
+            HelpExampleCli("listblsaddresses", "")
+    + HelpExampleRpc("listblsaddresses", "")
+        },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return NullUniValue;
+
+    // Make sure the results are valid at least up to the most recent block
+    // the user could have gotten from another RPC command prior to now
+    pwallet->BlockUntilSyncedToCurrentChain();
+
+    LOCK(pwallet->cs_wallet);
+
+    UniValue obj(UniValue::VOBJ);
+    std::map<unsigned int, std::string> addresses = pwallet->GetBLSAddresses();
+    for (const auto& address : addresses) {
+        obj.pushKV(std::to_string(address.first), address.second);
+    }
+    return obj;
+},
+    };
+}
+
 RPCHelpMan abortrescan();
 RPCHelpMan dumpprivkey();
 RPCHelpMan importprivkey();
@@ -4774,6 +4829,7 @@ static const CRPCCommand commands[] =
     { "wallet",             &keypoolrefill,                  },
     { "wallet",             &listaddressbalances,            },
     { "wallet",             &listaddressgroupings,           },
+    { "wallet",             &listblsaddresses,               },
     { "wallet",             &listdescriptors,                },
     { "wallet",             &listlabels,                     },
     { "wallet",             &listlockunspent,                },

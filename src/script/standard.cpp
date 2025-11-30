@@ -197,7 +197,7 @@ bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
     }
     case TxoutType::BLSPUBKEY: {
         CPubKey pubKey(vSolutions[0]);
-        addressRet = PKHash(pubKey);
+        addressRet = pubKey;
         if (!pubKey.IsValid())
             return false;
 
@@ -267,6 +267,11 @@ public:
     CScript operator()(const CNoDestination& dest) const
     {
         return CScript();
+    }
+
+    CScript operator()(const CPubKey& pubkey) const
+    {
+        return CScript() << ToByteVector(pubkey) << OP_CHECKSIG;
     }
 
     CScript operator()(const PKHash& keyID) const

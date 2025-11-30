@@ -15,6 +15,9 @@
 #include <uint256.h>
 #include <util/translation.h>
 
+#include <logging.h>
+#include <wallet/blswallet.h>
+
 typedef std::vector<unsigned char> valtype;
 
 MutableTransactionSignatureCreator::MutableTransactionSignatureCreator(const CMutableTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, int nHashTypeIn)
@@ -31,7 +34,7 @@ MutableTransactionSignatureCreator::MutableTransactionSignatureCreator(const CMu
 {
 }
 
-bool MutableTransactionSignatureCreator::CreateSig(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& address, const CScript& scriptCode, SigVersion sigversion, bool blsSig) const
+bool MutableTransactionSignatureCreator::CreateSig(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& address, const CScript& scriptCode, SigVersion sigversion) const
 {
     CKey key;
     if (!provider.GetKey(address, key))
@@ -39,13 +42,23 @@ bool MutableTransactionSignatureCreator::CreateSig(const SigningProvider& provid
 
     uint256 hash = SignatureHash(scriptCode, *txTo, nIn, nHashType, amount, sigversion, m_txdata);
 
-    if (!blsSig) {
-        if (!key.Sign(hash, vchSig))
-            return false;
-    } else {
-        if (!key.SignBLS(hash, vchSig))
-            return false;
-    }
+    if (!key.Sign(hash, vchSig))
+        return false;
+
+    vchSig.push_back((unsigned char)nHashType);
+    return true;
+}
+
+bool MutableTransactionSignatureCreator::CreateSigBLS(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& address, const CScript& scriptCode, SigVersion sigversion) const
+{
+    CKey key;
+    if (!GetBLSKey(address, key))
+        return false;
+
+    uint256 hash = SignatureHash(scriptCode, *txTo, nIn, nHashType, amount, sigversion, m_txdata);
+
+    if (!key.SignBLS(hash, vchSig))
+        return false;
 
     vchSig.push_back((unsigned char)nHashType);
     return true;
@@ -84,8 +97,6 @@ static bool GetPubKey(const SigningProvider& provider, const SignatureData& sigd
 
 static bool CreateSig(const BaseSignatureCreator& creator, SignatureData& sigdata, const SigningProvider& provider, std::vector<unsigned char>& sig_out, const CPubKey& pubkey, const CScript& scriptcode, SigVersion sigversion)
 {
-    bool sig_bls = pubkey.size() == CPubKey::BLS_PUBLIC_KEY_SIZE;
-
     CKeyID keyid = pubkey.GetID();
     const auto it = sigdata.signatures.find(keyid);
     if (it != sigdata.signatures.end()) {
@@ -96,7 +107,7 @@ static bool CreateSig(const BaseSignatureCreator& creator, SignatureData& sigdat
     if (provider.GetKeyOrigin(keyid, info)) {
         sigdata.misc_pubkeys.emplace(keyid, std::make_pair(pubkey, std::move(info)));
     }
-    if (creator.CreateSig(provider, sig_out, keyid, scriptcode, sigversion, sig_bls)) {
+    if (creator.CreateSig(provider, sig_out, keyid, scriptcode, sigversion)) {
         auto i = sigdata.signatures.emplace(keyid, SigPair(pubkey, sig_out));
         assert(i.second);
         return true;
@@ -104,6 +115,37 @@ static bool CreateSig(const BaseSignatureCreator& creator, SignatureData& sigdat
     // Could not make signature or signature not found, add keyid to missing
     sigdata.missing_sigs.push_back(keyid);
     return false;
+}
+
+static bool CreateSigBLS(const BaseSignatureCreator& creator, SignatureData& sigdata, const SigningProvider& provider, std::vector<unsigned char>& sig_out, const CPubKey& pubkey, const CScript& scriptcode, SigVersion sigversion)
+{
+    CKeyID keyid = pubkey.GetID();
+    const auto it = sigdata.signatures.find(keyid);
+    if (it != sigdata.signatures.end()) {
+        sig_out = it->second.second;
+        return true;
+    }
+    if (creator.CreateSigBLS(provider, sig_out, keyid, scriptcode, sigversion)) {
+        auto i = sigdata.signatures.emplace(keyid, SigPair(pubkey, sig_out));
+        assert(i.second);
+        return true;
+    }
+    // Could not make signature or signature not found, add keyid to missing
+    sigdata.missing_sigs.push_back(keyid);
+    return false;
+}
+
+static void PrintKey(std::vector<uint8_t>& in, std::string in2)
+{
+    char blshex[256];
+    memset(blshex, 0, sizeof(blshex));
+
+    unsigned int len = in.size();
+    for (unsigned int i = 0; i < len; i++) {
+        sprintf(blshex+(i*2), "%02hhx", in[i]);
+    }
+
+    LogPrintf("%s (%s)\n", blshex, in2.c_str());
 }
 
 /**
@@ -132,7 +174,7 @@ static bool SignStep(const SigningProvider& provider, const BaseSignatureCreator
         ret.push_back(std::move(sig));
         return true;
     case TxoutType::BLSPUBKEY:
-        if (!CreateSig(creator, sigdata, provider, sig, CPubKey(vSolutions[0]), scriptPubKey, sigversion)) return false;
+        if (!CreateSigBLS(creator, sigdata, provider, sig, CPubKey(vSolutions[0]), scriptPubKey, sigversion)) return false;
         ret.push_back(std::move(sig));
         return true;
     case TxoutType::PUBKEYHASH: {
@@ -376,7 +418,7 @@ private:
 public:
     DummySignatureCreator(char r_len, char s_len) : m_r_len(r_len), m_s_len(s_len) {}
     const BaseSignatureChecker& Checker() const override { return DUMMY_CHECKER; }
-    bool CreateSig(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& keyid, const CScript& scriptCode, SigVersion sigversion, bool blsSig) const override
+    bool CreateSig(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& keyid, const CScript& scriptCode, SigVersion sigversion) const override
     {
         // Create a dummy signature that is a valid DER-encoding
         vchSig.assign(m_r_len + m_s_len + 7, '\000');
@@ -389,6 +431,13 @@ public:
         vchSig[5 + m_r_len] = m_s_len;
         vchSig[6 + m_r_len] = 0x01;
         vchSig[6 + m_r_len + m_s_len] = SIGHASH_ALL;
+        return true;
+    }
+    bool CreateSigBLS(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& keyid, const CScript& scriptCode, SigVersion sigversion) const override
+    {
+        // Create a dummy signature that is a valid BLS-encoding
+        vchSig.assign(97, '\000');
+        vchSig[96] = SIGHASH_ALL;
         return true;
     }
 };

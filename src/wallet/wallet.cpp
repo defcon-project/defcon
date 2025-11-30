@@ -6,6 +6,7 @@
 
 #include <wallet/wallet.h>
 
+#include <base58.h>
 #include <chain.h>
 #include <chainparams.h>
 #include <consensus/amount.h>
@@ -1893,6 +1894,9 @@ int64_t CalculateMaximumSignedTxSize(const CTransaction &tx, const CWallet *wall
 {
     std::vector<CTxOut> txouts;
     for (const CTxIn& input : tx.vin) {
+
+        LogPrintf("input hash %s\n", input.prevout.hash.ToString().c_str());
+
         const auto mi = wallet->mapWallet.find(input.prevout.hash);
         // Can not estimate size without knowing the input details
         if (mi == wallet->mapWallet.end()) {
@@ -3709,9 +3713,14 @@ bool CWallet::CreateTransactionInternal(
                     txNew.vin.emplace_back(coin.outpoint, CScript(), CTxIn::SEQUENCE_FINAL - 1);
                 }
 
+                LogPrintf("rawtx: \n\n%s\n\n", txNew.ToString().c_str());
+
                 auto calculateFee = [&](CAmount& nFee) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet) -> bool {
                     AssertLockHeld(cs_wallet);
                     nBytes = CalculateMaximumSignedTxSize(CTransaction(txNew), this, coin_control.fAllowWatchOnly);
+
+                    LogPrintf("bytes to sign %d\n", nBytes);
+
                     if (nBytes < 0) {
                         error = _("Signing transaction failed");
                         return false;
@@ -3886,6 +3895,8 @@ bool CWallet::CreateTransactionInternal(
 
         // Make sure change position was updated one way or another
         assert(nChangePosInOut != std::numeric_limits<int>::max());
+
+        LogPrintf("rawtx3: \n\n%s\n\n", txNew.ToString().c_str());
 
         if (sign && !SignTransaction(txNew)) {
             error = _("Signing transaction failed");
@@ -4999,6 +5010,9 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, interfaces::C
     // Try to top up keypool. No-op if the wallet is locked.
     walletInstance->TopUpKeyPool();
 
+    // Load pending BLS data
+    walletInstance->BLSWalletInit();
+
     if (chain && !AttachChain(walletInstance, *chain, error, warnings)) {
         return nullptr;
     }
@@ -5210,9 +5224,6 @@ const CAddressBookData* CWallet::FindAddressBookEntry(const CTxDestination& dest
 void CWallet::postInitProcess()
 {
     LOCK(cs_wallet);
-
-    // Load pending BLS data
-    BLSWalletInit();
 
     // Add wallet transactions that aren't already in a block to mempool
     // Do this here as mempool requires genesis block to be loaded
@@ -6084,9 +6095,10 @@ bool CWallet::ReadFromBLSWallet(const std::string& keydata)
     //push into scriptpubkeyman
     auto spk_man = GetLegacyScriptPubKeyMan();
     spk_man->AddBLSEntries(pubkey, key);
+    spk_man->LoadKey(key, pubkey);
 
-    //push into fillablesigningprovider
-    spk_man->FillableSigningProvider::AddKeyPubKey(key, pubkey);
+    //try new method
+    AddBLSKey(pubkey.GetID(), key);
 
     //add record to cwallet
     {
@@ -6108,6 +6120,48 @@ bool CWallet::WriteToBLSWallet(const std::string& keydata)
         batch.WriteBLSKey(i, blsPrivateKey);
     }
     return true;
+}
+
+std::map<unsigned int, std::string> CWallet::GetBLSAddresses()
+{
+    LOCK(cs_wallet);
+    std::map<unsigned int, std::string> blsAddresses;
+    for (unsigned int i = 0; i < blsKeyRecords.size(); i++) {
+        blsAddresses[i] = EncodeBase58Check(blsKeyRecords[i].pk.ToByteVector(false));
+    }
+    return blsAddresses;
+}
+
+std::vector<BlsWalletEntry> CWallet::GetBLSKeypairs()
+{
+    return blsKeyRecords;
+}
+
+bool CWallet::IsSolvableBLS(CScript& scriptPubKey)
+{
+    if (scriptPubKey.IsPayToBLSPublicKey()) {
+        std::vector<std::vector<unsigned char>> vSolutions;
+        TxoutType whichType = Solver(scriptPubKey, vSolutions);
+        if (whichType == TxoutType::BLSPUBKEY) {
+            CPubKey pubkey(vSolutions[0]);
+            const CKeyID address = pubkey.GetID();
+            auto spk_man = GetLegacyScriptPubKeyMan();
+            if (spk_man->HaveBLSKey(address)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool CWallet::GetBLSKey(const CKeyID& keyID, CKey key)
+{
+    auto spk_man = GetLegacyScriptPubKeyMan();
+    if (spk_man->GetBLSKey(keyID, key)) {
+        return true;
+    }
+    return false;
 }
 
 bool CWallet::BLSWalletInit()

@@ -1565,6 +1565,10 @@ public:
     void PrintBLSKey(std::vector<uint8_t>& in, std::string in2);
     bool ReadFromBLSWallet(const std::string& keydata);
     bool WriteToBLSWallet(const std::string& keydata);
+    std::map<unsigned int, std::string> GetBLSAddresses();
+    std::vector<BlsWalletEntry> GetBLSKeypairs();
+    bool IsSolvableBLS(CScript& scriptPubKey);
+    bool GetBLSKey(const CKeyID& keyID, CKey key);
     bool BLSWalletInit();
 };
 

@@ -236,8 +236,8 @@ bool CScript::IsPayToPublicKey() const
 
 bool CScript::IsPayToBLSPublicKey() const
 {
-    if (this->size() == 49) {
-        return (*this)[48] == OP_CHECKSIG;
+    if (this->size() == 50) {
+        return (*this)[49] == OP_CHECKSIG;
     }
     return false;
 }

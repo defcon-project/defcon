@@ -101,7 +101,7 @@ struct ScriptHash : public BaseHash<uint160>
  *  * CScriptID: TxoutType::SCRIPTHASH destination
  *  A CTxDestination is the internal data type encoded in a bitcoin address
  */
-using CTxDestination = std::variant<CNoDestination, PKHash, ScriptHash>;
+using CTxDestination = std::variant<CNoDestination, CPubKey, PKHash, ScriptHash>;
 
 /** Check whether a CTxDestination is a CNoDestination. */
 bool IsValidDestination(const CTxDestination& dest);
