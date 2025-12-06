@@ -700,11 +700,13 @@ bool LegacyScriptPubKeyMan::CanProvide(const CScript& script, SignatureData& sig
 {
     IsMineResult ismine = IsMineInner(*this, script, IsMineSigVersion::TOP, /* recurse_scripthash= */ false);
     if (ismine == IsMineResult::SPENDABLE || ismine == IsMineResult::WATCH_ONLY) {
+        LogPrintf("%s - returning true\n", __func__);
         // If ismine, it means we recognize keys or script ids in the script, or
         // are watching the script itself, and we can at least provide metadata
         // or solving information, even if not able to sign fully.
         return true;
     } else {
+        LogPrintf("%s - returning false\n", __func__);
         // If, given the stuff in sigdata, we could make a valid signature, then we can provide for this script
         ProduceSignature(*this, DUMMY_SIGNATURE_CREATOR, script, sigdata);
         if (!sigdata.signatures.empty()) {

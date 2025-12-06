@@ -118,6 +118,9 @@ bool FillableSigningProvider::GetKey(const CKeyID &address, CKey &keyOut) const
         keyOut = mi->second;
         return true;
     }
+    if (GetBLSKey(address, keyOut)) {
+        return true;
+    }
     return false;
 }
 

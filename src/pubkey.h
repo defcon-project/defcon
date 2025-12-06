@@ -55,8 +55,6 @@ public:
         SIZE >= COMPRESSED_SIZE,
         "COMPRESSED_SIZE is larger than SIZE");
 
-private:
-
     /**
      * Just store the serialized data.
      * Its length can very cheaply be computed from the first byte.
@@ -64,6 +62,7 @@ private:
     unsigned int vchlen;
     unsigned char vch[SIZE];
 
+private:
     //! Set this key data to be invalid
     void Invalidate()
     {

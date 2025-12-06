@@ -1808,15 +1808,21 @@ bool CWallet::DummySignInput(CTxIn &tx_in, const CTxOut &txout, bool use_max_sig
     const CScript& scriptPubKey = txout.scriptPubKey;
     SignatureData sigdata;
 
+    LogPrintf("%s - signing input for scriptPubKey %s\n", __func__, HexStr(scriptPubKey));
+
+    bool is_bls_sig = scriptPubKey.size() == CPubKey::BLS_PUBLIC_KEY_SIZE + 2;
+
     std::unique_ptr<SigningProvider> provider = GetSolvingProvider(scriptPubKey);
     if (!provider) {
         // We don't know about this scriptpbuKey;
         return false;
     }
 
-    if (!ProduceSignature(*provider, use_max_sig ? DUMMY_MAXIMUM_SIGNATURE_CREATOR : DUMMY_SIGNATURE_CREATOR, scriptPubKey, sigdata)) {
+    if (!ProduceSignature(*provider, is_bls_sig ? DUMMY_MAXIMUM_SIGNATURE_CREATOR_BLS : (use_max_sig ? DUMMY_MAXIMUM_SIGNATURE_CREATOR : DUMMY_SIGNATURE_CREATOR), scriptPubKey, sigdata)) {
+        LogPrintf("%s - producesignature failed\n", __func__);
         return false;
     }
+    LogPrintf("%s - producesignature succeeded\n", __func__);
     UpdateInput(tx_in, sigdata);
     return true;
 }
@@ -1894,9 +1900,6 @@ int64_t CalculateMaximumSignedTxSize(const CTransaction &tx, const CWallet *wall
 {
     std::vector<CTxOut> txouts;
     for (const CTxIn& input : tx.vin) {
-
-        LogPrintf("input hash %s\n", input.prevout.hash.ToString().c_str());
-
         const auto mi = wallet->mapWallet.find(input.prevout.hash);
         // Can not estimate size without knowing the input details
         if (mi == wallet->mapWallet.end()) {
@@ -3097,7 +3100,9 @@ bool CWallet::SignTransaction(CMutableTransaction& tx) const
         coins[input.prevout] = Coin(wtx.tx->vout[input.prevout.n], wtx.m_confirm.block_height, wtx.IsCoinBase(), wtx.IsCoinStake());
     }
     std::map<int, bilingual_str> input_errors;
-    return SignTransaction(tx, coins, SIGHASH_ALL, input_errors);
+    bool ret = SignTransaction(tx, coins, SIGHASH_ALL, input_errors);
+    LogPrintf("%s - %s\n", __func__, tx.ToString());
+    return ret;
 }
 
 bool CWallet::SignTransaction(CMutableTransaction& tx, const std::map<COutPoint, Coin>& coins, int sighash, std::map<int, bilingual_str>& input_errors) const
@@ -3110,6 +3115,8 @@ bool CWallet::SignTransaction(CMutableTransaction& tx, const std::map<COutPoint,
             return true;
         }
     }
+
+    LogPrintf("%s - not completed\n", __func__);
 
     // At this point, one input was not fully signed otherwise we would have exited already
     return false;
@@ -3551,11 +3558,16 @@ bool CWallet::CreateTransactionInternal(
         int nExtraPayloadSize)
 {
     CAmount nValue = 0;
+    bool involveBLSdest = false;
     ReserveDestination reservedest(this);
     int nChangePosRequest = nChangePosInOut;
     unsigned int nSubtractFeeFromAmount = 0;
     for (const auto& recipient : vecSend)
     {
+        if (recipient.scriptPubKey.size() >= CPubKey::BLS_PUBLIC_KEY_SIZE + 2)
+        {
+            involveBLSdest = true;
+        }
         if (nValue < 0 || recipient.nAmount < 0)
         {
             error = _("Transaction amounts must not be negative");
@@ -3613,6 +3625,8 @@ bool CWallet::CreateTransactionInternal(
             // coin control: send change to custom address
             if (!std::get_if<CNoDestination>(&coin_control.destChange)) {
                 scriptChange = GetScriptForDestination(coin_control.destChange);
+            } else if (involveBLSdest) {
+                scriptChange = GenerateNewBLSChangeAddress();
             } else { // no coin control: send change to newly generated address
                 // Note: We use a new key here to keep it from being obvious which side is the change.
                 //  The drawback is that by not reusing a previous key, the change may be lost if a
@@ -3896,12 +3910,14 @@ bool CWallet::CreateTransactionInternal(
         // Make sure change position was updated one way or another
         assert(nChangePosInOut != std::numeric_limits<int>::max());
 
-        LogPrintf("rawtx3: \n\n%s\n\n", txNew.ToString().c_str());
+        LogPrintf("signing transaction\n");
 
         if (sign && !SignTransaction(txNew)) {
             error = _("Signing transaction failed");
             return false;
         }
+
+        LogPrintf("signing transaction passed\n");
 
         // Return the constructed transaction data.
         tx = MakeTransactionRef(std::move(txNew));
@@ -6085,26 +6101,23 @@ bool CWallet::ReadFromBLSWallet(const std::string& keydata)
 
     //flag this keyID as BLS
     AddBLSRelated(entry.keyID);
+    blsKeyRecords.push_back(entry);
 
     //convert into new keytype
     std::vector<uint8_t> pubBytes = entry.pk.ToByteVector(false);
-    CPubKey pubkey(pubBytes.begin(), pubBytes.end());
+    CPubKey pubkey;
+    pubkey.Set(pubBytes.begin(), pubBytes.end());
+
     std::vector<uint8_t> privBytes = entry.sk.ToByteVector(false);
-    CKey key(privBytes.begin(), privBytes.end());
+    CKey key;
+    key.Set(privBytes.begin(), privBytes.end(), false);
 
     //push into scriptpubkeyman
     auto spk_man = GetLegacyScriptPubKeyMan();
     spk_man->AddBLSEntries(pubkey, key);
-    spk_man->LoadKey(key, pubkey);
 
     //try new method
-    AddBLSKey(pubkey.GetID(), key);
-
-    //add record to cwallet
-    {
-        LOCK(cs_wallet);
-        blsKeyRecords.push_back(entry);
-    }
+    AddBLSKey(entry.keyID, key);
 
     return true;
 }
@@ -6182,4 +6195,18 @@ bool CWallet::BLSWalletInit()
         WalletLogPrintf("%s: loaded %d BLS keys successfully.\n", __func__, blsKeyRecords.size());
     }
     return true;
+}
+
+CScript CWallet::GenerateNewBLSChangeAddress()
+{
+    CBLSSecretKey sk;
+    sk.MakeNewKey();
+    WriteToBLSWallet(sk.ToString());
+
+    CBLSPublicKey pk = sk.GetPublicKey();
+    std::vector<uint8_t> pubBytes = pk.ToByteVector(false);
+    CPubKey pubkey;
+    pubkey.Set(pubBytes.begin(), pubBytes.end());
+
+    return CScript() << ToByteVector(pubkey) << OP_CHECKSIG;
 }

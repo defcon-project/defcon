@@ -7,6 +7,7 @@
 
 #include <crypto/common.h>
 #include <crypto/hmac_sha512.h>
+#include <logging.h>
 #include <random.h>
 
 #include <secp256k1.h>
@@ -190,6 +191,9 @@ CPubKey CKey::GetPubKey() const {
     int ret = secp256k1_ec_pubkey_create(secp256k1_context_sign, &pubkey, begin());
     assert(ret);
     secp256k1_ec_pubkey_serialize(secp256k1_context_sign, (unsigned char*)result.begin(), &clen, &pubkey, fCompressed ? SECP256K1_EC_COMPRESSED : SECP256K1_EC_UNCOMPRESSED);
+    if (result.size() != clen) {
+        return GetPubKeyForBLS();
+    }
     assert(result.size() == clen);
     assert(result.IsValid());
     return result;
@@ -430,7 +434,6 @@ void ECC_Stop() {
 ///////////////////////////
 // BLS
 ////////////////////////////
-
 bool CKey::CheckBLS(std::vector<unsigned char, secure_allocator<unsigned char>>& vch)
 {
     CBLSSecretKey testKey;
@@ -481,17 +484,19 @@ CPrivKey CKey::GetBLSPrivateKey() const
     return privkey;
 }
 
+std::vector<unsigned char> GetKeyData(const CKey &key)
+{
+    std::vector<unsigned char> keydata;
+    keydata.resize(32);
+    memcpy(keydata.data(), key.begin(), 32);
+    return keydata;
+}
+
 bool CKey::SignBLS(const uint256 &hash, std::vector<uint8_t> &vchSig) const
 {
-    if (!fValid) {
-        return false;
-    }
-    CBLSSecretKey testKey;
-    testKey.SetBytes(keydata, false);
-    CBLSSignature sig = testKey.Sign(hash, false);
-    if (sig.IsValid()) {
-        vchSig.push_back(*sig.ToBytes(false).data());
-        return true;
-    }
-    return false;
+    std::vector<unsigned char> keydata = GetKeyData(*this);
+    auto PK = bls::PrivateKey::FromByteVector(keydata);
+    std::vector<uint8_t> message(hash.begin(),hash.end());
+    vchSig = bls::AugSchemeMPL().Sign(PK, message).Serialize();
+    return true;
 }

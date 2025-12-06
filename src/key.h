@@ -46,6 +46,9 @@ public:
         SIZE >= COMPRESSED_SIZE,
         "COMPRESSED_SIZE is larger than SIZE");
 
+    //! The actual byte data
+    std::vector<unsigned char, secure_allocator<unsigned char> > keydata;
+
 private:
     //! Whether this private key is valid. We check for correctness when modifying the key
     //! data, so fValid should always correspond to the actual state.
@@ -53,9 +56,6 @@ private:
 
     //! Whether the public key corresponding to this private key is (to be) compressed.
     bool fCompressed;
-
-    //! The actual byte data
-    std::vector<unsigned char, secure_allocator<unsigned char> > keydata;
 
     //! Check whether the 32-byte array pointed to by vch is valid keydata.
     bool static Check(const unsigned char* vch);
@@ -73,7 +73,7 @@ public:
     {
         Set(pbegin, pend, false);
         fValid = true;
-        fCompressed = false;
+        fCompressed = true;
     }
 
     friend bool operator==(const CKey& a, const CKey& b)
@@ -89,13 +89,11 @@ public:
     {
         if (size_t(pend - pbegin) != keydata.size()) {
             fValid = false;
-        } else if (Check(&pbegin[0])) {
-            memcpy(keydata.data(), (unsigned char*)&pbegin[0], keydata.size());
-            fValid = true;
-            fCompressed = fCompressedIn;
-        } else {
-            fValid = false;
+            return;
         }
+        memcpy(keydata.data(), (unsigned char*)&pbegin[0], keydata.size());
+        fValid = true;
+        fCompressed = true;
     }
 
     //! Simple read-only vector-like interface.

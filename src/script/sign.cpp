@@ -36,6 +36,8 @@ MutableTransactionSignatureCreator::MutableTransactionSignatureCreator(const CMu
 
 bool MutableTransactionSignatureCreator::CreateSig(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& address, const CScript& scriptCode, SigVersion sigversion) const
 {
+    LogPrintf("signing as ECDSA\n");
+
     CKey key;
     if (!provider.GetKey(address, key))
         return false;
@@ -51,14 +53,20 @@ bool MutableTransactionSignatureCreator::CreateSig(const SigningProvider& provid
 
 bool MutableTransactionSignatureCreator::CreateSigBLS(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& address, const CScript& scriptCode, SigVersion sigversion) const
 {
+    LogPrintf("signing as BLS\n");
+
     CKey key;
-    if (!GetBLSKey(address, key))
+    if (!GetBLSKey(address, key)) {
+        LogPrintf("%s - couldnt get blskey\n", __func__);
         return false;
+    }
 
     uint256 hash = SignatureHash(scriptCode, *txTo, nIn, nHashType, amount, sigversion, m_txdata);
 
-    if (!key.SignBLS(hash, vchSig))
+    if (!key.SignBLS(hash, vchSig)) {
+        LogPrintf("%s - couldnt run signbls\n", __func__);
         return false;
+    }
 
     vchSig.push_back((unsigned char)nHashType);
     return true;
@@ -174,7 +182,10 @@ static bool SignStep(const SigningProvider& provider, const BaseSignatureCreator
         ret.push_back(std::move(sig));
         return true;
     case TxoutType::BLSPUBKEY:
-        if (!CreateSigBLS(creator, sigdata, provider, sig, CPubKey(vSolutions[0]), scriptPubKey, sigversion)) return false;
+        if (!CreateSigBLS(creator, sigdata, provider, sig, CPubKey(vSolutions[0]), scriptPubKey, sigversion)) {
+            LogPrintf("%s - CreateSigBLS - signstep fail\n", __func__);
+            return false;
+        }
         ret.push_back(std::move(sig));
         return true;
     case TxoutType::PUBKEYHASH: {
@@ -282,10 +293,12 @@ public:
     bool CheckSig(const std::vector<unsigned char>& scriptSig, const std::vector<unsigned char>& vchPubKey, const CScript& scriptCode, SigVersion sigversion) const override
     {
         if (checker.CheckSig(scriptSig, vchPubKey, scriptCode, sigversion)) {
+            LogPrintf("%s - passing\n", __func__);
             CPubKey pubkey(vchPubKey);
             sigdata.signatures.emplace(pubkey.GetID(), SigPair(pubkey, scriptSig));
             return true;
         }
+        LogPrintf("%s - failing\n", __func__);
         return false;
     }
 };
@@ -446,14 +459,19 @@ public:
 
 const BaseSignatureCreator& DUMMY_SIGNATURE_CREATOR = DummySignatureCreator(32, 32);
 const BaseSignatureCreator& DUMMY_MAXIMUM_SIGNATURE_CREATOR = DummySignatureCreator(33, 32);
+const BaseSignatureCreator& DUMMY_MAXIMUM_SIGNATURE_CREATOR_BLS = DummySignatureCreator(96, 48);
 
 bool IsSolvable(const SigningProvider& provider, const CScript& script)
 {
+    bool is_bls_sig = script.size() == CPubKey::BLS_PUBLIC_KEY_SIZE + 2;
+
+    LogPrintf("%s - is_bls_sig %d\n", __func__, is_bls_sig);
+
     // This check is to make sure that the script we created can actually be solved for and signed by us
     // if we were to have the private keys. This is just to make sure that the script is valid and that,
     // if found in a transaction, we would still accept and relay that transaction.
     SignatureData sigs;
-    if (ProduceSignature(provider, DUMMY_SIGNATURE_CREATOR, script, sigs)) {
+    if (ProduceSignature(provider, is_bls_sig ? DUMMY_MAXIMUM_SIGNATURE_CREATOR_BLS : DUMMY_SIGNATURE_CREATOR, script, sigs)) {
         // VerifyScript check is just defensive, and should never fail.
         bool verified = VerifyScript(sigs.scriptSig, script, STANDARD_SCRIPT_VERIFY_FLAGS, DUMMY_CHECKER);
         assert(verified);
@@ -507,6 +525,9 @@ bool SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, 
         }
 
         UpdateInput(txin, sigdata);
+
+        LogPrintf("%s - signature %s\n", __func__, HexStr(txin.scriptSig));
+        LogPrintf("%s - prevPubKey %s\n", __func__, HexStr(prevPubKey));
 
         ScriptError serror = SCRIPT_ERR_OK;
         if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&txConst, i, amount, txdata, MissingDataBehavior::FAIL), &serror)) {

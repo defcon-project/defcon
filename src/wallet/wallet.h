@@ -1570,6 +1570,7 @@ public:
     bool IsSolvableBLS(CScript& scriptPubKey);
     bool GetBLSKey(const CKeyID& keyID, CKey key);
     bool BLSWalletInit();
+    CScript GenerateNewBLSChangeAddress();
 };
 
 /**

@@ -330,12 +330,10 @@ bool CExtPubKey::Derive(CExtPubKey &out, unsigned int _nChild) const {
 ////////////////////////////
 
 bool CPubKey::VerifyBLS(const uint256 &hash, const std::vector<uint8_t> &vchSig) const {
-
-    CBLSSignature sig;
-    sig.SetBytes(vchSig, false);
-
-    CBLSPublicKey pubKey;
-    pubKey.SetBytes(vch, false);
-
-    return sig.VerifyInsecure(pubKey, hash, false);
+    std::vector<uint8_t> v(BLS_PUBLIC_KEY_SIZE);
+    for (size_t i=0; i < v.size(); i++) {
+         v[i] = vch[i];
+    }
+    std::vector<uint8_t> message(hash.begin(), hash.end());
+    return bls::AugSchemeMPL().Verify(v, message, vchSig);
 }
