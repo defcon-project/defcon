@@ -8,7 +8,6 @@
 #include <crypto/ripemd160.h>
 #include <crypto/sha1.h>
 #include <crypto/sha256.h>
-#include <logging.h>
 #include <pubkey.h>
 #include <script/script.h>
 #include <uint256.h>
@@ -1579,12 +1578,8 @@ template <class T>
 bool GenericTransactionSignatureChecker<T>::VerifySignature(const std::vector<unsigned char>& vchSig, const CPubKey& pubkey, const uint256& sighash) const
 {
     if (vchSig.size() == CPubKey::BLS_SIGNATURE_SIZE) {
-        LogPrintf("%s - verifying as BLS\n", __func__);
-        bool result = pubkey.VerifyBLS(sighash, vchSig);
-        LogPrintf("%s - verifying as BLS result is %d\n", __func__, result);
-        return result;
+        return pubkey.VerifyBLS(sighash, vchSig);
     }
-    LogPrintf("%s - verifying as std\n", __func__);
     return pubkey.Verify(sighash, vchSig);
 }
 
