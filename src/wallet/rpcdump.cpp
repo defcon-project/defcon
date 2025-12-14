@@ -162,6 +162,81 @@ RPCHelpMan importprivkey()
     };
 }
 
+RPCHelpMan importblsprivkey()
+{
+    return RPCHelpMan{"importblsprivkey",
+        "\nImports a raw BLS private key to your wallet. Requires a new wallet backup.\n"
+    "\nNote: This call can take over an hour to complete if rescan is true, during that time, other rpc calls\n"
+    "may report that the imported key exists but related transactions are still missing, leading to temporarily incorrect/bogus balances and unspent outputs until rescan completes.\n",
+        {
+            {"privkey", RPCArg::Type::STR, RPCArg::Optional::NO, "The BLS private key"},
+            {"rescan", RPCArg::Type::BOOL, RPCArg::Default{true}, "Rescan the wallet for transactions"},
+        },
+        RPCResult{RPCResult::Type::NONE, "", ""},
+        RPCExamples{
+    "\nImport the private key with rescan\n"
+    + HelpExampleCli("importblsprivkey", "\"mykey\"") +
+    "\nImport without rescan\n"
+    + HelpExampleCli("importblsprivkey", "\"mykey\" false") +
+    "\nAs a JSON-RPC call\n"
+    + HelpExampleRpc("importblsprivkey", "\"mykey\", false")
+        },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return NullUniValue;
+
+    if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Cannot import private keys to a wallet with private keys disabled");
+    }
+
+    EnsureLegacyScriptPubKeyMan(*pwallet, true);
+
+    WalletBatch batch(pwallet->GetDatabase());
+    WalletRescanReserver reserver(*pwallet);
+    bool fRescan = true;
+    {
+        LOCK(pwallet->cs_wallet);
+
+        EnsureWalletIsUnlocked(*pwallet);
+
+        std::string strSecret = request.params[0].get_str();
+
+        // Whether to perform rescan after import
+        if (!request.params[1].isNull())
+            fRescan = request.params[1].get_bool();
+
+        if (fRescan && pwallet->chain().havePruned()) {
+            // Exit early and print an error.
+            // If a block is pruned after this check, we will import the key(s),
+            // but fail the rescan with a generic error.
+            throw JSONRPCError(RPC_WALLET_ERROR, "Rescan is disabled when blocks are pruned");
+        }
+
+        if (fRescan && !reserver.reserve()) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Wallet is currently rescanning. Abort existing rescan or wait.");
+        }
+
+        if (!IsHex(strSecret) || strSecret.size() != 64) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Invalid BLS private key specified.");
+        }
+
+        if (pwallet->ContainsExistingBLSPrivKey(strSecret)) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Wallet already contains this key.");
+        }
+
+        pwallet->WriteToBLSWallet(strSecret);
+
+    }
+    if (fRescan) {
+        RescanWallet(*pwallet, reserver);
+    }
+    return NullUniValue;
+},
+    };
+}
+
+
 RPCHelpMan abortrescan()
 {
     return RPCHelpMan{"abortrescan",

@@ -1571,6 +1571,7 @@ public:
     bool GetBLSKey(const CKeyID& keyID, CKey key);
     bool BLSWalletInit();
     CScript GenerateNewBLSChangeAddress();
+    bool ContainsExistingBLSPrivKey(std::string& rpcBlsKey);
 };
 
 /**

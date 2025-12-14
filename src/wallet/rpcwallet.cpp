@@ -4777,6 +4777,7 @@ static RPCHelpMan listblsaddresses()
 RPCHelpMan abortrescan();
 RPCHelpMan dumpprivkey();
 RPCHelpMan importprivkey();
+RPCHelpMan importblsprivkey();
 RPCHelpMan importaddress();
 RPCHelpMan importpubkey();
 RPCHelpMan dumpwallet();
@@ -4823,6 +4824,7 @@ static const CRPCCommand commands[] =
     { "wallet",             &importdescriptors,              },
     { "wallet",             &importmulti,                    },
     { "wallet",             &importprivkey,                  },
+    { "wallet",             &importblsprivkey,               },
     { "wallet",             &importprunedfunds,              },
     { "wallet",             &importpubkey,                   },
     { "wallet",             &importwallet,                   },

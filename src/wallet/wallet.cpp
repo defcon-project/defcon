@@ -6210,3 +6210,15 @@ CScript CWallet::GenerateNewBLSChangeAddress()
 
     return CScript() << ToByteVector(pubkey) << OP_CHECKSIG;
 }
+
+bool CWallet::ContainsExistingBLSPrivKey(std::string& rpcBlsKey)
+{
+    std::string importAttempt = ToLower(rpcBlsKey);
+    for (unsigned int i = 0; i < blsKeyRecords.size(); i++) {
+        std::string blsPrivateKey = blsKeyRecords[i].sk.ToString();
+        if (blsPrivateKey == importAttempt) {
+            return true;
+        }
+    }
+    return false;
+}
