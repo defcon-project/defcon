@@ -692,6 +692,7 @@ static RPCHelpMan masternodelist_helper(bool is_composite)
             objMN.pushKV("votingaddress", EncodeDestination(PKHash(dmn.pdmnState->keyIDVoting)));
             objMN.pushKV("collateraladdress", collateralAddressStr);
             objMN.pushKV("pubkeyoperator", dmn.pdmnState->pubKeyOperator.ToString());
+            objMN.pushKV("pubkeyaddress", MasternodeBlsPubkeyToAddress(dmn.pdmnState->pubKeyOperator.ToString()));
             obj.pushKV(strOutpoint, objMN);
         } else if (strMode == "lastpaidblock") {
             if (strFilter !="" && strOutpoint.find(strFilter) == std::string::npos) return;

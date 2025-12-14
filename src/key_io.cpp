@@ -197,3 +197,8 @@ bool IsValidDestinationString(const std::string& str)
 {
     return IsValidDestinationString(str, Params());
 }
+
+std::string MasternodeBlsPubkeyToAddress(std::string blsPubKeyStr) {
+    std::vector<unsigned char> blsPubKeyBin = ParseHex(blsPubKeyStr);
+    return EncodeBase58Check(blsPubKeyBin);
+}
