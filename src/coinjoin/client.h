@@ -345,6 +345,7 @@ public:
 
     void AddUsedMasternode(const COutPoint& outpointMn);
     CDeterministicMNCPtr GetRandomNotUsedMasternode();
+    CDeterministicMNCPtr GetRandomUsedMasternode();
 
     void UpdatedSuccessBlock();
 
