@@ -1808,8 +1808,6 @@ bool CWallet::DummySignInput(CTxIn &tx_in, const CTxOut &txout, bool use_max_sig
     const CScript& scriptPubKey = txout.scriptPubKey;
     SignatureData sigdata;
 
-    LogPrintf("%s - signing input for scriptPubKey %s\n", __func__, HexStr(scriptPubKey));
-
     bool is_bls_sig = scriptPubKey.size() == CPubKey::BLS_PUBLIC_KEY_SIZE + 2;
 
     std::unique_ptr<SigningProvider> provider = GetSolvingProvider(scriptPubKey);
@@ -1819,11 +1817,11 @@ bool CWallet::DummySignInput(CTxIn &tx_in, const CTxOut &txout, bool use_max_sig
     }
 
     if (!ProduceSignature(*provider, is_bls_sig ? DUMMY_MAXIMUM_SIGNATURE_CREATOR_BLS : (use_max_sig ? DUMMY_MAXIMUM_SIGNATURE_CREATOR : DUMMY_SIGNATURE_CREATOR), scriptPubKey, sigdata)) {
-        LogPrintf("%s - producesignature failed\n", __func__);
         return false;
     }
-    LogPrintf("%s - producesignature succeeded\n", __func__);
+
     UpdateInput(tx_in, sigdata);
+
     return true;
 }
 
@@ -3101,7 +3099,6 @@ bool CWallet::SignTransaction(CMutableTransaction& tx) const
     }
     std::map<int, bilingual_str> input_errors;
     bool ret = SignTransaction(tx, coins, SIGHASH_ALL, input_errors);
-    LogPrintf("%s - %s\n", __func__, tx.ToString());
     return ret;
 }
 
@@ -3115,8 +3112,6 @@ bool CWallet::SignTransaction(CMutableTransaction& tx, const std::map<COutPoint,
             return true;
         }
     }
-
-    LogPrintf("%s - not completed\n", __func__);
 
     // At this point, one input was not fully signed otherwise we would have exited already
     return false;
@@ -3727,13 +3722,9 @@ bool CWallet::CreateTransactionInternal(
                     txNew.vin.emplace_back(coin.outpoint, CScript(), CTxIn::SEQUENCE_FINAL - 1);
                 }
 
-                LogPrintf("rawtx: \n\n%s\n\n", txNew.ToString().c_str());
-
                 auto calculateFee = [&](CAmount& nFee) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet) -> bool {
                     AssertLockHeld(cs_wallet);
                     nBytes = CalculateMaximumSignedTxSize(CTransaction(txNew), this, coin_control.fAllowWatchOnly);
-
-                    LogPrintf("bytes to sign %d\n", nBytes);
 
                     if (nBytes < 0) {
                         error = _("Signing transaction failed");
@@ -3910,14 +3901,10 @@ bool CWallet::CreateTransactionInternal(
         // Make sure change position was updated one way or another
         assert(nChangePosInOut != std::numeric_limits<int>::max());
 
-        LogPrintf("signing transaction\n");
-
         if (sign && !SignTransaction(txNew)) {
             error = _("Signing transaction failed");
             return false;
         }
-
-        LogPrintf("signing transaction passed\n");
 
         // Return the constructed transaction data.
         tx = MakeTransactionRef(std::move(txNew));

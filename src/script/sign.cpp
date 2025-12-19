@@ -36,8 +36,6 @@ MutableTransactionSignatureCreator::MutableTransactionSignatureCreator(const CMu
 
 bool MutableTransactionSignatureCreator::CreateSig(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& address, const CScript& scriptCode, SigVersion sigversion) const
 {
-    LogPrintf("signing as ECDSA\n");
-
     CKey key;
     if (!provider.GetKey(address, key))
         return false;
@@ -53,18 +51,14 @@ bool MutableTransactionSignatureCreator::CreateSig(const SigningProvider& provid
 
 bool MutableTransactionSignatureCreator::CreateSigBLS(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& address, const CScript& scriptCode, SigVersion sigversion) const
 {
-    LogPrintf("signing as BLS\n");
-
     CKey key;
     if (!GetBLSKey(address, key)) {
-        LogPrintf("%s - couldnt get blskey\n", __func__);
         return false;
     }
 
     uint256 hash = SignatureHash(scriptCode, *txTo, nIn, nHashType, amount, sigversion, m_txdata);
 
     if (!key.SignBLS(hash, vchSig)) {
-        LogPrintf("%s - couldnt run signbls\n", __func__);
         return false;
     }
 
@@ -152,8 +146,6 @@ static void PrintKey(std::vector<uint8_t>& in, std::string in2)
     for (unsigned int i = 0; i < len; i++) {
         sprintf(blshex+(i*2), "%02hhx", in[i]);
     }
-
-    LogPrintf("%s (%s)\n", blshex, in2.c_str());
 }
 
 /**
@@ -183,7 +175,6 @@ static bool SignStep(const SigningProvider& provider, const BaseSignatureCreator
         return true;
     case TxoutType::BLSPUBKEY:
         if (!CreateSigBLS(creator, sigdata, provider, sig, CPubKey(vSolutions[0]), scriptPubKey, sigversion)) {
-            LogPrintf("%s - CreateSigBLS - signstep fail\n", __func__);
             return false;
         }
         ret.push_back(std::move(sig));
@@ -293,12 +284,10 @@ public:
     bool CheckSig(const std::vector<unsigned char>& scriptSig, const std::vector<unsigned char>& vchPubKey, const CScript& scriptCode, SigVersion sigversion) const override
     {
         if (checker.CheckSig(scriptSig, vchPubKey, scriptCode, sigversion)) {
-            LogPrintf("%s - passing\n", __func__);
             CPubKey pubkey(vchPubKey);
             sigdata.signatures.emplace(pubkey.GetID(), SigPair(pubkey, scriptSig));
             return true;
         }
-        LogPrintf("%s - failing\n", __func__);
         return false;
     }
 };
@@ -465,8 +454,6 @@ bool IsSolvable(const SigningProvider& provider, const CScript& script)
 {
     bool is_bls_sig = script.size() == CPubKey::BLS_PUBLIC_KEY_SIZE + 2;
 
-    LogPrintf("%s - is_bls_sig %d\n", __func__, is_bls_sig);
-
     // This check is to make sure that the script we created can actually be solved for and signed by us
     // if we were to have the private keys. This is just to make sure that the script is valid and that,
     // if found in a transaction, we would still accept and relay that transaction.
@@ -525,9 +512,6 @@ bool SignTransaction(CMutableTransaction& mtx, const SigningProvider* keystore, 
         }
 
         UpdateInput(txin, sigdata);
-
-        LogPrintf("%s - signature %s\n", __func__, HexStr(txin.scriptSig));
-        LogPrintf("%s - prevPubKey %s\n", __func__, HexStr(prevPubKey));
 
         ScriptError serror = SCRIPT_ERR_OK;
         if (!VerifyScript(txin.scriptSig, prevPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&txConst, i, amount, txdata, MissingDataBehavior::FAIL), &serror)) {
