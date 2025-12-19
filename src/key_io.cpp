@@ -21,6 +21,13 @@ private:
 public:
     explicit DestinationEncoder(const CChainParams& params) : m_params(params) {}
 
+    std::string operator()(const CPubKey& id) const
+    {
+        std::vector<unsigned char> data;
+        data.insert(data.end(), id.begin(), id.end());
+        return EncodeBase58Check(data);
+    }
+
     std::string operator()(const PKHash& id) const
     {
         std::vector<unsigned char> data = m_params.Base58Prefix(CChainParams::PUBKEY_ADDRESS);
@@ -63,6 +70,20 @@ CTxDestination DecodeDestination(const std::string& str, const CChainParams& par
         // Set potential error message.
         error_str = "Invalid prefix for Base58-encoded address";
     }
+
+    uint384 hash2;
+    if (DecodeBase58Check(str, data, 48)) {
+        // base58-encoded BLS addresses
+        const std::vector<unsigned char>& pubkey_prefix = {};
+        if (data.size() == hash2.size() + pubkey_prefix.size() && std::equal(pubkey_prefix.begin(), pubkey_prefix.end(), data.begin())) {
+            std::copy(data.begin() + pubkey_prefix.size(), data.end(), hash2.begin());
+            return CPubKey(hash2);
+        }
+
+        // Set potential error message.
+        error_str = "Invalid prefix for Base58-encoded address";
+    }
+
     // Set error message if address can't be interpreted as Base58.
     if (error_str.empty()) error_str = "Invalid address format";
 
@@ -175,4 +196,9 @@ bool IsValidDestinationString(const std::string& str, const CChainParams& params
 bool IsValidDestinationString(const std::string& str)
 {
     return IsValidDestinationString(str, Params());
+}
+
+std::string MasternodeBlsPubkeyToAddress(std::string blsPubKeyStr) {
+    std::vector<unsigned char> blsPubKeyBin = ParseHex(blsPubKeyStr);
+    return EncodeBase58Check(blsPubKeyBin);
 }

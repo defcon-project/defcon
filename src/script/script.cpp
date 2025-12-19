@@ -234,6 +234,14 @@ bool CScript::IsPayToPublicKey() const
     return false;
 }
 
+bool CScript::IsPayToBLSPublicKey() const
+{
+    if (this->size() == 50) {
+        return (*this)[49] == OP_CHECKSIG;
+    }
+    return false;
+}
+
 bool CScript::IsPushOnly(const_iterator pc) const
 {
     while (pc < end())

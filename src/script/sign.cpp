@@ -15,6 +15,9 @@
 #include <uint256.h>
 #include <util/translation.h>
 
+#include <logging.h>
+#include <wallet/blswallet.h>
+
 typedef std::vector<unsigned char> valtype;
 
 MutableTransactionSignatureCreator::MutableTransactionSignatureCreator(const CMutableTransaction* txToIn, unsigned int nInIn, const CAmount& amountIn, int nHashTypeIn)
@@ -38,8 +41,27 @@ bool MutableTransactionSignatureCreator::CreateSig(const SigningProvider& provid
         return false;
 
     uint256 hash = SignatureHash(scriptCode, *txTo, nIn, nHashType, amount, sigversion, m_txdata);
+
     if (!key.Sign(hash, vchSig))
         return false;
+
+    vchSig.push_back((unsigned char)nHashType);
+    return true;
+}
+
+bool MutableTransactionSignatureCreator::CreateSigBLS(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& address, const CScript& scriptCode, SigVersion sigversion) const
+{
+    CKey key;
+    if (!GetBLSKey(address, key)) {
+        return false;
+    }
+
+    uint256 hash = SignatureHash(scriptCode, *txTo, nIn, nHashType, amount, sigversion, m_txdata);
+
+    if (!key.SignBLS(hash, vchSig)) {
+        return false;
+    }
+
     vchSig.push_back((unsigned char)nHashType);
     return true;
 }
@@ -97,6 +119,35 @@ static bool CreateSig(const BaseSignatureCreator& creator, SignatureData& sigdat
     return false;
 }
 
+static bool CreateSigBLS(const BaseSignatureCreator& creator, SignatureData& sigdata, const SigningProvider& provider, std::vector<unsigned char>& sig_out, const CPubKey& pubkey, const CScript& scriptcode, SigVersion sigversion)
+{
+    CKeyID keyid = pubkey.GetID();
+    const auto it = sigdata.signatures.find(keyid);
+    if (it != sigdata.signatures.end()) {
+        sig_out = it->second.second;
+        return true;
+    }
+    if (creator.CreateSigBLS(provider, sig_out, keyid, scriptcode, sigversion)) {
+        auto i = sigdata.signatures.emplace(keyid, SigPair(pubkey, sig_out));
+        assert(i.second);
+        return true;
+    }
+    // Could not make signature or signature not found, add keyid to missing
+    sigdata.missing_sigs.push_back(keyid);
+    return false;
+}
+
+static void PrintKey(std::vector<uint8_t>& in, std::string in2)
+{
+    char blshex[256];
+    memset(blshex, 0, sizeof(blshex));
+
+    unsigned int len = in.size();
+    for (unsigned int i = 0; i < len; i++) {
+        sprintf(blshex+(i*2), "%02hhx", in[i]);
+    }
+}
+
 /**
  * Sign scriptPubKey using signature made with creator.
  * Signatures are returned in scriptSigRet (or returns false if scriptPubKey can't be signed),
@@ -120,6 +171,12 @@ static bool SignStep(const SigningProvider& provider, const BaseSignatureCreator
         return false;
     case TxoutType::PUBKEY:
         if (!CreateSig(creator, sigdata, provider, sig, CPubKey(vSolutions[0]), scriptPubKey, sigversion)) return false;
+        ret.push_back(std::move(sig));
+        return true;
+    case TxoutType::BLSPUBKEY:
+        if (!CreateSigBLS(creator, sigdata, provider, sig, CPubKey(vSolutions[0]), scriptPubKey, sigversion)) {
+            return false;
+        }
         ret.push_back(std::move(sig));
         return true;
     case TxoutType::PUBKEYHASH: {
@@ -378,20 +435,30 @@ public:
         vchSig[6 + m_r_len + m_s_len] = SIGHASH_ALL;
         return true;
     }
+    bool CreateSigBLS(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& keyid, const CScript& scriptCode, SigVersion sigversion) const override
+    {
+        // Create a dummy signature that is a valid BLS-encoding
+        vchSig.assign(97, '\000');
+        vchSig[96] = SIGHASH_ALL;
+        return true;
+    }
 };
 
 }
 
 const BaseSignatureCreator& DUMMY_SIGNATURE_CREATOR = DummySignatureCreator(32, 32);
 const BaseSignatureCreator& DUMMY_MAXIMUM_SIGNATURE_CREATOR = DummySignatureCreator(33, 32);
+const BaseSignatureCreator& DUMMY_MAXIMUM_SIGNATURE_CREATOR_BLS = DummySignatureCreator(96, 48);
 
 bool IsSolvable(const SigningProvider& provider, const CScript& script)
 {
+    bool is_bls_sig = script.size() == CPubKey::BLS_PUBLIC_KEY_SIZE + 2;
+
     // This check is to make sure that the script we created can actually be solved for and signed by us
     // if we were to have the private keys. This is just to make sure that the script is valid and that,
     // if found in a transaction, we would still accept and relay that transaction.
     SignatureData sigs;
-    if (ProduceSignature(provider, DUMMY_SIGNATURE_CREATOR, script, sigs)) {
+    if (ProduceSignature(provider, is_bls_sig ? DUMMY_MAXIMUM_SIGNATURE_CREATOR_BLS : DUMMY_SIGNATURE_CREATOR, script, sigs)) {
         // VerifyScript check is just defensive, and should never fail.
         bool verified = VerifyScript(sigs.scriptSig, script, STANDARD_SCRIPT_VERIFY_FLAGS, DUMMY_CHECKER);
         assert(verified);

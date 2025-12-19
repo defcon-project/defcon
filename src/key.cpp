@@ -7,6 +7,7 @@
 
 #include <crypto/common.h>
 #include <crypto/hmac_sha512.h>
+#include <logging.h>
 #include <random.h>
 
 #include <secp256k1.h>
@@ -190,6 +191,9 @@ CPubKey CKey::GetPubKey() const {
     int ret = secp256k1_ec_pubkey_create(secp256k1_context_sign, &pubkey, begin());
     assert(ret);
     secp256k1_ec_pubkey_serialize(secp256k1_context_sign, (unsigned char*)result.begin(), &clen, &pubkey, fCompressed ? SECP256K1_EC_COMPRESSED : SECP256K1_EC_UNCOMPRESSED);
+    if (result.size() != clen) {
+        return GetPubKeyForBLS();
+    }
     assert(result.size() == clen);
     assert(result.IsValid());
     return result;
@@ -245,6 +249,11 @@ bool CKey::VerifyPubKey(const CPubKey& pubkey) const {
     GetRandBytes(rnd);
     uint256 hash{Hash(str, rnd)};
     std::vector<unsigned char> vchSig;
+    //this allows comp/uncomp ecdsa and bls
+    if (pubkey.IsBLS()) {
+        SignBLS(hash, vchSig);
+        return pubkey.VerifyBLS(hash, vchSig);
+    }
     Sign(hash, vchSig);
     return pubkey.Verify(hash, vchSig);
 }
@@ -420,4 +429,74 @@ void ECC_Stop() {
     if (ctx) {
         secp256k1_context_destroy(ctx);
     }
+}
+
+///////////////////////////
+// BLS
+////////////////////////////
+bool CKey::CheckBLS(std::vector<unsigned char, secure_allocator<unsigned char>>& vch)
+{
+    CBLSSecretKey testKey;
+    testKey.SetBytes(vch, false);
+    return testKey.IsValid();
+}
+
+void CKey::MakeNewBLSKey()
+{
+    do {
+        GetStrongRandBytes(MakeUCharSpan(keydata));
+    } while (!CheckBLS(keydata));
+    fValid = true;
+}
+
+void CKey::MakeNewDeterministicBLSKey(const std::vector<uint8_t>& hash)
+{
+    uint8_t count = 0;
+    std::vector<unsigned char, secure_allocator<unsigned char>> rand;
+    rand.resize(CHash256::OUTPUT_SIZE);
+    do {
+        CHash256().Write(MakeUCharSpan(hash)).Write(Span{&count,1}).Finalize(rand);
+        count++;
+        if (count == 255) {
+            fValid = false;
+            return;
+        }
+    } while (!CheckBLS(rand));
+    Set(rand.begin(), rand.end(), true);
+    fValid = true;
+}
+
+CPubKey CKey::GetPubKeyForBLS() const
+{
+    CBLSSecretKey testKey;
+    testKey.SetBytes(keydata, false);
+    CBLSPublicKey pubKey = testKey.GetPublicKey();
+    std::vector<uint8_t> pubBytes = pubKey.ToByteVector(false);
+    return CPubKey(pubBytes.begin(), pubBytes.end());
+}
+
+CPrivKey CKey::GetBLSPrivateKey() const
+{
+    assert(fValid);
+    CPrivKey privkey(keydata.size());
+    for (size_t i = 0; i < keydata.size(); i++)
+        privkey[i] = keydata[i];
+    return privkey;
+}
+
+std::vector<unsigned char> GetKeyData(const CKey &key)
+{
+    std::vector<unsigned char> keydata;
+    keydata.resize(32);
+    memcpy(keydata.data(), key.begin(), 32);
+    return keydata;
+}
+
+bool CKey::SignBLS(const uint256 &hash, std::vector<uint8_t> &vchSig) const
+{
+    std::vector<unsigned char> keydata = GetKeyData(*this);
+    auto PK = bls::PrivateKey::FromByteVector(keydata);
+    std::vector<uint8_t> message(hash.begin(),hash.end());
+    vchSig = bls::AugSchemeMPL().Sign(PK, message).Serialize();
+    return true;
 }

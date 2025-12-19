@@ -35,6 +35,7 @@ const std::string ACTIVEEXTERNALSPK{"activeexternalspk"};
 const std::string ACTIVEINTERNALSPK{"activeinternalspk"};
 const std::string BESTBLOCK_NOMERKLE{"bestblock_nomerkle"};
 const std::string BESTBLOCK{"bestblock"};
+const std::string BLSKEY{"blskey"};
 const std::string CRYPTED_KEY{"ckey"};
 const std::string CRYPTED_HDCHAIN{"chdchain"};
 const std::string COINJOIN_SALT{"cj_salt"};
@@ -71,6 +72,16 @@ const std::string WATCHS{"watchs"};
 //
 // WalletBatch
 //
+
+bool WalletBatch::WriteBLSKey(int64_t nPool, std::string& strBlsPrivate)
+{
+    return WriteIC(std::make_pair(DBKeys::BLSKEY, nPool), strBlsPrivate);
+}
+
+bool WalletBatch::ReadBLSKey(int64_t nPool, std::string& strBlsPrivate)
+{
+    return m_batch->Read(std::make_pair(DBKeys::BLSKEY, nPool), strBlsPrivate);
+}
 
 bool WalletBatch::WriteName(const std::string& strAddress, const std::string& strName)
 {

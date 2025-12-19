@@ -313,6 +313,13 @@ private:
      */
     bool ReserveKeyFromKeyPool(int64_t& nIndex, CKeyPool& keypool, bool fRequestedInternal);
 
+    //BLS///////////////////////////////////////////////////////////////////
+    using BLSKeyPair = std::pair<CKeyID, CKey>;
+    using BLSPubKeyPair = std::pair<CKeyID, CPubKey>;
+    std::vector<BLSKeyPair> blsKeyVector GUARDED_BY(cs_Keystore);
+    std::vector<BLSPubKeyPair> blsPubKeyVector GUARDED_BY(cs_Keystore);
+    //BLS///////////////////////////////////////////////////////////////////
+
 public:
     using ScriptPubKeyMan::ScriptPubKeyMan;
 
@@ -482,6 +489,16 @@ public:
     const std::map<CKeyID, int64_t>& GetAllReserveKeys() const { return m_pool_key_to_index; }
 
     std::set<CKeyID> GetKeys() const override;
+
+    //BLS//////////////////////////////////////////////////////////////////////////////////
+    bool HaveBLSKey(const CKeyID& keyID) const;
+    bool HaveBLSPubKey(const CKeyID& keyID) const;
+    bool GetBLSKey(const CKeyID& keyID, CKey& keyOut) const;
+    bool GetBLSPubKey(const CKeyID& keyID, CPubKey& pubkeyOut) const;
+    bool AddBLSKeyPair(CKey& key, CPubKey& pubkey);
+    bool AddBLSPubKeyPair(CKey& key, CPubKey& pubkey);
+    bool AddBLSEntries(CPubKey& pubkey, CKey& key);
+    //BLS//////////////////////////////////////////////////////////////////////////////////
 };
 
 /** Wraps a LegacyScriptPubKeyMan so that it can be returned in a new unique_ptr. Does not provide privkeys */

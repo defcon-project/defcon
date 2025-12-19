@@ -7,6 +7,7 @@
 #ifndef BITCOIN_KEY_H
 #define BITCOIN_KEY_H
 
+#include <bls/bls.h>
 #include <pubkey.h>
 #include <serialize.h>
 #include <support/allocators/secure.h>
@@ -45,6 +46,9 @@ public:
         SIZE >= COMPRESSED_SIZE,
         "COMPRESSED_SIZE is larger than SIZE");
 
+    //! The actual byte data
+    std::vector<unsigned char, secure_allocator<unsigned char> > keydata;
+
 private:
     //! Whether this private key is valid. We check for correctness when modifying the key
     //! data, so fValid should always correspond to the actual state.
@@ -52,9 +56,6 @@ private:
 
     //! Whether the public key corresponding to this private key is (to be) compressed.
     bool fCompressed;
-
-    //! The actual byte data
-    std::vector<unsigned char, secure_allocator<unsigned char> > keydata;
 
     //! Check whether the 32-byte array pointed to by vch is valid keydata.
     bool static Check(const unsigned char* vch);
@@ -65,6 +66,14 @@ public:
     {
         // Important: vch must be 32 bytes in length to not break serialization
         keydata.resize(32);
+    }
+
+    template <typename T>
+    CKey(const T pbegin, const T pend)
+    {
+        Set(pbegin, pend, false);
+        fValid = true;
+        fCompressed = true;
     }
 
     friend bool operator==(const CKey& a, const CKey& b)
@@ -80,13 +89,11 @@ public:
     {
         if (size_t(pend - pbegin) != keydata.size()) {
             fValid = false;
-        } else if (Check(&pbegin[0])) {
-            memcpy(keydata.data(), (unsigned char*)&pbegin[0], keydata.size());
-            fValid = true;
-            fCompressed = fCompressedIn;
-        } else {
-            fValid = false;
+            return;
         }
+        memcpy(keydata.data(), (unsigned char*)&pbegin[0], keydata.size());
+        fValid = true;
+        fCompressed = true;
     }
 
     //! Simple read-only vector-like interface.
@@ -166,6 +173,32 @@ public:
     ECDHSecret ComputeBIP324ECDHSecret(const EllSwiftPubKey& their_ellswift,
                                        const EllSwiftPubKey& our_ellswift,
                                        bool initiating) const;
+
+///////////////////////////
+// BLS
+////////////////////////////
+
+public:
+    //! Check whether the 32-byte array pointed to by vch is valid keydata.
+    bool CheckBLS(std::vector<unsigned char, secure_allocator<unsigned char>>& vch);
+
+    //! Generate a new private BLS key using a cryptographic PRNG.
+    void MakeNewBLSKey();
+
+    //! Generate a new private BLS key using a deterministic source
+    void MakeNewDeterministicBLSKey(const std::vector<uint8_t>& hash);
+    CPrivKey GetBLSPrivateKey() const;
+
+    /**
+     * Compute the public key from a private key.
+     * This is expensive.
+     */
+    CPubKey GetPubKeyForBLS() const;
+
+    /**
+     * Create a BLS signature.
+     */
+    bool SignBLS(const uint256 &hash, std::vector<uint8_t> &vchSig) const;
 };
 
 struct CExtKey {

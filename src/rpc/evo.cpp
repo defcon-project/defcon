@@ -1705,6 +1705,10 @@ static RPCHelpMan bls_generate()
                    {RPCResult::Type::STR_HEX, "scheme", "BLS scheme (valid schemes: legacy, basic)"}}},
         RPCExamples{HelpExampleCli("bls generate", "")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
+
+            std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+            if (!pwallet) return NullUniValue;
+
             CBLSSecretKey sk;
             sk.MakeNewKey();
             bool bls_legacy_scheme{false};
@@ -1713,6 +1717,8 @@ static RPCHelpMan bls_generate()
             }
             UniValue ret(UniValue::VOBJ);
             ret.pushKV("secret", sk.ToString());
+            pwallet->WriteToBLSWallet(sk.ToString());
+
             ret.pushKV("public", sk.GetPublicKey().ToString(bls_legacy_scheme));
             std::string bls_scheme_str = bls_legacy_scheme ? "legacy" : "basic";
             ret.pushKV("scheme", bls_scheme_str);

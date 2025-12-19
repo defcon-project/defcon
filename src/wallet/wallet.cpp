@@ -6,6 +6,7 @@
 
 #include <wallet/wallet.h>
 
+#include <base58.h>
 #include <chain.h>
 #include <chainparams.h>
 #include <consensus/amount.h>
@@ -1807,16 +1808,20 @@ bool CWallet::DummySignInput(CTxIn &tx_in, const CTxOut &txout, bool use_max_sig
     const CScript& scriptPubKey = txout.scriptPubKey;
     SignatureData sigdata;
 
+    bool is_bls_sig = scriptPubKey.size() == CPubKey::BLS_PUBLIC_KEY_SIZE + 2;
+
     std::unique_ptr<SigningProvider> provider = GetSolvingProvider(scriptPubKey);
     if (!provider) {
         // We don't know about this scriptpbuKey;
         return false;
     }
 
-    if (!ProduceSignature(*provider, use_max_sig ? DUMMY_MAXIMUM_SIGNATURE_CREATOR : DUMMY_SIGNATURE_CREATOR, scriptPubKey, sigdata)) {
+    if (!ProduceSignature(*provider, is_bls_sig ? DUMMY_MAXIMUM_SIGNATURE_CREATOR_BLS : (use_max_sig ? DUMMY_MAXIMUM_SIGNATURE_CREATOR : DUMMY_SIGNATURE_CREATOR), scriptPubKey, sigdata)) {
         return false;
     }
+
     UpdateInput(tx_in, sigdata);
+
     return true;
 }
 
@@ -3093,7 +3098,8 @@ bool CWallet::SignTransaction(CMutableTransaction& tx) const
         coins[input.prevout] = Coin(wtx.tx->vout[input.prevout.n], wtx.m_confirm.block_height, wtx.IsCoinBase(), wtx.IsCoinStake());
     }
     std::map<int, bilingual_str> input_errors;
-    return SignTransaction(tx, coins, SIGHASH_ALL, input_errors);
+    bool ret = SignTransaction(tx, coins, SIGHASH_ALL, input_errors);
+    return ret;
 }
 
 bool CWallet::SignTransaction(CMutableTransaction& tx, const std::map<COutPoint, Coin>& coins, int sighash, std::map<int, bilingual_str>& input_errors) const
@@ -3547,11 +3553,16 @@ bool CWallet::CreateTransactionInternal(
         int nExtraPayloadSize)
 {
     CAmount nValue = 0;
+    bool involveBLSdest = false;
     ReserveDestination reservedest(this);
     int nChangePosRequest = nChangePosInOut;
     unsigned int nSubtractFeeFromAmount = 0;
     for (const auto& recipient : vecSend)
     {
+        if (recipient.scriptPubKey.size() >= CPubKey::BLS_PUBLIC_KEY_SIZE + 2)
+        {
+            involveBLSdest = true;
+        }
         if (nValue < 0 || recipient.nAmount < 0)
         {
             error = _("Transaction amounts must not be negative");
@@ -3609,6 +3620,8 @@ bool CWallet::CreateTransactionInternal(
             // coin control: send change to custom address
             if (!std::get_if<CNoDestination>(&coin_control.destChange)) {
                 scriptChange = GetScriptForDestination(coin_control.destChange);
+            } else if (involveBLSdest) {
+                scriptChange = GenerateNewBLSChangeAddress();
             } else { // no coin control: send change to newly generated address
                 // Note: We use a new key here to keep it from being obvious which side is the change.
                 //  The drawback is that by not reusing a previous key, the change may be lost if a
@@ -3712,6 +3725,7 @@ bool CWallet::CreateTransactionInternal(
                 auto calculateFee = [&](CAmount& nFee) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet) -> bool {
                     AssertLockHeld(cs_wallet);
                     nBytes = CalculateMaximumSignedTxSize(CTransaction(txNew), this, coin_control.fAllowWatchOnly);
+
                     if (nBytes < 0) {
                         error = _("Signing transaction failed");
                         return false;
@@ -4999,6 +5013,9 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, interfaces::C
     // Try to top up keypool. No-op if the wallet is locked.
     walletInstance->TopUpKeyPool();
 
+    // Load pending BLS data
+    walletInstance->BLSWalletInit();
+
     if (chain && !AttachChain(walletInstance, *chain, error, warnings)) {
         return nullptr;
     }
@@ -6044,4 +6061,151 @@ ScriptPubKeyMan* CWallet::AddWalletDescriptor(WalletDescriptor& desc, const Flat
     spk_man->WriteDescriptor();
 
     return spk_man;
+}
+
+void CWallet::PrintBLSKey(std::vector<uint8_t>& in, std::string in2)
+{
+    char blshex[256];
+    memset(blshex, 0, sizeof(blshex));
+
+    unsigned int len = in.size();
+    for (unsigned int i = 0; i < len; i++) {
+        sprintf(blshex+(i*2), "%02hhx", in[i]);
+    }
+
+    WalletLogPrintf("%s (%s)\n", blshex, in2.c_str());
+}
+
+bool CWallet::ReadFromBLSWallet(const std::string& keydata)
+{
+    BlsWalletEntry entry;
+    if (!entry.sk.SetHexStr(keydata, false)) {
+        return false;
+    }
+    entry.id = blsKeyRecords.size();
+    entry.pk = entry.sk.GetPublicKey();
+    entry.keyID = CPubKey(entry.pk.ToByteVector(false)).GetID();
+
+    //flag this keyID as BLS
+    AddBLSRelated(entry.keyID);
+    blsKeyRecords.push_back(entry);
+
+    //convert into new keytype
+    std::vector<uint8_t> pubBytes = entry.pk.ToByteVector(false);
+    CPubKey pubkey;
+    pubkey.Set(pubBytes.begin(), pubBytes.end());
+
+    std::vector<uint8_t> privBytes = entry.sk.ToByteVector(false);
+    CKey key;
+    key.Set(privBytes.begin(), privBytes.end(), false);
+
+    //push into scriptpubkeyman
+    auto spk_man = GetLegacyScriptPubKeyMan();
+    spk_man->AddBLSEntries(pubkey, key);
+
+    //try new method
+    AddBLSKey(entry.keyID, key);
+
+    return true;
+}
+
+bool CWallet::WriteToBLSWallet(const std::string& keydata)
+{
+    if (!ReadFromBLSWallet(keydata)) {
+        return false;
+    }
+    WalletBatch batch(GetDatabase());
+    for (unsigned int i = 0; i < blsKeyRecords.size(); i++) {
+        std::string blsPrivateKey = blsKeyRecords[i].sk.ToString();
+        batch.WriteBLSKey(i, blsPrivateKey);
+    }
+    return true;
+}
+
+std::map<unsigned int, std::string> CWallet::GetBLSAddresses()
+{
+    LOCK(cs_wallet);
+    std::map<unsigned int, std::string> blsAddresses;
+    for (unsigned int i = 0; i < blsKeyRecords.size(); i++) {
+        blsAddresses[i] = EncodeBase58Check(blsKeyRecords[i].pk.ToByteVector(false));
+    }
+    return blsAddresses;
+}
+
+std::vector<BlsWalletEntry> CWallet::GetBLSKeypairs()
+{
+    return blsKeyRecords;
+}
+
+bool CWallet::IsSolvableBLS(CScript& scriptPubKey)
+{
+    if (scriptPubKey.IsPayToBLSPublicKey()) {
+        std::vector<std::vector<unsigned char>> vSolutions;
+        TxoutType whichType = Solver(scriptPubKey, vSolutions);
+        if (whichType == TxoutType::BLSPUBKEY) {
+            CPubKey pubkey(vSolutions[0]);
+            const CKeyID address = pubkey.GetID();
+            auto spk_man = GetLegacyScriptPubKeyMan();
+            if (spk_man->HaveBLSKey(address)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool CWallet::GetBLSKey(const CKeyID& keyID, CKey key)
+{
+    auto spk_man = GetLegacyScriptPubKeyMan();
+    if (spk_man->GetBLSKey(keyID, key)) {
+        return true;
+    }
+    return false;
+}
+
+bool CWallet::BLSWalletInit()
+{
+    unsigned int i = 0;
+    std::string blsPrivateKey;
+    WalletBatch batch(GetDatabase());
+    while (true) {
+        if (!batch.ReadBLSKey(i, blsPrivateKey)) {
+            break;
+        }
+        if (!ReadFromBLSWallet(blsPrivateKey)) {
+            break;
+        }
+        ++i;
+    }
+    if (blsKeyRecords.size()) {
+        WalletLogPrintf("%s: loaded %d BLS keys successfully.\n", __func__, blsKeyRecords.size());
+    }
+    return true;
+}
+
+CScript CWallet::GenerateNewBLSChangeAddress()
+{
+    CBLSSecretKey sk;
+    sk.MakeNewKey();
+    WriteToBLSWallet(sk.ToString());
+
+    CBLSPublicKey pk = sk.GetPublicKey();
+    std::vector<uint8_t> pubBytes = pk.ToByteVector(false);
+    CPubKey pubkey;
+    pubkey.Set(pubBytes.begin(), pubBytes.end());
+
+    return CScript() << ToByteVector(pubkey) << OP_CHECKSIG;
+}
+
+bool CWallet::ContainsExistingBLSPrivKey(std::string& rpcBlsKey)
+{
+    std::string importAttempt = ToLower(rpcBlsKey);
+    for (unsigned int i = 0; i < blsKeyRecords.size(); i++) {
+        std::string blsPrivateKey = blsKeyRecords[i].sk.ToString();
+        if (blsPrivateKey == importAttempt) {
+            return true;
+        }
+    }
+    return false;
 }

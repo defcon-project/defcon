@@ -219,6 +219,7 @@ bool CPubKey::RecoverCompact(const uint256 &hash, const std::vector<unsigned cha
 bool CPubKey::IsFullyValid() const {
     if (!IsValid())
         return false;
+    if (size() == BLS_PUBLIC_KEY_SIZE) return true;
     secp256k1_pubkey pubkey;
     return secp256k1_ec_pubkey_parse(secp256k1_context_static, &pubkey, vch, size());
 }
@@ -322,4 +323,17 @@ bool CExtPubKey::Derive(CExtPubKey &out, unsigned int _nChild) const {
         return false;
     }
     return (!secp256k1_ecdsa_signature_normalize(secp256k1_context_static, nullptr, &sig));
+}
+
+///////////////////////////
+// BLS
+////////////////////////////
+
+bool CPubKey::VerifyBLS(const uint256 &hash, const std::vector<uint8_t> &vchSig) const {
+    std::vector<uint8_t> v(BLS_PUBLIC_KEY_SIZE);
+    for (size_t i=0; i < v.size(); i++) {
+         v[i] = vch[i];
+    }
+    std::vector<uint8_t> message(hash.begin(), hash.end());
+    return bls::AugSchemeMPL().Verify(v, message, vchSig);
 }

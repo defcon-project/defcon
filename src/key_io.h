@@ -28,4 +28,6 @@ CTxDestination DecodeDestination(const std::string& str, std::string& error_msg)
 bool IsValidDestinationString(const std::string& str);
 bool IsValidDestinationString(const std::string& str, const CChainParams& params);
 
+std::string MasternodeBlsPubkeyToAddress(std::string blsPubKeyStr);
+
 #endif // BITCOIN_KEY_IO_H

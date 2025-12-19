@@ -137,6 +137,14 @@ inline uint256 uint256S(const std::string& str)
     return rv;
 }
 
+/** 384-bit unsigned big integer. */
+class uint384 : public base_blob<384> {
+public:
+    constexpr uint384() = default;
+    constexpr uint384(const base_blob<384>& b) : base_blob<384>(b) {}
+    constexpr explicit uint384(Span<unsigned char> vch) : base_blob<384>(vch) {}
+};
+
 /** 512-bit unsigned big integer. */
 class uint512 : public base_blob<512> {
 public:

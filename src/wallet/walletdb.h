@@ -62,6 +62,7 @@ extern const std::string ACTIVEEXTERNALSPK;
 extern const std::string ACTIVEINTERNALSPK;
 extern const std::string BESTBLOCK;
 extern const std::string BESTBLOCK_NOMERKLE;
+extern const std::string BLSKEY;
 extern const std::string CRYPTED_HDCHAIN;
 extern const std::string CRYPTED_KEY;
 extern const std::string COINJOIN_SALT;
@@ -175,6 +176,9 @@ public:
     }
     WalletBatch(const WalletBatch&) = delete;
     WalletBatch& operator=(const WalletBatch&) = delete;
+
+    bool WriteBLSKey(int64_t nPool, std::string& strBlsPrivate);
+    bool ReadBLSKey(int64_t nPool, std::string& strBlsPrivate);
 
     bool WriteName(const std::string& strAddress, const std::string& strName);
     bool EraseName(const std::string& strAddress);

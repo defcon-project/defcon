@@ -13,6 +13,7 @@
 #include <util/strencodings.h>
 #include <util/system.h>
 #include <util/translation.h>
+#include <wallet/blswallet.h>
 #include <wallet/scriptpubkeyman.h>
 
 bool LegacyScriptPubKeyMan::GetNewDestination(CTxDestination& dest, bilingual_str& error)
@@ -69,7 +70,11 @@ bool HaveKeys(const std::vector<valtype>& pubkeys, const LegacyScriptPubKeyMan& 
 {
     for (const valtype& pubkey : pubkeys) {
         CKeyID keyID = CPubKey(pubkey).GetID();
-        if (!keystore.HaveKey(keyID)) return false;
+        if (!IsBLSRelated(keyID)) {
+            if (!keystore.HaveKey(keyID)) return false;
+        } else {
+            if (!keystore.HaveBLSKey(keyID)) return false;
+        }
     }
     return true;
 }
@@ -100,6 +105,15 @@ IsMineResult IsMineInner(const LegacyScriptPubKeyMan& keystore, const CScript& s
             return IsMineResult::INVALID;
         }
         if (keystore.HaveKey(keyID)) {
+            ret = std::max(ret, IsMineResult::SPENDABLE);
+        }
+        break;
+    case TxoutType::BLSPUBKEY:
+        keyID = CPubKey(vSolutions[0]).GetID();
+        if (vSolutions[0].size() != CPubKey::BLS_PUBLIC_KEY_SIZE) {
+            return IsMineResult::INVALID;
+        }
+        if (keystore.HaveBLSPubKey(keyID)) {
             ret = std::max(ret, IsMineResult::SPENDABLE);
         }
         break;
@@ -617,7 +631,7 @@ bool LegacyScriptPubKeyMan::CanGetAddresses(bool internal) const
 bool LegacyScriptPubKeyMan::HavePrivateKeys() const
 {
     LOCK(cs_KeyStore);
-    return !mapKeys.empty() || !mapCryptedKeys.empty();
+    return !mapKeys.empty() || !mapCryptedKeys.empty() || !blsKeyVector.empty();
 }
 
 void LegacyScriptPubKeyMan::RewriteDB()
@@ -697,7 +711,7 @@ bool LegacyScriptPubKeyMan::CanProvide(const CScript& script, SignatureData& sig
             // If we could make signatures, make sure we have a private key to actually make a signature
             bool has_privkeys = false;
             for (const auto& key_sig_pair : sigdata.signatures) {
-                has_privkeys |= HaveKey(key_sig_pair.first);
+                has_privkeys |= (HaveKey(key_sig_pair.first) || HaveBLSKey(key_sig_pair.first));
             }
             return has_privkeys;
         }
@@ -945,7 +959,9 @@ bool LegacyScriptPubKeyMan::GetKeyInner(const CKeyID &address, CKey& keyOut) con
             return DecryptKey(encryption_key, vchCryptedSecret, vchPubKey, keyOut);
         });
     }
-    return false;
+
+    // Check for BLS privkey
+    return GetBLSKey(address, keyOut);
 }
 
 bool LegacyScriptPubKeyMan::GetPubKeyInner(const CKeyID &address, CPubKey& vchPubKeyOut) const
@@ -964,8 +980,13 @@ bool LegacyScriptPubKeyMan::GetPubKeyInner(const CKeyID &address, CPubKey& vchPu
         vchPubKeyOut = (*mi).second.first;
         return true;
     }
+
     // Check for watch-only pubkeys
-    return GetWatchPubKey(address, vchPubKeyOut);
+    bool watchOnly = GetWatchPubKey(address, vchPubKeyOut);
+    if (watchOnly) return true;
+
+    // Check for BLS pubkey
+    return GetBLSPubKey(address, vchPubKeyOut);
 }
 
 bool LegacyScriptPubKeyMan::LoadCryptedKey(const CPubKey &vchPubKey, const std::vector<unsigned char> &vchCryptedSecret, bool checksum_valid)
@@ -1040,8 +1061,13 @@ bool LegacyScriptPubKeyMan::GetWatchPubKey(const CKeyID &address, CPubKey &pubke
 static bool ExtractPubKey(const CScript &dest, CPubKey& pubKeyOut)
 {
     std::vector<std::vector<unsigned char>> solutions;
-    return Solver(dest, solutions) == TxoutType::PUBKEY &&
-        (pubKeyOut = CPubKey(solutions[0])).IsFullyValid();
+    bool isPubKey = Solver(dest, solutions) == TxoutType::PUBKEY;
+    bool isBlsPubKey = Solver(dest, solutions) == TxoutType::BLSPUBKEY;
+    if (isPubKey || isBlsPubKey) {
+        pubKeyOut = CPubKey(solutions[0]);
+        return pubKeyOut.IsFullyValid();
+    }
+    return false;
 }
 
 bool LegacyScriptPubKeyMan::RemoveWatchOnly(const CScript &dest)
@@ -1777,6 +1803,76 @@ bool LegacyScriptPubKeyMan::GetHDChain(CHDChain& hdChainRet) const
     LOCK(cs_KeyStore);
     hdChainRet = m_hd_chain;
     return !m_hd_chain.IsNull();
+}
+
+bool LegacyScriptPubKeyMan::AddBLSKeyPair(CKey& key, CPubKey& pubkey)
+{
+    LOCK(cs_KeyStore);
+    BLSKeyPair pair(pubkey.GetID(), key);
+    blsKeyVector.push_back(pair);
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::AddBLSPubKeyPair(CKey& key, CPubKey& pubkey)
+{
+    LOCK(cs_KeyStore);
+    BLSPubKeyPair pair(pubkey.GetID(), pubkey);
+    blsPubKeyVector.push_back(pair);
+    return true;
+}
+
+bool LegacyScriptPubKeyMan::HaveBLSKey(const CKeyID& keyID) const
+{
+    LOCK(cs_KeyStore);
+    for (auto entry : blsKeyVector) {
+        if (entry.first == keyID) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool LegacyScriptPubKeyMan::HaveBLSPubKey(const CKeyID& keyID) const
+{
+    LOCK(cs_KeyStore);
+    for (auto entry : blsPubKeyVector) {
+        if (entry.first == keyID) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool LegacyScriptPubKeyMan::GetBLSKey(const CKeyID& keyID, CKey& keyOut) const
+{
+    LOCK(cs_KeyStore);
+    for (auto entry : blsKeyVector) {
+        if (entry.first == keyID) {
+            keyOut = entry.second;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool LegacyScriptPubKeyMan::GetBLSPubKey(const CKeyID& keyID, CPubKey& pubkeyOut) const
+{
+    LOCK(cs_KeyStore);
+    for (auto entry : blsPubKeyVector) {
+        if (entry.first == keyID) {
+            pubkeyOut = entry.second;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool LegacyScriptPubKeyMan::AddBLSEntries(CPubKey& pubkey, CKey& key)
+{
+    LOCK(cs_KeyStore);
+    AddBLSKeyPair(key, pubkey);
+    AddBLSPubKeyPair(key, pubkey);
+    return true;
 }
 
 bool DescriptorScriptPubKeyMan::GetNewDestination(CTxDestination& dest, bilingual_str& error)

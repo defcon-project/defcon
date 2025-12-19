@@ -34,6 +34,7 @@ std::string GetTxnOutputType(TxoutType t)
     switch (t) {
     case TxoutType::NONSTANDARD: return "nonstandard";
     case TxoutType::PUBKEY: return "pubkey";
+    case TxoutType::BLSPUBKEY: return "blspubkey";
     case TxoutType::PUBKEYHASH: return "pubkeyhash";
     case TxoutType::SCRIPTHASH: return "scripthash";
     case TxoutType::MULTISIG: return "multisig";
@@ -50,6 +51,15 @@ static bool MatchPayToPubkey(const CScript& script, valtype& pubkey)
     }
     if (script.size() == CPubKey::COMPRESSED_SIZE + 2 && script[0] == CPubKey::COMPRESSED_SIZE && script.back() == OP_CHECKSIG) {
         pubkey = valtype(script.begin() + 1, script.begin() + CPubKey::COMPRESSED_SIZE + 1);
+        return CPubKey::ValidSize(pubkey);
+    }
+    return false;
+}
+
+static bool MatchPayToBLSPubkey(const CScript& script, valtype& pubkey)
+{
+    if (script.size() == CPubKey::BLS_PUBLIC_KEY_SIZE + 2 && script[0] == CPubKey::BLS_PUBLIC_KEY_SIZE && script.back() == OP_CHECKSIG) {
+        pubkey = valtype(script.begin() + 1, script.begin() + CPubKey::BLS_PUBLIC_KEY_SIZE + 1);
         return CPubKey::ValidSize(pubkey);
     }
     return false;
@@ -148,6 +158,11 @@ TxoutType Solver(const CScript& scriptPubKey, std::vector<std::vector<unsigned c
         return TxoutType::PUBKEY;
     }
 
+    if (MatchPayToBLSPubkey(scriptPubKey, data)) {
+        vSolutionsRet.push_back(std::move(data));
+        return TxoutType::BLSPUBKEY;
+    }
+
     if (MatchPayToPubkeyHash(scriptPubKey, data)) {
         vSolutionsRet.push_back(std::move(data));
         return TxoutType::PUBKEYHASH;
@@ -178,6 +193,14 @@ bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
             return false;
 
         addressRet = PKHash(pubKey);
+        return true;
+    }
+    case TxoutType::BLSPUBKEY: {
+        CPubKey pubKey(vSolutions[0]);
+        addressRet = pubKey;
+        if (!pubKey.IsValid())
+            return false;
+
         return true;
     }
     case TxoutType::PUBKEYHASH: {
@@ -244,6 +267,11 @@ public:
     CScript operator()(const CNoDestination& dest) const
     {
         return CScript();
+    }
+
+    CScript operator()(const CPubKey& pubkey) const
+    {
+        return CScript() << ToByteVector(pubkey) << OP_CHECKSIG;
     }
 
     CScript operator()(const PKHash& keyID) const

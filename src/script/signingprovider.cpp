@@ -9,6 +9,8 @@
 
 #include <util/system.h>
 
+#include <wallet/blswallet.h>
+
 const SigningProvider& DUMMY_SIGNING_PROVIDER = SigningProvider();
 
 template<typename M, typename K, typename V>
@@ -75,8 +77,14 @@ bool FillableSigningProvider::GetPubKey(const CKeyID &address, CPubKey &vchPubKe
     if (!GetKey(address, key)) {
         return false;
     }
-    vchPubKeyOut = key.GetPubKey();
-    return true;
+    if (!IsBLSRelated(address)) {
+        vchPubKeyOut = key.GetPubKey();
+        return true;
+    } else {
+        vchPubKeyOut = key.GetPubKeyForBLS();
+        return true;
+    }
+    return false;
 }
 
 bool FillableSigningProvider::AddKeyPubKey(const CKey& key, const CPubKey &pubkey)
@@ -108,6 +116,9 @@ bool FillableSigningProvider::GetKey(const CKeyID &address, CKey &keyOut) const
     KeyMap::const_iterator mi = mapKeys.find(address);
     if (mi != mapKeys.end()) {
         keyOut = mi->second;
+        return true;
+    }
+    if (GetBLSKey(address, keyOut)) {
         return true;
     }
     return false;

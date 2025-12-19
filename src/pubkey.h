@@ -7,6 +7,7 @@
 #ifndef BITCOIN_PUBKEY_H
 #define BITCOIN_PUBKEY_H
 
+#include <bls/bls.h>
 #include <hash.h>
 #include <serialize.h>
 #include <uint256.h>
@@ -39,6 +40,13 @@ public:
     static constexpr unsigned int COMPRESSED_SIZE        = 33;
     static constexpr unsigned int SIGNATURE_SIZE         = 72;
     static constexpr unsigned int COMPACT_SIGNATURE_SIZE = 65;
+
+    /**
+     * bls:
+     */
+    static constexpr unsigned int BLS_PUBLIC_KEY_SIZE    = 48;
+    static constexpr unsigned int BLS_SIGNATURE_SIZE     = 96;
+
     /**
      * see www.keylength.com
      * script supports up to 75 for single byte push
@@ -47,34 +55,30 @@ public:
         SIZE >= COMPRESSED_SIZE,
         "COMPRESSED_SIZE is larger than SIZE");
 
-private:
-
     /**
      * Just store the serialized data.
      * Its length can very cheaply be computed from the first byte.
      */
+    unsigned int vchlen;
     unsigned char vch[SIZE];
 
-    //! Compute the length of a pubkey with a given first byte.
-    unsigned int static GetLen(unsigned char chHeader)
-    {
-        if (chHeader == 2 || chHeader == 3)
-            return COMPRESSED_SIZE;
-        if (chHeader == 4 || chHeader == 6 || chHeader == 7)
-            return SIZE;
-        return 0;
-    }
-
+private:
     //! Set this key data to be invalid
     void Invalidate()
     {
-        vch[0] = 0xFF;
+        vchlen = COMPRESSED_SIZE;
     }
 
 public:
 
     bool static ValidSize(const std::vector<unsigned char> &vch) {
-      return vch.size() > 0 && GetLen(vch[0]) == vch.size();
+      if (vch.size() > 0 &&
+          ((vch.size() == BLS_PUBLIC_KEY_SIZE) ||
+           (vch.size() == COMPRESSED_SIZE) ||
+           (vch.size() == SIZE))) {
+          return true;
+      }
+      return false;
     }
 
     //! Construct an invalid public key.
@@ -87,11 +91,9 @@ public:
     template <typename T>
     void Set(const T pbegin, const T pend)
     {
-        int len = pend == pbegin ? 0 : GetLen(pbegin[0]);
-        if (len && len == (pend - pbegin))
-            memcpy(vch, (unsigned char*)&pbegin[0], len);
-        else
-            Invalidate();
+        vchlen = pend - pbegin;
+        if (vchlen <= BLS_PUBLIC_KEY_SIZE)
+            memcpy(vch, (unsigned char*)&pbegin[0], vchlen);
     }
 
     //! Construct a public key using begin/end iterators to byte data.
@@ -108,7 +110,7 @@ public:
     }
 
     //! Simple read-only vector-like interface to the pubkey data.
-    unsigned int size() const { return GetLen(vch[0]); }
+    unsigned int size() const { return vchlen; }
     const unsigned char* data() const { return vch; }
     const unsigned char* begin() const { return vch; }
     const unsigned char* end() const { return vch + size(); }
@@ -153,8 +155,10 @@ public:
         const unsigned int len(::ReadCompactSize(s));
         if (len <= SIZE) {
             s.read(AsWritableBytes(Span{vch, len}));
-            if (len != size()) {
+            if (len != SIZE && len != COMPRESSED_SIZE && len != BLS_PUBLIC_KEY_SIZE) {
                 Invalidate();
+            } else {
+                vchlen = len;
             }
         } else {
             // invalid pubkey, skip available data
@@ -162,6 +166,9 @@ public:
             Invalidate();
         }
     }
+
+    //! Lookup for key type
+    bool IsBLS() const { return size() == BLS_PUBLIC_KEY_SIZE; }
 
     //! Get the KeyID of this public key (hash of its serialization)
     CKeyID GetID() const
@@ -191,7 +198,7 @@ public:
     //! Check whether this is a compressed public key.
     bool IsCompressed() const
     {
-        return size() == COMPRESSED_SIZE;
+        return size() != BLS_PUBLIC_KEY_SIZE && size() == COMPRESSED_SIZE;
     }
 
     /**
@@ -213,6 +220,12 @@ public:
 
     //! Derive BIP32 child pubkey.
     bool Derive(CPubKey& pubkeyChild, ChainCode &ccChild, unsigned int nChild, const ChainCode& cc) const;
+
+///////////////////////////
+// BLS
+////////////////////////////
+
+    bool VerifyBLS(const uint256 &hash, const std::vector<uint8_t> &vchSig) const;
 };
 
 /** An ElligatorSwift-encoded public key. */

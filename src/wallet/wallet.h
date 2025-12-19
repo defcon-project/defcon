@@ -23,6 +23,7 @@
 #include <util/strencodings.h>
 #include <util/ui_change_type.h>
 #include <validationinterface.h>
+#include <wallet/blswallet.h>
 #include <wallet/coincontrol.h>
 #include <wallet/crypter.h>
 #include <wallet/coinselection.h>
@@ -748,6 +749,8 @@ private:
     std::atomic<int64_t> m_scanning_start{0};
     std::atomic<double> m_scanning_progress{0};
     friend class WalletRescanReserver;
+
+    std::vector<BlsWalletEntry> blsKeyRecords GUARDED_BY(cs_wallet);
 
     //! the current wallet version: clients below this version are not able to load the wallet
     int nWalletVersion GUARDED_BY(cs_wallet){FEATURE_BASE};
@@ -1557,6 +1560,18 @@ public:
 
     //! Add a descriptor to the wallet, return a ScriptPubKeyMan & associated output type
     ScriptPubKeyMan* AddWalletDescriptor(WalletDescriptor& desc, const FlatSigningProvider& signing_provider, const std::string& label, bool internal);
+
+    //! BLS Key Functions
+    void PrintBLSKey(std::vector<uint8_t>& in, std::string in2);
+    bool ReadFromBLSWallet(const std::string& keydata);
+    bool WriteToBLSWallet(const std::string& keydata);
+    std::map<unsigned int, std::string> GetBLSAddresses();
+    std::vector<BlsWalletEntry> GetBLSKeypairs();
+    bool IsSolvableBLS(CScript& scriptPubKey);
+    bool GetBLSKey(const CKeyID& keyID, CKey key);
+    bool BLSWalletInit();
+    CScript GenerateNewBLSChangeAddress();
+    bool ContainsExistingBLSPrivKey(std::string& rpcBlsKey);
 };
 
 /**

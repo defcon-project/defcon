@@ -197,12 +197,21 @@ bool static IsDefinedHashtypeSignature(const valtype &vchSig) {
     return true;
 }
 
+static bool IsBLSSig(uint32_t flags, const valtype &vchSig) {
+    return (vchSig.size() >= CPubKey::BLS_SIGNATURE_SIZE);
+}
+
 bool CheckSignatureEncoding(const std::vector<unsigned char> &vchSig, unsigned int flags, ScriptError* serror) {
     // Empty signature. Not strictly DER encoded, but allowed to provide a
     // compact way to provide an invalid signature for use with CHECK(MULTI)SIG
     if (vchSig.size() == 0) {
         return true;
     }
+
+    if (IsBLSSig(flags, vchSig)) {
+        return true;
+    }
+
     if ((flags & (SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S | SCRIPT_VERIFY_STRICTENC)) != 0 && !IsValidSignatureEncoding(vchSig)) {
         return set_error(serror, SCRIPT_ERR_SIG_DER);
     } else if ((flags & SCRIPT_VERIFY_LOW_S) != 0 && !IsLowDERSignature(vchSig, serror)) {
@@ -214,7 +223,14 @@ bool CheckSignatureEncoding(const std::vector<unsigned char> &vchSig, unsigned i
     return true;
 }
 
+static bool IsBLSPubKey(const valtype &vchPubKey) {
+    return (vchPubKey.size() == CPubKey::BLS_PUBLIC_KEY_SIZE);
+}
+
 bool static CheckPubKeyEncoding(const valtype &vchPubKey, unsigned int flags, const SigVersion &sigversion, ScriptError* serror) {
+    if (IsBLSPubKey(vchPubKey)) {
+        return true;
+    }
     if ((flags & SCRIPT_VERIFY_STRICTENC) != 0 && !IsCompressedOrUncompressedPubKey(vchPubKey)) {
         return set_error(serror, SCRIPT_ERR_PUBKEYTYPE);
     }
@@ -1561,6 +1577,9 @@ template uint256 SignatureHash<CTransaction>(const CScript& scriptCode, const CT
 template <class T>
 bool GenericTransactionSignatureChecker<T>::VerifySignature(const std::vector<unsigned char>& vchSig, const CPubKey& pubkey, const uint256& sighash) const
 {
+    if (vchSig.size() == CPubKey::BLS_SIGNATURE_SIZE) {
+        return pubkey.VerifyBLS(sighash, vchSig);
+    }
     return pubkey.Verify(sighash, vchSig);
 }
 
