@@ -81,6 +81,14 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
             continue;
         }
 
+        // Do not include BLS addresses
+        std::vector<valtype> vSolutions;
+        CScript scriptPubKeyKernel = pcoin->tx->vout[i].scriptPubKey;
+        TxoutType whichType = Solver(scriptPubKeyKernel, vSolutions);
+        if (whichType == TxoutType::BLSPUBKEY) {
+            continue;
+        }
+
         // Skip inputs that dont meet age, value requirements or are collaterals
         CAmount inputValue = pcoin->tx->vout[i].nValue;
         int64_t inputAge = GetTime() - pcoin->GetTxTime();
@@ -197,7 +205,13 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
                 }
                 scriptPubKeyOut = scriptPubKeyKernel;
 
+            } else if (whichType == TxoutType::BLSPUBKEY) {
+
+                LogPrint(BCLog::POS, "%s: staking on BLS kernels is forbidden", __func__);
+                continue;
+
             } else {
+
                 LogPrint(BCLog::POS, "%s: no support for kernel type=%s\n", __func__, GetTxnOutputType(whichType));
                 continue;
             }
