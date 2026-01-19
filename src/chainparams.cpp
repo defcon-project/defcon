@@ -217,6 +217,7 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
 
+        consensus.premineAddress = CScript() << ParseHex("867e79565f4443e588e3d11997215df2c4d181495eba1db35714ecc4a743b906e24636de1d2104635ca6056afbb4d9f0") << OP_CHECKSIG;
         consensus.lastPowBlock = 999;
         consensus.posTargetTimespan = consensus.nPowTargetTimespan;
         consensus.posTargetSpacing = consensus.nPowTargetSpacing;
@@ -388,6 +389,7 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
 
+        consensus.premineAddress = CScript() << ParseHex("867e79565f4443e588e3d11997215df2c4d181495eba1db35714ecc4a743b906e24636de1d2104635ca6056afbb4d9f0") << OP_CHECKSIG;
         consensus.lastPowBlock = 999;
         consensus.posTargetTimespan = consensus.nPowTargetTimespan;
         consensus.posTargetSpacing = consensus.nPowTargetSpacing;
@@ -553,6 +555,7 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
 
+        consensus.premineAddress = CScript() << ParseHex("867e79565f4443e588e3d11997215df2c4d181495eba1db35714ecc4a743b906e24636de1d2104635ca6056afbb4d9f0") << OP_CHECKSIG;
         consensus.lastPowBlock = 1000;
         consensus.posTargetTimespan = consensus.nPowTargetTimespan;
         consensus.posTargetSpacing = consensus.nPowTargetSpacing;
@@ -803,6 +806,7 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
 
+        consensus.premineAddress = CScript() << ParseHex("867e79565f4443e588e3d11997215df2c4d181495eba1db35714ecc4a743b906e24636de1d2104635ca6056afbb4d9f0") << OP_CHECKSIG;
         consensus.lastPowBlock = 1000;
         consensus.posTargetTimespan = consensus.nPowTargetTimespan;
         consensus.posTargetSpacing = consensus.nPowTargetSpacing;

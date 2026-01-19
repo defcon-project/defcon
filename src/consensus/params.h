@@ -7,6 +7,7 @@
 #define BITCOIN_CONSENSUS_PARAMS_H
 
 #include <consensus/amount.h>
+#include <script/script.h>
 #include <uint256.h>
 #include <llmq/params.h>
 
@@ -186,6 +187,7 @@ struct Params {
     CAmount evoMnCollateral;
     int32_t evoVoteWeight;
     int minStaticCollateral;
+    CScript premineAddress;
 
     /** these parameters are only used on devnet and can be configured from the outside */
     int nMinimumDifficultyBlocks{0};
