@@ -1364,7 +1364,7 @@ NOTE:   unlike bitcoin we are using PREVIOUS block height here,
 */
 static std::pair<CAmount, CAmount> GetBlockSubsidyHelper(int nPrevBits, int nPrevHeight, const Consensus::Params& consensusParams, bool fV20Active)
 {
-    CAmount nSubsidy = 10000000 * COIN;
+    CAmount nSubsidy = 11000000 * COIN;
     if (nPrevHeight + 1 > consensusParams.lastPowBlock)
         nSubsidy = GetProofOfStakeReward();
     return {nSubsidy, 0};
@@ -2460,6 +2460,17 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         // NOTE: Do not punish, the node might be missing governance data
         LogPrintf("ERROR: ConnectBlock(DFCN): couldn't find masternode or superblock payments\n");
         return state.Invalid(BlockValidationResult::BLOCK_RESULT_UNSET, "bad-cb-payee");
+    }
+
+    if (pindex->nHeight <= 900) {
+        if (block.vtx[0]->vout.size() != 1) {
+            LogPrintf("ERROR: ConnectBlock(DFCN): premine payment must have one vout only\n");
+            return state.Invalid(BlockValidationResult::BLOCK_RESULT_UNSET, "bad-split-premine");
+        }
+        if (block.vtx[0]->vout[0].scriptPubKey != Params().GetConsensus().premineAddress) {
+            LogPrintf("ERROR: ConnectBlock(DFCN): payment not going to correct pre-mine address\n");
+            return state.Invalid(BlockValidationResult::BLOCK_RESULT_UNSET, "bad-cb-premine");
+        }
     }
 
     int64_t nTime5_5 = GetTimeMicros(); nTimePayeeValid += nTime5_5 - nTime5_4;

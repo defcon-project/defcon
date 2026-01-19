@@ -194,7 +194,13 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     coinbaseTx.vin.resize(1);
     coinbaseTx.vin[0].prevout.SetNull();
     coinbaseTx.vout.resize(1);
-    coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
+
+    // First 900 blocks to premine BLS address
+    if (nHeight <= 900) {
+        coinbaseTx.vout[0].scriptPubKey = Params().GetConsensus().premineAddress;
+    } else {
+        coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
+    }
 
     // NOTE: unlike in bitcoin, we need to pass PREVIOUS block height here
     CAmount blockSubsidy = GetBlockSubsidyInner(pindexPrev->nBits, pindexPrev->nHeight, Params().GetConsensus(), fV20Active_context);

@@ -1204,7 +1204,7 @@ public:
        Proof of Stake Variables
      */
     CAmount nReserveBalance{0};
-    CAmount nStakeSplitThreshold = 10000 * COIN;
+    CAmount nStakeSplitThreshold = 15000 * COIN;
     int64_t nLastCoinStakeSearchTime{0};
     std::atomic<int> m_is_staking{NOT_STAKING};
     mutable int m_greatest_txn_depth = 0;

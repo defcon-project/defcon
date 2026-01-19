@@ -1101,10 +1101,6 @@ bool AppInitParameterInteraction(const ArgsManager& args)
         errors += strprintf(_("Config setting for %s only applied on %s network when in [%s] section.") + Untranslated("\n"), arg, network, network);
     }
 
-    if (network != "test") {
-        errors += strprintf(_("Please launch daemon in testnet mode only."));
-    }
-
     if (!errors.empty()) {
         return InitError(errors);
     }
