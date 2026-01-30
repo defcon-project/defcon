@@ -316,8 +316,8 @@ private:
     //BLS///////////////////////////////////////////////////////////////////
     using BLSKeyPair = std::pair<CKeyID, CKey>;
     using BLSPubKeyPair = std::pair<CKeyID, CPubKey>;
-    std::vector<BLSKeyPair> blsKeyVector GUARDED_BY(cs_Keystore);
-    std::vector<BLSPubKeyPair> blsPubKeyVector GUARDED_BY(cs_Keystore);
+    std::vector<BLSKeyPair> blsKeyVector;
+    std::vector<BLSPubKeyPair> blsPubKeyVector;
     //BLS///////////////////////////////////////////////////////////////////
 
 public:
