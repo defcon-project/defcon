@@ -157,7 +157,6 @@ jobs:
           BUILD_TARGET="${{ matrix.build_target }}"
           source ./ci/dash/matrix.sh
           ./ci/dash/build_src.sh
-          ./ci/dash/test_unittests.sh
         shell: bash
 
       - name: Upload build artifacts

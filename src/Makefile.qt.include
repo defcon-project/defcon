@@ -211,7 +211,10 @@ RES_ICONS = \
   qt/res/icons/remove.png \
   qt/res/icons/synced.png \
   qt/res/icons/fontbigger.png \
-  qt/res/icons/fontsmaller.png
+  qt/res/icons/fontsmaller.png \
+  qt/res/icons/staking_active.png \
+  qt/res/icons/staking_inactive.png \
+  qt/res/icons/staking_stalled.png
 
 BITCOIN_QT_BASE_CPP = \
   qt/appearancewidget.cpp \
