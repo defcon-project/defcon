@@ -63,8 +63,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - build_target: arm-linux
-          host: arm-linux-gnueabihf
         - build_target: linux64
           host: x86_64-pc-linux-gnu
 
@@ -108,28 +106,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - build_target: arm-linux
-            host: arm-linux-gnueabihf
-            depends_on: arm-linux
           - build_target: linux64
-            host: x86_64-pc-linux-gnu
-            depends_on: linux64
-          - build_target: linux64_cxx20
-            host: x86_64-pc-linux-gnu
-            depends_on: linux64
-          - build_target: linux64_fuzz
-            host: x86_64-pc-linux-gnu
-            depends_on: linux64
-          - build_target: linux64_nowallet
-            host: x86_64-pc-linux-gnu
-            depends_on: linux64
-          - build_target: linux64_sqlite
-            host: x86_64-pc-linux-gnu
-            depends_on: linux64
-          - build_target: linux64_tsan
-            host: x86_64-pc-linux-gnu
-            depends_on: linux64
-          - build_target: linux64_ubsan
             host: x86_64-pc-linux-gnu
             depends_on: linux64
     container:
@@ -171,7 +148,7 @@ jobs:
           git config --global --add advice.detachedHead false
           git config --global --add safe.directory "$PWD"
           GIT_HEAD="$(git rev-parse HEAD)"
-          git checkout develop
+          git checkout v22.1.x
           git checkout ${GIT_HEAD}
           CCACHE_SIZE="400M"
           CACHE_DIR="/cache"
