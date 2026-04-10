@@ -1078,10 +1078,7 @@ CDeterministicMNCPtr CCoinJoinClientManager::GetRandomNotUsedMasternode()
 
 static int WinnersToSkip()
 {
-    return (Params().NetworkIDString() == CBaseChainParams::DEVNET ||
-            Params().NetworkIDString() == CBaseChainParams::REGTEST ||
-            Params().NetworkIDString() == CBaseChainParams::TESTNET)
-            ? 1 : 8;
+    return 1;
 }
 
 bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, CConnman& connman)
@@ -1091,7 +1088,6 @@ bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, 
 
     const auto mnList = m_dmnman.GetListAtChainTip();
     const int nWeightedMnCount = mnList.GetValidWeightedMNsCount();
-    const bool isTestnet = Params().NetworkIDString() == CBaseChainParams::TESTNET;
 
     // Look through the queues and see if anything matches
     CCoinJoinQueue dsq;
@@ -1104,7 +1100,7 @@ bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, 
         }
 
         // skip next mn payments winners
-        if (!isTestnet && (dmn->pdmnState->nLastPaidHeight + nWeightedMnCount < mnList.GetHeight() + WinnersToSkip())) {
+        if (dmn->pdmnState->nLastPaidHeight + nWeightedMnCount < mnList.GetHeight() + WinnersToSkip()) {
             WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::JoinExistingQueue -- skipping winner, masternode=%s\n", dmn->proTxHash.ToString());
             continue;
         }
@@ -1124,13 +1120,6 @@ bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, 
         }
 
         m_clientman.AddUsedMasternode(dsq.masternodeOutpoint);
-
-        if (!isTestnet && (connman.IsMasternodeOrDisconnectRequested(dmn->pdmnState->addr))) {
-            WalletCJLogPrint(m_wallet, /* Continued */
-                             "CCoinJoinClientSession::JoinExistingQueue -- skipping masternode connection, addr=%s\n",
-                             dmn->pdmnState->addr.ToStringAddrPort());
-            continue;
-        }
 
         nSessionDenom = dsq.nDenom;
         mixingMasternode = dmn;
@@ -1161,7 +1150,6 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
     const auto mnList = m_dmnman.GetListAtChainTip();
     const int nMnCount = mnList.GetValidMNsCount();
     const int nWeightedMnCount = mnList.GetValidWeightedMNsCount();
-    const bool isTestnet = Params().NetworkIDString() == CBaseChainParams::TESTNET;
 
     // find available denominated amounts
     std::set<CAmount> setAmounts;
@@ -1174,7 +1162,7 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
 
     // otherwise, try one randomly
     while (nTries < 10) {
-        auto dmn = isTestnet ? m_clientman.GetRandomUsedMasternode() : m_clientman.GetRandomNotUsedMasternode();
+        auto dmn = m_clientman.GetRandomUsedMasternode();
         if (!dmn) {
             strAutoDenomResult = _("Can't find random Masternode.");
             WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewQueue -- %s\n", strAutoDenomResult.original);
@@ -1184,7 +1172,7 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
         m_clientman.AddUsedMasternode(dmn->collateralOutpoint);
 
         // skip next mn payments winners
-        if (!isTestnet && (dmn->pdmnState->nLastPaidHeight + nWeightedMnCount < mnList.GetHeight() + WinnersToSkip())) {
+        if (dmn->pdmnState->nLastPaidHeight + nWeightedMnCount < mnList.GetHeight() + WinnersToSkip()) {
             WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewQueue -- skipping winner, masternode=%s\n", dmn->proTxHash.ToString());
             nTries++;
             continue;
@@ -1198,13 +1186,6 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
                              " masternode=%s  addr=%s  nLastDsq=%d  nDsqThreshold=%d  nDsqCount=%d\n",
                              dmn->proTxHash.ToString(), dmn->pdmnState->addr.ToStringAddrPort(), nLastDsq,
                              nDsqThreshold, m_mn_metaman.GetDsqCount());
-            nTries++;
-            continue;
-        }
-
-        if (!isTestnet && (connman.IsMasternodeOrDisconnectRequested(dmn->pdmnState->addr))) {
-            WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewQueue -- skipping masternode connection, addr=%s\n",
-                             dmn->pdmnState->addr.ToStringAddrPort());
             nTries++;
             continue;
         }
