@@ -639,9 +639,7 @@ static UniValue protx_register_common_wrapper(const JSONRPCRequest& request,
     std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
     if (!pwallet) return NullUniValue;
 
-    if (action == ProTxRegisterAction::External || action == ProTxRegisterAction::Fund) {
-        EnsureWalletIsUnlocked(*pwallet);
-    }
+    EnsureWalletIsUnlocked(*pwallet);
 
     size_t paramIdx = 0;
 
