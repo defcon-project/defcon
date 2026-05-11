@@ -106,7 +106,7 @@ MessageProcessingResult CChainLocksHandler::ProcessNewChainLock(const NodeId fro
         }
 
         if (!bestChainLock.IsNull() && clsig.getHeight() <= bestChainLock.getHeight()) {
-            // no need to process/relay older CLSIGs
+            // no need to process older/same CLSIGs
             return {};
         }
     }
@@ -123,6 +123,11 @@ MessageProcessingResult CChainLocksHandler::ProcessNewChainLock(const NodeId fro
 
     {
         LOCK(cs);
+        // A newer chainlock might have been processed by another thread while cs was released.
+        if (!bestChainLock.IsNull() && clsig.getHeight() <= bestChainLock.getHeight()) {
+            // no need to process older/same CLSIGs
+            return {};
+        }
         bestChainLockHash = hash;
         bestChainLock = clsig;
 
