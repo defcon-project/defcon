@@ -150,6 +150,7 @@ private:
     QAction* usedReceivingAddressesAction = nullptr;
     QAction* signMessageAction = nullptr;
     QAction* verifyMessageAction = nullptr;
+    QAction* multisigAction = nullptr;
     QAction* m_load_psbt_action = nullptr;
     QAction* m_load_psbt_clipboard_action = nullptr;
     QAction* aboutAction = nullptr;
