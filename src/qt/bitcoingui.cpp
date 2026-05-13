@@ -418,6 +418,8 @@ void BitcoinGUI::createActions()
     unlockWalletAction = new QAction(tr("&Unlock Wallet…"), this);
     unlockWalletAction->setToolTip(tr("Unlock wallet"));
     lockWalletAction = new QAction(tr("&Lock Wallet"), this);
+    multisigAction = new QAction(tr("&Multisig..."), this);
+    multisigAction->setStatusTip(tr("Create or add a multisignature address"));
     signMessageAction = new QAction(tr("Sign &message…"), this);
     signMessageAction->setStatusTip(tr("Sign messages with your DeFCoN addresses to prove you own them"));
     verifyMessageAction = new QAction(tr("&Verify message…"), this);
@@ -550,6 +552,8 @@ void BitcoinGUI::createActions()
         connect(lockWalletAction, &QAction::triggered, walletFrame, &WalletFrame::lockWallet);
         connect(signMessageAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
         connect(signMessageAction, &QAction::triggered, [this]{ gotoSignMessageTab(); });
+        connect(multisigAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
+        connect(multisigAction, &QAction::triggered, walletFrame, &WalletFrame::openMultisigDialog);
         connect(m_load_psbt_action, &QAction::triggered, [this]{ gotoLoadPSBT(); });
         connect(m_load_psbt_clipboard_action, &QAction::triggered, [this]{ gotoLoadPSBT(true); });
         connect(verifyMessageAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
@@ -626,6 +630,7 @@ void BitcoinGUI::createMenuBar()
         file->addAction(backupWalletAction);
         file->addAction(signMessageAction);
         file->addAction(verifyMessageAction);
+        file->addAction(multisigAction);
         file->addAction(m_load_psbt_action);
         file->addAction(m_load_psbt_clipboard_action);
         file->addSeparator();
