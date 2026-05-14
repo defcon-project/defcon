@@ -796,7 +796,7 @@ void BitcoinGUI::createToolBars()
         m_wallet_selector->setSizeAdjustPolicy(QComboBox::AdjustToContents);
         connect(m_wallet_selector, qOverload<int>(&QComboBox::currentIndexChanged), this, &BitcoinGUI::setCurrentWalletBySelectorIndex);
 
-        QVBoxLayout* walletSelectorLayout = new QVBoxLayout(this);
+        QVBoxLayout* walletSelectorLayout = new QVBoxLayout();
         walletSelectorLayout->addWidget(m_wallet_selector);
         walletSelectorLayout->setSpacing(0);
         walletSelectorLayout->setMargin(0);
