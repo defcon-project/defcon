@@ -74,6 +74,10 @@ MultisigDialog::MultisigDialog(QWidget* parent, WalletModel* wallet_model, Clien
     m_mode_combo = new QComboBox(form_group);
     m_mode_combo->addItem(tr("Create only (createmultisig)"));
     m_mode_combo->addItem(tr("Add to current wallet (addmultisigaddress)"));
+    if (!isAddToWalletSupported()) {
+        m_mode_combo->removeItem(static_cast<int>(Mode::ADD_TO_WALLET));
+        m_mode_combo->setToolTip(tr("Add-to-wallet mode is only available for legacy wallets."));
+    }
     form->addRow(tr("Mode"), m_mode_combo);
 
     m_required_spin = new QSpinBox(form_group);
@@ -157,7 +161,7 @@ MultisigDialog::MultisigDialog(QWidget* parent, WalletModel* wallet_model, Clien
 
 void MultisigDialog::updateModeUi()
 {
-    const bool add_mode = currentMode() == Mode::ADD_TO_WALLET;
+    const bool add_mode = currentMode() == Mode::ADD_TO_WALLET && isAddToWalletSupported();
     m_label_edit->setEnabled(add_mode);
     m_label_edit->setVisible(add_mode);
     m_execute_button->setText(add_mode ? tr("Add multisig to wallet") : tr("Create multisig"));
@@ -187,6 +191,11 @@ MultisigDialog::Mode MultisigDialog::currentMode() const
         : Mode::CREATE_ONLY;
 }
 
+bool MultisigDialog::isAddToWalletSupported() const
+{
+    return m_wallet_model && m_wallet_model->wallet().isLegacy();
+}
+
 void MultisigDialog::executeCommand()
 {
     clearResult();
@@ -209,6 +218,11 @@ void MultisigDialog::executeCommand()
     }
 
     const Mode mode = currentMode();
+    if (mode == Mode::ADD_TO_WALLET && !isAddToWalletSupported()) {
+        setStatus(tr("Add-to-wallet mode is not supported for descriptor wallets."), true);
+        return;
+    }
+
     if (mode == Mode::ADD_TO_WALLET && !m_wallet_model) {
         setStatus(tr("No wallet is currently selected. Select a wallet first, or use create-only mode."), true);
         return;

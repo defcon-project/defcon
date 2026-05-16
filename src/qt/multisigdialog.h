@@ -46,6 +46,7 @@ private:
     void clearResult();
     void setStatus(const QString& message, bool is_error);
     void executeCommand();
+    bool isAddToWalletSupported() const;
     Mode currentMode() const;
 };
 
