@@ -646,7 +646,7 @@ public:
         nPoolMaxParticipants = 20;
         nFulfilledRequestExpireTime = 5*60; // fulfilled requests expire in 5 minutes
 
-        vSporkAddresses = {"PJGcRTT1eq3EuiyLsTkToEP1YbZMphk1k6"};
+        vSporkAddresses = {"yj949n1UH6fDhw6HtVE5VMj2iSTaSWBMcW"};
         nMinSporkKeys = 1;
 
         nCreditPoolPeriodBlocks = 576;
@@ -860,7 +860,7 @@ public:
         nPoolMinParticipants = 2;
         nPoolMaxParticipants = 20;
 
-        vSporkAddresses = {"PJGcRTT1eq3EuiyLsTkToEP1YbZMphk1k6"};
+        vSporkAddresses = {"yj949n1UH6fDhw6HtVE5VMj2iSTaSWBMcW"};
         nMinSporkKeys = 1;
 
         nCreditPoolPeriodBlocks = 100;
