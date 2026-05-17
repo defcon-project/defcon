@@ -6078,6 +6078,8 @@ void CWallet::PrintBLSKey(std::vector<uint8_t>& in, std::string in2)
 
 bool CWallet::ReadFromBLSWallet(const std::string& keydata)
 {
+    LOCK(cs_wallet);
+
     BlsWalletEntry entry;
     if (!entry.sk.SetHexStr(keydata, false)) {
         return false;
@@ -6101,7 +6103,9 @@ bool CWallet::ReadFromBLSWallet(const std::string& keydata)
 
     //push into scriptpubkeyman
     auto spk_man = GetLegacyScriptPubKeyMan();
-    spk_man->AddBLSEntries(pubkey, key);
+    if (spk_man) {
+        spk_man->AddBLSEntries(pubkey, key);
+    }
 
     //try new method
     AddBLSKey(entry.keyID, key);
@@ -6111,6 +6115,7 @@ bool CWallet::ReadFromBLSWallet(const std::string& keydata)
 
 bool CWallet::WriteToBLSWallet(const std::string& keydata)
 {
+    LOCK(cs_wallet);
     if (!ReadFromBLSWallet(keydata)) {
         return false;
     }
@@ -6134,6 +6139,7 @@ std::map<unsigned int, std::string> CWallet::GetBLSAddresses()
 
 std::vector<BlsWalletEntry> CWallet::GetBLSKeypairs()
 {
+    LOCK(cs_wallet);
     return blsKeyRecords;
 }
 
@@ -6146,22 +6152,25 @@ bool CWallet::IsSolvableBLS(CScript& scriptPubKey)
             CPubKey pubkey(vSolutions[0]);
             const CKeyID address = pubkey.GetID();
             auto spk_man = GetLegacyScriptPubKeyMan();
-            if (spk_man->HaveBLSKey(address)) {
+            if (spk_man && spk_man->HaveBLSKey(address)) {
                 return true;
             }
+            // Descriptor wallets do not have LegacyScriptPubKeyMan.
+            return HaveBLSKey(address);
         }
     }
 
     return false;
 }
 
-bool CWallet::GetBLSKey(const CKeyID& keyID, CKey key)
+bool CWallet::GetBLSKey(const CKeyID& keyID, CKey& key)
 {
     auto spk_man = GetLegacyScriptPubKeyMan();
-    if (spk_man->GetBLSKey(keyID, key)) {
+    if (spk_man && spk_man->GetBLSKey(keyID, key)) {
         return true;
     }
-    return false;
+    // Descriptor wallets do not have LegacyScriptPubKeyMan.
+    return ::GetBLSKey(keyID, key);
 }
 
 bool CWallet::BLSWalletInit()
@@ -6200,6 +6209,7 @@ CScript CWallet::GenerateNewBLSChangeAddress()
 
 bool CWallet::ContainsExistingBLSPrivKey(std::string& rpcBlsKey)
 {
+    LOCK(cs_wallet);
     std::string importAttempt = ToLower(rpcBlsKey);
     for (unsigned int i = 0; i < blsKeyRecords.size(); i++) {
         std::string blsPrivateKey = blsKeyRecords[i].sk.ToString();
