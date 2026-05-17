@@ -195,8 +195,8 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
     coinbaseTx.vin[0].prevout.SetNull();
     coinbaseTx.vout.resize(1);
 
-    // First 900 blocks to premine BLS address
-    if (nHeight <= 900) {
+    // First 900 blocks to premine BLS address (except regtest, where tests need wallet-funded setup).
+    if (Params().NetworkIDString() != CBaseChainParams::REGTEST && nHeight <= 900) {
         coinbaseTx.vout[0].scriptPubKey = Params().GetConsensus().premineAddress;
     } else {
         coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;

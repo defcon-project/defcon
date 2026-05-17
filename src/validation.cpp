@@ -2462,12 +2462,13 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         return state.Invalid(BlockValidationResult::BLOCK_RESULT_UNSET, "bad-cb-payee");
     }
 
-    if (pindex->nHeight <= 900) {
-        if (block.vtx[0]->vout.size() != 1) {
+    if (m_params.NetworkIDString() != CBaseChainParams::REGTEST && pindex->nHeight <= 900) {
+        const bool mn_rr_active = pindex->nHeight >= Params().GetConsensus().MN_RRHeight;
+        if (!mn_rr_active && block.vtx[0]->vout.size() != 1) {
             LogPrintf("ERROR: ConnectBlock(DFCN): premine payment must have one vout only\n");
             return state.Invalid(BlockValidationResult::BLOCK_RESULT_UNSET, "bad-split-premine");
         }
-        if (block.vtx[0]->vout[0].scriptPubKey != Params().GetConsensus().premineAddress) {
+        if (block.vtx[0]->vout.empty() || block.vtx[0]->vout[0].scriptPubKey != Params().GetConsensus().premineAddress) {
             LogPrintf("ERROR: ConnectBlock(DFCN): payment not going to correct pre-mine address\n");
             return state.Invalid(BlockValidationResult::BLOCK_RESULT_UNSET, "bad-cb-premine");
         }
