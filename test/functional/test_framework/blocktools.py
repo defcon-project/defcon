@@ -124,10 +124,17 @@ def create_block_with_mnpayments(mninfo, node, vtx=None, mn_payee=None, mn_amoun
 
     mn_operator_amount = 0
     if mn_amount is None:
-        v20_info = node.getblockchaininfo()['softforks']['v20']
-        mn_amount_total = get_masternode_payment(height, coinbasevalue, v20_info['active'])
-        mn_operator_amount = mn_amount_total * operator_reward // 100
-        mn_amount = mn_amount_total - mn_operator_amount
+        # Prefer exact template payouts when available. This keeps custom chains
+        # and test params aligned with consensus-critical payee amounts.
+        if 'amount' in bt['masternode'][0]:
+            mn_amount = bt['masternode'][0]['amount']
+            if len(bt['masternode']) == 2 and 'amount' in bt['masternode'][1]:
+                mn_operator_amount = bt['masternode'][1]['amount']
+        else:
+            v20_info = node.getblockchaininfo()['softforks']['v20']
+            mn_amount_total = get_masternode_payment(height, coinbasevalue, v20_info['active'])
+            mn_operator_amount = mn_amount_total * operator_reward // 100
+            mn_amount = mn_amount_total - mn_operator_amount
     miner_amount = coinbasevalue - mn_amount - mn_operator_amount
 
     miner_address = node.get_deterministic_priv_key().address

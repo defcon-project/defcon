@@ -2462,7 +2462,7 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         return state.Invalid(BlockValidationResult::BLOCK_RESULT_UNSET, "bad-cb-payee");
     }
 
-    if (pindex->nHeight <= 900) {
+    if (m_params.NetworkIDString() != CBaseChainParams::REGTEST && pindex->nHeight <= 900) {
         const bool mn_rr_active = pindex->nHeight >= Params().GetConsensus().MN_RRHeight;
         if (!mn_rr_active && block.vtx[0]->vout.size() != 1) {
             LogPrintf("ERROR: ConnectBlock(DFCN): premine payment must have one vout only\n");
