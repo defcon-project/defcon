@@ -1568,7 +1568,7 @@ public:
     std::map<unsigned int, std::string> GetBLSAddresses();
     std::vector<BlsWalletEntry> GetBLSKeypairs();
     bool IsSolvableBLS(CScript& scriptPubKey);
-    bool GetBLSKey(const CKeyID& keyID, CKey key);
+    bool GetBLSKey(const CKeyID& keyID, CKey& key);
     bool BLSWalletInit();
     CScript GenerateNewBLSChangeAddress();
     bool ContainsExistingBLSPrivKey(std::string& rpcBlsKey);
