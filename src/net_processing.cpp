@@ -1130,6 +1130,16 @@ static uint16_t GetHeadersLimit(const CNode& pfrom, bool compressed)
     return MAX_HEADERS_UNCOMPRESSED_RESULT;
 }
 
+// Returns true when peer is a verified masternode that has opted in to receive recsigs.
+// Such peers participate in the signing flow that populates creatingInstantSendLocks, so
+// they can reconstruct an ISDLOCK locally from the recsig and don't need the ISDLOCK inv.
+// Non-MN peers (e.g. nodes running with -watchquorums) also opt in to recsigs via
+// QSENDRECSIGS but still need ISDLOCK invs because they don't run the signing flow.
+static bool PeerReconstructsISLockFromRecsig(const CNode& pnode, const Peer& peer)
+{
+    return peer.m_wants_recsigs && !pnode.GetVerifiedProRegTxHash().IsNull();
+}
+
 static void PushInv(Peer& peer, const CInv& inv)
 {
     auto inv_relay = peer.GetInvRelay();
@@ -2401,6 +2411,11 @@ void PeerManagerImpl::RelayInvFiltered(CInv &inv, const CTransaction& relatedTx,
                 return;
             }
         } // LOCK(tx_relay->m_bloom_filter_mutex)
+        if (inv.type == MSG_ISDLOCK && PeerReconstructsISLockFromRecsig(*pnode, *peer)) {
+            LogPrint(BCLog::NET, "%s -- skipping ISDLOCK inv (peer wants recsigs): %s peer=%d\n",
+                     __func__, inv.ToString(), peer->m_id);
+            return;
+        }
         PushInv(*peer, inv);
     });
 }
@@ -2426,6 +2441,11 @@ void PeerManagerImpl::RelayInvFiltered(CInv &inv, const uint256& relatedTxHash, 
                 return;
             }
         } // LOCK(tx_relay->m_bloom_filter_mutex)
+        if (inv.type == MSG_ISDLOCK && PeerReconstructsISLockFromRecsig(*pnode, *peer)) {
+            LogPrint(BCLog::NET, "%s -- skipping ISDLOCK inv (peer wants recsigs): %s peer=%d\n",
+                     __func__, inv.ToString(), peer->m_id);
+            return;
+        }
         PushInv(*peer, inv);
     });
 }
@@ -6100,7 +6120,9 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                     if (pto->nVersion < ISDLOCK_PROTO_VERSION) continue;
                     uint256 isLockHash{::SerializeHash(*islock)};
                     tx_relay->m_tx_inventory_known_filter.insert(isLockHash);
-                    queueAndMaybePushInv(CInv(MSG_ISDLOCK, isLockHash));
+                    if (!PeerReconstructsISLockFromRecsig(*pto, *peer)) {
+                        queueAndMaybePushInv(CInv(MSG_ISDLOCK, isLockHash));
+                    }
                 }
 
                 // Send an inv for the best ChainLock we have
