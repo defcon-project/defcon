@@ -3,7 +3,7 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 from test_framework.test_framework import DashTestFramework
-from test_framework.util import assert_equal
+from test_framework.util import assert_equal, assert_raises_rpc_error
 
 '''
 rpc_masternode.py
@@ -85,6 +85,24 @@ class RPCMasternodeTest(DashTestFramework):
                 assert option1 or option2
                 checked_non_0_operator_reward = True
             self.generate(self.nodes[0], 1, sync_fun=self.no_op)
+
+        self.log.info("test protx list min_confirmations filter")
+        tip = self.nodes[0].getblockcount()
+        all_registered = self.nodes[0].protx("list", "registered", True, tip)
+        assert len(all_registered) > 0
+        # use a threshold above tip height to force an empty result set
+        filtered_none = self.nodes[0].protx("list", "registered", True, tip, tip + 1)
+        assert_equal(filtered_none, [])
+        assert_raises_rpc_error(
+            -8,
+            "min_confirmations must be non-negative",
+            self.nodes[0].protx,
+            "list",
+            "registered",
+            True,
+            tip,
+            -1,
+        )
 
         self.log.info("test that `masternode outputs` show correct list")
         addr1 = self.nodes[0].getnewaddress()

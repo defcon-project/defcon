@@ -1268,14 +1268,8 @@ static bool CheckWalletOwnsKey(const CWallet* const pwallet, const CKeyID& keyID
 }
 #endif
 
-static UniValue BuildDMNListEntry(const CWallet* const pwallet, const CDeterministicMN& dmn, CMasternodeMetaMan& mn_metaman, bool detailed, const ChainstateManager& chainman, const CBlockIndex* pindex = nullptr)
+static int GetDMNCollateralConfirmations(const CDeterministicMN& dmn, const ChainstateManager& chainman, const CBlockIndex* pindex = nullptr, CTransactionRef* collateral_tx_out = nullptr)
 {
-    if (!detailed) {
-        return dmn.proTxHash.ToString();
-    }
-
-    UniValue o = dmn.ToJson();
-
     CTransactionRef collateralTx{nullptr};
     int confirmations = GetUTXOConfirmations(chainman.ActiveChainstate(), dmn.collateralOutpoint);
 
@@ -1291,6 +1285,23 @@ static UniValue BuildDMNListEntry(const CWallet* const pwallet, const CDetermini
             confirmations = pindex->nHeight - pindexMined->nHeight + 1;
         }
     }
+
+    if (collateral_tx_out != nullptr) {
+        *collateral_tx_out = collateralTx;
+    }
+    return confirmations;
+}
+
+static UniValue BuildDMNListEntry(const CWallet* const pwallet, const CDeterministicMN& dmn, CMasternodeMetaMan& mn_metaman, bool detailed, const ChainstateManager& chainman, const CBlockIndex* pindex = nullptr)
+{
+    if (!detailed) {
+        return dmn.proTxHash.ToString();
+    }
+
+    UniValue o = dmn.ToJson();
+
+    CTransactionRef collateralTx{nullptr};
+    const int confirmations = GetDMNCollateralConfirmations(dmn, chainman, pindex, &collateralTx);
     o.pushKV("confirmations", confirmations);
 
 #ifdef ENABLE_WALLET
@@ -1340,6 +1351,9 @@ static RPCHelpMan protx_list()
             },
             {"detailed", RPCArg::Type::BOOL, RPCArg::Default{false}, "If not specified, only the hashes of the ProTx will be returned."},
             {"height", RPCArg::Type::NUM, RPCArg::DefaultHint{"current chain-tip"}, ""},
+            {"min_confirmations", RPCArg::Type::NUM, RPCArg::Default{0},
+                "Minimum collateral confirmations required to include a ProTx in results. "
+                "Set to 0 to disable filtering."},
         },
         RPCResults{},
         RPCExamples{""},
@@ -1387,25 +1401,33 @@ static RPCHelpMan protx_list()
         if (height < 1 || height > chainman.ActiveChain().Height()) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "invalid height specified");
         }
+        const int min_confirmations = !request.params[3].isNull() ? ParseInt32V(request.params[3], "min_confirmations") : 0;
+        if (min_confirmations < 0) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "min_confirmations must be non-negative");
+        }
 
         std::set<COutPoint> setOutpts;
         for (const auto& outpt : wallet->ListProTxCoins()) {
             setOutpts.emplace(outpt);
         }
 
-        CDeterministicMNList mnList = dmnman.GetListForBlock(chainman.ActiveChain()[height]);
+        const CBlockIndex* const pindex = chainman.ActiveChain()[height];
+        CDeterministicMNList mnList = dmnman.GetListForBlock(pindex);
         mnList.ForEachMN(false, [&](const auto& dmn) {
             if (setOutpts.count(dmn.collateralOutpoint) ||
                 CheckWalletOwnsKey(wallet.get(), dmn.pdmnState->keyIDOwner) ||
                 CheckWalletOwnsKey(wallet.get(), dmn.pdmnState->keyIDVoting) ||
                 CheckWalletOwnsScript(wallet.get(), dmn.pdmnState->scriptPayout) ||
                 CheckWalletOwnsScript(wallet.get(), dmn.pdmnState->scriptOperatorPayout)) {
-                ret.push_back(BuildDMNListEntry(wallet.get(), dmn, mn_metaman, detailed, chainman));
+                if (min_confirmations > 0 && GetDMNCollateralConfirmations(dmn, chainman, pindex) < min_confirmations) {
+                    return;
+                }
+                ret.push_back(BuildDMNListEntry(wallet.get(), dmn, mn_metaman, detailed, chainman, pindex));
             }
         });
 #endif
     } else if (type == "valid" || type == "registered" || type == "evo") {
-        if (request.params.size() > 3) {
+        if (request.params.size() > 4) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Too many arguments");
         }
 
@@ -1420,13 +1442,19 @@ static RPCHelpMan protx_list()
         if (height < 1 || height > chainman.ActiveChain().Height()) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "invalid height specified");
         }
+        const int min_confirmations = !request.params[3].isNull() ? ParseInt32V(request.params[3], "min_confirmations") : 0;
+        if (min_confirmations < 0) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "min_confirmations must be non-negative");
+        }
 
-        CDeterministicMNList mnList = dmnman.GetListForBlock(chainman.ActiveChain()[height]);
+        const CBlockIndex* const pindex = chainman.ActiveChain()[height];
+        CDeterministicMNList mnList = dmnman.GetListForBlock(pindex);
         bool onlyValid = type == "valid";
         bool onlyEvoNodes = type == "evo";
         mnList.ForEachMN(onlyValid, [&](const auto& dmn) {
             if (onlyEvoNodes && dmn.nType != MnType::Evo) return;
-            ret.push_back(BuildDMNListEntry(wallet.get(), dmn, mn_metaman, detailed, chainman));
+            if (min_confirmations > 0 && GetDMNCollateralConfirmations(dmn, chainman, pindex) < min_confirmations) return;
+            ret.push_back(BuildDMNListEntry(wallet.get(), dmn, mn_metaman, detailed, chainman, pindex));
         });
     } else {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "invalid type specified");
