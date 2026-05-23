@@ -262,7 +262,8 @@ public:
         vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_main), std::end(chainparams_seed_main));
 
         vSeeds.clear();
-        vSeeds.emplace_back("dnsseed.deftrack.xyz"); // DeFCoN DNS seeder
+        vSeeds.emplace_back("dnsseed.deftrack.xyz"); // Primary DeFCoN DNS seeder
+        vSeeds.emplace_back("dns.dfcn.io"); // Backup DeFCoN DNS seeder (future-ready)
 
         // Dash addresses start with 'P'
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,30);
