@@ -1,6 +1,8 @@
 #include <wallet/blswallet.h>
 #include <sync.h>
 
+#include <algorithm>
+
 namespace {
 
 RecursiveMutex cs_blswallet;
@@ -15,7 +17,9 @@ BLSKeyPair blsKeyMap;
 void AddBLSRelated(const CKeyID& keyID)
 {
     LOCK(cs_blswallet);
-    blsKeyID.push_back(keyID);
+    if (std::find(blsKeyID.begin(), blsKeyID.end(), keyID) == blsKeyID.end()) {
+        blsKeyID.push_back(keyID);
+    }
 }
 
 bool IsBLSRelated(const CKeyID& keyID)
@@ -49,4 +53,11 @@ bool AddBLSKey(const CKeyID& address, CKey& key)
     LOCK(cs_blswallet);
     blsKeyMap[address] = key;
     return true;
+}
+
+void ClearBLSWalletCache()
+{
+    LOCK(cs_blswallet);
+    blsKeyID.clear();
+    blsKeyMap.clear();
 }

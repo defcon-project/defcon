@@ -1735,16 +1735,21 @@ static RPCHelpMan bls_generate()
             std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
             if (!pwallet) return NullUniValue;
 
+            EnsureWalletIsUnlocked(*pwallet);
+
             CBLSSecretKey sk;
             sk.MakeNewKey();
             bool bls_legacy_scheme{false};
             if (!request.params[0].isNull()) {
                 bls_legacy_scheme = ParseBoolV(request.params[0], "bls_legacy_scheme");
             }
-            UniValue ret(UniValue::VOBJ);
-            ret.pushKV("secret", sk.ToString());
-            pwallet->WriteToBLSWallet(sk.ToString());
+            std::string bls_secret = sk.ToString();
+            if (!pwallet->WriteToBLSWallet(bls_secret)) {
+                throw JSONRPCError(RPC_WALLET_ERROR, "Failed to write BLS private key to wallet.");
+            }
 
+            UniValue ret(UniValue::VOBJ);
+            ret.pushKV("secret", bls_secret);
             ret.pushKV("public", sk.GetPublicKey().ToString(bls_legacy_scheme));
             std::string bls_scheme_str = bls_legacy_scheme ? "legacy" : "basic";
             ret.pushKV("scheme", bls_scheme_str);

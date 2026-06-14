@@ -24,5 +24,6 @@ bool IsBLSRelated(const CKeyID& keyID);
 bool HaveBLSKey(const CKeyID &address);
 bool GetBLSKey(const CKeyID &address, CKey& key);
 bool AddBLSKey(const CKeyID &address, CKey& key);
+void ClearBLSWalletCache();
 
 #endif // WALLET_BLSWALLET_H

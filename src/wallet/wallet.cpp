@@ -714,6 +714,12 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
             }
         }
 
+        if (!EncryptBLSKeyRecords(_vMasterKey, *encrypted_batch)) {
+            encrypted_batch->TxnAbort();
+            delete encrypted_batch;
+            encrypted_batch = nullptr;
+            assert(false);
+        }
 
         // Encryption was introduced in version 0.4.0
         SetMinVersion(FEATURE_WALLETCRYPT, encrypted_batch);
@@ -3622,6 +3628,10 @@ bool CWallet::CreateTransactionInternal(
                 scriptChange = GetScriptForDestination(coin_control.destChange);
             } else if (involveBLSdest) {
                 scriptChange = GenerateNewBLSChangeAddress();
+                if (scriptChange.empty()) {
+                    error = _("Transaction needs a BLS change address, but the wallet is locked or the BLS key could not be saved.");
+                    return false;
+                }
             } else { // no coin control: send change to newly generated address
                 // Note: We use a new key here to keep it from being obvious which side is the change.
                 //  The drawback is that by not reusing a previous key, the change may be lost if a
@@ -5662,6 +5672,7 @@ bool CWallet::Lock(bool fAllowMixing)
             memory_cleanse(vMasterKey.data(), vMasterKey.size() * sizeof(decltype(vMasterKey)::value_type));
             vMasterKey.clear();
         }
+        ClearBLSKeyCache();
     }
 
     fOnlyMixingAllowed = fAllowMixing;
@@ -5713,6 +5724,11 @@ bool CWallet::Unlock(const CKeyingMaterial& vMasterKeyIn, bool fForMixingOnly, b
         }
         vMasterKey = vMasterKeyIn;
         fOnlyMixingAllowed = fForMixingOnly;
+        if (!fForMixingOnly && (!MigrateLegacyBLSKeys() || !LoadCryptedBLSKeys())) {
+            memory_cleanse(vMasterKey.data(), vMasterKey.size() * sizeof(decltype(vMasterKey)::value_type));
+            vMasterKey.clear();
+            return false;
+        }
     }
     NotifyStatusChanged(this);
     return true;
@@ -6063,6 +6079,15 @@ ScriptPubKeyMan* CWallet::AddWalletDescriptor(WalletDescriptor& desc, const Flat
     return spk_man;
 }
 
+namespace {
+void CleanseString(std::string& str)
+{
+    if (!str.empty()) {
+        memory_cleanse(&str[0], str.size());
+    }
+}
+} // namespace
+
 void CWallet::PrintBLSKey(std::vector<uint8_t>& in, std::string in2)
 {
     char blshex[256];
@@ -6076,7 +6101,59 @@ void CWallet::PrintBLSKey(std::vector<uint8_t>& in, std::string in2)
     WalletLogPrintf("%s (%s)\n", blshex, in2.c_str());
 }
 
-bool CWallet::ReadFromBLSWallet(const std::string& keydata)
+bool CWallet::EncryptBLSKeySecret(const CKeyingMaterial& master_key, const std::string& keydata, CPubKey& pubkey, std::vector<unsigned char>& crypted_secret) const
+{
+    CBLSSecretKey sk;
+    if (!sk.SetHexStr(keydata, false)) {
+        return false;
+    }
+
+    std::vector<uint8_t> pubBytes = sk.GetPublicKey().ToByteVector(false);
+    pubkey.Set(pubBytes.begin(), pubBytes.end());
+    if (!pubkey.IsValid()) {
+        return false;
+    }
+
+    CKeyingMaterial secret(keydata.begin(), keydata.end());
+    const bool encrypted = EncryptSecret(master_key, secret, pubkey.GetHash(), crypted_secret);
+    if (!secret.empty()) {
+        memory_cleanse(secret.data(), secret.size() * sizeof(decltype(secret)::value_type));
+    }
+    sk.Reset();
+    return encrypted;
+}
+
+bool CWallet::DecryptBLSKeySecret(const CKeyingMaterial& master_key, const CPubKey& pubkey, const std::vector<unsigned char>& crypted_secret, std::string& keydata) const
+{
+    CKeyingMaterial secret;
+    if (!DecryptSecret(master_key, crypted_secret, pubkey.GetHash(), secret)) {
+        return false;
+    }
+
+    keydata.assign(secret.begin(), secret.end());
+    if (!secret.empty()) {
+        memory_cleanse(secret.data(), secret.size() * sizeof(decltype(secret)::value_type));
+    }
+    return true;
+}
+
+void CWallet::ClearBLSKeyCache()
+{
+    LOCK(cs_wallet);
+    for (auto& entry : blsKeyRecords) {
+        entry.sk.Reset();
+        entry.pk.Reset();
+    }
+    blsKeyRecords.clear();
+    ClearBLSWalletCache();
+
+    auto spk_man = GetLegacyScriptPubKeyMan();
+    if (spk_man) {
+        spk_man->ClearBLSEntries();
+    }
+}
+
+bool CWallet::LoadBLSKeyToMemory(const std::string& keydata, int64_t record_id, BlsWalletEntry* loaded_entry)
 {
     LOCK(cs_wallet);
 
@@ -6084,15 +6161,25 @@ bool CWallet::ReadFromBLSWallet(const std::string& keydata)
     if (!entry.sk.SetHexStr(keydata, false)) {
         return false;
     }
-    entry.id = blsKeyRecords.size();
     entry.pk = entry.sk.GetPublicKey();
     entry.keyID = CPubKey(entry.pk.ToByteVector(false)).GetID();
 
-    //flag this keyID as BLS
+    for (const auto& existing : blsKeyRecords) {
+        if (existing.keyID == entry.keyID) {
+            if (loaded_entry) {
+                *loaded_entry = existing;
+            }
+            entry.sk.Reset();
+            entry.pk.Reset();
+            return true;
+        }
+    }
+
+    entry.id = record_id >= 0 ? static_cast<unsigned int>(record_id) : static_cast<unsigned int>(blsKeyRecords.size());
+
     AddBLSRelated(entry.keyID);
     blsKeyRecords.push_back(entry);
 
-    //convert into new keytype
     std::vector<uint8_t> pubBytes = entry.pk.ToByteVector(false);
     CPubKey pubkey;
     pubkey.Set(pubBytes.begin(), pubBytes.end());
@@ -6101,30 +6188,142 @@ bool CWallet::ReadFromBLSWallet(const std::string& keydata)
     CKey key;
     key.Set(privBytes.begin(), privBytes.end(), false);
 
-    //push into scriptpubkeyman
     auto spk_man = GetLegacyScriptPubKeyMan();
     if (spk_man) {
         spk_man->AddBLSEntries(pubkey, key);
     }
 
-    //try new method
     AddBLSKey(entry.keyID, key);
 
+    if (loaded_entry) {
+        *loaded_entry = entry;
+    }
+    return true;
+}
+
+bool CWallet::ReadFromBLSWallet(const std::string& keydata)
+{
+    LOCK(cs_wallet);
+    return LoadBLSKeyToMemory(keydata);
+}
+
+bool CWallet::EncryptBLSKeyRecords(const CKeyingMaterial& master_key, WalletBatch& batch)
+{
+    LOCK(cs_wallet);
+    for (const auto& entry : blsKeyRecords) {
+        std::string bls_private_key = entry.sk.ToString();
+        CPubKey pubkey;
+        std::vector<unsigned char> crypted_secret;
+        const bool encrypted = EncryptBLSKeySecret(master_key, bls_private_key, pubkey, crypted_secret);
+        CleanseString(bls_private_key);
+        if (!encrypted) {
+            return false;
+        }
+        if (!batch.WriteCryptedBLSKey(entry.id, pubkey, crypted_secret)) {
+            return false;
+        }
+        cryptedBLSKeyRecords[entry.id] = std::make_pair(pubkey, crypted_secret);
+    }
+    return true;
+}
+
+bool CWallet::MigrateLegacyBLSKeys()
+{
+    LOCK(cs_wallet);
+    if (!IsCrypted() || IsLocked()) {
+        return true;
+    }
+
+    unsigned int migrated = 0;
+    {
+        WalletBatch batch(GetDatabase());
+        for (unsigned int i = 0;; ++i) {
+            std::string bls_private_key;
+            if (!batch.ReadBLSKey(i, bls_private_key)) {
+                break;
+            }
+
+            CPubKey pubkey;
+            std::vector<unsigned char> crypted_secret;
+            const bool encrypted = EncryptBLSKeySecret(vMasterKey, bls_private_key, pubkey, crypted_secret);
+            CleanseString(bls_private_key);
+            if (!encrypted) {
+                return false;
+            }
+            if (!batch.WriteCryptedBLSKey(i, pubkey, crypted_secret)) {
+                return false;
+            }
+            cryptedBLSKeyRecords[i] = std::make_pair(pubkey, crypted_secret);
+            ++migrated;
+        }
+    }
+
+    if (migrated > 0) {
+        WalletLogPrintf("%s: migrated %u legacy plaintext BLS keys to encrypted storage.\n", __func__, migrated);
+        GetDatabase().Rewrite();
+        GetDatabase().ReloadDbEnv();
+    }
+    return true;
+}
+
+bool CWallet::LoadCryptedBLSKeys()
+{
+    LOCK(cs_wallet);
+    if (cryptedBLSKeyRecords.empty() || IsLocked()) {
+        return true;
+    }
+
+    ClearBLSKeyCache();
+    for (const auto& [record_id, record] : cryptedBLSKeyRecords) {
+        std::string bls_private_key;
+        if (!DecryptBLSKeySecret(vMasterKey, record.first, record.second, bls_private_key)) {
+            return false;
+        }
+        const bool loaded = LoadBLSKeyToMemory(bls_private_key, record_id);
+        CleanseString(bls_private_key);
+        if (!loaded) {
+            return false;
+        }
+    }
+
+    if (!blsKeyRecords.empty()) {
+        WalletLogPrintf("%s: loaded %d encrypted BLS keys successfully.\n", __func__, blsKeyRecords.size());
+    }
     return true;
 }
 
 bool CWallet::WriteToBLSWallet(const std::string& keydata)
 {
     LOCK(cs_wallet);
-    if (!ReadFromBLSWallet(keydata)) {
+
+    if (IsCrypted() && IsLocked()) {
+        WalletLogPrintf("%s: refusing to write BLS key while wallet is locked.\n", __func__);
         return false;
     }
-    WalletBatch batch(GetDatabase());
-    for (unsigned int i = 0; i < blsKeyRecords.size(); i++) {
-        std::string blsPrivateKey = blsKeyRecords[i].sk.ToString();
-        batch.WriteBLSKey(i, blsPrivateKey);
+
+    BlsWalletEntry entry;
+    if (!LoadBLSKeyToMemory(keydata, -1, &entry)) {
+        return false;
     }
-    return true;
+
+    WalletBatch batch(GetDatabase());
+    if (IsCrypted()) {
+        CPubKey pubkey;
+        std::vector<unsigned char> crypted_secret;
+        if (!EncryptBLSKeySecret(vMasterKey, keydata, pubkey, crypted_secret)) {
+            return false;
+        }
+        if (!batch.WriteCryptedBLSKey(entry.id, pubkey, crypted_secret)) {
+            return false;
+        }
+        cryptedBLSKeyRecords[entry.id] = std::make_pair(pubkey, crypted_secret);
+        return true;
+    }
+
+    std::string bls_private_key = keydata;
+    const bool written = batch.WriteBLSKey(entry.id, bls_private_key);
+    CleanseString(bls_private_key);
+    return written;
 }
 
 std::map<unsigned int, std::string> CWallet::GetBLSAddresses()
@@ -6175,18 +6374,44 @@ bool CWallet::GetBLSKey(const CKeyID& keyID, CKey& key)
 
 bool CWallet::BLSWalletInit()
 {
-    unsigned int i = 0;
-    std::string blsPrivateKey;
+    LOCK(cs_wallet);
+
     WalletBatch batch(GetDatabase());
-    while (true) {
-        if (!batch.ReadBLSKey(i, blsPrivateKey)) {
+    cryptedBLSKeyRecords.clear();
+
+    for (unsigned int i = 0;; ++i) {
+        CPubKey pubkey;
+        std::vector<unsigned char> crypted_secret;
+        if (!batch.ReadCryptedBLSKey(i, pubkey, crypted_secret)) {
             break;
         }
-        if (!ReadFromBLSWallet(blsPrivateKey)) {
-            break;
-        }
-        ++i;
+        cryptedBLSKeyRecords[i] = std::make_pair(pubkey, crypted_secret);
     }
+
+    if (IsCrypted()) {
+        if (!IsLocked()) {
+            if (!MigrateLegacyBLSKeys() || !LoadCryptedBLSKeys()) {
+                return false;
+            }
+        } else if (!cryptedBLSKeyRecords.empty()) {
+            WalletLogPrintf("%s: found %d encrypted BLS keys; unlock wallet to load them.\n", __func__, cryptedBLSKeyRecords.size());
+        }
+        return true;
+    }
+
+    ClearBLSKeyCache();
+    for (unsigned int i = 0;; ++i) {
+        std::string bls_private_key;
+        if (!batch.ReadBLSKey(i, bls_private_key)) {
+            break;
+        }
+        const bool loaded = LoadBLSKeyToMemory(bls_private_key, i);
+        CleanseString(bls_private_key);
+        if (!loaded) {
+            return false;
+        }
+    }
+
     if (blsKeyRecords.size()) {
         WalletLogPrintf("%s: loaded %d BLS keys successfully.\n", __func__, blsKeyRecords.size());
     }
@@ -6197,7 +6422,10 @@ CScript CWallet::GenerateNewBLSChangeAddress()
 {
     CBLSSecretKey sk;
     sk.MakeNewKey();
-    WriteToBLSWallet(sk.ToString());
+    if (!WriteToBLSWallet(sk.ToString())) {
+        sk.Reset();
+        return CScript();
+    }
 
     CBLSPublicKey pk = sk.GetPublicKey();
     std::vector<uint8_t> pubBytes = pk.ToByteVector(false);
@@ -6213,9 +6441,13 @@ bool CWallet::ContainsExistingBLSPrivKey(std::string& rpcBlsKey)
     std::string importAttempt = ToLower(rpcBlsKey);
     for (unsigned int i = 0; i < blsKeyRecords.size(); i++) {
         std::string blsPrivateKey = blsKeyRecords[i].sk.ToString();
-        if (blsPrivateKey == importAttempt) {
+        const bool match = blsPrivateKey == importAttempt;
+        CleanseString(blsPrivateKey);
+        if (match) {
+            CleanseString(importAttempt);
             return true;
         }
     }
+    CleanseString(importAttempt);
     return false;
 }

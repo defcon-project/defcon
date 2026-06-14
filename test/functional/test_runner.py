@@ -310,6 +310,7 @@ BASE_SCRIPTS = [
     'feature_sporks.py',
     'rpc_getblockstats.py',
     'feature_bind_port_externalip.py',
+    'wallet_bls_encryption.py --descriptors',
     'wallet_encryption.py --legacy-wallet',
     'wallet_encryption.py --descriptors',
     'wallet_upgradetohd.py --legacy-wallet',

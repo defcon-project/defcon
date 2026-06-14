@@ -1808,7 +1808,13 @@ bool LegacyScriptPubKeyMan::GetHDChain(CHDChain& hdChainRet) const
 bool LegacyScriptPubKeyMan::AddBLSKeyPair(CKey& key, CPubKey& pubkey)
 {
     LOCK(cs_KeyStore);
-    BLSKeyPair pair(pubkey.GetID(), key);
+    const CKeyID key_id = pubkey.GetID();
+    for (const auto& entry : blsKeyVector) {
+        if (entry.first == key_id) {
+            return true;
+        }
+    }
+    BLSKeyPair pair(key_id, key);
     blsKeyVector.push_back(pair);
     return true;
 }
@@ -1816,7 +1822,13 @@ bool LegacyScriptPubKeyMan::AddBLSKeyPair(CKey& key, CPubKey& pubkey)
 bool LegacyScriptPubKeyMan::AddBLSPubKeyPair(CKey& key, CPubKey& pubkey)
 {
     LOCK(cs_KeyStore);
-    BLSPubKeyPair pair(pubkey.GetID(), pubkey);
+    const CKeyID key_id = pubkey.GetID();
+    for (const auto& entry : blsPubKeyVector) {
+        if (entry.first == key_id) {
+            return true;
+        }
+    }
+    BLSPubKeyPair pair(key_id, pubkey);
     blsPubKeyVector.push_back(pair);
     return true;
 }
@@ -1873,6 +1885,13 @@ bool LegacyScriptPubKeyMan::AddBLSEntries(CPubKey& pubkey, CKey& key)
     AddBLSKeyPair(key, pubkey);
     AddBLSPubKeyPair(key, pubkey);
     return true;
+}
+
+void LegacyScriptPubKeyMan::ClearBLSEntries()
+{
+    LOCK(cs_KeyStore);
+    blsKeyVector.clear();
+    blsPubKeyVector.clear();
 }
 
 bool DescriptorScriptPubKeyMan::GetNewDestination(CTxDestination& dest, bilingual_str& error)
