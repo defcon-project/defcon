@@ -36,6 +36,7 @@ const std::string ACTIVEINTERNALSPK{"activeinternalspk"};
 const std::string BESTBLOCK_NOMERKLE{"bestblock_nomerkle"};
 const std::string BESTBLOCK{"bestblock"};
 const std::string BLSKEY{"blskey"};
+const std::string CRYPTED_BLSKEY{"cblskey"};
 const std::string CRYPTED_KEY{"ckey"};
 const std::string CRYPTED_HDCHAIN{"chdchain"};
 const std::string COINJOIN_SALT{"cj_salt"};
@@ -81,6 +82,33 @@ bool WalletBatch::WriteBLSKey(int64_t nPool, std::string& strBlsPrivate)
 bool WalletBatch::ReadBLSKey(int64_t nPool, std::string& strBlsPrivate)
 {
     return m_batch->Read(std::make_pair(DBKeys::BLSKEY, nPool), strBlsPrivate);
+}
+
+bool WalletBatch::EraseBLSKey(int64_t nPool)
+{
+    return EraseIC(std::make_pair(DBKeys::BLSKEY, nPool));
+}
+
+bool WalletBatch::WriteCryptedBLSKey(int64_t nPool, const CPubKey& pubkey, const std::vector<unsigned char>& vchCryptedSecret)
+{
+    uint256 checksum = Hash(vchCryptedSecret);
+    if (!WriteIC(std::make_pair(DBKeys::CRYPTED_BLSKEY, nPool), std::make_pair(pubkey, std::make_pair(vchCryptedSecret, checksum)), true)) {
+        return false;
+    }
+    EraseBLSKey(nPool);
+    return true;
+}
+
+bool WalletBatch::ReadCryptedBLSKey(int64_t nPool, CPubKey& pubkey, std::vector<unsigned char>& vchCryptedSecret)
+{
+    std::pair<CPubKey, std::pair<std::vector<unsigned char>, uint256>> crypted_bls_key;
+    if (!m_batch->Read(std::make_pair(DBKeys::CRYPTED_BLSKEY, nPool), crypted_bls_key)) {
+        return false;
+    }
+
+    pubkey = crypted_bls_key.first;
+    vchCryptedSecret = crypted_bls_key.second.first;
+    return Hash(vchCryptedSecret) == crypted_bls_key.second.second;
 }
 
 bool WalletBatch::WriteName(const std::string& strAddress, const std::string& strName)
@@ -740,6 +768,7 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         } else if (strType != DBKeys::BESTBLOCK && strType != DBKeys::BESTBLOCK_NOMERKLE &&
                    strType != DBKeys::MINVERSION && strType != DBKeys::ACENTRY &&
                    strType != DBKeys::VERSION && strType != DBKeys::SETTINGS &&
+                   strType != DBKeys::BLSKEY && strType != DBKeys::CRYPTED_BLSKEY &&
                    strType != DBKeys::PRIVATESEND_SALT && strType != DBKeys::COINJOIN_SALT &&
                    strType != DBKeys::FLAGS) {
             wss.m_unknown_records++;

@@ -751,6 +751,7 @@ private:
     friend class WalletRescanReserver;
 
     std::vector<BlsWalletEntry> blsKeyRecords GUARDED_BY(cs_wallet);
+    std::map<int64_t, std::pair<CPubKey, std::vector<unsigned char>>> cryptedBLSKeyRecords GUARDED_BY(cs_wallet);
 
     //! the current wallet version: clients below this version are not able to load the wallet
     int nWalletVersion GUARDED_BY(cs_wallet){FEATURE_BASE};
@@ -887,6 +888,14 @@ private:
      * notifications about new blocks and transactions.
      */
     static bool AttachChain(const std::shared_ptr<CWallet>& wallet, interfaces::Chain& chain, bilingual_str& error, std::vector<bilingual_str>& warnings);
+
+    bool LoadBLSKeyToMemory(const std::string& keydata, int64_t record_id = -1, BlsWalletEntry* loaded_entry = nullptr) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool EncryptBLSKeySecret(const CKeyingMaterial& master_key, const std::string& keydata, CPubKey& pubkey, std::vector<unsigned char>& crypted_secret) const;
+    bool DecryptBLSKeySecret(const CKeyingMaterial& master_key, const CPubKey& pubkey, const std::vector<unsigned char>& crypted_secret, std::string& keydata) const;
+    bool EncryptBLSKeyRecords(const CKeyingMaterial& master_key, WalletBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool MigrateLegacyBLSKeys() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    bool LoadCryptedBLSKeys() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    void ClearBLSKeyCache() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
 public:
     /**

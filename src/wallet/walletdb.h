@@ -63,6 +63,7 @@ extern const std::string ACTIVEINTERNALSPK;
 extern const std::string BESTBLOCK;
 extern const std::string BESTBLOCK_NOMERKLE;
 extern const std::string BLSKEY;
+extern const std::string CRYPTED_BLSKEY;
 extern const std::string CRYPTED_HDCHAIN;
 extern const std::string CRYPTED_KEY;
 extern const std::string COINJOIN_SALT;
@@ -179,6 +180,9 @@ public:
 
     bool WriteBLSKey(int64_t nPool, std::string& strBlsPrivate);
     bool ReadBLSKey(int64_t nPool, std::string& strBlsPrivate);
+    bool EraseBLSKey(int64_t nPool);
+    bool WriteCryptedBLSKey(int64_t nPool, const CPubKey& pubkey, const std::vector<unsigned char>& vchCryptedSecret);
+    bool ReadCryptedBLSKey(int64_t nPool, CPubKey& pubkey, std::vector<unsigned char>& vchCryptedSecret);
 
     bool WriteName(const std::string& strAddress, const std::string& strName);
     bool EraseName(const std::string& strAddress);

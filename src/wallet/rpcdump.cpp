@@ -225,7 +225,9 @@ RPCHelpMan importblsprivkey()
             throw JSONRPCError(RPC_WALLET_ERROR, "Wallet already contains this key.");
         }
 
-        pwallet->WriteToBLSWallet(strSecret);
+        if (!pwallet->WriteToBLSWallet(strSecret)) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Failed to write BLS private key to wallet.");
+        }
 
     }
     if (fRescan) {

@@ -498,6 +498,7 @@ public:
     bool AddBLSKeyPair(CKey& key, CPubKey& pubkey);
     bool AddBLSPubKeyPair(CKey& key, CPubKey& pubkey);
     bool AddBLSEntries(CPubKey& pubkey, CKey& key);
+    void ClearBLSEntries();
     //BLS//////////////////////////////////////////////////////////////////////////////////
 };
 
