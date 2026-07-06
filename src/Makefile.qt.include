@@ -64,6 +64,9 @@ QT_MOC_CPP = \
   qt/moc_macnotificationhandler.cpp \
   qt/moc_modaloverlay.cpp \
   qt/moc_masternodelist.cpp \
+  qt/moc_multisigdialog.cpp \
+  qt/moc_multisigpage.cpp \
+  qt/moc_multisigspenddialog.cpp \
   qt/moc_notificator.cpp \
   qt/moc_openuridialog.cpp \
   qt/moc_optionsdialog.cpp \
@@ -142,6 +145,9 @@ BITCOIN_QT_H = \
   qt/modaloverlay.h \
   qt/masternodelist.h \
   qt/multisigdialog.h \
+  qt/multisigpage.h \
+  qt/multisigspenddialog.h \
+  qt/multisigutil.h \
   qt/networkstyle.h \
   qt/notificator.h \
   qt/openuridialog.h \
@@ -258,6 +264,9 @@ BITCOIN_QT_WALLET_CPP = \
   qt/governancelist.cpp \
   qt/masternodelist.cpp \
   qt/multisigdialog.cpp \
+  qt/multisigpage.cpp \
+  qt/multisigspenddialog.cpp \
+  qt/multisigutil.cpp \
   qt/openuridialog.cpp \
   qt/overviewpage.cpp \
   qt/paymentserver.cpp \

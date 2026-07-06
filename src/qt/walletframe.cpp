@@ -10,7 +10,6 @@
 #include <qt/governancelist.h>
 #include <qt/guiutil.h>
 #include <qt/masternodelist.h>
-#include <qt/multisigdialog.h>
 #include <qt/overviewpage.h>
 #include <qt/psbtoperationsdialog.h>
 #include <qt/walletmodel.h>
@@ -212,6 +211,15 @@ void WalletFrame::gotoMasternodePage()
         i.value()->gotoMasternodePage();
 }
 
+void WalletFrame::gotoMultisigPage()
+{
+    QMap<WalletModel*, WalletView*>::const_iterator i;
+
+    // The multisig tab button is disabled while no wallet is loaded.
+    for (i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i)
+        i.value()->gotoMultisigPage();
+}
+
 void WalletFrame::gotoReceiveCoinsPage()
 {
     QMap<WalletModel*, WalletView*>::const_iterator i;
@@ -282,18 +290,6 @@ void WalletFrame::gotoLoadPSBT(bool from_clipboard)
 
     PSBTOperationsDialog* dlg = new PSBTOperationsDialog(this, currentWalletModel(), clientModel);
     dlg->openWithPSBT(psbtx);
-    dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->exec();
-}
-
-void WalletFrame::openMultisigDialog()
-{
-    if (!clientModel) {
-        Q_EMIT message(tr("Error"), tr("Client model is not available"), CClientUIInterface::MSG_ERROR);
-        return;
-    }
-
-    MultisigDialog* dlg = new MultisigDialog(this, currentWalletModel(), clientModel);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->exec();
 }
