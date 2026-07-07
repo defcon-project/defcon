@@ -264,6 +264,7 @@ void OptionsDialog::setModel(OptionsModel *_model)
     connect(ui->databaseCache, qOverload<int>(&QSpinBox::valueChanged), this, &OptionsDialog::showRestartWarning);
     connect(ui->threadsScriptVerif, qOverload<int>(&QSpinBox::valueChanged), this, &OptionsDialog::showRestartWarning);
     /* Wallet */
+    connect(ui->showMultisigTab, &QCheckBox::clicked, this, &OptionsDialog::showRestartWarning);
     connect(ui->showMasternodesTab, &QCheckBox::clicked, this, &OptionsDialog::showRestartWarning);
     connect(ui->showGovernanceTab, &QCheckBox::clicked, this, &OptionsDialog::showRestartWarning);
     connect(ui->spendZeroConfChange, &QCheckBox::clicked, this, &OptionsDialog::showRestartWarning);
@@ -330,6 +331,7 @@ void OptionsDialog::setMapper()
     mapper->addMapping(ui->coinControlFeatures, OptionsModel::CoinControlFeatures);
     mapper->addMapping(ui->subFeeFromAmount, OptionsModel::SubFeeFromAmount);
     mapper->addMapping(ui->keepChangeAddress, OptionsModel::KeepChangeAddress);
+    mapper->addMapping(ui->showMultisigTab, OptionsModel::ShowMultisigTab);
     mapper->addMapping(ui->showMasternodesTab, OptionsModel::ShowMasternodesTab);
     mapper->addMapping(ui->showGovernanceTab, OptionsModel::ShowGovernanceTab);
     mapper->addMapping(ui->showAdvancedCJUI, OptionsModel::ShowAdvancedCJUI);

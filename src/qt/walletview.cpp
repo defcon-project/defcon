@@ -82,16 +82,19 @@ WalletView::WalletView(QWidget* parent) :
     usedSendingAddressesPage = new AddressBookPage(AddressBookPage::ForEditing, AddressBookPage::SendingTab, this);
     usedReceivingAddressesPage = new AddressBookPage(AddressBookPage::ForEditing, AddressBookPage::ReceivingTab, this);
 
-    multisigPage = new MultisigPage();
+    QSettings settings;
+    if (settings.value("fShowMultisigTab", false).toBool()) {
+        multisigPage = new MultisigPage();
+    }
 
     addWidget(overviewPage);
     addWidget(transactionsPage);
     addWidget(receiveCoinsPage);
     addWidget(sendCoinsPage);
     addWidget(coinJoinCoinsPage);
-    addWidget(multisigPage);
-
-    QSettings settings;
+    if (multisigPage != nullptr) {
+        addWidget(multisigPage);
+    }
     if (settings.value("fShowMasternodesTab").toBool()) {
         masternodeListPage = new MasternodeList();
         addWidget(masternodeListPage);
@@ -154,7 +157,9 @@ void WalletView::setClientModel(ClientModel *_clientModel)
     if (settings.value("fShowGovernanceTab").toBool() && governanceListPage != nullptr) {
         governanceListPage->setClientModel(_clientModel);
     }
-    multisigPage->setClientModel(_clientModel);
+    if (multisigPage != nullptr) {
+        multisigPage->setClientModel(_clientModel);
+    }
     if (walletModel) walletModel->setClientModel(_clientModel);
 }
 
@@ -172,7 +177,9 @@ void WalletView::setWalletModel(WalletModel *_walletModel)
     receiveCoinsPage->setModel(_walletModel);
     sendCoinsPage->setModel(_walletModel);
     coinJoinCoinsPage->setModel(_walletModel);
-    multisigPage->setWalletModel(_walletModel);
+    if (multisigPage != nullptr) {
+        multisigPage->setWalletModel(_walletModel);
+    }
     usedReceivingAddressesPage->setModel(_walletModel ? _walletModel->getAddressTableModel() : nullptr);
     usedSendingAddressesPage->setModel(_walletModel ? _walletModel->getAddressTableModel() : nullptr);
 
@@ -252,7 +259,9 @@ void WalletView::gotoMasternodePage()
 
 void WalletView::gotoMultisigPage()
 {
-    setCurrentWidget(multisigPage);
+    if (multisigPage != nullptr) {
+        setCurrentWidget(multisigPage);
+    }
 }
 
 void WalletView::gotoReceiveCoinsPage()

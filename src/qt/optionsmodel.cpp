@@ -215,6 +215,10 @@ void OptionsModel::Init(bool resetSettings)
     }
     m_sub_fee_from_amount = settings.value("SubFeeFromAmount", false).toBool();
 
+    if (!settings.contains("fShowMultisigTab")) {
+        settings.setValue("fShowMultisigTab", false);
+    }
+
     // CoinJoin
     if (!settings.contains("nCoinJoinSessions"))
         settings.setValue("nCoinJoinSessions", DEFAULT_COINJOIN_SESSIONS);
@@ -468,6 +472,8 @@ QVariant OptionsModel::data(const QModelIndex & index, int role) const
             return settings.value("bSpendZeroConfChange");
         case SubFeeFromAmount:
             return m_sub_fee_from_amount;
+        case ShowMultisigTab:
+            return settings.value("fShowMultisigTab", false);
         case ShowMasternodesTab:
             return settings.value("fShowMasternodesTab");
         case ShowGovernanceTab:
@@ -648,6 +654,12 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
         case SubFeeFromAmount:
             m_sub_fee_from_amount = value.toBool();
             settings.setValue("SubFeeFromAmount", m_sub_fee_from_amount);
+            break;
+        case ShowMultisigTab:
+            if (settings.value("fShowMultisigTab", false) != value) {
+                settings.setValue("fShowMultisigTab", value);
+                setRestartRequired(true);
+            }
             break;
         case ShowGovernanceTab:
             if (settings.value("fShowGovernanceTab") != value) {

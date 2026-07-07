@@ -630,7 +630,10 @@ void BitcoinGUI::createMenuBar()
         file->addAction(backupWalletAction);
         file->addAction(signMessageAction);
         file->addAction(verifyMessageAction);
-        file->addAction(multisigAction);
+        QSettings settings;
+        if (settings.value("fShowMultisigTab", false).toBool()) {
+            file->addAction(multisigAction);
+        }
         file->addAction(m_load_psbt_action);
         file->addAction(m_load_psbt_clipboard_action);
         file->addSeparator();
@@ -752,13 +755,14 @@ void BitcoinGUI::createToolBars()
         coinJoinCoinsButton->setStatusTip(coinJoinCoinsMenuAction->statusTip());
         tabGroup->addButton(coinJoinCoinsButton);
 
-        multisigButton = new QToolButton(this);
-        multisigButton->setText(tr("M&ultisig"));
-        multisigButton->setStatusTip(tr("Manage multisignature addresses and partially signed transactions"));
-        tabGroup->addButton(multisigButton);
-        connect(multisigButton, &QToolButton::clicked, this, &BitcoinGUI::gotoMultisigPage);
-
         QSettings settings;
+        if (settings.value("fShowMultisigTab", false).toBool()) {
+            multisigButton = new QToolButton(this);
+            multisigButton->setText(tr("M&ultisig"));
+            multisigButton->setStatusTip(tr("Manage multisignature addresses and partially signed transactions"));
+            tabGroup->addButton(multisigButton);
+            connect(multisigButton, &QToolButton::clicked, this, &BitcoinGUI::gotoMultisigPage);
+        }
         if (settings.value("fShowMasternodesTab").toBool()) {
             masternodeButton = new QToolButton(this);
             masternodeButton->setText(tr("&Masternodes"));
@@ -1052,7 +1056,7 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
         coinJoinCoinsButton->setEnabled(enabled && clientModel->coinJoinOptions().isEnabled());
         receiveCoinsButton->setEnabled(enabled);
         historyButton->setEnabled(enabled);
-        multisigButton->setEnabled(enabled);
+        if (multisigButton) multisigButton->setEnabled(enabled);
     }
 #endif // ENABLE_WALLET
 
@@ -1072,7 +1076,7 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
     lockWalletAction->setEnabled(enabled);
     signMessageAction->setEnabled(enabled);
     verifyMessageAction->setEnabled(enabled);
-    multisigAction->setEnabled(enabled);
+    if (multisigAction) multisigAction->setEnabled(enabled);
     usedSendingAddressesAction->setEnabled(enabled);
     usedReceivingAddressesAction->setEnabled(enabled);
     openAction->setEnabled(enabled);
@@ -1257,8 +1261,11 @@ void BitcoinGUI::gotoHistoryPage()
 
 void BitcoinGUI::gotoMultisigPage()
 {
-    multisigButton->setChecked(true);
-    if (walletFrame) walletFrame->gotoMultisigPage();
+    QSettings settings;
+    if (settings.value("fShowMultisigTab", false).toBool() && multisigButton) {
+        multisigButton->setChecked(true);
+        if (walletFrame) walletFrame->gotoMultisigPage();
+    }
 }
 
 void BitcoinGUI::gotoMasternodePage()

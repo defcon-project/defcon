@@ -358,6 +358,16 @@
           </widget>
          </item>
          <item>
+          <widget class="QCheckBox" name="showMultisigTab">
+           <property name="toolTip">
+            <string>Show additional tab for multisignature addresses and partially signed transactions.</string>
+           </property>
+           <property name="text">
+            <string>Show Multisig Tab</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <widget class="QCheckBox" name="showMasternodesTab">
            <property name="toolTip">
             <string>Show additional tab listing all your masternodes in first sub-tab&lt;br/&gt;and all masternodes on the network in second sub-tab.</string>
