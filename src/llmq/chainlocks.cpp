@@ -222,6 +222,11 @@ void CChainLocksHandler::CheckActiveState()
 
 void CChainLocksHandler::TrySignChainTip(const llmq::CInstantSendManager& isman)
 {
+    TRY_LOCK(cs_try_sign, locked);
+    if (!locked) {
+        return;
+    }
+
     Cleanup();
 
     if (!m_is_masternode) {
