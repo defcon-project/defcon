@@ -28,7 +28,10 @@ class QRImageWidget : public QLabel
 
 public:
     explicit QRImageWidget(QWidget *parent = nullptr);
-    bool setQR(const QString& data, const QString& text = "");
+    //! max_chars: payloads longer than this are rejected. The default suits
+    //! payment URIs; larger payloads (PSBTs, multisig setups) may pass a limit
+    //! up to the QR version 40 capacity (~2900 8-bit characters).
+    bool setQR(const QString& data, const QString& text = "", int max_chars = MAX_URI_LENGTH);
     QImage exportImage();
 
 public Q_SLOTS:

@@ -11,11 +11,15 @@
 #include <QHash>
 #include <QWidget>
 
+#include <optional>
+
 class ClientModel;
 class WalletModel;
 
 QT_BEGIN_NAMESPACE
+class QGroupBox;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 class QTableWidget;
 QT_END_NAMESPACE
@@ -48,6 +52,9 @@ private Q_SLOTS:
     void copyAddress();
     void removeSelected();
     void updateButtonStates();
+    void editCosignerLabels();
+    void importSelectedWatchOnly();
+    void showProfileQr();
 
 private:
     ClientModel* m_client_model{nullptr};
@@ -65,9 +72,23 @@ private:
     QPushButton* m_copy_address_button;
     QPushButton* m_remove_button;
 
+    QGroupBox* m_details_group;
+    QLabel* m_details_header;
+    QLabel* m_details_cosigners;
+    QLineEdit* m_details_address;
+    QLineEdit* m_details_redeem;
+    QLineEdit* m_details_descriptor;
+    QPushButton* m_edit_labels_button;
+    QPushButton* m_watchonly_button;
+    QPushButton* m_show_qr_button;
+    //! Cached MultisigUtil::IsDescriptorWallet result for the current wallet model.
+    std::optional<bool> m_is_descriptor_wallet;
+
     QList<MultisigUtil::Entry> m_entries;
 
     MultisigUtil::Entry selectedEntry() const;
+    void updateDetailsPanel();
+    QString walletName() const;
     void continuePsbt(bool from_clipboard);
     void setStatus(const QString& message, bool is_error);
     //! Query per-address balances/UTXO counts for all tracked addresses via a single listunspent call.

@@ -83,7 +83,7 @@ MultisigDialog::MultisigDialog(QWidget* parent, WalletModel* wallet_model, Clien
     form->addRow(QString(), m_validation_label);
 
     m_label_edit = new QLineEdit(form_group);
-    m_label_edit->setPlaceholderText(tr("Optional label, shown in the wallet and on the Multisig tab"));
+    m_label_edit->setPlaceholderText(tr("Optional profile name, e.g. \"Treasury 2-of-3\", shown in the wallet and on the Multisig tab"));
     form->addRow(tr("Label"), m_label_edit);
 
     m_track_checkbox = new QCheckBox(tr("Track in this wallet (import as watch-only, so balance and history are shown)"), form_group);

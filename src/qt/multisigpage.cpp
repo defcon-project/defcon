@@ -20,10 +20,15 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
+#include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
@@ -53,7 +58,7 @@ MultisigPage::MultisigPage(QWidget* parent) :
 {
     auto* root = new QVBoxLayout(this);
 
-    auto* intro = new QLabel(tr("Multisignature addresses tracked by this wallet. Create a new setup, share it with your cosigners, and spend from it with partially signed transactions."), this);
+    auto* intro = new QLabel(tr("Saved multisig profiles of this wallet. Create a profile, share it with your cosigners, and spend from it with partially signed transactions."), this);
     intro->setWordWrap(true);
     root->addWidget(intro);
 
@@ -71,7 +76,7 @@ MultisigPage::MultisigPage(QWidget* parent) :
 
     m_table = new QTableWidget(this);
     m_table->setColumnCount(COLUMN_COUNT);
-    m_table->setHorizontalHeaderLabels({tr("Label"), tr("Address"), tr("Scheme"), tr("Balance"), tr("UTXOs")});
+    m_table->setHorizontalHeaderLabels({tr("Profile"), tr("Address"), tr("Scheme"), tr("Balance"), tr("UTXOs")});
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -84,10 +89,71 @@ MultisigPage::MultisigPage(QWidget* parent) :
     m_table->horizontalHeader()->setSectionResizeMode(COLUMN_UTXOS, QHeaderView::ResizeToContents);
     root->addWidget(m_table, 1);
 
-    m_empty_label = new QLabel(tr("No multisig addresses are tracked yet. Use \"Create / Add…\" to set one up, or \"Import setup…\" if a cosigner sent you a setup file."), this);
+    m_empty_label = new QLabel(tr("No multisig profiles yet. Use \"Create / Add…\" to set one up, or \"Import setup…\" if a cosigner sent you a setup file."), this);
     m_empty_label->setWordWrap(true);
     m_empty_label->setAlignment(Qt::AlignCenter);
     root->addWidget(m_empty_label);
+
+    // Details of the selected profile: scheme, network, labelled cosigners and
+    // the raw data (kept collapsed so the default view stays simple).
+    m_details_group = new QGroupBox(tr("Selected profile"), this);
+    auto* details = new QVBoxLayout(m_details_group);
+    m_details_header = new QLabel(m_details_group);
+    m_details_header->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    details->addWidget(m_details_header);
+    m_details_cosigners = new QLabel(m_details_group);
+    m_details_cosigners->setWordWrap(true);
+    m_details_cosigners->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    details->addWidget(m_details_cosigners);
+
+    auto* address_row = new QHBoxLayout();
+    address_row->addWidget(new QLabel(tr("Address"), m_details_group));
+    m_details_address = new QLineEdit(m_details_group);
+    m_details_address->setReadOnly(true);
+    auto* copy_address_details = new QPushButton(tr("Copy"), m_details_group);
+    address_row->addWidget(m_details_address, 1);
+    address_row->addWidget(copy_address_details);
+    details->addLayout(address_row);
+
+    auto* advanced_group = new QGroupBox(tr("Advanced (redeem script, descriptor)"), m_details_group);
+    advanced_group->setCheckable(true);
+    advanced_group->setChecked(false);
+    auto* advanced_outer = new QVBoxLayout(advanced_group);
+    auto* advanced_contents = new QWidget(advanced_group);
+    auto* advanced_form = new QFormLayout(advanced_contents);
+    const auto make_copy_row = [&](const QString& name, QLineEdit*& line_edit) {
+        auto* row = new QHBoxLayout();
+        line_edit = new QLineEdit(advanced_contents);
+        line_edit->setReadOnly(true);
+        auto* copy_button = new QPushButton(tr("Copy"), advanced_contents);
+        row->addWidget(line_edit, 1);
+        row->addWidget(copy_button);
+        advanced_form->addRow(name, row);
+        connect(copy_button, &QPushButton::clicked, this, [this, name, line = line_edit] {
+            GUIUtil::setClipboard(line->text());
+            setStatus(tr("%1 copied to clipboard.").arg(name), false);
+        });
+    };
+    make_copy_row(tr("Redeem script"), m_details_redeem);
+    make_copy_row(tr("Descriptor"), m_details_descriptor);
+    advanced_outer->addWidget(advanced_contents);
+    advanced_contents->setVisible(false);
+    connect(advanced_group, &QGroupBox::toggled, advanced_contents, &QWidget::setVisible);
+    details->addWidget(advanced_group);
+
+    auto* details_actions = new QHBoxLayout();
+    m_edit_labels_button = new QPushButton(tr("Edit cosigner labels…"), m_details_group);
+    m_edit_labels_button->setToolTip(tr("Name each cosigner key (e.g. \"Alice hardware wallet\") so signature progress is easy to read"));
+    m_watchonly_button = new QPushButton(tr("Import as watch-only"), m_details_group);
+    m_show_qr_button = new QPushButton(tr("Show QR…"), m_details_group);
+    m_show_qr_button->setToolTip(tr("Show the setup as a QR code so a cosigner can copy it. Scanning QR codes is not available in this build."));
+    details_actions->addWidget(m_edit_labels_button);
+    details_actions->addWidget(m_watchonly_button);
+    details_actions->addWidget(m_show_qr_button);
+    details_actions->addStretch(1);
+    details->addLayout(details_actions);
+    m_details_group->setVisible(false);
+    root->addWidget(m_details_group);
 
     auto* bottom_buttons = new QHBoxLayout();
     m_spend_button = new QPushButton(tr("Spend…"), this);
@@ -125,6 +191,10 @@ MultisigPage::MultisigPage(QWidget* parent) :
     connect(m_remove_button, &QPushButton::clicked, this, &MultisigPage::removeSelected);
     connect(m_table, &QTableWidget::itemSelectionChanged, this, &MultisigPage::updateButtonStates);
     connect(m_table, &QTableWidget::itemDoubleClicked, this, [this](QTableWidgetItem*) { spendSelected(); });
+    connect(copy_address_details, &QPushButton::clicked, this, &MultisigPage::copyAddress);
+    connect(m_edit_labels_button, &QPushButton::clicked, this, &MultisigPage::editCosignerLabels);
+    connect(m_watchonly_button, &QPushButton::clicked, this, &MultisigPage::importSelectedWatchOnly);
+    connect(m_show_qr_button, &QPushButton::clicked, this, &MultisigPage::showProfileQr);
 
     updateButtonStates();
 }
@@ -137,6 +207,7 @@ void MultisigPage::setClientModel(ClientModel* client_model)
 void MultisigPage::setWalletModel(WalletModel* wallet_model)
 {
     m_wallet_model = wallet_model;
+    m_is_descriptor_wallet.reset();
     refresh();
 }
 
@@ -198,6 +269,7 @@ void MultisigPage::updateButtonStates()
     m_remove_button->setEnabled(has_selection);
     m_continue_button->setEnabled(m_wallet_model != nullptr);
     m_import_button->setEnabled(m_client_model != nullptr);
+    updateDetailsPanel();
 }
 
 MultisigUtil::Entry MultisigPage::selectedEntry() const
@@ -414,4 +486,123 @@ void MultisigPage::removeSelected()
 
     MultisigUtil::RemoveEntry(m_wallet_model ? m_wallet_model->getWalletName() : QString(), entry.address);
     refresh();
+}
+
+QString MultisigPage::walletName() const
+{
+    return m_wallet_model ? m_wallet_model->getWalletName() : QString();
+}
+
+void MultisigPage::updateDetailsPanel()
+{
+    const MultisigUtil::Entry entry = selectedEntry();
+    if (!entry.isValid()) {
+        m_details_group->setVisible(false);
+        return;
+    }
+    m_details_group->setVisible(true);
+
+    const QString network = entry.network.isEmpty() ? MultisigUtil::CurrentNetworkId() : entry.network;
+    m_details_header->setText(tr("%1 — %2-of-%3 multisig • %4")
+        .arg(entry.label.isEmpty() ? tr("(unnamed profile)") : entry.label)
+        .arg(entry.required_sigs)
+        .arg(entry.totalKeys())
+        .arg(MultisigUtil::NetworkDisplayName(network)));
+
+    QStringList cosigner_lines;
+    for (int i = 0; i < entry.pubkeys.size(); ++i) {
+        const QString label = entry.cosignerLabel(i);
+        QString line = QStringLiteral("• ");
+        line += label.isEmpty() ? tr("Cosigner %1").arg(i + 1) : label;
+        line += QStringLiteral(" — ") + MultisigUtil::ShortenKey(entry.pubkeys.at(i));
+        if (m_wallet_model && MultisigUtil::WalletHasKey(*m_wallet_model, entry.pubkeys.at(i))) {
+            line += QLatin1Char(' ') + tr("(key in this wallet)");
+        }
+        cosigner_lines << line;
+    }
+    m_details_cosigners->setText(cosigner_lines.join(QLatin1Char('\n')));
+
+    m_details_address->setText(entry.address);
+    m_details_redeem->setText(entry.redeem_script_hex);
+    m_details_descriptor->setText(entry.descriptor);
+
+    // Watch-only import goes through importmulti, which only exists for legacy
+    // wallets. Descriptor wallets would need an importdescriptors-based path
+    // (not implemented in the multisig GUI yet), so the action is disabled
+    // there with an explanation.
+    bool watchonly_possible = m_wallet_model != nullptr;
+    if (watchonly_possible) {
+        if (!m_is_descriptor_wallet.has_value()) {
+            m_is_descriptor_wallet = MultisigUtil::IsDescriptorWallet(*m_wallet_model);
+        }
+        watchonly_possible = !*m_is_descriptor_wallet;
+    }
+    m_watchonly_button->setEnabled(watchonly_possible);
+    m_watchonly_button->setToolTip(watchonly_possible
+        ? tr("Import the address into this wallet as watch-only so its balance and history are tracked")
+        : (m_wallet_model
+            ? tr("Not available for descriptor wallets: watch-only import uses importmulti, which is legacy-only. Import the profile's descriptor manually via the importdescriptors RPC instead.")
+            : tr("No wallet loaded")));
+    m_edit_labels_button->setEnabled(true);
+}
+
+void MultisigPage::editCosignerLabels()
+{
+    MultisigUtil::Entry entry = selectedEntry();
+    if (!entry.isValid()) return;
+
+    QDialog dialog(this, GUIUtil::dialog_flags);
+    dialog.setWindowTitle(tr("Cosigner labels"));
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* hint = new QLabel(tr("Give each cosigner key a recognizable name, e.g. \"Alice hardware wallet\". Labels are stored locally and included in exported setup files."), &dialog);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+
+    auto* form = new QFormLayout();
+    QList<QLineEdit*> edits;
+    for (int i = 0; i < entry.pubkeys.size(); ++i) {
+        auto* edit = new QLineEdit(entry.cosignerLabel(i), &dialog);
+        edit->setPlaceholderText(tr("Cosigner %1").arg(i + 1));
+        form->addRow(MultisigUtil::ShortenKey(entry.pubkeys.at(i)), edit);
+        edits << edit;
+    }
+    layout->addLayout(form);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+
+    if (dialog.exec() != QDialog::Accepted) return;
+
+    entry.cosigner_labels.clear();
+    for (const QLineEdit* edit : edits) {
+        entry.cosigner_labels << edit->text().trimmed();
+    }
+    MultisigUtil::UpdateEntry(walletName(), entry);
+    refresh();
+    setStatus(tr("Cosigner labels updated."), false);
+}
+
+void MultisigPage::importSelectedWatchOnly()
+{
+    const MultisigUtil::Entry entry = selectedEntry();
+    if (!entry.isValid() || !m_wallet_model) return;
+
+    QString error;
+    if (!MultisigUtil::ImportWatchOnly(*m_wallet_model, entry, error)) {
+        setStatus(tr("Watch-only import failed: %1").arg(error), true);
+        return;
+    }
+    setStatus(tr("Address %1 is now tracked as watch-only. Transactions received before now appear only after a rescan.").arg(entry.address), false);
+    refresh();
+}
+
+void MultisigPage::showProfileQr()
+{
+    const MultisigUtil::Entry entry = selectedEntry();
+    if (!entry.isValid()) return;
+    MultisigUtil::ShowQrDialog(this, tr("Multisig setup as QR code"),
+        QString::fromUtf8(MultisigUtil::EntryToSetupJson(entry, /*compact=*/true)),
+        tr("Contains the profile name, public keys, address and redeem script — no private keys."));
 }

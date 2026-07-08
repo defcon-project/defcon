@@ -82,11 +82,6 @@ InputSigStatus StatusForInput(const PSBTInput& input, const CScript& fallback_re
     return status;
 }
 
-QString ShortKey(const CPubKey& pubkey)
-{
-    const QString hex = QString::fromStdString(HexStr(pubkey));
-    return hex.left(16) + QStringLiteral("…") + hex.right(8);
-}
 } // namespace
 
 MultisigSpendDialog::MultisigSpendDialog(QWidget* parent, WalletModel* wallet_model, ClientModel* client_model, const MultisigUtil::Entry& entry)
@@ -111,9 +106,23 @@ MultisigSpendDialog::MultisigSpendDialog(QWidget* parent, WalletModel* wallet_mo
 void MultisigSpendDialog::setupUi(bool with_build_stage)
 {
     setWindowTitle(with_build_stage ? tr("Spend from Multisig") : tr("Multisig Transaction"));
-    resize(920, with_build_stage ? 760 : 620);
+    resize(920, with_build_stage ? 860 : 700);
 
     auto* root = new QVBoxLayout(this);
+
+    // Step indicator: the user should always know where they are in the
+    // Create -> Collect -> Finalize flow.
+    {
+        auto* steps_row = new QHBoxLayout();
+        const QString step_names[3] = {tr("1. Create"), tr("2. Collect signatures"), tr("3. Finalize & broadcast")};
+        for (int i = 0; i < 3; ++i) {
+            if (i > 0) steps_row->addWidget(new QLabel(QStringLiteral("→"), this));
+            m_step_labels[i] = new QLabel(step_names[i], this);
+            steps_row->addWidget(m_step_labels[i]);
+        }
+        steps_row->addStretch(1);
+        root->addLayout(steps_row);
+    }
 
     if (with_build_stage) {
         m_build_group = new QGroupBox(tr("Transaction"), this);
@@ -144,6 +153,12 @@ void MultisigSpendDialog::setupUi(bool with_build_stage)
         m_subtract_fee_checkbox = new QCheckBox(tr("Subtract fee from amount"), m_build_group);
         form->addRow(QString(), m_subtract_fee_checkbox);
 
+        // Pre-flight checks for the selected profile, so problems surface
+        // before a transaction is built.
+        auto* validation_group = new QGroupBox(tr("Checks"), m_build_group);
+        m_validation_layout = new QVBoxLayout(validation_group);
+        form->addRow(validation_group);
+
         m_build_button = new QPushButton(tr("Build transaction"), m_build_group);
         form->addRow(QString(), m_build_button);
 
@@ -153,26 +168,30 @@ void MultisigSpendDialog::setupUi(bool with_build_stage)
         connect(m_build_button, &QPushButton::clicked, this, &MultisigSpendDialog::buildTransaction);
     }
 
-    m_manage_group = new QGroupBox(tr("Signatures"), this);
-    auto* manage_layout = new QVBoxLayout(m_manage_group);
+    m_preview_group = new QGroupBox(tr("Transaction preview"), this);
+    auto* preview_layout = new QVBoxLayout(m_preview_group);
+    m_preview_label = new QLabel(m_preview_group);
+    m_preview_label->setWordWrap(true);
+    m_preview_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    preview_layout->addWidget(m_preview_label);
+    root->addWidget(m_preview_group);
 
-    m_summary_label = new QLabel(m_manage_group);
-    m_summary_label->setWordWrap(true);
-    m_summary_label->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    manage_layout->addWidget(m_summary_label);
+    m_manage_group = new QGroupBox(tr("Collect signatures"), this);
+    auto* manage_layout = new QVBoxLayout(m_manage_group);
 
     m_progress_label = new QLabel(m_manage_group);
     m_progress_label->setWordWrap(true);
     manage_layout->addWidget(m_progress_label);
 
     m_signers_table = new QTableWidget(m_manage_group);
-    m_signers_table->setColumnCount(2);
-    m_signers_table->setHorizontalHeaderLabels({tr("Public key"), tr("Signature")});
+    m_signers_table->setColumnCount(3);
+    m_signers_table->setHorizontalHeaderLabels({tr("Cosigner"), tr("Public key"), tr("Signature")});
     m_signers_table->setSelectionMode(QAbstractItemView::NoSelection);
     m_signers_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_signers_table->verticalHeader()->setVisible(false);
-    m_signers_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_signers_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_signers_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_signers_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_signers_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     m_signers_table->setMinimumHeight(140);
     manage_layout->addWidget(m_signers_table);
 
@@ -180,22 +199,48 @@ void MultisigSpendDialog::setupUi(bool with_build_stage)
     m_sign_button = new QPushButton(tr("Sign with this wallet"), m_manage_group);
     m_copy_button = new QPushButton(tr("Copy PSBT"), m_manage_group);
     m_save_button = new QPushButton(tr("Save PSBT…"), m_manage_group);
+    m_qr_button = new QPushButton(tr("Show QR…"), m_manage_group);
+    m_qr_button->setToolTip(tr("Show the PSBT as a QR code for transfer to another device. Only smaller transactions fit into a QR code."));
     m_merge_button = new QPushButton(tr("Merge signatures"), m_manage_group);
     m_merge_button->setToolTip(tr("Combine a partially signed copy of this transaction received from a cosigner"));
     auto* merge_menu = new QMenu(m_merge_button);
     merge_menu->addAction(tr("From clipboard"), [this] { mergePsbt(/*from_clipboard=*/true); });
     merge_menu->addAction(tr("From file…"), [this] { mergePsbt(/*from_clipboard=*/false); });
+    // TODO: enable once a camera/QR-scanner backend exists in the project;
+    // adding one is a heavy new dependency, so PSBTs come in via
+    // clipboard/file for now (QR is export-only).
+    auto* scan_action = merge_menu->addAction(tr("From QR code…"));
+    scan_action->setEnabled(false);
     m_merge_button->setMenu(merge_menu);
-    m_broadcast_button = new QPushButton(tr("Broadcast"), m_manage_group);
     manage_buttons->addWidget(m_sign_button);
     manage_buttons->addWidget(m_merge_button);
     manage_buttons->addWidget(m_copy_button);
     manage_buttons->addWidget(m_save_button);
+    manage_buttons->addWidget(m_qr_button);
     manage_buttons->addStretch(1);
-    manage_buttons->addWidget(m_broadcast_button);
     manage_layout->addLayout(manage_buttons);
 
     root->addWidget(m_manage_group, 1);
+
+    m_finalize_group = new QGroupBox(tr("Finalize && broadcast"), this);
+    auto* finalize_layout = new QVBoxLayout(m_finalize_group);
+    auto* finalize_row = new QHBoxLayout();
+    m_broadcast_button = new QPushButton(tr("Finalize and broadcast"), m_finalize_group);
+    m_broadcast_button->setToolTip(tr("Combine the collected signatures into a final transaction and send it to the network"));
+    finalize_row->addWidget(m_broadcast_button);
+    finalize_row->addStretch(1);
+    finalize_layout->addLayout(finalize_row);
+    auto* txid_row = new QHBoxLayout();
+    txid_row->addWidget(new QLabel(tr("Transaction ID"), m_finalize_group));
+    m_txid_out = new QLineEdit(m_finalize_group);
+    m_txid_out->setReadOnly(true);
+    m_txid_out->setPlaceholderText(tr("appears after broadcasting"));
+    m_copy_txid_button = new QPushButton(tr("Copy"), m_finalize_group);
+    m_copy_txid_button->setEnabled(false);
+    txid_row->addWidget(m_txid_out, 1);
+    txid_row->addWidget(m_copy_txid_button);
+    finalize_layout->addLayout(txid_row);
+    root->addWidget(m_finalize_group);
 
     m_status_label = new QLabel(this);
     m_status_label->setWordWrap(true);
@@ -211,10 +256,13 @@ void MultisigSpendDialog::setupUi(bool with_build_stage)
     connect(m_sign_button, &QPushButton::clicked, this, &MultisigSpendDialog::signTransaction);
     connect(m_copy_button, &QPushButton::clicked, this, &MultisigSpendDialog::copyPsbt);
     connect(m_save_button, &QPushButton::clicked, this, &MultisigSpendDialog::savePsbt);
+    connect(m_qr_button, &QPushButton::clicked, this, &MultisigSpendDialog::showPsbtQr);
     connect(m_broadcast_button, &QPushButton::clicked, this, &MultisigSpendDialog::broadcastTransaction);
+    connect(m_copy_txid_button, &QPushButton::clicked, this, &MultisigSpendDialog::copyTxid);
     connect(close_button, &QPushButton::clicked, this, &QDialog::close);
 
     m_manage_group->setEnabled(false);
+    populateValidationPanel();
     updateManageUi();
 }
 
@@ -381,12 +429,15 @@ bool MultisigSpendDialog::transactionComplete() const
 void MultisigSpendDialog::updateManageUi()
 {
     if (!m_psbt) {
-        m_summary_label->setText(tr("No transaction loaded yet."));
-        m_progress_label->clear();
+        updateStepIndicator(1);
+        m_preview_group->setVisible(false);
+        m_finalize_group->setVisible(false);
+        m_progress_label->setText(tr("No transaction loaded yet."));
         m_signers_table->setRowCount(0);
         m_sign_button->setEnabled(false);
         m_copy_button->setEnabled(false);
         m_save_button->setEnabled(false);
+        m_qr_button->setEnabled(false);
         m_merge_button->setEnabled(false);
         m_broadcast_button->setEnabled(false);
         return;
@@ -395,25 +446,6 @@ void MultisigSpendDialog::updateManageUi()
     const int display_unit = (m_wallet_model && m_wallet_model->getOptionsModel())
         ? m_wallet_model->getOptionsModel()->getDisplayUnit()
         : BitcoinUnits::DASH;
-
-    // Outputs and fee summary
-    QStringList summary_lines;
-    for (const CTxOut& out : m_psbt->tx->vout) {
-        CTxDestination dest;
-        ExtractDestination(out.scriptPubKey, dest);
-        QString line = tr("Sends %1 to %2")
-            .arg(BitcoinUnits::formatWithUnit(display_unit, out.nValue))
-            .arg(QString::fromStdString(EncodeDestination(dest)));
-        if (m_entry.isValid() && QString::fromStdString(EncodeDestination(dest)) == m_entry.address) {
-            line += QLatin1Char(' ') + tr("(change back to the multisig address)");
-        }
-        summary_lines << line;
-    }
-    const PSBTAnalysis analysis = AnalyzePSBT(*m_psbt);
-    if (analysis.fee) {
-        summary_lines << tr("Fee: %1").arg(BitcoinUnits::formatWithUnit(display_unit, *analysis.fee));
-    }
-    m_summary_label->setText(summary_lines.join(QLatin1Char('\n')));
 
     // Signature progress across inputs
     CScript fallback_redeem_script;
@@ -441,11 +473,67 @@ void MultisigSpendDialog::updateManageUi()
     }
 
     const bool complete = transactionComplete();
+
+    // Human-readable preview: destination / fee / change / required
+    // signatures, with "unknown" whenever the PSBT does not carry enough
+    // information to tell (never guess).
+    {
+        QStringList preview_lines;
+        const bool change_known = m_entry.isValid();
+        CAmount change_total = 0;
+        bool has_change_output = false;
+        for (const CTxOut& out : m_psbt->tx->vout) {
+            CTxDestination dest;
+            const bool extracted = ExtractDestination(out.scriptPubKey, dest);
+            const QString address = extracted ? QString::fromStdString(EncodeDestination(dest)) : QString();
+            if (change_known && address == m_entry.address) {
+                change_total += out.nValue;
+                has_change_output = true;
+                continue;
+            }
+            preview_lines << tr("Send %1 to %2")
+                .arg(BitcoinUnits::formatWithUnit(display_unit, out.nValue))
+                .arg(address.isEmpty() ? tr("unknown destination") : address);
+        }
+        if (change_known) {
+            if (has_change_output) {
+                preview_lines << tr("Change: %1 (back to the multisig address)")
+                    .arg(BitcoinUnits::formatWithUnit(display_unit, change_total));
+            }
+        } else {
+            // Without the profile we cannot tell which output is change.
+            preview_lines << tr("Change: unknown (transaction loaded without its multisig profile)");
+        }
+        const PSBTAnalysis analysis = AnalyzePSBT(*m_psbt);
+        preview_lines << (analysis.fee
+            ? tr("Fee: %1").arg(BitcoinUnits::formatWithUnit(display_unit, *analysis.fee))
+            : tr("Fee: unknown"));
+        preview_lines << (required > 0
+            ? tr("Required signatures: %1 of %2 cosigners").arg(required).arg(table_source ? int(table_source->keys.size()) : 0)
+            : tr("Required signatures: unknown"));
+        m_preview_label->setText(preview_lines.join(QLatin1Char('\n')));
+        m_preview_group->setVisible(true);
+    }
+
     if (complete) {
-        m_progress_label->setText(tr("All required signatures collected — the transaction is ready to broadcast."));
+        m_progress_label->setText(tr("All required signatures collected — ready to finalize."));
     } else if (table_source) {
-        QString text = tr("Signatures: %1 of %2 required.").arg(min_have < 0 ? 0 : min_have).arg(required);
+        QString text = tr("Signatures: %1 of %2 collected.").arg(min_have < 0 ? 0 : min_have).arg(required);
         if (finalized_inputs > 0) text += QLatin1Char(' ') + tr("(%1 of %2 inputs already finalized)").arg(finalized_inputs).arg(m_psbt->inputs.size());
+        // Who is still missing: match the pending input's pubkeys against the
+        // profile's cosigner labels. The PSBT reliably tells which *key* has
+        // signed (partial_sigs is keyed by pubkey); mapping a key to a person
+        // relies on the locally stored labels, so this is best-effort display
+        // information, not an authenticated identity.
+        QStringList missing;
+        for (const auto& [pubkey, have_sig] : table_source->keys) {
+            if (!have_sig) {
+                const QString hex = QString::fromStdString(HexStr(pubkey));
+                missing << (m_entry.isValid() ? MultisigUtil::CosignerDisplayName(m_entry, hex)
+                                              : MultisigUtil::ShortenKey(hex));
+            }
+        }
+        if (!missing.isEmpty()) text += QLatin1Char('\n') + tr("Missing: %1").arg(missing.join(QLatin1String(", ")));
         m_progress_label->setText(text);
     } else if (unknown_inputs > 0) {
         m_progress_label->setText(tr("Signature progress is unknown: the transaction inputs are missing multisig redeem script information."));
@@ -460,9 +548,14 @@ void MultisigSpendDialog::updateManageUi()
         m_signers_table->setRowCount(table_source->keys.size());
         for (size_t row = 0; row < table_source->keys.size(); ++row) {
             const auto& [pubkey, have_sig] = table_source->keys.at(row);
-            m_signers_table->setItem(int(row), 0, new QTableWidgetItem(ShortKey(pubkey)));
-            auto* status_item = new QTableWidgetItem(have_sig ? tr("Signed") : tr("Missing"));
-            m_signers_table->setItem(int(row), 1, status_item);
+            const QString hex = QString::fromStdString(HexStr(pubkey));
+            // Cosigner name comes from the locally stored profile labels; when
+            // the profile is unknown only the key itself can be shown.
+            const QString cosigner = m_entry.isValid() ? MultisigUtil::CosignerDisplayName(m_entry, hex)
+                                                       : QStringLiteral("—");
+            m_signers_table->setItem(int(row), 0, new QTableWidgetItem(cosigner));
+            m_signers_table->setItem(int(row), 1, new QTableWidgetItem(MultisigUtil::ShortenKey(hex)));
+            m_signers_table->setItem(int(row), 2, new QTableWidgetItem(have_sig ? tr("Signed") : tr("Missing")));
         }
         m_signers_table->setVisible(true);
     } else {
@@ -474,8 +567,65 @@ void MultisigSpendDialog::updateManageUi()
     m_sign_button->setEnabled(!complete && can_sign);
     m_copy_button->setEnabled(true);
     m_save_button->setEnabled(true);
+    m_qr_button->setEnabled(true);
     m_merge_button->setEnabled(!complete);
     m_broadcast_button->setEnabled(complete && m_client_model != nullptr);
+
+    m_finalize_group->setVisible(true);
+    updateStepIndicator(complete ? 3 : 2);
+}
+
+void MultisigSpendDialog::updateStepIndicator(int current_step)
+{
+    for (int i = 0; i < 3; ++i) {
+        QLabel* label = m_step_labels[i];
+        if (label == nullptr) continue;
+        const int step = i + 1;
+        GUIUtil::setFont({label}, step == current_step ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal);
+        if (step < current_step) {
+            label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_SUCCESS));
+        } else if (step == current_step) {
+            label->setStyleSheet(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_PRIMARY));
+        } else {
+            label->setStyleSheet(QString());
+        }
+    }
+}
+
+void MultisigSpendDialog::populateValidationPanel()
+{
+    if (m_validation_layout == nullptr || !m_entry.isValid()) return;
+
+    while (QLayoutItem* item = m_validation_layout->takeAt(0)) {
+        delete item->widget();
+        delete item;
+    }
+    for (const MultisigUtil::ValidationCheck& check : MultisigUtil::BuildValidationReport(m_wallet_model, m_entry)) {
+        QString icon = QStringLiteral("•");
+        GUIUtil::ThemedStyle style = GUIUtil::ThemedStyle::TS_PRIMARY;
+        switch (check.state) {
+        case MultisigUtil::ValidationCheck::State::OK:
+            icon = QStringLiteral("✓");
+            style = GUIUtil::ThemedStyle::TS_SUCCESS;
+            break;
+        case MultisigUtil::ValidationCheck::State::WARN:
+            icon = QStringLiteral("!");
+            style = GUIUtil::ThemedStyle::TS_WARNING;
+            break;
+        case MultisigUtil::ValidationCheck::State::FAIL:
+            icon = QStringLiteral("✗");
+            style = GUIUtil::ThemedStyle::TS_ERROR;
+            break;
+        case MultisigUtil::ValidationCheck::State::UNKNOWN:
+            break;
+        }
+        QString text = icon + QLatin1Char(' ') + check.text;
+        if (!check.detail.isEmpty()) text += QStringLiteral(" — ") + check.detail;
+        auto* row = new QLabel(text, m_validation_layout->parentWidget());
+        row->setWordWrap(true);
+        row->setStyleSheet(GUIUtil::getThemedStyleQString(style));
+        m_validation_layout->addWidget(row);
+    }
 }
 
 void MultisigSpendDialog::signTransaction()
@@ -530,6 +680,23 @@ void MultisigSpendDialog::savePsbt()
     out << ssTx.str();
     out.close();
     setStatus(tr("PSBT saved to %1.").arg(filename), false);
+}
+
+void MultisigSpendDialog::showPsbtQr()
+{
+    if (!m_psbt) return;
+    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
+    ssTx << *m_psbt;
+    MultisigUtil::ShowQrDialog(this, tr("PSBT as QR code"),
+        QString::fromStdString(EncodeBase64(ssTx.str())),
+        tr("Scan this with the cosigner's device to transfer the partially signed transaction."));
+}
+
+void MultisigSpendDialog::copyTxid()
+{
+    if (m_txid_out->text().isEmpty()) return;
+    GUIUtil::setClipboard(m_txid_out->text());
+    setStatus(tr("Transaction ID copied to clipboard."), false);
 }
 
 void MultisigSpendDialog::mergePsbt(bool from_clipboard)
@@ -590,6 +757,9 @@ void MultisigSpendDialog::broadcastTransaction()
         m_broadcast_button->setEnabled(false);
         m_sign_button->setEnabled(false);
         m_merge_button->setEnabled(false);
+        m_txid_out->setText(QString::fromStdString(tx->GetHash().GetHex()));
+        m_copy_txid_button->setEnabled(true);
+        updateStepIndicator(3);
         setStatus(tr("Transaction broadcast successfully! Transaction ID: %1").arg(QString::fromStdString(tx->GetHash().GetHex())), false);
     } else {
         setStatus(tr("Transaction broadcast failed: %1").arg(QString::fromStdString(TransactionErrorString(error).translated)), true);

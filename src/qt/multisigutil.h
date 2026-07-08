@@ -13,6 +13,10 @@
 
 class WalletModel;
 
+QT_BEGIN_NAMESPACE
+class QWidget;
+QT_END_NAMESPACE
+
 /**
  * Helpers shared by the multisig GUI: a per-wallet registry of tracked
  * multisig addresses (stored in QSettings), key validation and the
@@ -26,15 +30,22 @@ class WalletModel;
 namespace MultisigUtil {
 
 struct Entry {
-    QString label;
+    QString label; //!< profile name, e.g. "Treasury 2-of-3"
     QString address;
     QString redeem_script_hex;
     QString descriptor;
     int required_sigs{0};
     QStringList pubkeys;
+    QStringList cosigner_labels; //!< parallel to pubkeys; may be shorter or empty
+    QString network;             //!< chain id (main/test/regtest/...); empty in entries saved by older versions
 
     int totalKeys() const { return pubkeys.size(); }
     bool isValid() const { return !address.isEmpty() && required_sigs > 0; }
+    //! Label of the i-th cosigner; empty if not set.
+    QString cosignerLabel(int index) const
+    {
+        return index >= 0 && index < cosigner_labels.size() ? cosigner_labels.at(index).trimmed() : QString();
+    }
 };
 
 /** Load all tracked multisig entries for a wallet (by wallet name). */
@@ -45,6 +56,8 @@ bool AddEntry(const QString& wallet_name, const Entry& entry);
 bool RemoveEntry(const QString& wallet_name, const QString& address);
 /** Find a tracked entry by address. Returned entry is invalid (isValid() == false) if not found. */
 Entry FindEntry(const QString& wallet_name, const QString& address);
+/** Replace the stored entry with the same address; returns false if the address is not tracked. */
+bool UpdateEntry(const QString& wallet_name, const Entry& entry);
 
 enum class KeyTokenType {
     PUBKEY,   //!< hex-encoded compressed/uncompressed public key
@@ -67,10 +80,51 @@ bool IsDescriptorWallet(WalletModel& wallet_model);
  */
 bool ImportWatchOnly(WalletModel& wallet_model, const Entry& entry, QString& error);
 
-/** Serialize an entry to the portable multisig setup JSON exchanged between cosigners. */
-QByteArray EntryToSetupJson(const Entry& entry);
-/** Parse a setup JSON; on failure returns an invalid entry and sets error. */
+/** Serialize an entry to the portable multisig setup JSON exchanged between cosigners.
+ *  Contains public data only (name, m/n, pubkeys, cosigner labels, scripts, address, network) — never keys. */
+QByteArray EntryToSetupJson(const Entry& entry, bool compact = false);
+/** Parse and validate a setup JSON; on failure returns an invalid entry and sets error. */
 Entry EntryFromSetupJson(const QByteArray& json, QString& error);
+
+/** Chain id of the running node (Params().NetworkIDString()). */
+QString CurrentNetworkId();
+/** Human-readable network name for a chain id; falls back to the raw id. */
+QString NetworkDisplayName(const QString& network_id);
+
+/** Shorten a hex key for display (first 12 and last 6 chars). */
+QString ShortenKey(const QString& hex);
+/** Cosigner display name: the stored label when set, otherwise the shortened pubkey. */
+QString CosignerDisplayName(const Entry& entry, const QString& pubkey_hex);
+
+/** Best-effort check whether this wallet holds the private key of a hex pubkey
+ *  (getaddressinfo on the derived P2PKH address; false on RPC failure). */
+bool WalletHasKey(WalletModel& wallet_model, const QString& pubkey_hex);
+
+enum class ScriptAddressMatch {
+    MATCH,
+    MISMATCH,
+    UNKNOWN, //!< no redeem script stored, or the address is not P2SH
+};
+/** Local check that the stored redeem script hashes to the P2SH address. */
+ScriptAddressMatch RedeemScriptMatchesAddress(const Entry& entry);
+
+/** One row of the pre-flight validation panel. */
+struct ValidationCheck {
+    enum class State { OK, WARN, FAIL, UNKNOWN };
+    State state{State::UNKNOWN};
+    QString text;   //!< short check description, e.g. "Address valid"
+    QString detail; //!< optional extra information
+};
+/** Pre-flight checks for an entry: address, redeem script/address match, m-of-n,
+ *  network, wallet tracking and signing capability. wallet_model may be null. */
+QList<ValidationCheck> BuildValidationReport(WalletModel* wallet_model, const Entry& entry);
+
+/** Show a payload as a QR code in a small dialog (save/copy supported). Falls back
+ *  to a friendly message when the payload exceeds QR capacity or QR support is not
+ *  compiled in. Scanning QR codes (import) is not offered anywhere yet: the project
+ *  has no camera/scanner dependency, and adding one is out of scope — import stays
+ *  file/clipboard based until a scanner backend exists. */
+void ShowQrDialog(QWidget* parent, const QString& title, const QString& payload, const QString& note);
 
 } // namespace MultisigUtil
 
