@@ -56,6 +56,7 @@ private:
     const bool m_is_masternode;
     std::unique_ptr<CScheduler> scheduler;
     std::unique_ptr<std::thread> scheduler_thread;
+    mutable Mutex cs_try_sign;
     mutable Mutex cs;
     std::atomic<bool> tryLockChainTipScheduled{false};
     std::atomic<bool> isEnabled{false};
@@ -101,12 +102,12 @@ public:
                                                               const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
 
     void AcceptedBlockHeader(gsl::not_null<const CBlockIndex*> pindexNew) EXCLUSIVE_LOCKS_REQUIRED(!cs);
-    void UpdatedBlockTip(const llmq::CInstantSendManager& isman);
+    void UpdatedBlockTip(const llmq::CInstantSendManager& isman) EXCLUSIVE_LOCKS_REQUIRED(!cs_try_sign, !cs);
     void TransactionAddedToMempool(const CTransactionRef& tx, int64_t nAcceptTime) EXCLUSIVE_LOCKS_REQUIRED(!cs);
     void BlockConnected(const std::shared_ptr<const CBlock>& pblock, gsl::not_null<const CBlockIndex*> pindex) EXCLUSIVE_LOCKS_REQUIRED(!cs);
     void BlockDisconnected(const std::shared_ptr<const CBlock>& pblock, gsl::not_null<const CBlockIndex*> pindexDisconnected) EXCLUSIVE_LOCKS_REQUIRED(!cs);
     void CheckActiveState() EXCLUSIVE_LOCKS_REQUIRED(!cs);
-    void TrySignChainTip(const llmq::CInstantSendManager& isman) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    void TrySignChainTip(const llmq::CInstantSendManager& isman) EXCLUSIVE_LOCKS_REQUIRED(!cs_try_sign, !cs);
     void EnforceBestChainLock() EXCLUSIVE_LOCKS_REQUIRED(!cs);
     [[nodiscard]] MessageProcessingResult HandleNewRecoveredSig(const CRecoveredSig& recoveredSig) override
         EXCLUSIVE_LOCKS_REQUIRED(!cs);
