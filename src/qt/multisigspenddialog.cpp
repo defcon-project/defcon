@@ -885,12 +885,14 @@ void MultisigSpendDialog::broadcastTransaction()
         ? tr("Signatures: %1 of %2 collected").arg(collected_signatures).arg(required_signatures)
         : tr("Signatures: transaction is complete"));
     summary_lines << tr("Transaction ID: %1").arg(QString::fromStdString(tx->GetHash().GetHex()));
+    summary_lines << QString();
+    summary_lines << output_lines;
 
     SendConfirmationDialog confirmation(
         tr("Confirm multisig broadcast"),
         tr("Verify the transaction before broadcasting."),
         summary_lines.join(QLatin1Char('\n')),
-        output_lines.join(QLatin1Char('\n')),
+        QString(),
         MULTISIG_BROADCAST_CONFIRM_DELAY,
         tr("Broadcast"),
         this);
