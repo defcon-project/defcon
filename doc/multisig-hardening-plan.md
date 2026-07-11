@@ -1,6 +1,6 @@
 # Multisig GUI Hardening Plan
 
-Status: proposed. This document covers Qt wallet UX and wallet-policy hardening only. It does not change consensus rules or require a network activation height.
+Status: implemented on `feature/gui-multisig-wallet`; the manual 2-of-3 verification remains pending. This document covers Qt wallet UX and wallet-policy hardening only. It does not change consensus rules or require a network activation height.
 
 ## Scope
 
@@ -59,6 +59,8 @@ Before sending a completed PSBT to the network, finalize it in memory and presen
 `Cancel` must leave the transaction unbroadcast. The subsequent `Broadcast transaction` action must send exactly the finalized transaction that was shown in the confirmation dialog.
 
 Add GUI-side absolute-fee and fee-to-payment-ratio policy checks. A high fee must be shown as a prominent warning and require a separate acknowledgement. A hard upper limit must block broadcasting. The final thresholds must be defined as reviewable policy constants rather than inferred from the node's fee-rate guard.
+
+Current policy constants warn above 0.01 DFCN or 1% of the payment amount, and block above 1 DFCN or 25% of the payment amount. These limits are intentionally conservative for treasury use and can be reviewed without changing transaction or consensus rules.
 
 Never guess missing financial information. If the fee cannot be determined, block normal GUI broadcast. If change cannot be identified, show every output, mark change as unknown, and require a separate explicit acknowledgement. This is especially important for PSBTs loaded without a stored multisig profile.
 
