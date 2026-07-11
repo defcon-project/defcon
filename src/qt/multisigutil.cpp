@@ -446,6 +446,19 @@ QList<ValidationCheck> BuildValidationReport(WalletModel* wallet_model, const En
     return checks;
 }
 
+bool IsProfileSpendable(const Entry& entry, QString& error)
+{
+    QStringList failures;
+    for (const ValidationCheck& check : BuildValidationReport(nullptr, entry)) {
+        if (check.state != ValidationCheck::State::FAIL) continue;
+        QString failure = check.text;
+        if (!check.detail.isEmpty()) failure += QStringLiteral(": ") + check.detail;
+        failures << failure;
+    }
+    error = failures.join(QLatin1String("; "));
+    return failures.isEmpty();
+}
+
 void ShowQrDialog(QWidget* parent, const QString& title, const QString& payload, const QString& note)
 {
     QDialog dialog(parent, GUIUtil::dialog_flags);

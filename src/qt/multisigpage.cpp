@@ -262,8 +262,14 @@ void MultisigPage::refresh()
 
 void MultisigPage::updateButtonStates()
 {
-    const bool has_selection = selectedEntry().isValid();
-    m_spend_button->setEnabled(has_selection && m_wallet_model != nullptr);
+    const MultisigUtil::Entry entry = selectedEntry();
+    const bool has_selection = entry.isValid();
+    QString spend_error;
+    const bool can_spend = has_selection && MultisigUtil::IsProfileSpendable(entry, spend_error);
+    m_spend_button->setEnabled(can_spend && m_wallet_model != nullptr);
+    m_spend_button->setToolTip(has_selection && !can_spend
+        ? tr("Cannot spend from this profile: %1").arg(spend_error)
+        : QString());
     m_export_button->setEnabled(has_selection);
     m_copy_address_button->setEnabled(has_selection);
     m_remove_button->setEnabled(has_selection);
@@ -424,6 +430,12 @@ void MultisigPage::spendSelected()
 {
     const MultisigUtil::Entry entry = selectedEntry();
     if (!entry.isValid() || !m_wallet_model) return;
+
+    QString spend_error;
+    if (!MultisigUtil::IsProfileSpendable(entry, spend_error)) {
+        setStatus(tr("Cannot spend from this profile: %1").arg(spend_error), true);
+        return;
+    }
 
     MultisigSpendDialog dlg(this, m_wallet_model, m_client_model, entry);
     dlg.exec();

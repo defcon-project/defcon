@@ -277,6 +277,13 @@ void MultisigSpendDialog::refreshAvailableBalance()
 {
     if (!m_wallet_model || !m_entry.isValid()) return;
 
+    QString spend_error;
+    if (!MultisigUtil::IsProfileSpendable(m_entry, spend_error)) {
+        if (m_build_button) m_build_button->setEnabled(false);
+        setStatus(tr("Cannot spend from this profile: %1").arg(spend_error), true);
+        return;
+    }
+
     m_available = 0;
     int utxo_count = 0;
     try {
@@ -319,9 +326,19 @@ void MultisigSpendDialog::buildTransaction()
 {
     if (!m_wallet_model) return;
 
+    QString spend_error;
+    if (!MultisigUtil::IsProfileSpendable(m_entry, spend_error)) {
+        setStatus(tr("Cannot spend from this profile: %1").arg(spend_error), true);
+        return;
+    }
+
     const QString destination = m_destination_edit->text().trimmed();
     if (!m_wallet_model->validateAddress(destination)) {
         setStatus(tr("The destination address is not valid."), true);
+        return;
+    }
+    if (DecodeDestination(destination.toStdString()) == DecodeDestination(m_entry.address.toStdString())) {
+        setStatus(tr("The destination must be different from the source multisig address. Wallet-generated change will still return to the multisig address."), true);
         return;
     }
 

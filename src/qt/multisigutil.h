@@ -119,6 +119,11 @@ struct ValidationCheck {
  *  network, wallet tracking and signing capability. wallet_model may be null. */
 QList<ValidationCheck> BuildValidationReport(WalletModel* wallet_model, const Entry& entry);
 
+/** Return whether an entry may be used to build a spend. Explicit validation
+ *  failures are fatal; warnings and unknown legacy metadata remain usable.
+ *  On failure, error contains a human-readable summary. */
+bool IsProfileSpendable(const Entry& entry, QString& error);
+
 /** Show a payload as a QR code in a small dialog (save/copy supported). Falls back
  *  to a friendly message when the payload exceeds QR capacity or QR support is not
  *  compiled in. Scanning QR codes (import) is not offered anywhere yet: the project
