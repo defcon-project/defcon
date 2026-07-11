@@ -207,7 +207,7 @@ void MultisigPage::setClientModel(ClientModel* client_model)
 void MultisigPage::setWalletModel(WalletModel* wallet_model)
 {
     m_wallet_model = wallet_model;
-    m_is_descriptor_wallet.reset();
+    m_wallet_storage_type.reset();
     refresh();
 }
 
@@ -304,7 +304,7 @@ bool MultisigPage::queryBalances(QHash<QString, CAmount>& balances, QHash<QStrin
         addresses.push_back(entry.address.toStdString());
     }
     UniValue params(UniValue::VARR);
-    params.push_back(UniValue(0));
+    params.push_back(UniValue(MultisigUtil::MIN_SPEND_CONFIRMATIONS));
     params.push_back(UniValue(9999999));
     params.push_back(addresses);
 
@@ -316,8 +316,8 @@ bool MultisigPage::queryBalances(QHash<QString, CAmount>& balances, QHash<QStrin
         }
         for (size_t i = 0; i < result.size(); ++i) {
             const UniValue& utxo = result[i];
-            const UniValue& address = find_value(utxo, "address");
-            const UniValue& amount = find_value(utxo, "amount");
+            const UniValue address = find_value(utxo, "address");
+            const UniValue amount = find_value(utxo, "amount");
             if (!address.isStr() || amount.isNull()) continue;
             const QString address_str = QString::fromStdString(address.get_str());
             balances[address_str] += AmountFromValue(amount);
@@ -384,17 +384,29 @@ void MultisigPage::importSetup()
         return;
     }
 
+    QString import_note;
     if (m_wallet_model) {
-        const QMessageBox::StandardButton reply = QMessageBox::question(this, tr("Track address"),
-            tr("Import %1 into the wallet as watch-only so its balance and history are tracked?\n\n"
-               "Note: transactions received before now will only appear after a rescan.").arg(entry.address),
-            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-        if (reply == QMessageBox::Yes) {
-            QString import_error;
-            if (!MultisigUtil::ImportWatchOnly(*m_wallet_model, entry, import_error)) {
-                setStatus(tr("Watch-only import failed: %1").arg(import_error), true);
-                return;
+        switch (MultisigUtil::GetWalletStorageType(*m_wallet_model)) {
+        case MultisigUtil::WalletStorageType::LEGACY: {
+            const QMessageBox::StandardButton reply = QMessageBox::question(this, tr("Track address"),
+                tr("Import %1 into the wallet as watch-only so its balance and history are tracked?\n\n"
+                   "Note: transactions received before now will only appear after a rescan.").arg(entry.address),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+            if (reply == QMessageBox::Yes) {
+                QString import_error;
+                if (!MultisigUtil::ImportWatchOnly(*m_wallet_model, entry, import_error)) {
+                    setStatus(tr("Watch-only import failed: %1").arg(import_error), true);
+                    return;
+                }
             }
+            break;
+        }
+        case MultisigUtil::WalletStorageType::DESCRIPTOR:
+            import_note = tr("Watch-only tracking was not imported because this is a descriptor wallet; use importdescriptors manually.");
+            break;
+        case MultisigUtil::WalletStorageType::UNKNOWN:
+            import_note = tr("Watch-only tracking was not imported because the wallet type could not be determined.");
+            break;
         }
     }
 
@@ -403,7 +415,9 @@ void MultisigPage::importSetup()
         return;
     }
     refresh();
-    setStatus(tr("Multisig setup %1 imported.").arg(entry.address), false);
+    QString status = tr("Multisig setup %1 imported.").arg(entry.address);
+    if (!import_note.isEmpty()) status += QLatin1Char(' ') + import_note;
+    setStatus(status, false);
 }
 
 void MultisigPage::exportSetup()
@@ -544,17 +558,21 @@ void MultisigPage::updateDetailsPanel()
     // there with an explanation.
     bool watchonly_possible = m_wallet_model != nullptr;
     if (watchonly_possible) {
-        if (!m_is_descriptor_wallet.has_value()) {
-            m_is_descriptor_wallet = MultisigUtil::IsDescriptorWallet(*m_wallet_model);
+        if (!m_wallet_storage_type.has_value()) {
+            m_wallet_storage_type = MultisigUtil::GetWalletStorageType(*m_wallet_model);
         }
-        watchonly_possible = !*m_is_descriptor_wallet;
+        watchonly_possible = *m_wallet_storage_type == MultisigUtil::WalletStorageType::LEGACY;
     }
     m_watchonly_button->setEnabled(watchonly_possible);
-    m_watchonly_button->setToolTip(watchonly_possible
-        ? tr("Import the address into this wallet as watch-only so its balance and history are tracked")
-        : (m_wallet_model
-            ? tr("Not available for descriptor wallets: watch-only import uses importmulti, which is legacy-only. Import the profile's descriptor manually via the importdescriptors RPC instead.")
-            : tr("No wallet loaded")));
+    if (watchonly_possible) {
+        m_watchonly_button->setToolTip(tr("Import the address into this wallet as watch-only so its balance and history are tracked"));
+    } else if (!m_wallet_model) {
+        m_watchonly_button->setToolTip(tr("No wallet loaded"));
+    } else if (*m_wallet_storage_type == MultisigUtil::WalletStorageType::DESCRIPTOR) {
+        m_watchonly_button->setToolTip(tr("Not available for descriptor wallets: import the profile's descriptor manually via the importdescriptors RPC instead."));
+    } else {
+        m_watchonly_button->setToolTip(tr("Wallet type could not be determined, so legacy watch-only import is disabled for safety."));
+    }
     m_edit_labels_button->setEnabled(true);
 }
 

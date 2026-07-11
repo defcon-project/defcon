@@ -22,6 +22,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSet>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
@@ -160,7 +161,23 @@ void MultisigDialog::updateModeUi()
 {
     const bool add_mode = currentMode() == Mode::ADD_TO_WALLET;
     m_track_checkbox->setVisible(!add_mode);
-    m_track_checkbox->setEnabled(m_wallet_model != nullptr);
+    bool tracking_available = m_wallet_model != nullptr;
+    if (!add_mode && m_wallet_model) {
+        const MultisigUtil::WalletStorageType wallet_type = MultisigUtil::GetWalletStorageType(*m_wallet_model);
+        tracking_available = wallet_type == MultisigUtil::WalletStorageType::LEGACY;
+        if (!tracking_available) {
+            m_track_checkbox->setChecked(false);
+            m_track_checkbox->setToolTip(wallet_type == MultisigUtil::WalletStorageType::DESCRIPTOR
+                ? tr("Descriptor wallets require manual import with importdescriptors.")
+                : tr("Wallet type could not be determined, so legacy watch-only import is disabled for safety."));
+        }
+    }
+    m_track_checkbox->setEnabled(tracking_available);
+    if (tracking_available) {
+        m_track_checkbox->setToolTip(tr("Import as watch-only so the wallet can show balance and history."));
+    } else if (!m_wallet_model) {
+        m_track_checkbox->setToolTip(tr("No wallet loaded."));
+    }
     m_execute_button->setText(add_mode ? tr("Add multisig to wallet") : tr("Create multisig"));
     validateInputs();
 }
@@ -174,8 +191,10 @@ QStringList MultisigDialog::validatedKeys(QString& error) const
     }
 
     const bool addresses_allowed = currentMode() == Mode::ADD_TO_WALLET;
+    QSet<QString> seen;
     for (int i = 0; i < tokens.size(); ++i) {
-        switch (MultisigUtil::ClassifyKeyToken(tokens.at(i))) {
+        const MultisigUtil::KeyTokenType type = MultisigUtil::ClassifyKeyToken(tokens.at(i));
+        switch (type) {
         case MultisigUtil::KeyTokenType::PUBKEY:
             break;
         case MultisigUtil::KeyTokenType::ADDRESS:
@@ -188,10 +207,14 @@ QStringList MultisigDialog::validatedKeys(QString& error) const
             error = tr("Entry #%1 is not a valid public key%2.").arg(i + 1).arg(addresses_allowed ? tr(" or address") : QString());
             return {};
         }
-        if (tokens.indexOf(tokens.at(i)) != i) {
+        const QString normalized = type == MultisigUtil::KeyTokenType::PUBKEY
+            ? tokens.at(i).toLower()
+            : tokens.at(i);
+        if (seen.contains(normalized)) {
             error = tr("Entry #%1 is a duplicate.").arg(i + 1);
             return {};
         }
+        seen.insert(normalized);
     }
 
     if (m_required_spin->value() > tokens.size()) {
@@ -281,13 +304,22 @@ void MultisigDialog::executeCommand()
     }
 
     const Mode mode = currentMode();
-    if (mode == Mode::ADD_TO_WALLET) {
-        if (!m_wallet_model) {
+    if ((mode == Mode::ADD_TO_WALLET || m_track_checkbox->isChecked()) && !m_wallet_model) {
+        if (mode == Mode::ADD_TO_WALLET) {
             setStatus(tr("No wallet is currently selected. Select a wallet first, or use create-only mode."), true);
             return;
         }
-        if (MultisigUtil::IsDescriptorWallet(*m_wallet_model)) {
-            setStatus(tr("This is a descriptor wallet; addmultisigaddress only works with legacy wallets. Use create-only mode and track the address as watch-only instead."), true);
+    }
+    if (m_wallet_model && (mode == Mode::ADD_TO_WALLET || m_track_checkbox->isChecked())) {
+        const MultisigUtil::WalletStorageType wallet_type = MultisigUtil::GetWalletStorageType(*m_wallet_model);
+        if (wallet_type == MultisigUtil::WalletStorageType::DESCRIPTOR) {
+            setStatus(mode == Mode::ADD_TO_WALLET
+                ? tr("This is a descriptor wallet; addmultisigaddress only works with legacy wallets. Use create-only mode without watch-only tracking, then import the descriptor manually with importdescriptors.")
+                : tr("This is a descriptor wallet. Uncheck watch-only tracking and import the generated descriptor manually with importdescriptors."), true);
+            return;
+        }
+        if (wallet_type == MultisigUtil::WalletStorageType::UNKNOWN) {
+            setStatus(tr("Wallet type could not be determined. No legacy multisig import will be attempted."), true);
             return;
         }
     }
@@ -347,6 +379,12 @@ void MultisigDialog::executeCommand()
         }
         m_export_setup_button->setEnabled(true);
 
+        const QString wallet_name = m_wallet_model ? m_wallet_model->getWalletName() : QString();
+        if (MultisigUtil::FindEntry(wallet_name, m_last_entry.address).isValid()) {
+            setStatus(tr("Multisig address %1 was created, but its profile is already stored and was not changed.").arg(m_last_entry.address), true);
+            return;
+        }
+
         QStringList notes;
         if (mode == Mode::CREATE_ONLY && m_wallet_model && m_track_checkbox->isChecked()) {
             QString import_error;
@@ -357,7 +395,10 @@ void MultisigDialog::executeCommand()
             }
         }
 
-        MultisigUtil::AddEntry(m_wallet_model ? m_wallet_model->getWalletName() : QString(), m_last_entry);
+        if (!MultisigUtil::AddEntry(wallet_name, m_last_entry)) {
+            setStatus(tr("Multisig address %1 was created, but its profile could not be stored.").arg(m_last_entry.address), true);
+            return;
+        }
 
         QString status = tr("Multisig address %1 created.").arg(m_last_entry.address);
         if (!notes.isEmpty()) status += QLatin1Char(' ') + notes.join(QLatin1Char(' '));

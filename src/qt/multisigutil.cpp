@@ -198,19 +198,31 @@ std::string WalletRpcUri(const WalletModel& wallet_model)
     return "/wallet/" + std::string(encoded_name.constData(), encoded_name.length());
 }
 
-bool IsDescriptorWallet(WalletModel& wallet_model)
+WalletStorageType GetWalletStorageType(WalletModel& wallet_model)
 {
     try {
         const UniValue info = wallet_model.node().executeRpc("getwalletinfo", UniValue(UniValue::VARR), WalletRpcUri(wallet_model));
         const UniValue descriptors = find_value(info, "descriptors");
-        return descriptors.isBool() && descriptors.get_bool();
+        if (!descriptors.isBool()) return WalletStorageType::UNKNOWN;
+        return descriptors.get_bool() ? WalletStorageType::DESCRIPTOR : WalletStorageType::LEGACY;
     } catch (...) {
-        return false;
+        return WalletStorageType::UNKNOWN;
     }
 }
 
 bool ImportWatchOnly(WalletModel& wallet_model, const Entry& entry, QString& error)
 {
+    switch (GetWalletStorageType(wallet_model)) {
+    case WalletStorageType::DESCRIPTOR:
+        error = QObject::tr("Descriptor wallets do not support the legacy importmulti path. Import the profile descriptor manually with importdescriptors.");
+        return false;
+    case WalletStorageType::UNKNOWN:
+        error = QObject::tr("Wallet type could not be determined. No legacy watch-only import was attempted.");
+        return false;
+    case WalletStorageType::LEGACY:
+        break;
+    }
+
     try {
         UniValue request(UniValue::VOBJ);
         UniValue script_pub_key(UniValue::VOBJ);

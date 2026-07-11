@@ -81,8 +81,8 @@ private:
     QPushButton* m_edit_labels_button;
     QPushButton* m_watchonly_button;
     QPushButton* m_show_qr_button;
-    //! Cached MultisigUtil::IsDescriptorWallet result for the current wallet model.
-    std::optional<bool> m_is_descriptor_wallet;
+    //! Cached fail-closed wallet storage type for the current wallet model.
+    std::optional<MultisigUtil::WalletStorageType> m_wallet_storage_type;
 
     QList<MultisigUtil::Entry> m_entries;
 

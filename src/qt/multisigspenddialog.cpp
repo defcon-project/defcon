@@ -299,7 +299,7 @@ void MultisigSpendDialog::refreshAvailableBalance()
         UniValue addresses(UniValue::VARR);
         addresses.push_back(m_entry.address.toStdString());
         UniValue params(UniValue::VARR);
-        params.push_back(UniValue(0));
+        params.push_back(UniValue(MultisigUtil::MIN_SPEND_CONFIRMATIONS));
         params.push_back(UniValue(9999999));
         params.push_back(addresses);
         const UniValue result = m_wallet_model->node().executeRpc("listunspent", params, MultisigUtil::WalletRpcUri(*m_wallet_model));
@@ -318,7 +318,7 @@ void MultisigSpendDialog::refreshAvailableBalance()
     const int display_unit = (m_wallet_model && m_wallet_model->getOptionsModel())
         ? m_wallet_model->getOptionsModel()->getDisplayUnit()
         : BitcoinUnits::DASH;
-    m_balance_label->setText(tr("%1 in %2 UTXOs")
+    m_balance_label->setText(tr("%1 in %2 confirmed UTXOs")
         .arg(BitcoinUnits::formatWithUnit(display_unit, m_available))
         .arg(utxo_count));
     if (m_build_button) m_build_button->setEnabled(m_available > 0);
@@ -370,7 +370,7 @@ void MultisigSpendDialog::buildTransaction()
             UniValue addresses(UniValue::VARR);
             addresses.push_back(m_entry.address.toStdString());
             UniValue params(UniValue::VARR);
-            params.push_back(UniValue(0));
+            params.push_back(UniValue(MultisigUtil::MIN_SPEND_CONFIRMATIONS));
             params.push_back(UniValue(9999999));
             params.push_back(addresses);
             const UniValue unspent = m_wallet_model->node().executeRpc("listunspent", params, MultisigUtil::WalletRpcUri(*m_wallet_model));

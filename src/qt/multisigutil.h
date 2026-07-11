@@ -29,6 +29,9 @@ QT_END_NAMESPACE
  */
 namespace MultisigUtil {
 
+//! Treasury spends only use confirmed outputs; there is no GUI override.
+inline constexpr int MIN_SPEND_CONFIRMATIONS{1};
+
 struct Entry {
     QString label; //!< profile name, e.g. "Treasury 2-of-3"
     QString address;
@@ -71,8 +74,14 @@ KeyTokenType ClassifyKeyToken(const QString& token);
 /** RPC URI selecting the wallet of the given model, for interfaces::Node::executeRpc. */
 std::string WalletRpcUri(const WalletModel& wallet_model);
 
-/** Whether the wallet is a descriptor wallet (importmulti/addmultisigaddress are legacy-only). */
-bool IsDescriptorWallet(WalletModel& wallet_model);
+enum class WalletStorageType {
+    LEGACY,
+    DESCRIPTOR,
+    UNKNOWN,
+};
+
+/** Detect wallet storage type. RPC failures return UNKNOWN so legacy imports fail closed. */
+WalletStorageType GetWalletStorageType(WalletModel& wallet_model);
 
 /**
  * Import the entry into the wallet as solvable watch-only via importmulti
