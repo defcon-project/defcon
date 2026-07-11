@@ -15,6 +15,7 @@
 #include <qt/clientmodel.h>
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
+#include <qt/sendcoinsdialog.h>
 #include <qt/walletmodel.h>
 #include <rpc/util.h>
 #include <script/script.h>
@@ -28,6 +29,7 @@
 #include <version.h>
 
 #include <QApplication>
+#include <QAbstractButton>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QFormLayout>
@@ -37,6 +39,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -47,6 +50,12 @@
 #include <vector>
 
 namespace {
+constexpr int MULTISIG_BROADCAST_CONFIRM_DELAY{3};
+constexpr CAmount MULTISIG_FEE_WARNING_ABSOLUTE{COIN / 100}; // 0.01 DFCN
+constexpr CAmount MULTISIG_FEE_HARD_LIMIT_ABSOLUTE{COIN};    // 1 DFCN
+constexpr int MULTISIG_FEE_WARNING_RATIO{100};               // 1%
+constexpr int MULTISIG_FEE_HARD_LIMIT_RATIO{4};              // 25%
+
 //! Multisig signature state of one PSBT input.
 struct InputSigStatus {
     bool known{false};     //!< redeem script found and is a standard multisig
@@ -760,6 +769,21 @@ void MultisigSpendDialog::broadcastTransaction()
 {
     if (!m_psbt || !m_client_model) return;
 
+    const PSBTAnalysis analysis = AnalyzePSBT(*m_psbt);
+    if (!analysis.error.empty()) {
+        setStatus(tr("The transaction could not be analyzed: %1").arg(QString::fromStdString(analysis.error)), true);
+        return;
+    }
+    if (!analysis.fee) {
+        setStatus(tr("Broadcast blocked: the exact transaction fee is unknown. Load a PSBT containing complete UTXO information."), true);
+        return;
+    }
+    const CAmount fee = *analysis.fee;
+    if (!MoneyRange(fee)) {
+        setStatus(tr("Broadcast blocked: the transaction fee is invalid."), true);
+        return;
+    }
+
     PartiallySignedTransaction copy = *m_psbt;
     CMutableTransaction mtx;
     if (!FinalizeAndExtractPSBT(copy, mtx)) {
@@ -768,6 +792,110 @@ void MultisigSpendDialog::broadcastTransaction()
     }
 
     const CTransactionRef tx = MakeTransactionRef(mtx);
+    const int display_unit = (m_wallet_model && m_wallet_model->getOptionsModel())
+        ? m_wallet_model->getOptionsModel()->getDisplayUnit()
+        : BitcoinUnits::DASH;
+
+    const bool change_known = m_entry.isValid();
+    CAmount change_total{0};
+    CAmount send_total{0};
+    QStringList output_lines;
+    for (size_t i = 0; i < tx->vout.size(); ++i) {
+        const CTxOut& out = tx->vout.at(i);
+        CTxDestination destination;
+        const bool extracted = ExtractDestination(out.scriptPubKey, destination);
+        const QString address = extracted ? QString::fromStdString(EncodeDestination(destination)) : tr("unknown destination");
+        const bool is_change = change_known && extracted && address == m_entry.address;
+        if (is_change) {
+            change_total += out.nValue;
+        } else if (change_known) {
+            send_total += out.nValue;
+        }
+        output_lines << tr("Output %1: %2 to %3%4")
+            .arg(i + 1)
+            .arg(BitcoinUnits::formatWithUnit(display_unit, out.nValue))
+            .arg(address)
+            .arg(is_change ? tr(" (change)") : QString());
+    }
+
+    const bool hard_absolute_fee = fee > MULTISIG_FEE_HARD_LIMIT_ABSOLUTE;
+    const bool hard_ratio_fee = change_known && send_total > 0 && fee > send_total / MULTISIG_FEE_HARD_LIMIT_RATIO;
+    if (hard_absolute_fee || hard_ratio_fee) {
+        setStatus(tr("Broadcast blocked: fee %1 exceeds the multisig safety limit. Review the selected inputs and outputs, then rebuild the transaction.")
+            .arg(BitcoinUnits::formatWithUnit(display_unit, fee)), true);
+        return;
+    }
+
+    const bool warning_absolute_fee = fee > MULTISIG_FEE_WARNING_ABSOLUTE;
+    const bool warning_ratio_fee = change_known && send_total > 0 && fee > send_total / MULTISIG_FEE_WARNING_RATIO;
+    if (warning_absolute_fee || warning_ratio_fee) {
+        QString warning_text = tr("This transaction pays an unusually high fee of %1.")
+            .arg(BitcoinUnits::formatWithUnit(display_unit, fee));
+        if (change_known && send_total > 0) {
+            const double fee_percent = 100.0 * static_cast<double>(fee) / static_cast<double>(send_total);
+            warning_text += QLatin1Char('\n') + tr("The fee is %1% of the amount being sent.").arg(QString::number(fee_percent, 'f', 2));
+        }
+        warning_text += QLatin1String("\n\n") + tr("Continue only after checking every input and output.");
+
+        QMessageBox warning(QMessageBox::Warning, tr("High multisig transaction fee"), warning_text,
+            QMessageBox::Yes | QMessageBox::Cancel, this);
+        warning.setDefaultButton(QMessageBox::Cancel);
+        warning.button(QMessageBox::Yes)->setText(tr("I understand"));
+        if (warning.exec() != QMessageBox::Yes) return;
+    }
+
+    if (!change_known) {
+        QMessageBox warning(QMessageBox::Warning, tr("Change output cannot be identified"),
+            tr("This PSBT was loaded without its multisig profile. The wallet cannot identify which output is change. Review every output in the final confirmation before broadcasting."),
+            QMessageBox::Yes | QMessageBox::Cancel, this);
+        warning.setDefaultButton(QMessageBox::Cancel);
+        warning.button(QMessageBox::Yes)->setText(tr("Review outputs"));
+        if (warning.exec() != QMessageBox::Yes) return;
+    }
+
+    QStringList summary_lines;
+    if (change_known) {
+        summary_lines << tr("Send amount: %1").arg(BitcoinUnits::formatWithUnit(display_unit, send_total));
+        summary_lines << (change_total > 0
+            ? tr("Change: %1 to %2").arg(BitcoinUnits::formatWithUnit(display_unit, change_total), m_entry.address)
+            : tr("Change: none"));
+    } else {
+        summary_lines << tr("Send amount: review individual outputs below");
+        summary_lines << tr("Change: unknown");
+    }
+    summary_lines << tr("Fee: %1").arg(BitcoinUnits::formatWithUnit(display_unit, fee));
+
+    CScript fallback_redeem_script;
+    if (m_entry.isValid() && !m_entry.redeem_script_hex.isEmpty() && IsHex(m_entry.redeem_script_hex.toStdString())) {
+        const std::vector<unsigned char> script_data = ParseHex(m_entry.redeem_script_hex.toStdString());
+        fallback_redeem_script = CScript(script_data.begin(), script_data.end());
+    }
+    int required_signatures{0};
+    int collected_signatures{0};
+    for (const PSBTInput& input : m_psbt->inputs) {
+        const InputSigStatus status = StatusForInput(input, fallback_redeem_script);
+        required_signatures = std::max(required_signatures, status.required);
+        collected_signatures = std::max(collected_signatures, status.have);
+    }
+    if (required_signatures == 0 && m_entry.isValid()) {
+        required_signatures = m_entry.required_sigs;
+        collected_signatures = m_entry.required_sigs;
+    }
+    summary_lines << (required_signatures > 0
+        ? tr("Signatures: %1 of %2 collected").arg(collected_signatures).arg(required_signatures)
+        : tr("Signatures: transaction is complete"));
+    summary_lines << tr("Transaction ID: %1").arg(QString::fromStdString(tx->GetHash().GetHex()));
+
+    SendConfirmationDialog confirmation(
+        tr("Confirm multisig broadcast"),
+        tr("Verify the transaction before broadcasting."),
+        summary_lines.join(QLatin1Char('\n')),
+        output_lines.join(QLatin1Char('\n')),
+        MULTISIG_BROADCAST_CONFIRM_DELAY,
+        tr("Broadcast"),
+        this);
+    if (confirmation.exec() != QMessageBox::Yes) return;
+
     bilingual_str err_string;
     const TransactionError error = m_client_model->node().broadcastTransaction(tx, DEFAULT_MAX_RAW_TX_FEE_RATE.GetFeePerK(), err_string);
     if (error == TransactionError::OK) {
