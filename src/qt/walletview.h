@@ -12,6 +12,7 @@
 #include <QStackedWidget>
 
 class ClientModel;
+class MultisigPage;
 class OverviewPage;
 class ReceiveCoinsDialog;
 class SendCoinsDialog;
@@ -68,6 +69,7 @@ private:
     AddressBookPage *usedReceivingAddressesPage;
     MasternodeList* masternodeListPage{nullptr};
     GovernanceList* governanceListPage{nullptr};
+    MultisigPage* multisigPage{nullptr};
 
     TransactionView *transactionView;
 
@@ -83,6 +85,8 @@ public Q_SLOTS:
     void gotoHistoryPage();
     /** Switch to masternode page */
     void gotoMasternodePage();
+    /** Switch to multisig page */
+    void gotoMultisigPage();
     /** Switch to receive coins page */
     void gotoReceiveCoinsPage();
     /** Switch to send coins page */

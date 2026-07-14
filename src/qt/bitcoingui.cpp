@@ -418,8 +418,8 @@ void BitcoinGUI::createActions()
     unlockWalletAction = new QAction(tr("&Unlock Wallet…"), this);
     unlockWalletAction->setToolTip(tr("Unlock wallet"));
     lockWalletAction = new QAction(tr("&Lock Wallet"), this);
-    multisigAction = new QAction(tr("&Multisig..."), this);
-    multisigAction->setStatusTip(tr("Create or add a multisignature address"));
+    multisigAction = new QAction(tr("&Multisig"), this);
+    multisigAction->setStatusTip(tr("Manage multisignature addresses and partially signed transactions"));
     signMessageAction = new QAction(tr("Sign &message…"), this);
     signMessageAction->setStatusTip(tr("Sign messages with your DeFCoN addresses to prove you own them"));
     verifyMessageAction = new QAction(tr("&Verify message…"), this);
@@ -553,7 +553,7 @@ void BitcoinGUI::createActions()
         connect(signMessageAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
         connect(signMessageAction, &QAction::triggered, [this]{ gotoSignMessageTab(); });
         connect(multisigAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
-        connect(multisigAction, &QAction::triggered, walletFrame, &WalletFrame::openMultisigDialog);
+        connect(multisigAction, &QAction::triggered, this, &BitcoinGUI::gotoMultisigPage);
         connect(m_load_psbt_action, &QAction::triggered, [this]{ gotoLoadPSBT(); });
         connect(m_load_psbt_clipboard_action, &QAction::triggered, [this]{ gotoLoadPSBT(true); });
         connect(verifyMessageAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
@@ -630,7 +630,10 @@ void BitcoinGUI::createMenuBar()
         file->addAction(backupWalletAction);
         file->addAction(signMessageAction);
         file->addAction(verifyMessageAction);
-        file->addAction(multisigAction);
+        QSettings settings;
+        if (settings.value("fShowMultisigTab", false).toBool()) {
+            file->addAction(multisigAction);
+        }
         file->addAction(m_load_psbt_action);
         file->addAction(m_load_psbt_clipboard_action);
         file->addSeparator();
@@ -753,6 +756,13 @@ void BitcoinGUI::createToolBars()
         tabGroup->addButton(coinJoinCoinsButton);
 
         QSettings settings;
+        if (settings.value("fShowMultisigTab", false).toBool()) {
+            multisigButton = new QToolButton(this);
+            multisigButton->setText(tr("M&ultisig"));
+            multisigButton->setStatusTip(tr("Manage multisignature addresses and partially signed transactions"));
+            tabGroup->addButton(multisigButton);
+            connect(multisigButton, &QToolButton::clicked, this, &BitcoinGUI::gotoMultisigPage);
+        }
         if (settings.value("fShowMasternodesTab").toBool()) {
             masternodeButton = new QToolButton(this);
             masternodeButton->setText(tr("&Masternodes"));
@@ -1046,6 +1056,7 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
         coinJoinCoinsButton->setEnabled(enabled && clientModel->coinJoinOptions().isEnabled());
         receiveCoinsButton->setEnabled(enabled);
         historyButton->setEnabled(enabled);
+        if (multisigButton) multisigButton->setEnabled(enabled);
     }
 #endif // ENABLE_WALLET
 
@@ -1065,6 +1076,7 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
     lockWalletAction->setEnabled(enabled);
     signMessageAction->setEnabled(enabled);
     verifyMessageAction->setEnabled(enabled);
+    if (multisigAction) multisigAction->setEnabled(enabled);
     usedSendingAddressesAction->setEnabled(enabled);
     usedReceivingAddressesAction->setEnabled(enabled);
     openAction->setEnabled(enabled);
@@ -1245,6 +1257,15 @@ void BitcoinGUI::gotoHistoryPage()
 {
     historyButton->setChecked(true);
     if (walletFrame) walletFrame->gotoHistoryPage();
+}
+
+void BitcoinGUI::gotoMultisigPage()
+{
+    QSettings settings;
+    if (settings.value("fShowMultisigTab", false).toBool() && multisigButton) {
+        multisigButton->setChecked(true);
+        if (walletFrame) walletFrame->gotoMultisigPage();
+    }
 }
 
 void BitcoinGUI::gotoMasternodePage()

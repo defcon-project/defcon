@@ -73,6 +73,7 @@ public:
         PruneSize,            // int
         DatabaseCache,        // int
         SpendZeroConfChange,  // bool
+        ShowMultisigTab,      // bool
         ShowMasternodesTab,   // bool
         ShowGovernanceTab,    // bool
         CoinJoinEnabled,      // bool

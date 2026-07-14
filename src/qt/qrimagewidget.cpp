@@ -31,14 +31,14 @@ QRImageWidget::QRImageWidget(QWidget *parent):
     contextMenu->addAction(tr("&Copy Image"), this, &QRImageWidget::copyImage);
 }
 
-bool QRImageWidget::setQR(const QString& data, const QString& text)
+bool QRImageWidget::setQR(const QString& data, const QString& text, int max_chars)
 {
 #ifdef USE_QRCODE
     setText("");
     if (data.isEmpty()) return false;
 
     // limit length
-    if (data.length() > MAX_URI_LENGTH) {
+    if (data.length() > max_chars) {
         setText(tr("Resulting URI too long, try to reduce the text for label / message."));
         return false;
     }

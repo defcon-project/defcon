@@ -11,6 +11,7 @@
 #include <qt/askpassphrasedialog.h>
 #include <qt/clientmodel.h>
 #include <qt/guiutil.h>
+#include <qt/multisigpage.h>
 #include <qt/optionsmodel.h>
 #include <qt/overviewpage.h>
 #include <qt/receivecoinsdialog.h>
@@ -81,13 +82,19 @@ WalletView::WalletView(QWidget* parent) :
     usedSendingAddressesPage = new AddressBookPage(AddressBookPage::ForEditing, AddressBookPage::SendingTab, this);
     usedReceivingAddressesPage = new AddressBookPage(AddressBookPage::ForEditing, AddressBookPage::ReceivingTab, this);
 
+    QSettings settings;
+    if (settings.value("fShowMultisigTab", false).toBool()) {
+        multisigPage = new MultisigPage();
+    }
+
     addWidget(overviewPage);
     addWidget(transactionsPage);
     addWidget(receiveCoinsPage);
     addWidget(sendCoinsPage);
     addWidget(coinJoinCoinsPage);
-
-    QSettings settings;
+    if (multisigPage != nullptr) {
+        addWidget(multisigPage);
+    }
     if (settings.value("fShowMasternodesTab").toBool()) {
         masternodeListPage = new MasternodeList();
         addWidget(masternodeListPage);
@@ -150,6 +157,9 @@ void WalletView::setClientModel(ClientModel *_clientModel)
     if (settings.value("fShowGovernanceTab").toBool() && governanceListPage != nullptr) {
         governanceListPage->setClientModel(_clientModel);
     }
+    if (multisigPage != nullptr) {
+        multisigPage->setClientModel(_clientModel);
+    }
     if (walletModel) walletModel->setClientModel(_clientModel);
 }
 
@@ -167,6 +177,9 @@ void WalletView::setWalletModel(WalletModel *_walletModel)
     receiveCoinsPage->setModel(_walletModel);
     sendCoinsPage->setModel(_walletModel);
     coinJoinCoinsPage->setModel(_walletModel);
+    if (multisigPage != nullptr) {
+        multisigPage->setWalletModel(_walletModel);
+    }
     usedReceivingAddressesPage->setModel(_walletModel ? _walletModel->getAddressTableModel() : nullptr);
     usedSendingAddressesPage->setModel(_walletModel ? _walletModel->getAddressTableModel() : nullptr);
 
@@ -241,6 +254,13 @@ void WalletView::gotoMasternodePage()
     QSettings settings;
     if (settings.value("fShowMasternodesTab").toBool()) {
         setCurrentWidget(masternodeListPage);
+    }
+}
+
+void WalletView::gotoMultisigPage()
+{
+    if (multisigPage != nullptr) {
+        setCurrentWidget(multisigPage);
     }
 }
 
