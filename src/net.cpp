@@ -3256,9 +3256,7 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect, CDe
     auto next_feeler = GetExponentialRand(start, FEELER_INTERVAL);
     auto next_extra_block_relay = GetExponentialRand(start, EXTRA_BLOCK_RELAY_ONLY_PEER_INTERVAL);
     auto next_extra_network_peer{GetExponentialRand(start, EXTRA_NETWORK_PEER_INTERVAL)};
-    const bool dnsseed = gArgs.GetBoolArg("-dnsseed", DEFAULT_DNSSEED);
     bool add_fixed_seeds = gArgs.GetBoolArg("-fixedseeds", DEFAULT_FIXEDSEEDS);
-    const bool use_seednodes{gArgs.IsArgSet("-seednode")};
 
     if (!add_fixed_seeds) {
         LogPrintf("Fixed seeds are disabled\n");
@@ -3279,43 +3277,30 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect, CDe
 
         const std::unordered_set<Network> fixed_seed_networks{GetReachableEmptyNetworks()};
         if (add_fixed_seeds && !fixed_seed_networks.empty()) {
-            // When the node starts with an empty peers.dat, there are a few other sources of peers before
-            // we fallback on to fixed seeds: -dnsseed, -seednode, -addnode
-            // If none of those are available, we fallback on to fixed seeds immediately, else we allow
-            // 60 seconds for any of those sources to populate addrman.
-            bool add_fixed_seeds_now = false;
-            // It is cheapest to check if enough time has passed first.
-            if (GetTime<std::chrono::seconds>() > start + std::chrono::seconds{5}) {
-                add_fixed_seeds_now = true;
-                LogPrintf("Adding fixed seeds as 5 seconds have passed and addrman is empty for at least one reachable network\n");
+            // The compact fixed seed set is the primary bootstrap path for a
+            // fresh AddrMan. DNS seeders and explicit seed nodes still run in
+            // parallel and can expand the peer set after the first contact.
+            std::vector<CAddress> seed_addrs{ConvertSeeds(Params().FixedSeeds())};
+            // We will not make outgoing connections to peers that are unreachable
+            // (e.g. because of -onlynet configuration).
+            // Therefore, we do not add them to addrman in the first place.
+            // In case previously unreachable networks become reachable
+            // (e.g. in case of -onlynet changes by the user), fixed seeds will
+            // be loaded only for networks for which we have no addresses.
+            seed_addrs.erase(std::remove_if(seed_addrs.begin(), seed_addrs.end(),
+                                            [&fixed_seed_networks](const CAddress& addr) { return fixed_seed_networks.count(addr.GetNetwork()) == 0; }),
+                             seed_addrs.end());
+            CNetAddr local;
+            local.SetInternal("fixedseeds");
+            addrman.Add(seed_addrs, local);
+            // Queue direct address-fetch connections as well. These are
+            // short-lived bootstrap connections: once a seed supplies peers,
+            // normal outbound selection continues through AddrMan.
+            for (const CAddress& seed_addr : seed_addrs) {
+                AddAddrFetch(seed_addr.ToStringAddrPort());
             }
-
-            // Perform cheap checks before locking a mutex.
-            else if (!dnsseed && !use_seednodes) {
-                LOCK(m_added_nodes_mutex);
-                if (m_added_node_params.empty()) {
-                    add_fixed_seeds_now = true;
-                    LogPrintf("Adding fixed seeds as -dnsseed=0 (or IPv4/IPv6 connections are disabled via -onlynet) and neither -addnode nor -seednode are provided\n");
-                }
-            }
-
-            if (add_fixed_seeds_now) {
-                std::vector<CAddress> seed_addrs{ConvertSeeds(Params().FixedSeeds())};
-                // We will not make outgoing connections to peers that are unreachable
-                // (e.g. because of -onlynet configuration).
-                // Therefore, we do not add them to addrman in the first place.
-                // In case previously unreachable networks become reachable
-                // (e.g. in case of -onlynet changes by the user), fixed seeds will
-                // be loaded only for networks for which we have no addresses.
-                seed_addrs.erase(std::remove_if(seed_addrs.begin(), seed_addrs.end(),
-                                                [&fixed_seed_networks](const CAddress& addr) { return fixed_seed_networks.count(addr.GetNetwork()) == 0; }),
-                                 seed_addrs.end());
-                CNetAddr local;
-                local.SetInternal("fixedseeds");
-                addrman.Add(seed_addrs, local);
-                add_fixed_seeds = false;
-                LogPrintf("Added %d fixed seeds from reachable networks.\n", seed_addrs.size());
-            }
+            add_fixed_seeds = false;
+            LogPrintf("Added and queued %d primary bootstrap seeds from reachable networks.\n", seed_addrs.size());
         }
 
         //
