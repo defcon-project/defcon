@@ -2,21 +2,19 @@
 #define BITCOIN_CHAINPARAMSSEEDS_H
 
 /**
- * Static DeFCoN mainnet fallback seeds.
+ * Static DeFCoN mainnet bootstrap seeds.
  *
- * These are only used after DNS and configured seed sources have had time to
- * populate AddrMan. Keep this list small and limited to independently
- * monitored canonical-chain bootstrap nodes.
+ * Keep this list intentionally small and limited to the two independently
+ * monitored primary Seed Nodes. DNS seeders continue to provide dynamic peer
+ * discovery, while this set makes a fresh AddrMan immediately bootstrappable.
  *
  * Each line is a BIP155 serialized (networkID, addr, port) tuple.
  */
 static const uint8_t chainparams_seed_main[] = {
-    // fullnode-6: 178.18.247.92:8192
-    0x01,0x04,0xb2,0x12,0xf7,0x5c,0x20,0x00,
-    // fullnode-7: 178.18.252.84:8192
-    0x01,0x04,0xb2,0x12,0xfc,0x54,0x20,0x00,
-    // fullnode-8: 194.163.130.132:8192
-    0x01,0x04,0xc2,0xa3,0x82,0x84,0x20,0x00,
+    // Seed 1: 154.12.247.198:8192
+    0x01,0x04,0x9a,0x0c,0xf7,0xc6,0x20,0x00,
+    // Seed 2: 154.12.247.214:8192
+    0x01,0x04,0x9a,0x0c,0xf7,0xd6,0x20,0x00,
 };
 
 static const uint8_t chainparams_seed_test[] = {
