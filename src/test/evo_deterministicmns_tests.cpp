@@ -283,7 +283,7 @@ void FuncV19Activation(TestChainSetup& setup)
     CKey owner_key;
     CBLSSecretKey operator_key;
     CKey collateral_key;
-    collateral_key.MakeNewKey(false);
+    collateral_key.MakeNewKey(true);
     auto collateralScript = GetScriptForDestination(PKHash(collateral_key.GetPubKey()));
     auto tx_reg = CreateProRegTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, 1, collateralScript, setup.coinbaseKey, owner_key, operator_key);
     auto tx_reg_hash = tx_reg.GetHash();
@@ -327,9 +327,34 @@ void FuncV19Activation(TestChainSetup& setup)
 
     FillableSigningProvider signing_provider;
     signing_provider.AddKeyPubKey(collateral_key, collateral_key.GetPubKey());
-    BOOST_REQUIRE(SignSignature(signing_provider, CTransaction(tx_reg), tx_spend, 0, SIGHASH_ALL));
-    block = std::make_shared<CBlock>(setup.CreateBlock({tx_spend}, setup.coinbaseKey, chainman.ActiveChainstate()));
-    BOOST_REQUIRE(chainman.ProcessNewBlock(Params(), block, true, nullptr));
+    // Use the full coin context for signing. The legacy single-transaction
+    // overload does not prepare the spent-output data required by the modern
+    // signature path.
+    std::map<COutPoint, Coin> collateral_coins;
+    collateral_coins.emplace(collateralOutpoint, Coin(tx_reg.vout[0], nHeight, /* fCoinBaseIn */ false, /* fCoinStakeIn */ false));
+    std::map<int, bilingual_str> input_errors;
+    BOOST_REQUIRE(::SignTransaction(tx_spend, &signing_provider, collateral_coins, SIGHASH_ALL, input_errors));
+    const int expected_min_static_collateral = Params().GetConsensus().minStaticCollateral;
+    {
+        // This fixture verifies the pre-V19 deterministic list diff generated
+        // by spending collateral. The current 8,064-block collateral maturity
+        // rule is covered separately and would otherwise make this historical
+        // fixture intractably slow.
+        struct ScopedCollateralMaturityOverride {
+            explicit ScopedCollateralMaturityOverride(Consensus::Params& params)
+                : m_params(params), m_saved(params.minStaticCollateral)
+            {
+                m_params.minStaticCollateral = 0;
+            }
+            ~ScopedCollateralMaturityOverride() { m_params.minStaticCollateral = m_saved; }
+            Consensus::Params& m_params;
+            const int m_saved;
+        } collateral_maturity_override{const_cast<Consensus::Params&>(Params().GetConsensus())};
+
+        block = std::make_shared<CBlock>(setup.CreateBlock({tx_spend}, setup.coinbaseKey, chainman.ActiveChainstate()));
+        BOOST_REQUIRE(chainman.ProcessNewBlock(Params(), block, true, nullptr));
+    }
+    BOOST_CHECK_EQUAL(Params().GetConsensus().minStaticCollateral, expected_min_static_collateral);
     BOOST_REQUIRE(!DeploymentActiveAfter(chainman.ActiveChain().Tip(), Params().GetConsensus(), Consensus::DEPLOYMENT_V19));
     ++nHeight;
     BOOST_CHECK_EQUAL(chainman.ActiveChain().Height(), nHeight);
@@ -879,6 +904,50 @@ BOOST_AUTO_TEST_CASE(v19_activation_legacy)
 {
     TestChainV19BeforeActivationSetup setup;
     FuncV19Activation(setup);
+}
+
+BOOST_AUTO_TEST_CASE(v19_boundary_validation_failure_restores_bls_scheme)
+{
+    TestChainV19Setup setup;
+    auto& chainman = *Assert(setup.m_node.chainman);
+    const CScript coinbase_pk = GetScriptForRawPubKey(setup.coinbaseKey.GetPubKey());
+
+    BOOST_REQUIRE(!DeploymentActiveAt(*chainman.ActiveChain().Tip(), Params().GetConsensus(),
+                                      Consensus::DEPLOYMENT_V19));
+    BOOST_REQUIRE(DeploymentActiveAfter(chainman.ActiveChain().Tip(), Params().GetConsensus(),
+                                        Consensus::DEPLOYMENT_V19));
+
+    struct ScopedBLSLegacySchemeRestore {
+        explicit ScopedBLSLegacySchemeRestore(bool saved_scheme) : m_saved_scheme(saved_scheme) {}
+        ~ScopedBLSLegacySchemeRestore() { bls::bls_legacy_scheme.store(m_saved_scheme); }
+        const bool m_saved_scheme;
+    } bls_scheme_restore{bls::bls_legacy_scheme.load()};
+
+    CMutableTransaction bad_tx;
+    bad_tx.nVersion = 1;
+    bad_tx.vin.emplace_back(COutPoint(uint256::ONE, 0));
+    bad_tx.vout.emplace_back(1 * COIN, CScript{} << OP_TRUE);
+
+    bls::bls_legacy_scheme.store(true);
+
+    CBlock proposal_block = setup.CreateBlock({bad_tx}, coinbase_pk, chainman.ActiveChainstate());
+    {
+        LOCK(cs_main);
+        BlockValidationState state;
+        BOOST_CHECK(!TestBlockValidity(state, *Assert(setup.m_node.llmq_ctx)->clhandler, *Assert(setup.m_node.evodb),
+                                       Params(), chainman.ActiveChainstate(), proposal_block,
+                                       chainman.ActiveChain().Tip(), /*fCheckPOW=*/true,
+                                       /*fCheckMerkleRoot=*/true));
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-inputs-missingorspent");
+    }
+    BOOST_CHECK(bls::bls_legacy_scheme.load());
+
+    CBlock connect_block = setup.CreateBlock({bad_tx}, coinbase_pk, chainman.ActiveChainstate());
+    const int height_before_invalid_block{chainman.ActiveChain().Height()};
+    (void)chainman.ProcessNewBlock(Params(), std::make_shared<const CBlock>(connect_block),
+                                   /*force_processing=*/true, /*new_block=*/nullptr);
+    BOOST_CHECK_EQUAL(chainman.ActiveChain().Height(), height_before_invalid_block);
+    BOOST_CHECK(bls::bls_legacy_scheme.load());
 }
 
 BOOST_AUTO_TEST_CASE(dip3_protx_legacy)
