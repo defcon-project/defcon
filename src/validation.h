@@ -349,6 +349,12 @@ void InitScriptExecutionCache();
 /** Context-independent validity checks */
 bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true, bool fCheckMerkleRoot = true, bool fCheckSignature = true);
 
+/**
+ * Check that a candidate chain descends from the configured canonical anchor
+ * once fork-recovery enforcement is active.
+ */
+bool IsForkRecoveryAnchorValid(const CBlockIndex* chain_tip, int validation_height, const Consensus::Params& consensus_params);
+
 /** Check a block is completely valid from start to finish (only works on top of our current best block) */
 bool TestBlockValidity(BlockValidationState& state,
                        llmq::CChainLocksHandler& clhandler,

@@ -217,6 +217,10 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].nFalloffCoeff = 5;          // this corresponds to 10 periods
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
 
+        consensus.nForkRecoveryAnchorHeight = 103536;
+        consensus.hashForkRecoveryAnchor = uint256S("0x7b9b767a13d10f2ffa012f8ca05aa80ad9df0719ae3f47cd66251c2a2044d863");
+        consensus.nForkRecoveryActivationHeight = 110448;
+
         consensus.premineAddress = CScript() << ParseHex("867e79565f4443e588e3d11997215df2c4d181495eba1db35714ecc4a743b906e24636de1d2104635ca6056afbb4d9f0") << OP_CHECKSIG;
         consensus.lastPowBlock = 999;
         consensus.posTargetTimespan = consensus.nPowTargetTimespan;
@@ -232,10 +236,10 @@ public:
         consensus.minStaticCollateral = 8064;
 
         // The best chain should have at least this much work.
-        consensus.nMinimumChainWork = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
+        consensus.nMinimumChainWork = uint256S("0x00000000000000000000000000000000000000000000021fa68e72c9b84c57ac");
 
         // By default assume that the signatures in ancestors of this block are valid.
-        consensus.defaultAssumeValid = uint256S("0x0000000000000000000000000000000000000000000000000000000000000000");
+        consensus.defaultAssumeValid = uint256S("0x7b9b767a13d10f2ffa012f8ca05aa80ad9df0719ae3f47cd66251c2a2044d863");
 
         /**
          * The message start string is designed to be unlikely to occur in normal data.
@@ -310,6 +314,7 @@ public:
         checkpointData = {
             {
                 {0,    genesis.GetHash()},
+                {103536, consensus.hashForkRecoveryAnchor},
             }
         };
 

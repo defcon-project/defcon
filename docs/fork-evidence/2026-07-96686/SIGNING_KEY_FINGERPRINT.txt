@@ -1,0 +1,1 @@
+256 SHA256:pYpFB9iPVPng95Olk1NbfqCu3r57c11pycDY3CJuC7s DeFCoN fork evidence signing key (ED25519)

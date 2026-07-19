@@ -4,6 +4,7 @@
 
 #include <chain.h>
 #include <test/util/setup_common.h>
+#include <validation.h>
 
 #include <vector>
 
@@ -96,6 +97,51 @@ BOOST_AUTO_TEST_CASE(getlocator_test)
             dist *= 2;
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(fork_recovery_anchor_test)
+{
+    std::vector<uint256> canonical_hashes(7);
+    std::vector<CBlockIndex> canonical(7);
+    for (int height = 0; height < 7; ++height) {
+        canonical_hashes[height] = ArithToUint256(height + 1);
+        canonical[height].nHeight = height;
+        canonical[height].pprev = height == 0 ? nullptr : &canonical[height - 1];
+        canonical[height].phashBlock = &canonical_hashes[height];
+        canonical[height].BuildSkip();
+    }
+
+    std::vector<uint256> fork_hashes(4);
+    std::vector<CBlockIndex> fork(4);
+    for (int offset = 0; offset < 4; ++offset) {
+        const int height = offset + 3;
+        fork_hashes[offset] = ArithToUint256(height + (arith_uint256(1) << 128));
+        fork[offset].nHeight = height;
+        fork[offset].pprev = offset == 0 ? &canonical[2] : &fork[offset - 1];
+        fork[offset].phashBlock = &fork_hashes[offset];
+        fork[offset].BuildSkip();
+    }
+
+    Consensus::Params params;
+    params.nForkRecoveryAnchorHeight = 3;
+    params.hashForkRecoveryAnchor = canonical[3].GetBlockHash();
+    params.nForkRecoveryActivationHeight = 5;
+
+    // No rule is applied before activation, even to the competing branch.
+    BOOST_CHECK(IsForkRecoveryAnchorValid(&fork[1], 4, params));
+
+    // At activation both header (previous tip) and block (candidate tip) paths are covered.
+    BOOST_CHECK(IsForkRecoveryAnchorValid(&canonical[4], 5, params));
+    BOOST_CHECK(IsForkRecoveryAnchorValid(&canonical[5], 5, params));
+    BOOST_CHECK(!IsForkRecoveryAnchorValid(&fork[1], 5, params));
+    BOOST_CHECK(!IsForkRecoveryAnchorValid(&fork[2], 5, params));
+
+    // A chain that cannot prove the configured ancestor must fail closed.
+    BOOST_CHECK(!IsForkRecoveryAnchorValid(&canonical[2], 5, params));
+
+    Consensus::Params disabled_params;
+    disabled_params.nForkRecoveryActivationHeight = -1;
+    BOOST_CHECK(IsForkRecoveryAnchorValid(&fork[2], 5, disabled_params));
 }
 
 BOOST_AUTO_TEST_CASE(findearliestatleast_test)
