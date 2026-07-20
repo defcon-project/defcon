@@ -173,6 +173,14 @@ struct Params {
     int64_t DifficultyAdjustmentInterval() const { return nPowTargetTimespan / nPowTargetSpacing; }
     uint256 nMinimumChainWork;
     uint256 defaultAssumeValid;
+    /** Canonical block used to prevent the July 2026 fork from returning after a reindex. */
+    int nForkRecoveryAnchorHeight{-1};
+    uint256 hashForkRecoveryAnchor;
+    /**
+     * Height at which every accepted chain must contain hashForkRecoveryAnchor.
+     * A negative value disables this rule on non-main networks.
+     */
+    int nForkRecoveryActivationHeight{-1};
 
     /** these parameters are specific to the pacplatform extensions */
     uint256 posLimit;

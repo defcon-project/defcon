@@ -1,0 +1,51 @@
+{
+  "schema": "org.defcon.fork-evidence.v1",
+  "network": "defcon-mainnet",
+  "collectedAt": "2026-07-19T20:54:28Z",
+  "fork": {
+    "firstDivergentHeight": 96686,
+    "commonAncestor": {
+      "height": 96685,
+      "hash": "c826c164126f4193c580992a80fa84d587a4069cab5d848c16148b91c84f8b52"
+    },
+    "projectDesignatedCanonicalBlock": {
+      "height": 96686,
+      "hash": "6da5b2f350c9c7db51fa3e3594c5c15261c71348da8d972df637e3c398fbda10"
+    },
+    "competingHistoricalBlock": {
+      "height": 96686,
+      "hash": "47c68500b4d914ec9b187ecfb30506b70f782b0192af0f0b26a54d7f83184396"
+    }
+  },
+  "recovery": {
+    "release": "22.1.4",
+    "protocolVersion": 70239,
+    "anchorHeight": 103536,
+    "anchorHash": "7b9b767a13d10f2ffa012f8ca05aa80ad9df0719ae3f47cd66251c2a2044d863",
+    "anchorChainwork": "00000000000000000000000000000000000000000000021fa68e72c9b84c57ac",
+    "enforcementHeight": 110448,
+    "minimumPeerProtocolAfterEnforcement": 70239
+  },
+  "observations": {
+    "queriedNodeCount": 6,
+    "allQueriedNodesAgree": true,
+    "nodes": [
+      "154.12.247.198",
+      "154.12.247.214",
+      "173.212.219.124",
+      "178.18.247.92",
+      "178.18.252.84",
+      "194.163.130.132"
+    ]
+  },
+  "signature": {
+    "algorithm": "ssh-ed25519",
+    "namespace": "defcon-fork-evidence",
+    "signedObject": "SHA256SUMS"
+  },
+  "limitations": [
+    "The canonical designation is a project decision encoded by v22.1.4.",
+    "The signature proves package integrity and signing-key possession, not consensus truth by itself.",
+    "ChainLock fields are node RPC observations at collection time, not a complete CLSIG archive."
+  ]
+}

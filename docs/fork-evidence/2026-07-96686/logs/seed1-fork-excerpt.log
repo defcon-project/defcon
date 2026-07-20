@@ -1,0 +1,19 @@
+# Source: seed1 public node 154.12.247.198
+# File: debug.log; selected public consensus lines only
+# Secrets, credentials, wallet data, and unrelated peer logs are excluded.
+2026-07-07T22:23:17Z UpdateTip: new best=c826c164126f4193c580992a80fa84d587a4069cab5d848c16148b91c84f8b52 height=96685 date='2026-07-07T18:26:58Z'
+2026-07-07T22:23:17Z UpdateTip: new best=6da5b2f350c9c7db51fa3e3594c5c15261c71348da8d972df637e3c398fbda10 height=96686 date='2026-07-07T18:38:02Z'
+2026-07-07T22:23:17Z UpdateTip: new best=c826c164126f4193c580992a80fa84d587a4069cab5d848c16148b91c84f8b52 height=96685 date='2026-07-07T18:26:58Z'
+2026-07-07T22:23:17Z UpdateTip: new best=47c68500b4d914ec9b187ecfb30506b70f782b0192af0f0b26a54d7f83184396 height=96686 date='2026-07-07T18:38:02Z'
+2026-07-07T22:23:18Z UpdateTip: new best=c826c164126f4193c580992a80fa84d587a4069cab5d848c16148b91c84f8b52 height=96685 date='2026-07-07T18:26:58Z'
+2026-07-07T22:23:18Z UpdateTip: new best=6da5b2f350c9c7db51fa3e3594c5c15261c71348da8d972df637e3c398fbda10 height=96686 date='2026-07-07T18:38:02Z'
+2026-07-07T22:23:18Z UpdateTip: new best=c826c164126f4193c580992a80fa84d587a4069cab5d848c16148b91c84f8b52 height=96685 date='2026-07-07T18:26:58Z'
+2026-07-07T22:23:18Z UpdateTip: new best=47c68500b4d914ec9b187ecfb30506b70f782b0192af0f0b26a54d7f83184396 height=96686 date='2026-07-07T18:38:02Z'
+2026-07-07T22:27:06Z ERROR: AcceptBlockHeader: header 3e806a1beeb991c3a077edc367def5b2f9cd1e456489b2f24eafbdf2a335abfd conflicts with chainlock
+2026-07-09T18:30:12Z ERROR: AcceptBlockHeader: header 481c25b2542fdeaf31108da280cfd02f2309fce2046b9b08a0f35cff98b59e1f conflicts with chainlock
+2026-07-09T20:12:51Z ERROR: AcceptBlockHeader: header cd728a1da1b4ca37efe679a0ff2b57bf6249ee2434a7b54882f1de97fd2a4046 conflicts with chainlock
+2026-07-13T04:17:38Z ERROR: AcceptBlockHeader: header 52afecbfd8c25a6af64b39b021bff049f2c6b8c84b6e33417a9b80cafeac09cf conflicts with chainlock
+2026-07-16T00:30:32Z ERROR: AcceptBlockHeader: header 6235b09b2c47be6b457d01dea3ac913c03d58c3309b382067cfec732f98681ad conflicts with chainlock
+2026-07-16T08:11:29Z ERROR: AcceptBlockHeader: header a206a46ab73a6a99fa4c3648107747dfad81d1d4c11a5da17aa010a1860dfe82 conflicts with chainlock
+2026-07-16T19:30:58Z ERROR: AcceptBlockHeader: header 8037b7370aa6f90be1d79b8eb2881c9bd9bd193bb23a983426acd0cd750c9963 conflicts with chainlock
+2026-07-17T03:37:37Z ERROR: AcceptBlockHeader: header 8cab2ddc8e340cff5e326a4cdd045dbd4db998a5124b4e97641efd8e08e29a74 conflicts with chainlock

@@ -200,6 +200,15 @@ static constexpr size_t MAX_ADDR_PROCESSING_TOKEN_BUCKET{MAX_ADDR_TO_SEND};
 /** The compactblocks version we support. See BIP 152. */
 static constexpr uint64_t CMPCTBLOCKS_VERSION{1};
 
+static int GetRequiredPeerProtocolVersion(int active_height, const Consensus::Params& consensus_params)
+{
+    if (consensus_params.nForkRecoveryActivationHeight >= 0 &&
+        active_height >= consensus_params.nForkRecoveryActivationHeight) {
+        return FORK_RECOVERY_PROTO_VERSION;
+    }
+    return MIN_PEER_PROTO_VERSION;
+}
+
 // Internal stuff
 namespace {
 /** Blocks that are in flight, and that are in the queue to be downloaded. */
@@ -3575,9 +3584,15 @@ void PeerManagerImpl::ProcessMessage(
             return;
         }
 
-        if (nVersion < MIN_PEER_PROTO_VERSION) {
+        int required_protocol_version;
+        {
+            LOCK(cs_main);
+            required_protocol_version = GetRequiredPeerProtocolVersion(m_chainman.ActiveHeight(), m_chainparams.GetConsensus());
+        }
+        if (nVersion < required_protocol_version) {
             // disconnect from peers older than this proto version
-            LogPrint(BCLog::NET, "peer=%d using obsolete version %i; disconnecting\n", pfrom.GetId(), nVersion);
+            LogPrint(BCLog::NET, "peer=%d using obsolete version %i (required %i); disconnecting\n",
+                     pfrom.GetId(), nVersion, required_protocol_version);
             pfrom.fDisconnect = true;
             return;
         }
@@ -5800,6 +5815,17 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
     // Don't send anything until the version handshake is complete
     if (!pto->fSuccessfullyConnected || pto->fDisconnect)
         return true;
+
+    {
+        LOCK(cs_main);
+        const int required_protocol_version = GetRequiredPeerProtocolVersion(m_chainman.ActiveHeight(), consensusParams);
+        if (pto->nVersion < required_protocol_version) {
+            LogPrint(BCLog::NET, "peer=%d using obsolete version %i after fork-recovery activation (required %i); disconnecting\n",
+                     pto->GetId(), pto->nVersion, required_protocol_version);
+            pto->fDisconnect = true;
+            return true;
+        }
+    }
 
     // If we get here, the outgoing message serialization version is set and can't change.
     const CNetMsgMaker msgMaker(pto->GetCommonVersion());

@@ -2042,6 +2042,23 @@ static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consens
     return flags;
 }
 
+bool IsForkRecoveryAnchorValid(const CBlockIndex* chain_tip, int validation_height, const Consensus::Params& consensus_params)
+{
+    if (consensus_params.nForkRecoveryActivationHeight < 0 ||
+        validation_height < consensus_params.nForkRecoveryActivationHeight) {
+        return true;
+    }
+
+    if (chain_tip == nullptr || consensus_params.nForkRecoveryAnchorHeight < 0 ||
+        consensus_params.hashForkRecoveryAnchor.IsNull() ||
+        chain_tip->nHeight < consensus_params.nForkRecoveryAnchorHeight) {
+        return false;
+    }
+
+    const CBlockIndex* anchor = chain_tip->GetAncestor(consensus_params.nForkRecoveryAnchorHeight);
+    return anchor != nullptr && anchor->GetBlockHash() == consensus_params.hashForkRecoveryAnchor;
+}
+
 
 
 static int64_t nTimeCheck = 0;
@@ -2076,6 +2093,15 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
     assert(*pindex->phashBlock == block_hash);
 
     assert(m_chain_helper);
+
+    const Consensus::Params& consensus_params = m_params.GetConsensus();
+    if (!IsForkRecoveryAnchorValid(pindex, pindex->nHeight, consensus_params)) {
+        return state.Invalid(BlockValidationResult::BLOCK_RECENT_CONSENSUS_CHANGE,
+                             "bad-fork-recovery-anchor",
+                             strprintf("block at height %d does not descend from canonical anchor %s at height %d",
+                                       pindex->nHeight, consensus_params.hashForkRecoveryAnchor.ToString(),
+                                       consensus_params.nForkRecoveryAnchorHeight));
+    }
 
     // Roll back any BLS scheme switch below unless we fully connect the block.
     ScopedBLSLegacyScheme bls_scheme_guard;
@@ -3922,6 +3948,14 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
 
     // Check proof of work
     const Consensus::Params& consensusParams = params.GetConsensus();
+    if (!IsForkRecoveryAnchorValid(pindexPrev, nHeight, consensusParams)) {
+        return state.Invalid(BlockValidationResult::BLOCK_RECENT_CONSENSUS_CHANGE,
+                             "bad-fork-recovery-anchor",
+                             strprintf("header at height %d does not descend from canonical anchor %s at height %d",
+                                       nHeight, consensusParams.hashForkRecoveryAnchor.ToString(),
+                                       consensusParams.nForkRecoveryAnchorHeight));
+    }
+
     if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-diffbits", strprintf("incorrect proof of work at %d", nHeight));
 
@@ -4403,12 +4437,24 @@ bool CChainState::LoadChainTip()
     const CBlockIndex* tip = m_chain.Tip();
 
     if (tip && tip->GetBlockHash() == coins_cache.GetBestBlock()) {
+        if (!IsForkRecoveryAnchorValid(tip, tip->nHeight, m_params.GetConsensus())) {
+            LogPrintf("ERROR: Loaded chain tip %s at height %d does not contain the canonical fork-recovery anchor. "
+                      "Restart with -reindex and canonical peers.\n",
+                      tip->GetBlockHash().ToString(), tip->nHeight);
+            return false;
+        }
         return true;
     }
 
     // Load pointer to end of best chain
     CBlockIndex* pindex = m_blockman.LookupBlockIndex(coins_cache.GetBestBlock());
     if (!pindex) {
+        return false;
+    }
+    if (!IsForkRecoveryAnchorValid(pindex, pindex->nHeight, m_params.GetConsensus())) {
+        LogPrintf("ERROR: Stored chain tip %s at height %d does not contain the canonical fork-recovery anchor. "
+                  "Restart with -reindex and canonical peers.\n",
+                  pindex->GetBlockHash().ToString(), pindex->nHeight);
         return false;
     }
     m_chain.SetTip(pindex);
