@@ -395,7 +395,7 @@ void MultisigPage::importSetup()
             if (reply == QMessageBox::Yes) {
                 QString import_error;
                 if (!MultisigUtil::ImportWatchOnly(*m_wallet_model, entry, import_error)) {
-                    setStatus(tr("Watch-only import failed: %1").arg(import_error), true);
+                    setStatus(MultisigUtil::WatchOnlyImportErrorMessage(import_error), true);
                     return;
                 }
             }
@@ -621,7 +621,7 @@ void MultisigPage::importSelectedWatchOnly()
 
     QString error;
     if (!MultisigUtil::ImportWatchOnly(*m_wallet_model, entry, error)) {
-        setStatus(tr("Watch-only import failed: %1").arg(error), true);
+        setStatus(MultisigUtil::WatchOnlyImportErrorMessage(error), true);
         return;
     }
     setStatus(tr("Address %1 is now tracked as watch-only. Transactions received before now appear only after a rescan.").arg(entry.address), false);
