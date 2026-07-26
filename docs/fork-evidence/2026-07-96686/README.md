@@ -32,9 +32,10 @@ The recovery release anchors the selected chain at:
 - height: `103536`
 - hash: `7b9b767a13d10f2ffa012f8ca05aa80ad9df0719ae3f47cd66251c2a2044d863`
 - chainwork: `00000000000000000000000000000000000000000000021fa68e72c9b84c57ac`
-- enforcement height: `110448`
+- enforcement height: `113117`
 
-Height 110448 is the deterministic consensus trigger. Calendar estimates are
+Height 113117 is the deterministic consensus trigger. It provides an estimated
+10-day upgrade window from mainnet height 107357. Calendar estimates are
 informational only because actual block production time varies.
 
 ## Evidence boundaries
