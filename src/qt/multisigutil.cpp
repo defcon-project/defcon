@@ -263,6 +263,16 @@ bool ImportWatchOnly(WalletModel& wallet_model, const Entry& entry, QString& err
     }
 }
 
+QString WatchOnlyImportErrorMessage(const QString& error)
+{
+    QJsonParseError parse_error;
+    const QJsonDocument document = QJsonDocument::fromJson(error.toUtf8(), &parse_error);
+    if (document.isObject() && document.object().value(QStringLiteral("code")).toInt() == -13) {
+        return QObject::tr("Wallet is locked. Unlock the wallet before importing the multisig setup.");
+    }
+    return QObject::tr("Watch-only import failed: %1").arg(error);
+}
+
 QByteArray EntryToSetupJson(const Entry& entry, bool compact)
 {
     QJsonObject obj = EntryToJson(entry);

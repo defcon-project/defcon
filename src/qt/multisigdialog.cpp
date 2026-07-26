@@ -391,7 +391,7 @@ void MultisigDialog::executeCommand()
             if (MultisigUtil::ImportWatchOnly(*m_wallet_model, m_last_entry, import_error)) {
                 notes << tr("The address is now tracked as watch-only; transactions received before now require a rescan to appear.");
             } else {
-                notes << tr("Watch-only import failed: %1").arg(import_error);
+                notes << MultisigUtil::WatchOnlyImportErrorMessage(import_error);
             }
         }
 

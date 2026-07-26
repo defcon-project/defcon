@@ -89,6 +89,13 @@ WalletStorageType GetWalletStorageType(WalletModel& wallet_model);
  */
 bool ImportWatchOnly(WalletModel& wallet_model, const Entry& entry, QString& error);
 
+/**
+ * Formats errors returned by the legacy watch-only import RPC for display in
+ * the multisig UI. Wallet-locked errors use an actionable message instead of
+ * exposing the raw JSON-RPC response.
+ */
+QString WatchOnlyImportErrorMessage(const QString& error);
+
 /** Serialize an entry to the portable multisig setup JSON exchanged between cosigners.
  *  Contains public data only (name, m/n, pubkeys, cosigner labels, scripts, address, network) — never keys. */
 QByteArray EntryToSetupJson(const Entry& entry, bool compact = false);

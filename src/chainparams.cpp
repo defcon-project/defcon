@@ -219,7 +219,7 @@ public:
 
         consensus.nForkRecoveryAnchorHeight = 103536;
         consensus.hashForkRecoveryAnchor = uint256S("0x7b9b767a13d10f2ffa012f8ca05aa80ad9df0719ae3f47cd66251c2a2044d863");
-        consensus.nForkRecoveryActivationHeight = 110448;
+        consensus.nForkRecoveryActivationHeight = 113117;
 
         consensus.premineAddress = CScript() << ParseHex("867e79565f4443e588e3d11997215df2c4d181495eba1db35714ecc4a743b906e24636de1d2104635ca6056afbb4d9f0") << OP_CHECKSIG;
         consensus.lastPowBlock = 999;
