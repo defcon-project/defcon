@@ -747,7 +747,7 @@ void MultisigSpendDialog::mergePsbt(bool from_clipboard)
             return;
         }
         std::ifstream in{filename.toLocal8Bit().data(), std::ios::binary};
-        const std::vector<unsigned char> data{std::istream_iterator<unsigned char>{in}, {}};
+        const std::vector<unsigned char> data{std::istreambuf_iterator<char>{in}, {}};
         if (!DecodeRawPSBT(incoming, MakeByteSpan(data), decode_error)) {
             setStatus(tr("Unable to decode PSBT: %1").arg(QString::fromStdString(decode_error)), true);
             return;
