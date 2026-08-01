@@ -477,7 +477,7 @@ void MultisigPage::continuePsbt(bool from_clipboard)
             return;
         }
         std::ifstream in{filename.toLocal8Bit().data(), std::ios::binary};
-        data.assign(std::istream_iterator<unsigned char>{in}, {});
+        data.assign(std::istreambuf_iterator<char>{in}, {});
     }
 
     std::string error;
