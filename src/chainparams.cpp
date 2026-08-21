@@ -569,12 +569,12 @@ public:
         consensus.posTargetTimespan = consensus.nPowTargetTimespan;
         consensus.posTargetSpacing = consensus.nPowTargetSpacing;
         consensus.posTimestampMask = 5;
-        consensus.stakeValueRange = { 0 * COIN, MAX_MONEY };
-        consensus.stakeAgeRange = { 10 * 60, 60 * 60 * 24 * 30 };
-        consensus.posLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        consensus.regularMnCollateral = 1000 * COIN;
+        consensus.stakeValueRange = { 10000 * COIN, 12500000 * COIN };
+        consensus.stakeAgeRange = { 60 * 60, 60 * 60 * 24 * 60 };
+        consensus.posLimit = uint256S("0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
-        consensus.evoMnCollateral = 4000 * COIN;
+        consensus.evoMnCollateral = 4000000 * COIN;
         consensus.evoVoteWeight = 4;
         consensus.minStaticCollateral = 8064;
 
@@ -631,10 +631,10 @@ public:
         AddLLMQ(Consensus::LLMQType::LLMQ_DEVNET);
         AddLLMQ(Consensus::LLMQType::LLMQ_DEVNET_DIP0024);
         AddLLMQ(Consensus::LLMQType::LLMQ_DEVNET_PLATFORM);
-        consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_DEVNET;
+        consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_400_60;
         consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_DEVNET_DIP0024;
         consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_DEVNET_PLATFORM;
-        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_DEVNET;
+        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_400_85;
 
         UpdateDevnetLLMQChainLocksFromArgs(args);
         UpdateDevnetLLMQInstantSendDIP0024FromArgs(args);
