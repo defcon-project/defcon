@@ -216,7 +216,13 @@ void TxToUniv(const CTransaction& tx, const uint256& hashBlock, bool include_add
 
     // If available, use Undo data to calculate the fee. Note that txundo == nullptr
     // for coinbase transactions and for transactions where undo data is unavailable.
-    const bool calculate_fee = txundo != nullptr;
+    //
+    // A coinstake is excluded for the same reason a coinbase is: its outputs are
+    // the staked input plus a freshly minted reward, so inputs - outputs is
+    // negative and there is no fee to report. Without this the CHECK_NONFATAL
+    // below rejects the value and the whole call fails with
+    // "Internal bug detected: MoneyRange(fee)".
+    const bool calculate_fee = txundo != nullptr && !tx.IsCoinStake();
     CAmount amt_total_in = 0;
     CAmount amt_total_out = 0;
 
