@@ -2522,7 +2522,13 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         return state.Invalid(BlockValidationResult::BLOCK_RESULT_UNSET, "bad-cb-payee");
     }
 
-    if (m_params.NetworkIDString() != CBaseChainParams::REGTEST && pindex->nHeight <= 900) {
+    // The devnet genesis block is a structural block, not a reward block: it
+    // burns its output to OP_RETURN and so can never satisfy the premine rule.
+    // Identified by hash rather than by height, and hashDevnetGenesisBlock is
+    // null on every other network, so this is a no-op outside devnet.
+    const bool is_devnet_genesis = !m_params.GetConsensus().hashDevnetGenesisBlock.IsNull() &&
+                                   pindex->GetBlockHash() == m_params.GetConsensus().hashDevnetGenesisBlock;
+    if (m_params.NetworkIDString() != CBaseChainParams::REGTEST && !is_devnet_genesis && pindex->nHeight <= 900) {
         const bool mn_rr_active = pindex->nHeight >= Params().GetConsensus().MN_RRHeight;
         if (!mn_rr_active && block.vtx[0]->vout.size() != 1) {
             LogPrintf("ERROR: ConnectBlock(DFCN): premine payment must have one vout only\n");
