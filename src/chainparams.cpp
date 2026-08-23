@@ -508,19 +508,19 @@ public:
         strNetworkID = CBaseChainParams::DEVNET;
         consensus.nSubsidyHalvingInterval = 210240;
         consensus.BIP16Height = 0;
-        consensus.nMasternodePaymentsStartBlock = 4010; // not true, but it's ok as long as it's less then nMasternodePaymentsIncreaseBlock
-        consensus.nMasternodePaymentsIncreaseBlock = 4030;
+        consensus.nMasternodePaymentsStartBlock = 240;
+        consensus.nMasternodePaymentsIncreaseBlock = 350;
         consensus.nMasternodePaymentsIncreasePeriod = 10;
         consensus.nInstantSendConfirmationsRequired = 2;
         consensus.nInstantSendKeepLock = 6;
-        consensus.nBudgetPaymentsStartBlock = 4100;
+        consensus.nBudgetPaymentsStartBlock = 1000;
         consensus.nBudgetPaymentsCycleBlocks = 50;
         consensus.nBudgetPaymentsWindowBlocks = 10;
-        consensus.nSuperblockStartBlock = 4200; // NOTE: Should satisfy nSuperblockStartBlock > nBudgetPeymentsStartBlock
+        consensus.nSuperblockStartBlock = 1500;
         consensus.nSuperblockStartHash = uint256(); // do not check this on devnet
-        consensus.nSuperblockCycle = 24; // Superblocks can be issued hourly on devnet
-        consensus.nSuperblockMaturityWindow = 8;
-        consensus.nGovernanceMinQuorum = 1;
+        consensus.nSuperblockCycle = 16616;
+        consensus.nSuperblockMaturityWindow = 1662;
+        consensus.nGovernanceMinQuorum = 10;
         consensus.nGovernanceFilterElements = 500;
         consensus.nMasternodeMinimumConfirmations = 1;
         consensus.BIP34Height = 1;   // BIP34 activated immediately on devnet
@@ -529,25 +529,25 @@ public:
         consensus.BIP147Height = 1;  // BIP147 activated immediately on devnet
         consensus.CSVHeight = 1;     // BIP68 activated immediately on devnet
         consensus.DIP0001Height = 2; // DIP0001 activated immediately on devnet
-        consensus.DIP0003Height = 2; // DIP0003 activated immediately on devnet
-        consensus.DIP0003EnforcementHeight = 2; // DIP0003 activated immediately on devnet
+        consensus.DIP0003Height = 1000;
+        consensus.DIP0003EnforcementHeight = 1100;
         consensus.DIP0003EnforcementHash = uint256();
-        consensus.DIP0008Height = 2; // DIP0008 activated immediately on devnet
-        consensus.BRRHeight = 2;     // BRR (realloc) activated immediately on devnet
-        consensus.DIP0020Height = 2; // DIP0020 activated immediately on devnet
-        consensus.DIP0024Height = 2; // DIP0024 activated immediately on devnet
-        consensus.DIP0024QuorumsHeight = 2; // DIP0024 activated immediately on devnet
-        consensus.V19Height = 2;     // V19 activated immediately on devnet
-        consensus.V20Height = 2;     // V20 activated immediately on devnet
-        consensus.MN_RRHeight = 2;   // MN_RR activated immediately on devnet
+        consensus.DIP0008Height = 1200;
+        consensus.BRRHeight = std::numeric_limits<int>::max();
+        consensus.DIP0020Height = std::numeric_limits<int>::max();
+        consensus.DIP0024Height = std::numeric_limits<int>::max();
+        consensus.DIP0024QuorumsHeight = std::numeric_limits<int>::max();
+        consensus.V19Height = std::numeric_limits<int>::max();
+        consensus.V20Height = std::numeric_limits<int>::max();
+        consensus.MN_RRHeight = std::numeric_limits<int>::max();
         consensus.MinBIP9WarningHeight = 2 + 2016; // v19 activation height + miner confirmation window
         consensus.powLimit = uint256S("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); // ~uint256(0) >> 1
         consensus.nPowTargetTimespan = 24 * 60 * 60; // Dash: 1 day
         consensus.nPowTargetSpacing = 2.5 * 60; // Dash: 2.5 minutes
-        consensus.fPowAllowMinDifficultyBlocks = true;
+        consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.fPowNoRetargeting = false;
-        consensus.nPowKGWHeight = 4001; // nPowKGWHeight >= nPowDGWHeight means "no KGW"
-        consensus.nPowDGWHeight = 4001;
+        consensus.nPowKGWHeight = 4002;
+        consensus.nPowDGWHeight = 4002;
         consensus.nRuleChangeActivationThreshold = 1512; // 75% for testchains
         consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
@@ -565,7 +565,7 @@ public:
         consensus.vDeployments[Consensus::DEPLOYMENT_WITHDRAWALS].useEHF = true;
 
         consensus.premineAddress = CScript() << ParseHex("867e79565f4443e588e3d11997215df2c4d181495eba1db35714ecc4a743b906e24636de1d2104635ca6056afbb4d9f0") << OP_CHECKSIG;
-        consensus.lastPowBlock = 1000;
+        consensus.lastPowBlock = 999;
         consensus.posTargetTimespan = consensus.nPowTargetTimespan;
         consensus.posTargetSpacing = consensus.nPowTargetSpacing;
         consensus.posTimestampMask = 5;
@@ -628,12 +628,9 @@ public:
         AddLLMQ(Consensus::LLMQType::LLMQ_400_60);
         AddLLMQ(Consensus::LLMQType::LLMQ_400_85);
         AddLLMQ(Consensus::LLMQType::LLMQ_100_67);
-        AddLLMQ(Consensus::LLMQType::LLMQ_DEVNET);
-        AddLLMQ(Consensus::LLMQType::LLMQ_DEVNET_DIP0024);
-        AddLLMQ(Consensus::LLMQType::LLMQ_DEVNET_PLATFORM);
         consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_400_60;
-        consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_DEVNET_DIP0024;
-        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_DEVNET_PLATFORM;
+        consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_60_75;
+        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_100_67;
         consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_400_85;
 
         UpdateDevnetLLMQChainLocksFromArgs(args);
@@ -732,7 +729,12 @@ public:
     void UpdateLLMQDevnetParameters(int size, int threshold)
     {
         auto params = ranges::find_if(consensus.llmqs, [](const auto& llmq){ return llmq.type == Consensus::LLMQType::LLMQ_DEVNET;});
-        assert(params != consensus.llmqs.end());
+        // Devnet registers the mainnet quorum set, which does not include
+        // LLMQ_DEVNET, so this override has nothing to act on. Say so instead
+        // of asserting: a stale command line should not abort the node.
+        if (params == consensus.llmqs.end()) {
+            throw std::runtime_error("-llmqdevnetparams: LLMQ_DEVNET is not registered on this network");
+        }
         params->size = size;
         params->minSize = threshold;
         params->threshold = threshold;
