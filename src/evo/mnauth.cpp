@@ -174,8 +174,10 @@ PeerMsgRet CMNAuth::ProcessMessage(CNode& peer, ServiceFlags node_services, CCon
         return {};
     }
 
-    peer.SetVerifiedProRegTxHash(mnauth.proRegTxHash);
-    peer.SetVerifiedPubKeyHash(dmn->pdmnState->pubKeyOperator.GetHash());
+    if (!connman.TryMarkVerified(peer.GetId(), mnauth.proRegTxHash, dmn->pdmnState->pubKeyOperator.GetHash())) {
+        peer.fDisconnect = true;
+        return {};
+    }
 
     if (!peer.m_masternode_iqr_connection && connman.IsMasternodeQuorumRelayMember(peer.GetVerifiedProRegTxHash())) {
         // Tell our peer that we're interested in plain LLMQ recovered signatures.

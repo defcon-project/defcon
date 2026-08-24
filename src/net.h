@@ -95,6 +95,8 @@ static const int MAX_BLOCK_RELAY_ONLY_CONNECTIONS = 2;
 static const int MAX_DESIRED_ONION_CONNECTIONS = 2;
 /** Maximum number of feeler connections */
 static const int MAX_FEELER_CONNECTIONS = 1;
+/** Maximum number of verified inbound connections per masternode identity. */
+static constexpr size_t MAX_VERIFIED_INBOUND_PER_PROTX{3};
 /** -listen default */
 static const bool DEFAULT_LISTEN = true;
 /** The maximum number of peer connections to maintain.
@@ -1507,6 +1509,10 @@ public:
     bool IsMasternodeQuorumNode(const CNode* pnode, const CDeterministicMNList& tip_mn_list) const;
     bool IsMasternodeQuorumRelayMember(const uint256& protxHash);
     void AddPendingProbeConnections(const std::set<uint256>& proTxHashes);
+
+    /** Atomically verify a masternode connection while enforcing the inbound identity cap. */
+    bool TryMarkVerified(NodeId id, const uint256& proregtx_hash, const uint256& pubkey_hash)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_nodes_mutex);
 
     size_t GetNodeCount(ConnectionDirection) const;
     size_t GetMaxOutboundNodeCount();

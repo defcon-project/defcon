@@ -4732,6 +4732,40 @@ void CConnman::AddPendingProbeConnections(const std::set<uint256> &proTxHashes)
     masternodePendingProbes.insert(proTxHashes.begin(), proTxHashes.end());
 }
 
+bool CConnman::TryMarkVerified(NodeId id, const uint256& proregtx_hash, const uint256& pubkey_hash)
+{
+    LOCK(m_nodes_mutex);
+
+    CNode* node{nullptr};
+    for (CNode* pnode : m_nodes) {
+        if (pnode->GetId() == id) {
+            node = pnode;
+            break;
+        }
+    }
+    if (node == nullptr) return false;
+
+    if (node->IsInboundConn()) {
+        size_t verified_inbound{0};
+        for (const CNode* pnode : m_nodes) {
+            if (pnode != node && !pnode->fDisconnect && pnode->IsInboundConn() &&
+                pnode->GetVerifiedProRegTxHash() == proregtx_hash) {
+                ++verified_inbound;
+            }
+        }
+        if (verified_inbound >= MAX_VERIFIED_INBOUND_PER_PROTX) {
+            LogPrint(BCLog::NET_NETCONN,
+                     "CConnman::%s -- refusing to verify masternode %s: already %d verified inbound connections, peer=%d\n",
+                     __func__, proregtx_hash.ToString(), verified_inbound, id);
+            return false;
+        }
+    }
+
+    node->SetVerifiedProRegTxHash(proregtx_hash);
+    node->SetVerifiedPubKeyHash(pubkey_hash);
+    return true;
+}
+
 size_t CConnman::GetNodeCount(ConnectionDirection flags) const
 {
     LOCK(m_nodes_mutex);

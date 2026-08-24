@@ -50,6 +50,30 @@ class FakeMNAUTHTest(DashTestFramework):
                                                          null_hash)
         assert not masternode.node.mnauth(-1, protx_hash, public_key)
 
+        # Bound on verified inbound connections per proRegTxHash; keep in sync with
+        # MAX_VERIFIED_INBOUND_PER_PROTX in src/net.h.
+        max_verified_inbound = 3
+
+        # The connection verified above already holds one slot; fill the remaining budget.
+        extra_peers = []
+        for _ in range(max_verified_inbound - 1):
+            extra_peers.append(masternode.node.add_p2p_connection(P2PInterface()))
+            peer_id = masternode.node.getpeerinfo()[-1]["id"]
+            assert masternode.node.mnauth(peer_id, protx_hash, public_key)
+
+        # The next inbound leg carrying the same identity is refused and stays unverified...
+        masternode.node.add_p2p_connection(P2PInterface())
+        refused_id = masternode.node.getpeerinfo()[-1]["id"]
+        assert not masternode.node.mnauth(refused_id, protx_hash, public_key)
+        assert "verified_proregtx_hash" not in masternode.node.getpeerinfo()[-1]
+
+        # ...until a verified leg goes away and frees its slot.
+        peer_count = len(masternode.node.getpeerinfo())
+        extra_peers[0].peer_disconnect()
+        self.wait_until(lambda: len(masternode.node.getpeerinfo()) == peer_count - 1)
+        assert masternode.node.mnauth(refused_id, protx_hash, public_key)
+        assert_equal(masternode.node.getpeerinfo()[-1]["verified_proregtx_hash"], protx_hash)
+
 
 if __name__ == '__main__':
     FakeMNAUTHTest().main()
