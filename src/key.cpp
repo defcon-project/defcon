@@ -187,13 +187,17 @@ CPubKey CKey::GetPubKey() const {
     assert(fValid);
     secp256k1_pubkey pubkey;
     size_t clen = CPubKey::SIZE;
-    CPubKey result;
+    unsigned char buf[CPubKey::SIZE];
     int ret = secp256k1_ec_pubkey_create(secp256k1_context_sign, &pubkey, begin());
     assert(ret);
-    secp256k1_ec_pubkey_serialize(secp256k1_context_sign, (unsigned char*)result.begin(), &clen, &pubkey, fCompressed ? SECP256K1_EC_COMPRESSED : SECP256K1_EC_UNCOMPRESSED);
-    if (result.size() != clen) {
-        return GetPubKeyForBLS();
-    }
+    secp256k1_ec_pubkey_serialize(secp256k1_context_sign, buf, &clen, &pubkey,
+                                  fCompressed ? SECP256K1_EC_COMPRESSED : SECP256K1_EC_UNCOMPRESSED);
+    // The previous version wrote into the result's buffer directly and never
+    // set its length, so an uncompressed serialization disagreed with the
+    // default length and fell through to a BLS pubkey built from a secp
+    // secret. The BLS flow never came through here -- it calls
+    // GetPubKeyForBLS() explicitly (see signingprovider.cpp).
+    CPubKey result{buf, buf + clen};
     assert(result.size() == clen);
     assert(result.IsValid());
     return result;

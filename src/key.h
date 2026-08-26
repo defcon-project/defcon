@@ -93,7 +93,14 @@ public:
         }
         memcpy(keydata.data(), (unsigned char*)&pbegin[0], keydata.size());
         fValid = true;
-        fCompressed = true;
+        // The BLS wallet change hardcoded true here, overriding what every
+        // caller asked for: DecodeSecret of an uncompressed WIF answered a
+        // compressed key, which derives a different address than the one the
+        // WIF's funds were sent to, and the crypter's decrypt path lost the
+        // stored form the same way. The BLS caller passes its flag explicitly
+        // and never reads it back through secp derivation, so honouring the
+        // parameter is what every caller -- including that one -- expects.
+        fCompressed = fCompressedIn;
     }
 
     //! Simple read-only vector-like interface.
