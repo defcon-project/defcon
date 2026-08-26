@@ -698,6 +698,8 @@ public:
         const CBlockIndex* start_index, const CBlockIndex* stop_index,
         ChainstateManager& chainman, BuildListFromBlockFunc build_list_func,
         bool repair) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    [[nodiscard]] bool IsRepaired() const;
+    void CompleteRepair();
 
 private:
     void CleanupCache(int nHeight) EXCLUSIVE_LOCKS_REQUIRED(cs);
