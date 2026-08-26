@@ -1748,6 +1748,7 @@ static UniValue evodb_verify_or_repair_impl(const JSONRPCRequest& request, bool 
 
     result.pushKV("startHeight", recalc_result.start_height);
     result.pushKV("stopHeight", recalc_result.stop_height);
+    result.pushKV("verifiedThroughHeight", recalc_result.verified_through_height);
     result.pushKV("diffsRecalculated", recalc_result.diffs_recalculated);
     result.pushKV("snapshotsVerified", recalc_result.snapshots_verified);
     result.pushKV("verificationErrors", verification_errors);
@@ -1780,6 +1781,7 @@ static RPCHelpMan evodb_verify()
             {
                 {RPCResult::Type::NUM, "startHeight", "Actual starting block height (may differ from input if clamped to DIP0003 activation)"},
                 {RPCResult::Type::NUM, "stopHeight", "Ending block height"},
+                {RPCResult::Type::NUM, "verifiedThroughHeight", "Height full snapshot-pair verification reached; diffs beyond it up to stopHeight are checked for readability and applicability only"},
                 {RPCResult::Type::NUM, "diffsRecalculated", "Number of diffs recalculated (always 0 for verify-only mode)"},
                 {RPCResult::Type::NUM, "snapshotsVerified", "Number of snapshot pairs that passed verification"},
                 {RPCResult::Type::ARR, "verificationErrors", "List of verification errors (empty if verification passed)",

@@ -940,6 +940,20 @@ void FuncEvoDbDiffRoundTrip(TestChainSetup& setup)
     const std::string post_repair_error = result.verification_errors.empty() ? "" : result.verification_errors.front();
     BOOST_REQUIRE_MESSAGE(result.verification_errors.empty(), post_repair_error);
     BOOST_CHECK_EQUAL(result.snapshots_verified, 1);
+    BOOST_CHECK_EQUAL(result.verified_through_height, 576);
+
+    // The stretch past the last snapshot has no closing snapshot and used to
+    // escape verification entirely. A diff there that cannot apply must fail
+    // the walk now, while the pair section stays clean.
+    CDeterministicMNListDiff poison;
+    poison.updatedMNs.emplace(uint64_t{999999}, CDeterministicMNStateDiff{});
+    const uint256 tip_hash = chainman.ActiveChain().Tip()->GetBlockHash();
+    BOOST_REQUIRE(setup.m_node.evodb->GetRawDB().Write(std::make_pair(std::string("dmn_D3"), tip_hash), poison));
+    result = dmnman.RecalculateAndRepairDiffs(chainman.ActiveChain().Genesis(), chainman.ActiveChain().Tip(),
+                                              chainman, no_rebuild, /*repair=*/false);
+    BOOST_CHECK(!result.verification_errors.empty());
+    BOOST_CHECK_EQUAL(result.snapshots_verified, 1);
+    BOOST_CHECK_EQUAL(result.verified_through_height, 576);
 }
 
 BOOST_AUTO_TEST_SUITE(evo_dip3_activation_tests)

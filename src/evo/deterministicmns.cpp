@@ -1992,9 +1992,55 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
         }
     }
 
-    // Write repaired diffs to database
+    // The pair loop stops at the last on-disk snapshot; the stretch from
+    // there to the tip has no snapshot to close a comparison against, and it
+    // used to go entirely unchecked while stop_height claimed the tip. Walk
+    // it anyway: an unreadable or inapplicable diff there is the same
+    // corruption class a failing pair is, and verified_through_height reports
+    // exactly how far the full comparison reached.
+    result.verified_through_height = snapshot_blocks.back()->nHeight;
+    if (const CBlockIndex* tail_start = snapshot_blocks.back(); tail_start->nHeight < stop_index->nHeight) {
+        CDeterministicMNList tail_list;
+        if (!m_evoDb.Read(std::make_pair(DB_LIST_SNAPSHOT, tail_start->GetBlockHash()), tail_list)) {
+            result.verification_errors.push_back(
+                strprintf("Failed to read snapshot at height %d for the tail check", tail_start->nHeight));
+        } else {
+            try {
+                for (int nHeight = tail_start->nHeight + 1; nHeight <= stop_index->nHeight; ++nHeight) {
+                    const CBlockIndex* pIndex = stop_index->GetAncestor(nHeight);
+                    CDeterministicMNListDiff diff;
+                    if (!pIndex || !m_evoDb.Read(std::make_pair(DB_LIST_DIFF, pIndex->GetBlockHash()), diff)) {
+                        result.verification_errors.push_back(
+                            strprintf("Failed to read diff at height %d past the last snapshot", nHeight));
+                        break;
+                    }
+                    diff.nHeight = nHeight;
+                    tail_list = tail_list.ApplyDiff(pIndex, diff);
+                }
+            } catch (const std::exception& e) {
+                result.verification_errors.push_back(strprintf(
+                    "Exception applying diffs past the last snapshot at height %d: %s", tail_start->nHeight, e.what()));
+            }
+        }
+    }
+
     if (repair) {
-        WriteRepairedDiffs(recalculated_diffs, result);
+        if (!WriteRepairedDiffs(recalculated_diffs, result)) {
+            return result;
+        }
+        if (result.diffs_recalculated > 0 && result.repair_errors.empty()) {
+            // Prove the rewrite. The old flow reported the pre-repair
+            // verification failures upward even when the repair succeeded, so
+            // a successful repair was never marked complete and every restart
+            // re-ran it. What the caller gets now is the verified state of
+            // the database after the repair, pairs and tail alike.
+            LogPrintf("CDeterministicMNManager::%s -- Re-verifying after repair...\n", __func__);
+            RecalcDiffsResult recheck =
+                RecalculateAndRepairDiffs(start_index, stop_index, chainman, build_list_func, /*repair=*/false);
+            recheck.diffs_recalculated = result.diffs_recalculated;
+            recheck.repair_errors = result.repair_errors;
+            return recheck;
+        }
     }
 
     return result;
@@ -2210,13 +2256,13 @@ std::vector<std::pair<uint256, CDeterministicMNListDiff>> CDeterministicMNManage
     }
 }
 
-void CDeterministicMNManager::WriteRepairedDiffs(
+bool CDeterministicMNManager::WriteRepairedDiffs(
     const std::vector<std::pair<uint256, CDeterministicMNListDiff>>& recalculated_diffs, RecalcDiffsResult& result)
 {
     AssertLockNotHeld(cs);
 
     if (recalculated_diffs.empty()) {
-        return;
+        return true;
     }
 
     CDBBatch batch(m_evoDb.GetRawDB());
@@ -2234,7 +2280,11 @@ void CDeterministicMNManager::WriteRepairedDiffs(
         if (batch.SizeEstimate() >= BATCH_SIZE_THRESHOLD) {
             LogPrintf("CDeterministicMNManager::%s -- Flushing batch (%d diffs written so far)...\n",
                       __func__, diffs_written);
-            m_evoDb.GetRawDB().WriteBatch(batch);
+            if (!m_evoDb.GetRawDB().WriteBatch(batch)) {
+                result.repair_errors.push_back(strprintf(
+                    "Failed to write repaired diffs to the database (%d queued before the failure)", diffs_written));
+                return false;
+            }
             batch.Clear();
         }
     }
@@ -2242,7 +2292,11 @@ void CDeterministicMNManager::WriteRepairedDiffs(
     // Write any remaining diffs in the batch
     if (batch.SizeEstimate() > 0) {
         LogPrintf("CDeterministicMNManager::%s -- Writing final batch...\n", __func__);
-        m_evoDb.GetRawDB().WriteBatch(batch);
+        if (!m_evoDb.GetRawDB().WriteBatch(batch)) {
+            result.repair_errors.push_back(strprintf(
+                "Failed to write repaired diffs to the database (%d queued before the failure)", diffs_written));
+            return false;
+        }
         batch.Clear();
     }
 
@@ -2256,4 +2310,5 @@ void CDeterministicMNManager::WriteRepairedDiffs(
 
     LogPrintf("CDeterministicMNManager::%s -- Successfully repaired %d diffs (caches cleared)\n", __func__,
               recalculated_diffs.size());
+    return true;
 }
