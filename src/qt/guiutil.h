@@ -301,10 +301,13 @@ namespace GUIUtil
     /** Check if the modern DeFCon Dark theme is active. */
     bool isDefconDarkTheme();
 
+    /** Check if the DeFCon Galaxy theme is active. */
+    bool isDefconGalaxyTheme();
+
     /** Check if the modern DeFCon Light theme is active. */
     bool isDefconLightTheme();
 
-    /** Check if either modern DeFCon theme is active. */
+    /** Check if any modern DeFCon theme is active. */
     bool isModernTheme();
 
     /** Sets the stylesheet of the whole app and updates it if the

@@ -62,7 +62,9 @@ void TestRpcCommand(RPCConsole* console)
 void AppTests::appTests()
 {
     QVERIFY(GUIUtil::isValidTheme("DeFCon Dark"));
+    QVERIFY(GUIUtil::isValidTheme("DeFCon Galaxy"));
     QVERIFY(GUIUtil::isValidTheme("DeFCon Light"));
+    QVERIFY(QFile(":/css/DeFCon Galaxy").exists());
     QVERIFY(QFile(":/css/DeFCon Light").exists());
     QCOMPARE(GUIUtil::getDefaultTheme(), QString("Light"));
 

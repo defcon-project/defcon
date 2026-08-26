@@ -856,21 +856,26 @@ void BitcoinGUI::applyThemeLayout()
         return;
     }
 
+    const bool galaxy = GUIUtil::isDefconGalaxyTheme();
     const bool modern = GUIUtil::isModernTheme();
+    const bool vertical = modern && !galaxy;
     appToolBar->setProperty("modern", modern);
-    appToolBar->setOrientation(modern ? Qt::Vertical : Qt::Horizontal);
+    appToolBar->setProperty("galaxy", galaxy);
+    appToolBar->setOrientation(vertical ? Qt::Vertical : Qt::Horizontal);
     appToolBar->setToolButtonStyle(modern ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonTextOnly);
-    appToolBar->setSizePolicy(modern ? QSizePolicy::Fixed : QSizePolicy::Expanding,
-                              modern ? QSizePolicy::Expanding : QSizePolicy::Preferred);
-    walletLayout->setDirection(modern ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
+    appToolBar->setSizePolicy(vertical ? QSizePolicy::Fixed : QSizePolicy::Expanding,
+                              vertical ? QSizePolicy::Expanding : QSizePolicy::Preferred);
+    walletLayout->setDirection(vertical ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
 
     for (QAbstractButton* abstractButton : tabGroup->buttons()) {
         auto* button = qobject_cast<QToolButton*>(abstractButton);
         if (!button) {
             continue;
         }
-        button->setSizePolicy(QSizePolicy::Expanding, modern ? QSizePolicy::Fixed : QSizePolicy::Preferred);
-        GUIUtil::setFont({button}, button->isChecked() ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal, modern ? 12 : 16);
+        button->setSizePolicy(galaxy ? QSizePolicy::Preferred : QSizePolicy::Expanding,
+                              modern ? QSizePolicy::Fixed : QSizePolicy::Preferred);
+        const int fontSize = galaxy ? 11 : (modern ? 12 : 16);
+        GUIUtil::setFont({button}, button->isChecked() ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal, fontSize);
         if (!modern) {
             button->setIcon(QIcon());
         }
@@ -892,7 +897,7 @@ void BitcoinGUI::applyThemeLayout()
             governanceButton->setIcon(GUIUtil::getIcon("synced"));
         }
         for (QAbstractButton* button : tabGroup->buttons()) {
-            button->setIconSize(QSize(22, 22));
+            button->setIconSize(galaxy ? QSize(18, 18) : QSize(22, 22));
         }
 
         if (appToolBarLogoAction && firstNavigationAction) {
@@ -901,7 +906,11 @@ void BitcoinGUI::applyThemeLayout()
         }
         if (m_wallet_selector_action && firstNavigationAction) {
             appToolBar->removeAction(m_wallet_selector_action);
-            appToolBar->insertAction(firstNavigationAction, m_wallet_selector_action);
+            if (galaxy) {
+                appToolBar->addAction(m_wallet_selector_action);
+            } else {
+                appToolBar->insertAction(firstNavigationAction, m_wallet_selector_action);
+            }
         }
     } else {
         if (m_wallet_selector_action) {
@@ -1320,8 +1329,9 @@ void BitcoinGUI::openClicked()
 
 void BitcoinGUI::highlightTabButton(QAbstractButton *button, bool checked)
 {
+    const int fontSize = GUIUtil::isDefconGalaxyTheme() ? 11 : (GUIUtil::isModernTheme() ? 12 : 16);
     GUIUtil::setFont({button}, checked ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal,
-                     GUIUtil::isModernTheme() ? 12 : 16);
+                     fontSize);
     GUIUtil::updateFonts();
 }
 
@@ -1574,7 +1584,7 @@ void BitcoinGUI::updateWidth()
         return;
     }
     if (GUIUtil::isModernTheme()) {
-        constexpr int modernMinimumWidth{1200};
+        const int modernMinimumWidth = GUIUtil::isDefconGalaxyTheme() ? 1280 : 1200;
         setMinimumWidth(modernMinimumWidth);
         resize(std::max(width(), modernMinimumWidth), height());
         return;
