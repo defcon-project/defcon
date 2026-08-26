@@ -2163,8 +2163,36 @@ std::vector<std::pair<uint256, CDeterministicMNListDiff>> CDeterministicMNManage
             current_list = std::move(next_list);
         }
 
-        // Verify that applying all diffs results in the target snapshot
-        if (current_list.IsEqual(to_snapshot)) {
+        // Replay what is about to be written, rather than trusting the list it was
+        // built from.
+        //
+        // The rebuilt list is not evidence about the diffs. BuildDiff records
+        // internalIds and IsEqual deliberately ignores them -- they differ
+        // legitimately between nodes -- so a rebuild that assigned different ones
+        // satisfies IsEqual while producing diffs ApplyDiff cannot use, and the pair
+        // then fails verification for ever with "can't find an updated masternode".
+        // Observed on a live devnet: all three snapshot pairs reported a successful
+        // recalculation, 1304 diffs were written, and verification returned the
+        // identical three errors afterwards from a fresh process reading disk.
+        //
+        // A repair may only claim success on the round trip a later verification
+        // will actually perform.
+        CDeterministicMNList replay = from_snapshot;
+        for (size_t i = 0; i < temp_diffs.size(); ++i) {
+            const CBlockIndex* pReplayIndex = to_index->GetAncestor(from_index->nHeight + 1 + int(i));
+            if (!pReplayIndex) {
+                result.repair_errors.push_back(
+                    strprintf("CRITICAL: Failed to get ancestor at height %d while replaying repaired "
+                              "diffs. Cannot repair - full reindex required.",
+                              from_index->nHeight + 1 + int(i)));
+                return {};
+            }
+            CDeterministicMNListDiff replay_diff = temp_diffs[i].second;
+            replay_diff.nHeight = pReplayIndex->nHeight;
+            replay.ApplyDiff(pReplayIndex, replay_diff);
+        }
+
+        if (replay.IsEqual(to_snapshot)) {
             LogPrintf("CDeterministicMNManager::%s -- Successfully recalculated %d diffs between heights %d and %d\n",
                       __func__, temp_diffs.size(), from_index->nHeight, to_index->nHeight);
             return temp_diffs; // Success - return recalculated diffs
