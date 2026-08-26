@@ -911,6 +911,21 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
     if (!m_chain_helper.special_tx->CheckSpecialTx(tx, m_active_chainstate.m_chain.Tip(), m_active_chainstate.CoinsTip(), true, state))
         return false;
 
+    if (m_pool.existsProviderTxCrossSchemeConflict(tx)) {
+        // The check below compares operator keys per BLS encoding, so it cannot see a second
+        // in-flight transaction claiming the same key under the other one. Keeping such a pair out
+        // of the mempool matters because block assembly does not revalidate special transactions
+        // cumulatively: it checks each candidate against the tip, where neither key is yet present,
+        // so both would be selected and the whole block then rejected.
+        //
+        // Deliberately NOT gated on a deployment. A pair admitted before activation is never
+        // evicted by one, so a gated check would leave exactly that stall reachable across the
+        // boundary. This is mempool policy, which is allowed to be stricter than consensus: a node
+        // that rejects the second transaction still accepts a block containing it, so no chain can
+        // split over this.
+        return state.Invalid(TxValidationResult::TX_CONFLICT, "protx-dup");
+    }
+
     if (m_pool.existsProviderTxConflict(tx)) {
         return state.Invalid(TxValidationResult::TX_CONFLICT, "protx-dup");
     }
