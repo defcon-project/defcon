@@ -2086,7 +2086,7 @@ bool CDeterministicMNManager::VerifySnapshotPair(
             }
 
             diff.nHeight = nHeight;
-            test_list.ApplyDiff(pIndex, diff);
+            test_list = test_list.ApplyDiff(pIndex, diff);
         }
     } catch (const std::exception& e) {
         result.verification_errors.push_back(strprintf("Exception during verification: %s", e.what()));
@@ -2189,7 +2189,7 @@ std::vector<std::pair<uint256, CDeterministicMNListDiff>> CDeterministicMNManage
             }
             CDeterministicMNListDiff replay_diff = temp_diffs[i].second;
             replay_diff.nHeight = pReplayIndex->nHeight;
-            replay.ApplyDiff(pReplayIndex, replay_diff);
+            replay = replay.ApplyDiff(pReplayIndex, replay_diff);
         }
 
         if (replay.IsEqual(to_snapshot)) {
