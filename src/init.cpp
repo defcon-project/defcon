@@ -704,6 +704,7 @@ void SetupServerArgs(ArgsManager& argsman)
     argsman.AddArg("-checkmempool=<n>", strprintf("Run mempool consistency checks every <n> transactions. Use 0 to disable. (default: %u, regtest: %u)", defaultChainParams->DefaultConsistencyChecks(), regtestChainParams->DefaultConsistencyChecks()), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-checkpoints", strprintf("Enable rejection of any forks from the known historical chain until block %s (default: %u)", defaultChainParams->Checkpoints().GetHeight(), DEFAULT_CHECKPOINTS_ENABLED), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-deprecatedrpc=<method>", "Allows deprecated RPC method(s) to be used", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-evodbrepair", "Rewrite masternode list diffs at startup when verification fails, instead of only reporting it (default: 0)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-forceevodbrepair", "Force evodb masternode list diff verification and repair on startup, even if already repaired (default: 0)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-limitancestorcount=<n>", strprintf("Do not accept transactions if number of in-mempool ancestors is <n> or more (default: %u)", DEFAULT_ANCESTOR_LIMIT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-limitancestorsize=<n>", strprintf("Do not accept transactions whose size with all in-mempool ancestors exceeds <n> kilobytes (default: %u)", DEFAULT_ANCESTOR_SIZE_LIMIT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
@@ -2203,7 +2204,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             }
 
             if (start_index && stop_index && start_index->nHeight < stop_index->nHeight) {
-                LogPrintf("Verifying and repairing masternode list diffs...\n");
+                LogPrintf("Verifying masternode list diffs...\n");
                 const auto start{SteadyClock::now()};
                 // Upstream reaches this through CSpecialTxProcessor; in this tree
                 // the function lives on CDeterministicMNManager.
@@ -2214,14 +2215,20 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                     return node.dmnman->RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet,
                                                              *node.llmq_ctx->qsnapman, debugLogs);
                 };
-                auto result = node.dmnman->RecalculateAndRepairDiffs(start_index, stop_index, chainman, build_list_func, true);
+                // Verify by default; write only when asked. A repair rewrites historical
+                // diffs, and an automatic write nobody asked for is the wrong default for an
+                // operation that can leave the database no better than it found it.
+                const bool do_repair{args.GetBoolArg("-evodbrepair", false)};
+                auto result = node.dmnman->RecalculateAndRepairDiffs(start_index, stop_index, chainman,
+                                                                     build_list_func, do_repair);
 
                 if (!result.verification_errors.empty()) {
                     LogPrintf("WARNING: Verification errors:\n%s\n", Join(result.verification_errors, "\n"));
                 }
 
                 if (!result.repair_errors.empty()) {
-                    // Critical errors occurred - reindex required
+                    // Only reachable with -evodbrepair: a repair that cannot produce diffs
+                    // reproducing the snapshots has found damage this tool cannot mend.
                     LogPrintf("Failed to repair masternode list diffs. Database corruption detected. " /* Continued */
                               "Please restart with -reindex to rebuild the database.\n"
                               "Errors:\n%s\n",
@@ -2229,10 +2236,21 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                     StartShutdown();
                     return;
                 }
-                node.dmnman->CompleteRepair();
-                LogPrintf("Successfully repaired %d masternode list diffs, verified %d snapshots in %ds\n",
-                          result.diffs_recalculated, result.snapshots_verified,
-                          Ticks<std::chrono::seconds>(SteadyClock::now() - start));
+
+                if (!result.verification_errors.empty()) {
+                    // Not fatal, and deliberately not marked repaired: the node builds its own
+                    // list from blocks rather than from these diffs, so it runs correctly while
+                    // they disagree. Say so once, plainly, and leave the decision to rewrite
+                    // history to whoever is watching.
+                    LogPrintf("Masternode list diffs do not reproduce the stored snapshots. The node is "
+                              "unaffected -- its list is built from blocks -- but historical diffs are "
+                              "unreliable. Run `evodb repair`, or restart with -evodbrepair, to attempt "
+                              "a rewrite.\n");
+                } else {
+                    node.dmnman->CompleteRepair();
+                    LogPrintf("Verified %d snapshot pair(s) in %ds\n", result.snapshots_verified,
+                              Ticks<std::chrono::seconds>(SteadyClock::now() - start));
+                }
             }
         }    });
 
