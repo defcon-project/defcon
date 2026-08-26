@@ -42,7 +42,8 @@ CChainLocksHandler::CChainLocksHandler(CChainState& chainstate, CQuorumManager& 
     m_is_masternode{is_masternode},
     scheduler(std::make_unique<CScheduler>()),
     scheduler_thread(
-        std::make_unique<std::thread>(std::thread(util::TraceThread, "cl-schdlr", [&] { scheduler->serviceQueue(); })))
+        std::make_unique<std::thread>(std::thread(util::TraceThread, "cl-schdlr", [&] { scheduler->serviceQueue(); }))),
+    seenChainLocks{MAX_SEEN_CHAINLOCKS}
 {
 }
 
@@ -101,9 +102,10 @@ MessageProcessingResult CChainLocksHandler::ProcessNewChainLock(const NodeId fro
 
     {
         LOCK(cs);
-        if (!seenChainLocks.emplace(hash, GetTimeMillis()).second) {
+        if (seenChainLocks.count(hash) != 0) {
             return {};
         }
+        seenChainLocks.insert({hash, GetTimeMillis()});
 
         if (!bestChainLock.IsNull() && clsig.getHeight() <= bestChainLock.getHeight()) {
             // no need to process older/same CLSIGs
@@ -619,7 +621,10 @@ void CChainLocksHandler::Cleanup()
         LOCK(cs);
         for (auto it = seenChainLocks.begin(); it != seenChainLocks.end(); ) {
             if (GetTimeMillis() - it->second >= CLEANUP_SEEN_TIMEOUT) {
-                it = seenChainLocks.erase(it);
+                // erase() takes a key on the bounded map, so step past the entry first
+                const auto hash = it->first;
+                ++it;
+                seenChainLocks.erase(hash);
             } else {
                 ++it;
             }
