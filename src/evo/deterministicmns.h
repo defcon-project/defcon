@@ -715,6 +715,10 @@ public:
     struct RecalcDiffsResult {
         int start_height{0};
         int stop_height{0};
+        //! Height up to which full snapshot-pair verification reached. Diffs
+        //! beyond it, up to stop_height, have no closing snapshot and are
+        //! checked for readability and applicability only.
+        int verified_through_height{0};
         int diffs_recalculated{0};
         int snapshots_verified{0};
         std::vector<std::string> verification_errors;
@@ -750,8 +754,8 @@ private:
     std::vector<std::pair<uint256, CDeterministicMNListDiff>> RepairSnapshotPair(
         const CBlockIndex* from_index, const CBlockIndex* to_index, const CDeterministicMNList& from_snapshot,
         const CDeterministicMNList& to_snapshot, BuildListFromBlockFunc build_list_func, RecalcDiffsResult& result);
-    void WriteRepairedDiffs(const std::vector<std::pair<uint256, CDeterministicMNListDiff>>& recalculated_diffs,
-                            RecalcDiffsResult& result) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    [[nodiscard]] bool WriteRepairedDiffs(const std::vector<std::pair<uint256, CDeterministicMNListDiff>>& recalculated_diffs,
+                                          RecalcDiffsResult& result) EXCLUSIVE_LOCKS_REQUIRED(!cs);
 };
 
 bool CheckProRegTx(CDeterministicMNManager& dmnman, const CTransaction& tx, gsl::not_null<const CBlockIndex*> pindexPrev, TxValidationState& state, const CCoinsViewCache& view, bool check_sigs);
