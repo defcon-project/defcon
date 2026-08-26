@@ -20,6 +20,7 @@
 #include <validation.h>
 
 #include <evo/deterministicmns.h>
+#include <evo/evodb.h>
 #include <evo/providertx.h>
 #include <evo/specialtx.h>
 #include <llmq/context.h>
@@ -847,6 +848,69 @@ void FuncVerifyDB(TestChainSetup& setup)
                                        chainman.ActiveChainstate().CoinsTip(), *(setup.m_node.evodb), 4, 2));
 }
 
+void FuncEvoDbDiffRoundTrip(TestChainSetup& setup)
+{
+    auto& chainman = *Assert(setup.m_node.chainman.get());
+    auto& dmnman = *Assert(setup.m_node.dmnman);
+
+    auto utxos = BuildSimpleUtxoMap(setup.m_coinbase_txns);
+
+    // Keep the DIP3 activation block itself empty: the verifier anchors its
+    // first snapshot at that height, and this test is about what follows it.
+    setup.CreateAndProcessBlock({}, setup.coinbaseKey);
+
+    // Register a masternode, then update it in a later block. Verifying the
+    // stored diffs must then carry state forward from one diff to the next:
+    // the update names a masternode that exists only once the registration
+    // diff has been applied. This is the exact shape that went undetected
+    // while VerifySnapshotPair dropped ApplyDiff's return value.
+    CKey owner_key;
+    CBLSSecretKey operator_key;
+    auto tx_reg = CreateProRegTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, 1,
+                                 GenerateRandomAddress(), setup.coinbaseKey, owner_key, operator_key);
+    auto tx_reg_hash = tx_reg.GetHash();
+    auto block = std::make_shared<CBlock>(setup.CreateBlock({tx_reg}, setup.coinbaseKey, chainman.ActiveChainstate()));
+    BOOST_REQUIRE(chainman.ProcessNewBlock(Params(), block, true, nullptr));
+    dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+    BOOST_REQUIRE(dmnman.GetListAtChainTip().HasMN(tx_reg_hash));
+
+    setup.CreateAndProcessBlock({}, setup.coinbaseKey);
+
+    auto tx_upreg = CreateProUpRegTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, tx_reg_hash,
+                                     owner_key, operator_key.GetPublicKey(), owner_key.GetPubKey().GetID(),
+                                     GenerateRandomAddress(), setup.coinbaseKey);
+    block = std::make_shared<CBlock>(setup.CreateBlock({tx_upreg}, setup.coinbaseKey, chainman.ActiveChainstate()));
+    BOOST_REQUIRE(chainman.ProcessNewBlock(Params(), block, true, nullptr));
+    dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+    const uint256 update_block_hash = chainman.ActiveChain().Tip()->GetBlockHash();
+
+    // Reach the first regular snapshot (DISK_SNAPSHOT_PERIOD, 576) so the
+    // range holds one complete snapshot pair for the verifier to work on.
+    while (chainman.ActiveChain().Height() <= 576) {
+        setup.CreateAndProcessBlock({}, setup.coinbaseKey);
+    }
+    dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+
+    // repair=false never reaches the rebuild callback.
+    CDeterministicMNManager::BuildListFromBlockFunc no_rebuild =
+        [](const CBlock&, gsl::not_null<const CBlockIndex*>, const CDeterministicMNList&,
+           const CCoinsViewCache&, bool, BlockValidationState&, CDeterministicMNList&) { return false; };
+
+    auto result = dmnman.RecalculateAndRepairDiffs(chainman.ActiveChain().Genesis(), chainman.ActiveChain().Tip(),
+                                                   chainman, no_rebuild, /*repair=*/false);
+    const std::string first_error = result.verification_errors.empty() ? "" : result.verification_errors.front();
+    BOOST_REQUIRE_MESSAGE(result.verification_errors.empty(), first_error);
+    BOOST_CHECK_EQUAL(result.snapshots_verified, 1);
+
+    // The pass above must not be vacuous: emptying one stored diff has to
+    // break it. The key literal matches DB_LIST_DIFF in deterministicmns.cpp.
+    setup.m_node.evodb->Write(std::make_pair(std::string("dmn_D3"), update_block_hash), CDeterministicMNListDiff{});
+    result = dmnman.RecalculateAndRepairDiffs(chainman.ActiveChain().Genesis(), chainman.ActiveChain().Tip(),
+                                              chainman, no_rebuild, /*repair=*/false);
+    BOOST_CHECK(!result.verification_errors.empty());
+    BOOST_CHECK_EQUAL(result.snapshots_verified, 0);
+}
+
 BOOST_AUTO_TEST_SUITE(evo_dip3_activation_tests)
 
 struct TestChainDIP3BeforeActivationSetup : public TestChainSetup {
@@ -991,6 +1055,12 @@ BOOST_AUTO_TEST_CASE(verify_db_legacy)
 {
     TestChainDIP3Setup setup;
     FuncVerifyDB(setup);
+}
+
+BOOST_AUTO_TEST_CASE(evodb_diff_round_trip)
+{
+    TestChainDIP3Setup setup;
+    FuncEvoDbDiffRoundTrip(setup);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
