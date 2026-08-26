@@ -8,6 +8,7 @@
 #include <key.h>
 #include <qt/bitcoin.h>
 #include <qt/bitcoingui.h>
+#include <qt/guiutil.h>
 #include <qt/networkstyle.h>
 #include <qt/rpcconsole.h>
 #include <shutdown.h>
@@ -59,6 +60,9 @@ void TestRpcCommand(RPCConsole* console)
 //! Entry point for BitcoinApplication tests.
 void AppTests::appTests()
 {
+    QVERIFY(GUIUtil::isValidTheme("DeFCon Dark"));
+    QCOMPARE(GUIUtil::getDefaultTheme(), QString("Light"));
+
 #ifdef Q_OS_MAC
     if (QApplication::platformName() == "minimal") {
         // Disable for mac on "minimal" platform to avoid crashes inside the Qt

@@ -26,10 +26,14 @@
 #include <QAbstractItemDelegate>
 #include <QApplication>
 #include <QDateTime>
+#include <QEvent>
+#include <QIcon>
+#include <QLabel>
 #include <QPainter>
 #include <QSettings>
 #include <QStatusTipEvent>
 #include <QTimer>
+#include <QVBoxLayout>
 
 #define ITEM_HEIGHT 54
 #define NUM_ITEMS_DISABLED 5
@@ -149,6 +153,26 @@ OverviewPage::OverviewPage(QWidget* parent) :
 {
     ui->setupUi(this);
 
+    modernHeader = new QWidget(this);
+    modernHeader->setObjectName("modernOverviewHeader");
+    auto* modernHeaderLayout = new QVBoxLayout(modernHeader);
+    modernHeaderLayout->setContentsMargins(4, 4, 4, 10);
+    modernHeaderLayout->setSpacing(2);
+    auto* modernTitle = new QLabel(tr("Overview"), modernHeader);
+    modernTitle->setObjectName("modernOverviewTitle");
+    auto* modernSubtitle = new QLabel(tr("Wallet overview and recent activity"), modernHeader);
+    modernSubtitle->setObjectName("modernOverviewSubtitle");
+    modernHeaderLayout->addWidget(modernTitle);
+    modernHeaderLayout->addWidget(modernSubtitle);
+    ui->topLayout->insertWidget(0, modernHeader);
+
+    modernBalanceLogo = new QLabel(ui->frame);
+    modernBalanceLogo->setObjectName("modernBalanceLogo");
+    modernBalanceLogo->setPixmap(QIcon(":/icons/dash").pixmap(42, 42));
+    modernBalanceLogo->setAlignment(Qt::AlignCenter);
+    ui->horizontalLayout_4->addWidget(modernBalanceLogo);
+    updateThemePresentation();
+
     GUIUtil::setFont({ui->label_4,
                       ui->label_5,
                       ui->labelCoinJoinHeader
@@ -217,6 +241,25 @@ void OverviewPage::setPrivacy(bool privacy)
     setStatusTip(status_tip);
     QStatusTipEvent event(status_tip);
     QApplication::sendEvent(this, &event);
+}
+
+void OverviewPage::changeEvent(QEvent* event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::StyleChange) {
+        updateThemePresentation();
+    }
+}
+
+void OverviewPage::updateThemePresentation()
+{
+    const bool modern = GUIUtil::isDefconDarkTheme();
+    if (modernHeader) {
+        modernHeader->setVisible(modern);
+    }
+    if (modernBalanceLogo) {
+        modernBalanceLogo->setVisible(modern);
+    }
 }
 
 OverviewPage::~OverviewPage()

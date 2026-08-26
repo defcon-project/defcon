@@ -20,6 +20,8 @@ namespace Ui {
 }
 
 QT_BEGIN_NAMESPACE
+class QEvent;
+class QLabel;
 class QModelIndex;
 QT_END_NAMESPACE
 
@@ -45,6 +47,9 @@ Q_SIGNALS:
     void transactionClicked(const QModelIndex &index);
     void outOfSyncWarningClicked();
 
+protected:
+    void changeEvent(QEvent* event) override;
+
 private:
     QTimer *timer;
     Ui::OverviewPage *ui;
@@ -58,9 +63,12 @@ private:
 
     TxViewDelegate *txdelegate;
     std::unique_ptr<TransactionFilterProxy> filter;
+    QWidget* modernHeader{nullptr};
+    QLabel* modernBalanceLogo{nullptr};
 
     void SetupTransactionList(int nNumItems);
     void DisableCoinJoinCompletely();
+    void updateThemePresentation();
 
 private Q_SLOTS:
     void toggleCoinJoin();

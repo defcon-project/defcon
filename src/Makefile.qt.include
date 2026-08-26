@@ -352,6 +352,7 @@ RES_IMAGES = \
 
 RES_CSS = \
   qt/res/css/dark.css \
+  qt/res/css/defcon-dark.css \
   qt/res/css/general.css \
   qt/res/css/light.css \
   qt/res/css/traditional.css

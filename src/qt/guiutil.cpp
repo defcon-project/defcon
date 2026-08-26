@@ -99,14 +99,16 @@ static QString stylesheetDirectory = defaultStylesheetDirectory;
 static const QString traditionalTheme = "Traditional";
 // The theme to set by default if settings are missing or incorrect
 static const QString defaultTheme = "Light";
-// The prefix a theme name should have if we want to apply dark colors and styles to it
-static const QString darkThemePrefix = "Dark";
+// Names of the dark themes
+static const QString darkTheme = "Dark";
+static const QString defconDarkTheme = "DeFCon Dark";
 // The theme to set as a base one for non-traditional themes
 static const QString generalTheme = "general";
 // Mapping theme => css file
 static const std::map<QString, QString> mapThemeToStyle{
     {generalTheme, "general.css"},
-    {"Dark", "dark.css"},
+    {darkTheme, "dark.css"},
+    {defconDarkTheme, "defcon-dark.css"},
     {"Light", "light.css"},
     {"Traditional", "traditional.css"},
 };
@@ -179,6 +181,23 @@ static const std::map<ThemedColor, QColor> themedDarkColors = {
     { ThemedColor::ICON_ALTERNATIVE_COLOR, QColor(74, 74, 75) },
 };
 
+static const std::map<ThemedColor, QColor> themedDefconDarkColors = {
+    { ThemedColor::DEFAULT, QColor(230, 237, 247) },
+    { ThemedColor::UNCONFIRMED, QColor(126, 145, 168) },
+    { ThemedColor::BLUE, QColor(18, 151, 255) },
+    { ThemedColor::ORANGE, QColor(245, 180, 45) },
+    { ThemedColor::RED, QColor(239, 83, 80) },
+    { ThemedColor::GREEN, QColor(126, 211, 33) },
+    { ThemedColor::BAREADDRESS, QColor(126, 145, 168) },
+    { ThemedColor::TX_STATUS_OPENUNTILDATE, QColor(18, 151, 255) },
+    { ThemedColor::BACKGROUND_WIDGET, QColor(11, 23, 39) },
+    { ThemedColor::BORDER_WIDGET, QColor(32, 52, 76) },
+    { ThemedColor::BACKGROUND_NETSTATS, QColor(11, 23, 39, 235) },
+    { ThemedColor::BORDER_NETSTATS, QColor(32, 52, 76) },
+    { ThemedColor::QR_PIXEL, QColor(230, 237, 247) },
+    { ThemedColor::ICON_ALTERNATIVE_COLOR, QColor(72, 94, 121) },
+};
+
 static const std::map<ThemedStyle, QString> themedStyles = {
     { ThemedStyle::TS_INVALID, "background:#a84832;" },
     { ThemedStyle::TS_ERROR, "color:#a84832;" },
@@ -199,16 +218,32 @@ static const std::map<ThemedStyle, QString> themedDarkStyles = {
     { ThemedStyle::TS_SECONDARY, "color:#aaa;" },
 };
 
+static const std::map<ThemedStyle, QString> themedDefconDarkStyles = {
+    { ThemedStyle::TS_INVALID, "background:#ef5350;" },
+    { ThemedStyle::TS_ERROR, "color:#ef5350;" },
+    { ThemedStyle::TS_WARNING, "color:#f5b42d;" },
+    { ThemedStyle::TS_SUCCESS, "color:#7ed321;" },
+    { ThemedStyle::TS_COMMAND, "color:#1297ff;" },
+    { ThemedStyle::TS_PRIMARY, "color:#e6edf7;" },
+    { ThemedStyle::TS_SECONDARY, "color:#7e91a8;" },
+};
+
 QColor getThemedQColor(ThemedColor color)
 {
     QString theme = QSettings().value("theme", "").toString();
-    return theme.startsWith(darkThemePrefix) ? themedDarkColors.at(color) : themedColors.at(color);
+    if (theme == defconDarkTheme) {
+        return themedDefconDarkColors.at(color);
+    }
+    return theme == darkTheme ? themedDarkColors.at(color) : themedColors.at(color);
 }
 
 QString getThemedStyleQString(ThemedStyle style)
 {
     QString theme = QSettings().value("theme", "").toString();
-    return theme.startsWith(darkThemePrefix) ? themedDarkStyles.at(style) : themedStyles.at(style);
+    if (theme == defconDarkTheme) {
+        return themedDefconDarkStyles.at(style);
+    }
+    return theme == darkTheme ? themedDarkStyles.at(style) : themedStyles.at(style);
 }
 
 QIcon getIcon(const QString& strIcon, const ThemedColor color, const ThemedColor colorAlternative, const QString& strIconPath)
@@ -912,7 +947,12 @@ const QString getDefaultTheme()
 
 bool isValidTheme(const QString& strTheme)
 {
-    return strTheme == defaultTheme || strTheme == darkThemePrefix || strTheme == traditionalTheme;
+    return strTheme != generalTheme && mapThemeToStyle.count(strTheme) != 0;
+}
+
+bool isDefconDarkTheme()
+{
+    return getActiveTheme() == defconDarkTheme;
 }
 
 void loadStyleSheet(bool fForceUpdate)
@@ -998,9 +1038,13 @@ void loadStyleSheet(bool fForceUpdate)
         };
 
         std::vector<QString> vecFiles;
-        // If light/dark theme is used load general styles first
+        // If a DeFCoN theme is used load general styles first.
         if (dashThemeActive()) {
             vecFiles.push_back(pathToFile(generalTheme));
+        }
+        // DeFCon Dark is an override layer on top of the complete, proven Dark theme.
+        if (isDefconDarkTheme()) {
+            vecFiles.push_back(pathToFile(darkTheme));
         }
         vecFiles.push_back(pathToFile(getActiveTheme()));
 

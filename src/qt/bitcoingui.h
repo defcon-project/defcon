@@ -49,6 +49,7 @@ struct BlockAndHeaderTipInfo;
 
 QT_BEGIN_NAMESPACE
 class QAction;
+class QBoxLayout;
 class QButtonGroup;
 class QComboBox;
 class QDateTime;
@@ -135,6 +136,7 @@ private:
 
     QMenuBar* appMenuBar = nullptr;
     QToolBar* appToolBar = nullptr;
+    QBoxLayout* walletLayout = nullptr;
     QToolButton* overviewButton = nullptr;
     QToolButton* sendCoinsButton = nullptr;
     QToolButton* coinJoinCoinsButton = nullptr;
@@ -144,6 +146,8 @@ private:
     QToolButton* governanceButton = nullptr;
     QToolButton* multisigButton = nullptr;
     QAction* appToolBarLogoAction = nullptr;
+    QAction* firstNavigationAction = nullptr;
+    QAction* coinJoinToolbarAction = nullptr;
     QAction* quitAction = nullptr;
     QAction* sendCoinsMenuAction = nullptr;
     QAction* coinJoinCoinsMenuAction = nullptr;
@@ -237,6 +241,8 @@ private:
     void createMenuBar();
     /** Create the toolbars */
     void createToolBars();
+    /** Apply the selected theme's navigation orientation and sizing. */
+    void applyThemeLayout();
     /** Create system tray icon and notification */
     void createTrayIcon();
     /** Create system tray menu (or setup the dock menu) */
