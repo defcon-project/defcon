@@ -274,12 +274,12 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         fname_bitcoind = os.path.join(
             config["environment"]["BUILDDIR"],
             "src",
-            "dashd" + config["environment"]["EXEEXT"],
+            "defcond" + config["environment"]["EXEEXT"],
         )
         fname_bitcoincli = os.path.join(
             config["environment"]["BUILDDIR"],
             "src",
-            "dash-cli" + config["environment"]["EXEEXT"],
+            "defcon-cli" + config["environment"]["EXEEXT"],
         )
         self.options.bitcoind = os.getenv("BITCOIND", default=fname_bitcoind)
         self.options.bitcoincli = os.getenv("BITCOINCLI", default=fname_bitcoincli)
@@ -617,7 +617,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
 
         (chain_name_conf_arg, chain_name_conf_arg_value, chain_name_conf_section) = get_chain_conf_names(self.chain)
 
-        with open(os.path.join(new_data_dir, "dash.conf"), 'w', encoding='utf8') as f:
+        with open(os.path.join(new_data_dir, "defcon.conf"), 'w', encoding='utf8') as f:
             f.write("{}={}\n".format(chain_name_conf_arg, chain_name_conf_arg_value))
             f.write("[{}]\n".format(chain_name_conf_section))
             f.write("port=" + str(node_p2p_port) + "\n")
@@ -1008,7 +1008,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             self.log.debug("Copy cache directory {} to node {}".format(cache_node_dir, i))
             to_dir = get_datadir_path(self.options.tmpdir, i)
             shutil.copytree(cache_node_dir, to_dir)
-            initialize_datadir(self.options.tmpdir, i, self.chain)  # Overwrite port/rpcport in dash.conf
+            initialize_datadir(self.options.tmpdir, i, self.chain)  # Overwrite port/rpcport in defcon.conf
 
     def _initialize_chain_clean(self):
         """Initialize empty blockchain for use by the test.
