@@ -7,6 +7,8 @@
 
 #include <llmq/clsig.h>
 
+#include <limitedmap.h>
+
 #include <crypto/common.h> // For ReadLE64
 #include <llmq/signing.h>
 #include <net.h> // For NodeId
@@ -81,7 +83,11 @@ private:
     BlockTxs blockTxs GUARDED_BY(cs);
     std::unordered_map<uint256, int64_t, StaticSaltedHasher> txFirstSeenTime GUARDED_BY(cs);
 
-    std::map<uint256, int64_t> seenChainLocks GUARDED_BY(cs);
+    // Bounded: every CLSIG announcement a peer sends lands here, and the time-based
+    // cleanup below only runs once per CLEANUP_INTERVAL. Between two cleanups an
+    // unbounded map grows as fast as a peer cares to announce.
+    static constexpr size_t MAX_SEEN_CHAINLOCKS{1024};
+    unordered_limitedmap<uint256, int64_t, StaticSaltedHasher> seenChainLocks GUARDED_BY(cs);
 
     std::atomic<int64_t> lastCleanupTime{0};
 
