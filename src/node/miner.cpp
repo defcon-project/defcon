@@ -27,6 +27,7 @@
 #include <evo/specialtx.h>
 #include <evo/cbtx.h>
 #include <evo/chainhelper.h>
+#include <evo/specialtxman.h>
 #include <evo/creditpool.h>
 #include <evo/mnhftx.h>
 #include <evo/simplifiedmns.h>
@@ -322,6 +323,22 @@ bool BlockAssembler::TestPackageTransactions(const CTxMemPool::setEntries& packa
     for (CTxMemPool::txiter it : package) {
         if (!IsFinalTx(it->GetTx(), nHeight, m_lock_time_cutoff)) {
             return false;
+        }
+
+        // A special transaction that was valid when it entered the mempool can be invalidated by
+        // intervening state, most sharply by a fork activating a rule it violates, and nothing
+        // evicts it. Selection otherwise trusts mempool validity, so the entry would be picked into
+        // every template and TestBlockValidity would then reject the whole block, leaving an honest
+        // producer unable to build one at all. Recheck here, at package granularity: the caller adds
+        // every member of a package that passes, so dropping one member while keeping its
+        // descendants would itself yield an invalid template. check_sigs is off because signatures
+        // were verified on entry and cannot have changed.
+        if (it->GetTx().IsSpecialTxVersion()) {
+            TxValidationState tx_state;
+            if (!m_chain_helper.special_tx->CheckSpecialTx(it->GetTx(), m_chainstate.m_chain.Tip(),
+                                                           m_chainstate.CoinsTip(), /*check_sigs=*/false, tx_state)) {
+                return false;
+            }
         }
 
         const auto& txid = it->GetTx().GetHash();
