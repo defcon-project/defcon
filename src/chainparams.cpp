@@ -652,14 +652,20 @@ public:
         nPoolMaxParticipants = 20;
         nFulfilledRequestExpireTime = 5*60; // fulfilled requests expire in 5 minutes
 
-        vSporkAddresses = {"yj949n1UH6fDhw6HtVE5VMj2iSTaSWBMcW"};
+        // The same key the inherited default named, re-encoded from Dash's
+        // prefix 140 to this devnet's 55 (the regtest copy keeps the y form,
+        // where 140 is correct): the old form failed DecodeDestination here,
+        // so a fresh devnet refused to start until -sporkaddr overrode it.
+        vSporkAddresses = {"PXQnTYfyvmGkC6EvopuzGhbADZZQ5PTZve"};
         nMinSporkKeys = 1;
 
         nCreditPoolPeriodBlocks = 576;
 
         checkpointData = (CCheckpointData) {
             {
-                { 0, uint256S("0x000008ca1832a4baf228eb1553c03d3a2c8e02399550dd6ea8d65cec3ef23d2e")},
+                // The base genesis was re-mined for this chain; the old hash
+                // here named a block no devnet ever had.
+                { 0, uint256S("0x61f3bbd088aae875f47d0fd08bf45a395c9741669b759f27fbc0fbf9229ce591")},
                 { 1, devnetGenesis.GetHash() },
             }
         };
