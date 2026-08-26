@@ -5,6 +5,7 @@
 #ifndef BITCOIN_LLMQ_SIGNING_SHARES_H
 #define BITCOIN_LLMQ_SIGNING_SHARES_H
 
+#include <llmq/params.h>
 #include <llmq/signing.h>
 
 #include <bls/bls.h>
@@ -369,8 +370,8 @@ private:
     static constexpr size_t MAX_MSGS_CNT_QSIGSESANN{100};
     static constexpr size_t MAX_MSGS_CNT_QGETSIGSHARES{200};
     static constexpr size_t MAX_MSGS_CNT_QSIGSHARESINV{200};
-    // 400 is the maximum quorum size, so this is also the maximum number of sigs we need to support
-    static constexpr size_t MAX_MSGS_TOTAL_BATCHED_SIGS{400};
+    // The maximum quorum size is also the maximum number of sigs we need to support
+    static constexpr size_t MAX_MSGS_TOTAL_BATCHED_SIGS{Consensus::MAX_LLMQ_SIZE};
 
     static constexpr int64_t EXP_SEND_FOR_RECOVERY_TIMEOUT{2000};
     static constexpr int64_t MAX_SEND_FOR_RECOVERY_TIMEOUT{10000};
