@@ -176,6 +176,12 @@ static RPCHelpMan setstaking()
                 stakable_wallets[y].StakingDisabled();
             } else {
                 status = true;
+                // Before the first block is attempted: a descriptor wallet
+                // otherwise pays its own coinstake to a script it does not
+                // track, and watches its balance leave as it produces blocks.
+                if (CWallet* w = stakable_wallets[y].GetWallet()) {
+                    EnsureCoinstakeDescriptors(*w);
+                }
                 stakable_wallets[y].StakingEnabled();
             }
             break;

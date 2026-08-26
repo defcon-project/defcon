@@ -2287,6 +2287,12 @@ std::unique_ptr<FlatSigningProvider> DescriptorScriptPubKeyMan::GetSigningProvid
     return out_keys;
 }
 
+std::pair<int32_t, int32_t> DescriptorScriptPubKeyMan::GetRange() const
+{
+    LOCK(cs_desc_man);
+    return {m_wallet_descriptor.range_start, m_wallet_descriptor.range_end};
+}
+
 std::unique_ptr<SigningProvider> DescriptorScriptPubKeyMan::GetSolvingProvider(const CScript& script) const
 {
     return GetSigningProvider(script, false);
