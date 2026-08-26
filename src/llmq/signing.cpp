@@ -406,14 +406,17 @@ static bool PreVerifyRecoveredSig(const CQuorumManager& quorum_manager, const CR
         return false;
     }
 
-    auto quorum = quorum_manager.GetQuorum(llmqType, recoveredSig.getQuorumHash());
+    const uint256& quorumHash = recoveredSig.getQuorumHash();
 
-    if (!quorum) {
-        LogPrint(BCLog::LLMQ, "CSigningManager::%s -- quorum %s not found\n", __func__,
-                  recoveredSig.getQuorumHash().ToString());
+    // Reject inactive peer-supplied hashes before GetQuorum can reconstruct a
+    // historical quorum and its deterministic masternode list.
+    if (!IsQuorumActive(llmqType, quorum_manager, quorumHash)) {
         return false;
     }
-    if (!IsQuorumActive(llmqType, quorum_manager, quorum->qc->quorumHash)) {
+
+    auto quorum = quorum_manager.GetQuorum(llmqType, quorumHash);
+    if (!quorum) {
+        LogPrint(BCLog::LLMQ, "CSigningManager::%s -- quorum %s not found\n", __func__, quorumHash.ToString());
         return false;
     }
 
@@ -866,7 +869,9 @@ bool IsQuorumActive(Consensus::LLMQType llmqType, const CQuorumManager& qman, co
     // we allow one more active quorum as specified in consensus, as otherwise there is a small window where things could
     // fail while we are on the brink of a new quorum
     const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
-    assert(llmq_params_opt.has_value());
+    if (!llmq_params_opt.has_value()) {
+        return false;
+    }
     auto quorums = qman.ScanQuorums(llmqType, llmq_params_opt->keepOldConnections);
     return ranges::any_of(quorums, [&quorumHash](const auto& q){ return q->qc->quorumHash == quorumHash; });
 }
