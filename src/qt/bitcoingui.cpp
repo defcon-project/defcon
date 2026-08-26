@@ -874,6 +874,13 @@ void BitcoinGUI::applyThemeLayout()
         }
         button->setSizePolicy(galaxy ? QSizePolicy::Preferred : QSizePolicy::Expanding,
                               modern ? QSizePolicy::Fixed : QSizePolicy::Preferred);
+        // The toolbar-level setToolButtonStyle() above only reaches buttons a
+        // toolbar creates for QActions; these are hand-made QToolButtons added
+        // as widgets, which keep their own style -- and their default is
+        // icon-only. The classic themes never noticed because they carry no
+        // icons, so Qt fell back to text; the moment the modern branch set
+        // icons, every label vanished.
+        button->setToolButtonStyle(modern ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonTextOnly);
         const int fontSize = galaxy ? 11 : (modern ? 12 : 16);
         GUIUtil::setFont({button}, button->isChecked() ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal, fontSize);
         if (!modern) {
