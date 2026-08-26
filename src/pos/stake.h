@@ -16,8 +16,6 @@
 
 using valtype = std::vector<unsigned char>;
 
-static const CAmount CENT = 1000000;
-
 /**
  * Convenience class allowing stake functions to have easy access to the wallet,
  * without the linking issues that come with later bitcoin releases.
@@ -33,6 +31,7 @@ class CStakeWallet
     private:
         bool staking;
         CWallet* wallet;
+        std::string name;
         Consensus::Params params;
 
     public:
@@ -42,6 +41,7 @@ class CStakeWallet
         CStakeWallet(CWallet* walletIn, Consensus::Params& paramsIn) {
             staking = false;
             wallet = walletIn;
+            name = walletIn ? walletIn->GetName() : std::string{};
             params = paramsIn;
         }
 
@@ -56,6 +56,10 @@ class CStakeWallet
         CWallet* GetWallet() {
             return wallet;
         }
+
+        // Captured at construction: an entry can outlive the wallet it points
+        // to, so identity checks must not go through the pointer.
+        const std::string& GetName() const { return name; }
 
         uint64_t GetStakeWeight(int64_t nTime, int nHeight) const;
         bool SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight, std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet, CAmount& nValueRet) const;

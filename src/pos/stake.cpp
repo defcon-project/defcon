@@ -4,6 +4,10 @@
 
 #include <pos/stake.h>
 
+// Only the coin-selection and split arithmetic below use this; keeping it out
+// of the header stops it colliding with the test framework's CENT.
+static constexpr CAmount CENT{1000000};
+
 #include <chainparams.h>
 #include <consensus/merkle.h>
 #include <node/miner.h>
