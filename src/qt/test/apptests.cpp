@@ -20,6 +20,7 @@
 #endif
 
 #include <QAction>
+#include <QFile>
 #include <QLineEdit>
 #include <QRegularExpression>
 #include <QScopedPointer>
@@ -61,6 +62,8 @@ void TestRpcCommand(RPCConsole* console)
 void AppTests::appTests()
 {
     QVERIFY(GUIUtil::isValidTheme("DeFCon Dark"));
+    QVERIFY(GUIUtil::isValidTheme("DeFCon Light"));
+    QVERIFY(QFile(":/css/DeFCon Light").exists());
     QCOMPARE(GUIUtil::getDefaultTheme(), QString("Light"));
 
 #ifdef Q_OS_MAC

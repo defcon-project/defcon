@@ -856,7 +856,7 @@ void BitcoinGUI::applyThemeLayout()
         return;
     }
 
-    const bool modern = GUIUtil::isDefconDarkTheme();
+    const bool modern = GUIUtil::isModernTheme();
     appToolBar->setProperty("modern", modern);
     appToolBar->setOrientation(modern ? Qt::Vertical : Qt::Horizontal);
     appToolBar->setToolButtonStyle(modern ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonTextOnly);
@@ -1321,7 +1321,7 @@ void BitcoinGUI::openClicked()
 void BitcoinGUI::highlightTabButton(QAbstractButton *button, bool checked)
 {
     GUIUtil::setFont({button}, checked ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal,
-                     GUIUtil::isDefconDarkTheme() ? 12 : 16);
+                     GUIUtil::isModernTheme() ? 12 : 16);
     GUIUtil::updateFonts();
 }
 
@@ -1510,6 +1510,7 @@ void BitcoinGUI::openOptionsDialogWithTab(OptionsDialog::Tab tab)
     if (!clientModel || !clientModel->getOptionsModel())
         return;
 
+    const QString previousTheme = GUIUtil::getActiveTheme();
     OptionsDialog dlg(this, enableWallet);
     dlg.setCurrentTab(tab);
     dlg.setModel(clientModel->getOptionsModel());
@@ -1517,10 +1518,14 @@ void BitcoinGUI::openOptionsDialogWithTab(OptionsDialog::Tab tab)
         applyThemeLayout();
         updateWidth();
     });
-    dlg.exec();
+    const int result = dlg.exec();
 
     applyThemeLayout();
     updateCoinJoinVisibility();
+
+    if (result == QDialog::Accepted && previousTheme != GUIUtil::getActiveTheme() && rpcConsole) {
+        rpcConsole->restartClient();
+    }
 }
 
 void BitcoinGUI::updateProgressBarVisibility()
@@ -1568,7 +1573,7 @@ void BitcoinGUI::updateWidth()
     if (windowState() & (Qt::WindowMaximized | Qt::WindowFullScreen)) {
         return;
     }
-    if (GUIUtil::isDefconDarkTheme()) {
+    if (GUIUtil::isModernTheme()) {
         constexpr int modernMinimumWidth{1200};
         setMinimumWidth(modernMinimumWidth);
         resize(std::max(width(), modernMinimumWidth), height());

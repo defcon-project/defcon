@@ -53,6 +53,8 @@ public:
     void setClientModel(ClientModel *model = nullptr, int bestblock_height = 0, int64_t bestblock_date = 0, uint256 bestblock_hash = uint256(), double verification_progress = 0.0);
     void addWallet(WalletModel * const walletModel);
     void removeWallet(WalletModel* const walletModel);
+    /** Restart with the current command-line arguments and no repair option. */
+    void restartClient();
 
     enum MessageClass {
         MC_ERROR,
