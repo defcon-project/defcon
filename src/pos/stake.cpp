@@ -215,13 +215,15 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
         }
     }
 
-    bool added = false;
+    bool ok = true;
+    bool changed = false;
     for (const Wanted& item : wanted) {
         FlatSigningProvider provider;
         std::string error;
         std::unique_ptr<Descriptor> parsed = Parse(item.expression, provider, error, /*require_checksum=*/false);
         if (!parsed) {
             LogPrint(BCLog::POS, "%s: could not build coinstake descriptor: %s\n", __func__, error);
+            ok = false;
             continue;
         }
 
@@ -232,19 +234,32 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
                                /*next_index=*/0);
 
         LOCK(wallet.cs_wallet);
-        if (wallet.GetDescriptorScriptPubKeyMan(wdesc) != nullptr) continue; // already registered
+        if (auto* existing = wallet.GetDescriptorScriptPubKeyMan(wdesc)) {
+            // The source pkh() range grows as the wallet hands out addresses,
+            // and skipping here froze the pk() twin at whatever range it was
+            // first registered with -- keys past that end staked to a script
+            // the wallet did not recognise. Extend it alongside the source.
+            if (!ranged || existing->GetRange().second >= item.range_end) continue;
+            std::string update_error;
+            if (!existing->CanUpdateToWalletDescriptor(wdesc, update_error)) {
+                LogPrint(BCLog::POS, "%s: could not extend coinstake descriptor: %s\n", __func__, update_error);
+                ok = false;
+                continue;
+            }
+        }
 
         if (wallet.AddWalletDescriptor(wdesc, provider, /*label=*/"", /*internal=*/false) == nullptr) {
             LogPrint(BCLog::POS, "%s: could not register coinstake descriptor\n", __func__);
+            ok = false;
             continue;
         }
-        added = true;
+        changed = true;
     }
 
-    if (added) {
+    if (changed) {
         wallet.WalletLogPrintf("Registered pay-to-pubkey descriptors so coinstake outputs are recognised\n");
     }
-    return true;
+    return ok;
 }
 
 bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key)

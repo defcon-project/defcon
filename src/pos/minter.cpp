@@ -10,6 +10,7 @@
 #include <net.h>
 
 extern int stakable_sz;
+extern RecursiveMutex stakable_mutex;
 extern std::vector<CStakeWallet> stakable_wallets;
 
 std::thread m_staking_thread;
@@ -110,15 +111,26 @@ void PoSMiner(NodeContext& node)
 
         MultiwalletMaintenance();
 
+        // Work from a copy. The GUI and RPC threads flip entries and the
+        // maintenance above rebuilds the vector under stakable_mutex, while
+        // one staking attempt below can take seconds -- holding the lock
+        // across it would stall every toggle, and reading the globals
+        // without it is a data race.
+        std::vector<CStakeWallet> wallets_snapshot;
+        {
+            LOCK(stakable_mutex);
+            wallets_snapshot = stakable_wallets;
+        }
+
         bool foundBlock{false};
         CScript coinbaseScript;
-        for (int y = 0; y < stakable_sz; y++)
+        for (int y = 0; y < (int)wallets_snapshot.size(); y++)
         {
             if (fStopMinerProc)
                 return;
-            if (!stakable_wallets[y].CanStake())
+            if (!wallets_snapshot[y].CanStake())
                 continue;
-            CWallet* this_wallet = stakable_wallets[y].GetWallet();
+            CWallet* this_wallet = wallets_snapshot[y].GetWallet();
             if (!this_wallet)
                 continue;
             if (foundBlock)
@@ -234,7 +246,7 @@ void PoSMiner(NodeContext& node)
 
                 this_wallet->m_is_staking = IS_STAKING;
                 fIsStaking = true;
-                if (stakable_wallets[y].SignBlock(chainman.ActiveChainstate(), pblocktemplate.get(), nBestHeight + 1, nSearchTime)) {
+                if (wallets_snapshot[y].SignBlock(chainman.ActiveChainstate(), pblocktemplate.get(), nBestHeight + 1, nSearchTime)) {
                     CBlock *pblock = &pblocktemplate->block;
                     if (CheckStake(chainman, pblock)) {
                         foundBlock = true;

@@ -60,6 +60,9 @@ static RPCHelpMan getstakinginfo()
     uint64_t lastCoinStakeSearchInterval;
     UniValue obj(UniValue::VOBJ);
 
+    // The miner's maintenance rebuilds this vector on its own thread.
+    LOCK(stakable_mutex);
+
     //multiwallet loop
     for (int y = 0; y < stakable_sz; y++)
     {
@@ -126,6 +129,9 @@ static RPCHelpMan liststakingwallets()
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     UniValue obj(UniValue::VOBJ);
+
+    // The miner's maintenance rebuilds this vector on its own thread.
+    LOCK(stakable_mutex);
 
     //multiwallet loop
     for (int y = 0; y < stakable_sz; y++)

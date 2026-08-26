@@ -83,9 +83,13 @@ bool ToggleWalletStaking(const std::string& name)
                 // Every enable ends up here, so this is where the wallet gets
                 // its coinstake descriptors: a descriptor wallet otherwise
                 // pays its own coinstake to a script it does not track, and
-                // watches its balance leave as it produces blocks.
-                if (CWallet* this_wallet = stakable_wallets[y].GetWallet()) {
-                    EnsureCoinstakeDescriptors(*this_wallet);
+                // watches its balance leave as it produces blocks. Enabling
+                // without them would reintroduce exactly that, so a failure
+                // keeps the switch off.
+                CWallet* this_wallet = stakable_wallets[y].GetWallet();
+                if (this_wallet == nullptr || !EnsureCoinstakeDescriptors(*this_wallet)) {
+                    LogPrint(BCLog::POS, "%s - not enabling staking for wallet '%s': coinstake descriptors unavailable\n", __func__, name);
+                    return false;
                 }
                 stakable_wallets[y].StakingEnabled();
                 LogPrint(BCLog::POS, "%s - enabling staking for wallet '%s'\n", __func__, name);
