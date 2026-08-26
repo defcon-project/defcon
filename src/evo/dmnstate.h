@@ -344,6 +344,16 @@ public:
 #define DMN_STATE_DIFF_LINE(f) if (a.f != b.f) { state.f = b.f; fields |= Field_##f; }
         DMN_STATE_DIFF_ALL_FIELDS
 #undef DMN_STATE_DIFF_LINE
+        // CBLSLazyPublicKey::operator== compares the underlying key and ignores its BLS
+        // encoding, but a scheme migration re-encodes the same key (legacy->basic). That has to
+        // be captured in the diff -- GetHash() is scheme-dependent -- or a list reconstructed
+        // from diffs keeps the old encoding while an online-built list has the new one, and the
+        // two diverge, mnUniquePropertyMap included.
+        if (!(fields & Field_pubKeyOperator) &&
+            a.pubKeyOperator.GetHash() != b.pubKeyOperator.GetHash()) {
+            state.pubKeyOperator = b.pubKeyOperator;
+            fields |= Field_pubKeyOperator;
+        }
         if (fields & Field_pubKeyOperator) { state.nVersion = b.nVersion; fields |= Field_nVersion; }
     }
 
