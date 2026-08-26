@@ -28,7 +28,11 @@ BOOST_AUTO_TEST_CASE(reinitialize_preserves_staking_switch)
     MultiwalletInitialize();
     BOOST_CHECK(!IsWalletStaking("pos-multiwallet-test"));
 
-    ToggleWalletStaking("pos-multiwallet-test");
+    BOOST_CHECK(ToggleWalletStaking("pos-multiwallet-test"));
+    BOOST_CHECK(IsWalletStaking("pos-multiwallet-test"));
+
+    // A name nothing carries answers false rather than touching anything.
+    BOOST_CHECK(!ToggleWalletStaking("no-such-wallet"));
     BOOST_CHECK(IsWalletStaking("pos-multiwallet-test"));
 
     // The failure-retry path: a second initialize over a live list.
@@ -39,7 +43,7 @@ BOOST_AUTO_TEST_CASE(reinitialize_preserves_staking_switch)
     MultiwalletMaintenance();
     BOOST_CHECK(IsWalletStaking("pos-multiwallet-test"));
 
-    ToggleWalletStaking("pos-multiwallet-test");
+    BOOST_CHECK(!ToggleWalletStaking("pos-multiwallet-test"));
     BOOST_CHECK(!IsWalletStaking("pos-multiwallet-test"));
 
     // Off stays off across a rebuild.

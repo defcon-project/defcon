@@ -7,7 +7,7 @@
 
 void MultiwalletInitialize();
 void MultiwalletMaintenance();
-void ToggleWalletStaking(const std::string& name);
+bool ToggleWalletStaking(const std::string& name);
 int ReturnActiveStakingWallets();
 bool IsWalletStaking(const std::string& name);
 

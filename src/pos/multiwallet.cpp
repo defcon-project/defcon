@@ -72,24 +72,31 @@ void MultiwalletMaintenance()
     }
 }
 
-void ToggleWalletStaking(const std::string& name)
+bool ToggleWalletStaking(const std::string& name)
 {
     LOCK(stakable_mutex);
 
     for (int y = 0; y < stakable_sz; y++)
     {
         if (name == stakable_wallets[y].GetName()) {
-            bool current = stakable_wallets[y].CanStake();
-            if (!current) {
+            if (!stakable_wallets[y].CanStake()) {
+                // Every enable ends up here, so this is where the wallet gets
+                // its coinstake descriptors: a descriptor wallet otherwise
+                // pays its own coinstake to a script it does not track, and
+                // watches its balance leave as it produces blocks.
+                if (CWallet* this_wallet = stakable_wallets[y].GetWallet()) {
+                    EnsureCoinstakeDescriptors(*this_wallet);
+                }
                 stakable_wallets[y].StakingEnabled();
                 LogPrint(BCLog::POS, "%s - enabling staking for wallet '%s'\n", __func__, name);
-            } else {
-                stakable_wallets[y].StakingDisabled();
-                LogPrint(BCLog::POS, "%s - disabling staking for wallet '%s'\n", __func__, name);
+                return true;
             }
-            break;
+            stakable_wallets[y].StakingDisabled();
+            LogPrint(BCLog::POS, "%s - disabling staking for wallet '%s'\n", __func__, name);
+            return false;
         }
     }
+    return false;
 }
 
 int ReturnActiveStakingWallets()
