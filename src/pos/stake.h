@@ -22,6 +22,12 @@ static const CAmount CENT = 1000000;
  * Convenience class allowing stake functions to have easy access to the wallet,
  * without the linking issues that come with later bitcoin releases.
  */
+/**
+ * Register the pay-to-pubkey form of a descriptor wallet's keys, so the wallet
+ * recognises the coinstake outputs it produces. A no-op for legacy wallets.
+ */
+bool EnsureCoinstakeDescriptors(CWallet& wallet);
+
 class CStakeWallet
 {
     private:

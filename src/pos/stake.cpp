@@ -10,7 +10,9 @@
 #include <pos/minter.h>
 #include <pow.h>
 #include <rpc/util.h>
+#include <script/descriptor.h>
 #include <wallet/scriptpubkeyman.h>
+#include <wallet/walletutil.h>
 
 extern std::atomic<bool> fStopMinerProc;
 
@@ -157,6 +159,89 @@ const SigningProvider* GetStakingSigningProvider(const CWallet& wallet, const CS
     return nullptr;
 }
 } // namespace
+
+/**
+ * Teach a descriptor wallet about the pay-to-pubkey form of its own keys.
+ *
+ * A coinstake must pay vout[1] to a pay-to-pubkey script: CheckBlockSignature
+ * recovers the signing pubkey from that output, and only its PUBKEY branch can
+ * succeed. A descriptor wallet tracks exactly the scripts its descriptors
+ * produce -- pkh(...) -- so it does not recognise that output as its own. It
+ * books its own coinstake as an outgoing send, and the staked amount together
+ * with the reward leaves its visible balance.
+ *
+ * Registering the matching pk(...) descriptor closes that gap. No key material
+ * is created or changed: this tells the wallet about a second script form for
+ * keys it already holds.
+ *
+ * Only coinstakes from here on become visible. Outputs already mined were never
+ * tracked, so recovering those still needs importdescriptors with a rescan.
+ */
+bool EnsureCoinstakeDescriptors(CWallet& wallet)
+{
+    // A legacy keystore already matches any script form for a key it holds.
+    if (!wallet.IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) return true;
+    if (wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) return true;
+
+    struct Wanted {
+        std::string expression;
+        int32_t range_start;
+        int32_t range_end;
+    };
+    std::vector<Wanted> wanted;
+
+    {
+        LOCK(wallet.cs_wallet);
+        for (ScriptPubKeyMan* spk_man : wallet.GetAllScriptPubKeyMans()) {
+            auto* desc_man = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man);
+            if (desc_man == nullptr) continue;
+
+            std::string desc;
+            if (!desc_man->GetDescriptorString(desc, /*priv=*/true)) continue;
+            // Only pkh needs a counterpart; a pk descriptor is what we add.
+            if (desc.rfind("pkh(", 0) != 0) continue;
+
+            const size_t close = desc.rfind(')');
+            if (close == std::string::npos || close <= 4) continue;
+
+            // The same indices the source descriptor covers, so every key that
+            // can stake has its coinstake form registered too.
+            const std::pair<int32_t, int32_t> range = desc_man->GetRange();
+            wanted.push_back({"pk(" + desc.substr(4, close - 4) + ")", range.first, range.second});
+        }
+    }
+
+    bool added = false;
+    for (const Wanted& item : wanted) {
+        FlatSigningProvider provider;
+        std::string error;
+        std::unique_ptr<Descriptor> parsed = Parse(item.expression, provider, error, /*require_checksum=*/false);
+        if (!parsed) {
+            LogPrint(BCLog::POS, "%s: could not build coinstake descriptor: %s\n", __func__, error);
+            continue;
+        }
+
+        const bool ranged = parsed->IsRange();
+        WalletDescriptor wdesc(std::move(parsed), /*creation_time=*/0,
+                               ranged ? item.range_start : 0,
+                               ranged ? item.range_end : 0,
+                               /*next_index=*/0);
+
+        LOCK(wallet.cs_wallet);
+        if (wallet.GetDescriptorScriptPubKeyMan(wdesc) != nullptr) continue; // already registered
+
+        if (wallet.AddWalletDescriptor(wdesc, provider, /*label=*/"", /*internal=*/false) == nullptr) {
+            LogPrint(BCLog::POS, "%s: could not register coinstake descriptor\n", __func__);
+            continue;
+        }
+        added = true;
+    }
+
+    if (added) {
+        wallet.WalletLogPrintf("Registered pay-to-pubkey descriptors so coinstake outputs are recognised\n");
+    }
+    return true;
+}
 
 bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key)
 {

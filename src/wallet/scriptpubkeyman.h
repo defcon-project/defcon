@@ -548,6 +548,14 @@ private:
     std::unique_ptr<FlatSigningProvider> GetSigningProvider(int32_t index, bool include_private = false) const EXCLUSIVE_LOCKS_REQUIRED(cs_desc_man);
 
 public:
+    /**
+     * The range this descriptor covers, as {start, end}.
+     *
+     * Public so code that has to mirror a descriptor with a second script form
+     * can cover the same indices. Both are zero for an unranged descriptor.
+     */
+    std::pair<int32_t, int32_t> GetRange() const;
+
     // Fetch the SigningProvider for the given script and optionally include private keys.
     //
     // Public because proof-of-stake block production needs the private key for
