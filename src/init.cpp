@@ -2183,9 +2183,11 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     }
 
     chainman.m_load_block = std::thread(&util::TraceThread, "loadblk", [=, &args, &chainman, &node] {
+        // ThreadImport can switch fReindex from true to false, fetch its original state here to use later
+        bool skip_evodb_repair_on_reindex = fReindex || fReindexChainState;
         ThreadImport(chainman, *node.dmnman, *g_ds_notification_interface, vImportFiles, node.mn_activeman.get(), args);
 
-        if (fReindex || fReindexChainState) {
+        if (skip_evodb_repair_on_reindex) {
             LogPrintf("Skipping evodb repair during reindex\n");
             node.dmnman->CompleteRepair();  // Mark as repaired since we're rebuilding fresh
         } else if (node.dmnman->IsRepaired() && !args.GetBoolArg("-forceevodbrepair", false)) {
