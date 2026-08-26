@@ -262,13 +262,29 @@ void PoSMiner(NodeContext& node)
 
 void ThreadStakeMiner(NodeContext& node)
 {
-    try
-    {
-        PoSMiner(node);
-    }
-    catch (std::exception& e) {
-        PrintExceptionContinue(std::current_exception(), e.what());
-    } catch (...) {
-        PrintExceptionContinue(NULL, "ThreadStakeMiner()");
+    // Restart the miner after an unexpected failure rather than returning.
+    //
+    // This used to catch once and fall out of the function, which ended staking
+    // for the lifetime of the process: the node kept running, getstakinginfo
+    // kept reporting a healthy staking wallet, and no block was ever produced
+    // again. A fault that recurs is at least visible in the log now, and a
+    // transient one no longer costs the node its ability to stake.
+    while (!fStopMinerProc) {
+        try {
+            PoSMiner(node);
+            return; // clean return: shutdown was requested
+        } catch (const std::exception& e) {
+            PrintExceptionContinue(std::current_exception(), e.what());
+        } catch (...) {
+            // Not a std::exception -- a thrown UniValue, for instance, which is
+            // what JSONRPCError produces. There is no message to recover, so
+            // say what happened instead of printing a bare null.
+            PrintExceptionContinue(nullptr, "ThreadStakeMiner(): staking failed and will be retried");
+        }
+
+        if (fStopMinerProc) break;
+        // Never spin: a permanent fault would otherwise fill the log as fast as
+        // the disk allows.
+        UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::LARGEDELAY});
     }
 }

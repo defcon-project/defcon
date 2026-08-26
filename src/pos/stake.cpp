@@ -10,7 +10,7 @@
 #include <pos/minter.h>
 #include <pow.h>
 #include <rpc/util.h>
-#include <wallet/rpcwallet.h>
+#include <wallet/scriptpubkeyman.h>
 
 extern std::atomic<bool> fStopMinerProc;
 
@@ -120,6 +120,44 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
     return true;
 }
 
+namespace {
+/**
+ * A signing provider for `script` that can produce private keys, whatever kind
+ * of wallet this is. Returns nullptr when no manager owns the script.
+ *
+ * Staking needs real private keys twice: once for the block header signature
+ * and once to sign the coinstake inputs.
+ *
+ * Note that GetSolvingProvider is *not* usable here for either manager.
+ * LegacySigningProvider::GetKey returns false unconditionally, and a descriptor
+ * wallet's solving provider is built with include_private = false: both are
+ * deliberately key-free, because solving only needs public material. The legacy
+ * manager is itself a FillableSigningProvider, so it is used directly; the
+ * descriptor manager is asked for a provider that includes private keys.
+ *
+ * `owned` holds the descriptor manager's provider for as long as the caller
+ * needs it. The legacy path returns a pointer to the manager, which the wallet
+ * owns and outlives this call.
+ */
+const SigningProvider* GetStakingSigningProvider(const CWallet& wallet, const CScript& script,
+                                                 std::unique_ptr<SigningProvider>& owned)
+{
+    for (ScriptPubKeyMan* spk_man : wallet.GetAllScriptPubKeyMans()) {
+        if (const auto* desc_man = dynamic_cast<const DescriptorScriptPubKeyMan*>(spk_man)) {
+            if (auto provider = desc_man->GetSigningProvider(script, /*include_private=*/true)) {
+                owned = std::move(provider);
+                return owned.get();
+            }
+            continue;
+        }
+        if (const auto* legacy = dynamic_cast<const LegacyScriptPubKeyMan*>(spk_man)) {
+            return legacy;
+        }
+    }
+    return nullptr;
+}
+} // namespace
+
 bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key)
 {
     arith_uint256 bnTargetPerCoinDay;
@@ -152,7 +190,6 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
 
     CAmount nCredit = 0;
     CScript scriptPubKeyKernel;
-    LegacyScriptPubKeyMan& spk_man = EnsureLegacyScriptPubKeyMan(*wallet);
     std::set<std::pair<const CWalletTx*, unsigned int>>::iterator it = setCoins.begin();
 
     for (; it != setCoins.end(); ++it)
@@ -179,11 +216,19 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
 
             LogPrint(BCLog::POS, "%s: parsed kernel type=%s\n", __func__, GetTxnOutputType(whichType));
 
+            std::unique_ptr<SigningProvider> kernel_provider_owned;
+            const SigningProvider* kernel_provider =
+                GetStakingSigningProvider(*wallet, scriptPubKeyKernel, kernel_provider_owned);
+            if (!kernel_provider) {
+                LogPrint(BCLog::POS, "%s: no signing provider for kernel type=%s\n", __func__, GetTxnOutputType(whichType));
+                break;
+            }
+
             if (whichType == TxoutType::PUBKEYHASH) {
 
                 uint160 hash160(vSolutions[0]);
                 CKeyID pubKeyHash(hash160);
-                if (!spk_man.GetKey(pubKeyHash, key)) {
+                if (!kernel_provider->GetKey(pubKeyHash, key)) {
                     LogPrint(BCLog::POS, "%s: failed to get key for kernel type=%s\n", __func__, GetTxnOutputType(whichType));
                     break;
                 }
@@ -195,7 +240,7 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
                 CPubKey pubKey(vchPubKey);
                 uint160 hash160(Hash160(vchPubKey));
                 CKeyID pubKeyHash(hash160);
-                if (!spk_man.GetKey(pubKeyHash, key)) {
+                if (!kernel_provider->GetKey(pubKeyHash, key)) {
                     LogPrint(BCLog::POS, "%s: failed to get key for kernel type=%s\n", __func__, GetTxnOutputType(whichType));
                     break;
                 }
@@ -268,7 +313,13 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
         CScript& scriptPubKeyOut = prevOut.scriptPubKey;
 
         SignatureData sigdata;
-        if (!ProduceSignature(*wallet->GetLegacyScriptPubKeyMan(), MutableTransactionSignatureCreator(&txNew, nIn, amount, SIGHASH_ALL), scriptPubKeyOut, sigdata)) {
+        std::unique_ptr<SigningProvider> provider_owned;
+        const SigningProvider* provider = GetStakingSigningProvider(*wallet, scriptPubKeyOut, provider_owned);
+        if (!provider) {
+            LogPrint(BCLog::POS, "%s: no signing provider for input %d.", __func__, nIn);
+            return false;
+        }
+        if (!ProduceSignature(*provider, MutableTransactionSignatureCreator(&txNew, nIn, amount, SIGHASH_ALL), scriptPubKeyOut, sigdata)) {
             LogPrint(BCLog::POS, "%s: ProduceSignature failed.", __func__);
             return false;
         }
