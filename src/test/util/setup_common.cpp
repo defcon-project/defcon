@@ -163,6 +163,12 @@ BasicTestingSetup::BasicTestingSetup(const std::string& chainName, const std::ve
     gArgs.ForceSetArg("-datadir", fs::PathToString(m_path_root));
     gArgs.ClearPathCache();
     {
+        // A test that dies on a signal is caught by Boost without unwinding,
+        // so the previous fixture's destructor -- and its ClearArgs() -- never
+        // ran. Registering into the leftovers asserts on the first duplicate
+        // AddArg, which used to turn one broken test into an abort of every
+        // case that followed it in the process. Start from a clean slate.
+        m_node.args->ClearArgs();
         SetupServerArgs(*m_node.args);
         std::string error;
         if (!m_node.args->ParseParameters(arguments.size(), arguments.data(), error)) {
