@@ -4,6 +4,8 @@
 
 #include <pos/multiwallet.h>
 
+#include <set>
+
 int stakable_sz;
 RecursiveMutex stakable_mutex;
 std::vector<CStakeWallet> stakable_wallets;
@@ -12,6 +14,17 @@ void MultiwalletInitialize()
 {
     LOCK(stakable_mutex);
 
+    // The miner re-enters here when ThreadStakeMiner restarts it after an
+    // unexpected failure. Rebuilding the list must not cost any wallet its
+    // staking switch: nothing downstream ever turns it back on, and RPC
+    // cannot show that it went off -- getstakinginfo reads wallet state, not
+    // this list.
+    std::set<std::string> was_staking;
+    for (auto& entry : stakable_wallets) {
+        if (entry.CanStake())
+            was_staking.insert(entry.GetName());
+    }
+
     stakable_sz = 0;
     stakable_wallets.clear();
     const Consensus::Params& params = Params().GetConsensus();
@@ -19,7 +32,11 @@ void MultiwalletInitialize()
     for (auto p : GetWallets())
     {
         CStakeWallet wallet(p.get(), (Consensus::Params&) params);
-        wallet.StakingDisabled();
+        if (was_staking.count(wallet.GetName())) {
+            wallet.StakingEnabled();
+        } else {
+            wallet.StakingDisabled();
+        }
         stakable_wallets.push_back(wallet);
         stakable_sz++;
     }
@@ -44,7 +61,7 @@ void MultiwalletMaintenance()
         wallet.StakingDisabled();
         //use temporary copy of old wallet list to determine which wallets were staking
         for (int i=0; i<temp_wallets.size(); i++) {
-            if (wallet.GetWallet()->GetName() == temp_wallets[i].GetWallet()->GetName()) {
+            if (wallet.GetName() == temp_wallets[i].GetName()) {
                 if (temp_wallets[i].CanStake()) {
                     wallet.StakingEnabled();
                 }
@@ -61,10 +78,7 @@ void ToggleWalletStaking(const std::string& name)
 
     for (int y = 0; y < stakable_sz; y++)
     {
-        CWallet* this_wallet = stakable_wallets[y].GetWallet();
-        if (!this_wallet)
-            continue;
-        if (name == this_wallet->GetName()) {
+        if (name == stakable_wallets[y].GetName()) {
             bool current = stakable_wallets[y].CanStake();
             if (!current) {
                 stakable_wallets[y].StakingEnabled();
@@ -100,10 +114,7 @@ bool IsWalletStaking(const std::string& name)
 
     for (int y = 0; y < stakable_sz; y++)
     {
-        CWallet* this_wallet = stakable_wallets[y].GetWallet();
-        if (!this_wallet)
-            continue;
-        if (name == this_wallet->GetName()) {
+        if (name == stakable_wallets[y].GetName()) {
             return stakable_wallets[y].CanStake();
         }
     }
