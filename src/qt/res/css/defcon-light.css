@@ -1,0 +1,460 @@
+/**
+Copyright (c) 2026 The DeFCoN developers
+Distributed under the MIT/X11 software license, see the accompanying
+file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+---------------------------------------------------------------------
+
+ * DeFCon Light
+ *
+ * Modern light DeFCoN wallet presentation. This file is intentionally an
+ * override layer on top of general.css and light.css so the original themes
+ * remain untouched and upstream changes to shared widget styling are inherited.
+ */
+
+/******************************************************
+Palette and typography
+******************************************************/
+
+QDialog,
+QMainWindow,
+QMessageBox,
+WalletFrame,
+QWidget#walletContainer {
+    background-color: #f5f8fc;
+}
+
+QWidget {
+    selection-color: #ffffff;
+    selection-background-color: #087cf0;
+    font-family: "Montserrat";
+}
+
+QCheckBox,
+QLabel,
+QListView,
+QRadioButton,
+QTreeWidget {
+    color: #0b1f44;
+}
+
+QCheckBox:disabled,
+QLabel:disabled,
+QListView:disabled,
+QRadioButton:disabled {
+    color: #9aa8bc;
+}
+
+QMenuBar {
+    background-color: #ffffff;
+    border-bottom: 1px solid #d7e1ed;
+    color: #0b1f44;
+    padding: 3px 8px;
+}
+
+QMenuBar::item {
+    background: transparent;
+    border-radius: 5px;
+    padding: 6px 10px;
+}
+
+QMenuBar::item:selected {
+    background-color: #eaf3fe;
+    color: #075fb8;
+}
+
+QMenu {
+    background-color: #ffffff;
+    border: 1px solid #d7e1ed;
+    color: #0b1f44;
+    padding: 6px;
+}
+
+QMenu::item {
+    border-radius: 5px;
+    padding: 7px 24px 7px 10px;
+}
+
+QMenu::item:selected {
+    background-color: #eaf3fe;
+    color: #075fb8;
+}
+
+QMenu::separator {
+    background-color: #d7e1ed;
+    height: 1px;
+    margin: 5px 8px;
+}
+
+/******************************************************
+Inputs and buttons
+******************************************************/
+
+BitcoinAmountField,
+QAbstractSpinBox,
+QComboBox,
+QPlainTextEdit,
+QLineEdit,
+QTextEdit {
+    background-color: #ffffff;
+    border: 1px solid #cbd7e6;
+    border-radius: 8px;
+    color: #0b1f44;
+    min-height: 32px;
+    padding: 3px 9px;
+}
+
+BitcoinAmountField:hover:!focus,
+QAbstractSpinBox:hover:!focus,
+QComboBox:hover:!focus,
+QPlainTextEdit:hover:!focus,
+QLineEdit:hover:!focus,
+QTextEdit:hover:!focus {
+    background-color: #fbfdff;
+    border-color: #9fb4cc;
+}
+
+BitcoinAmountField:focus,
+QAbstractSpinBox:focus,
+QComboBox:focus,
+QPlainTextEdit:focus,
+QLineEdit:focus,
+QTextEdit:focus {
+    background-color: #ffffff;
+    border-color: #087cf0;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 28px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #ffffff;
+    border: 1px solid #cbd7e6;
+    color: #0b1f44;
+    selection-background-color: #eaf3fe;
+    selection-color: #075fb8;
+}
+
+QPushButton {
+    background-color: #087cf0;
+    border: 1px solid #087cf0;
+    border-radius: 8px;
+    color: #ffffff;
+    min-height: 34px;
+    padding: 3px 16px;
+}
+
+QPushButton:hover {
+    background-color: #168af8;
+    border-color: #168af8;
+}
+
+QPushButton:pressed {
+    background-color: #0769ca;
+    border-color: #0769ca;
+}
+
+QPushButton:disabled {
+    background-color: #e7edf5;
+    border-color: #d5dfeb;
+    color: #9aa8bc;
+}
+
+QToolTip {
+    background-color: #ffffff;
+    border: 1px solid #cbd7e6;
+    border-radius: 6px;
+    color: #0b1f44;
+    padding: 5px 8px;
+}
+
+/******************************************************
+Tables, lists, tabs and progress
+******************************************************/
+
+.QTableView,
+.QTableWidget,
+QTreeWidget {
+    alternate-background-color: #f7faff;
+    background-color: #ffffff;
+    border: 1px solid #d7e1ed;
+    color: #0b1f44;
+    gridline-color: #e3eaf3;
+}
+
+QTableView::item,
+QTableWidget::item,
+QTreeWidget::item {
+    background-color: #ffffff;
+    border-color: #e3eaf3;
+    padding: 5px;
+}
+
+QTableView::item:selected,
+QTableWidget::item:selected,
+QTreeWidget::item:selected {
+    background-color: #dcecff;
+    color: #075fb8;
+}
+
+QHeaderView::section {
+    background-color: #f4f7fb;
+    border: none;
+    border-bottom: 1px solid #d7e1ed;
+    color: #66758e;
+    padding: 7px;
+}
+
+QTabWidget::pane {
+    background-color: #ffffff;
+    border: 1px solid #d7e1ed;
+    border-radius: 8px;
+}
+
+QTabBar::tab {
+    background-color: transparent;
+    border: none;
+    color: #66758e;
+    min-height: 34px;
+    padding: 5px 14px;
+}
+
+QTabBar::tab:selected {
+    border-bottom: 2px solid #087cf0;
+    color: #0b1f44;
+}
+
+QProgressBar {
+    background-color: #e7edf5;
+    border: 1px solid #d7e1ed;
+    border-radius: 5px;
+    color: #0b1f44;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #087cf0;
+    border-radius: 4px;
+}
+
+QScrollBar:vertical,
+QScrollBar:horizontal {
+    background-color: #f1f5fa;
+    border: none;
+    margin: 0;
+}
+
+QScrollBar::handle:vertical,
+QScrollBar::handle:horizontal {
+    background-color: #bdcad9;
+    border-radius: 5px;
+    min-height: 28px;
+    min-width: 28px;
+}
+
+QScrollBar::handle:vertical:hover,
+QScrollBar::handle:horizontal:hover {
+    background-color: #9fb0c5;
+}
+
+/******************************************************
+Modern navigation shell
+******************************************************/
+
+QToolBar#navigationToolBar[modern="true"] {
+    background-color: #f8fbff;
+    border: none;
+    border-right: 1px solid #d7e1ed;
+    margin: 0;
+    padding: 12px 8px;
+    spacing: 4px;
+    min-width: 238px;
+    max-width: 238px;
+    min-height: 0;
+    max-height: 16777215px;
+}
+
+QToolBar#navigationToolBar[modern="true"] > QToolButton {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #0b1f44;
+    margin: 2px 4px;
+    min-width: 206px;
+    max-width: 206px;
+    min-height: 44px;
+    max-height: 44px;
+    padding: 0 10px;
+    text-align: left;
+}
+
+QToolBar#navigationToolBar[modern="true"] > QToolButton:hover:!checked {
+    background-color: #eaf3fe;
+    border-color: #c9def6;
+    color: #075fb8;
+}
+
+QToolBar#navigationToolBar[modern="true"] > QToolButton:checked {
+    background-color: #087cf0;
+    border-color: #087cf0;
+    color: #ffffff;
+}
+
+QToolBar#navigationToolBar[modern="true"] > QToolButton:disabled {
+    color: #9aa8bc;
+}
+
+QToolBar#navigationToolBar[modern="true"] QLabel#lblToolbarLogo {
+    image: url(':/images/dash_logo_toolbar_blue');
+    margin: 4px 10px 16px 10px;
+    padding: 0;
+    min-width: 194px;
+    max-width: 194px;
+    min-height: 58px;
+    max-height: 58px;
+}
+
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector {
+    background-color: #ffffff;
+    border: 1px solid #cbd7e6;
+    border-radius: 8px;
+    margin: 10px 5px 2px 5px;
+    min-width: 202px;
+    max-width: 202px;
+}
+
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox {
+    border: none;
+    min-width: 176px;
+}
+
+/******************************************************
+Overview dashboard
+******************************************************/
+
+QWidget#OverviewPage {
+    background-color: #f5f8fc;
+}
+
+QWidget#OverviewPage QWidget#modernOverviewHeader {
+    background-color: transparent;
+    margin: 0 4px 2px 4px;
+}
+
+QWidget#OverviewPage QLabel#modernOverviewTitle {
+    color: #0b1f44;
+    font-size: 24px;
+    font-weight: 600;
+}
+
+QWidget#OverviewPage QLabel#modernOverviewSubtitle {
+    color: #66758e;
+    font-size: 12px;
+}
+
+QWidget#OverviewPage QFrame#frame,
+QWidget#OverviewPage QFrame#frameCoinJoin,
+QWidget#OverviewPage QFrame#frame_2 {
+    background-color: #ffffff;
+    border: 1px solid #d7e1ed;
+    border-radius: 10px;
+}
+
+QWidget#OverviewPage QFrame#frame {
+    min-width: 490px;
+}
+
+QWidget#OverviewPage QFrame#frameCoinJoin {
+    background-color: #ffffff;
+    max-width: 16777215px;
+    max-height: 16777215px;
+}
+
+QWidget#OverviewPage QFrame#frame_2 {
+    min-width: 430px;
+}
+
+QWidget#OverviewPage QFrame#frame QLabel#label_5,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCoinJoinHeader,
+QWidget#OverviewPage QFrame#frame_2 QLabel#label_4 {
+    color: #0b1f44;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+QWidget#OverviewPage QFrame#frame QLabel#labelTotal {
+    color: #0b1f44;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+QWidget#OverviewPage QFrame#frame QLabel#labelSpendable,
+QWidget#OverviewPage QFrame#frame QLabel#labelWatchonly,
+QWidget#OverviewPage QFrame#frame QLabel#labelBalanceText,
+QWidget#OverviewPage QFrame#frame QLabel#labelPendingText,
+QWidget#OverviewPage QFrame#frame QLabel#labelImmatureText,
+QWidget#OverviewPage QFrame#frame QLabel#labelTotalText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCoinJoinEnabledText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCompletitionText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelAnonymizedText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelAmountAndRoundsText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelSubmittedDenomText {
+    color: #66758e;
+}
+
+QWidget#OverviewPage QFrame#frame QLabel#modernBalanceLogo {
+    margin: 0 4px;
+    min-width: 42px;
+    max-width: 42px;
+    min-height: 42px;
+    max-height: 42px;
+}
+
+QWidget#OverviewPage QFrame#frame_2 QListView {
+    background-color: transparent;
+    border: none;
+    margin: 2px 6px 6px 2px;
+}
+
+QWidget#OverviewPage QFrame#frame_2 QListView::item {
+    background-color: transparent;
+    border-bottom: 1px solid #e3eaf3;
+}
+
+QWidget#OverviewPage QFrame#frame_2 QListView::item:hover {
+    background-color: #f1f7fe;
+}
+
+QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin {
+    min-width: 150px;
+}
+
+/******************************************************
+Status bar and dialogs
+******************************************************/
+
+QStatusBar {
+    background-color: #ffffff;
+    border-top: 1px solid #d7e1ed;
+    color: #0b1f44;
+}
+
+QStatusBar QLabel {
+    color: #0b1f44;
+}
+
+QDialog#OptionsDialog #line,
+QDialog#OptionsDialog #frame {
+    border-top: 1px solid #d7e1ed;
+}
+
+QDialog#OptionsDialog,
+QDialog#OptionsDialog QWidget {
+    background-color: #ffffff;
+}
+
+QDialog#OptionsDialog QPushButton {
+    background-color: #087cf0;
+}

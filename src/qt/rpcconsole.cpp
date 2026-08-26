@@ -928,6 +928,11 @@ void RPCConsole::walletReindex()
     buildParameterlist(REINDEX);
 }
 
+void RPCConsole::restartClient()
+{
+    buildParameterlist(QString());
+}
+
 /** Build command-line parameter list for restart */
 void RPCConsole::buildParameterlist(QString arg)
 {
@@ -949,8 +954,10 @@ void RPCConsole::buildParameterlist(QString arg)
     args.removeAll(RESCAN2);
     args.removeAll(REINDEX);
 
-    // Append repair parameter to command line.
-    args.append(arg);
+    // Append a repair parameter when this restart was requested by the repair tab.
+    if (!arg.isEmpty()) {
+        args.append(arg);
+    }
 
     // Send command-line arguments to BitcoinGUI::handleRestart()
     Q_EMIT handleRestart(args);

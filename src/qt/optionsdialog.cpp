@@ -198,6 +198,13 @@ OptionsDialog::OptionsDialog(QWidget *parent, bool enableWallet) :
         updateWidth();
         Q_EMIT appearanceChanged();
     });
+    connect(appearance, &AppearanceWidget::themeChanged, [this](bool restartRequired) {
+        if (restartRequired) {
+            showRestartWarning(true);
+        } else {
+            clearStatusLabel();
+        }
+    });
 
     if (!QSystemTrayIcon::isSystemTrayAvailable()) {
         ui->showTrayIcon->setChecked(false);

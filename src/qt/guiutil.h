@@ -301,6 +301,12 @@ namespace GUIUtil
     /** Check if the modern DeFCon Dark theme is active. */
     bool isDefconDarkTheme();
 
+    /** Check if the modern DeFCon Light theme is active. */
+    bool isDefconLightTheme();
+
+    /** Check if either modern DeFCon theme is active. */
+    bool isModernTheme();
+
     /** Sets the stylesheet of the whole app and updates it if the
     related css files has been changed and -debug-ui mode is active. */
     void loadStyleSheet(bool fForceUpdate = false);

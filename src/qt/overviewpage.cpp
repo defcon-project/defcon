@@ -253,7 +253,7 @@ void OverviewPage::changeEvent(QEvent* event)
 
 void OverviewPage::updateThemePresentation()
 {
-    const bool modern = GUIUtil::isDefconDarkTheme();
+    const bool modern = GUIUtil::isModernTheme();
     if (modernHeader) {
         modernHeader->setVisible(modern);
     }

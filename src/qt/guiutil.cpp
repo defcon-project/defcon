@@ -99,9 +99,11 @@ static QString stylesheetDirectory = defaultStylesheetDirectory;
 static const QString traditionalTheme = "Traditional";
 // The theme to set by default if settings are missing or incorrect
 static const QString defaultTheme = "Light";
-// Names of the dark themes
+// Names of the built-in and modern DeFCoN themes
 static const QString darkTheme = "Dark";
 static const QString defconDarkTheme = "DeFCon Dark";
+static const QString lightTheme = "Light";
+static const QString defconLightTheme = "DeFCon Light";
 // The theme to set as a base one for non-traditional themes
 static const QString generalTheme = "general";
 // Mapping theme => css file
@@ -109,7 +111,8 @@ static const std::map<QString, QString> mapThemeToStyle{
     {generalTheme, "general.css"},
     {darkTheme, "dark.css"},
     {defconDarkTheme, "defcon-dark.css"},
-    {"Light", "light.css"},
+    {lightTheme, "light.css"},
+    {defconLightTheme, "defcon-light.css"},
     {"Traditional", "traditional.css"},
 };
 
@@ -198,6 +201,23 @@ static const std::map<ThemedColor, QColor> themedDefconDarkColors = {
     { ThemedColor::ICON_ALTERNATIVE_COLOR, QColor(72, 94, 121) },
 };
 
+static const std::map<ThemedColor, QColor> themedDefconLightColors = {
+    { ThemedColor::DEFAULT, QColor(11, 31, 68) },
+    { ThemedColor::UNCONFIRMED, QColor(102, 117, 142) },
+    { ThemedColor::BLUE, QColor(8, 124, 240) },
+    { ThemedColor::ORANGE, QColor(227, 154, 0) },
+    { ThemedColor::RED, QColor(211, 47, 47) },
+    { ThemedColor::GREEN, QColor(46, 170, 54) },
+    { ThemedColor::BAREADDRESS, QColor(102, 117, 142) },
+    { ThemedColor::TX_STATUS_OPENUNTILDATE, QColor(8, 124, 240) },
+    { ThemedColor::BACKGROUND_WIDGET, QColor(255, 255, 255) },
+    { ThemedColor::BORDER_WIDGET, QColor(215, 225, 237) },
+    { ThemedColor::BACKGROUND_NETSTATS, QColor(255, 255, 255, 235) },
+    { ThemedColor::BORDER_NETSTATS, QColor(215, 225, 237) },
+    { ThemedColor::QR_PIXEL, QColor(11, 31, 68) },
+    { ThemedColor::ICON_ALTERNATIVE_COLOR, QColor(185, 198, 216) },
+};
+
 static const std::map<ThemedStyle, QString> themedStyles = {
     { ThemedStyle::TS_INVALID, "background:#a84832;" },
     { ThemedStyle::TS_ERROR, "color:#a84832;" },
@@ -228,11 +248,24 @@ static const std::map<ThemedStyle, QString> themedDefconDarkStyles = {
     { ThemedStyle::TS_SECONDARY, "color:#7e91a8;" },
 };
 
+static const std::map<ThemedStyle, QString> themedDefconLightStyles = {
+    { ThemedStyle::TS_INVALID, "background:#d32f2f;" },
+    { ThemedStyle::TS_ERROR, "color:#d32f2f;" },
+    { ThemedStyle::TS_WARNING, "color:#e39a00;" },
+    { ThemedStyle::TS_SUCCESS, "color:#2eaa36;" },
+    { ThemedStyle::TS_COMMAND, "color:#087cf0;" },
+    { ThemedStyle::TS_PRIMARY, "color:#0b1f44;" },
+    { ThemedStyle::TS_SECONDARY, "color:#66758e;" },
+};
+
 QColor getThemedQColor(ThemedColor color)
 {
     QString theme = QSettings().value("theme", "").toString();
     if (theme == defconDarkTheme) {
         return themedDefconDarkColors.at(color);
+    }
+    if (theme == defconLightTheme) {
+        return themedDefconLightColors.at(color);
     }
     return theme == darkTheme ? themedDarkColors.at(color) : themedColors.at(color);
 }
@@ -242,6 +275,9 @@ QString getThemedStyleQString(ThemedStyle style)
     QString theme = QSettings().value("theme", "").toString();
     if (theme == defconDarkTheme) {
         return themedDefconDarkStyles.at(style);
+    }
+    if (theme == defconLightTheme) {
+        return themedDefconLightStyles.at(style);
     }
     return theme == darkTheme ? themedDarkStyles.at(style) : themedStyles.at(style);
 }
@@ -955,6 +991,16 @@ bool isDefconDarkTheme()
     return getActiveTheme() == defconDarkTheme;
 }
 
+bool isDefconLightTheme()
+{
+    return getActiveTheme() == defconLightTheme;
+}
+
+bool isModernTheme()
+{
+    return isDefconDarkTheme() || isDefconLightTheme();
+}
+
 void loadStyleSheet(bool fForceUpdate)
 {
     AssertLockNotHeld(cs_css);
@@ -1042,9 +1088,11 @@ void loadStyleSheet(bool fForceUpdate)
         if (dashThemeActive()) {
             vecFiles.push_back(pathToFile(generalTheme));
         }
-        // DeFCon Dark is an override layer on top of the complete, proven Dark theme.
+        // Modern themes are override layers on top of the corresponding proven theme.
         if (isDefconDarkTheme()) {
             vecFiles.push_back(pathToFile(darkTheme));
+        } else if (isDefconLightTheme()) {
+            vecFiles.push_back(pathToFile(lightTheme));
         }
         vecFiles.push_back(pathToFile(getActiveTheme()));
 

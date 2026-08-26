@@ -106,6 +106,7 @@ void AppearanceWidget::updateTheme(const QString& theme)
         if (model) {
             GUIUtil::loadTheme(true);
         }
+        Q_EMIT themeChanged(newValue != prevTheme);
     }
 }
 

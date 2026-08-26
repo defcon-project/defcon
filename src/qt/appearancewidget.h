@@ -31,6 +31,8 @@ public:
 
 Q_SIGNALS:
     void appearanceChanged();
+    /** Notify the options dialog whether the selected theme differs from the saved one. */
+    void themeChanged(bool restartRequired);
 
 public Q_SLOTS:
     void accept();
