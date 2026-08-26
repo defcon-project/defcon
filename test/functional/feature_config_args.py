@@ -5,7 +5,6 @@
 """Test various command line arguments and configuration file parameters."""
 
 import os
-import time
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework import util
@@ -158,30 +157,27 @@ class ConfArgsTest(BitcoinTestFramework):
         self.stop_node(0)
 
         # No peers.dat exists and -dnsseed=1
-        # We expect the node will use DNS Seeds, but Regtest mode has 0 DNS seeds
-        # So after 60 seconds, the node should fallback to fixed seeds (this is a slow test)
+        # Fixed seeds are the primary bootstrap path for an empty addrman: they
+        # are added as soon as a reachable network has no addresses, and DNS
+        # seeding runs in parallel rather than gating them.
         assert not os.path.exists(os.path.join(default_data_dir, "peers.dat"))
-        start = int(time.time())
         with self.nodes[0].assert_debug_log(expected_msgs=[
                 "Loaded 0 addresses from peers.dat",
                 "0 addresses found from DNS seeds",
                 "opencon thread start",  # Ensure ThreadOpenConnections::start time is properly set
-        ]):
-            self.start_node(0, extra_args=['-dnsseed=1', '-fixedseeds=1', f'-mocktime={start}'])
-        with self.nodes[0].assert_debug_log(expected_msgs=[
-                "Adding fixed seeds as 60 seconds have passed and addrman is empty",
-        ]):
-            self.nodes[0].setmocktime(start + 65)
+                "primary bootstrap seeds from reachable networks",
+        ], timeout=10):
+            self.start_node(0, extra_args=['-dnsseed=1', '-fixedseeds=1'])
         self.stop_node(0)
 
         # No peers.dat exists and -dnsseed=0
-        # We expect the node will fallback immediately to fixed seeds
+        # We expect the node to bootstrap from fixed seeds
         assert not os.path.exists(os.path.join(default_data_dir, "peers.dat"))
         with self.nodes[0].assert_debug_log(expected_msgs=[
                 "Loaded 0 addresses from peers.dat",
                 "DNS seeding disabled",
-                "Adding fixed seeds as -dnsseed=0 (or IPv4/IPv6 connections are disabled via -onlynet) and neither -addnode nor -seednode are provided\n",
-        ]):
+                "primary bootstrap seeds from reachable networks",
+        ], timeout=10):
             self.start_node(0, extra_args=['-dnsseed=0', '-fixedseeds=1'])
         self.stop_node(0)
         self.nodes[0].assert_start_raises_init_error(['-dnsseed=1', '-onlynet=i2p', '-i2psam=127.0.0.1:7656'], "Error: Incompatible options: -dnsseed=1 was explicitly specified, but -onlynet forbids connections to IPv4/IPv6")
@@ -198,19 +194,16 @@ class ConfArgsTest(BitcoinTestFramework):
         self.stop_node(0)
 
         # No peers.dat exists and -dnsseed=0, but a -addnode is provided
-        # We expect the node will allow 60 seconds prior to using fixed seeds
+        # Fixed seeds remain the primary bootstrap path; -addnode no longer
+        # delays them.
         assert not os.path.exists(os.path.join(default_data_dir, "peers.dat"))
-        start = int(time.time())
         with self.nodes[0].assert_debug_log(expected_msgs=[
                 "Loaded 0 addresses from peers.dat",
                 "DNS seeding disabled",
                 "opencon thread start",  # Ensure ThreadOpenConnections::start time is properly set
-        ]):
-            self.start_node(0, extra_args=['-dnsseed=0', '-fixedseeds=1', '-addnode=fakenodeaddr', f'-mocktime={start}'])
-        with self.nodes[0].assert_debug_log(expected_msgs=[
-                "Adding fixed seeds as 60 seconds have passed and addrman is empty",
-        ]):
-            self.nodes[0].setmocktime(start + 65)
+                "primary bootstrap seeds from reachable networks",
+        ], timeout=10):
+            self.start_node(0, extra_args=['-dnsseed=0', '-fixedseeds=1', '-addnode=fakenodeaddr'])
 
     def test_connect_with_seednode(self):
         self.log.info('Test -connect with -seednode')
