@@ -47,6 +47,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QBoxLayout>
 #include <QButtonGroup>
 #include <QComboBox>
 #include <QCursor>
@@ -724,6 +725,7 @@ void BitcoinGUI::createToolBars()
     {
         QToolBar *toolbar = new QToolBar(tr("Tabs toolbar"));
         appToolBar = toolbar;
+        toolbar->setObjectName("navigationToolBar");
         toolbar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         toolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
         toolbar->setMovable(false); // remove unused icon in upper left corner
@@ -795,7 +797,12 @@ void BitcoinGUI::createToolBars()
             button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
             button->setToolTip(button->statusTip());
             button->setCheckable(true);
-            toolbar->addWidget(button);
+            QAction* toolbarAction = toolbar->addWidget(button);
+            if (button == overviewButton) {
+                firstNavigationAction = toolbarAction;
+            } else if (button == coinJoinCoinsButton) {
+                coinJoinToolbarAction = toolbarAction;
+            }
         }
 
         overviewButton->setChecked(true);
@@ -828,15 +835,94 @@ void BitcoinGUI::createToolBars()
         /** Create additional container for toolbar and walletFrame and make it the central widget.
             This is a workaround mostly for toolbar styling on Mac OS but should work fine for every other OSes too.
         */
-        QVBoxLayout *layout = new QVBoxLayout;
-        layout->addWidget(toolbar);
-        layout->addWidget(walletFrame);
-        layout->setSpacing(0);
-        layout->setContentsMargins(QMargins());
+        walletLayout = new QBoxLayout(QBoxLayout::TopToBottom);
+        walletLayout->addWidget(toolbar);
+        walletLayout->addWidget(walletFrame);
+        walletLayout->setSpacing(0);
+        walletLayout->setContentsMargins(QMargins());
         QWidget *containerWidget = new QWidget();
-        containerWidget->setLayout(layout);
+        containerWidget->setObjectName("walletContainer");
+        containerWidget->setLayout(walletLayout);
         setCentralWidget(containerWidget);
+        applyThemeLayout();
     }
+#endif // ENABLE_WALLET
+}
+
+void BitcoinGUI::applyThemeLayout()
+{
+#ifdef ENABLE_WALLET
+    if (!appToolBar || !walletLayout || !tabGroup) {
+        return;
+    }
+
+    const bool modern = GUIUtil::isDefconDarkTheme();
+    appToolBar->setProperty("modern", modern);
+    appToolBar->setOrientation(modern ? Qt::Vertical : Qt::Horizontal);
+    appToolBar->setToolButtonStyle(modern ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonTextOnly);
+    appToolBar->setSizePolicy(modern ? QSizePolicy::Fixed : QSizePolicy::Expanding,
+                              modern ? QSizePolicy::Expanding : QSizePolicy::Preferred);
+    walletLayout->setDirection(modern ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
+
+    for (QAbstractButton* abstractButton : tabGroup->buttons()) {
+        auto* button = qobject_cast<QToolButton*>(abstractButton);
+        if (!button) {
+            continue;
+        }
+        button->setSizePolicy(QSizePolicy::Expanding, modern ? QSizePolicy::Fixed : QSizePolicy::Preferred);
+        GUIUtil::setFont({button}, button->isChecked() ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal, modern ? 12 : 16);
+        if (!modern) {
+            button->setIcon(QIcon());
+        }
+    }
+
+    if (modern) {
+        overviewButton->setIcon(QIcon(":/icons/dash"));
+        sendCoinsButton->setIcon(GUIUtil::getIcon("transaction_0"));
+        receiveCoinsButton->setIcon(GUIUtil::getIcon("transaction_5"));
+        historyButton->setIcon(GUIUtil::getIcon("transaction_locked"));
+        coinJoinCoinsButton->setIcon(GUIUtil::getIcon("eye"));
+        if (multisigButton) {
+            multisigButton->setIcon(GUIUtil::getIcon("lock_closed"));
+        }
+        if (masternodeButton) {
+            masternodeButton->setIcon(GUIUtil::getIcon("connect_4"));
+        }
+        if (governanceButton) {
+            governanceButton->setIcon(GUIUtil::getIcon("synced"));
+        }
+        for (QAbstractButton* button : tabGroup->buttons()) {
+            button->setIconSize(QSize(22, 22));
+        }
+
+        if (appToolBarLogoAction && firstNavigationAction) {
+            appToolBar->removeAction(appToolBarLogoAction);
+            appToolBar->insertAction(firstNavigationAction, appToolBarLogoAction);
+        }
+        if (m_wallet_selector_action && firstNavigationAction) {
+            appToolBar->removeAction(m_wallet_selector_action);
+            appToolBar->insertAction(firstNavigationAction, m_wallet_selector_action);
+        }
+    } else {
+        if (m_wallet_selector_action) {
+            appToolBar->removeAction(m_wallet_selector_action);
+            appToolBar->addAction(m_wallet_selector_action);
+        }
+        if (appToolBarLogoAction) {
+            appToolBar->removeAction(appToolBarLogoAction);
+            appToolBar->addAction(appToolBarLogoAction);
+        }
+    }
+
+    GUIUtil::updateFonts();
+    appToolBar->style()->unpolish(appToolBar);
+    appToolBar->style()->polish(appToolBar);
+    for (QWidget* child : appToolBar->findChildren<QWidget*>()) {
+        child->style()->unpolish(child);
+        child->style()->polish(child);
+    }
+    appToolBar->updateGeometry();
+    updateWidth();
 #endif // ENABLE_WALLET
 }
 
@@ -1234,7 +1320,8 @@ void BitcoinGUI::openClicked()
 
 void BitcoinGUI::highlightTabButton(QAbstractButton *button, bool checked)
 {
-    GUIUtil::setFont({button}, checked ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal, 16);
+    GUIUtil::setFont({button}, checked ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal,
+                     GUIUtil::isDefconDarkTheme() ? 12 : 16);
     GUIUtil::updateFonts();
 }
 
@@ -1427,10 +1514,12 @@ void BitcoinGUI::openOptionsDialogWithTab(OptionsDialog::Tab tab)
     dlg.setCurrentTab(tab);
     dlg.setModel(clientModel->getOptionsModel());
     connect(&dlg, &OptionsDialog::appearanceChanged, [=]() {
+        applyThemeLayout();
         updateWidth();
     });
     dlg.exec();
 
+    applyThemeLayout();
     updateCoinJoinVisibility();
 }
 
@@ -1460,7 +1549,9 @@ void BitcoinGUI::updateCoinJoinVisibility()
     // Hiding the QToolButton itself doesn't work for the GUI part
     // but is still needed for shortcuts to work properly.
     if (appToolBar != nullptr) {
-        appToolBar->actions()[4]->setVisible(fEnabled);
+        if (coinJoinToolbarAction) {
+            coinJoinToolbarAction->setVisible(fEnabled);
+        }
         coinJoinCoinsButton->setVisible(fEnabled);
         GUIUtil::updateButtonGroupShortcuts(tabGroup);
     }
@@ -1475,6 +1566,12 @@ void BitcoinGUI::updateWidth()
         return;
     }
     if (windowState() & (Qt::WindowMaximized | Qt::WindowFullScreen)) {
+        return;
+    }
+    if (GUIUtil::isDefconDarkTheme()) {
+        constexpr int modernMinimumWidth{1200};
+        setMinimumWidth(modernMinimumWidth);
+        resize(std::max(width(), modernMinimumWidth), height());
         return;
     }
     int nWidthWidestButton{0};
@@ -1753,6 +1850,7 @@ void BitcoinGUI::changeEvent(QEvent *e)
     }
 #endif
     if (e->type() == QEvent::StyleChange) {
+        applyThemeLayout();
         updateNetworkState();
 #ifdef ENABLE_WALLET
         if (walletFrame) {

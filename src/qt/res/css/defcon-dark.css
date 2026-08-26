@@ -1,0 +1,439 @@
+/**
+Copyright (c) 2026 The DeFCoN developers
+Distributed under the MIT/X11 software license, see the accompanying
+file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+---------------------------------------------------------------------
+
+ * DeFCon Dark
+ *
+ * Modern DeFCoN wallet presentation. This file is intentionally an override
+ * layer on top of general.css and dark.css so the original themes remain
+ * untouched and upstream changes to shared widget styling are inherited.
+ */
+
+/******************************************************
+Palette and typography
+******************************************************/
+
+QDialog,
+QMainWindow,
+QMessageBox,
+WalletFrame,
+QWidget#walletContainer {
+    background-color: #07111f;
+}
+
+QWidget {
+    selection-color: #f7fbff;
+    selection-background-color: #0b6cc6;
+    font-family: "Montserrat";
+}
+
+QCheckBox,
+QLabel,
+QListView,
+QRadioButton,
+QTreeWidget {
+    color: #e6edf7;
+}
+
+QCheckBox:disabled,
+QLabel:disabled,
+QListView:disabled,
+QRadioButton:disabled {
+    color: #526780;
+}
+
+QMenuBar {
+    background-color: #081522;
+    border-bottom: 1px solid #1b2d43;
+    color: #d9e4f2;
+    padding: 3px 8px;
+}
+
+QMenuBar::item {
+    background: transparent;
+    border-radius: 5px;
+    padding: 6px 10px;
+}
+
+QMenuBar::item:selected {
+    background-color: #12243a;
+    color: #ffffff;
+}
+
+QMenu {
+    background-color: #0b1727;
+    border: 1px solid #20344c;
+    color: #e6edf7;
+    padding: 6px;
+}
+
+QMenu::item {
+    border-radius: 5px;
+    padding: 7px 24px 7px 10px;
+}
+
+QMenu::item:selected {
+    background-color: #12375b;
+    color: #ffffff;
+}
+
+QMenu::separator {
+    background-color: #20344c;
+    height: 1px;
+    margin: 5px 8px;
+}
+
+/******************************************************
+Inputs and buttons
+******************************************************/
+
+BitcoinAmountField,
+QAbstractSpinBox,
+QComboBox,
+QPlainTextEdit,
+QLineEdit,
+QTextEdit {
+    background-color: #0b1727;
+    border: 1px solid #29435f;
+    border-radius: 8px;
+    color: #e6edf7;
+    min-height: 32px;
+    padding: 3px 9px;
+}
+
+BitcoinAmountField:hover:!focus,
+QAbstractSpinBox:hover:!focus,
+QComboBox:hover:!focus,
+QPlainTextEdit:hover:!focus,
+QLineEdit:hover:!focus,
+QTextEdit:hover:!focus {
+    background-color: #0d1c2e;
+    border-color: #3a5e82;
+}
+
+BitcoinAmountField:focus,
+QAbstractSpinBox:focus,
+QComboBox:focus,
+QPlainTextEdit:focus,
+QLineEdit:focus,
+QTextEdit:focus {
+    background-color: #102137;
+    border-color: #1297ff;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 28px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #0b1727;
+    border: 1px solid #29435f;
+    color: #e6edf7;
+    selection-background-color: #12375b;
+    selection-color: #ffffff;
+}
+
+QPushButton {
+    background-color: #0f75d6;
+    border: 1px solid #1297ff;
+    border-radius: 8px;
+    color: #ffffff;
+    min-height: 34px;
+    padding: 3px 16px;
+}
+
+QPushButton:hover {
+    background-color: #1488ec;
+    border-color: #42aaff;
+}
+
+QPushButton:pressed {
+    background-color: #0b65bb;
+}
+
+QPushButton:disabled {
+    background-color: #122338;
+    border-color: #263d57;
+    color: #5f748d;
+}
+
+QToolTip {
+    background-color: #102137;
+    border: 1px solid #29435f;
+    border-radius: 6px;
+    color: #e6edf7;
+    padding: 5px 8px;
+}
+
+/******************************************************
+Tables, lists, tabs and progress
+******************************************************/
+
+.QTableView,
+.QTableWidget,
+QTreeWidget {
+    alternate-background-color: #0d1c2e;
+    background-color: #0b1727;
+    border: 1px solid #20344c;
+    color: #e6edf7;
+    gridline-color: #1b2d43;
+}
+
+QTableView::item,
+QTableWidget::item,
+QTreeWidget::item {
+    background-color: #0b1727;
+    border-color: #1b2d43;
+    padding: 5px;
+}
+
+QTableView::item:selected,
+QTableWidget::item:selected,
+QTreeWidget::item:selected {
+    background-color: #12375b;
+    color: #ffffff;
+}
+
+QHeaderView::section {
+    background-color: #0d1c2e;
+    border: none;
+    border-bottom: 1px solid #29435f;
+    color: #91a5bc;
+    padding: 7px;
+}
+
+QTabWidget::pane {
+    background-color: #0b1727;
+    border: 1px solid #20344c;
+    border-radius: 8px;
+}
+
+QTabBar::tab {
+    background-color: transparent;
+    border: none;
+    color: #7e91a8;
+    min-height: 34px;
+    padding: 5px 14px;
+}
+
+QTabBar::tab:selected {
+    border-bottom: 2px solid #1297ff;
+    color: #ffffff;
+}
+
+QProgressBar {
+    background-color: #122338;
+    border: 1px solid #20344c;
+    border-radius: 5px;
+    color: #e6edf7;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #1297ff;
+    border-radius: 4px;
+}
+
+/******************************************************
+Modern navigation shell
+******************************************************/
+
+QToolBar#navigationToolBar[modern="true"] {
+    background-color: #081522;
+    border: none;
+    border-right: 1px solid #20344c;
+    margin: 0;
+    padding: 12px 8px;
+    spacing: 4px;
+    min-width: 238px;
+    max-width: 238px;
+    min-height: 0;
+    max-height: 16777215px;
+}
+
+QToolBar#navigationToolBar[modern="true"] > QToolButton {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #cbd8e7;
+    margin: 2px 4px;
+    min-width: 206px;
+    max-width: 206px;
+    min-height: 44px;
+    max-height: 44px;
+    padding: 0 10px;
+    text-align: left;
+}
+
+QToolBar#navigationToolBar[modern="true"] > QToolButton:hover:!checked {
+    background-color: #10263e;
+    border-color: #1d3f60;
+    color: #ffffff;
+}
+
+QToolBar#navigationToolBar[modern="true"] > QToolButton:checked {
+    background-color: #0d5da5;
+    border-color: #168fea;
+    color: #ffffff;
+}
+
+QToolBar#navigationToolBar[modern="true"] > QToolButton:disabled {
+    color: #4f647d;
+}
+
+QToolBar#navigationToolBar[modern="true"] QLabel#lblToolbarLogo {
+    image: url(':/images/dash_logo_toolbar');
+    margin: 4px 10px 16px 10px;
+    padding: 0;
+    min-width: 194px;
+    max-width: 194px;
+    min-height: 58px;
+    max-height: 58px;
+}
+
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector {
+    background-color: #0b1727;
+    border: 1px solid #29435f;
+    border-radius: 8px;
+    margin: 10px 5px 2px 5px;
+    min-width: 202px;
+    max-width: 202px;
+}
+
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox {
+    border: none;
+    min-width: 176px;
+}
+
+/******************************************************
+Overview dashboard
+******************************************************/
+
+QWidget#OverviewPage {
+    background-color: #07111f;
+}
+
+QWidget#OverviewPage QWidget#modernOverviewHeader {
+    background-color: transparent;
+    margin: 0 4px 2px 4px;
+}
+
+QWidget#OverviewPage QLabel#modernOverviewTitle {
+    color: #ffffff;
+    font-size: 24px;
+    font-weight: 600;
+}
+
+QWidget#OverviewPage QLabel#modernOverviewSubtitle {
+    color: #91a5bc;
+    font-size: 12px;
+}
+
+QWidget#OverviewPage QFrame#frame,
+QWidget#OverviewPage QFrame#frameCoinJoin,
+QWidget#OverviewPage QFrame#frame_2 {
+    background-color: #0b1727;
+    border: 1px solid #20344c;
+    border-radius: 10px;
+}
+
+QWidget#OverviewPage QFrame#frame {
+    min-width: 490px;
+}
+
+QWidget#OverviewPage QFrame#frameCoinJoin {
+    background-color: #0b1727;
+    max-width: 16777215px;
+    max-height: 16777215px;
+}
+
+QWidget#OverviewPage QFrame#frame_2 {
+    min-width: 430px;
+}
+
+QWidget#OverviewPage QFrame#frame QLabel#label_5,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCoinJoinHeader,
+QWidget#OverviewPage QFrame#frame_2 QLabel#label_4 {
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+QWidget#OverviewPage QFrame#frame QLabel#labelTotal {
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+QWidget#OverviewPage QFrame#frame QLabel#labelSpendable,
+QWidget#OverviewPage QFrame#frame QLabel#labelWatchonly,
+QWidget#OverviewPage QFrame#frame QLabel#labelBalanceText,
+QWidget#OverviewPage QFrame#frame QLabel#labelPendingText,
+QWidget#OverviewPage QFrame#frame QLabel#labelImmatureText,
+QWidget#OverviewPage QFrame#frame QLabel#labelTotalText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCoinJoinEnabledText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCompletitionText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelAnonymizedText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelAmountAndRoundsText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelSubmittedDenomText {
+    color: #91a5bc;
+}
+
+QWidget#OverviewPage QFrame#frame QLabel#modernBalanceLogo {
+    margin: 0 4px;
+    min-width: 42px;
+    max-width: 42px;
+    min-height: 42px;
+    max-height: 42px;
+}
+
+QWidget#OverviewPage QFrame#frame_2 QListView {
+    background-color: transparent;
+    border: none;
+    margin: 2px 6px 6px 2px;
+}
+
+QWidget#OverviewPage QFrame#frame_2 QListView::item {
+    background-color: transparent;
+    border-bottom: 1px solid #1b2d43;
+}
+
+QWidget#OverviewPage QFrame#frame_2 QListView::item:hover {
+    background-color: #102137;
+}
+
+QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin {
+    min-width: 150px;
+}
+
+/******************************************************
+Status bar and dialogs
+******************************************************/
+
+QStatusBar {
+    background-color: #081522;
+    border-top: 1px solid #20344c;
+    color: #cbd8e7;
+}
+
+QStatusBar QLabel {
+    color: #cbd8e7;
+}
+
+QDialog#OptionsDialog #line,
+QDialog#OptionsDialog #frame {
+    border-top: 1px solid #20344c;
+}
+
+QDialog#OptionsDialog,
+QDialog#OptionsDialog QWidget {
+    background-color: #0b1727;
+}
+
+QDialog#OptionsDialog QPushButton {
+    background-color: #0f75d6;
+}
