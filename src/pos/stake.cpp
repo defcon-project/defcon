@@ -10,7 +10,7 @@
 #include <pos/minter.h>
 #include <pow.h>
 #include <rpc/util.h>
-#include <wallet/rpcwallet.h>
+#include <wallet/scriptpubkeyman.h>
 
 extern std::atomic<bool> fStopMinerProc;
 
@@ -120,6 +120,33 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
     return true;
 }
 
+namespace {
+/**
+ * A signing provider for `script` that carries private keys, whatever kind of
+ * wallet this is.
+ *
+ * Staking needs real private keys twice: once for the block signature and once
+ * to sign the coinstake inputs. A LegacyScriptPubKeyMan hands back a full
+ * keystore, but a descriptor wallet withholds private material unless it is
+ * asked for it, and returns nothing at all for a script it does not own.
+ */
+std::unique_ptr<SigningProvider> GetStakingSigningProvider(const CWallet& wallet, const CScript& script)
+{
+    for (ScriptPubKeyMan* spk_man : wallet.GetAllScriptPubKeyMans()) {
+        if (const auto* desc_man = dynamic_cast<const DescriptorScriptPubKeyMan*>(spk_man)) {
+            if (auto provider = desc_man->GetSigningProvider(script, /*include_private=*/true)) {
+                return provider;
+            }
+            continue;
+        }
+        if (auto provider = spk_man->GetSolvingProvider(script)) {
+            return provider;
+        }
+    }
+    return nullptr;
+}
+} // namespace
+
 bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key)
 {
     arith_uint256 bnTargetPerCoinDay;
@@ -152,7 +179,6 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
 
     CAmount nCredit = 0;
     CScript scriptPubKeyKernel;
-    LegacyScriptPubKeyMan& spk_man = EnsureLegacyScriptPubKeyMan(*wallet);
     std::set<std::pair<const CWalletTx*, unsigned int>>::iterator it = setCoins.begin();
 
     for (; it != setCoins.end(); ++it)
@@ -179,11 +205,18 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
 
             LogPrint(BCLog::POS, "%s: parsed kernel type=%s\n", __func__, GetTxnOutputType(whichType));
 
+            const std::unique_ptr<SigningProvider> kernel_provider =
+                GetStakingSigningProvider(*wallet, scriptPubKeyKernel);
+            if (!kernel_provider) {
+                LogPrint(BCLog::POS, "%s: no signing provider for kernel type=%s\n", __func__, GetTxnOutputType(whichType));
+                break;
+            }
+
             if (whichType == TxoutType::PUBKEYHASH) {
 
                 uint160 hash160(vSolutions[0]);
                 CKeyID pubKeyHash(hash160);
-                if (!spk_man.GetKey(pubKeyHash, key)) {
+                if (!kernel_provider->GetKey(pubKeyHash, key)) {
                     LogPrint(BCLog::POS, "%s: failed to get key for kernel type=%s\n", __func__, GetTxnOutputType(whichType));
                     break;
                 }
@@ -195,7 +228,7 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
                 CPubKey pubKey(vchPubKey);
                 uint160 hash160(Hash160(vchPubKey));
                 CKeyID pubKeyHash(hash160);
-                if (!spk_man.GetKey(pubKeyHash, key)) {
+                if (!kernel_provider->GetKey(pubKeyHash, key)) {
                     LogPrint(BCLog::POS, "%s: failed to get key for kernel type=%s\n", __func__, GetTxnOutputType(whichType));
                     break;
                 }
@@ -268,7 +301,12 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
         CScript& scriptPubKeyOut = prevOut.scriptPubKey;
 
         SignatureData sigdata;
-        if (!ProduceSignature(*wallet->GetLegacyScriptPubKeyMan(), MutableTransactionSignatureCreator(&txNew, nIn, amount, SIGHASH_ALL), scriptPubKeyOut, sigdata)) {
+        const std::unique_ptr<SigningProvider> provider = GetStakingSigningProvider(*wallet, scriptPubKeyOut);
+        if (!provider) {
+            LogPrint(BCLog::POS, "%s: no signing provider for input %d.", __func__, nIn);
+            return false;
+        }
+        if (!ProduceSignature(*provider, MutableTransactionSignatureCreator(&txNew, nIn, amount, SIGHASH_ALL), scriptPubKeyOut, sigdata)) {
             LogPrint(BCLog::POS, "%s: ProduceSignature failed.", __func__);
             return false;
         }
