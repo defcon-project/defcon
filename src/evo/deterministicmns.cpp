@@ -729,6 +729,9 @@ bool CDeterministicMNManager::RebuildListFromBlock(const CBlock& block, gsl::not
     assert(prevList == CDeterministicMNList() || prevList.GetBlockHash() == pindexPrev->GetBlockHash());
 
     int nHeight = pindexPrev->nHeight + 1;
+    // Cross-scheme operator keys only become expressible once basic BLS is available, which is what
+    // V19 activates. Before it the rule is unreachable, so gating here cannot invalidate history.
+    const bool is_v19_deployed{DeploymentActiveAfter(pindexPrev, Params().GetConsensus(), Consensus::DEPLOYMENT_V19)};
 
     CDeterministicMNList oldList = prevList;
     CDeterministicMNList newList = oldList;
@@ -828,6 +831,15 @@ bool CDeterministicMNManager::RebuildListFromBlock(const CBlock& block, gsl::not
             }
             dmn->pdmnState = dmnState;
 
+            // CheckProRegTx ran against pindexPrev, so transactions in this same block are invisible
+            // to each other and two of them could claim one operator key under different encodings.
+            // Re-probe the list as rebuilt so far. AddMN() reports a duplicate by throwing, which
+            // would escape block assembly, so reject cleanly here instead.
+            if (is_v19_deployed &&
+                newList.HasOperatorKeyUnderAnyScheme(dmn->pdmnState->pubKeyOperator.Get(), /*self=*/uint256())) {
+                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-dup-key");
+            }
+
             newList.AddMN(dmn);
 
             if (debugLogs) {
@@ -901,6 +913,17 @@ bool CDeterministicMNManager::RebuildListFromBlock(const CBlock& block, gsl::not
             }
             newState->keyIDVoting = opt_proTx->keyIDVoting;
             newState->scriptPayout = opt_proTx->scriptPayout;
+
+            // As in the registration path: CheckProUpRegTx ran against pindexPrev, so a second
+            // transaction in this same block claiming the same key under the other encoding is
+            // invisible to it. Same key-change scoping as that check -- an update keeping its own key
+            // cannot create a duplicate. UpdateMN() reports duplicates by throwing, which would
+            // escape block assembly, so reject cleanly here instead.
+            if (is_v19_deployed && !(opt_proTx->pubKeyOperator == dmn->pdmnState->pubKeyOperator) &&
+                newList.HasOperatorKeyUnderAnyScheme(opt_proTx->pubKeyOperator.Get(),
+                                                     /*self=*/opt_proTx->proTxHash)) {
+                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-protx-dup-key");
+            }
 
             newList.UpdateMN(opt_proTx->proTxHash, newState);
 
@@ -1652,6 +1675,16 @@ bool CheckProRegTx(CDeterministicMNManager& dmnman, const CTransaction& tx, gsl:
             return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
         }
 
+        // The check above only sees the operator key under the encoding this payload happens to use,
+        // so it misses a key an existing masternode holds under the other one. A ProRegTx never
+        // proves ownership of the operator key, so that gap lets anyone claim a masternode's key.
+        // Nothing is excluded here: a duplicate key is never allowed, even for a ProTx replacing an
+        // existing masternode.
+        if (DeploymentActiveAfter(pindexPrev, Params().GetConsensus(), Consensus::DEPLOYMENT_V19) &&
+            mnList.HasOperatorKeyUnderAnyScheme(opt_ptx->pubKeyOperator.Get(), /*self=*/uint256())) {
+            return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
+        }
+
         // never allow duplicate platformNodeIds for EvoNodes
         if (opt_ptx->nType == MnType::Evo) {
             if (mnList.HasUniqueProperty(opt_ptx->platformNodeID)) {
@@ -1792,6 +1825,17 @@ bool CheckProUpRegTx(CDeterministicMNManager& dmnman, const CTransaction& tx, gs
         if (opt_ptx->proTxHash != otherDmn->proTxHash) {
             return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
         }
+    }
+
+    // As above, but for the key under its other encoding, which the check above cannot see. Only
+    // when the key is actually changing: an update that keeps its own key cannot create a new
+    // duplicate, and probing it anyway would let a cross-scheme pair formed before activation
+    // permanently block the affected masternode's registrar updates unless it rotated its key --
+    // making an old squat more harmful rather than less.
+    if (DeploymentActiveAfter(pindexPrev, Params().GetConsensus(), Consensus::DEPLOYMENT_V19) &&
+        !(opt_ptx->pubKeyOperator == dmn->pdmnState->pubKeyOperator) &&
+        mnList.HasOperatorKeyUnderAnyScheme(opt_ptx->pubKeyOperator.Get(), /*self=*/opt_ptx->proTxHash)) {
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-key");
     }
 
     if (!DeploymentDIP0003Enforced(pindexPrev->nHeight, Params().GetConsensus())) {
