@@ -92,8 +92,16 @@ public:
     void Set(const T pbegin, const T pend)
     {
         vchlen = pend - pbegin;
-        if (vchlen <= BLS_PUBLIC_KEY_SIZE)
+        // The devault adaptation capped this copy at the BLS size, so a
+        // 65-byte uncompressed pubkey recorded its length but copied nothing
+        // and carried whatever the buffer held before. Unserialize has always
+        // accepted all three sizes; this path must too -- the buffer is SIZE
+        // bytes, exactly the largest of them.
+        if (vchlen <= SIZE) {
             memcpy(vch, (unsigned char*)&pbegin[0], vchlen);
+        } else {
+            Invalidate();
+        }
     }
 
     //! Construct a public key using begin/end iterators to byte data.

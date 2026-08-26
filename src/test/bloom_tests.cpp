@@ -75,9 +75,20 @@ BOOST_AUTO_TEST_CASE(bloom_create_insert_serialize_with_tweak)
 
 BOOST_AUTO_TEST_CASE(bloom_create_insert_key)
 {
-    std::string strSecret = std::string("7sQb6QHALg4XyHsJHsSNXnEHGhZfzTTUPJXJqaqK7CavQkiL9Ms");
-    CKey key = DecodeSecret(strSecret);
+    // Upstream decoded a mainnet WIF here, which ties the fixture to the
+    // network's base58 prefixes: on this chain DecodeSecret answered an
+    // invalid key and GetPubKey() aborted the entire test binary. The raw
+    // bytes of that same key are what the test actually needs -- identical
+    // pubkey, so the expected filter contents below are unchanged.
+    const std::vector<unsigned char> vchSecret =
+        ParseHex("f49addfd726a59abde172c86452f5f73038a02f4415878dc14934175e8418aff");
+    CKey key;
+    key.Set(vchSecret.begin(), vchSecret.end(), /*fCompressedIn=*/false);
+    BOOST_REQUIRE(key.IsValid());
     CPubKey pubkey = key.GetPubKey();
+    // The expected filter below was built from the uncompressed form; a
+    // compressed pubkey here means key handling dropped the flag again.
+    BOOST_REQUIRE_EQUAL(pubkey.size(), 65U);
     std::vector<unsigned char> vchPubKey(pubkey.begin(), pubkey.end());
 
     CBloomFilter filter(2, 0.001, 0, BLOOM_UPDATE_ALL);
