@@ -458,3 +458,66 @@ QDialog#OptionsDialog QWidget {
 QDialog#OptionsDialog QPushButton {
     background-color: #087cf0;
 }
+
+
+/******************************************************
+QPushButton - Special case, tabbar replacement buttons
+
+Without these the dialog "tabs" fall back to the theme's
+filled button style, whose text is unreadable there.
+******************************************************/
+
+#btnInfo,
+#btnConsole,
+#btnNetTraffic,
+#btnPeers,
+#btnRepair,
+#btnMain,
+#btnWallet,
+#btnCoinJoin,
+#btnNetwork,
+#btnDisplay,
+#btnAppearance,
+#btnSignMessage,
+#btnVerifyMessage {
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    color: #5d6d7b;
+    padding: 6px 14px;
+}
+
+#btnInfo:checked,
+#btnConsole:checked,
+#btnNetTraffic:checked,
+#btnPeers:checked,
+#btnRepair:checked,
+#btnMain:checked,
+#btnWallet:checked,
+#btnCoinJoin:checked,
+#btnNetwork:checked,
+#btnDisplay:checked,
+#btnAppearance:checked,
+#btnSignMessage:checked,
+#btnVerifyMessage:checked {
+    border-bottom: 2px solid #0b6fd0;
+    color: #0b2740;
+}
+
+#btnInfo:hover:!checked,
+#btnConsole:hover:!checked,
+#btnNetTraffic:hover:!checked,
+#btnPeers:hover:!checked,
+#btnRepair:hover:!checked,
+#btnMain:hover:!checked,
+#btnWallet:hover:!checked,
+#btnCoinJoin:hover:!checked,
+#btnNetwork:hover:!checked,
+#btnDisplay:hover:!checked,
+#btnAppearance:hover:!checked,
+#btnSignMessage:hover:!checked,
+#btnVerifyMessage:hover:!checked {
+    background-color: #e2ecf5;
+    color: #0b2740;
+}
