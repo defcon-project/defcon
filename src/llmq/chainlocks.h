@@ -86,7 +86,13 @@ private:
     // Bounded: every CLSIG announcement a peer sends lands here, and the time-based
     // cleanup below only runs once per CLEANUP_INTERVAL. Between two cleanups an
     // unbounded map grows as fast as a peer cares to announce.
-    static constexpr size_t MAX_SEEN_CHAINLOCKS{1024};
+    //
+    // The prune trims back to the cutoff only once the map has grown to the
+    // maximum. With the two equal, every insert past the limit would pay the
+    // prune's full O(n) selection on its own -- and a peer decides how often
+    // that happens, because entries are recorded before the signature check.
+    static constexpr size_t SEEN_CHAINLOCKS_CUTOFF{1024};
+    static constexpr size_t MAX_SEEN_CHAINLOCKS{2 * SEEN_CHAINLOCKS_CUTOFF};
     unordered_limitedmap<uint256, int64_t, StaticSaltedHasher> seenChainLocks GUARDED_BY(cs);
 
     std::atomic<int64_t> lastCleanupTime{0};
