@@ -788,8 +788,8 @@ std::string LicenseInfo()
 {
     return std::string{} +
            "Copyright (C) 2025-2026 The DeFCoN developers\n" +
-           "Copyright (C) 2014-2025 The Dash Core developers\n" +
-           "Copyright (C) 2009-2025 The Bitcoin Core developers\n" +
+           "Copyright (C) 2014-2026 The Dash Core developers\n" +
+           "Copyright (C) 2009-2026 The Bitcoin Core developers\n" +
            "\n" +
            "Please contribute if you find DeFCoN useful. Visit <https://www.dfcn.io/> for further information about the software.\n" +
            "The source code is available from <https://github.com/defcon-project/defcon>.\n" +
