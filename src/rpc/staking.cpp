@@ -160,35 +160,23 @@ static RPCHelpMan setstaking()
         },
     [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    //multiwallet loop
     int walletid = 0;
     if (!request.params[0].isNull())
         walletid = request.params[0].get_int();
-    if (walletid > stakable_sz)
-        return NullUniValue;
 
-    bool status = false;
-    for (int y = 0; y < stakable_sz; y++)
+    std::string name;
     {
-        if (y == walletid) {
-            if (stakable_wallets[y].CanStake()) {
-                status = false;
-                stakable_wallets[y].StakingDisabled();
-            } else {
-                status = true;
-                // Before the first block is attempted: a descriptor wallet
-                // otherwise pays its own coinstake to a script it does not
-                // track, and watches its balance leave as it produces blocks.
-                if (CWallet* w = stakable_wallets[y].GetWallet()) {
-                    EnsureCoinstakeDescriptors(*w);
-                }
-                stakable_wallets[y].StakingEnabled();
-            }
-            break;
-        }
+        LOCK(stakable_mutex);
+        // The old bound let walletid == stakable_sz fall through the loop and
+        // answer "disabled" for a wallet that does not exist.
+        if (walletid < 0 || walletid >= stakable_sz)
+            return NullUniValue;
+        name = stakable_wallets[walletid].GetName();
     }
 
-    return status;
+    // One enable path for RPC and GUI alike; the coinstake-descriptor
+    // preparation lives inside the toggle.
+    return ToggleWalletStaking(name);
 },
     };
 }
