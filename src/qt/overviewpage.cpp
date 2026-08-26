@@ -29,7 +29,9 @@
 #include <QEvent>
 #include <QIcon>
 #include <QLabel>
+#include <QPaintEvent>
 #include <QPainter>
+#include <QRadialGradient>
 #include <QSettings>
 #include <QStatusTipEvent>
 #include <QTimer>
@@ -251,15 +253,63 @@ void OverviewPage::changeEvent(QEvent* event)
     }
 }
 
+void OverviewPage::paintEvent(QPaintEvent* event)
+{
+    QWidget::paintEvent(event);
+    if (!GUIUtil::isDefconGalaxyTheme()) {
+        return;
+    }
+
+    QPainter painter(this);
+    painter.setClipRegion(event->region());
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.fillRect(event->rect(), QColor(16, 8, 20));
+
+    const qreal canvasWidth = std::max(width(), 1);
+    const qreal canvasHeight = std::max(height(), 1);
+    QRadialGradient magentaNebula(QPointF(canvasWidth * 0.34, canvasHeight * 0.37), canvasWidth * 0.58);
+    magentaNebula.setColorAt(0.0, QColor(217, 54, 114, 76));
+    magentaNebula.setColorAt(0.38, QColor(97, 33, 92, 38));
+    magentaNebula.setColorAt(1.0, QColor(16, 8, 20, 0));
+    painter.fillRect(rect(), magentaNebula);
+
+    QRadialGradient violetNebula(QPointF(canvasWidth * 0.76, canvasHeight * 0.22), canvasWidth * 0.46);
+    violetNebula.setColorAt(0.0, QColor(119, 65, 160, 54));
+    violetNebula.setColorAt(0.48, QColor(68, 31, 89, 24));
+    violetNebula.setColorAt(1.0, QColor(16, 8, 20, 0));
+    painter.fillRect(rect(), violetNebula);
+
+    for (int i = 0; i < 72; ++i) {
+        const int x = (i * 193 + 47) % std::max(width(), 1);
+        const int y = (i * 109 + 31 + (i % 5) * 17) % std::max(height(), 1);
+        const int alpha = 65 + (i % 4) * 28;
+        const qreal radius = (i % 11 == 0) ? 1.5 : ((i % 3 == 0) ? 1.0 : 0.6);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(255, 216 + (i % 3) * 12, 242, alpha));
+        painter.drawEllipse(QPointF(x, y), radius, radius);
+    }
+}
+
 void OverviewPage::updateThemePresentation()
 {
+    const bool galaxy = GUIUtil::isDefconGalaxyTheme();
     const bool modern = GUIUtil::isModernTheme();
+    setAttribute(Qt::WA_OpaquePaintEvent, galaxy);
     if (modernHeader) {
-        modernHeader->setVisible(modern);
+        modernHeader->setVisible(modern && !galaxy);
     }
     if (modernBalanceLogo) {
         modernBalanceLogo->setVisible(modern);
+        const int logoSize = galaxy ? 54 : 42;
+        modernBalanceLogo->setPixmap(galaxy ? GUIUtil::getIcon("dash").pixmap(logoSize, logoSize)
+                                            : QIcon(":/icons/dash").pixmap(logoSize, logoSize));
     }
+
+    const int outerMargin = galaxy ? 18 : 11;
+    ui->topLayout->setContentsMargins(outerMargin, outerMargin, outerMargin, outerMargin);
+    ui->topLayout->setSpacing(galaxy ? 14 : 6);
+    ui->horizontalLayout->setSpacing(galaxy ? 14 : 6);
+    update();
 }
 
 OverviewPage::~OverviewPage()

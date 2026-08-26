@@ -102,6 +102,7 @@ static const QString defaultTheme = "Light";
 // Names of the built-in and modern DeFCoN themes
 static const QString darkTheme = "Dark";
 static const QString defconDarkTheme = "DeFCon Dark";
+static const QString defconGalaxyTheme = "DeFCon Galaxy";
 static const QString lightTheme = "Light";
 static const QString defconLightTheme = "DeFCon Light";
 // The theme to set as a base one for non-traditional themes
@@ -111,6 +112,7 @@ static const std::map<QString, QString> mapThemeToStyle{
     {generalTheme, "general.css"},
     {darkTheme, "dark.css"},
     {defconDarkTheme, "defcon-dark.css"},
+    {defconGalaxyTheme, "defcon-galaxy.css"},
     {lightTheme, "light.css"},
     {defconLightTheme, "defcon-light.css"},
     {"Traditional", "traditional.css"},
@@ -201,6 +203,23 @@ static const std::map<ThemedColor, QColor> themedDefconDarkColors = {
     { ThemedColor::ICON_ALTERNATIVE_COLOR, QColor(72, 94, 121) },
 };
 
+static const std::map<ThemedColor, QColor> themedDefconGalaxyColors = {
+    { ThemedColor::DEFAULT, QColor(255, 244, 248) },
+    { ThemedColor::UNCONFIRMED, QColor(173, 143, 169) },
+    { ThemedColor::BLUE, QColor(240, 68, 167) },
+    { ThemedColor::ORANGE, QColor(245, 193, 91) },
+    { ThemedColor::RED, QColor(255, 122, 102) },
+    { ThemedColor::GREEN, QColor(245, 193, 91) },
+    { ThemedColor::BAREADDRESS, QColor(173, 143, 169) },
+    { ThemedColor::TX_STATUS_OPENUNTILDATE, QColor(200, 167, 255) },
+    { ThemedColor::BACKGROUND_WIDGET, QColor(33, 17, 38) },
+    { ThemedColor::BORDER_WIDGET, QColor(101, 48, 82) },
+    { ThemedColor::BACKGROUND_NETSTATS, QColor(33, 17, 38, 235) },
+    { ThemedColor::BORDER_NETSTATS, QColor(101, 48, 82) },
+    { ThemedColor::QR_PIXEL, QColor(255, 244, 248) },
+    { ThemedColor::ICON_ALTERNATIVE_COLOR, QColor(122, 82, 111) },
+};
+
 static const std::map<ThemedColor, QColor> themedDefconLightColors = {
     { ThemedColor::DEFAULT, QColor(11, 31, 68) },
     { ThemedColor::UNCONFIRMED, QColor(102, 117, 142) },
@@ -248,6 +267,16 @@ static const std::map<ThemedStyle, QString> themedDefconDarkStyles = {
     { ThemedStyle::TS_SECONDARY, "color:#7e91a8;" },
 };
 
+static const std::map<ThemedStyle, QString> themedDefconGalaxyStyles = {
+    { ThemedStyle::TS_INVALID, "background:#ff7a66;" },
+    { ThemedStyle::TS_ERROR, "color:#ff7a66;" },
+    { ThemedStyle::TS_WARNING, "color:#f5c15b;" },
+    { ThemedStyle::TS_SUCCESS, "color:#f5c15b;" },
+    { ThemedStyle::TS_COMMAND, "color:#f044a7;" },
+    { ThemedStyle::TS_PRIMARY, "color:#fff4f8;" },
+    { ThemedStyle::TS_SECONDARY, "color:#ad8fa9;" },
+};
+
 static const std::map<ThemedStyle, QString> themedDefconLightStyles = {
     { ThemedStyle::TS_INVALID, "background:#d32f2f;" },
     { ThemedStyle::TS_ERROR, "color:#d32f2f;" },
@@ -264,6 +293,9 @@ QColor getThemedQColor(ThemedColor color)
     if (theme == defconDarkTheme) {
         return themedDefconDarkColors.at(color);
     }
+    if (theme == defconGalaxyTheme) {
+        return themedDefconGalaxyColors.at(color);
+    }
     if (theme == defconLightTheme) {
         return themedDefconLightColors.at(color);
     }
@@ -275,6 +307,9 @@ QString getThemedStyleQString(ThemedStyle style)
     QString theme = QSettings().value("theme", "").toString();
     if (theme == defconDarkTheme) {
         return themedDefconDarkStyles.at(style);
+    }
+    if (theme == defconGalaxyTheme) {
+        return themedDefconGalaxyStyles.at(style);
     }
     if (theme == defconLightTheme) {
         return themedDefconLightStyles.at(style);
@@ -991,6 +1026,11 @@ bool isDefconDarkTheme()
     return getActiveTheme() == defconDarkTheme;
 }
 
+bool isDefconGalaxyTheme()
+{
+    return getActiveTheme() == defconGalaxyTheme;
+}
+
 bool isDefconLightTheme()
 {
     return getActiveTheme() == defconLightTheme;
@@ -998,7 +1038,7 @@ bool isDefconLightTheme()
 
 bool isModernTheme()
 {
-    return isDefconDarkTheme() || isDefconLightTheme();
+    return isDefconDarkTheme() || isDefconGalaxyTheme() || isDefconLightTheme();
 }
 
 void loadStyleSheet(bool fForceUpdate)
@@ -1089,7 +1129,7 @@ void loadStyleSheet(bool fForceUpdate)
             vecFiles.push_back(pathToFile(generalTheme));
         }
         // Modern themes are override layers on top of the corresponding proven theme.
-        if (isDefconDarkTheme()) {
+        if (isDefconDarkTheme() || isDefconGalaxyTheme()) {
             vecFiles.push_back(pathToFile(darkTheme));
         } else if (isDefconLightTheme()) {
             vecFiles.push_back(pathToFile(lightTheme));

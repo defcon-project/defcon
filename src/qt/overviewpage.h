@@ -23,6 +23,7 @@ QT_BEGIN_NAMESPACE
 class QEvent;
 class QLabel;
 class QModelIndex;
+class QPaintEvent;
 QT_END_NAMESPACE
 
 /** Overview ("home") page widget */
@@ -49,6 +50,7 @@ Q_SIGNALS:
 
 protected:
     void changeEvent(QEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
 
 private:
     QTimer *timer;
