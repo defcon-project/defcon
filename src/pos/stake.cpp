@@ -122,25 +122,36 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
 
 namespace {
 /**
- * A signing provider for `script` that carries private keys, whatever kind of
- * wallet this is.
+ * A signing provider for `script` that can produce private keys, whatever kind
+ * of wallet this is. Returns nullptr when no manager owns the script.
  *
- * Staking needs real private keys twice: once for the block signature and once
- * to sign the coinstake inputs. A LegacyScriptPubKeyMan hands back a full
- * keystore, but a descriptor wallet withholds private material unless it is
- * asked for it, and returns nothing at all for a script it does not own.
+ * Staking needs real private keys twice: once for the block header signature
+ * and once to sign the coinstake inputs.
+ *
+ * Note that GetSolvingProvider is *not* usable here for either manager.
+ * LegacySigningProvider::GetKey returns false unconditionally, and a descriptor
+ * wallet's solving provider is built with include_private = false: both are
+ * deliberately key-free, because solving only needs public material. The legacy
+ * manager is itself a FillableSigningProvider, so it is used directly; the
+ * descriptor manager is asked for a provider that includes private keys.
+ *
+ * `owned` holds the descriptor manager's provider for as long as the caller
+ * needs it. The legacy path returns a pointer to the manager, which the wallet
+ * owns and outlives this call.
  */
-std::unique_ptr<SigningProvider> GetStakingSigningProvider(const CWallet& wallet, const CScript& script)
+const SigningProvider* GetStakingSigningProvider(const CWallet& wallet, const CScript& script,
+                                                 std::unique_ptr<SigningProvider>& owned)
 {
     for (ScriptPubKeyMan* spk_man : wallet.GetAllScriptPubKeyMans()) {
         if (const auto* desc_man = dynamic_cast<const DescriptorScriptPubKeyMan*>(spk_man)) {
             if (auto provider = desc_man->GetSigningProvider(script, /*include_private=*/true)) {
-                return provider;
+                owned = std::move(provider);
+                return owned.get();
             }
             continue;
         }
-        if (auto provider = spk_man->GetSolvingProvider(script)) {
-            return provider;
+        if (const auto* legacy = dynamic_cast<const LegacyScriptPubKeyMan*>(spk_man)) {
+            return legacy;
         }
     }
     return nullptr;
@@ -205,8 +216,9 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
 
             LogPrint(BCLog::POS, "%s: parsed kernel type=%s\n", __func__, GetTxnOutputType(whichType));
 
-            const std::unique_ptr<SigningProvider> kernel_provider =
-                GetStakingSigningProvider(*wallet, scriptPubKeyKernel);
+            std::unique_ptr<SigningProvider> kernel_provider_owned;
+            const SigningProvider* kernel_provider =
+                GetStakingSigningProvider(*wallet, scriptPubKeyKernel, kernel_provider_owned);
             if (!kernel_provider) {
                 LogPrint(BCLog::POS, "%s: no signing provider for kernel type=%s\n", __func__, GetTxnOutputType(whichType));
                 break;
@@ -301,7 +313,8 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
         CScript& scriptPubKeyOut = prevOut.scriptPubKey;
 
         SignatureData sigdata;
-        const std::unique_ptr<SigningProvider> provider = GetStakingSigningProvider(*wallet, scriptPubKeyOut);
+        std::unique_ptr<SigningProvider> provider_owned;
+        const SigningProvider* provider = GetStakingSigningProvider(*wallet, scriptPubKeyOut, provider_owned);
         if (!provider) {
             LogPrint(BCLog::POS, "%s: no signing provider for input %d.", __func__, nIn);
             return false;
