@@ -43,7 +43,7 @@ CChainLocksHandler::CChainLocksHandler(CChainState& chainstate, CQuorumManager& 
     scheduler(std::make_unique<CScheduler>()),
     scheduler_thread(
         std::make_unique<std::thread>(std::thread(util::TraceThread, "cl-schdlr", [&] { scheduler->serviceQueue(); }))),
-    seenChainLocks{MAX_SEEN_CHAINLOCKS}
+    seenChainLocks{SEEN_CHAINLOCKS_CUTOFF, MAX_SEEN_CHAINLOCKS}
 {
 }
 
