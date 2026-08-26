@@ -1682,37 +1682,38 @@ static UniValue evodb_verify_or_repair_impl(const JSONRPCRequest& request, bool 
     const LLMQContext& llmq_ctx = *CHECK_NONFATAL(node.llmq_ctx);
     auto& qsnapman = *CHECK_NONFATAL(llmq_ctx.qsnapman);
 
-    LOCK(::cs_main);
-
     const CBlockIndex* start_index;
     const CBlockIndex* stop_index;
 
-    // Default to DIP0003 activation height if startBlock not specified
-    if (request.params[0].isNull()) {
-        const auto& consensus_params = Params().GetConsensus();
-        start_index = chainman.ActiveChain()[consensus_params.DIP0003Height];
-        if (!start_index) {
-            throw JSONRPCError(RPC_INTERNAL_ERROR, "Cannot find DIP0003 activation block");
+    {
+        LOCK(::cs_main);
+        // Default to DIP0003 activation height if startBlock not specified
+        if (request.params[0].isNull()) {
+            const auto& consensus_params = Params().GetConsensus();
+            start_index = chainman.ActiveChain()[consensus_params.DIP0003Height];
+            if (!start_index) {
+                throw JSONRPCError(RPC_INTERNAL_ERROR, "Cannot find DIP0003 activation block");
+            }
+        } else {
+            uint256 start_block_hash = ParseBlock(request.params[0], chainman, "startBlock");
+            start_index = chainman.m_blockman.LookupBlockIndex(start_block_hash);
+            if (!start_index) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Start block not found");
+            }
         }
-    } else {
-        uint256 start_block_hash = ParseBlock(request.params[0], chainman, "startBlock");
-        start_index = chainman.m_blockman.LookupBlockIndex(start_block_hash);
-        if (!start_index) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Start block not found");
-        }
-    }
 
-    // Default to chain tip if stopBlock not specified
-    if (request.params[1].isNull()) {
-        stop_index = chainman.ActiveChain().Tip();
-        if (!stop_index) {
-            throw JSONRPCError(RPC_INTERNAL_ERROR, "Cannot find chain tip");
-        }
-    } else {
-        uint256 stop_block_hash = ParseBlock(request.params[1], chainman, "stopBlock");
-        stop_index = chainman.m_blockman.LookupBlockIndex(stop_block_hash);
-        if (!stop_index) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Stop block not found");
+        // Default to chain tip if stopBlock not specified
+        if (request.params[1].isNull()) {
+            stop_index = chainman.ActiveChain().Tip();
+            if (!stop_index) {
+                throw JSONRPCError(RPC_INTERNAL_ERROR, "Cannot find chain tip");
+            }
+        } else {
+            uint256 stop_block_hash = ParseBlock(request.params[1], chainman, "stopBlock");
+            stop_index = chainman.m_blockman.LookupBlockIndex(stop_block_hash);
+            if (!stop_index) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "Stop block not found");
+            }
         }
     }
 
@@ -1727,11 +1728,10 @@ static UniValue evodb_verify_or_repair_impl(const JSONRPCRequest& request, bool 
     // Upstream reaches this through CSpecialTxProcessor; in this tree the
     // function still lives on CDeterministicMNManager, so the callback binds
     // there and passes the quorum snapshot manager that signature takes.
-    // NO_THREAD_SAFETY_ANALYSIS: cs_main is held by the calling function (evodb_verify_or_repair_impl)
     auto build_list_func = [&dmnman, &qsnapman](const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
                                                 const CDeterministicMNList& prevList, const CCoinsViewCache& view,
                                                 bool debugLogs, BlockValidationState& state,
-                                                CDeterministicMNList& mnListRet) NO_THREAD_SAFETY_ANALYSIS -> bool {
+                                                CDeterministicMNList& mnListRet) -> bool {
         return dmnman.RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet, qsnapman, debugLogs);
     };
 

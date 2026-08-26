@@ -659,8 +659,10 @@ bool CDeterministicMNManager::ProcessBlock(const CBlock& block, gsl::not_null<co
         }
         LogPrintf("CDeterministicMNManager::%s -- DIP3 is enforced now. nHeight=%d\n", __func__, nHeight);
     }
-    if (nHeight > to_cleanup) to_cleanup = nHeight;
-
+    int current = to_cleanup.load();
+    while (nHeight > current && !to_cleanup.compare_exchange_weak(current, nHeight)) {
+        // Loop continues if compare_exchange_weak failed (another thread changed it) (current is updated to the new value in to_cleanup)
+    }
     return true;
 }
 
@@ -1848,8 +1850,6 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
     const CBlockIndex* start_index, const CBlockIndex* stop_index, ChainstateManager& chainman,
     BuildListFromBlockFunc build_list_func, bool repair)
 {
-    AssertLockHeld(::cs_main);
-
     RecalcDiffsResult result;
     result.start_height = start_index->nHeight;
     result.stop_height = stop_index->nHeight;
@@ -1898,13 +1898,8 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
         CDeterministicMNList from_snapshot;
         CDeterministicMNList to_snapshot;
 
-        bool has_from_snapshot;
-        bool has_to_snapshot;
-        {
-            LOCK(cs);
-            has_from_snapshot = m_evoDb.Read(std::make_pair(DB_LIST_SNAPSHOT, from_index->GetBlockHash()), from_snapshot);
-            has_to_snapshot = m_evoDb.Read(std::make_pair(DB_LIST_SNAPSHOT, to_index->GetBlockHash()), to_snapshot);
-        }
+        bool has_from_snapshot = m_evoDb.Read(std::make_pair(DB_LIST_SNAPSHOT, from_index->GetBlockHash()), from_snapshot);
+        bool has_to_snapshot = m_evoDb.Read(std::make_pair(DB_LIST_SNAPSHOT, to_index->GetBlockHash()), to_snapshot);
 
         // Handle missing snapshots
         if (!has_from_snapshot) {
@@ -1930,12 +1925,14 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
             return result;
         }
 
-        // Verify this snapshot pair
-        bool is_snapshot_pair_valid;
-        {
-            LOCK(cs);
-            is_snapshot_pair_valid = VerifySnapshotPair(from_index, to_index, from_snapshot, to_snapshot, result, i, snapshot_blocks.size() - 1);
+        // Log progress periodically (every 100 snapshot pairs) to avoid spam
+        if (i % 100 == 0) {
+            LogPrintf("CDeterministicMNManager::%s -- Progress: verifying snapshot pair %d/%d (heights %d-%d)\n",
+                      __func__, i + 1, snapshot_blocks.size() - 1, from_index->nHeight, to_index->nHeight);
         }
+
+        // Verify this snapshot pair
+        bool is_snapshot_pair_valid = VerifySnapshotPair(from_index, to_index, from_snapshot, to_snapshot, result);
 
         // If repair mode is enabled and verification failed, recalculate diffs from blockchain
         if (repair && !is_snapshot_pair_valid) {
@@ -1952,7 +1949,6 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
 
     // Write repaired diffs to database
     if (repair) {
-        LOCK(cs);
         WriteRepairedDiffs(recalculated_diffs, result);
     }
 
@@ -1962,8 +1958,6 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
 std::vector<const CBlockIndex*> CDeterministicMNManager::CollectSnapshotBlocks(
     const CBlockIndex* start_index, const CBlockIndex* stop_index, const Consensus::Params& consensus_params)
 {
-    AssertLockHeld(::cs_main);
-
     std::vector<const CBlockIndex*> snapshot_blocks;
 
     // Add the starting snapshot (find the snapshot at or before start)
@@ -2013,17 +2007,8 @@ std::vector<const CBlockIndex*> CDeterministicMNManager::CollectSnapshotBlocks(
 
 bool CDeterministicMNManager::VerifySnapshotPair(
     const CBlockIndex* from_index, const CBlockIndex* to_index, const CDeterministicMNList& from_snapshot,
-    const CDeterministicMNList& to_snapshot, RecalcDiffsResult& result, size_t pair_index, size_t total_pairs)
+    const CDeterministicMNList& to_snapshot, RecalcDiffsResult& result)
 {
-    AssertLockHeld(cs);
-    AssertLockHeld(::cs_main);
-
-    // Log progress periodically (every 100 snapshot pairs) to avoid spam
-    if (pair_index % 100 == 0) {
-        LogPrintf("CDeterministicMNManager::%s -- Progress: verifying snapshot pair %d/%d (heights %d-%d)\n",
-                  __func__, pair_index + 1, total_pairs, from_index->nHeight, to_index->nHeight);
-    }
-
     // Verify this snapshot pair by applying all stored diffs sequentially
     CDeterministicMNList test_list = from_snapshot;
 
@@ -2068,8 +2053,6 @@ std::vector<std::pair<uint256, CDeterministicMNListDiff>> CDeterministicMNManage
     const CBlockIndex* from_index, const CBlockIndex* to_index, const CDeterministicMNList& from_snapshot,
     const CDeterministicMNList& to_snapshot, BuildListFromBlockFunc build_list_func, RecalcDiffsResult& result)
 {
-    AssertLockHeld(::cs_main);
-
     CDeterministicMNList current_list = from_snapshot;
     // Temporary storage for recalculated diffs (one per block in this snapshot interval)
     std::vector<std::pair<uint256, CDeterministicMNListDiff>> temp_diffs;
@@ -2143,7 +2126,7 @@ std::vector<std::pair<uint256, CDeterministicMNListDiff>> CDeterministicMNManage
 void CDeterministicMNManager::WriteRepairedDiffs(
     const std::vector<std::pair<uint256, CDeterministicMNListDiff>>& recalculated_diffs, RecalcDiffsResult& result)
 {
-    AssertLockHeld(cs);
+    AssertLockNotHeld(cs);
 
     if (recalculated_diffs.empty()) {
         return;
@@ -2178,6 +2161,7 @@ void CDeterministicMNManager::WriteRepairedDiffs(
 
     // Clear caches for repaired diffs so next read gets fresh data from disk
     // Must clear both diff cache and list cache since lists were built from old diffs
+    LOCK(cs);
     for (const auto& [block_hash, diff] : recalculated_diffs) {
         mnListDiffsCache.erase(block_hash);
         mnListsCache.erase(block_hash);
