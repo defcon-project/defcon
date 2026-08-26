@@ -21,6 +21,7 @@
 
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
+#include <llmq/context.h>
 #include <evo/providertx.h>
 #include <evo/specialtx.h>
 #include <llmq/context.h>
@@ -904,11 +905,41 @@ void FuncEvoDbDiffRoundTrip(TestChainSetup& setup)
 
     // The pass above must not be vacuous: emptying one stored diff has to
     // break it. The key literal matches DB_LIST_DIFF in deterministicmns.cpp.
-    setup.m_node.evodb->Write(std::make_pair(std::string("dmn_D3"), update_block_hash), CDeterministicMNListDiff{});
+    //
+    // The corruption goes into the raw database, the layer repair writes to
+    // and startup reads from -- a value planted in the uncommitted transaction
+    // overlay would shadow the repair's writes and fail the test for reasons
+    // production never sees. Drain the overlay first so raw is what Read hits.
+    BOOST_REQUIRE(setup.m_node.evodb->CommitRootTransaction());
+    BOOST_REQUIRE(setup.m_node.evodb->GetRawDB().Write(std::make_pair(std::string("dmn_D3"), update_block_hash),
+                                                       CDeterministicMNListDiff{}));
     result = dmnman.RecalculateAndRepairDiffs(chainman.ActiveChain().Genesis(), chainman.ActiveChain().Tip(),
                                               chainman, no_rebuild, /*repair=*/false);
     BOOST_CHECK(!result.verification_errors.empty());
     BOOST_CHECK_EQUAL(result.snapshots_verified, 0);
+
+    // Repair must recalculate the damaged interval from blocks and accept its
+    // own replay -- the replay is the second call site the discarded ApplyDiff
+    // return value broke, and verify-only coverage never reaches it.
+    CDeterministicMNManager::BuildListFromBlockFunc rebuild =
+        [&](const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
+            const CDeterministicMNList& prevList, const CCoinsViewCache& view,
+            bool debugLogs, BlockValidationState& state, CDeterministicMNList& mnListRet) {
+            return dmnman.RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet,
+                                               *setup.m_node.llmq_ctx->qsnapman, debugLogs);
+        };
+    result = dmnman.RecalculateAndRepairDiffs(chainman.ActiveChain().Genesis(), chainman.ActiveChain().Tip(),
+                                              chainman, rebuild, /*repair=*/true);
+    const std::string first_repair_error = result.repair_errors.empty() ? "" : result.repair_errors.front();
+    BOOST_REQUIRE_MESSAGE(result.repair_errors.empty(), first_repair_error);
+    BOOST_CHECK(result.diffs_recalculated > 0);
+
+    // And the database it leaves behind has to verify clean.
+    result = dmnman.RecalculateAndRepairDiffs(chainman.ActiveChain().Genesis(), chainman.ActiveChain().Tip(),
+                                              chainman, no_rebuild, /*repair=*/false);
+    const std::string post_repair_error = result.verification_errors.empty() ? "" : result.verification_errors.front();
+    BOOST_REQUIRE_MESSAGE(result.verification_errors.empty(), post_repair_error);
+    BOOST_CHECK_EQUAL(result.snapshots_verified, 1);
 }
 
 BOOST_AUTO_TEST_SUITE(evo_dip3_activation_tests)
