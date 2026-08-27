@@ -307,6 +307,15 @@ void CQuorumManager::TriggerQuorumDataRecoveryThreads(CConnman& connman, const C
     }
 }
 
+void CQuorumManager::InitializeQuorumConnections(CConnman& connman, const CBlockIndex* pindexNew) const
+{
+    if (pindexNew == nullptr) return;
+    LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- h[%d]\n", __func__, pindexNew->nHeight);
+    for (const auto& params : Params().GetConsensus().llmqs) {
+        CheckQuorumConnections(connman, params, pindexNew);
+    }
+}
+
 void CQuorumManager::UpdatedBlockTip(const CBlockIndex* pindexNew, CConnman& connman, bool fInitialDownload) const
 {
     if (!m_mn_sync.IsBlockchainSynced()) return;

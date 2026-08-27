@@ -49,6 +49,13 @@ void CDSNotificationInterface::InitializeCurrentBlockTip()
     UpdatedBlockTip(m_chainman.ActiveChain().Tip(), nullptr, m_chainman.ActiveChainstate().IsInitialBlockDownload());
 }
 
+void CDSNotificationInterface::InitializeQuorumConnections()
+{
+    assert(m_llmq_ctx);
+
+    m_llmq_ctx->qman->InitializeQuorumConnections(m_connman, m_chainman.ActiveChain().Tip());
+}
+
 void CDSNotificationInterface::AcceptedBlockHeader(const CBlockIndex *pindexNew)
 {
     assert(m_llmq_ctx);
