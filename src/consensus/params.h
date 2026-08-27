@@ -204,6 +204,12 @@ struct Params {
 
     std::vector<LLMQParams> llmqs;
     LLMQType llmqTypeChainLocks;
+    /** The ChainLock profile that takes over for CLSIGs whose signed height is
+     *  at or above nChainLocksV2ActivationHeight (the Q60 switchover). The
+     *  defaults -- no type, an unreachable height -- mean the legacy type
+     *  forever; both must be set for the resolver to ever switch. */
+    LLMQType llmqTypeChainLocksV2{LLMQType::LLMQ_NONE};
+    int nChainLocksV2ActivationHeight{std::numeric_limits<int>::max()};
     LLMQType llmqTypeDIP0024InstantSend{LLMQType::LLMQ_NONE};
     LLMQType llmqTypePlatform{LLMQType::LLMQ_NONE};
     LLMQType llmqTypeMnhf{LLMQType::LLMQ_NONE};

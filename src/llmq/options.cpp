@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <limits>
 #include <llmq/options.h>
 
 #include <chainparams.h>
@@ -119,6 +120,15 @@ bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBloc
     return IsQuorumTypeEnabledInternal(llmqType, pindexPrev, std::nullopt, std::nullopt);
 }
 
+Consensus::LLMQType GetChainLocksLLMQType(const ::Consensus::Params& params, int nSignedHeight)
+{
+    if (params.llmqTypeChainLocksV2 != Consensus::LLMQType::LLMQ_NONE &&
+        nSignedHeight >= params.nChainLocksV2ActivationHeight) {
+        return params.llmqTypeChainLocksV2;
+    }
+    return params.llmqTypeChainLocks;
+}
+
 bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev,
                                 std::optional<bool> optDIP0024IsActive, std::optional<bool> optHaveDIP0024Quorums)
 {
@@ -130,6 +140,25 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
     {
         case Consensus::LLMQType::LLMQ_DEVNET:
             return true;
+        case Consensus::LLMQType::LLMQ_DEFCON: {
+            // Q60 -- devnet-only until it graduates. Quorums start forming a
+            // few intervals before the ChainLock switchover so the resolver
+            // finds an active quorum at the activation height -- and no
+            // earlier: a commitment of a type old binaries do not know forks
+            // them off, so the quiet window before formation is the fleet's
+            // rollout window.
+            if (Params().NetworkIDString() != CBaseChainParams::DEVNET) {
+                return false;
+            }
+            const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
+            assert(llmq_params_opt.has_value());
+            const int formation_lead =
+                (llmq_params_opt->signingActiveQuorumCount + 1) * llmq_params_opt->dkgInterval;
+            if (consensusParams.nChainLocksV2ActivationHeight == std::numeric_limits<int>::max()) {
+                return false;
+            }
+            return pindexPrev->nHeight + 1 >= consensusParams.nChainLocksV2ActivationHeight - formation_lead;
+        }
         case Consensus::LLMQType::LLMQ_25_67:
         case Consensus::LLMQType::LLMQ_50_60:
         case Consensus::LLMQType::LLMQ_60_75: {

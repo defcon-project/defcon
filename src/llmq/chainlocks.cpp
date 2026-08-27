@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <llmq/chainlocks.h>
+#include <llmq/options.h>
 #include <llmq/quorums.h>
 #include <llmq/instantsend.h>
 #include <llmq/signing_shares.h>
@@ -340,7 +341,11 @@ void CChainLocksHandler::TrySignChainTip(const llmq::CInstantSendManager& isman)
         lastSignedMsgHash = msgHash;
     }
 
-    sigman.AsyncSignIfMember(Params().GetConsensus().llmqTypeChainLocks, shareman, requestId, msgHash);
+    // The profile is resolved from the signed height so that a node signing
+    // across the Q60 activation boundary switches at exactly the height every
+    // verifier will resolve for this CLSIG.
+    sigman.AsyncSignIfMember(GetChainLocksLLMQType(Params().GetConsensus(), pindex->nHeight), shareman, requestId,
+                             msgHash);
 }
 
 void CChainLocksHandler::TransactionAddedToMempool(const CTransactionRef& tx, int64_t nAcceptTime)
@@ -545,7 +550,11 @@ bool CChainLocksHandler::HasChainLock(int nHeight, const uint256& blockHash) con
 
 VerifyRecSigStatus CChainLocksHandler::VerifyChainLock(const CChainLockSig& clsig) const
 {
-    const auto llmqType = Params().GetConsensus().llmqTypeChainLocks;
+    // Every ChainLock verification in the system funnels through here -- the
+    // RPCs and the coinbase best-CL consensus check included -- so resolving
+    // the profile from the CLSIG's signed height keeps historical locks
+    // verifiable forever across the Q60 activation boundary.
+    const auto llmqType = GetChainLocksLLMQType(Params().GetConsensus(), clsig.getHeight());
     const uint256 nRequestId = ::SerializeHash(std::make_pair(llmq::CLSIG_REQUESTID_PREFIX, clsig.getHeight()));
 
     return llmq::VerifyRecoveredSig(llmqType, m_chainstate.m_chain, qman, clsig.getHeight(), nRequestId, clsig.getBlockHash(), clsig.getSig());

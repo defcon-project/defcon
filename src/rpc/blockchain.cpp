@@ -56,6 +56,7 @@
 #include <evo/specialtx.h>
 
 #include <llmq/chainlocks.h>
+#include <llmq/options.h>
 #include <llmq/instantsend.h>
 
 #include <stdint.h>
@@ -248,6 +249,7 @@ static RPCHelpMan getbestchainlock()
             {
                 {RPCResult::Type::STR_HEX, "hash", "The block hash hex-encoded"},
                 {RPCResult::Type::NUM, "height", "The block height or index"},
+                {RPCResult::Type::STR, "llmqType", "The LLMQ profile the signed height resolves to"},
                 {RPCResult::Type::STR_HEX, "signature", "The ChainLock's BLS signature"},
                 {RPCResult::Type::BOOL, "known_block", "True if the block is known by our node"},
                 {RPCResult::Type::STR_HEX, "hex", "The serialized, hex-encoded data for best ChainLock"},
@@ -270,6 +272,10 @@ static RPCHelpMan getbestchainlock()
 
     result.pushKV("blockhash", clsig.getBlockHash().GetHex());
     result.pushKV("height", clsig.getHeight());
+    if (const auto llmq_params_opt = Params().GetLLMQ(
+            llmq::GetChainLocksLLMQType(Params().GetConsensus(), clsig.getHeight()))) {
+        result.pushKV("llmqType", std::string(llmq_params_opt->name));
+    }
     result.pushKV("signature", clsig.getSig().ToString());
 
     {

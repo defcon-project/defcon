@@ -627,11 +627,19 @@ public:
         AddLLMQ(Consensus::LLMQType::LLMQ_60_75);
         AddLLMQ(Consensus::LLMQType::LLMQ_400_60);
         AddLLMQ(Consensus::LLMQType::LLMQ_400_85);
+        AddLLMQ(Consensus::LLMQType::LLMQ_DEFCON);
         AddLLMQ(Consensus::LLMQType::LLMQ_100_67);
         consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_400_60;
         consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_60_75;
         consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_100_67;
         consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_400_85;
+        // The Q60 switchover: CLSIGs signed at or above this height use
+        // llmq_defcon (60/44/41); everything below stays llmq_400_60 and
+        // remains verifiable. Quorum formation is gated to a few intervals
+        // before this height (see IsQuorumTypeEnabledInternal), which is also
+        // the deadline for every node to run a binary that knows the type.
+        consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
+        consensus.nChainLocksV2ActivationHeight = 3240;
 
         UpdateDevnetLLMQChainLocksFromArgs(args);
         UpdateDevnetLLMQInstantSendDIP0024FromArgs(args);

@@ -14,6 +14,7 @@
 
 class CBlockIndex;
 class CSporkManager;
+namespace Consensus { struct Params; }
 
 namespace llmq
 {
@@ -44,6 +45,13 @@ bool IsWatchQuorumsEnabled();
 std::map<Consensus::LLMQType, QvvecSyncMode> GetEnabledQuorumVvecSyncEntries();
 
 bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev);
+
+/** Resolve which LLMQ profile signs and verifies the ChainLock for a given
+ *  signed height. One-way and height-only by design: signing and verification
+ *  must agree from the signed height alone, never from live masternode
+ *  counts, sporks or local configuration. */
+[[nodiscard]] Consensus::LLMQType GetChainLocksLLMQType(const ::Consensus::Params& params, int nSignedHeight);
+
 bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev, std::optional<bool> optDIP0024IsActive, std::optional<bool> optHaveDIP0024Quorums);
 
 std::vector<Consensus::LLMQType> GetEnabledQuorumTypes(gsl::not_null<const CBlockIndex*> pindex);
