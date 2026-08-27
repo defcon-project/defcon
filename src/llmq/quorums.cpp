@@ -31,6 +31,8 @@
 
 #include <cxxtimer.hpp>
 
+#include <algorithm>
+
 namespace llmq
 {
 
@@ -46,6 +48,26 @@ static size_t nInboundRequestCount GUARDED_BY(cs_data_requests){0};
 
 // forward declaration to avoid circular dependency
 uint256 BuildSignHash(Consensus::LLMQType llmqType, const uint256& quorumHash, const uint256& id, const uint256& msgHash);
+
+//! Read a vector's compact-size count and reject it against @p max_size before
+//! deserializing any element, so an attacker-declared count is bounded up front
+//! instead of after the whole vector has been decoded. Returns false on an
+//! over-cap count. Same helper as in signing_shares.cpp (dash#7418); lift to a
+//! shared header when a third user appears.
+template <typename T>
+[[nodiscard]] static bool UnserializeVectorWithMaxSize(CDataStream& s, std::vector<T>& out, size_t max_size)
+{
+    const uint64_t count{ReadCompactSize(s, /*range_check=*/false)};
+    if (count > max_size) {
+        return false;
+    }
+    out.reserve(count);
+    while (out.size() < count) {
+        out.emplace_back();
+        s >> out.back();
+    }
+    return true;
+}
 
 static uint256 MakeQuorumKey(const CQuorum& q)
 {
@@ -773,6 +795,14 @@ PeerMsgRet CQuorumManager::ProcessMessage(CNode& pfrom, CConnman& connman, const
         }
 
         CQuorumDataRequest request;
+        // An honest QGETDATA is exactly the fixed-size request encoding; nError is
+        // response-only (QDATA). A smuggled value used to select the *_MISSING branches
+        // that skip the rate-limit ban, so reject any longer payload by length -- this
+        // also catches an explicitly serialized UNDEFINED byte and trailing garbage.
+        // (dash#7605)
+        if (vRecv.size() > GetSerializeSize(request, vRecv.GetVersion())) {
+            return errorHandler("oversized qgetdata", 100);
+        }
         vRecv >> request;
 
         auto sendQDATA = [&](CQuorumDataRequest::Errors nError,
@@ -910,9 +940,15 @@ PeerMsgRet CQuorumManager::ProcessMessage(CNode& pfrom, CConnman& connman, const
 
         // Check if request has QUORUM_VERIFICATION_VECTOR data
         if (request.GetDataMask() & CQuorumDataRequest::QUORUM_VERIFICATION_VECTOR) {
-
+            // Reject the wire count before decoding any BLS G1 element so a bogus
+            // count cannot spend arbitrary CPU on doomed decodes. A mismatch -- over
+            // or under -- is a protocol violation worth a full ban. (dash#7416)
+            const size_t expected_vvec_size{static_cast<size_t>(pQuorum->params.threshold)};
             std::vector<CBLSPublicKey> verificationVector;
-            vRecv >> verificationVector;
+            if (!UnserializeVectorWithMaxSize(vRecv, verificationVector, expected_vvec_size) ||
+                verificationVector.size() != expected_vvec_size) {
+                return errorHandler("invalid quorum verification vector size", 100);
+            }
 
             if (pQuorum->SetVerificationVector(verificationVector)) {
                 StartCachePopulatorThread(pQuorum);
@@ -934,8 +970,16 @@ PeerMsgRet CQuorumManager::ProcessMessage(CNode& pfrom, CConnman& connman, const
                 return errorHandler("Not a member of the quorum", 0); // Don't bump score because we asked for it
             }
 
+            // Same bound for the encrypted contributions: the responder sends
+            // exactly one per valid member. (dash#7416)
+            const auto& validMembers = pQuorum->qc->validMembers;
+            const size_t expected_contributions{
+                static_cast<size_t>(std::count(validMembers.begin(), validMembers.end(), true))};
             std::vector<CBLSIESEncryptedObject<CBLSSecretKey>> vecEncrypted;
-            vRecv >> vecEncrypted;
+            if (!UnserializeVectorWithMaxSize(vRecv, vecEncrypted, expected_contributions) ||
+                vecEncrypted.size() != expected_contributions) {
+                return errorHandler("invalid encrypted contribution vector size", 100);
+            }
 
             std::vector<CBLSSecretKey> vecSecretKeys;
             vecSecretKeys.resize(vecEncrypted.size());
