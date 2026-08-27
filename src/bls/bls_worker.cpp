@@ -704,7 +704,7 @@ void CBLSWorker::AsyncVerifyContributionShares(const CBLSId& forId, Span<BLSVeri
         return;
     }
 
-    auto verifier = std::make_shared<ContributionVerifier>(forId, vvecs, skShares, 8, parallel, aggregated, workerPool, std::move(doneCallback));
+    auto verifier = std::make_shared<ContributionVerifier>(forId, vvecs, skShares, CONTRIBUTION_VERIFY_BATCH_SIZE, parallel, aggregated, workerPool, std::move(doneCallback));
     verifier->Start();
 }
 
