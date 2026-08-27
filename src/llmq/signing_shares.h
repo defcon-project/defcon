@@ -329,8 +329,9 @@ public:
         CSigSharesInv announced;
         CSigSharesInv requested;
         CSigSharesInv knows;
+
+        bool receivedAnnouncement{false};
     };
-    // TODO limit number of sessions per node
     std::unordered_map<uint256, Session, StaticSaltedHasher> sessions;
 
     std::unordered_map<uint32_t, Session*> sessionByRecvId;
@@ -343,6 +344,13 @@ public:
 
     Session& GetOrCreateSessionFromShare(const CSigShare& sigShare);
     Session& GetOrCreateSessionFromAnn(const CSigSesAnn& ann);
+    //! A refresh of an already-announced session is always allowed; a session the peer has
+    //! only seen through shares we sent does not count against its announcement budget.
+    //! (dash#7351, adapted)
+    [[nodiscard]] bool CanCreateSessionFromAnn(const CSigSesAnn& ann, size_t maxSessions) const;
+    [[nodiscard]] size_t GetSessionCount() const;
+    [[nodiscard]] size_t GetSessionCount(Consensus::LLMQType llmqType) const;
+    [[nodiscard]] size_t GetAnnouncementSessionCount(Consensus::LLMQType llmqType) const;
     Session* GetSessionBySignHash(const uint256& signHash);
     Session* GetSessionByRecvId(uint32_t sessionId);
     bool GetSessionInfoByRecvId(uint32_t sessionId, SessionInfo& retInfo);
