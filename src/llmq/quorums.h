@@ -288,6 +288,13 @@ public:
 
     void UpdatedBlockTip(const CBlockIndex* pindexNew, CConnman& connman, bool fInitialDownload) const;
 
+    //! Startup-only: establish quorum connections for the current tip without waiting for
+    //! masternode sync. At startup mnsync cannot be complete yet, so the UpdatedBlockTip
+    //! path skips CheckQuorumConnections -- and on an idle chain no later tip arrives to
+    //! re-run it, leaving a restarted masternode without its DKG/signing mesh.
+    //! (dash#7240, adapted)
+    void InitializeQuorumConnections(CConnman& connman, const CBlockIndex* pindexNew) const;
+
     PeerMsgRet ProcessMessage(CNode& pfrom, CConnman& connman, const std::string& msg_type, CDataStream& vRecv);
 
     static bool HasQuorum(Consensus::LLMQType llmqType, const CQuorumBlockProcessor& quorum_block_processor, const uint256& quorumHash);
