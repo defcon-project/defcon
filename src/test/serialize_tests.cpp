@@ -178,6 +178,49 @@ BOOST_AUTO_TEST_CASE(vector_bool)
     BOOST_CHECK(SerializeHash(vec1) == SerializeHash(vec2));
 }
 
+/**
+ * DYNBITSET must not allocate from an attacker-declared CompactSize when the
+ * remaining stream is far too small to hold the claimed bit payload. A
+ * handful of bytes claiming ~1e6 bits is the amplification primitive:
+ * ReadCompactSize permits up to MAX_SIZE, which would resize a
+ * std::vector<bool> and allocate a byte buffer of megabytes before the short
+ * read throws. (dash#7532) The reason string is matched exactly so the test
+ * cannot pass on an unrelated short read -- the very failure mode the bound
+ * replaces.
+ */
+BOOST_AUTO_TEST_CASE(dynbitset_rejects_oversized_declared_length)
+{
+    constexpr uint64_t kClaimedBits = 1000000;
+
+    CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
+    WriteCompactSize(s, kClaimedBits);
+    // No bit payload follows, so the remaining size is zero.
+
+    std::vector<bool> bits;
+    BOOST_CHECK_EXCEPTION(s >> DYNBITSET(bits), std::ios_base::failure,
+                          HasReason("declared size exceeds remaining bytes"));
+    // Rejection has to precede the resize, so the destination must still
+    // hold its exact pre-deserialization state.
+    BOOST_CHECK(bits.empty());
+}
+
+/** The largest bit count accepted by ReadCompactSize must still round-trip. */
+BOOST_AUTO_TEST_CASE(dynbitset_accepts_maximum_size)
+{
+    constexpr size_t kSize = MAX_SIZE;
+    std::vector<bool> original(kSize, false);
+    for (size_t i = 0; i < kSize; i += 3) {
+        original[i] = true;
+    }
+
+    CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
+    s << DYNBITSET(original);
+
+    std::vector<bool> decoded;
+    s >> DYNBITSET(decoded);
+    BOOST_CHECK(decoded == original);
+}
+
 BOOST_AUTO_TEST_CASE(noncanonical)
 {
     // Write some non-canonical CompactSize encodings, and

@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstring>
 #include <ios>
+#include <type_traits>
 #include <limits>
 #include <list>
 #include <map>
@@ -429,12 +430,39 @@ void WriteFixedBitSet(Stream& s, const std::vector<bool>& vec, size_t size)
     s.write(AsBytes(Span{vBytes}));
 }
 
+namespace serialize_internal {
+//! Whether the stream reports how many bytes remain to be read. size() must
+//! mean bytes *remaining*, not the total the stream ever held --
+//! ReadFixedBitSet relies on that to bound a wire-declared bit count before
+//! allocating anything.
+template <typename S, typename = void>
+struct StreamHasSize : std::false_type {};
+template <typename S>
+struct StreamHasSize<S, std::void_t<decltype(std::declval<const S&>().size())>> : std::true_type {};
+} // namespace serialize_internal
+
 template<typename Stream>
 void ReadFixedBitSet(Stream& s, std::vector<bool>& vec, size_t size)
 {
+    const size_t nbytes = (size + 7) / 8;
+    // Bound the wire-declared length against the bytes actually left in the
+    // stream before allocating: a handful of bytes declaring millions of
+    // bits otherwise forces a multi-megabyte resize and zero-fill that is
+    // only abandoned when the short read throws. A well-formed message
+    // always carries exactly the required bytes, so this rejects only claims
+    // that could never have been satisfied. (dash#7532, adapted: the
+    // upstream C++20 SizedStream concept became a C++17 detection trait, so
+    // a stream without size() skips the bound instead of failing to
+    // compile.)
+    if constexpr (serialize_internal::StreamHasSize<Stream>::value) {
+        if (nbytes > s.size()) {
+            throw std::ios_base::failure("ReadFixedBitSet(): declared size exceeds remaining bytes");
+        }
+    }
+
     vec.resize(size);
 
-    std::vector<uint8_t> vBytes((size + 7) / 8);
+    std::vector<uint8_t> vBytes(nbytes);
     s.read(AsWritableBytes(Span{vBytes}));
     for (size_t p = 0; p < size; p++)
         vec[p] = (vBytes[p / 8] & (1 << (p % 8))) != 0;

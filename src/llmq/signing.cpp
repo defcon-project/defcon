@@ -503,15 +503,21 @@ void CSigningManager::CollectPendingRecoveredSigsToVerify(
             auto llmqType = recSig->getLlmqType();
             auto quorumKey = std::make_pair(recSig->getLlmqType(), recSig->getQuorumHash());
             if (!retQuorums.count(quorumKey)) {
-                auto quorum = qman.GetQuorum(llmqType, recSig->getQuorumHash());
-                if (!quorum) {
-                    LogPrint(BCLog::LLMQ, "CSigningManager::%s -- quorum %s not found, node=%d\n", __func__,
+                // Cheap gate first: GetQuorum can rebuild an arbitrary
+                // historical quorum on a cache miss, so don't let an
+                // unsolicited QSIGREC force that work for an inactive hash.
+                // (dash#7531)
+                if (!IsQuorumActive(llmqType, qman, recSig->getQuorumHash())) {
+                    LogPrint(BCLog::LLMQ, "CSigningManager::%s -- quorum %s not active anymore, node=%d\n", __func__,
                               recSig->getQuorumHash().ToString(), nodeId);
                     it = v.erase(it);
                     continue;
                 }
-                if (!IsQuorumActive(llmqType, qman, quorum->qc->quorumHash)) {
-                    LogPrint(BCLog::LLMQ, "CSigningManager::%s -- quorum %s not active anymore, node=%d\n", __func__,
+                auto quorum = qman.GetQuorum(llmqType, recSig->getQuorumHash());
+                if (!quorum) {
+                    // Active per ScanQuorums but no longer materializable
+                    // (e.g. reorg); not peer-controlled, so no score.
+                    LogPrint(BCLog::LLMQ, "CSigningManager::%s -- quorum %s not found, node=%d\n", __func__,
                               recSig->getQuorumHash().ToString(), nodeId);
                     it = v.erase(it);
                     continue;
