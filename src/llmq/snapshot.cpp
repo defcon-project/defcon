@@ -15,6 +15,8 @@
 #include <chainparams.h>
 #include <serialize.h>
 #include <univalue.h>
+
+#include <algorithm>
 #include <validation.h>
 
 namespace llmq {
@@ -112,9 +114,15 @@ bool BuildQuorumRotationInfo(CDeterministicMNManager& dmnman, CQuorumSnapshotMan
             }
             baseBlockIndexes.push_back(blockIndex);
         }
-        if (use_legacy_construction) {
-            std::sort(baseBlockIndexes.begin(), baseBlockIndexes.end(),
-                      [](const CBlockIndex* a, const CBlockIndex* b) { return a->nHeight < b->nHeight; });
+        // Sort in all cases: the legacy path (served to older peers) relies on the
+        // order for baseBlockIndexes.back() and GetLastBaseBlockHash(). (dash#7349)
+        std::sort(baseBlockIndexes.begin(), baseBlockIndexes.end(),
+                  [](const CBlockIndex* a, const CBlockIndex* b) { return a->nHeight < b->nHeight; });
+        if (!use_legacy_construction) {
+            // Only deduplicate on the non-legacy path; leave the legacy path untouched so the
+            // wire response to older peers stays bit-for-bit identical to the pre-fix behavior.
+            baseBlockIndexes.erase(std::unique(baseBlockIndexes.begin(), baseBlockIndexes.end()),
+                                   baseBlockIndexes.end());
         }
     }
 

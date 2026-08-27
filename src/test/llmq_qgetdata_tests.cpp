@@ -6,6 +6,7 @@
 #include <llmq/quorums.h>
 #include <uint256.h>
 #include <util/time.h>
+#include <version.h>
 
 #include <test/util/setup_common.h>
 
@@ -119,6 +120,19 @@ BOOST_AUTO_TEST_CASE(qgetdata_global_capacity_does_not_limit_outbound_requests)
                 DataRequestRegistration::Accepted);
 
     DrainTrackingState(kNow);
+}
+
+// dash#7605: the intake guard rejects any QGETDATA longer than the canonical
+// request encoding. The property it relies on: nError is response-only, so a
+// request carrying one -- however it got there -- serializes strictly longer.
+BOOST_AUTO_TEST_CASE(qgetdata_request_canonical_size_excludes_error)
+{
+    CQuorumDataRequest request;
+    const size_t canonical = GetSerializeSize(request, PROTOCOL_VERSION);
+    BOOST_CHECK_EQUAL(canonical, 1U + 32U + 2U + 32U); // llmqType + quorumHash + nDataMask + proTxHash
+
+    request.SetError(CQuorumDataRequest::Errors::NONE);
+    BOOST_CHECK_GT(GetSerializeSize(request, PROTOCOL_VERSION), canonical);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
