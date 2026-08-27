@@ -159,12 +159,19 @@ class SigShareMap
 {
 private:
     std::unordered_map<uint256, std::unordered_map<uint16_t, T>, StaticSaltedHasher> internalMap;
+    // Running total across all sign-hash buckets, kept in sync by every mutating method,
+    // so Size() is O(1): the intake caps consult it on every incoming share.
+    // (dash#7415, adapted)
+    size_t m_num_entries{0};
 
 public:
     bool Add(const SigShareKey& k, const T& v)
     {
-        auto& m = internalMap[k.first];
-        return m.emplace(k.second, v).second;
+        if (!internalMap[k.first].emplace(k.second, v).second) {
+            return false;
+        }
+        ++m_num_entries;
+        return true;
     }
 
     void Erase(const SigShareKey& k)
@@ -173,7 +180,7 @@ public:
         if (it == internalMap.end()) {
             return;
         }
-        it->second.erase(k.second);
+        m_num_entries -= it->second.erase(k.second);
         if (it->second.empty()) {
             internalMap.erase(it);
         }
@@ -182,6 +189,7 @@ public:
     void Clear()
     {
         internalMap.clear();
+        m_num_entries = 0;
     }
 
     [[nodiscard]] bool Has(const SigShareKey& k) const
@@ -228,11 +236,7 @@ public:
 
     [[nodiscard]] size_t Size() const
     {
-        size_t s = 0;
-        for (auto& p : internalMap) {
-            s += p.second.size();
-        }
-        return s;
+        return m_num_entries;
     }
 
     [[nodiscard]] size_t CountForSignHash(const uint256& signHash) const
@@ -260,7 +264,12 @@ public:
 
     void EraseAllForSignHash(const uint256& signHash)
     {
-        internalMap.erase(signHash);
+        auto it = internalMap.find(signHash);
+        if (it == internalMap.end()) {
+            return;
+        }
+        m_num_entries -= it->second.size();
+        internalMap.erase(it);
     }
 
     template<typename F>
@@ -273,6 +282,7 @@ public:
                 k.second = jt->first;
                 if (f(k, jt->second)) {
                     jt = it->second.erase(jt);
+                    --m_num_entries;
                 } else {
                     ++jt;
                 }
@@ -329,8 +339,9 @@ public:
         CSigSharesInv announced;
         CSigSharesInv requested;
         CSigSharesInv knows;
+
+        bool receivedAnnouncement{false};
     };
-    // TODO limit number of sessions per node
     std::unordered_map<uint256, Session, StaticSaltedHasher> sessions;
 
     std::unordered_map<uint32_t, Session*> sessionByRecvId;
@@ -343,6 +354,13 @@ public:
 
     Session& GetOrCreateSessionFromShare(const CSigShare& sigShare);
     Session& GetOrCreateSessionFromAnn(const CSigSesAnn& ann);
+    //! A refresh of an already-announced session is always allowed; a session the peer has
+    //! only seen through shares we sent does not count against its announcement budget.
+    //! (dash#7351, adapted)
+    [[nodiscard]] bool CanCreateSessionFromAnn(const CSigSesAnn& ann, size_t maxSessions) const;
+    [[nodiscard]] size_t GetSessionCount() const;
+    [[nodiscard]] size_t GetSessionCount(Consensus::LLMQType llmqType) const;
+    [[nodiscard]] size_t GetAnnouncementSessionCount(Consensus::LLMQType llmqType) const;
     Session* GetSessionBySignHash(const uint256& signHash);
     Session* GetSessionByRecvId(uint32_t sessionId);
     bool GetSessionInfoByRecvId(uint32_t sessionId, SessionInfo& retInfo);
@@ -362,20 +380,31 @@ public:
 
 class CSigSharesManager : public CRecoveredSigsListener
 {
-private:
-    static constexpr int64_t SESSION_NEW_SHARES_TIMEOUT{60};
-    static constexpr int64_t SIG_SHARE_REQUEST_TIMEOUT{5};
-
+public:
     // we try to keep total message size below 10k
     static constexpr size_t MAX_MSGS_CNT_QSIGSESANN{100};
     static constexpr size_t MAX_MSGS_CNT_QGETSIGSHARES{200};
     static constexpr size_t MAX_MSGS_CNT_QSIGSHARESINV{200};
     // The maximum quorum size is also the maximum number of sigs we need to support
     static constexpr size_t MAX_MSGS_TOTAL_BATCHED_SIGS{Consensus::MAX_LLMQ_SIZE};
+    static constexpr size_t MAX_MSGS_SIG_SHARES{32};
+
+    //! Decode a QBSIGSHARES payload into its vector of CBatchedSigShares.
+    //!
+    //! Each batch could individually stay within the per-batch cap while their aggregate
+    //! exceeds it, so this bounds the outer batch count and checks the running total of
+    //! inner sig shares as it decodes, stopping before an attacker forces us through the
+    //! full cross product of the per-vector limits. A wire count above either cap throws
+    //! std::ios_base::failure once detected, leaving the caller to log and ban.
+    //! (dash#7418, adapted)
+    static std::vector<CBatchedSigShares> UnserializeBatchedSigShares(CDataStream& vRecv);
+
+private:
+    static constexpr int64_t SESSION_NEW_SHARES_TIMEOUT{60};
+    static constexpr int64_t SIG_SHARE_REQUEST_TIMEOUT{5};
 
     static constexpr int64_t EXP_SEND_FOR_RECOVERY_TIMEOUT{2000};
     static constexpr int64_t MAX_SEND_FOR_RECOVERY_TIMEOUT{10000};
-    static constexpr size_t MAX_MSGS_SIG_SHARES{32};
 
     RecursiveMutex cs;
 
@@ -455,8 +484,12 @@ private:
     static bool PreVerifyBatchedSigShares(const CActiveMasternodeManager& mn_activeman, const CQuorumManager& quorum_manager,
                                           const CSigSharesNodeState::SessionInfo& session, const CBatchedSigShares& batchedSigShares, bool& retBan);
 
+    // The returned batch contains at most maxShares actual sig shares, drawn one at a time in
+    // randomized round-robin order across peers so that no single peer can dominate a batch.
+    // Bounding by shares (not by unique sessions) caps the BLS work a batch can carry.
+    // (dash#7415, adapted)
     bool CollectPendingSigSharesToVerify(
-        size_t maxUniqueSessions, std::unordered_map<NodeId, std::vector<CSigShare>>& retSigShares,
+        size_t maxShares, std::unordered_map<NodeId, std::vector<CSigShare>>& retSigShares,
         std::unordered_map<std::pair<Consensus::LLMQType, uint256>, CQuorumCPtr, StaticSaltedHasher>& retQuorums);
     bool ProcessPendingSigShares(PeerManager& peerman, const CConnman& connman);
 
@@ -471,6 +504,8 @@ private:
 
     bool GetSessionInfoByRecvId(NodeId nodeId, uint32_t sessionId, CSigSharesNodeState::SessionInfo& retInfo);
     static CSigShare RebuildSigShare(const CSigSharesNodeState::SessionInfo& session, const std::pair<uint16_t, CBLSLazySignature>& in);
+    bool TryAddPendingIncomingSigShare(NodeId nodeId, CSigSharesNodeState& nodeState, const CSigShare& sigShare)
+        EXCLUSIVE_LOCKS_REQUIRED(cs);
 
     void Cleanup(const CConnman& connman);
     void RemoveSigSharesForSession(const uint256& signHash) EXCLUSIVE_LOCKS_REQUIRED(cs);

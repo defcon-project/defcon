@@ -25,6 +25,43 @@
 
 namespace llmq
 {
+namespace {
+// A peer legitimately follows only a handful of concurrent signing sessions per LLMQ type;
+// bounding announcements keeps the per-node session maps from being grown without limit.
+// (dash#7351, adapted)
+constexpr size_t MAX_SESSIONS_PER_PEER_FACTOR{4};
+constexpr size_t MIN_SESSIONS_PER_PEER{100};
+
+// Incoming QSIGSHARE/QBSIGSHARES traffic is cheap to admit but drains only at BLS verification
+// speed, so unverified shares are bounded and over-cap shares dropped without misbehaviour scoring.
+// (dash#7415, adapted)
+constexpr size_t MAX_PENDING_SIG_SHARES_PER_NODE{1000};
+constexpr size_t MAX_PENDING_SIG_SHARES_TOTAL{10000};
+
+size_t GetMaxSessionsForPeer(const Consensus::LLMQParams& params)
+{
+    return std::max<size_t>(size_t(params.size) * MAX_SESSIONS_PER_PEER_FACTOR, MIN_SESSIONS_PER_PEER);
+}
+
+//! Read a vector's compact-size count and reject it against @p max_size before deserializing
+//! any element, so an attacker-declared count is bounded up front instead of after the whole
+//! vector has been decoded. Returns false on an over-cap count. (dash#7418, adapted)
+template <typename T>
+[[nodiscard]] bool UnserializeVectorWithMaxSize(CDataStream& s, std::vector<T>& out, size_t max_size)
+{
+    const uint64_t count{ReadCompactSize(s, /*range_check=*/false)};
+    if (count > max_size) {
+        return false;
+    }
+    out.reserve(count);
+    while (out.size() < count) {
+        out.emplace_back();
+        s >> out.back();
+    }
+    return true;
+}
+} // namespace
+
 void CSigShare::UpdateKey()
 {
     key.first = this->buildSignHash();
@@ -129,7 +166,30 @@ CSigSharesNodeState::Session& CSigSharesNodeState::GetOrCreateSessionFromAnn(con
     if (s.announced.inv.empty()) {
         InitSession(s, signHash, ann);
     }
+    s.receivedAnnouncement = true;
     return s;
+}
+
+bool CSigSharesNodeState::CanCreateSessionFromAnn(const llmq::CSigSesAnn& ann, size_t maxSessions) const
+{
+    return sessions.count(ann.buildSignHash()) != 0 || GetAnnouncementSessionCount(ann.getLlmqType()) < maxSessions;
+}
+
+size_t CSigSharesNodeState::GetSessionCount() const
+{
+    return sessions.size();
+}
+
+size_t CSigSharesNodeState::GetSessionCount(Consensus::LLMQType llmqType) const
+{
+    return ranges::count_if(sessions, [&](const auto& kv) { return kv.second.llmqType == llmqType; });
+}
+
+size_t CSigSharesNodeState::GetAnnouncementSessionCount(Consensus::LLMQType llmqType) const
+{
+    return ranges::count_if(sessions, [&](const auto& kv) {
+        return kv.second.receivedAnnouncement && kv.second.llmqType == llmqType;
+    });
 }
 
 CSigSharesNodeState::Session* CSigSharesNodeState::GetSessionBySignHash(const uint256& signHash)
@@ -216,6 +276,26 @@ void CSigSharesManager::InterruptWorkerThread()
     workInterrupt();
 }
 
+std::vector<CBatchedSigShares> CSigSharesManager::UnserializeBatchedSigShares(CDataStream& vRecv)
+{
+    std::vector<CBatchedSigShares> msgs;
+    const uint64_t msgs_size{ReadCompactSize(vRecv, /*range_check=*/false)};
+    if (msgs_size > MAX_MSGS_TOTAL_BATCHED_SIGS) {
+        throw std::ios_base::failure("QBSIGSHARES batch count too large");
+    }
+    msgs.reserve(msgs_size);
+    size_t total_sigs_count{0};
+    while (msgs.size() < msgs_size) {
+        msgs.emplace_back();
+        vRecv >> msgs.back();
+        total_sigs_count += msgs.back().sigShares.size();
+        if (total_sigs_count > MAX_MSGS_TOTAL_BATCHED_SIGS) {
+            throw std::ios_base::failure("QBSIGSHARES sig share count too large");
+        }
+    }
+    return msgs;
+}
+
 void CSigSharesManager::ProcessMessage(const CNode& pfrom, PeerManager& peerman, const CSporkManager& sporkman,
                                        const std::string& msg_type, CDataStream& vRecv)
 {
@@ -225,10 +305,8 @@ void CSigSharesManager::ProcessMessage(const CNode& pfrom, PeerManager& peerman,
 
     if (sporkman.IsSporkActive(SPORK_21_QUORUM_ALL_CONNECTED) && msg_type == NetMsgType::QSIGSHARE) {
         std::vector<CSigShare> receivedSigShares;
-        vRecv >> receivedSigShares;
-
-        if (receivedSigShares.size() > MAX_MSGS_SIG_SHARES) {
-            LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- too many sigs in QSIGSHARE message. cnt=%d, max=%d, node=%d\n", __func__, receivedSigShares.size(), MAX_MSGS_SIG_SHARES, pfrom.GetId());
+        if (!UnserializeVectorWithMaxSize(vRecv, receivedSigShares, MAX_MSGS_SIG_SHARES)) {
+            LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- too many sigs in QSIGSHARE message. max=%d, node=%d\n", __func__, MAX_MSGS_SIG_SHARES, pfrom.GetId());
             BanNode(pfrom.GetId(), peerman);
             return;
         }
@@ -240,9 +318,8 @@ void CSigSharesManager::ProcessMessage(const CNode& pfrom, PeerManager& peerman,
 
     if (msg_type == NetMsgType::QSIGSESANN) {
         std::vector<CSigSesAnn> msgs;
-        vRecv >> msgs;
-        if (msgs.size() > MAX_MSGS_CNT_QSIGSESANN) {
-            LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- too many announcements in QSIGSESANN message. cnt=%d, max=%d, node=%d\n", __func__, msgs.size(), MAX_MSGS_CNT_QSIGSESANN, pfrom.GetId());
+        if (!UnserializeVectorWithMaxSize(vRecv, msgs, MAX_MSGS_CNT_QSIGSESANN)) {
+            LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- too many announcements in QSIGSESANN message. max=%d, node=%d\n", __func__, MAX_MSGS_CNT_QSIGSESANN, pfrom.GetId());
             BanNode(pfrom.GetId(), peerman);
             return;
         }
@@ -253,9 +330,8 @@ void CSigSharesManager::ProcessMessage(const CNode& pfrom, PeerManager& peerman,
         }
     } else if (msg_type == NetMsgType::QSIGSHARESINV) {
         std::vector<CSigSharesInv> msgs;
-        vRecv >> msgs;
-        if (msgs.size() > MAX_MSGS_CNT_QSIGSHARESINV) {
-            LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- too many invs in QSIGSHARESINV message. cnt=%d, max=%d, node=%d\n", __func__, msgs.size(), MAX_MSGS_CNT_QSIGSHARESINV, pfrom.GetId());
+        if (!UnserializeVectorWithMaxSize(vRecv, msgs, MAX_MSGS_CNT_QSIGSHARESINV)) {
+            LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- too many invs in QSIGSHARESINV message. max=%d, node=%d\n", __func__, MAX_MSGS_CNT_QSIGSHARESINV, pfrom.GetId());
             BanNode(pfrom.GetId(), peerman);
             return;
         }
@@ -266,9 +342,8 @@ void CSigSharesManager::ProcessMessage(const CNode& pfrom, PeerManager& peerman,
         }
     } else if (msg_type == NetMsgType::QGETSIGSHARES) {
         std::vector<CSigSharesInv> msgs;
-        vRecv >> msgs;
-        if (msgs.size() > MAX_MSGS_CNT_QGETSIGSHARES) {
-            LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- too many invs in QGETSIGSHARES message. cnt=%d, max=%d, node=%d\n", __func__, msgs.size(), MAX_MSGS_CNT_QGETSIGSHARES, pfrom.GetId());
+        if (!UnserializeVectorWithMaxSize(vRecv, msgs, MAX_MSGS_CNT_QGETSIGSHARES)) {
+            LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- too many invs in QGETSIGSHARES message. max=%d, node=%d\n", __func__, MAX_MSGS_CNT_QGETSIGSHARES, pfrom.GetId());
             BanNode(pfrom.GetId(), peerman);
             return;
         }
@@ -279,15 +354,12 @@ void CSigSharesManager::ProcessMessage(const CNode& pfrom, PeerManager& peerman,
         }
     } else if (msg_type == NetMsgType::QBSIGSHARES) {
         std::vector<CBatchedSigShares> msgs;
-        vRecv >> msgs;
-        size_t totalSigsCount = 0;
-        for (const auto& bs : msgs) {
-            totalSigsCount += bs.sigShares.size();
-        }
-        if (totalSigsCount > MAX_MSGS_TOTAL_BATCHED_SIGS) {
-            LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- too many sigs in QBSIGSHARES message. cnt=%d, max=%d, node=%d\n", __func__, msgs.size(), MAX_MSGS_TOTAL_BATCHED_SIGS, pfrom.GetId());
+        try {
+            msgs = UnserializeBatchedSigShares(vRecv);
+        } catch (const std::ios_base::failure& e) {
+            LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- rejected QBSIGSHARES from node=%d: %s\n", __func__, pfrom.GetId(), e.what());
             BanNode(pfrom.GetId(), peerman);
-            return;
+            throw;
         }
         if (!ranges::all_of(msgs,
                             [this, &pfrom](const auto& bs){ return ProcessMessageBatchedSigShares(pfrom, bs); })) {
@@ -300,7 +372,8 @@ void CSigSharesManager::ProcessMessage(const CNode& pfrom, PeerManager& peerman,
 bool CSigSharesManager::ProcessMessageSigSesAnn(const CNode& pfrom, const CSigSesAnn& ann)
 {
     auto llmqType = ann.getLlmqType();
-    if (!Params().GetLLMQ(llmqType).has_value()) {
+    const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
+    if (!llmq_params_opt.has_value()) {
         return false;
     }
     if (ann.getSessionId() == UNINITIALIZED_SESSION_ID || ann.getQuorumHash().IsNull() || ann.getId().IsNull() || ann.getMsgHash().IsNull()) {
@@ -319,7 +392,17 @@ bool CSigSharesManager::ProcessMessageSigSesAnn(const CNode& pfrom, const CSigSe
 
     LOCK(cs);
     auto& nodeState = nodeStates[pfrom.GetId()];
+    const size_t maxSessions = GetMaxSessionsForPeer(*llmq_params_opt);
+    if (!nodeState.CanCreateSessionFromAnn(ann, maxSessions)) {
+        LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- too many sessions. cnt=%d, max=%d, llmqType=%d, node=%d\n",
+                 __func__, nodeState.GetAnnouncementSessionCount(llmqType), maxSessions, ToUnderlying(llmqType), pfrom.GetId());
+        return true;
+    }
+    const uint256 signHash = ann.buildSignHash();
     auto& session = nodeState.GetOrCreateSessionFromAnn(ann);
+    // Sessions created by announcement alone must also age out; without a time-seen entry
+    // only the arrival of a share would ever start their cleanup clock.
+    timeSeenForSessions.try_emplace(signHash, GetTime<std::chrono::seconds>().count());
     nodeState.sessionByRecvId.erase(session.recvSessionId);
     nodeState.sessionByRecvId.erase(ann.getSessionId());
     session.recvSessionId = ann.getSessionId();
@@ -451,7 +534,7 @@ bool CSigSharesManager::ProcessMessageBatchedSigShares(const CNode& pfrom, const
     LOCK(cs);
     auto& nodeState = nodeStates[pfrom.GetId()];
     for (const auto& s : sigSharesToProcess) {
-        nodeState.pendingIncomingSigShares.Add(s.GetKey(), s);
+        TryAddPendingIncomingSigShare(pfrom.GetId(), nodeState, s);
     }
     return true;
 }
@@ -511,7 +594,7 @@ void CSigSharesManager::ProcessMessageSigShare(NodeId fromId, PeerManager& peerm
         }
 
         auto& nodeState = nodeStates[fromId];
-        nodeState.pendingIncomingSigShares.Add(sigShare.GetKey(), sigShare);
+        TryAddPendingIncomingSigShare(fromId, nodeState, sigShare);
     }
 
     LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- signHash=%s, id=%s, msgHash=%s, member=%d, node=%d\n", __func__,
@@ -560,8 +643,35 @@ bool CSigSharesManager::PreVerifyBatchedSigShares(const CActiveMasternodeManager
     return true;
 }
 
+bool CSigSharesManager::TryAddPendingIncomingSigShare(NodeId nodeId, CSigSharesNodeState& nodeState,
+                                                      const CSigShare& sigShare)
+{
+    AssertLockHeld(cs);
+
+    if (nodeState.banned) {
+        return false;
+    }
+    if (nodeState.pendingIncomingSigShares.Size() >= MAX_PENDING_SIG_SHARES_PER_NODE) {
+        LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- per-node pending sig shares cap reached (%d), dropping sigShare. node=%d\n",
+                 __func__, MAX_PENDING_SIG_SHARES_PER_NODE, nodeId);
+        return false;
+    }
+    size_t total{0};
+    for (const auto& [_, ns] : nodeStates) {
+        // the size of nodeStates is limited by the connection count (maxconnections=125 floor on
+        // this chain), so the per-share sweep stays cheap; each Size() itself is O(1)
+        total += ns.pendingIncomingSigShares.Size();
+    }
+    if (total >= MAX_PENDING_SIG_SHARES_TOTAL) {
+        LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- global pending sig shares cap reached (%d), dropping sigShare. node=%d\n",
+                 __func__, MAX_PENDING_SIG_SHARES_TOTAL, nodeId);
+        return false;
+    }
+    return nodeState.pendingIncomingSigShares.Add(sigShare.GetKey(), sigShare);
+}
+
 bool CSigSharesManager::CollectPendingSigSharesToVerify(
-    size_t maxUniqueSessions, std::unordered_map<NodeId, std::vector<CSigShare>>& retSigShares,
+    size_t maxShares, std::unordered_map<NodeId, std::vector<CSigShare>>& retSigShares,
     std::unordered_map<std::pair<Consensus::LLMQType, uint256>, CQuorumCPtr, StaticSaltedHasher>& retQuorums)
 {
     {
@@ -570,16 +680,18 @@ bool CSigSharesManager::CollectPendingSigSharesToVerify(
             return false;
         }
 
-        // This will iterate node states in random order and pick one sig share at a time. This avoids processing
-        // of large batches at once from the same node while other nodes also provided shares. If we wouldn't do this,
-        // other nodes would be able to poison us with a large batch with N-1 valid shares and the last one being
-        // invalid, making batch verification fail and revert to per-share verification, which in turn would slow down
-        // the whole verification process
-        std::unordered_set<std::pair<NodeId, uint256>, StaticSaltedHasher> uniqueSignHashes;
+        // Iterate node states in random order and pick one sig share at a time. This ensures no single peer can
+        // dominate a batch and that a large flood from one peer cannot poison batch verification (an N-1 valid /
+        // 1 invalid batch would fall back to per-share verification and slow the whole pipeline).
+        //
+        // The batch is bounded by the number of shares actually added (maxShares), not by the count of unique
+        // (nodeId, signHash) sessions: bounding by sessions would let a single session inflate the batch up to
+        // the full pending-share cap.
+        size_t sharesAdded{0};
         IterateNodesRandom(
             nodeStates,
             [&]() {
-                return uniqueSignHashes.size() < maxUniqueSessions;
+                return sharesAdded < maxShares;
                 // TODO: remove NO_THREAD_SAFETY_ANALYSIS
                 // using here template IterateNodesRandom makes impossible to use lock annotation
             },
@@ -591,8 +703,8 @@ bool CSigSharesManager::CollectPendingSigSharesToVerify(
 
                 AssertLockHeld(cs);
                 if (const bool alreadyHave = this->sigShares.Has(sigShare.GetKey()); !alreadyHave) {
-                    uniqueSignHashes.emplace(nodeId, sigShare.GetSignHash());
                     retSigShares[nodeId].emplace_back(sigShare);
+                    ++sharesAdded;
                 }
                 ns.pendingIncomingSigShares.Erase(sigShare.GetKey());
                 return !ns.pendingIncomingSigShares.Empty();
@@ -1328,6 +1440,13 @@ void CSigSharesManager::Cleanup(const CConnman& connman)
                 doneSessions.emplace(sigShare.GetSignHash());
             }
         });
+        // Sessions we track by time but hold no shares for (e.g. announcement-only ones)
+        // are also done once a recovered sig exists for them.
+        for (const auto& [signHash, _] : timeSeenForSessions) {
+            if (doneSessions.count(signHash) == 0 && sigman.HasRecoveredSigForSession(signHash)) {
+                doneSessions.emplace(signHash);
+            }
+        }
         for (const auto& signHash : doneSessions) {
             RemoveSigSharesForSession(signHash);
         }
@@ -1465,6 +1584,7 @@ void CSigSharesManager::BanNode(NodeId nodeId, PeerManager& peerman)
         sigSharesRequested.Erase(k);
     });
     nodeState.requestedSigShares.Clear();
+    nodeState.pendingIncomingSigShares.Clear();
     nodeState.banned = true;
 }
 

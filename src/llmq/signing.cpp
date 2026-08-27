@@ -454,8 +454,37 @@ PeerMsgRet CSigningManager::ProcessMessageRecoveredSig(const CNode& pfrom, PeerM
         return {};
     }
 
+    // Backpressure: bound the pending queue so a peer cannot enqueue faster than we drain and
+    // exhaust memory. Drop silently (no misbehaviour) -- verification is deferred to the worker
+    // thread, so an honest peer can legitimately outrun the drain during a burst.
+    if (pendingRecoveredSigsCount >= MAX_PENDING_RECSIGS_TOTAL) {
+        LogPrint(BCLog::LLMQ, "CSigningManager::%s -- global pending recovered sigs cap reached (%d), dropping sig from node=%d\n",
+                 __func__, MAX_PENDING_RECSIGS_TOTAL, pfrom.GetId());
+        return {};
+    }
+    if (auto it = pendingRecoveredSigs.find(pfrom.GetId());
+        it != pendingRecoveredSigs.end() && it->second.size() >= MAX_PENDING_RECSIGS_PER_NODE) {
+        LogPrint(BCLog::LLMQ, "CSigningManager::%s -- per-node pending recovered sigs cap reached (%d), dropping sig from node=%d\n",
+                 __func__, MAX_PENDING_RECSIGS_PER_NODE, pfrom.GetId());
+        return {};
+    }
+
     pendingRecoveredSigs[pfrom.GetId()].emplace_back(recoveredSig);
+    ++pendingRecoveredSigsCount;
     return {};
+}
+
+void CSigningManager::RemoveNodesIf(const std::function<bool(NodeId)>& predicate)
+{
+    LOCK(cs_pending);
+    for (auto it = pendingRecoveredSigs.begin(); it != pendingRecoveredSigs.end();) {
+        if (predicate(it->first)) {
+            pendingRecoveredSigsCount -= it->second.size();
+            it = pendingRecoveredSigs.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void CSigningManager::CollectPendingRecoveredSigsToVerify(
@@ -471,6 +500,7 @@ void CSigningManager::CollectPendingRecoveredSigsToVerify(
 
         // TODO: refactor it to remove duplicated code with `CSigSharesManager::CollectPendingSigSharesToVerify`
         std::unordered_set<std::pair<NodeId, uint256>, StaticSaltedHasher> uniqueSignHashes;
+        size_t erasedCount{0};
         IterateNodesRandom(pendingRecoveredSigs, [&]() {
             return uniqueSignHashes.size() < maxUniqueSessions;
         }, [&](NodeId nodeId, std::list<std::shared_ptr<const CRecoveredSig>>& ns) {
@@ -485,8 +515,20 @@ void CSigningManager::CollectPendingRecoveredSigsToVerify(
                 retSigShares[nodeId].emplace_back(recSig);
             }
             ns.erase(ns.begin());
+            ++erasedCount;
             return !ns.empty();
         }, rnd);
+        pendingRecoveredSigsCount -= erasedCount;
+
+        // Prune drained (now-empty) node entries so the map only holds nodes with pending sigs
+        // and disconnected nodes' queues are reclaimed once drained, without waiting for a ban.
+        for (auto it = pendingRecoveredSigs.begin(); it != pendingRecoveredSigs.end();) {
+            if (it->second.empty()) {
+                it = pendingRecoveredSigs.erase(it);
+            } else {
+                ++it;
+            }
+        }
 
         if (retSigShares.empty()) {
             return;
@@ -846,6 +888,9 @@ void CSigningManager::WorkThreadMain(PeerManager& peerman)
         bool fMoreWork = ProcessPendingRecoveredSigs(peerman);
 
         Cleanup();
+        // Drop pending recovered sigs queued by banned peers so a flood's backlog does not
+        // persist after the peer is banned (the sig-shares subsystem cleans only its own state).
+        RemoveNodesIf([&peerman](NodeId node_id) { return peerman.IsBanned(node_id); });
 
         // TODO Wakeup when pending signing is needed?
         if (!fMoreWork && !workInterrupt.sleep_for(std::chrono::milliseconds(100))) {
