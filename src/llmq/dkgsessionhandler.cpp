@@ -2,6 +2,7 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <util/check.h>
 #include <llmq/dkgsessionhandler.h>
 
 #include <llmq/commitment.h>
@@ -58,7 +59,37 @@ CDKGSessionHandler::CDKGSessionHandler(CBLSWorker& _blsWorker, CChainState& chai
 
 CDKGSessionHandler::~CDKGSessionHandler() = default;
 
-void CDKGPendingMessages::PushPendingMessage(NodeId from, CDataStream& vRecv, PeerManager& peerman)
+void CDKGPendingMessages::PushPendingMessage(NodeId from, const uint256& sender_protx,
+                                             std::shared_ptr<CDataStream> pm, const uint256& hash)
+{
+    LOCK(cs_messages);
+
+    // Check duplicates before the quota so resent hashes don't burn budget
+    if (seenMessages.count(hash) != 0) {
+        LogPrint(BCLog::LLMQ_DKG, "CDKGPendingMessages::%s -- already seen %s, peer=%d\n", __func__, hash.ToString(), from);
+        return;
+    }
+
+    // Callers always pass an identity (the MNAuth gate for remote, our own
+    // proTxHash for local); drop rather than share a null-keyed quota bucket
+    if (!Assume(!sender_protx.IsNull())) {
+        return;
+    }
+    auto& count = messagesPerProTx[sender_protx];
+    if (count >= maxMessagesPerProTx) {
+        // TODO ban?
+        LogPrint(BCLog::LLMQ_DKG, "CDKGPendingMessages::%s -- too many messages from %s, peer=%d\n", __func__,
+                 sender_protx.ToString(), from);
+        return;
+    }
+    count++;
+
+    seenMessages.emplace(hash);
+    pendingMessages.emplace_back(std::make_pair(from, std::move(pm)));
+}
+
+void CDKGPendingMessages::PushPendingMessage(NodeId from, const uint256& sender_protx, CDataStream& vRecv,
+                                             PeerManager& peerman)
 {
     // this will also consume the data, even if we bail out early
     auto pm = std::make_shared<CDataStream>(std::move(vRecv));
@@ -71,21 +102,7 @@ void CDKGPendingMessages::PushPendingMessage(NodeId from, CDataStream& vRecv, Pe
         WITH_LOCK(::cs_main, peerman.EraseObjectRequest(from, CInv(invType, hash)));
     }
 
-    LOCK(cs_messages);
-
-    if (messagesPerNode[from] >= maxMessagesPerNode) {
-        // TODO ban?
-        LogPrint(BCLog::LLMQ_DKG, "CDKGPendingMessages::%s -- too many messages, peer=%d\n", __func__, from);
-        return;
-    }
-    messagesPerNode[from]++;
-
-    if (!seenMessages.emplace(hash).second) {
-        LogPrint(BCLog::LLMQ_DKG, "CDKGPendingMessages::%s -- already seen %s, peer=%d\n", __func__, hash.ToString(), from);
-        return;
-    }
-
-    pendingMessages.emplace_back(std::make_pair(from, std::move(pm)));
+    PushPendingMessage(from, sender_protx, std::move(pm), hash);
 }
 
 std::list<CDKGPendingMessages::BinaryMessage> CDKGPendingMessages::PopPendingMessages(size_t maxCount)
@@ -117,7 +134,7 @@ void CDKGPendingMessages::Clear()
 {
     LOCK(cs_messages);
     pendingMessages.clear();
-    messagesPerNode.clear();
+    messagesPerProTx.clear();
     seenMessages.clear();
 }
 
@@ -153,15 +170,27 @@ void CDKGSessionHandler::UpdatedBlockTip(const CBlockIndex* pindexNew)
 void CDKGSessionHandler::ProcessMessage(const CNode& pfrom, PeerManager& peerman, const std::string& msg_type,
                                         CDataStream& vRecv)
 {
+    // DKG messages are relayed only among quorum members and carry
+    // attacker-controlled payloads, so they must originate from an
+    // MNAuth-verified masternode -- and that identity, not the transient
+    // NodeId, keys the retention quota, so reconnecting under a fresh id
+    // cannot refill it. (dash#7583, adapted; the verified-origin gate ships
+    // with it because the quota key must never be null.)
+    const uint256 sender_protx = pfrom.GetVerifiedProRegTxHash();
+    if (sender_protx.IsNull()) {
+        peerman.Misbehaving(pfrom.GetId(), 10, "DKG message from non-verified peer");
+        return;
+    }
+
     // We don't handle messages in the calling thread as deserialization/processing of these would block everything
     if (msg_type == NetMsgType::QCONTRIB) {
-        pendingContributions.PushPendingMessage(pfrom.GetId(), vRecv, peerman);
+        pendingContributions.PushPendingMessage(pfrom.GetId(), sender_protx, vRecv, peerman);
     } else if (msg_type == NetMsgType::QCOMPLAINT) {
-        pendingComplaints.PushPendingMessage(pfrom.GetId(), vRecv, peerman);
+        pendingComplaints.PushPendingMessage(pfrom.GetId(), sender_protx, vRecv, peerman);
     } else if (msg_type == NetMsgType::QJUSTIFICATION) {
-        pendingJustifications.PushPendingMessage(pfrom.GetId(), vRecv, peerman);
+        pendingJustifications.PushPendingMessage(pfrom.GetId(), sender_protx, vRecv, peerman);
     } else if (msg_type == NetMsgType::QPCOMMITMENT) {
-        pendingPrematureCommitments.PushPendingMessage(pfrom.GetId(), vRecv, peerman);
+        pendingPrematureCommitments.PushPendingMessage(pfrom.GetId(), sender_protx, vRecv, peerman);
     }
 }
 

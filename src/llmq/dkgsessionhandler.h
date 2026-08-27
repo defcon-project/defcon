@@ -6,10 +6,12 @@
 #define BITCOIN_LLMQ_DKGSESSIONHANDLER_H
 
 #include <net.h> // for NodeId
+#include <saltedhasher.h>
 
 #include <atomic>
 #include <list>
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -65,28 +67,44 @@ public:
 
 private:
     const int invType;
-    const size_t maxMessagesPerNode;
+    const size_t maxMessagesPerProTx;
     mutable Mutex cs_messages;
     std::list<BinaryMessage> pendingMessages GUARDED_BY(cs_messages);
-    std::map<NodeId, size_t> messagesPerNode GUARDED_BY(cs_messages);
+    // Keyed by proTxHash rather than NodeId so the quota survives reconnects,
+    // and cumulative for the round (not refunded on pop) so draining the
+    // queue does not regain retention slots. MNAuth pins keys to registered
+    // masternodes. (dash#7583, adapted)
+    std::unordered_map<uint256, size_t, StaticSaltedHasher> messagesPerProTx GUARDED_BY(cs_messages);
     std::set<uint256> seenMessages GUARDED_BY(cs_messages);
 
 public:
-    explicit CDKGPendingMessages(size_t _maxMessagesPerNode, int _invType) :
-            invType(_invType), maxMessagesPerNode(_maxMessagesPerNode) {};
+    explicit CDKGPendingMessages(size_t _maxMessagesPerProTx, int _invType) :
+            invType(_invType), maxMessagesPerProTx(_maxMessagesPerProTx) {};
 
-    void PushPendingMessage(NodeId from, CDataStream& vRecv, PeerManager& peerman);
+    /**
+     * Enqueue a serialized DKG message. @p sender_protx keys the per-proTx
+     * quota: the sender's MNAuth-verified proTxHash for remote messages, or
+     * this node's own for messages it produced itself (@p from == -1). Drops
+     * silently on quota overflow or duplicate hash; quota-dropped messages
+     * are not marked seen, so another sender with budget can re-deliver
+     * them.
+     */
+    void PushPendingMessage(NodeId from, const uint256& sender_protx, std::shared_ptr<CDataStream> pm,
+                            const uint256& hash);
+    //! Hashes the payload, routes the erase-request to PeerManager for real
+    //! peers, then enqueues through the overload above.
+    void PushPendingMessage(NodeId from, const uint256& sender_protx, CDataStream& vRecv, PeerManager& peerman);
     std::list<BinaryMessage> PopPendingMessages(size_t maxCount);
     bool HasSeen(const uint256& hash) const;
     void Misbehaving(NodeId from, int score, PeerManager& peerman);
     void Clear();
 
     template <typename Message>
-    void PushPendingMessage(NodeId from, Message& msg, PeerManager& peerman)
+    void PushPendingMessage(NodeId from, const uint256& sender_protx, Message& msg, PeerManager& peerman)
     {
         CDataStream ds(SER_NETWORK, PROTOCOL_VERSION);
         ds << msg;
-        PushPendingMessage(from, ds, peerman);
+        PushPendingMessage(from, sender_protx, ds, peerman);
     }
 
     // Might return nullptr messages, which indicates that deserialization failed for some reason
