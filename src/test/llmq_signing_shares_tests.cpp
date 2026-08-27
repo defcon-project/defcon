@@ -181,4 +181,74 @@ BOOST_AUTO_TEST_CASE(pending_sig_shares_session_removal_updates_count)
     BOOST_CHECK_EQUAL(node_state.pendingIncomingSigShares.Size(), 1U);
 }
 
+namespace {
+
+CBatchedSigShares MakeBatch(uint32_t session_id, size_t share_count)
+{
+    CBatchedSigShares batch;
+    batch.sessionId = session_id;
+    batch.sigShares.resize(share_count); // default pairs are enough to exercise the count invariant
+    return batch;
+}
+
+} // namespace
+
+// dash#7418, adapted: exercise the production QBSIGSHARES decoder directly. The
+// outer batch count is bounded regardless of the inner contents; every batch here
+// is empty, so only the outer-count guard can reject the stream, which keeps this
+// a genuine test of that guard rather than an end-of-stream artifact.
+BOOST_AUTO_TEST_CASE(qbsigshares_rejects_oversized_batch_count)
+{
+    std::vector<CBatchedSigShares> msgs(CSigSharesManager::MAX_MSGS_TOTAL_BATCHED_SIGS + 1);
+
+    CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+    stream << msgs;
+
+    BOOST_CHECK_THROW(CSigSharesManager::UnserializeBatchedSigShares(stream), std::ios_base::failure);
+}
+
+// The regression this targets: each batch is individually within the cap, but the
+// running aggregate exceeds MAX_MSGS_TOTAL_BATCHED_SIGS, so the decoder must abort
+// mid-stream rather than accept the cross product of the per-batch limits.
+BOOST_AUTO_TEST_CASE(qbsigshares_rejects_oversized_aggregate_total)
+{
+    std::vector<CBatchedSigShares> msgs;
+    msgs.push_back(MakeBatch(1, 300));
+    msgs.push_back(MakeBatch(2, 200)); // 300 + 200 = 500 > 400, though each batch is <= the cap
+
+    CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+    stream << msgs;
+
+    BOOST_CHECK_THROW(CSigSharesManager::UnserializeBatchedSigShares(stream), std::ios_base::failure);
+}
+
+// A single batch over the cap must be rejected by the running total as well.
+BOOST_AUTO_TEST_CASE(qbsigshares_rejects_oversized_single_batch)
+{
+    std::vector<CBatchedSigShares> msgs;
+    msgs.push_back(MakeBatch(1, CSigSharesManager::MAX_MSGS_TOTAL_BATCHED_SIGS + 1));
+
+    CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+    stream << msgs;
+
+    BOOST_CHECK_THROW(CSigSharesManager::UnserializeBatchedSigShares(stream), std::ios_base::failure);
+}
+
+// Batches whose aggregate is exactly at the cap must be accepted and decoded intact.
+BOOST_AUTO_TEST_CASE(qbsigshares_accepts_aggregate_at_cap)
+{
+    std::vector<CBatchedSigShares> msgs;
+    msgs.push_back(MakeBatch(1, 200));
+    msgs.push_back(MakeBatch(2, CSigSharesManager::MAX_MSGS_TOTAL_BATCHED_SIGS - 200));
+
+    CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+    stream << msgs;
+
+    std::vector<CBatchedSigShares> decoded;
+    BOOST_CHECK_NO_THROW(decoded = CSigSharesManager::UnserializeBatchedSigShares(stream));
+    BOOST_CHECK_EQUAL(decoded.size(), 2U);
+    BOOST_CHECK_EQUAL(decoded[0].sigShares.size(), 200U);
+    BOOST_CHECK_EQUAL(decoded[1].sigShares.size(), CSigSharesManager::MAX_MSGS_TOTAL_BATCHED_SIGS - 200);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

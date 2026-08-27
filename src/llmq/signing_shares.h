@@ -380,20 +380,31 @@ public:
 
 class CSigSharesManager : public CRecoveredSigsListener
 {
-private:
-    static constexpr int64_t SESSION_NEW_SHARES_TIMEOUT{60};
-    static constexpr int64_t SIG_SHARE_REQUEST_TIMEOUT{5};
-
+public:
     // we try to keep total message size below 10k
     static constexpr size_t MAX_MSGS_CNT_QSIGSESANN{100};
     static constexpr size_t MAX_MSGS_CNT_QGETSIGSHARES{200};
     static constexpr size_t MAX_MSGS_CNT_QSIGSHARESINV{200};
     // The maximum quorum size is also the maximum number of sigs we need to support
     static constexpr size_t MAX_MSGS_TOTAL_BATCHED_SIGS{Consensus::MAX_LLMQ_SIZE};
+    static constexpr size_t MAX_MSGS_SIG_SHARES{32};
+
+    //! Decode a QBSIGSHARES payload into its vector of CBatchedSigShares.
+    //!
+    //! Each batch could individually stay within the per-batch cap while their aggregate
+    //! exceeds it, so this bounds the outer batch count and checks the running total of
+    //! inner sig shares as it decodes, stopping before an attacker forces us through the
+    //! full cross product of the per-vector limits. A wire count above either cap throws
+    //! std::ios_base::failure once detected, leaving the caller to log and ban.
+    //! (dash#7418, adapted)
+    static std::vector<CBatchedSigShares> UnserializeBatchedSigShares(CDataStream& vRecv);
+
+private:
+    static constexpr int64_t SESSION_NEW_SHARES_TIMEOUT{60};
+    static constexpr int64_t SIG_SHARE_REQUEST_TIMEOUT{5};
 
     static constexpr int64_t EXP_SEND_FOR_RECOVERY_TIMEOUT{2000};
     static constexpr int64_t MAX_SEND_FOR_RECOVERY_TIMEOUT{10000};
-    static constexpr size_t MAX_MSGS_SIG_SHARES{32};
 
     RecursiveMutex cs;
 
