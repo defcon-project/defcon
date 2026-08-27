@@ -16,6 +16,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -60,6 +61,22 @@ enum class QuorumPhase {
  *
  * Each message type has it's own instance of this class.
  */
+//! Upper bound on the serialized size of a well-formed DKG message of the given
+//! type for the given quorum params. Used to reject oversized payloads at intake
+//! before any deserialization or retention, which closes the low-cost memory
+//! amplification window (a legitimate message is bounded by quorum params, far
+//! below the transport cap). Generous slack is added and the result is clamped
+//! to a hard ceiling so a future params change can never silently re-open the
+//! full transport window. (adapted from upstream's NetDKG intake layer)
+size_t MaxDKGMessageSize(std::string_view msg_type, const Consensus::LLMQParams& params);
+
+//! Framing-only pre-validation before retention: walks the payload's wire
+//! structure against the quorum params without decoding a single BLS point --
+//! decoding happens exactly once, on the DKG worker, after retention. Returns
+//! false on any params bound violation, trailing bytes, or truncation.
+bool CheckDKGMessageWireStructure(std::string_view msg_type, const CDataStream& payload,
+                                  const Consensus::LLMQParams& params);
+
 class CDKGPendingMessages
 {
 public:

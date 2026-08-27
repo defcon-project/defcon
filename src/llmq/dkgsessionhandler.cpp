@@ -5,6 +5,7 @@
 #include <util/check.h>
 #include <llmq/dkgsessionhandler.h>
 
+#include <bls/bls.h>
 #include <llmq/commitment.h>
 #include <llmq/dkgsession.h>
 #include <llmq/blockprocessor.h>
@@ -167,6 +168,150 @@ void CDKGSessionHandler::UpdatedBlockTip(const CBlockIndex* pindexNew)
              params.name, quorumIndex, currentHeight, pQuorumBaseBlockIndex->nHeight, ToUnderlying(oldPhase), ToUnderlying(phase));
 }
 
+namespace {
+
+constexpr size_t DKG_MSG_PREFIX_SIZE = 1 + 32 + 32; // llmqType + quorumHash + proTxHash
+
+// The framing walks below use throwing stream primitives; truncation anywhere
+// surfaces as an exception CheckDKGMessageWireStructure turns into a reject.
+// They return false on a params bound violation and true only when the whole
+// payload was consumed. BLS encodings have fixed wire sizes, so the walks only
+// establish that the bytes are present; decoding happens once, on the worker.
+
+// Reads a DYNBITSET bounded by @p max_size and returns its bit count. Reuses
+// ReadFixedBitSet -- the exact deserializer the typed path uses -- so
+// truncation and padding-bit handling cannot diverge.
+uint64_t ReadBoundedDynBitset(CDataStream& ds, size_t max_size)
+{
+    const uint64_t bit_count = ReadCompactSize(ds);
+    if (bit_count > max_size) {
+        throw std::ios_base::failure("dynamic bitset exceeds quorum size");
+    }
+    std::vector<bool> bits;
+    ReadFixedBitSet(ds, bits, bit_count);
+    return bit_count;
+}
+
+bool CheckContributionWireStructure(CDataStream& ds, const Consensus::LLMQParams& params)
+{
+    const size_t size = params.size > 0 ? static_cast<size_t>(params.size) : 0;
+    const size_t threshold = params.threshold > 0 ? static_cast<size_t>(params.threshold) : 0;
+
+    ds.ignore(DKG_MSG_PREFIX_SIZE);
+    if (ReadCompactSize(ds) != threshold) { // vvec
+        return false;
+    }
+    ds.ignore(threshold * CBLSPublicKey::SerSize);
+    ds.ignore(CBLSPublicKey::SerSize + 32); // IES ephemeralPubKey + ivSeed
+    const uint64_t blob_count = ReadCompactSize(ds);
+    if (blob_count > size) {
+        return false;
+    }
+    for (uint64_t i = 0; i < blob_count; ++i) {
+        ds.ignore(ReadCompactSize(ds)); // encrypted contribution blob
+    }
+    ds.ignore(CBLSSignature::SerSize);
+    return ds.empty();
+}
+
+bool CheckComplaintWireStructure(CDataStream& ds, const Consensus::LLMQParams& params)
+{
+    const size_t size = params.size > 0 ? static_cast<size_t>(params.size) : 0;
+
+    ds.ignore(DKG_MSG_PREFIX_SIZE);
+    const uint64_t bad_members = ReadBoundedDynBitset(ds, size);
+    const uint64_t complain_for_members = ReadBoundedDynBitset(ds, size);
+    if (bad_members != complain_for_members) {
+        return false;
+    }
+    ds.ignore(CBLSSignature::SerSize);
+    return ds.empty();
+}
+
+bool CheckJustificationWireStructure(CDataStream& ds, const Consensus::LLMQParams& params)
+{
+    const size_t size = params.size > 0 ? static_cast<size_t>(params.size) : 0;
+
+    ds.ignore(DKG_MSG_PREFIX_SIZE);
+    const uint64_t contribution_count = ReadCompactSize(ds);
+    if (contribution_count > size) {
+        return false;
+    }
+    ds.ignore(contribution_count * (4 + CBLSSecretKey::SerSize)); // {u32 index, encrypted key share}
+    ds.ignore(CBLSSignature::SerSize);
+    return ds.empty();
+}
+
+bool CheckPrematureCommitmentWireStructure(CDataStream& ds, const Consensus::LLMQParams& params)
+{
+    const size_t size = params.size > 0 ? static_cast<size_t>(params.size) : 0;
+
+    ds.ignore(DKG_MSG_PREFIX_SIZE);
+    ReadBoundedDynBitset(ds, size); // validMembers
+    // quorumPublicKey + quorumVvecHash + quorumSig + sig
+    ds.ignore(CBLSPublicKey::SerSize + 32 + 2 * CBLSSignature::SerSize);
+    return ds.empty();
+}
+
+} // namespace
+
+size_t MaxDKGMessageSize(std::string_view msg_type, const Consensus::LLMQParams& params)
+{
+    constexpr size_t COMPACT = 5;          // max CompactSize for any realistic count
+    constexpr size_t PREFIX = DKG_MSG_PREFIX_SIZE;
+    constexpr size_t PUBKEY = BLS_CURVE_PUBKEY_SIZE; // 48
+    constexpr size_t SIG = BLS_CURVE_SIG_SIZE;       // 96
+    constexpr size_t SECKEY = BLS_CURVE_SECKEY_SIZE; // 32
+    constexpr size_t BLOB = COMPACT + 128; // encrypted seckey blob, generous
+    constexpr size_t SLACK = 1024;
+    constexpr size_t HARD_CEILING = size_t{1} << 20; // 1 MiB
+
+    const size_t size = params.size > 0 ? static_cast<size_t>(params.size) : 0;
+    const size_t threshold = params.threshold > 0 ? static_cast<size_t>(params.threshold) : 0;
+
+    size_t cap = 0;
+    if (msg_type == NetMsgType::QCONTRIB) {
+        // llmqType/quorumHash/proTxHash + vvec + contributions(IES) + sig
+        cap = PREFIX + (COMPACT + threshold * PUBKEY) + (PUBKEY + 32 + COMPACT + size * BLOB) + SIG;
+    } else if (msg_type == NetMsgType::QJUSTIFICATION) {
+        // ... + contributions(index u32 + seckey) + sig
+        cap = PREFIX + (COMPACT + size * (4 + SECKEY)) + SIG;
+    } else if (msg_type == NetMsgType::QCOMPLAINT) {
+        // ... + 2 dynamic bitsets (badMembers, complainForMembers) + sig
+        cap = PREFIX + 2 * (COMPACT + (size + 7) / 8) + SIG;
+    } else if (msg_type == NetMsgType::QPCOMMITMENT) {
+        // ... + validMembers bitset + quorumPublicKey + quorumVvecHash + quorumSig + sig
+        cap = PREFIX + (COMPACT + (size + 7) / 8) + PUBKEY + 32 + 2 * SIG;
+    } else {
+        return HARD_CEILING;
+    }
+    cap += SLACK;
+    return cap < HARD_CEILING ? cap : HARD_CEILING;
+}
+
+bool CheckDKGMessageWireStructure(std::string_view msg_type, const CDataStream& payload,
+                                  const Consensus::LLMQParams& params)
+{
+    // Walk a copy so the caller's read position (and the bytes backing its
+    // retention hash) survive. The copy is a memcpy bounded by the size cap
+    // applied just before this call -- negligible next to the BLS point
+    // decompression that deserializing the payload here would have cost.
+    CDataStream ds{payload};
+    try {
+        if (msg_type == NetMsgType::QCONTRIB) {
+            return CheckContributionWireStructure(ds, params);
+        } else if (msg_type == NetMsgType::QCOMPLAINT) {
+            return CheckComplaintWireStructure(ds, params);
+        } else if (msg_type == NetMsgType::QJUSTIFICATION) {
+            return CheckJustificationWireStructure(ds, params);
+        } else if (msg_type == NetMsgType::QPCOMMITMENT) {
+            return CheckPrematureCommitmentWireStructure(ds, params);
+        }
+    } catch (const std::exception&) {
+    }
+    return false;
+}
+
 void CDKGSessionHandler::ProcessMessage(const CNode& pfrom, PeerManager& peerman, const std::string& msg_type,
                                         CDataStream& vRecv)
 {
@@ -179,6 +324,21 @@ void CDKGSessionHandler::ProcessMessage(const CNode& pfrom, PeerManager& peerman
     const uint256 sender_protx = pfrom.GetVerifiedProRegTxHash();
     if (sender_protx.IsNull()) {
         peerman.Misbehaving(pfrom.GetId(), 10, "DKG message from non-verified peer");
+        return;
+    }
+
+    // Reject oversized payloads before any deserialization or retention. A
+    // well-formed DKG message is bounded by quorum params; anything larger is an
+    // amplification attempt against the per-proTx pending queue.
+    if (vRecv.size() > MaxDKGMessageSize(msg_type, params)) {
+        peerman.Misbehaving(pfrom.GetId(), 100, "oversized DKG message");
+        return;
+    }
+
+    // Framing-only pre-validation before retention; BLS decoding happens
+    // exactly once, on the DKG phase-handler thread, after retention.
+    if (!CheckDKGMessageWireStructure(msg_type, vRecv, params)) {
+        peerman.Misbehaving(pfrom.GetId(), 100, "malformed DKG message");
         return;
     }
 
