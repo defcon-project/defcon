@@ -804,7 +804,12 @@ PeerMsgRet CQuorumManager::ProcessMessage(CNode& pfrom, CConnman& connman, const
         // rejecting them costs no storage lookup. Replies are ~request-sized (no
         // amplification). (dash#7519, adapted)
         if (!Params().GetLLMQ(request.GetLLMQType()).has_value()) {
-            return sendQDATA(CQuorumDataRequest::Errors::QUORUM_TYPE_INVALID, /*request_limit_exceeded=*/false);
+            // Unlike the misses below, this one cannot be explained by the peer being ahead
+            // of us: no quorum of an unregistered type can exist on this chain, so there is
+            // nothing to ask about. Answer with the error anyway, then score in full.
+            // (dash#7529)
+            (void)sendQDATA(CQuorumDataRequest::Errors::QUORUM_TYPE_INVALID, /*request_limit_exceeded=*/false);
+            return errorHandler("invalid llmqType in QGETDATA", 100);
         }
 
         const CBlockIndex* pQuorumBaseBlockIndex{nullptr};
