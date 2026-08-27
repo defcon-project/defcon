@@ -25,6 +25,19 @@
 
 namespace llmq
 {
+namespace {
+// A peer legitimately follows only a handful of concurrent signing sessions per LLMQ type;
+// bounding announcements keeps the per-node session maps from being grown without limit.
+// (dash#7351, adapted)
+constexpr size_t MAX_SESSIONS_PER_PEER_FACTOR{4};
+constexpr size_t MIN_SESSIONS_PER_PEER{100};
+
+size_t GetMaxSessionsForPeer(const Consensus::LLMQParams& params)
+{
+    return std::max<size_t>(size_t(params.size) * MAX_SESSIONS_PER_PEER_FACTOR, MIN_SESSIONS_PER_PEER);
+}
+} // namespace
+
 void CSigShare::UpdateKey()
 {
     key.first = this->buildSignHash();
@@ -129,7 +142,30 @@ CSigSharesNodeState::Session& CSigSharesNodeState::GetOrCreateSessionFromAnn(con
     if (s.announced.inv.empty()) {
         InitSession(s, signHash, ann);
     }
+    s.receivedAnnouncement = true;
     return s;
+}
+
+bool CSigSharesNodeState::CanCreateSessionFromAnn(const llmq::CSigSesAnn& ann, size_t maxSessions) const
+{
+    return sessions.count(ann.buildSignHash()) != 0 || GetAnnouncementSessionCount(ann.getLlmqType()) < maxSessions;
+}
+
+size_t CSigSharesNodeState::GetSessionCount() const
+{
+    return sessions.size();
+}
+
+size_t CSigSharesNodeState::GetSessionCount(Consensus::LLMQType llmqType) const
+{
+    return ranges::count_if(sessions, [&](const auto& kv) { return kv.second.llmqType == llmqType; });
+}
+
+size_t CSigSharesNodeState::GetAnnouncementSessionCount(Consensus::LLMQType llmqType) const
+{
+    return ranges::count_if(sessions, [&](const auto& kv) {
+        return kv.second.receivedAnnouncement && kv.second.llmqType == llmqType;
+    });
 }
 
 CSigSharesNodeState::Session* CSigSharesNodeState::GetSessionBySignHash(const uint256& signHash)
@@ -300,7 +336,8 @@ void CSigSharesManager::ProcessMessage(const CNode& pfrom, PeerManager& peerman,
 bool CSigSharesManager::ProcessMessageSigSesAnn(const CNode& pfrom, const CSigSesAnn& ann)
 {
     auto llmqType = ann.getLlmqType();
-    if (!Params().GetLLMQ(llmqType).has_value()) {
+    const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
+    if (!llmq_params_opt.has_value()) {
         return false;
     }
     if (ann.getSessionId() == UNINITIALIZED_SESSION_ID || ann.getQuorumHash().IsNull() || ann.getId().IsNull() || ann.getMsgHash().IsNull()) {
@@ -319,7 +356,17 @@ bool CSigSharesManager::ProcessMessageSigSesAnn(const CNode& pfrom, const CSigSe
 
     LOCK(cs);
     auto& nodeState = nodeStates[pfrom.GetId()];
+    const size_t maxSessions = GetMaxSessionsForPeer(*llmq_params_opt);
+    if (!nodeState.CanCreateSessionFromAnn(ann, maxSessions)) {
+        LogPrint(BCLog::LLMQ_SIGS, "CSigSharesManager::%s -- too many sessions. cnt=%d, max=%d, llmqType=%d, node=%d\n",
+                 __func__, nodeState.GetAnnouncementSessionCount(llmqType), maxSessions, ToUnderlying(llmqType), pfrom.GetId());
+        return true;
+    }
+    const uint256 signHash = ann.buildSignHash();
     auto& session = nodeState.GetOrCreateSessionFromAnn(ann);
+    // Sessions created by announcement alone must also age out; without a time-seen entry
+    // only the arrival of a share would ever start their cleanup clock.
+    timeSeenForSessions.try_emplace(signHash, GetTime<std::chrono::seconds>().count());
     nodeState.sessionByRecvId.erase(session.recvSessionId);
     nodeState.sessionByRecvId.erase(ann.getSessionId());
     session.recvSessionId = ann.getSessionId();
@@ -1328,6 +1375,13 @@ void CSigSharesManager::Cleanup(const CConnman& connman)
                 doneSessions.emplace(sigShare.GetSignHash());
             }
         });
+        // Sessions we track by time but hold no shares for (e.g. announcement-only ones)
+        // are also done once a recovered sig exists for them.
+        for (const auto& [signHash, _] : timeSeenForSessions) {
+            if (doneSessions.count(signHash) == 0 && sigman.HasRecoveredSigForSession(signHash)) {
+                doneSessions.emplace(signHash);
+            }
+        }
         for (const auto& signHash : doneSessions) {
             RemoveSigSharesForSession(signHash);
         }
