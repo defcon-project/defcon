@@ -159,12 +159,19 @@ class SigShareMap
 {
 private:
     std::unordered_map<uint256, std::unordered_map<uint16_t, T>, StaticSaltedHasher> internalMap;
+    // Running total across all sign-hash buckets, kept in sync by every mutating method,
+    // so Size() is O(1): the intake caps consult it on every incoming share.
+    // (dash#7415, adapted)
+    size_t m_num_entries{0};
 
 public:
     bool Add(const SigShareKey& k, const T& v)
     {
-        auto& m = internalMap[k.first];
-        return m.emplace(k.second, v).second;
+        if (!internalMap[k.first].emplace(k.second, v).second) {
+            return false;
+        }
+        ++m_num_entries;
+        return true;
     }
 
     void Erase(const SigShareKey& k)
@@ -173,7 +180,7 @@ public:
         if (it == internalMap.end()) {
             return;
         }
-        it->second.erase(k.second);
+        m_num_entries -= it->second.erase(k.second);
         if (it->second.empty()) {
             internalMap.erase(it);
         }
@@ -182,6 +189,7 @@ public:
     void Clear()
     {
         internalMap.clear();
+        m_num_entries = 0;
     }
 
     [[nodiscard]] bool Has(const SigShareKey& k) const
@@ -228,11 +236,7 @@ public:
 
     [[nodiscard]] size_t Size() const
     {
-        size_t s = 0;
-        for (auto& p : internalMap) {
-            s += p.second.size();
-        }
-        return s;
+        return m_num_entries;
     }
 
     [[nodiscard]] size_t CountForSignHash(const uint256& signHash) const
@@ -260,7 +264,12 @@ public:
 
     void EraseAllForSignHash(const uint256& signHash)
     {
-        internalMap.erase(signHash);
+        auto it = internalMap.find(signHash);
+        if (it == internalMap.end()) {
+            return;
+        }
+        m_num_entries -= it->second.size();
+        internalMap.erase(it);
     }
 
     template<typename F>
@@ -273,6 +282,7 @@ public:
                 k.second = jt->first;
                 if (f(k, jt->second)) {
                     jt = it->second.erase(jt);
+                    --m_num_entries;
                 } else {
                     ++jt;
                 }
@@ -463,8 +473,12 @@ private:
     static bool PreVerifyBatchedSigShares(const CActiveMasternodeManager& mn_activeman, const CQuorumManager& quorum_manager,
                                           const CSigSharesNodeState::SessionInfo& session, const CBatchedSigShares& batchedSigShares, bool& retBan);
 
+    // The returned batch contains at most maxShares actual sig shares, drawn one at a time in
+    // randomized round-robin order across peers so that no single peer can dominate a batch.
+    // Bounding by shares (not by unique sessions) caps the BLS work a batch can carry.
+    // (dash#7415, adapted)
     bool CollectPendingSigSharesToVerify(
-        size_t maxUniqueSessions, std::unordered_map<NodeId, std::vector<CSigShare>>& retSigShares,
+        size_t maxShares, std::unordered_map<NodeId, std::vector<CSigShare>>& retSigShares,
         std::unordered_map<std::pair<Consensus::LLMQType, uint256>, CQuorumCPtr, StaticSaltedHasher>& retQuorums);
     bool ProcessPendingSigShares(PeerManager& peerman, const CConnman& connman);
 
@@ -479,6 +493,8 @@ private:
 
     bool GetSessionInfoByRecvId(NodeId nodeId, uint32_t sessionId, CSigSharesNodeState::SessionInfo& retInfo);
     static CSigShare RebuildSigShare(const CSigSharesNodeState::SessionInfo& session, const std::pair<uint16_t, CBLSLazySignature>& in);
+    bool TryAddPendingIncomingSigShare(NodeId nodeId, CSigSharesNodeState& nodeState, const CSigShare& sigShare)
+        EXCLUSIVE_LOCKS_REQUIRED(cs);
 
     void Cleanup(const CConnman& connman);
     void RemoveSigSharesForSession(const uint256& signHash) EXCLUSIVE_LOCKS_REQUIRED(cs);
