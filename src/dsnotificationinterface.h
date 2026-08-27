@@ -33,6 +33,10 @@ public:
 
     // a small helper to initialize current block height in sub-modules on startup
     void InitializeCurrentBlockTip();
+    //! Startup-only, after CActiveMasternodeManager::Init: quorum connections need the
+    //! active masternode's proTxHash, which InitializeCurrentBlockTip runs too early to
+    //! have. (dash#7240, adapted)
+    void InitializeQuorumConnections();
 
 protected:
     // CValidationInterface

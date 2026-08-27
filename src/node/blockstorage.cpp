@@ -929,6 +929,13 @@ void ThreadImport(ChainstateManager& chainman, CDeterministicMNManager& dmnman, 
         mn_activeman->Init(chainman.ActiveTip());
     }
 
+    // Now that the active masternode knows its proTxHash, establish quorum connections for
+    // the current tip. The mnsync gate keeps the UpdatedBlockTip path from doing this at
+    // startup, and on an idle chain no new tip ever arrives to re-run it -- after a restart
+    // the mesh would only re-form at the first block mined after sync completes.
+    // (dash#7240, adapted)
+    dsnfi.InitializeQuorumConnections();
+
     g_wallet_init_interface.AutoLockMasternodeCollaterals();
 
     chainman.ActiveChainstate().LoadMempool(args);
