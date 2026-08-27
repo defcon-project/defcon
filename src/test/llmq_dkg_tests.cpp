@@ -6,6 +6,8 @@
 #include <streams.h>
 #include <protocol.h>
 #include <llmq/dkgsessionhandler.h>
+#include <netmessagemaker.h>
+#include <llmq/params.h>
 #include <util/irange.h>
 #include <util/underlying.h>
 
@@ -124,6 +126,184 @@ BOOST_AUTO_TEST_CASE(pending_messages_quota_is_per_protx)
     BOOST_CHECK(pending.HasSeen(MakeTestHash(5)));
 
     BOOST_CHECK_EQUAL(pending.PopPendingMessages(6).size(), 5U);
+}
+
+using namespace llmq;
+
+namespace {
+
+// Small synthetic profile so the wire-structure walks are exercised against
+// exact bounds: 5 members, 3 needed to form, threshold 2.
+Consensus::LLMQParams WireTestParams()
+{
+    return Consensus::LLMQParams{
+        .type = Consensus::LLMQType::LLMQ_TEST,
+        .name = "wire_test",
+        .useRotation = false,
+        .size = 5,
+        .minSize = 3,
+        .threshold = 2,
+        .dkgInterval = 24,
+        .dkgPhaseBlocks = 2,
+        .dkgMiningWindowStart = 10,
+        .dkgMiningWindowEnd = 18,
+        .dkgBadVotesThreshold = 4,
+        .signingActiveQuorumCount = 2,
+        .keepOldConnections = 3,
+        .keepOldKeys = 4,
+        .recoveryMembers = 3,
+    };
+}
+
+void AppendZeros(CDataStream& s, size_t n)
+{
+    const std::vector<uint8_t> zeros(n, 0);
+    s.write(AsBytes(Span{zeros}));
+}
+
+CDataStream MakeDKGStream()
+{
+    CDataStream s{SER_NETWORK, PROTOCOL_VERSION};
+    AppendZeros(s, 1 + 32 + 32); // llmqType + quorumHash + proTxHash
+    return s;
+}
+
+CDataStream BuildContribPayload(size_t vvec_count, size_t blob_count, size_t blob_len = 32)
+{
+    CDataStream s = MakeDKGStream();
+    WriteCompactSize(s, vvec_count);
+    AppendZeros(s, vvec_count * CBLSPublicKey::SerSize);
+    AppendZeros(s, CBLSPublicKey::SerSize + 32); // IES ephemeralPubKey + ivSeed
+    WriteCompactSize(s, blob_count);
+    for (size_t i = 0; i < blob_count; ++i) {
+        WriteCompactSize(s, blob_len);
+        AppendZeros(s, blob_len);
+    }
+    AppendZeros(s, CBLSSignature::SerSize);
+    return s;
+}
+
+void AppendDynBitset(CDataStream& s, size_t bit_count)
+{
+    WriteCompactSize(s, bit_count);
+    AppendZeros(s, (bit_count + 7) / 8);
+}
+
+CDataStream BuildComplaintPayload(size_t bad_bits, size_t complain_bits)
+{
+    CDataStream s = MakeDKGStream();
+    AppendDynBitset(s, bad_bits);
+    AppendDynBitset(s, complain_bits);
+    AppendZeros(s, CBLSSignature::SerSize);
+    return s;
+}
+
+CDataStream BuildJustificationPayload(size_t contribution_count)
+{
+    CDataStream s = MakeDKGStream();
+    WriteCompactSize(s, contribution_count);
+    AppendZeros(s, contribution_count * (4 + CBLSSecretKey::SerSize));
+    AppendZeros(s, CBLSSignature::SerSize);
+    return s;
+}
+
+CDataStream BuildCommitmentPayload(size_t valid_bits)
+{
+    CDataStream s = MakeDKGStream();
+    AppendDynBitset(s, valid_bits);
+    AppendZeros(s, CBLSPublicKey::SerSize + 32 + 2 * CBLSSignature::SerSize);
+    return s;
+}
+
+} // namespace
+
+// Adapted from upstream's NetDKG intake layer: the framing walk must accept
+// exactly the payloads the typed deserializer would, and reject everything
+// whose declared counts violate the quorum params -- before any BLS decode.
+BOOST_AUTO_TEST_CASE(dkg_wire_structure_contribution)
+{
+    const auto params = WireTestParams();
+    const size_t size = static_cast<size_t>(params.size);
+    const size_t threshold = static_cast<size_t>(params.threshold);
+
+    const auto ok = BuildContribPayload(threshold, size);
+    BOOST_CHECK(CheckDKGMessageWireStructure(NetMsgType::QCONTRIB, ok, params));
+    // The size cap admits every well-formed payload of this profile.
+    BOOST_CHECK_LE(ok.size(), MaxDKGMessageSize(NetMsgType::QCONTRIB, params));
+
+    // vvec must declare exactly threshold public keys.
+    BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QCONTRIB, BuildContribPayload(threshold + 1, size), params));
+    BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QCONTRIB, BuildContribPayload(threshold - 1, size), params));
+
+    // More encrypted blobs than members cannot be well-formed.
+    BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QCONTRIB, BuildContribPayload(threshold, size + 1), params));
+
+    // A quorum below minSize never forms, so fewer blobs than that can never
+    // belong to a real session; exactly minSize is the smallest legal count.
+    // (dash#7408)
+    const size_t min_size = static_cast<size_t>(params.minSize);
+    BOOST_CHECK(CheckDKGMessageWireStructure(NetMsgType::QCONTRIB, BuildContribPayload(threshold, min_size), params));
+    BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QCONTRIB, BuildContribPayload(threshold, min_size - 1), params));
+
+    // Trailing bytes and truncation both reject.
+    {
+        CDataStream trailing = BuildContribPayload(threshold, size);
+        AppendZeros(trailing, 1);
+        BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QCONTRIB, trailing, params));
+    }
+    {
+        CDataStream full = BuildContribPayload(threshold, size);
+        CDataStream truncated{SER_NETWORK, PROTOCOL_VERSION};
+        truncated.write(AsBytes(Span{full.data(), full.size() - 1}));
+        BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QCONTRIB, truncated, params));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(dkg_wire_structure_complaint)
+{
+    const auto params = WireTestParams();
+    const size_t size = static_cast<size_t>(params.size);
+
+    BOOST_CHECK(CheckDKGMessageWireStructure(NetMsgType::QCOMPLAINT, BuildComplaintPayload(size, size), params));
+
+    // A bitset wider than the quorum, or two bitsets of different widths, reject.
+    BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QCOMPLAINT, BuildComplaintPayload(size + 1, size + 1), params));
+    BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QCOMPLAINT, BuildComplaintPayload(size, size - 1), params));
+}
+
+BOOST_AUTO_TEST_CASE(dkg_wire_structure_justification_and_commitment)
+{
+    const auto params = WireTestParams();
+    const size_t size = static_cast<size_t>(params.size);
+
+    BOOST_CHECK(CheckDKGMessageWireStructure(NetMsgType::QJUSTIFICATION, BuildJustificationPayload(size), params));
+    BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QJUSTIFICATION, BuildJustificationPayload(size + 1), params));
+
+    BOOST_CHECK(CheckDKGMessageWireStructure(NetMsgType::QPCOMMITMENT, BuildCommitmentPayload(size), params));
+    BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QPCOMMITMENT, BuildCommitmentPayload(size + 1), params));
+
+    // Unknown message types never pass the walk.
+    BOOST_CHECK(!CheckDKGMessageWireStructure("qunknown", BuildJustificationPayload(size), params));
+}
+
+BOOST_AUTO_TEST_CASE(dkg_max_message_size_bounds)
+{
+    const auto params = WireTestParams();
+    constexpr size_t HARD_CEILING = size_t{1} << 20;
+
+    // Every known type gets a params-derived cap below the ceiling; unknown
+    // types fall back to the ceiling rather than the transport cap.
+    for (const auto* msg_type : {NetMsgType::QCONTRIB, NetMsgType::QCOMPLAINT,
+                                 NetMsgType::QJUSTIFICATION, NetMsgType::QPCOMMITMENT}) {
+        BOOST_CHECK_LT(MaxDKGMessageSize(msg_type, params), HARD_CEILING);
+    }
+    BOOST_CHECK_EQUAL(MaxDKGMessageSize("qunknown", params), HARD_CEILING);
+
+    // A profile large enough to overflow the ceiling is clamped to it.
+    auto huge = WireTestParams();
+    huge.size = 10000;
+    huge.threshold = 8000;
+    BOOST_CHECK_EQUAL(MaxDKGMessageSize(NetMsgType::QCONTRIB, huge), HARD_CEILING);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
