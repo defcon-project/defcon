@@ -195,6 +195,7 @@ uint64_t ReadBoundedDynBitset(CDataStream& ds, size_t max_size)
 bool CheckContributionWireStructure(CDataStream& ds, const Consensus::LLMQParams& params)
 {
     const size_t size = params.size > 0 ? static_cast<size_t>(params.size) : 0;
+    const size_t min_size = params.minSize > 0 ? static_cast<size_t>(params.minSize) : 0;
     const size_t threshold = params.threshold > 0 ? static_cast<size_t>(params.threshold) : 0;
 
     ds.ignore(DKG_MSG_PREFIX_SIZE);
@@ -204,7 +205,9 @@ bool CheckContributionWireStructure(CDataStream& ds, const Consensus::LLMQParams
     ds.ignore(threshold * CBLSPublicKey::SerSize);
     ds.ignore(CBLSPublicKey::SerSize + 32); // IES ephemeralPubKey + ivSeed
     const uint64_t blob_count = ReadCompactSize(ds);
-    if (blob_count > size) {
+    // A quorum below minSize never forms, so a contribution carrying fewer
+    // encrypted shares than that can never belong to a real session. (dash#7408)
+    if (blob_count < min_size || blob_count > size) {
         return false;
     }
     for (uint64_t i = 0; i < blob_count; ++i) {

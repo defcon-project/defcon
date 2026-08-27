@@ -238,6 +238,13 @@ BOOST_AUTO_TEST_CASE(dkg_wire_structure_contribution)
     // More encrypted blobs than members cannot be well-formed.
     BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QCONTRIB, BuildContribPayload(threshold, size + 1), params));
 
+    // A quorum below minSize never forms, so fewer blobs than that can never
+    // belong to a real session; exactly minSize is the smallest legal count.
+    // (dash#7408)
+    const size_t min_size = static_cast<size_t>(params.minSize);
+    BOOST_CHECK(CheckDKGMessageWireStructure(NetMsgType::QCONTRIB, BuildContribPayload(threshold, min_size), params));
+    BOOST_CHECK(!CheckDKGMessageWireStructure(NetMsgType::QCONTRIB, BuildContribPayload(threshold, min_size - 1), params));
+
     // Trailing bytes and truncation both reject.
     {
         CDataStream trailing = BuildContribPayload(threshold, size);
