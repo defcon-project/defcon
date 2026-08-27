@@ -25,6 +25,7 @@ enum class LLMQType : uint8_t {
     LLMQ_100_67 = 4, // 100 members, 67 (67%) threshold, one per hour
     LLMQ_60_75 = 5,  // 60 members, 45 (75%) threshold, one every 12 hours
     LLMQ_25_67 = 6, // 25 members, 17 (67%) threshold, one per hour
+    LLMQ_DEFCON = 7, // Q60: 60 members, 41 (68%) threshold, one per hour. The DeFCoN ChainLock profile.
 
     // for testing only
     LLMQ_TEST = 100, // 3 members, 2 (66%) threshold, one per hour. Params might differ when -llmqtestparams is used
@@ -134,7 +135,7 @@ static_assert(std::is_trivially_copyable_v<Consensus::LLMQParams>, "LLMQParams i
 static_assert(std::is_trivially_assignable_v<Consensus::LLMQParams, Consensus::LLMQParams>, "LLMQParams is not trivially assignable");
 
 
-static constexpr std::array<LLMQParams, 14> available_llmqs = {
+static constexpr std::array<LLMQParams, 15> available_llmqs = {
 
     /**
      * llmq_test
@@ -362,7 +363,7 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
         .dkgPhaseBlocks = 2,
         .dkgMiningWindowStart = 10, // dkgPhaseBlocks * 5 = after finalization
         .dkgMiningWindowEnd = 18,
-        .dkgBadVotesThreshold = 3,
+        .dkgBadVotesThreshold = 40, // 80% of size, the mainnet proportion; 3-of-50 was the ban-wave engine
 
         .signingActiveQuorumCount = 2, // a full day worth of LLMQs
         .keepOldConnections = 4,
@@ -388,7 +389,7 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
         .dkgPhaseBlocks = 2,
         .dkgMiningWindowStart = 20, // signingActiveQuorumCount + dkgPhaseBlocks * 5 = after finalization
         .dkgMiningWindowEnd = 36,
-        .dkgBadVotesThreshold = 3,
+        .dkgBadVotesThreshold = 48, // 80% of size, the mainnet proportion (see llmq_50_60)
 
         .signingActiveQuorumCount = 2,
         .keepOldConnections = 4,
@@ -505,6 +506,38 @@ static constexpr std::array<LLMQParams, 14> available_llmqs = {
         .keepOldConnections = 25,
         .keepOldKeys = 24 * 30 * 2, // 2 months of quorums
         .recoveryMembers = 12,
+    },
+
+    /**
+     * llmq_defcon (Q60)
+     * The DeFCoN ChainLock profile selected by the chainlock/PoSe simulator:
+     * 60/44/41. The threshold exceeds half the size (2*41 > 60), so two
+     * disjoint signer sets can never both recover a signature -- a partition
+     * produces a pause, not a dual ChainLock. minSize 44 leaves 16 members of
+     * DKG failure headroom; the hourly interval is the Layer-1 dead-masternode
+     * mitigation from the simulator's reward-window analysis. The bad-vote
+     * threshold is a supermajority (80%), not the whisper-quiet 3 of the
+     * inherited devnet profiles, which was the documented ban-wave engine.
+     */
+    LLMQParams{
+        .type = LLMQType::LLMQ_DEFCON,
+        .name = "llmq_defcon",
+        .useRotation = false,
+        .size = 60,
+        .minSize = 44,
+        .threshold = 41,
+
+        .dkgInterval = 24, // one DKG per hour
+        .dkgPhaseBlocks = 2,
+        .dkgMiningWindowStart = 10, // dkgPhaseBlocks * 5 = after finalization
+        .dkgMiningWindowEnd = 18,
+        .dkgBadVotesThreshold = 48, // 80% of size
+
+        .signingActiveQuorumCount = 4,
+
+        .keepOldConnections = 5,
+        .keepOldKeys = 8,
+        .recoveryMembers = 25,
     },
 
 }; // available_llmqs
