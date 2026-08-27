@@ -91,6 +91,7 @@
 #include <llmq/context.h>
 #include <llmq/dkgsessionmgr.h>
 #include <llmq/options.h>
+#include <llmq/quorums.h>
 #include <llmq/signing.h>
 #include <masternode/meta.h>
 #include <masternode/node.h>
@@ -2116,6 +2117,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     node.scheduler->scheduleEvery(std::bind(&CMasternodeSync::DoMaintenance, std::ref(*node.mn_sync), std::cref(*node.peerman), std::cref(*node.govman)), std::chrono::seconds{1});
     node.scheduler->scheduleEvery(std::bind(&CMasternodeUtils::DoMaintenance, std::ref(*node.connman), std::ref(*node.dmnman), std::ref(*node.mn_sync), std::ref(*node.cj_ctx)), std::chrono::minutes{1});
     node.scheduler->scheduleEvery(std::bind(&CDeterministicMNManager::DoMaintenance, std::ref(*node.dmnman)), std::chrono::seconds{10});
+    // Capacity for inbound QGETDATA tracking must recover even when no block arrives
+    node.scheduler->scheduleEvery([] { llmq::CQuorumManager::CleanupExpiredDataRequests(); }, std::chrono::minutes{1});
 
     if (node.govman->IsValid()) {
         node.scheduler->scheduleEvery(std::bind(&CGovernanceManager::DoMaintenance, std::ref(*node.govman), std::ref(*node.connman)), std::chrono::minutes{5});

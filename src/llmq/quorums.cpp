@@ -27,6 +27,8 @@
 #include <util/underlying.h>
 #include <validation.h>
 
+#include <util/check.h>
+
 #include <cxxtimer.hpp>
 
 namespace llmq
@@ -37,6 +39,10 @@ static const std::string DB_QUORUM_QUORUM_VVEC = "q_Qqvvec";
 
 RecursiveMutex cs_data_requests;
 static std::unordered_map<CQuorumDataRequestKey, CQuorumDataRequest, StaticSaltedHasher> mapQuorumDataRequests GUARDED_BY(cs_data_requests);
+//! Budgets for the inbound (they-requested) entries of mapQuorumDataRequests; outbound
+//! entries initiated by us are exempt. (dash#7519, adapted)
+static std::unordered_map<uint256, size_t, StaticSaltedHasher> mapInboundRequestCounts GUARDED_BY(cs_data_requests);
+static size_t nInboundRequestCount GUARDED_BY(cs_data_requests){0};
 
 // forward declaration to avoid circular dependency
 uint256 BuildSignHash(Consensus::LLMQType llmqType, const uint256& quorumHash, const uint256& id, const uint256& msgHash);
@@ -309,18 +315,8 @@ void CQuorumManager::UpdatedBlockTip(const CBlockIndex* pindexNew, CConnman& con
         CheckQuorumConnections(connman, params, pindexNew);
     }
 
-    if (m_mn_activeman != nullptr || IsWatchQuorumsEnabled()) {
-        // Cleanup expired data requests
-        LOCK(cs_data_requests);
-        auto it = mapQuorumDataRequests.begin();
-        while (it != mapQuorumDataRequests.end()) {
-            if (it->second.IsExpired(/*add_bias=*/true)) {
-                it = mapQuorumDataRequests.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
+    // Cleanup expired data requests and refund the inbound budgets
+    CleanupExpiredDataRequests();
 
     TriggerQuorumDataRecoveryThreads(connman, pindexNew);
     StartCleanupOldQuorumDataThread(pindexNew);
@@ -472,6 +468,64 @@ bool CQuorumManager::HasQuorum(Consensus::LLMQType llmqType, const CQuorumBlockP
     return quorum_block_processor.HasMinedCommitment(llmqType, quorumHash);
 }
 
+DataRequestRegistration CQuorumManager::RegisterDataRequest(const CQuorumDataRequestKey& key,
+                                                            const CQuorumDataRequest& request, bool add_expiry_bias)
+{
+    LOCK(cs_data_requests);
+    if (auto it = mapQuorumDataRequests.find(key); it != mapQuorumDataRequests.end()) {
+        if (!it->second.IsExpired(add_expiry_bias)) {
+            return DataRequestRegistration::RateLimited;
+        }
+        it->second = request;
+        return DataRequestRegistration::Accepted;
+    }
+
+    if (!key.m_we_requested) {
+        if (nInboundRequestCount >= MAX_INBOUND_DATA_REQUESTS) {
+            return DataRequestRegistration::CapacityExhausted;
+        }
+        const auto count_it = mapInboundRequestCounts.find(key.proRegTx);
+        if (count_it != mapInboundRequestCounts.end() && count_it->second >= MAX_INBOUND_DATA_REQUESTS_PER_REQUESTER) {
+            // All unauthenticated qwatch peers share the null identity, so exhaustion of that
+            // budget is not attributable to the connection that happened to arrive last.
+            return key.proRegTx.IsNull() ? DataRequestRegistration::CapacityExhausted
+                                         : DataRequestRegistration::RequesterLimitExceeded;
+        }
+    }
+
+    mapQuorumDataRequests.emplace(key, request);
+    if (!key.m_we_requested) {
+        ++mapInboundRequestCounts[key.proRegTx];
+        ++nInboundRequestCount;
+    }
+    return DataRequestRegistration::Accepted;
+}
+
+void CQuorumManager::CleanupExpiredDataRequests()
+{
+    LOCK(cs_data_requests);
+    auto it = mapQuorumDataRequests.begin();
+    while (it != mapQuorumDataRequests.end()) {
+        if (it->second.IsExpired(/*add_bias=*/true)) {
+            if (!it->first.m_we_requested) {
+                // On counter desync, skip the decrement: over-counting fails toward stricter
+                // limits, while an underflow would disable the caps entirely.
+                auto count_it = mapInboundRequestCounts.find(it->first.proRegTx);
+                if (Assume(count_it != mapInboundRequestCounts.end() && count_it->second > 0) &&
+                    --count_it->second == 0) {
+                    mapInboundRequestCounts.erase(count_it);
+                }
+                if (Assume(nInboundRequestCount > 0)) {
+                    --nInboundRequestCount;
+                }
+            }
+            it = mapQuorumDataRequests.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 bool CQuorumManager::RequestQuorumData(CNode* pfrom, CConnman& connman, CQuorumCPtr pQuorum, uint16_t nDataMask,
                                        const uint256& proTxHash) const
 {
@@ -498,17 +552,11 @@ bool CQuorumManager::RequestQuorumData(CNode* pfrom, CConnman& connman, CQuorumC
         return false;
     }
 
-    LOCK(cs_data_requests);
     const CQuorumDataRequestKey key(pfrom->GetVerifiedProRegTxHash(), true, pindex->GetBlockHash(), llmqType);
     const CQuorumDataRequest request(llmqType, pindex->GetBlockHash(), nDataMask, proTxHash);
-    auto [old_pair, inserted] = mapQuorumDataRequests.emplace(key, request);
-    if (!inserted) {
-        if (old_pair->second.IsExpired(/*add_bias=*/true)) {
-            old_pair->second = request;
-        } else {
-            LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- Already requested\n", __func__);
-            return false;
-        }
+    if (RegisterDataRequest(key, request) != DataRequestRegistration::Accepted) {
+        LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- Already requested\n", __func__);
+        return false;
     }
     LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- sending QGETDATA quorumHash[%s] llmqType[%d] proRegTx[%s]\n", __func__, key.quorumHash.ToString(),
              ToUnderlying(key.llmqType), key.proRegTx.ToString());
@@ -742,28 +790,39 @@ PeerMsgRet CQuorumManager::ProcessMessage(CNode& pfrom, CConnman& connman, const
             return ret;
         };
 
-        bool request_limit_exceeded(false);
+        // Cheap pre-checks before tracking: invalid type / unknown block must not grow
+        // mapQuorumDataRequests -- their keyspace is attacker-controlled and unbounded, but
+        // rejecting them costs no storage lookup. Replies are ~request-sized (no
+        // amplification). (dash#7519, adapted)
+        if (!Params().GetLLMQ(request.GetLLMQType()).has_value()) {
+            return sendQDATA(CQuorumDataRequest::Errors::QUORUM_TYPE_INVALID, /*request_limit_exceeded=*/false);
+        }
+
+        const CBlockIndex* pQuorumBaseBlockIndex{nullptr};
         {
-            LOCK2(cs_main, cs_data_requests);
-            const CQuorumDataRequestKey key(pfrom.GetVerifiedProRegTxHash(), false, request.GetQuorumHash(), request.GetLLMQType());
-            auto it = mapQuorumDataRequests.find(key);
-            if (it == mapQuorumDataRequests.end()) {
-                it = mapQuorumDataRequests.emplace(key, request).first;
-            } else if (it->second.IsExpired(/*add_bias=*/false)) {
-                it->second = request;
-            } else {
-                request_limit_exceeded = true;
+            LOCK(cs_main);
+            const auto* pindex = m_chainstate.m_blockman.LookupBlockIndex(request.GetQuorumHash());
+            if (pindex != nullptr && m_chainstate.m_chain.Contains(pindex)) {
+                pQuorumBaseBlockIndex = pindex;
             }
         }
-
-        if (!Params().GetLLMQ(request.GetLLMQType()).has_value()) {
-            return sendQDATA(CQuorumDataRequest::Errors::QUORUM_TYPE_INVALID, request_limit_exceeded);
-        }
-
-        const CBlockIndex* pQuorumBaseBlockIndex = WITH_LOCK(cs_main, return m_chainstate.m_blockman.LookupBlockIndex(request.GetQuorumHash()));
         if (pQuorumBaseBlockIndex == nullptr) {
-            return sendQDATA(CQuorumDataRequest::Errors::QUORUM_BLOCK_NOT_FOUND, request_limit_exceeded);
+            // Not misbehavior: the requester may simply be ahead of us or on another fork.
+            return sendQDATA(CQuorumDataRequest::Errors::QUORUM_BLOCK_NOT_FOUND, /*request_limit_exceeded=*/false);
         }
+
+        // Active-chain keys are bounded by chain blocks x LLMQ types, so register the request
+        // before the commitment lookup: the lookup misses the caches for blocks without a
+        // mined commitment, and rate limiting must gate that cost, not the other way around.
+        const CQuorumDataRequestKey key(pfrom.GetVerifiedProRegTxHash(), false, request.GetQuorumHash(), request.GetLLMQType());
+        const auto registration = RegisterDataRequest(key, request, /*add_expiry_bias=*/false);
+        if (registration == DataRequestRegistration::RequesterLimitExceeded) {
+            return errorHandler("too many quorum data requests", 25);
+        }
+        if (registration == DataRequestRegistration::CapacityExhausted) {
+            return {};
+        }
+        const bool request_limit_exceeded = registration == DataRequestRegistration::RateLimited;
 
         const auto pQuorum = GetQuorum(request.GetLLMQType(), pQuorumBaseBlockIndex);
         if (pQuorum == nullptr) {

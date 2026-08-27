@@ -105,10 +105,10 @@ private:
     int64_t nTime{GetTime()};
     bool fProcessed{false};
 
+public:
     static constexpr int64_t EXPIRATION_TIMEOUT{300};
     static constexpr int64_t EXPIRATION_BIAS{60};
 
-public:
 
     CQuorumDataRequest() : nTime(GetTime()) {}
     CQuorumDataRequest(const Consensus::LLMQType llmqTypeIn, const uint256& quorumHashIn, const uint16_t nDataMaskIn, const uint256& proTxHashIn = uint256()) :
@@ -158,6 +158,19 @@ public:
     {
         return !(*this == other);
     }
+};
+
+//! A peer normally needs data for only a handful of quorums at once. These limits keep
+//! attacker-controlled inbound tracking bounded independently of request expiry or block
+//! production. (dash#7519, adapted)
+static constexpr size_t MAX_INBOUND_DATA_REQUESTS_PER_REQUESTER{64};
+static constexpr size_t MAX_INBOUND_DATA_REQUESTS{4096};
+
+enum class DataRequestRegistration : uint8_t {
+    Accepted,
+    RateLimited,
+    RequesterLimitExceeded,
+    CapacityExhausted,
 };
 
 /**
@@ -278,6 +291,13 @@ public:
     PeerMsgRet ProcessMessage(CNode& pfrom, CConnman& connman, const std::string& msg_type, CDataStream& vRecv);
 
     static bool HasQuorum(Consensus::LLMQType llmqType, const CQuorumBlockProcessor& quorum_block_processor, const uint256& quorumHash);
+
+    //! Request tracking for QGETDATA/QDATA. Inbound entries are bounded per requester and
+    //! globally; outbound entries initiated by us consume neither budget. (dash#7519, adapted)
+    static DataRequestRegistration RegisterDataRequest(const CQuorumDataRequestKey& key,
+                                                       const CQuorumDataRequest& request, bool add_expiry_bias = true);
+    //! Tip- and timer-driven: expired entries leave the map and refund the inbound budgets.
+    static void CleanupExpiredDataRequests();
 
     bool RequestQuorumData(CNode* pfrom, CConnman& connman, const CQuorumCPtr pQuorum, uint16_t nDataMask,
                            const uint256& proTxHash = uint256()) const;
