@@ -282,6 +282,14 @@ std::string CGovernanceVote::GetSignatureString() const
                              ::ToString(nTime);
 }
 
+bool CGovernanceVote::IsValidForUnknownParent(const CDeterministicMNList& tip_mn_list) const
+{
+    if (nVoteSignal == VOTE_SIGNAL_FUNDING && IsValid(tip_mn_list, /*useVotingKey=*/true)) {
+        return true;
+    }
+    return IsValid(tip_mn_list, /*useVotingKey=*/false);
+}
+
 bool operator==(const CGovernanceVote& vote1, const CGovernanceVote& vote2)
 {
     bool fResult = ((vote1.masternodeOutpoint == vote2.masternodeOutpoint) &&
