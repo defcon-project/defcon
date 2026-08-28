@@ -29,10 +29,12 @@
 #include <reverse_iterator.h>
 #include <scheduler.h>
 #include <streams.h>
+#include <unordered_lru_cache.h>
 #include <sync.h>
 #include <timedata.h>
 #include <tinyformat.h>
 #include <index/txindex.h>
+#include <saltedhasher.h>
 #include <txmempool.h>
 #include <txorphanage.h>
 #include <util/check.h> // For NDEBUG compile time check
@@ -446,6 +448,32 @@ private:
 
 using PeerRef = std::shared_ptr<Peer>;
 
+/** How many request intervals after sending a GETDATA an answer still counts as merely late rather
+ *  than unsolicited (see CNodeState::m_recent_object_requests). GetObjectInterval() is already this
+ *  node's statement of how long it is willing to wait before asking someone else, so the grace is
+ *  kept in the same currency. In this tree an in-flight request itself survives until the expiry
+ *  sweep (GetObjectExpiryInterval), which is far longer -- the grace exists for requests whose
+ *  bookkeeping was erased early because the object was accepted from another source. (dash#7484,
+ *  adapted) */
+static constexpr int RECENT_OBJECT_REQUEST_TTL_INTERVALS{2};
+/** Memory ceiling for the per-peer record of GETDATA-only requests (see
+ *  CNodeState::m_recent_object_requests). Evicting early costs the late-answer grace for the oldest
+ *  requests -- degrading them to the behaviour of the gate without this record -- never correctness,
+ *  so it does not have to be proved large enough for any particular burst. */
+static constexpr size_t MAX_RECENT_OBJECT_REQUESTS{256};
+
+/** A GETDATA we sent for a GETDATA-only object: which type we asked for, and when.
+ *
+ * The type has to be remembered rather than taken from the answer, because the type in an INV is
+ * whatever the peer said it was and is not bound to the payload until that payload arrives. A peer
+ * can announce the hash of a DKG message as MSG_CLSIG, collect our GETDATA, and then send the DKG
+ * message: the hashes match, so a record keyed on the hash alone would authorise it and would take
+ * its grace from the answer's type rather than the request's. */
+struct RequestedObject {
+    uint32_t m_inv_type{0};
+    std::chrono::microseconds m_time{0};
+};
+
 /**
  * Maintain validation-specific state about nodes, protected by cs_main, instead
  * by CNode's own locks. This simplifies asynchronous operation, where
@@ -587,6 +615,14 @@ struct CNodeState {
 
     ObjectDownloadState m_object_download;
 
+    //! The GETDATA-only objects (see IsGetDataOnlyObject) we have recently asked this peer for.
+    //! Only we ever add to this, so a peer cannot use it to authorise its own payload. An entry is
+    //! erased by the answer it authorises and ages out after RECENT_OBJECT_REQUEST_TTL_INTERVALS, so
+    //! one GETDATA buys exactly one accepted object, within a bounded window: a peer can neither
+    //! replay the payload it induced a request for, nor bank an unanswered request to spend later.
+    unordered_lru_cache<uint256, RequestedObject, StaticSaltedHasher, MAX_RECENT_OBJECT_REQUESTS>
+        m_recent_object_requests;
+
     //! Whether this peer is an inbound connection
     const bool m_is_inbound;
 
@@ -652,6 +688,7 @@ public:
     void UpdateLastBlockAnnounceTime(NodeId node, int64_t time_in_seconds) override;
     bool IsBanned(NodeId pnode) override EXCLUSIVE_LOCKS_REQUIRED(cs_main, !m_peer_mutex);
     void EraseObjectRequest(NodeId nodeid, const CInv& inv) override EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    GetDataResponse ConsumeGetDataResponse(NodeId nodeid, const CInv& inv) override EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void RequestObject(NodeId nodeid, const CInv& inv, std::chrono::microseconds current_time,
                        bool is_masternode, bool fForce = false) override EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     size_t GetRequestedObjectCount(NodeId nodeid) const override EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
@@ -1508,6 +1545,46 @@ void PeerManagerImpl::EraseObjectRequest(NodeId nodeid, const CInv& inv)
     state->m_object_download.m_object_in_flight.erase(inv);
 }
 
+std::chrono::microseconds GetObjectInterval(int invType);
+
+GetDataResponse PeerManagerImpl::ConsumeGetDataResponse(NodeId nodeid, const CInv& inv)
+{
+    AssertLockHeld(cs_main);
+
+    CNodeState* state = State(nodeid);
+    if (state == nullptr) return GetDataResponse::UNREQUESTED;
+
+    if (state->m_object_download.m_object_in_flight.count(inv) > 0) {
+        // Answered while the request was still in flight. Consume the request, and spend the
+        // late-answer grace too, so the one GETDATA cannot also pay for a replay of the payload.
+        EraseObjectRequest(nodeid, inv);
+        state->m_recent_object_requests.erase(inv.hash);
+        return GetDataResponse::REQUESTED;
+    }
+
+    // No in-flight request. Before treating this as an unsolicited push, check whether we asked
+    // this peer for it at all: the in-flight entry is erased once the object is accepted from any
+    // source, and the expiry sweep drops requests answered too slowly. Neither means the peer
+    // misbehaved.
+    RequestedObject requested;
+    if (state->m_recent_object_requests.get(inv.hash, requested)) {
+        // Grace is one answer per GETDATA: erase it whatever the outcome, so further copies are
+        // unsolicited again and a peer cannot replay the payload it induced a request for.
+        state->m_recent_object_requests.erase(inv.hash);
+        // Both the type and the window come from what we asked for, never from the answer: the
+        // peer chose the type it announced, so letting the answer name it would let a request
+        // for one object type authorise another, with that other type's grace.
+        if (requested.m_inv_type == inv.type &&
+            GetTime<std::chrono::microseconds>() - requested.m_time <=
+                GetObjectInterval(requested.m_inv_type) * RECENT_OBJECT_REQUEST_TTL_INTERVALS) {
+            // Tidy whatever bookkeeping is left, exactly as an on-time answer would have.
+            EraseObjectRequest(nodeid, inv);
+            return GetDataResponse::LATE;
+        }
+    }
+    return GetDataResponse::UNREQUESTED;
+}
+
 std::chrono::microseconds GetObjectRequestTime(const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
 {
     AssertLockHeld(cs_main);
@@ -1548,6 +1625,30 @@ std::chrono::microseconds GetObjectInterval(int invType)
 std::chrono::microseconds GetObjectExpiryInterval(int invType)
 {
     return GetObjectInterval(invType) * TX_EXPIRY_INTERVAL_FACTOR;
+}
+
+bool IsGetDataOnlyObject(int invType)
+{
+    // These object types only ever travel inv -> getdata -> object: the only places that send them
+    // are the GETDATA handler (ProcessGetData), and no local producer pushes them. Receiving one we
+    // never asked for is therefore always unsolicited, which lets the handlers drop it before doing
+    // any work on the sender's behalf.
+    //
+    // Not every inv-driven type belongs here. MSG_QUORUM_RECOVERED_SIG (proactive relay to peers
+    // that sent QSENDRECSIGS), MSG_DSQ (SENDDSQUEUE), MSG_ISDLOCK (pushed alongside MERKLEBLOCK for
+    // BIP37 clients) and MSG_SPORK (bulk push in reply to GETSPORKS) all have a legitimate
+    // unsolicited-push path. (dash#7484, adapted)
+    switch (invType) {
+        case MSG_CLSIG:
+        case MSG_QUORUM_FINAL_COMMITMENT:
+        case MSG_QUORUM_CONTRIB:
+        case MSG_QUORUM_COMPLAINT:
+        case MSG_QUORUM_JUSTIFICATION:
+        case MSG_QUORUM_PREMATURE_COMMITMENT:
+            return true;
+        default:
+            return false;
+    }
 }
 
 std::chrono::microseconds GetObjectRandomDelay(int invType)
@@ -5331,7 +5432,14 @@ void PeerManagerImpl::ProcessMessage(
         m_mn_sync.ProcessMessage(pfrom, msg_type, vRecv);
         ProcessPeerMsgRet(m_govman.ProcessMessage(pfrom, m_connman, *this, msg_type, vRecv), pfrom);
         ProcessPeerMsgRet(CMNAuth::ProcessMessage(pfrom, peer->m_their_services, m_connman, m_mn_metaman, m_mn_activeman, m_mn_sync, m_dmnman->GetListAtChainTip(), msg_type, vRecv), pfrom);
-        PostProcessMessage(m_llmq_ctx->quorum_block_processor->ProcessMessage(pfrom, msg_type, vRecv), pfrom.GetId());
+        PostProcessMessage(m_llmq_ctx->quorum_block_processor->ProcessMessage(
+                               pfrom, msg_type, vRecv,
+                               [this, &pfrom](const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(!::cs_main) {
+                                   return WITH_LOCK(::cs_main,
+                                                    return ConsumeGetDataResponse(pfrom.GetId(), inv)) !=
+                                          GetDataResponse::UNREQUESTED;
+                               }),
+                           pfrom.GetId());
         ProcessPeerMsgRet(m_llmq_ctx->qdkgsman->ProcessMessage(pfrom, *this, is_masternode, msg_type, vRecv), pfrom);
         ProcessPeerMsgRet(m_llmq_ctx->qman->ProcessMessage(pfrom, m_connman, msg_type, vRecv), pfrom);
         m_llmq_ctx->shareman->ProcessMessage(pfrom, *this, m_sporkman, msg_type, vRecv);
@@ -5342,7 +5450,21 @@ void PeerManagerImpl::ProcessMessage(
                 llmq::CChainLockSig clsig;
                 vRecv >> clsig;
                 const uint256& hash = ::SerializeHash(clsig);
-                WITH_LOCK(::cs_main, EraseObjectRequest(pfrom.GetId(), CInv{MSG_CLSIG, hash}));
+                // A CLSIG is only ever sent in reply to a GETDATA (see ProcessGetData), so one we
+                // never asked this peer for was pushed at us. Drop it before ProcessNewChainLock,
+                // which exits without any penalty for a CLSIG at or below our best ChainLock -- and
+                // since every distinct signature blob hashes differently, an unsolicited peer could
+                // otherwise repeat that free work indefinitely. A bare announcement deliberately
+                // does not qualify: it would let the peer authorise its own payload by sending INV
+                // first. Authorise after the spork gate so a CLSIG dropped while ChainLocks are
+                // disabled does not burn a later retransmit. (dash#7484, adapted)
+                if (WITH_LOCK(::cs_main, return ConsumeGetDataResponse(pfrom.GetId(), CInv{MSG_CLSIG, hash})) ==
+                    GetDataResponse::UNREQUESTED) {
+                    LogPrint(BCLog::CHAINLOCKS, "CLSIG -- received unrequested CLSIG %s, peer=%d\n",
+                             hash.ToString(), pfrom.GetId());
+                    Misbehaving(pfrom.GetId(), UNREQUESTED_OBJECT_MISBEHAVIOR_SCORE, "unrequested clsig");
+                    return;
+                }
                 PostProcessMessage(m_llmq_ctx->clhandler->ProcessNewChainLock(pfrom.GetId(), clsig, hash), pfrom.GetId());
             }
             return; // CLSIG
@@ -6417,6 +6539,13 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                     }
                     UpdateObjectRequestTime(inv, current_time);
                     state.m_object_download.m_object_in_flight.emplace(inv, current_time);
+                    if (IsGetDataOnlyObject(inv.type)) {
+                        // Remember that we asked, so that an answer arriving after the in-flight
+                        // entry is gone -- erased because the object turned up elsewhere, or swept
+                        // by expiry -- is not mistaken for an unsolicited push. See GetDataResponse.
+                        state.m_recent_object_requests.insert(inv.hash,
+                                                              RequestedObject{static_cast<uint32_t>(inv.type), current_time});
+                    }
                 } else {
                     // This object is in flight from someone else; queue
                     // up processing to happen after the download times out
