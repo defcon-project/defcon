@@ -53,12 +53,30 @@ public:
 };
 } // anonymous namespace
 
+namespace {
+bool IsSyncableObject(const CGovernanceObject& obj)
+{
+    return !obj.IsSetCachedDelete() && !obj.IsSetExpired();
+}
+
+bool IsEmptyBloomFilter(const CBloomFilter& filter)
+{
+    // CBloomFilter does not expose its backing bytes. Governance uses an empty
+    // filter as an object-fetch signal, so inspect the serialized vector field.
+    CDataStream serialized_filter{SER_NETWORK, PROTOCOL_VERSION};
+    serialized_filter << filter;
+
+    std::vector<unsigned char> filter_data;
+    serialized_filter >> filter_data;
+    return filter_data.empty();
+}
+} // namespace
+
 GovernanceStore::GovernanceStore() :
     cs(),
     mapObjects(),
     mapErasedGovernanceObjects(),
     cmapVoteToObject(MAX_CACHE_SIZE),
-    cmapInvalidVotes(MAX_CACHE_SIZE),
     cmmapOrphanVotes(MAX_CACHE_SIZE),
     mapLastMasternodeObject(),
     lastMNListForVotingKeys(std::make_shared<CDeterministicMNList>())
@@ -104,6 +122,36 @@ bool CGovernanceManager::HaveObjectForHash(const uint256& nHash) const
 {
     LOCK(cs);
     return (mapObjects.count(nHash) == 1 || mapPostponedObjects.count(nHash) == 1);
+}
+
+bool CGovernanceManager::HaveObjectForFetch(const uint256& nHash) const
+{
+    LOCK(cs);
+
+    if (mapErasedGovernanceObjects.count(nHash) != 0) {
+        return false;
+    }
+
+    if (auto it = mapObjects.find(nHash); it != mapObjects.end()) {
+        return IsSyncableObject(it->second);
+    }
+
+    if (auto it = mapPostponedObjects.find(nHash); it != mapPostponedObjects.end()) {
+        return IsSyncableObject(it->second);
+    }
+
+    return false;
+}
+
+bool CGovernanceManager::HaveSyncableObjectForHash(const uint256& nHash) const
+{
+    LOCK(cs);
+    const auto it = mapObjects.find(nHash);
+    if (it == mapObjects.end()) {
+        return false;
+    }
+
+    return IsSyncableObject(it->second);
 }
 
 bool CGovernanceManager::SerializeObjectForHash(const uint256& nHash, CDataStream& ss) const
@@ -168,11 +216,39 @@ PeerMsgRet CGovernanceManager::ProcessMessage(CNode& peer, CConnman& connman, Pe
         }
 
         LogPrint(BCLog::GOBJECT, "MNGOVERNANCESYNC -- syncing governance objects to our peer %s\n", peer.GetLogString());
-        if (nProp == uint256()) {
-            return SyncObjects(peer, peerman, connman);
-        } else {
-            SyncSingleObjVotes(peer, peerman, nProp, filter, connman);
+        const bool full_sync{nProp == uint256()};
+        const bool object_fetch{!full_sync && IsEmptyBloomFilter(filter)};
+        // Nonzero govsync with an empty filter is what RequestGovernanceObject sends to fetch a
+        // missing object for an orphan vote. Only full sync and actual known-object vote sync are
+        // fulfilled-request limited. (dash#7414, adapted)
+        const bool track_request{full_sync || (!object_fetch && HaveSyncableObjectForHash(nProp))};
+        const std::string fulfilled_request{full_sync ? NetMsgType::MNGOVERNANCESYNC
+                                                      : strprintf("%s-votes-%s", NetMsgType::MNGOVERNANCESYNC,
+                                                                  nProp.ToString())};
+        assert(m_netfulfilledman.IsValid());
+        if (track_request && m_netfulfilledman.HasFulfilledRequest(peer.addr, fulfilled_request)) {
+            // Asking for the same governance data multiple times in a short period of time is no good
+            LogPrint(BCLog::GOBJECT, "MNGOVERNANCESYNC -- peer already asked me for %s\n",
+                     full_sync ? "the list" : strprintf("votes for %s", nProp.ToString()));
+            return tl::unexpected{20};
         }
+        if (track_request) {
+            m_netfulfilledman.AddFulfilledRequest(peer.addr, fulfilled_request);
+        }
+
+        if (object_fetch) {
+            if (HaveObjectForFetch(nProp)) {
+                CNetMsgMaker msgMaker(peer.GetCommonVersion());
+                connman.PushMessage(&peer, msgMaker.Make(NetMsgType::INV,
+                                                         std::vector<CInv>{CInv{MSG_GOVERNANCE_OBJECT, nProp}}));
+            }
+            return {};
+        }
+
+        if (full_sync) {
+            return SyncObjects(peer, peerman, connman);
+        }
+        SyncSingleObjVotes(peer, peerman, nProp, filter, connman);
     }
 
     // A NEW GOVERNANCE OBJECT HAS ARRIVED
@@ -948,20 +1024,22 @@ void CGovernanceManager::SyncSingleObjVotes(CNode& peer, PeerManager& peerman, c
         return;
     }
 
-    const auto& fileVotes = govobj.GetVoteFile();
     const auto tip_mn_list = Assert(m_dmnman)->GetListAtChainTip();
 
-    for (const auto& vote : fileVotes.GetVotes()) {
+    // Visit the stored votes in place: CheckSignature memoises its verdict on
+    // the vote instance, and a GetVotes() copy would discard that memo, so every
+    // walk would pay a fresh ECDSA recovery or BLS pairing per vote. (dash#7518)
+    govobj.GetVoteFile().ForEachVote([&](const CGovernanceVote& vote) {
         uint256 nVoteHash = vote.GetHash();
 
         bool onlyVotingKeyAllowed = govobj.GetObjectType() == GovernanceObject::PROPOSAL && vote.GetSignal() == VOTE_SIGNAL_FUNDING;
 
         if (filter.contains(nVoteHash) || !vote.IsValid(tip_mn_list, onlyVotingKeyAllowed)) {
-            continue;
+            return;
         }
         peerman.PushInventory(peer.GetId(), CInv(MSG_GOVERNANCE_OBJECT_VOTE, nVoteHash));
         ++nVoteCount;
-    }
+    });
 
     CNetMsgMaker msgMaker(peer.GetCommonVersion());
     connman.PushMessage(&peer, msgMaker.Make(NetMsgType::SYNCSTATUSCOUNT, MASTERNODE_SYNC_GOVOBJ_VOTE, nVoteCount));
@@ -975,12 +1053,7 @@ PeerMsgRet CGovernanceManager::SyncObjects(CNode& peer, PeerManager& peerman, CC
     // do not provide any data until our node is synced
     if (!m_mn_sync.IsSynced()) return {};
 
-    if (m_netfulfilledman.HasFulfilledRequest(peer.addr, NetMsgType::MNGOVERNANCESYNC)) {
-        // Asking for the whole list multiple times in a short period of time is no good
-        LogPrint(BCLog::GOBJECT, "CGovernanceManager::%s -- peer already asked me for the list\n", __func__);
-        return tl::unexpected{20};
-    }
-    m_netfulfilledman.AddFulfilledRequest(peer.addr, NetMsgType::MNGOVERNANCESYNC);
+    // The repeated-request gate lives in ProcessMessage, which also quotas per-object vote syncs.
 
     int nObjCount = 0;
 
@@ -1132,6 +1205,11 @@ bool CGovernanceManager::ProcessVoteAndRelay(const CGovernanceVote& vote, CGover
 
 bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, CGovernanceException& exception, CConnman& connman)
 {
+    // Fetched before taking cs: GetListAtChainTip acquires the deterministic
+    // masternode manager's own locks, and it is needed on the unknown-parent
+    // path below as well as for the object's vote processing.
+    const auto tip_mn_list{Assert(m_dmnman)->GetListAtChainTip()};
+
     ENTER_CRITICAL_SECTION(cs);
     uint256 nHashVote = vote.GetHash();
     uint256 nHashGovobj = vote.GetParentHash();
@@ -1142,22 +1220,26 @@ bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, 
         return false;
     }
 
-    if (cmapInvalidVotes.HasKey(nHashVote)) {
-        std::ostringstream ostr;
-        ostr << "CGovernanceManager::ProcessVote -- Old invalid vote "
-             << ", MN outpoint = " << vote.GetMasternodeOutpoint().ToStringShort()
-             << ", governance object hash = " << nHashGovobj.ToString();
-        LogPrint(BCLog::GOBJECT, "%s\n", ostr.str());
-        exception = CGovernanceException(ostr.str(), GOVERNANCE_EXCEPTION_PERMANENT_ERROR, 20);
-        LEAVE_CRITICAL_SECTION(cs);
-        return false;
-    }
-
     auto it = mapObjects.find(nHashGovobj);
     if (it == mapObjects.end()) {
+        // A vote reaching the orphan cache must first prove masternode authorship; without this an
+        // attacker floods the cache -- and triggers object re-requests -- with unsigned garbage for
+        // free. (dash#7527, adapted)
+        if (!vote.IsValidForUnknownParent(tip_mn_list)) {
+            std::ostringstream ostr;
+            ostr << "CGovernanceManager::ProcessVote -- Invalid vote for unknown parent object " << nHashGovobj.ToString()
+                 << ", MN outpoint = " << vote.GetMasternodeOutpoint().ToStringShort()
+                 << ", vote hash = " << nHashVote.ToString();
+            LogPrint(BCLog::GOBJECT, "%s\n", ostr.str());
+            exception = CGovernanceException(ostr.str(), GOVERNANCE_EXCEPTION_PERMANENT_ERROR, 20);
+            LEAVE_CRITICAL_SECTION(cs);
+            return false;
+        }
         std::ostringstream ostr;
         ostr << "CGovernanceManager::ProcessVote -- Unknown parent object " << nHashGovobj.ToString()
              << ", MN outpoint = " << vote.GetMasternodeOutpoint().ToStringShort();
+        // No penalty: the vote is signed by a masternode, it just arrived before its parent object,
+        // which routinely happens during governance sync. Misbehaviour scores never decay.
         exception = CGovernanceException(ostr.str(), GOVERNANCE_EXCEPTION_WARNING);
         if (cmmapOrphanVotes.Insert(nHashGovobj, vote_time_pair_t(vote, GetTime<std::chrono::seconds>().count() + GOVERNANCE_ORPHAN_EXPIRATION_TIME))) {
             LEAVE_CRITICAL_SECTION(cs);
@@ -1179,7 +1261,7 @@ bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, 
         return false;
     }
 
-    bool fOk = govobj.ProcessVote(m_mn_metaman, *this, Assert(m_dmnman)->GetListAtChainTip(), vote, exception) && cmapVoteToObject.Insert(nHashVote, &govobj);
+    bool fOk = govobj.ProcessVote(m_mn_metaman, *this, tip_mn_list, vote, exception) && cmapVoteToObject.Insert(nHashVote, &govobj);
     LEAVE_CRITICAL_SECTION(cs);
     return fOk;
 }
@@ -1455,7 +1537,6 @@ void GovernanceStore::Clear()
     mapObjects.clear();
     mapErasedGovernanceObjects.clear();
     cmapVoteToObject.Clear();
-    cmapInvalidVotes.Clear();
     cmmapOrphanVotes.Clear();
     mapLastMasternodeObject.clear();
 }
@@ -1633,7 +1714,6 @@ void CGovernanceManager::RemoveInvalidVotes()
             }
             for (auto& voteHash : removed) {
                 cmapVoteToObject.Erase(voteHash);
-                cmapInvalidVotes.Erase(voteHash);
                 cmmapOrphanVotes.Erase(voteHash);
                 m_requested_hash_time.erase(voteHash);
             }

@@ -172,7 +172,6 @@ protected:
     //   value - expiration time for deleted objects
     std::map<uint256, int64_t> mapErasedGovernanceObjects;
     object_ref_cm_t cmapVoteToObject;
-    CacheMap<uint256, CGovernanceVote> cmapInvalidVotes;
     vote_cmm_t cmmapOrphanVotes;
     txout_m_t mapLastMasternodeObject;
     // used to check for changed voting keys
@@ -186,9 +185,13 @@ public:
     void Serialize(Stream &s) const
     {
         LOCK(cs);
+        // TODO: Remove the historical invalid-vote-cache field on the next disk-format version bump.
+        // (dash#7569: the cache punished honest retransmits of votes that were invalid only
+        // transiently, and repeat offenders are already scored on every rejection.)
+        const CacheMap<uint256, CGovernanceVote> empty_invalid_votes{MAX_CACHE_SIZE};
         s   << SERIALIZATION_VERSION_STRING
             << mapErasedGovernanceObjects
-            << cmapInvalidVotes
+            << empty_invalid_votes
             << cmmapOrphanVotes
             << mapObjects
             << mapLastMasternodeObject
@@ -207,8 +210,10 @@ public:
             return;
         }
 
+        // TODO: Stop consuming the historical invalid-vote-cache field on the next disk-format version bump.
+        CacheMap<uint256, CGovernanceVote> discarded_invalid_votes;
         s   >> mapErasedGovernanceObjects
-            >> cmapInvalidVotes
+            >> discarded_invalid_votes
             >> cmmapOrphanVotes
             >> mapObjects
             >> mapLastMasternodeObject
@@ -305,6 +310,12 @@ public:
 
     // Accessors for thread-safe access to maps
     bool HaveObjectForHash(const uint256& nHash) const;
+    /** Whether an object-fetch govsync (nonzero hash, empty filter) for this hash can be served:
+     *  known -- stored or postponed -- syncable and not erased. (dash#7414, adapted) */
+    bool HaveObjectForFetch(const uint256& nHash) const;
+    /** Whether a vote-sync govsync for this hash names an object we would actually serve votes
+     *  for, so only such requests draw from the per-object fulfilled-request quota. */
+    bool HaveSyncableObjectForHash(const uint256& nHash) const;
 
     bool HaveVoteForHash(const uint256& nHash) const;
 
@@ -386,11 +397,6 @@ private:
     bool HasAlreadyVotedFundingTrigger() const;
 
     void RequestGovernanceObject(CNode* pfrom, const uint256& nHash, CConnman& connman, bool fUseFilter = false) const;
-
-    void AddInvalidVote(const CGovernanceVote& vote)
-    {
-        cmapInvalidVotes.Insert(vote.GetHash(), vote);
-    }
 
     bool ProcessVote(CNode* pfrom, const CGovernanceVote& vote, CGovernanceException& exception, CConnman& connman);
 
