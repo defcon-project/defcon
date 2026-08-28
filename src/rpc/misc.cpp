@@ -571,6 +571,16 @@ static bool getIndexKey(const std::string& str, uint160& hashBytes, AddressType&
     }
     const PKHash *pkhash = std::get_if<PKHash>(&dest);
     const ScriptHash *scriptID = std::get_if<ScriptHash>(&dest);
+    if (pkhash == nullptr && scriptID == nullptr) {
+        // A CTxDestination that is neither: a pay-to-BLS-pubkey address decodes to
+        // CPubKey, which IsValidDestination() accepts. Such outputs never reach the
+        // address index -- AddressBytesFromScript() answers UNKNOWN for anything that
+        // is not P2SH, P2PKH or P2PK, and the indexer skips UNKNOWN -- so there is
+        // nothing to look up. Without this the line below dereferenced a null
+        // scriptID and killed the node from any of the five getaddress* RPCs.
+        type = AddressType::UNKNOWN;
+        return false;
+    }
     type = pkhash ? AddressType::P2PK_OR_P2PKH : AddressType::P2SH;
     hashBytes = pkhash ? uint160(*pkhash) : uint160(*scriptID);
     return true;
