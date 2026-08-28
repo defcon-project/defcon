@@ -766,6 +766,121 @@ void FuncTestMempoolDualProregtx(TestChainSetup& setup)
     BOOST_CHECK(testPool.existsProviderTxConflict(CTransaction(tx_reg2)));
 }
 
+// dash#7489: a ProRegTx that reuses a confirmed external collateral replaces
+// the live MN at block connect. An update (ProUpServ/ProUpReg/ProUpRev) for the
+// replaced proTxHash is still mempool-valid against the pre-block tip list, so
+// fee-ordered packaging can put the replacement before the update and make
+// BuildNewListFromBlock return bad-protx-hash, aborting block assembly. The
+// mempool must treat the two as conflicts, whichever arrives first.
+void FuncTestMempoolProRegReplacementUpdateConflict(TestChainSetup& setup)
+{
+    auto& chainman = *Assert(setup.m_node.chainman.get());
+    auto& dmnman = *Assert(setup.m_node.dmnman);
+    const CScript coinbase_pk = GetScriptForRawPubKey(setup.coinbaseKey.GetPubKey());
+    int nHeight = chainman.ActiveChain().Height();
+    auto utxos = BuildSimpleUtxoMap(setup.m_coinbase_txns);
+
+    CKey ownerKey;
+    CKey payoutKey;
+    CKey collateralKey;
+    CBLSSecretKey operatorKey;
+    ownerKey.MakeNewKey(true);
+    payoutKey.MakeNewKey(true);
+    collateralKey.MakeNewKey(true);
+    operatorKey.MakeNewKey();
+
+    auto scriptPayout = GetScriptForDestination(PKHash(payoutKey.GetPubKey()));
+    auto scriptCollateral = GetScriptForDestination(PKHash(collateralKey.GetPubKey()));
+
+    // Mine an external collateral, then register MN X against it.
+    CMutableTransaction tx_collateral;
+    FundTransaction(chainman.ActiveChain(), tx_collateral, utxos, scriptCollateral,
+                    dmn_types::BuildMnStruct(MnType::Regular).collat_amount, setup.coinbaseKey);
+    SignTransaction(*(setup.m_node.mempool), tx_collateral, setup.coinbaseKey);
+    auto block = std::make_shared<CBlock>(setup.CreateBlock({tx_collateral}, setup.coinbaseKey, chainman.ActiveChainstate()));
+    BOOST_REQUIRE(Assert(setup.m_node.chainman)->ProcessNewBlock(Params(), block, true, nullptr));
+    dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+    BOOST_REQUIRE_EQUAL(chainman.ActiveChain().Height(), nHeight + 1);
+
+    COutPoint collateralOutpoint;
+    for (size_t i = 0; i < tx_collateral.vout.size(); ++i) {
+        if (tx_collateral.vout[i].nValue == dmn_types::BuildMnStruct(MnType::Regular).collat_amount) {
+            collateralOutpoint = COutPoint(tx_collateral.GetHash(), i);
+            break;
+        }
+    }
+    BOOST_REQUIRE(!collateralOutpoint.hash.IsNull());
+
+    auto make_external_reg = [&](int port, CKey& owner, const CKey& payout, CBLSSecretKey& op) {
+        CProRegTx payload;
+        payload.nVersion = CProRegTx::GetVersion(!bls::bls_legacy_scheme);
+        payload.addr = LookupNumeric("1.1.1.1", port);
+        payload.keyIDOwner = owner.GetPubKey().GetID();
+        payload.pubKeyOperator.Set(op.GetPublicKey(), bls::bls_legacy_scheme.load());
+        payload.keyIDVoting = owner.GetPubKey().GetID();
+        payload.scriptPayout = GetScriptForDestination(PKHash(payout.GetPubKey()));
+        payload.collateralOutpoint = collateralOutpoint;
+
+        CMutableTransaction tx;
+        tx.nVersion = 3;
+        tx.nType = TRANSACTION_PROVIDER_REGISTER;
+        FundTransaction(chainman.ActiveChain(), tx, utxos, payload.scriptPayout, 1 * COIN, setup.coinbaseKey);
+        payload.inputsHash = CalcTxInputsHash(CTransaction(tx));
+        CMessageSigner::SignMessage(payload.MakeSignString(), payload.vchSig, collateralKey);
+        SetTxPayload(tx, payload);
+        SignTransaction(*(setup.m_node.mempool), tx, setup.coinbaseKey);
+        return tx;
+    };
+
+    auto tx_reg = make_external_reg(/*port=*/1, ownerKey, payoutKey, operatorKey);
+    const uint256 proTxHash = tx_reg.GetHash();
+    block = std::make_shared<CBlock>(setup.CreateBlock({tx_reg}, setup.coinbaseKey, chainman.ActiveChainstate()));
+    BOOST_REQUIRE(Assert(setup.m_node.chainman)->ProcessNewBlock(Params(), block, true, nullptr));
+    dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+    BOOST_REQUIRE_EQUAL(chainman.ActiveChain().Height(), nHeight + 2);
+    BOOST_REQUIRE(dmnman.GetListAtChainTip().HasMN(proTxHash));
+    BOOST_REQUIRE(dmnman.GetListAtChainTip().GetMNByCollateral(collateralOutpoint) != nullptr);
+
+    // Replacement ProRegTx reusing the same external collateral with fresh keys.
+    CKey ownerKey2;
+    CKey payoutKey2;
+    CBLSSecretKey operatorKey2;
+    ownerKey2.MakeNewKey(true);
+    payoutKey2.MakeNewKey(true);
+    operatorKey2.MakeNewKey();
+    auto tx_reg_replace = make_external_reg(/*port=*/3, ownerKey2, payoutKey2, operatorKey2);
+
+    // Update for the MN the replacement would delete.
+    auto tx_up_serv = CreateProUpServTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, proTxHash,
+                                        operatorKey, /*port=*/2, CScript(), setup.coinbaseKey);
+
+    CTxMemPool testPool;
+    if (setup.m_node.dmnman) {
+        testPool.ConnectManagers(setup.m_node.dmnman.get(), setup.m_node.llmq_ctx->isman.get());
+    }
+    TestMemPoolEntryHelper entry;
+    LOCK2(cs_main, testPool.cs);
+
+    // Replacement already in mempool => update for the MN it replaces is a conflict.
+    testPool.addUnchecked(entry.FromTx(tx_reg_replace));
+    BOOST_CHECK_EQUAL(testPool.size(), 1U);
+    BOOST_CHECK(testPool.existsProviderTxConflict(CTransaction(tx_up_serv)));
+    testPool.removeRecursive(CTransaction(tx_reg_replace), MemPoolRemovalReason::MANUAL);
+    BOOST_CHECK_EQUAL(testPool.size(), 0U);
+
+    // Update already in mempool => replacement ProRegTx reusing that MN's collateral conflicts.
+    testPool.addUnchecked(entry.FromTx(tx_up_serv));
+    BOOST_CHECK_EQUAL(testPool.size(), 1U);
+    BOOST_CHECK(testPool.existsProviderTxConflict(CTransaction(tx_reg_replace)));
+
+    // existsProviderTxConflict only gates our own acceptance; a miner can still confirm the
+    // replacement. Once that block arrives, removeForBlock must evict the now-unmineable
+    // update, or it lingers and stalls our own block assembly.
+    std::vector<CTransactionRef> connected{MakeTransactionRef(tx_reg_replace)};
+    testPool.removeForBlock(connected, chainman.ActiveChain().Height() + 1);
+    BOOST_CHECK_EQUAL(testPool.size(), 0U);
+}
+
 void FuncVerifyDB(TestChainSetup& setup)
 {
     auto& chainman = *Assert(setup.m_node.chainman.get());
@@ -1093,6 +1208,12 @@ BOOST_AUTO_TEST_CASE(test_mempool_dual_proregtx_basic)
 {
     TestChainV19Setup setup;
     FuncTestMempoolDualProregtx(setup);
+}
+
+BOOST_AUTO_TEST_CASE(test_mempool_proreg_replacement_update_conflict)
+{
+    TestChainV19Setup setup;
+    FuncTestMempoolProRegReplacementUpdateConflict(setup);
 }
 
 //This one can be started only with legacy scheme, since inside undo block will switch it back to legacy resulting into an inconsistency
