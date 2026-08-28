@@ -15,6 +15,7 @@
 #include <serialize.h>
 #include <span.h>
 #include <streams.h>
+#include <test/util/net.h>
 #include <test/util/validation.h>
 #include <timedata.h>
 #include <util/strencodings.h>
@@ -46,6 +47,140 @@ BOOST_AUTO_TEST_CASE(cnode_listen_port)
     BOOST_CHECK(gArgs.SoftSetArg("-port", ToString(altPort)));
     port = GetListenPort();
     BOOST_CHECK(port == altPort);
+}
+
+namespace {
+//! GetObjectInterval(MSG_CLSIG), the shortest of the per-type request intervals, and the grace that
+//! follows it: RECENT_OBJECT_REQUEST_TTL_INTERVALS of them. Neither is reachable from a test, so the
+//! arithmetic is spelled out here -- if either changes, the cases pinning this boundary should be
+//! revisited rather than silently re-pointed at a different one.
+constexpr auto CLSIG_REQUEST_INTERVAL{5s};
+constexpr auto CLSIG_LATE_GRACE{2 * CLSIG_REQUEST_INTERVAL};
+
+GetDataResponse ConsumeGetDataResponse(PeerManager& peerman, const CNode& peer, const CInv& inv)
+{
+    return WITH_LOCK(::cs_main, return peerman.ConsumeGetDataResponse(peer.GetId(), inv));
+}
+} // namespace
+
+// GETDATA-only object types authorise an incoming payload with ConsumeGetDataResponse, which must
+// reject a bare announcement. Otherwise a peer could authorise its own payload by sending INV
+// immediately followed by the object, before SendMessages ever turned that announcement into a
+// request.
+BOOST_AUTO_TEST_CASE(getdata_response_requires_an_inflight_request)
+{
+    LOCK(NetEventsInterface::g_msgproc_mutex);
+
+    TestChainState& chainstate = *static_cast<TestChainState*>(&m_node.chainman->ActiveChainstate());
+    chainstate.JumpOutOfIbd();
+
+    auto peer{MakeTestPeer(/*id=*/0)};
+    m_node.peerman->InitializeNode(*peer, NODE_NETWORK);
+
+    // MSG_SPORK is not a GETDATA-only type (see IsGetDataOnlyObject), so no late-answer grace is
+    // ever recorded for it and the strict in-flight requirement is visible on its own.
+    const CInv inv{MSG_SPORK, uint256S("04")};
+    AnnounceInv(*m_node.peerman, *peer, inv);
+    // Announced but not yet requested: must not authorise.
+    BOOST_CHECK(ConsumeGetDataResponse(*m_node.peerman, *peer, inv) == GetDataResponse::UNREQUESTED);
+    // The rejection left the candidate intact, so the GETDATA is still pending.
+    BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return m_node.peerman->GetRequestedObjectCount(peer->GetId())), 1U);
+
+    // After SendMessages issues the GETDATA the announcement authorises exactly once.
+    SetMockTime(GetTime<std::chrono::seconds>() + 61s);
+    m_node.peerman->SendMessages(peer.get());
+    BOOST_CHECK(ConsumeGetDataResponse(*m_node.peerman, *peer, inv) == GetDataResponse::REQUESTED);
+    BOOST_CHECK(ConsumeGetDataResponse(*m_node.peerman, *peer, inv) == GetDataResponse::UNREQUESTED);
+
+    // Never announced at all: rejected.
+    const CInv never_announced{MSG_SPORK, uint256S("05")};
+    BOOST_CHECK(ConsumeGetDataResponse(*m_node.peerman, *peer, never_announced) == GetDataResponse::UNREQUESTED);
+
+    m_node.peerman->FinalizeNode(*peer);
+    chainstate.ResetIbd();
+    SetMockTime(0s);
+}
+
+// Accepting an object from any source erases the requesting bookkeeping (EraseObjectRequest), which
+// strands an in-flight request. Reachable in production whenever the object turns up from another
+// peer -- or locally, e.g. a ChainLock we sign ourselves -- while our GETDATA is out. A peer that
+// then answers is late, not unsolicited, and must not be scored; but one GETDATA buys exactly one
+// answer, so a replay of the same payload is unsolicited again.
+BOOST_AUTO_TEST_CASE(stranded_getdata_response_is_late_not_unrequested)
+{
+    LOCK(NetEventsInterface::g_msgproc_mutex);
+
+    TestChainState& chainstate = *static_cast<TestChainState*>(&m_node.chainman->ActiveChainstate());
+    chainstate.JumpOutOfIbd();
+
+    auto peer{MakeTestPeer(/*id=*/0)};
+    m_node.peerman->InitializeNode(*peer, NODE_NETWORK);
+
+    // MSG_CLSIG is a GETDATA-only type, and its request interval is the shortest of them all.
+    const CInv inv{MSG_CLSIG, uint256S("06")};
+    AnnounceInv(*m_node.peerman, *peer, inv);
+
+    // Nudge past the announcement's reqtime so SendMessages issues the GETDATA.
+    SetMockTime(GetTime<std::chrono::seconds>() + 2s);
+    m_node.peerman->SendMessages(peer.get());
+    BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return m_node.peerman->GetRequestedObjectCount(peer->GetId())), 0U);
+
+    // The object arrives from somewhere else while our GETDATA is still in flight.
+    WITH_LOCK(::cs_main, m_node.peerman->EraseObjectRequest(peer->GetId(), inv));
+
+    // The answer is late, not unsolicited; a second copy is unsolicited again.
+    BOOST_CHECK(ConsumeGetDataResponse(*m_node.peerman, *peer, inv) == GetDataResponse::LATE);
+    BOOST_CHECK(ConsumeGetDataResponse(*m_node.peerman, *peer, inv) == GetDataResponse::UNREQUESTED);
+
+    // A hash we never asked this peer for is still unsolicited.
+    BOOST_CHECK(ConsumeGetDataResponse(*m_node.peerman, *peer, CInv{MSG_CLSIG, uint256S("07")}) ==
+                GetDataResponse::UNREQUESTED);
+
+    m_node.peerman->FinalizeNode(*peer);
+    chainstate.ResetIbd();
+    SetMockTime(0s);
+}
+
+// The late-answer grace is bound to the type we asked for and to a window measured from the request.
+// The type in an INV is whatever the peer said it was, so a peer could announce the hash of one
+// gated type under another, collect our GETDATA, and answer with the object it meant all along; and
+// without the time bound it could bank an unanswered request to spend arbitrarily later.
+BOOST_AUTO_TEST_CASE(getdata_response_grace_is_typed_and_expires)
+{
+    LOCK(NetEventsInterface::g_msgproc_mutex);
+
+    TestChainState& chainstate = *static_cast<TestChainState*>(&m_node.chainman->ActiveChainstate());
+    chainstate.JumpOutOfIbd();
+
+    auto peer{MakeTestPeer(/*id=*/0)};
+    m_node.peerman->InitializeNode(*peer, NODE_NETWORK);
+
+    // Announced as a ChainLock, so that is what we ask for. Strand the request, then answer with a
+    // DKG contribution carrying the same hash: the grace must not cross inv types.
+    {
+        const uint256 hash{uint256S("08")};
+        AnnounceInv(*m_node.peerman, *peer, CInv{MSG_CLSIG, hash});
+        SetMockTime(GetTime<std::chrono::seconds>() + 2s);
+        m_node.peerman->SendMessages(peer.get());
+        WITH_LOCK(::cs_main, m_node.peerman->EraseObjectRequest(peer->GetId(), CInv{MSG_CLSIG, hash}));
+        BOOST_CHECK(ConsumeGetDataResponse(*m_node.peerman, *peer, CInv{MSG_QUORUM_CONTRIB, hash}) ==
+                    GetDataResponse::UNREQUESTED);
+    }
+
+    // Same flow with the right type, but past the grace window: unsolicited again.
+    {
+        const CInv inv{MSG_CLSIG, uint256S("09")};
+        AnnounceInv(*m_node.peerman, *peer, inv);
+        SetMockTime(GetTime<std::chrono::seconds>() + 2s);
+        m_node.peerman->SendMessages(peer.get());
+        WITH_LOCK(::cs_main, m_node.peerman->EraseObjectRequest(peer->GetId(), inv));
+        SetMockTime(GetTime<std::chrono::seconds>() + CLSIG_LATE_GRACE + 1s);
+        BOOST_CHECK(ConsumeGetDataResponse(*m_node.peerman, *peer, inv) == GetDataResponse::UNREQUESTED);
+    }
+
+    m_node.peerman->FinalizeNode(*peer);
+    chainstate.ResetIbd();
+    SetMockTime(0s);
 }
 
 BOOST_AUTO_TEST_CASE(cnode_simple_test)
