@@ -152,7 +152,11 @@ bool CGovernanceObject::ProcessVote(CMasternodeMetaMan& mn_metaman, CGovernanceM
              << ", vote hash = " << vote.GetHash().ToString();
         LogPrintf("%s\n", ostr.str());
         exception = CGovernanceException(ostr.str(), GOVERNANCE_EXCEPTION_PERMANENT_ERROR, 20);
-        govman.AddInvalidVote(vote);
+        // No invalid-vote cache any more (dash#7569): a vote can be invalid transiently -- signed by
+        // a masternode whose registration this node has not seen yet, or by a rotated key one list
+        // behind -- and caching the verdict permanently suppressed the honest retransmit. The
+        // sender is scored on every rejection either way, and dash#7518's signature memo already
+        // makes re-verification cheap.
         return false;
     }
 

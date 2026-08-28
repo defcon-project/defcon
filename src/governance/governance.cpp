@@ -77,7 +77,6 @@ GovernanceStore::GovernanceStore() :
     mapObjects(),
     mapErasedGovernanceObjects(),
     cmapVoteToObject(MAX_CACHE_SIZE),
-    cmapInvalidVotes(MAX_CACHE_SIZE),
     cmmapOrphanVotes(MAX_CACHE_SIZE),
     mapLastMasternodeObject(),
     lastMNListForVotingKeys(std::make_shared<CDeterministicMNList>())
@@ -1221,17 +1220,6 @@ bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, 
         return false;
     }
 
-    if (cmapInvalidVotes.HasKey(nHashVote)) {
-        std::ostringstream ostr;
-        ostr << "CGovernanceManager::ProcessVote -- Old invalid vote "
-             << ", MN outpoint = " << vote.GetMasternodeOutpoint().ToStringShort()
-             << ", governance object hash = " << nHashGovobj.ToString();
-        LogPrint(BCLog::GOBJECT, "%s\n", ostr.str());
-        exception = CGovernanceException(ostr.str(), GOVERNANCE_EXCEPTION_PERMANENT_ERROR, 20);
-        LEAVE_CRITICAL_SECTION(cs);
-        return false;
-    }
-
     auto it = mapObjects.find(nHashGovobj);
     if (it == mapObjects.end()) {
         // A vote reaching the orphan cache must first prove masternode authorship; without this an
@@ -1549,7 +1537,6 @@ void GovernanceStore::Clear()
     mapObjects.clear();
     mapErasedGovernanceObjects.clear();
     cmapVoteToObject.Clear();
-    cmapInvalidVotes.Clear();
     cmmapOrphanVotes.Clear();
     mapLastMasternodeObject.clear();
 }
@@ -1727,7 +1714,6 @@ void CGovernanceManager::RemoveInvalidVotes()
             }
             for (auto& voteHash : removed) {
                 cmapVoteToObject.Erase(voteHash);
-                cmapInvalidVotes.Erase(voteHash);
                 cmmapOrphanVotes.Erase(voteHash);
                 m_requested_hash_time.erase(voteHash);
             }
