@@ -60,7 +60,7 @@ void MultiwalletMaintenance()
         CStakeWallet wallet(p.get(), (Consensus::Params&) params);
         wallet.StakingDisabled();
         //use temporary copy of old wallet list to determine which wallets were staking
-        for (int i=0; i<temp_wallets.size(); i++) {
+        for (size_t i = 0; i < temp_wallets.size(); i++) {
             if (wallet.GetName() == temp_wallets[i].GetName()) {
                 if (temp_wallets[i].CanStake()) {
                     wallet.StakingEnabled();
