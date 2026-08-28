@@ -608,7 +608,13 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         } else if (strType == DBKeys::HDCHAIN || strType == DBKeys::CRYPTED_HDCHAIN) {
             CHDChain chain;
             ssValue >> chain;
-            assert ((strType == DBKeys::CRYPTED_HDCHAIN) == chain.IsCrypted());
+            // A corrupted or crafted wallet file could pair the plain record key with
+            // a crypted chain (or vice versa); that is a load error, not a programming
+            // error, and must not abort the process. (dash#7383)
+            if ((strType == DBKeys::CRYPTED_HDCHAIN) != chain.IsCrypted()) {
+                strErr = "Error reading wallet database: HD chain type mismatch";
+                return false;
+            }
             if (!pwallet->GetOrCreateLegacyScriptPubKeyMan()->LoadHDChain(chain))
             {
                 strErr = "Error reading wallet database: SetHDChain failed";
