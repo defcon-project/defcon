@@ -171,12 +171,6 @@ OverviewPage::OverviewPage(QWidget* parent) :
     modernHeaderLayout->addWidget(modernSubtitle);
     ui->topLayout->insertWidget(0, modernHeader);
 
-    modernBalanceLogo = new QLabel(ui->frame);
-    modernBalanceLogo->setObjectName("modernBalanceLogo");
-    modernBalanceLogo->setPixmap(QIcon(":/icons/dash").pixmap(42, 42));
-    modernBalanceLogo->setAlignment(Qt::AlignCenter);
-    ui->horizontalLayout_4->addWidget(modernBalanceLogo);
-
     // The network's pulse belongs on the front page, not only in the status
     // bar: one quiet line above the cards, fed from the client model.
     networkCard = new QFrame(this);
@@ -323,13 +317,6 @@ void OverviewPage::updateThemePresentation()
     if (networkCard) {
         networkCard->setVisible(modern);
     }
-    if (modernBalanceLogo) {
-        modernBalanceLogo->setVisible(modern);
-        const int logoSize = galaxy ? 54 : 42;
-        modernBalanceLogo->setPixmap(galaxy ? GUIUtil::getIcon("dash").pixmap(logoSize, logoSize)
-                                            : QIcon(":/icons/dash").pixmap(logoSize, logoSize));
-    }
-
     const int outerMargin = galaxy ? 18 : 11;
     ui->topLayout->setContentsMargins(outerMargin, outerMargin, outerMargin, outerMargin);
     ui->topLayout->setSpacing(galaxy ? 14 : 6);

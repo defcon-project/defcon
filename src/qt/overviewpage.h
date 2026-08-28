@@ -67,7 +67,6 @@ private:
     TxViewDelegate *txdelegate;
     std::unique_ptr<TransactionFilterProxy> filter;
     QWidget* modernHeader{nullptr};
-    QLabel* modernBalanceLogo{nullptr};
     QFrame* networkCard{nullptr};
     QLabel* labelNetworkStatus{nullptr};
 
