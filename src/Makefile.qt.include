@@ -301,6 +301,12 @@ endif # ENABLE_WALLET
 
 RES_IMAGES = \
   qt/res/images/arrow_down_dark.png \
+  qt/res/images/arrow_down_abyss.png \
+  qt/res/images/arrow_down_arctic.png \
+  qt/res/images/arrow_down_nebula.png \
+  qt/res/images/arrow_up_abyss.png \
+  qt/res/images/arrow_up_arctic.png \
+  qt/res/images/arrow_up_nebula.png \
   qt/res/images/arrow_down_light.png \
   qt/res/images/arrow_left_dark.png \
   qt/res/images/arrow_left_light.png \
