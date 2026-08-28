@@ -13,6 +13,7 @@
 
 #include <map>
 #include <set>
+#include <optional>
 #include <unordered_set>
 #include <vector>
 
@@ -35,6 +36,14 @@ std::vector<CDeterministicMNCPtr> GetAllQuorumMembers(Consensus::LLMQType llmqTy
                                                       CQuorumSnapshotManager& qsnapman,
                                                       gsl::not_null<const CBlockIndex*> pQuorumBaseBlockIndex,
                                                       bool reset_cache = false);
+
+// Predicts the members of a future v20 quorum from its already-known work block, before the
+// quorum's own base block exists on chain. Returns std::nullopt when V20 is not yet active at
+// the work block (the pre-v20 modifier needs the future base block hash) or for rotated types,
+// whose predictive quarter-rotation path this tree does not carry. (dash#7428, adapted)
+std::optional<std::vector<CDeterministicMNCPtr>> ComputeQuorumMembersFromWorkBlock(
+    Consensus::LLMQType llmqType, CDeterministicMNManager& dmnman,
+    gsl::not_null<const CBlockIndex*> pWorkBlockIndex, int quorumHeight);
 
 uint256 DeterministicOutboundConnection(const uint256& proTxHash1, const uint256& proTxHash2);
 std::unordered_set<uint256, StaticSaltedHasher> GetQuorumConnections(

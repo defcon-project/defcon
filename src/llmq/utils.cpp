@@ -85,6 +85,19 @@ static void BuildQuorumSnapshot(const Consensus::LLMQParams& llmqParams, const C
                                 std::vector<CDeterministicMNCPtr>& sortedCombinedMns, CQuorumSnapshot& quorumSnapshot,
                                 int nHeight, std::vector<int>& skipList, const CBlockIndex* pCycleQuorumBaseBlockIndex);
 
+static uint256 GetHashModifierFromWorkBlock(const Consensus::LLMQParams& llmqParams,
+                                            const CBlockIndex* pWorkBlockIndex)
+{
+    auto cbcl = GetNonNullCoinbaseChainlock(pWorkBlockIndex);
+    if (cbcl.has_value()) {
+        // We have a non-null CL signature: calculate modifier using this CL signature
+        auto& [bestCLSignature, bestCLHeightDiff] = cbcl.value();
+        return ::SerializeHash(std::make_tuple(llmqParams.type, pWorkBlockIndex->nHeight, bestCLSignature));
+    }
+    // No non-null CL signature found in coinbase: calculate modifier using block hash only
+    return ::SerializeHash(std::make_pair(llmqParams.type, pWorkBlockIndex->GetBlockHash()));
+}
+
 static uint256 GetHashModifier(const Consensus::LLMQParams& llmqParams, gsl::not_null<const CBlockIndex*> pCycleQuorumBaseBlockIndex)
 {
     ASSERT_IF_DEBUG(pCycleQuorumBaseBlockIndex->nHeight % llmqParams.dkgInterval == 0);
@@ -92,14 +105,7 @@ static uint256 GetHashModifier(const Consensus::LLMQParams& llmqParams, gsl::not
 
     if (IsV20Active(pWorkBlockIndex)) {
         // v20 is active: calculate modifier using the new way.
-        auto cbcl = GetNonNullCoinbaseChainlock(pWorkBlockIndex);
-        if (cbcl.has_value()) {
-            // We have a non-null CL signature: calculate modifier using this CL signature
-            auto& [bestCLSignature, bestCLHeightDiff] = cbcl.value();
-            return ::SerializeHash(std::make_tuple(llmqParams.type, pWorkBlockIndex->nHeight, bestCLSignature));
-        }
-        // No non-null CL signature found in coinbase: calculate modifier using block hash only
-        return ::SerializeHash(std::make_pair(llmqParams.type, pWorkBlockIndex->GetBlockHash()));
+        return GetHashModifierFromWorkBlock(llmqParams, pWorkBlockIndex);
     }
 
     // v20 isn't active yet: calculate modifier using the usual way
@@ -204,6 +210,48 @@ std::vector<CDeterministicMNCPtr> ComputeQuorumMembers(Consensus::LLMQType llmqT
     const auto modifier = GetHashModifier(llmq_params_opt.value(), pQuorumBaseBlockIndex);
     auto allMns = dmnman.GetListForBlock(pWorkBlockIndex);
     return allMns.CalculateQuorum(llmq_params_opt->size, modifier, EvoOnly);
+}
+
+std::optional<std::vector<CDeterministicMNCPtr>> ComputeQuorumMembersFromWorkBlock(
+    Consensus::LLMQType llmqType, CDeterministicMNManager& dmnman,
+    gsl::not_null<const CBlockIndex*> pWorkBlockIndex, int quorumHeight)
+{
+    const Consensus::Params& consensus{Params().GetConsensus()};
+    const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
+    if (!llmq_params_opt.has_value()) {
+        ASSERT_IF_DEBUG(false);
+        return std::nullopt;
+    }
+    const auto& llmq_params = llmq_params_opt.value();
+
+    const int quorumIndex{quorumHeight % llmq_params.dkgInterval};
+    const int cycleBaseHeight{quorumHeight - quorumIndex};
+    if (quorumIndex < 0 || quorumIndex >= (llmq_params.useRotation ? llmq_params.signingActiveQuorumCount : 1) ||
+        pWorkBlockIndex->nHeight != cycleBaseHeight - 8) {
+        ASSERT_IF_DEBUG(false);
+        return std::nullopt;
+    }
+
+    if (!IsV20Active(pWorkBlockIndex)) {
+        // The pre-v20 modifier needs the future (cycle) quorum base block hash, which does
+        // not exist yet.
+        return std::nullopt;
+    }
+
+    if (llmq_params.useRotation) {
+        // Quarter rotation would need the historical snapshots threaded through a predictive
+        // path this tree does not carry (upstream dash#7428 does); no rotated type is active
+        // on any chain this tree runs, so the caller reports "not available" instead.
+        return std::nullopt;
+    }
+
+    const auto modifier = GetHashModifierFromWorkBlock(llmq_params, pWorkBlockIndex.get());
+    // Canonical member selection gates EvoOnly on V19 at the future quorum base block; V19 is
+    // a buried deployment, so its state there is a pure height check even though the block
+    // itself is not mined yet.
+    const bool EvoOnly = llmq_params.type == consensus.llmqTypePlatform &&
+                         quorumHeight + 1 >= consensus.DeploymentHeight(Consensus::DEPLOYMENT_V19);
+    return dmnman.GetListForBlock(pWorkBlockIndex).CalculateQuorum(llmq_params.size, modifier, EvoOnly);
 }
 
 std::vector<std::vector<CDeterministicMNCPtr>> ComputeQuorumMembersByQuarterRotation(
