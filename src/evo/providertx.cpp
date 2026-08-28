@@ -104,6 +104,12 @@ bool CProUpServTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationSta
     if (nVersion != BASIC_BLS_VERSION && nType == MnType::Evo) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-evo-version");
     }
+    // Mirror CProRegTx: an out-of-range nType is mempool-acceptable without
+    // this but block-invalid in BuildNewListFromBlock, so a single relayed
+    // ProUpServTx would stall CreateNewBlock/getblocktemplate. (dash#7488)
+    if (!IsValidMnType(nType)) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
+    }
 
     return true;
 }

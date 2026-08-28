@@ -7,7 +7,10 @@
 #include <consensus/amount.h>
 #include <consensus/tx_check.h>
 #include <consensus/validation.h>
+#include <chainparams.h>
 #include <evo/assetlocktx.h>
+#include <evo/creditpool.h>
+#include <llmq/context.h>
 #include <evo/specialtx.h>
 #include <llmq/context.h>
 #include <policy/settings.h>
@@ -404,6 +407,52 @@ BOOST_FIXTURE_TEST_CASE(evo_assetunlock, TestChain100Setup)
         BOOST_CHECK(tx_state.GetRejectReason() == "bad-assetunlocktx-too-many-outs");
     }
 
+}
+
+// dash#7570, adapted: Asset Unlock limits are cumulative, so a package can
+// exceed the block's limit even though its transactions pass individually;
+// ProcessLockUnlockTransactions must be atomic. In this tree the per-tx path
+// runs CheckAssetLockUnlockTx first, and fabricating an unlock that passes its
+// quorum-signature check is not possible in a unit test -- so the rollback
+// mechanics are pinned through the lock path, whose checks are structural.
+BOOST_FIXTURE_TEST_CASE(credit_pool_package_atomicity, TestChain100Setup)
+{
+    LOCK(cs_main);
+    auto& blockman = Assert(m_node.chainman)->m_blockman;
+    auto& qman = *Assert(m_node.llmq_ctx)->qman;
+    const auto* tip = m_node.chainman->ActiveChain().Tip();
+
+    FillableSigningProvider keystore;
+    CCoinsView coinsDummy;
+    CCoinsViewCache coins(&coinsDummy);
+    CKey key;
+    key.MakeNewKey(true);
+
+    // The helper locks 30 CENT (a 17 + 13 credit split against a 30 CENT
+    // OP_RETURN output).
+    const CMutableTransaction lock_ok_mtx = CreateAssetLockTx(keystore, coins, key);
+    const auto lock_ok = MakeTransactionRef(lock_ok_mtx);
+
+    // Same transaction with the OP_RETURN value lowered: the credit outputs no
+    // longer sum to the locked amount, so CheckAssetLockTx rejects it.
+    CMutableTransaction bad_mtx = lock_ok_mtx;
+    bad_mtx.vout[0].nValue -= CENT;
+    const auto lock_bad = MakeTransactionRef(bad_mtx);
+
+    CCreditPoolDiff diff(CCreditPool{}, tip, Params().GetConsensus(), /*blockSubsidy=*/0);
+    const CAmount baseline = diff.GetTotalLocked();
+
+    // A package with a failing member must leave the diff exactly as it was:
+    // the amount committed by the first, valid lock is rolled back with it.
+    TxValidationState package_state;
+    BOOST_CHECK(!diff.ProcessLockUnlockTransactions(blockman, qman, {lock_ok, lock_bad}, package_state));
+    BOOST_CHECK(!package_state.IsValid());
+    BOOST_CHECK_EQUAL(diff.GetTotalLocked(), baseline);
+
+    // The same valid lock alone still commits.
+    TxValidationState retry_state;
+    BOOST_CHECK(diff.ProcessLockUnlockTransactions(blockman, qman, {lock_ok}, retry_state));
+    BOOST_CHECK_EQUAL(diff.GetTotalLocked(), baseline + 30 * CENT);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

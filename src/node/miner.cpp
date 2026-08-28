@@ -504,34 +504,11 @@ void BlockAssembler::addPackageTxs(int& nPackagesSelected, int& nDescendantsUpda
             }
         }
 
-        if (creditPoolDiff != std::nullopt) {
-            // If one transaction is skipped due to limits, it is not a reason to interrupt
-            // whole process of adding transactions.
-            // `state` is local here because used only to log info about this specific tx
-            TxValidationState state;
-
-            if (!creditPoolDiff->ProcessLockUnlockTransaction(m_blockman, m_qman, iter->GetTx(), state)) {
-                if (fUsingModified) {
-                    mapModifiedTx.get<ancestor_score>().erase(modit);
-                    failedTx.insert(iter);
-                }
-                LogPrintf("%s: asset-locks tx %s skipped due %s\n",
-                          __func__, iter->GetTx().GetHash().ToString(), state.ToString());
-                continue;
-            }
-        }
-        if (std::optional<uint8_t> signal = extractEHFSignal(iter->GetTx()); signal != std::nullopt) {
-            if (signals.find(*signal) != signals.end()) {
-                if (fUsingModified) {
-                    mapModifiedTx.get<ancestor_score>().erase(modit);
-                    failedTx.insert(iter);
-                }
-                LogPrintf("%s: ehf signal tx %s skipped due to duplicate %d\n",
-                          __func__, iter->GetTx().GetHash().ToString(), *signal);
-                continue;
-            }
-            signals.insert({*signal, 0});
-        }
+        // Credit pool and EHF checks run per package, after the ancestor set
+        // is known: Asset Unlock limits are cumulative, so a package can
+        // exceed the block's limit even though its transactions were accepted
+        // individually. Checking the entry alone here would commit state its
+        // package later fails to honour. (dash#7570)
 
         // We skip mapTx entries that are inBlock, and mapModifiedTx shouldn't
         // contain anything that is inBlock.
@@ -586,12 +563,47 @@ void BlockAssembler::addPackageTxs(int& nPackagesSelected, int& nDescendantsUpda
             continue;
         }
 
-        // This transaction will make it in; reset the failed counter.
-        nConsecutiveFailed = 0;
-
         // Package can be added. Sort the entries in a valid order.
         std::vector<CTxMemPool::txiter> sortedEntries;
         SortForBlock(ancestors, sortedEntries);
+
+        auto packageSignals = signals;
+        std::vector<CTransactionRef> creditPoolTransactions;
+        bool validPackage{true};
+        for (const auto& entry : sortedEntries) {
+            const auto& tx = entry->GetTx();
+            if (std::optional<uint8_t> signal = extractEHFSignal(tx); signal != std::nullopt) {
+                if (!packageSignals.insert({*signal, 0}).second) {
+                    LogPrintf("%s: package tx %s skipped due to duplicate EHF signal %d\n", __func__,
+                              tx.GetHash().ToString(), *signal);
+                    validPackage = false;
+                    break;
+                }
+            }
+            if (tx.IsSpecialTxVersion() && (tx.nType == TRANSACTION_ASSET_LOCK || tx.nType == TRANSACTION_ASSET_UNLOCK)) {
+                creditPoolTransactions.emplace_back(entry->GetSharedTx());
+            }
+        }
+
+        if (validPackage && creditPoolDiff != std::nullopt && !creditPoolTransactions.empty()) {
+            TxValidationState state;
+            if (!creditPoolDiff->ProcessLockUnlockTransactions(m_blockman, m_qman, creditPoolTransactions, state)) {
+                LogPrintf("%s: package tx %s skipped due to credit pool state: %s\n", __func__,
+                          iter->GetTx().GetHash().ToString(), state.ToString());
+                validPackage = false;
+            }
+        }
+        if (!validPackage) {
+            if (fUsingModified) {
+                mapModifiedTx.get<ancestor_score>().erase(modit);
+                failedTx.insert(iter);
+            }
+            continue;
+        }
+
+        // This transaction will make it in; reset the failed counter.
+        nConsecutiveFailed = 0;
+        signals = std::move(packageSignals);
 
         for (size_t i = 0; i < sortedEntries.size(); ++i) {
             AddToBlock(sortedEntries[i]);
