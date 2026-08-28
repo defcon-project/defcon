@@ -398,6 +398,10 @@ struct Peer {
 
     /** Whether this peer has already sent us a getaddr message. */
     bool m_getaddr_recvd GUARDED_BY(NetEventsInterface::g_msgproc_mutex){false};
+    /** Whether this peer has already requested sporks. */
+    bool m_getsporks_recvd GUARDED_BY(NetEventsInterface::g_msgproc_mutex){false};
+    /** Hashes of active sporks sent in the last getsporks response. */
+    std::vector<uint256> m_getsporks_last_response GUARDED_BY(NetEventsInterface::g_msgproc_mutex){};
     /** Number of addresses that can be processed from this peer. Start at 1 to
      *  permit self-announcement. */
     double m_addr_token_bucket GUARDED_BY(NetEventsInterface::g_msgproc_mutex){1.0};
@@ -5264,27 +5268,44 @@ void PeerManagerImpl::ProcessMessage(
 
     if (msg_type == NetMsgType::NOTFOUND) {
         // Remove the NOTFOUND transactions from the peer
-        LOCK(cs_main);
-        CNodeState *state = State(pfrom.GetId());
         std::vector<CInv> vInv;
         vRecv >> vInv;
-        if (vInv.size() <= MAX_PEER_OBJECT_IN_FLIGHT + MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
-            for (CInv &inv : vInv) {
-                if (inv.IsKnownType()) {
-                    // If we receive a NOTFOUND message for a txid we requested, erase
-                    // it from our data structures for this peer.
-                    auto in_flight_it = state->m_object_download.m_object_in_flight.find(inv);
-                    if (in_flight_it == state->m_object_download.m_object_in_flight.end()) {
-                        // Skip any further work if this is a spurious NOTFOUND
-                        // message.
-                        continue;
-                    }
-                    state->m_object_download.m_object_in_flight.erase(in_flight_it);
-                    state->m_object_download.m_object_announced.erase(inv);
+        if (vInv.size() > MAX_PEER_OBJECT_IN_FLIGHT + MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
+            Misbehaving(pfrom.GetId(), 20, strprintf("notfound message size = %u", vInv.size()));
+            return;
+        }
+
+        LOCK(cs_main);
+        CNodeState *state = State(pfrom.GetId());
+        for (CInv &inv : vInv) {
+            if (inv.IsKnownType()) {
+                // If we receive a NOTFOUND message for a txid we requested, erase
+                // it from our data structures for this peer.
+                auto in_flight_it = state->m_object_download.m_object_in_flight.find(inv);
+                if (in_flight_it == state->m_object_download.m_object_in_flight.end()) {
+                    // Skip any further work if this is a spurious NOTFOUND
+                    // message.
+                    continue;
                 }
+                state->m_object_download.m_object_in_flight.erase(in_flight_it);
+                state->m_object_download.m_object_announced.erase(inv);
             }
         }
         return;
+    }
+
+    if (msg_type == NetMsgType::GETSPORKS) {
+        // Ignore repeated requests only while the active spork set is unchanged. Some peers and
+        // the functional tests request sporks again after a spork update; those requests must
+        // receive the newer active set. (dash#7343, adapted: the response itself is sent by
+        // CSporkManager::ProcessGetSporks through the extension dispatch below.)
+        auto active_spork_hashes = m_sporkman.ActiveSporkHashes();
+        if (peer->m_getsporks_recvd && peer->m_getsporks_last_response == active_spork_hashes) {
+            LogPrint(BCLog::NET, "Ignoring repeated \"getsporks\". peer=%d\n", pfrom.GetId());
+            return;
+        }
+        peer->m_getsporks_recvd = true;
+        peer->m_getsporks_last_response = std::move(active_spork_hashes);
     }
 
     bool found = false;

@@ -276,6 +276,12 @@ public:
     void ProcessGetSporks(CNode& peer, CConnman& connman) EXCLUSIVE_LOCKS_REQUIRED(!cs);
 
     /**
+     * Sorted hashes of every active spork message, for callers that need to know
+     * whether the active set changed between two requests. (dash#7343)
+     */
+    std::vector<uint256> ActiveSporkHashes() const EXCLUSIVE_LOCKS_REQUIRED(!cs);
+
+    /**
      * UpdateSpork is used by the spork RPC command to set a new spork value, sign
      * and broadcast the spork message.
      */
