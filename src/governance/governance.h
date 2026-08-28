@@ -305,6 +305,12 @@ public:
 
     // Accessors for thread-safe access to maps
     bool HaveObjectForHash(const uint256& nHash) const;
+    /** Whether an object-fetch govsync (nonzero hash, empty filter) for this hash can be served:
+     *  known -- stored or postponed -- syncable and not erased. (dash#7414, adapted) */
+    bool HaveObjectForFetch(const uint256& nHash) const;
+    /** Whether a vote-sync govsync for this hash names an object we would actually serve votes
+     *  for, so only such requests draw from the per-object fulfilled-request quota. */
+    bool HaveSyncableObjectForHash(const uint256& nHash) const;
 
     bool HaveVoteForHash(const uint256& nHash) const;
 
