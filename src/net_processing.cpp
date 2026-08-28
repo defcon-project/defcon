@@ -398,6 +398,10 @@ struct Peer {
 
     /** Whether this peer has already sent us a getaddr message. */
     bool m_getaddr_recvd GUARDED_BY(NetEventsInterface::g_msgproc_mutex){false};
+    /** Whether this peer has already requested sporks. */
+    bool m_getsporks_recvd GUARDED_BY(NetEventsInterface::g_msgproc_mutex){false};
+    /** Hashes of active sporks sent in the last getsporks response. */
+    std::vector<uint256> m_getsporks_last_response GUARDED_BY(NetEventsInterface::g_msgproc_mutex){};
     /** Number of addresses that can be processed from this peer. Start at 1 to
      *  permit self-announcement. */
     double m_addr_token_bucket GUARDED_BY(NetEventsInterface::g_msgproc_mutex){1.0};
@@ -5288,6 +5292,20 @@ void PeerManagerImpl::ProcessMessage(
             }
         }
         return;
+    }
+
+    if (msg_type == NetMsgType::GETSPORKS) {
+        // Ignore repeated requests only while the active spork set is unchanged. Some peers and
+        // the functional tests request sporks again after a spork update; those requests must
+        // receive the newer active set. (dash#7343, adapted: the response itself is sent by
+        // CSporkManager::ProcessGetSporks through the extension dispatch below.)
+        auto active_spork_hashes = m_sporkman.ActiveSporkHashes();
+        if (peer->m_getsporks_recvd && peer->m_getsporks_last_response == active_spork_hashes) {
+            LogPrint(BCLog::NET, "Ignoring repeated \"getsporks\". peer=%d\n", pfrom.GetId());
+            return;
+        }
+        peer->m_getsporks_recvd = true;
+        peer->m_getsporks_last_response = std::move(active_spork_hashes);
     }
 
     bool found = false;

@@ -22,6 +22,7 @@
 #include <util/string.h>
 #include <validation.h>
 
+#include <algorithm>
 #include <string>
 
 const std::string SporkStore::SERIALIZATION_VERSION_STRING = "CSporkManager-Version-2";
@@ -209,6 +210,19 @@ void CSporkManager::ProcessGetSporks(CNode& peer, CConnman& connman)
             connman.PushMessage(&peer, CNetMsgMaker(peer.GetCommonVersion()).Make(NetMsgType::SPORK, signerSporkPair.second));
         }
     }
+}
+
+std::vector<uint256> CSporkManager::ActiveSporkHashes() const
+{
+    LOCK(cs);
+    std::vector<uint256> hashes;
+    for (const auto& [spork_id, signer_map] : mapSporksActive) {
+        for (const auto& [key_id, spork] : signer_map) {
+            hashes.push_back(spork.GetHash());
+        }
+    }
+    std::sort(hashes.begin(), hashes.end());
+    return hashes;
 }
 
 
