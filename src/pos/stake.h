@@ -26,6 +26,40 @@ using valtype = std::vector<unsigned char>;
  */
 bool EnsureCoinstakeDescriptors(CWallet& wallet);
 
+/** Why a coin is, or is not, available to the staking loop. */
+enum class StakeEligibility {
+    Eligible,
+    Immature,    //!< a generated output not yet COINBASE_MATURITY + 1 deep
+    BLSAddress,  //!< held at a BLS address, which cannot stake
+    BelowMin,    //!< under stakeValueRange[0]
+    AboveMax,    //!< over stakeValueRange[1]
+    Collateral,  //!< exactly a masternode collateral amount
+    TooYoung,    //!< under stakeAgeRange[0]
+    TooOld,      //!< over stakeAgeRange[1], where that bound still applies
+};
+
+/**
+ * What a wallet's coins were held back for, by value.
+ *
+ * A wallet can show a full balance and stake nothing at all, and until now the
+ * only trace of why was a coin's absence from a loop: no message, no log line,
+ * no count. Seven rules can each remove a coin silently and one of them removes
+ * it for good, so the reason is worth reporting.
+ */
+struct StakeSkipReport
+{
+    CAmount immature{0};
+    CAmount bls{0};
+    CAmount below_min{0};
+    CAmount above_max{0};
+    CAmount collateral{0};
+    CAmount too_young{0};
+    CAmount too_old{0};
+
+    void Add(StakeEligibility why, CAmount value);
+    CAmount Total() const;
+};
+
 class CStakeWallet
 {
     private:
@@ -60,6 +94,24 @@ class CStakeWallet
         // Captured at construction: an entry can outlive the wallet it points
         // to, so identity checks must not go through the pointer.
         const std::string& GetName() const { return name; }
+
+        /**
+         * The single answer to "may this coin stake", used by the selection loop
+         * and by the report below. One implementation, so the two cannot drift
+         * apart and start describing different rules.
+         */
+        StakeEligibility ClassifyForStaking(CAmount value, bool generated, int depth,
+                                            TxoutType type, int64_t inputAge, int nHeight) const;
+
+        /** Tally every coin the wallet holds that the rules keep out. */
+        StakeSkipReport ExplainExcludedCoins(int nHeight) const;
+
+        /**
+         * How a coinstake's credit is laid out: one output, or two that can each
+         * stake again. Takes the threshold rather than reading it from the
+         * wallet so the decision can be exercised on its own.
+         */
+        std::vector<CAmount> SplitStakeCredit(CAmount nCredit, CAmount threshold) const;
 
         uint64_t GetStakeWeight(int64_t nTime, int nHeight) const;
         bool SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight, std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet, CAmount& nValueRet) const;
