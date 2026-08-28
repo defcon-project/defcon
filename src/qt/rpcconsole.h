@@ -5,6 +5,7 @@
 #ifndef BITCOIN_QT_RPCCONSOLE_H
 #define BITCOIN_QT_RPCCONSOLE_H
 
+#include <qt/clientmodel.h>
 #include <qt/guiutil.h>
 #include <qt/peertablemodel.h>
 #include <qt/trafficgraphdata.h>
@@ -17,7 +18,6 @@
 #include <QThread>
 #include <QWidget>
 
-class ClientModel;
 class RPCTimerInterface;
 class WalletModel;
 
@@ -128,7 +128,7 @@ public Q_SLOTS:
     /** Set latest chainlocked hash and height shown in the UI */
     void setChainLock(const QString& bestChainLockHash, int bestChainLockHeight);
     /** Set number of blocks, last block date and last block hash shown in the UI */
-    void setNumBlocks(int count, const QDateTime& blockDate, const QString& blockHash, double nVerificationProgress, bool headers);
+    void setNumBlocks(int count, const QDateTime& blockDate, const QString& blockHash, double nVerificationProgress, SyncType synctype);
     /** Set size (number of transactions and memory usage) of the mempool in the UI */
     void setMempoolSize(long numberOfTxs, size_t dynUsage);
     /** Set number of InstantSend locks */

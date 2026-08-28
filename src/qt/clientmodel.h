@@ -34,6 +34,11 @@ enum class BlockSource {
     NETWORK
 };
 
+enum class SyncType {
+    HEADER_SYNC,
+    BLOCK_SYNC
+};
+
 enum NumConnections {
     CONNECTIONS_NONE = 0,
     CONNECTIONS_IN   = (1U << 0),
@@ -131,7 +136,7 @@ Q_SIGNALS:
     void numConnectionsChanged(int count);
     void masternodeListChanged() const;
     void chainLockChanged(const QString& bestChainLockHash, int bestChainLockHeight);
-    void numBlocksChanged(int count, const QDateTime& blockDate, const QString& blockHash, double nVerificationProgress, bool header, SynchronizationState sync_state);
+    void numBlocksChanged(int count, const QDateTime& blockDate, const QString& blockHash, double nVerificationProgress, SyncType synctype, SynchronizationState sync_state);
     void additionalDataSyncProgressChanged(double nSyncProgress);
     void mempoolSizeChanged(long count, size_t mempoolSizeInBytes);
     void islockCountChanged(size_t count);
