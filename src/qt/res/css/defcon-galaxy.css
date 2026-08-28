@@ -284,8 +284,11 @@ QToolBar#navigationToolBar[galaxy="true"] > QToolButton {
     border-radius: 20px;
     color: #d8c4d2;
     margin: 1px 1px;
-    min-width: 82px;
-    max-width: 154px;
+    /* Wide enough for the longest label ("Transactions") with its icon:
+       anything narrower elides to "Tra...ons", and a tab the bar cannot
+       name in full is worse than a wider pill. Five tabs fit at min 1280. */
+    min-width: 132px;
+    max-width: 16777215px;
     min-height: 40px;
     max-height: 40px;
     padding: 0 8px;

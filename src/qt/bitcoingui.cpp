@@ -719,6 +719,45 @@ void BitcoinGUI::createMenuBar()
     help->addAction(aboutQtAction);
 }
 
+namespace {
+/** Some late layout pass re-applies a stale sidebar width to the navigation
+ *  bar after the theme layout has already run -- observed live on Nebula,
+ *  where the horizontal bar collapsed to the width of a single sidebar item
+ *  and every tab vanished into the overflow chevron. The writer acts between
+ *  theme application and the first paints, so a one-shot reset cannot win;
+ *  this guard undoes the constraint the moment it lands. Vertical mode sizes
+ *  its width through the stylesheet and is deliberately left alone. */
+class ToolBarWidthGuard final : public QObject
+{
+public:
+    explicit ToolBarWidthGuard(QToolBar* tb) : QObject(tb), m_tb(tb) {}
+    bool eventFilter(QObject*, QEvent*) override
+    {
+        if (m_tb->orientation() == Qt::Horizontal) {
+            if (m_tb->maximumWidth() != QWIDGETSIZE_MAX) {
+                m_tb->setMinimumWidth(0);
+                m_tb->setMaximumWidth(QWIDGETSIZE_MAX);
+            }
+            // The same stale constraints land on the tab buttons themselves
+            // (a 120px cap elides "Overview" to "Ov...ew"); the horizontal
+            // bar wants every label whole, so free the buttons with the bar.
+            for (QObject* child : m_tb->children()) {
+                auto* button = qobject_cast<QToolButton*>(child);
+                if (button && button->maximumWidth() != QWIDGETSIZE_MAX) {
+                    button->setMinimumSize(0, 0);
+                    button->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+                }
+            }
+        }
+        return false;
+    }
+
+private:
+    QToolBar* const m_tb;
+};
+
+} // namespace
+
 void BitcoinGUI::createToolBars()
 {
 #ifdef ENABLE_WALLET
@@ -730,6 +769,7 @@ void BitcoinGUI::createToolBars()
         toolbar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         toolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
         toolbar->setMovable(false); // remove unused icon in upper left corner
+        toolbar->installEventFilter(new ToolBarWidthGuard(toolbar));
 
         tabGroup = new QButtonGroup(this);
 
@@ -994,6 +1034,16 @@ void BitcoinGUI::applyThemeLayout()
     for (QWidget* child : appToolBar->findChildren<QWidget*>()) {
         child->style()->unpolish(child);
         child->style()->polish(child);
+    }
+    if (!vertical) {
+        // Coming from (or racing with) the vertical layout, a stale fixed
+        // width can survive on the toolbar and squeeze the whole horizontal
+        // tab row into an extension chevron -- observed live on Nebula, where
+        // the bar collapsed to the width of one sidebar item and every
+        // navigation button vanished into the overflow popup. Horizontal mode
+        // never wants a width constraint, so clear it explicitly.
+        appToolBar->setMinimumWidth(0);
+        appToolBar->setMaximumWidth(QWIDGETSIZE_MAX);
     }
     appToolBar->updateGeometry();
     updateWidth();
