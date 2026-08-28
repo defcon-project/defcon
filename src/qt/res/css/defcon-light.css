@@ -576,3 +576,21 @@ QWidget#OverviewPage QLabel#labelNetworkStatus {
     color: #5a6a84;
     font-size: 12px;
 }
+
+
+/******************************************************
+Devnet badge
+******************************************************/
+
+QLabel#devnetBadge {
+    color: #a86f24;
+    background-color: #fdf4e0;
+    border: 1px solid #e39a00;
+    border-radius: 6px;
+    padding: 3px 10px;
+    margin: 6px 10px;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
