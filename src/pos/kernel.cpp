@@ -215,8 +215,15 @@ bool CheckProofOfStake(CChainState& chain_state, BlockValidationState& state, co
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-stake-amount");
     }
 
+    // The upper bound is lifted from the activation height. Nothing in this
+    // kernel rewards an older coin -- the target is weighted by value alone --
+    // so the bound could never moderate an advantage, only disqualify a coin
+    // for having failed to win for long enough, silently and permanently. The
+    // lower bound stays: it is what stops a coin being staked the moment it
+    // arrives.
     int64_t inputAge = nTime - nBlockFromTime;
-    if (inputAge < params.stakeAgeRange[0] || inputAge > params.stakeAgeRange[1]) {
+    const bool age_capped = !IsPosKernelV2(params, pindexPrev->nHeight + 1);
+    if (inputAge < params.stakeAgeRange[0] || (age_capped && inputAge > params.stakeAgeRange[1])) {
         LogPrint(BCLog::POS, "ERROR: %s: Stake input age is out of range (age: %d min: %d, max: %d)\n",
                              __func__, inputAge, params.stakeAgeRange[0], params.stakeAgeRange[1]);
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-stake-age");

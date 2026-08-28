@@ -178,4 +178,43 @@ BOOST_AUTO_TEST_CASE(a_larger_stake_is_never_ranked_below_a_smaller_one)
                        << " and rejected the larger " << larger_rejected / COIN);
 }
 
+/**
+ * Age alone must not retire a coin.
+ *
+ * A coin becomes ineligible once it is older than stakeAgeRange[1], and the
+ * only thing that refreshes it is winning a block -- which is the one thing a
+ * coin that never wins cannot do. Nothing in this kernel rewards age, so the
+ * bound moderated no advantage; it simply removed coins from the set, silently
+ * and for good.
+ *
+ * Under the corrected rules an over-age coin gets past the age check and is
+ * judged on the same terms as any other. It still fails here, because this
+ * coinstake carries no signature -- but it fails for that reason, which is the
+ * point.
+ */
+BOOST_AUTO_TEST_CASE(an_old_coin_may_still_stake)
+{
+    LOCK(cs_main);
+    CChainState& chainstate = m_node.chainman->ActiveChainstate();
+    const CBlockIndex* tip = chainstate.m_chain.Tip();
+    BOOST_REQUIRE(tip != nullptr);
+
+    const Consensus::Params& params = Params().GetConsensus();
+    BOOST_REQUIRE_MESSAGE(IsPosKernelV2(params, tip->nHeight + 1),
+                          "this test needs the corrected rules active on regtest");
+
+    const CBlockIndex* funding = chainstate.m_chain[1];
+    BOOST_REQUIRE(funding != nullptr);
+    const int64_t past_the_cap = funding->GetBlockTime() + params.stakeAgeRange[1] + 1;
+
+    const auto tx = MakeCoinstakeSpending(COutPoint(m_coinbase_txns[0]->GetHash(), 0));
+    BlockValidationState state;
+    uint256 hashProof, target;
+    BOOST_CHECK(!CheckProofOfStake(chainstate, state, tip, CTransaction(tx), past_the_cap,
+                                   tip->nBits, hashProof, target));
+    BOOST_CHECK(state.IsInvalid());
+    BOOST_CHECK_MESSAGE(state.GetRejectReason() != "bad-stake-age",
+                        "an over-age coin was still turned away for its age");
+}
+
 BOOST_AUTO_TEST_SUITE_END()
