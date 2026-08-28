@@ -309,21 +309,21 @@ static void BannedListChanged(ClientModel *clientmodel)
     assert(invoked);
 }
 
-static void BlockTipChanged(ClientModel* clientmodel, SynchronizationState sync_state, interfaces::BlockTip tip, double verificationProgress, bool fHeader)
+static void BlockTipChanged(ClientModel* clientmodel, SynchronizationState sync_state, interfaces::BlockTip tip, double verificationProgress, SyncType synctype)
 {
-    if (fHeader) {
+    if (synctype == SyncType::HEADER_SYNC) {
         // cache best headers time and height to reduce future cs_main locks
         clientmodel->cachedBestHeaderHeight = tip.block_height;
         clientmodel->cachedBestHeaderTime = tip.block_time;
-    } else {
+    } else if (synctype == SyncType::BLOCK_SYNC) {
         clientmodel->m_cached_num_blocks = tip.block_height;
         WITH_LOCK(clientmodel->m_cached_tip_mutex, clientmodel->m_cached_tip_blocks = tip.block_hash;);
     }
 
     // Throttle GUI notifications about (a) blocks during initial sync, and (b) both blocks and headers during reindex.
-    const bool throttle = (sync_state != SynchronizationState::POST_INIT && !fHeader) || sync_state == SynchronizationState::INIT_REINDEX;
+    const bool throttle = (sync_state != SynchronizationState::POST_INIT && synctype == SyncType::BLOCK_SYNC) || sync_state == SynchronizationState::INIT_REINDEX;
     const int64_t now = throttle ? GetTimeMillis() : 0;
-    int64_t& nLastUpdateNotification = fHeader ? nLastHeaderTipUpdateNotification : nLastBlockTipUpdateNotification;
+    int64_t& nLastUpdateNotification = synctype != SyncType::BLOCK_SYNC ? nLastHeaderTipUpdateNotification : nLastBlockTipUpdateNotification;
     if (throttle && now < nLastUpdateNotification + count_milliseconds(MODEL_UPDATE_DELAY)) {
         return;
     }
@@ -333,7 +333,7 @@ static void BlockTipChanged(ClientModel* clientmodel, SynchronizationState sync_
         Q_ARG(QDateTime, QDateTime::fromSecsSinceEpoch(tip.block_time)),
         Q_ARG(QString, QString::fromStdString(tip.block_hash.ToString())),
         Q_ARG(double, verificationProgress),
-        Q_ARG(bool, fHeader),
+        Q_ARG(SyncType, synctype),
         Q_ARG(SynchronizationState, sync_state));
     assert(invoked);
     nLastUpdateNotification = now;
@@ -368,9 +368,12 @@ void ClientModel::subscribeToCoreSignals()
     m_handler_notify_network_active_changed = m_node.handleNotifyNetworkActiveChanged(std::bind(NotifyNetworkActiveChanged, this, std::placeholders::_1));
     m_handler_notify_alert_changed = m_node.handleNotifyAlertChanged(std::bind(NotifyAlertChanged, this));
     m_handler_banned_list_changed = m_node.handleBannedListChanged(std::bind(BannedListChanged, this));
-    m_handler_notify_block_tip = m_node.handleNotifyBlockTip(std::bind(BlockTipChanged, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, false));
+    m_handler_notify_block_tip = m_node.handleNotifyBlockTip(std::bind(BlockTipChanged, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, SyncType::BLOCK_SYNC));
     m_handler_notify_chainlock = m_node.handleNotifyChainLock(std::bind(NotifyChainLock, this, std::placeholders::_1, std::placeholders::_2));
-    m_handler_notify_header_tip = m_node.handleNotifyHeaderTip(std::bind(BlockTipChanged, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, true));
+    m_handler_notify_header_tip = m_node.handleNotifyHeaderTip(
+        [this](SynchronizationState sync_state, interfaces::BlockTip tip) {
+            BlockTipChanged(this, sync_state, tip, /*verificationProgress=*/0.0, SyncType::HEADER_SYNC);
+        });
     m_handler_notify_masternodelist_changed = m_node.handleNotifyMasternodeListChanged(std::bind(NotifyMasternodeListChanged, this, std::placeholders::_1, std::placeholders::_2));
     m_handler_notify_additional_data_sync_progess_changed = m_node.handleNotifyAdditionalDataSyncProgressChanged(std::bind(NotifyAdditionalDataSyncProgressChanged, this, std::placeholders::_1));
 }
