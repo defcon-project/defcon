@@ -32,7 +32,7 @@ static bool CheckSpecialTxInner(CDeterministicMNManager& dmnman, llmq::CQuorumSn
 
     const auto& consensusParams = Params().GetConsensus();
     if (!DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_DIP0003)) {
-        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-tx-type");
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-tx-type-dip3-inactive");
     }
 
     try {

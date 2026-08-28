@@ -322,8 +322,28 @@ static std::string SignAndSendSpecialTx(const JSONRPCRequest& request, CChainsta
     {
     LOCK(cs_main);
 
+    const CBlockIndex* tip{chainman.ActiveChain().Tip()};
+    const Consensus::Params& consensus_params{Params().GetConsensus()};
+    // Before DIP3 the consensus answer is a bare "bad-tx-type"; on a fresh
+    // regtest or devnet that reads like a malformed transaction when the only
+    // problem is the height. Say so, with the numbers. (dash#7342)
+    if (!DeploymentActiveAfter(tip, consensus_params, Consensus::DEPLOYMENT_DIP0003)) {
+        const int current_height{tip ? tip->nHeight : -1};
+        const int next_block_height{current_height + 1};
+        const int activation_height{consensus_params.DIP0003Height};
+        const int blocks_to_mine{
+            activation_height > next_block_height ? activation_height - next_block_height : 0
+        };
+        throw JSONRPCError(RPC_VERIFY_ERROR, strprintf(
+            "DIP0003 is not active yet; ProTx transactions are valid starting at block height %d "
+            "(current chain height %d, next block height %d). Mine %d more block%s or restart "
+            "this regtest/devnet chain with DIP3 activation parameters that are already active.",
+            activation_height, current_height, next_block_height, blocks_to_mine,
+            blocks_to_mine == 1 ? "" : "s"));
+    }
+
     TxValidationState state;
-    if (!chain_helper.special_tx->CheckSpecialTx(CTransaction(tx), chainman.ActiveChain().Tip(), chainman.ActiveChainstate().CoinsTip(), true, state)) {
+    if (!chain_helper.special_tx->CheckSpecialTx(CTransaction(tx), tip, chainman.ActiveChainstate().CoinsTip(), true, state)) {
         throw std::runtime_error(state.ToString());
     }
     } // cs_main
