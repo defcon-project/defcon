@@ -20,6 +20,81 @@ static constexpr CAmount CENT{1000000};
 
 extern std::atomic<bool> fStopMinerProc;
 
+void StakeSkipReport::Add(StakeEligibility why, CAmount value)
+{
+    switch (why) {
+    case StakeEligibility::Eligible:   break;
+    case StakeEligibility::Immature:   immature   += value; break;
+    case StakeEligibility::BLSAddress: bls        += value; break;
+    case StakeEligibility::BelowMin:   below_min  += value; break;
+    case StakeEligibility::AboveMax:   above_max  += value; break;
+    case StakeEligibility::Collateral: collateral += value; break;
+    case StakeEligibility::TooYoung:   too_young  += value; break;
+    case StakeEligibility::TooOld:     too_old    += value; break;
+    } // no default case, so the compiler can warn about missing cases
+}
+
+CAmount StakeSkipReport::Total() const
+{
+    return immature + bls + below_min + above_max + collateral + too_young + too_old;
+}
+
+StakeEligibility CStakeWallet::ClassifyForStaking(CAmount value, bool generated, int depth,
+                                                  TxoutType type, int64_t inputAge, int nHeight) const
+{
+    if (generated && depth < COINBASE_MATURITY + 1) return StakeEligibility::Immature;
+    if (type == TxoutType::BLSPUBKEY) return StakeEligibility::BLSAddress;
+    if (value < params.stakeValueRange[0]) return StakeEligibility::BelowMin;
+    if (value > params.stakeValueRange[1]) return StakeEligibility::AboveMax;
+    if (value == params.regularMnCollateral || value == params.evoMnCollateral) {
+        return StakeEligibility::Collateral;
+    }
+    if (inputAge < params.stakeAgeRange[0]) return StakeEligibility::TooYoung;
+    // Matches validation exactly, resolved from the height being mined.
+    if (!IsPosKernelV2(params, nHeight) && inputAge > params.stakeAgeRange[1]) {
+        return StakeEligibility::TooOld;
+    }
+    return StakeEligibility::Eligible;
+}
+
+StakeSkipReport CStakeWallet::ExplainExcludedCoins(int nHeight) const
+{
+    StakeSkipReport report;
+    if (!wallet) {
+        return report;
+    }
+
+    // Deliberately unfiltered, unlike the selection loop: a coin kept out by its
+    // value has to reach the classifier to be counted, and AvailableCoins would
+    // otherwise drop it before anything could name the reason.
+    std::vector<COutput> vCoins;
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->AvailableCoins(vCoins);
+    }
+
+    for (const auto& output : vCoins) {
+        const CWalletTx* pcoin = output.tx;
+        const int i = output.i;
+
+        int nDepth;
+        {
+            LOCK(wallet->cs_wallet);
+            nDepth = pcoin->GetDepthInMainChain();
+        }
+
+        std::vector<valtype> vSolutions;
+        const TxoutType type = Solver(pcoin->tx->vout[i].scriptPubKey, vSolutions);
+        const CAmount value = pcoin->tx->vout[i].nValue;
+        const int64_t inputAge = GetTime() - pcoin->GetTxTime();
+        const bool generated = pcoin->IsCoinBase() || pcoin->IsCoinStake();
+
+        report.Add(ClassifyForStaking(value, generated, nDepth, type, inputAge, nHeight), value);
+    }
+
+    return report;
+}
+
 uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 {
     // Choose coins to use
@@ -62,7 +137,6 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
 
     setCoinsRet.clear();
     nValueRet = 0;
-    int nRequiredDepth = COINBASE_MATURITY + 1;
 
     for (const auto& output : vCoins)
     {
@@ -81,34 +155,14 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
             nDepth = pcoin->GetDepthInMainChain();
         }
 
-        // If coinbase/stake, ensure it has reached maturity
-        bool nGenerated = pcoin->IsCoinBase() || pcoin->IsCoinStake();
-        if (nGenerated && (nDepth < nRequiredDepth)) {
-            continue;
-        }
-
-        // Do not include BLS addresses
         std::vector<valtype> vSolutions;
-        CScript scriptPubKeyKernel = pcoin->tx->vout[i].scriptPubKey;
-        TxoutType whichType = Solver(scriptPubKeyKernel, vSolutions);
-        if (whichType == TxoutType::BLSPUBKEY) {
-            continue;
-        }
+        const TxoutType whichType = Solver(pcoin->tx->vout[i].scriptPubKey, vSolutions);
+        const CAmount inputValue = pcoin->tx->vout[i].nValue;
+        const int64_t inputAge = GetTime() - pcoin->GetTxTime();
+        const bool nGenerated = pcoin->IsCoinBase() || pcoin->IsCoinStake();
 
-        // Skip inputs that dont meet age, value requirements or are collaterals
-        CAmount inputValue = pcoin->tx->vout[i].nValue;
-        int64_t inputAge = GetTime() - pcoin->GetTxTime();
-        if (inputValue < params.stakeValueRange[0] || inputValue > params.stakeValueRange[1]) {
-            continue;
-        }
-        if (inputValue == params.regularMnCollateral || inputValue == params.evoMnCollateral) {
-            continue;
-        }
-        // Matches the validation rule exactly, resolved from the height being
-        // mined: selecting a coin the network would then reject would cost a
-        // block, and skipping one it would accept would cost the reward.
-        const bool age_capped = !IsPosKernelV2(params, nHeight);
-        if (inputAge < params.stakeAgeRange[0] || (age_capped && inputAge > params.stakeAgeRange[1])) {
+        if (ClassifyForStaking(inputValue, nGenerated, nDepth, whichType, inputAge, nHeight)
+                != StakeEligibility::Eligible) {
             continue;
         }
 
