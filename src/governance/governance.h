@@ -172,7 +172,6 @@ protected:
     //   value - expiration time for deleted objects
     std::map<uint256, int64_t> mapErasedGovernanceObjects;
     object_ref_cm_t cmapVoteToObject;
-    CacheMap<uint256, CGovernanceVote> cmapInvalidVotes;
     vote_cmm_t cmmapOrphanVotes;
     txout_m_t mapLastMasternodeObject;
     // used to check for changed voting keys
@@ -186,9 +185,13 @@ public:
     void Serialize(Stream &s) const
     {
         LOCK(cs);
+        // TODO: Remove the historical invalid-vote-cache field on the next disk-format version bump.
+        // (dash#7569: the cache punished honest retransmits of votes that were invalid only
+        // transiently, and repeat offenders are already scored on every rejection.)
+        const CacheMap<uint256, CGovernanceVote> empty_invalid_votes{MAX_CACHE_SIZE};
         s   << SERIALIZATION_VERSION_STRING
             << mapErasedGovernanceObjects
-            << cmapInvalidVotes
+            << empty_invalid_votes
             << cmmapOrphanVotes
             << mapObjects
             << mapLastMasternodeObject
@@ -207,8 +210,10 @@ public:
             return;
         }
 
+        // TODO: Stop consuming the historical invalid-vote-cache field on the next disk-format version bump.
+        CacheMap<uint256, CGovernanceVote> discarded_invalid_votes;
         s   >> mapErasedGovernanceObjects
-            >> cmapInvalidVotes
+            >> discarded_invalid_votes
             >> cmmapOrphanVotes
             >> mapObjects
             >> mapLastMasternodeObject
@@ -392,11 +397,6 @@ private:
     bool HasAlreadyVotedFundingTrigger() const;
 
     void RequestGovernanceObject(CNode* pfrom, const uint256& nHash, CConnman& connman, bool fUseFilter = false) const;
-
-    void AddInvalidVote(const CGovernanceVote& vote)
-    {
-        cmapInvalidVotes.Insert(vote.GetHash(), vote);
-    }
 
     bool ProcessVote(CNode* pfrom, const CGovernanceVote& vote, CGovernanceException& exception, CConnman& connman);
 
