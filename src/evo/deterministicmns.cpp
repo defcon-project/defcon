@@ -1745,6 +1745,15 @@ bool CheckProUpServTx(CDeterministicMNManager& dmnman, const CTransaction& tx, g
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-hash");
     }
 
+    // Mirror BuildNewListFromBlock: nType must match the registered MN, or a
+    // mempool-accepted ProUpServTx makes block assembly fail. An out-of-range
+    // nType is already rejected by IsTriviallyValid, and dmn->nType is always
+    // in range, so no separate IsValidMnType check is reachable here.
+    // (dash#7488)
+    if (opt_ptx->nType != mn->nType) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type-mismatch");
+    }
+
     // don't allow updating to addresses already used by other MNs
     if (mnList.HasUniqueProperty(opt_ptx->addr) && mnList.GetUniquePropertyMN(opt_ptx->addr)->proTxHash != opt_ptx->proTxHash) {
         return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-dup-addr");
