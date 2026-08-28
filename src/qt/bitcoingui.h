@@ -147,6 +147,8 @@ private:
     QToolButton* multisigButton = nullptr;
     QAction* appToolBarLogoAction = nullptr;
     QAction* firstNavigationAction = nullptr;
+    QAction* devnetBadgeAction = nullptr;
+    QLabel* devnetBadgeLabel = nullptr;
     QAction* coinJoinToolbarAction = nullptr;
     QAction* quitAction = nullptr;
     QAction* sendCoinsMenuAction = nullptr;

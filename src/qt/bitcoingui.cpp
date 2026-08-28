@@ -859,6 +859,18 @@ void BitcoinGUI::applyThemeLayout()
     const bool galaxy = GUIUtil::isDefconGalaxyTheme();
     const bool modern = GUIUtil::isModernTheme();
     const bool vertical = modern && !galaxy;
+
+    // A wallet on a test chain must say so where the eye rests. The window
+    // title already carries the network suffix, but nobody reads the title
+    // bar; a badge in the navigation is unmissable and cannot be mistaken
+    // for mainnet. Mainnet has no suffix, so the badge never exists there.
+    if (devnetBadgeLabel == nullptr && !m_network_style->getTitleAddText().isEmpty()) {
+        devnetBadgeLabel = new QLabel(m_network_style->getTitleAddText().trimmed());
+        devnetBadgeLabel->setObjectName("devnetBadge");
+        devnetBadgeLabel->setAlignment(Qt::AlignCenter);
+        devnetBadgeLabel->setToolTip(tr("This wallet is not on mainnet."));
+        devnetBadgeAction = appToolBar->addWidget(devnetBadgeLabel);
+    }
     appToolBar->setProperty("modern", modern);
     appToolBar->setProperty("galaxy", galaxy);
     appToolBar->setOrientation(vertical ? Qt::Vertical : Qt::Horizontal);
@@ -931,6 +943,13 @@ void BitcoinGUI::applyThemeLayout()
             appToolBar->removeAction(appToolBarLogoAction);
             appToolBar->addAction(appToolBarLogoAction);
         }
+    }
+
+    if (devnetBadgeAction) {
+        // Always the last item, whichever orientation the theme just chose.
+        appToolBar->removeAction(devnetBadgeAction);
+        appToolBar->addAction(devnetBadgeAction);
+        devnetBadgeAction->setVisible(modern);
     }
 
     GUIUtil::updateFonts();
