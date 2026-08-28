@@ -61,9 +61,14 @@ void TestRpcCommand(RPCConsole* console)
 //! Entry point for BitcoinApplication tests.
 void AppTests::appTests()
 {
-    QVERIFY(GUIUtil::isValidTheme("DeFCon Dark"));
-    QVERIFY(GUIUtil::isValidTheme("DeFCon Galaxy"));
-    QVERIFY(GUIUtil::isValidTheme("DeFCon Light"));
+    QVERIFY(GUIUtil::isValidTheme("Abyss"));
+    QVERIFY(GUIUtil::isValidTheme("Nebula"));
+    QVERIFY(GUIUtil::isValidTheme("Arctic"));
+    // The former names are no longer valid themes; migrateThemeSetting() and
+    // getActiveTheme() map them, so a stored selection survives the rename.
+    QVERIFY(!GUIUtil::isValidTheme("DeFCon Dark"));
+    QVERIFY(!GUIUtil::isValidTheme("DeFCon Galaxy"));
+    QVERIFY(!GUIUtil::isValidTheme("DeFCon Light"));
     QVERIFY(QFile(":/css/DeFCon Galaxy").exists());
     QVERIFY(QFile(":/css/DeFCon Light").exists());
     QCOMPARE(GUIUtil::getDefaultTheme(), QString("Light"));

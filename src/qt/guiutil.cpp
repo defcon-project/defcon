@@ -103,10 +103,19 @@ static const QString traditionalTheme = "Traditional";
 static const QString defaultTheme = "Light";
 // Names of the built-in and modern DeFCoN themes
 static const QString darkTheme = "Dark";
-static const QString defconDarkTheme = "DeFCon Dark";
-static const QString defconGalaxyTheme = "DeFCon Galaxy";
+static const QString defconDarkTheme = "Abyss";
+static const QString defconGalaxyTheme = "Nebula";
 static const QString lightTheme = "Light";
-static const QString defconLightTheme = "DeFCon Light";
+static const QString defconLightTheme = "Arctic";
+// Former names of the modern themes. A stored selection under an old name is
+// accepted on read and rewritten once, so renaming a theme never resets a
+// user's appearance to the default -- that regression already happened once
+// with the theme setting and must not come back.
+static const std::map<QString, QString> mapLegacyThemeNames{
+    {"DeFCon Dark", defconDarkTheme},
+    {"DeFCon Galaxy", defconGalaxyTheme},
+    {"DeFCon Light", defconLightTheme},
+};
 // The theme to set as a base one for non-traditional themes
 static const QString generalTheme = "general";
 // Mapping theme => css file
@@ -291,7 +300,7 @@ static const std::map<ThemedStyle, QString> themedDefconLightStyles = {
 
 QColor getThemedQColor(ThemedColor color)
 {
-    QString theme = QSettings().value("theme", "").toString();
+    const QString theme = getActiveTheme();
     if (theme == defconDarkTheme) {
         return themedDefconDarkColors.at(color);
     }
@@ -306,7 +315,7 @@ QColor getThemedQColor(ThemedColor color)
 
 QString getThemedStyleQString(ThemedStyle style)
 {
-    QString theme = QSettings().value("theme", "").toString();
+    const QString theme = getActiveTheme();
     if (theme == defconDarkTheme) {
         return themedDefconDarkStyles.at(style);
     }
@@ -1752,10 +1761,23 @@ QString getActiveTheme()
 {
     QSettings settings;
     QString theme = settings.value("theme", defaultTheme).toString();
+    if (const auto it = mapLegacyThemeNames.find(theme); it != mapLegacyThemeNames.end()) {
+        theme = it->second;
+    }
     if (!isValidTheme(theme)) {
         return defaultTheme;
     }
     return theme;
+}
+
+void migrateThemeSetting()
+{
+    QSettings settings;
+    const QString stored = settings.value("theme", "").toString();
+    const auto it = mapLegacyThemeNames.find(stored);
+    if (it != mapLegacyThemeNames.end()) {
+        settings.setValue("theme", it->second);
+    }
 }
 
 bool dashThemeActive()
