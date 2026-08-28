@@ -8,6 +8,7 @@
 
 #ifndef BUILD_BITCOIN_INTERNAL
 #include <support/allocators/mt_pooled_secure.h>
+#include <support/cleanse.h>
 #endif
 
 #include <cassert>
@@ -66,10 +67,19 @@ void CBLSSecretKey::MakeNewKey()
         GetStrongRandBytes({buf, sizeof(buf)});
         try {
             impl = bls::PrivateKey::FromBytes(bls::Bytes(reinterpret_cast<const uint8_t*>(buf), SerSize));
+            // The zero scalar is the one draw that must be rejected: it is the
+            // identity secret, whose public key is the identity element.
+            // (dash#7193)
+            if (impl == bls::PrivateKey()) {
+                continue;
+            }
             break;
         } catch (...) {
         }
     }
+    // The winning draw lives on in impl; the stack copy of the secret must
+    // not outlive this call. (dash#7606)
+    memory_cleanse(buf, sizeof(buf));
     fValid = true;
     cachedHash.SetNull();
 }
