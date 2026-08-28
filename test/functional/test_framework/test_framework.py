@@ -1815,6 +1815,26 @@ class DashTestFramework(BitcoinTestFramework):
         self.bump_mocktime(1, nodes=nodes)
         self.generate(self.nodes[0], num_blocks, sync_fun=lambda: self.sync_blocks(nodes))
 
+    def get_upcoming_dkg_predictions(self, node, llmq_type):
+        # 'quorum dkginfo' upcoming DKG entries of the given type per registered masternode
+        return {mn.proTxHash: [d for d in node.quorum("dkginfo", mn.proTxHash)["upcoming_dkgs"]
+                               if d["llmqType"] == llmq_type]
+                for mn in self.mninfo}
+
+    def verify_upcoming_dkg_predictions(self, predictions, quorum_info):
+        # 'quorum info' lists members in member-index order
+        members = [m["proTxHash"] for m in quorum_info["members"]]
+        work_height = quorum_info["height"] - quorum_info["quorumIndex"] - 8
+        for proTxHash, entries in predictions.items():
+            [entry] = [d for d in entries if d["quorumHeight"] == quorum_info["height"]]
+            if not entry["known"]:
+                # no prediction was possible (e.g. pre-v20); the RPC must tell why
+                assert "reason" in entry
+                continue
+            assert_equal(entry["workBlockHeight"], work_height)
+            assert_equal(entry["workBlockHash"], self.nodes[0].getblockhash(work_height))
+            assert_equal(entry["isMember"], proTxHash in members)
+
     def mine_quorum(self, llmq_type_name="llmq_test", llmq_type=100, expected_connections=None, expected_members=None, expected_contributions=None, expected_complaints=0, expected_justifications=0, expected_commitments=None, mninfos_online=None, mninfos_valid=None):
         spork21_active = self.nodes[0].spork('show')['SPORK_21_QUORUM_ALL_CONNECTED'] <= 1
         spork23_active = self.nodes[0].spork('show')['SPORK_23_QUORUM_POSE'] <= 1
@@ -1840,6 +1860,12 @@ class DashTestFramework(BitcoinTestFramework):
 
         # move forward to next DKG
         skip_count = 24 - (self.nodes[0].getblockcount() % 24)
+        # a tip already within the work-diff window of the upcoming DKG means its members are
+        # predictable via 'quorum dkginfo'; capture now and verify once the quorum is formed
+        predictions = None
+        if skip_count <= 8:
+            self.log.info(f"Capturing upcoming DKG membership predictions {skip_count} blocks ahead")
+            predictions = self.get_upcoming_dkg_predictions(self.nodes[0], llmq_type)
         if skip_count != 0:
             self.bump_mocktime(1)
             self.generate(self.nodes[0], skip_count, sync_fun=self.no_op)
@@ -1892,6 +1918,8 @@ class DashTestFramework(BitcoinTestFramework):
         new_quorum = self.nodes[0].quorum("list", 1)[llmq_type_name][0]
         assert_equal(q, new_quorum)
         quorum_info = self.nodes[0].quorum("info", llmq_type, new_quorum)
+        if predictions is not None:
+            self.verify_upcoming_dkg_predictions(predictions, quorum_info)
 
         # Mine 8 (SIGN_HEIGHT_OFFSET) more blocks to make sure that the new quorum gets eligible for signing sessions
         self.generate(self.nodes[0], 8, sync_fun=lambda: self.sync_blocks(nodes))
