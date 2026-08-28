@@ -91,7 +91,7 @@ uint256 ComputeStakeModifier(const CBlockIndex* pindexPrev, const uint256& kerne
  *   quantities so as to generate blocks faster, degrading the system back into
  *   a proof-of-work situation.
  */
-bool CheckStakeKernelHash(const CBlockIndex* pindexPrev,
+bool CheckStakeKernelHash(const CBlockIndex* pindexPrev, const Consensus::Params& params,
     uint32_t nBits, uint32_t nBlockFromTime,
     CAmount prevOutAmount, const COutPoint& prevout, uint32_t nTime,
     uint256& hashProofOfStake, uint256& targetProofOfStake,
@@ -112,10 +112,30 @@ bool CheckStakeKernelHash(const CBlockIndex* pindexPrev,
         return false;
     }
 
-    // Weighted target
-    int64_t nValueIn = prevOutAmount;
-    arith_uint256 bnWeight = arith_uint256(nValueIn);
-    bnTarget *= bnWeight;
+    // The chance of winning has to be proportional to the amount staked, and
+    // weighting the target by the input value is how that is expressed.
+    // Multiplying the target is the obvious way to do it and the way this
+    // started, but it is wrong at a fixed 256-bit width: arith_uint256 discards
+    // whatever does not fit and does so silently. That happens exactly when the
+    // product exceeds every possible hash -- when the comparison below would
+    // otherwise accept anything -- and the truncation replaces "accept
+    // anything" with an arbitrary threshold, one that can rank a larger stake
+    // below a smaller one.
+    //
+    // Dividing the hash by the weight asks the same question and cannot
+    // overflow, because division only ever shrinks. targetProofOfStake then
+    // reports the unweighted target, the only form that always fits.
+    const bool kernel_v2 = IsPosKernelV2(params, pindexPrev->nHeight + 1);
+    const arith_uint256 bnWeight = arith_uint256(prevOutAmount);
+    if (kernel_v2 && bnWeight == 0) {
+        // Reachable only where stakeValueRange admits a zero-value output, as
+        // it does on testnet and regtest.
+        LogPrint(BCLog::POS, "%s: zero-value kernel.", __func__);
+        return false;
+    }
+    if (!kernel_v2) {
+        bnTarget *= bnWeight;
+    }
 
     targetProofOfStake = ArithToUint256(bnTarget);
 
@@ -139,7 +159,8 @@ bool CheckStakeKernelHash(const CBlockIndex* pindexPrev,
     }
 
     // Now check if proof-of-stake hash meets target protocol
-    if (UintToArith256(hashProofOfStake) > bnTarget) {
+    const arith_uint256 bnHash = UintToArith256(hashProofOfStake);
+    if (kernel_v2 ? (bnHash / bnWeight > bnTarget) : (bnHash > bnTarget)) {
         return false;
     }
 
@@ -194,8 +215,15 @@ bool CheckProofOfStake(CChainState& chain_state, BlockValidationState& state, co
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-stake-amount");
     }
 
+    // The upper bound is lifted from the activation height. Nothing in this
+    // kernel rewards an older coin -- the target is weighted by value alone --
+    // so the bound could never moderate an advantage, only disqualify a coin
+    // for having failed to win for long enough, silently and permanently. The
+    // lower bound stays: it is what stops a coin being staked the moment it
+    // arrives.
     int64_t inputAge = nTime - nBlockFromTime;
-    if (inputAge < params.stakeAgeRange[0] || inputAge > params.stakeAgeRange[1]) {
+    const bool age_capped = !IsPosKernelV2(params, pindexPrev->nHeight + 1);
+    if (inputAge < params.stakeAgeRange[0] || (age_capped && inputAge > params.stakeAgeRange[1])) {
         LogPrint(BCLog::POS, "ERROR: %s: Stake input age is out of range (age: %d min: %d, max: %d)\n",
                              __func__, inputAge, params.stakeAgeRange[0], params.stakeAgeRange[1]);
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-stake-age");
@@ -207,7 +235,7 @@ bool CheckProofOfStake(CChainState& chain_state, BlockValidationState& state, co
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-stake-signature");
     }
 
-    if (!CheckStakeKernelHash(pindexPrev, nBits, nBlockFromTime, coin.out.nValue, txin.prevout, nTime, hashProofOfStake, targetProofOfStake)) {
+    if (!CheckStakeKernelHash(pindexPrev, params, nBits, nBlockFromTime, coin.out.nValue, txin.prevout, nTime, hashProofOfStake, targetProofOfStake)) {
         LogPrint(BCLog::POS, "ERROR: %s: Check kernel failed on coinstake %s, hashProof=%s\n", __func__, tx.GetHash().ToString(), hashProofOfStake.ToString());
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-stake-kernel");
     }
@@ -238,10 +266,14 @@ bool CheckKernel(CChainState& chain_state, const CBlockIndex* pindexPrev, unsign
     if (nRequiredDepth > nDepth)
         return false;
 
+    // Read the time into a local first: pBlockTime is optional and defaults to
+    // nullptr, and the call below used to dereference it either way.
+    const int64_t nBlockFromTime = pindex->GetBlockTime();
     if (pBlockTime)
-        *pBlockTime = pindex->GetBlockTime();
+        *pBlockTime = nBlockFromTime;
 
     CAmount amount = coin.out.nValue;
     uint256 hashProofOfStake, targetProofOfStake;
-    return CheckStakeKernelHash(pindexPrev, nBits, *pBlockTime, amount, prevout, nTime, hashProofOfStake, targetProofOfStake);
+    return CheckStakeKernelHash(pindexPrev, Params().GetConsensus(), nBits, nBlockFromTime, amount, prevout,
+                                nTime, hashProofOfStake, targetProofOfStake);
 }

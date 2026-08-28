@@ -104,7 +104,11 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
         if (inputValue == params.regularMnCollateral || inputValue == params.evoMnCollateral) {
             continue;
         }
-        if (inputAge < params.stakeAgeRange[0] || inputAge > params.stakeAgeRange[1]) {
+        // Matches the validation rule exactly, resolved from the height being
+        // mined: selecting a coin the network would then reject would cost a
+        // block, and skipping one it would accept would cost the reward.
+        const bool age_capped = !IsPosKernelV2(params, nHeight);
+        if (inputAge < params.stakeAgeRange[0] || (age_capped && inputAge > params.stakeAgeRange[1])) {
             continue;
         }
 

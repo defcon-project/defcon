@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <arith_uint256.h>
 #include <chainparams.h>
 #include <consensus/validation.h>
 #include <pos/kernel.h>
@@ -11,6 +12,9 @@
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
+
+#include <limits>
+#include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(pos_kernel_tests, TestChain100Setup)
 
@@ -94,6 +98,123 @@ BOOST_AUTO_TEST_CASE(rejections_set_the_validation_state)
         BOOST_CHECK_MESSAGE(state.IsInvalid(), "an out-of-range stake age must mark the block invalid");
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-stake-age");
     }
+}
+
+/**
+ * A larger stake must never be less likely to win than a smaller one.
+ *
+ * The kernel hash does not depend on the amount -- only the stake modifier, the
+ * outpoint and the two timestamps feed it -- so the amount moves the threshold
+ * and nothing else. Weighting the target by multiplying it therefore has a
+ * clean failure mode: the product exceeds 256 bits, arith_uint256 keeps the low
+ * bits and drops the rest without a word, and the threshold lands somewhere
+ * arbitrary. Two stakes that differ only in size then get thresholds in no
+ * particular order.
+ *
+ * That happens exactly where the untruncated product would exceed every
+ * possible hash, which is to say where the check should accept everything. At
+ * the difficulty floor -- posLimit, which is where a chain sits when block
+ * production has just started or has stalled -- it is reached by any stake of a
+ * few dozen coins.
+ */
+BOOST_AUTO_TEST_CASE(a_larger_stake_is_never_ranked_below_a_smaller_one)
+{
+    LOCK(cs_main);
+    CChainState& chainstate = m_node.chainman->ActiveChainstate();
+    const CBlockIndex* tip = chainstate.m_chain.Tip();
+    BOOST_REQUIRE(tip != nullptr);
+
+    Consensus::Params corrected = Params().GetConsensus();
+    corrected.nPosKernelV2ActivationHeight = 0;
+    Consensus::Params original = corrected;
+    original.nPosKernelV2ActivationHeight = std::numeric_limits<int>::max();
+
+    const unsigned int nBits = UintToArith256(corrected.posLimit).GetCompact();
+    const COutPoint prevout(m_coinbase_txns[0]->GetHash(), 0);
+    const CBlockIndex* funding = chainstate.m_chain[1];
+    BOOST_REQUIRE(funding != nullptr);
+    const uint32_t nBlockFromTime = static_cast<uint32_t>(funding->GetBlockTime());
+    const uint32_t nTime = nBlockFromTime + 3600;
+
+    const auto accepts = [&](const Consensus::Params& params, CAmount amount) {
+        uint256 hashProof, target;
+        return CheckStakeKernelHash(tip, params, nBits, nBlockFromTime, amount, prevout, nTime,
+                                    hashProof, target);
+    };
+
+    std::vector<CAmount> amounts;
+    for (int i = 1; i <= 400; ++i) {
+        amounts.push_back(static_cast<CAmount>(i) * 5 * COIN);
+    }
+
+    // The corrected rules divide the hash by the weight, so a bigger weight can
+    // only ever help: once a stake is large enough to be accepted, every larger
+    // one must be too.
+    bool accepted_something = false;
+    for (const CAmount amount : amounts) {
+        const bool ok = accepts(corrected, amount);
+        if (accepted_something) {
+            BOOST_CHECK_MESSAGE(ok, "a stake of " << amount / COIN
+                                    << " was rejected while a smaller one was accepted");
+        }
+        accepted_something = accepted_something || ok;
+    }
+    BOOST_CHECK_MESSAGE(accepted_something, "no stake in the range was accepted at all");
+
+    // The original rules do not hold that line. Find the inversion rather than
+    // hard-coding one, so this states the property and not a fixture detail.
+    CAmount smaller_accepted = 0, larger_rejected = 0;
+    for (const CAmount amount : amounts) {
+        if (accepts(original, amount)) {
+            smaller_accepted = amount;
+        } else if (smaller_accepted != 0) {
+            larger_rejected = amount;
+            break;
+        }
+    }
+    BOOST_CHECK_MESSAGE(larger_rejected != 0,
+                        "expected the original rules to rank some larger stake below a smaller one");
+    BOOST_TEST_MESSAGE("original rules accepted a stake of " << smaller_accepted / COIN
+                       << " and rejected the larger " << larger_rejected / COIN);
+}
+
+/**
+ * Age alone must not retire a coin.
+ *
+ * A coin becomes ineligible once it is older than stakeAgeRange[1], and the
+ * only thing that refreshes it is winning a block -- which is the one thing a
+ * coin that never wins cannot do. Nothing in this kernel rewards age, so the
+ * bound moderated no advantage; it simply removed coins from the set, silently
+ * and for good.
+ *
+ * Under the corrected rules an over-age coin gets past the age check and is
+ * judged on the same terms as any other. It still fails here, because this
+ * coinstake carries no signature -- but it fails for that reason, which is the
+ * point.
+ */
+BOOST_AUTO_TEST_CASE(an_old_coin_may_still_stake)
+{
+    LOCK(cs_main);
+    CChainState& chainstate = m_node.chainman->ActiveChainstate();
+    const CBlockIndex* tip = chainstate.m_chain.Tip();
+    BOOST_REQUIRE(tip != nullptr);
+
+    const Consensus::Params& params = Params().GetConsensus();
+    BOOST_REQUIRE_MESSAGE(IsPosKernelV2(params, tip->nHeight + 1),
+                          "this test needs the corrected rules active on regtest");
+
+    const CBlockIndex* funding = chainstate.m_chain[1];
+    BOOST_REQUIRE(funding != nullptr);
+    const int64_t past_the_cap = funding->GetBlockTime() + params.stakeAgeRange[1] + 1;
+
+    const auto tx = MakeCoinstakeSpending(COutPoint(m_coinbase_txns[0]->GetHash(), 0));
+    BlockValidationState state;
+    uint256 hashProof, target;
+    BOOST_CHECK(!CheckProofOfStake(chainstate, state, tip, CTransaction(tx), past_the_cap,
+                                   tip->nBits, hashProof, target));
+    BOOST_CHECK(state.IsInvalid());
+    BOOST_CHECK_MESSAGE(state.GetRejectReason() != "bad-stake-age",
+                        "an over-age coin was still turned away for its age");
 }
 
 BOOST_AUTO_TEST_SUITE_END()
