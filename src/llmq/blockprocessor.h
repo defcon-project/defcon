@@ -35,6 +35,9 @@ class CQuorumSnapshotManager;
 
 using CFinalCommitmentPtr = std::unique_ptr<CFinalCommitment>;
 
+using QcHashMap = std::map<Consensus::LLMQType, std::vector<uint256>>;
+using QcIndexedHashMap = std::map<Consensus::LLMQType, std::map<int16_t, uint256>>;
+
 class CQuorumBlockProcessor
 {
 private:
@@ -48,6 +51,15 @@ private:
     std::map<uint256, CFinalCommitment> minableCommitments GUARDED_BY(minableCommitmentsCs);
 
     mutable std::map<Consensus::LLMQType, unordered_lru_cache<uint256, bool, StaticSaltedHasher>> mapHasMinedCommitmentCache GUARDED_BY(minableCommitmentsCs);
+
+    // Cache for GetQcHashes, invalidated whenever a mined commitment is
+    // recorded or unrecorded (dash#7491)
+    mutable Mutex m_qc_hashes_cache_mutex;
+    mutable std::map<Consensus::LLMQType, std::vector<const CBlockIndex*>> m_quorums_cached GUARDED_BY(m_qc_hashes_cache_mutex);
+    mutable QcHashMap m_qc_hashes_cached GUARDED_BY(m_qc_hashes_cache_mutex);
+    mutable QcIndexedHashMap m_qc_indexed_hashes_cached GUARDED_BY(m_qc_hashes_cache_mutex);
+
+    void DropQcHashesCache() EXCLUSIVE_LOCKS_REQUIRED(!m_qc_hashes_cache_mutex);
 
 public:
     explicit CQuorumBlockProcessor(CChainState& chainstate, CDeterministicMNManager& dmnman, CEvoDB& evoDb,
@@ -66,6 +78,15 @@ public:
     bool GetMineableCommitmentsTx(const Consensus::LLMQParams& llmqParams, int nHeight, std::vector<CTransactionRef>& ret) const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     bool HasMinedCommitment(Consensus::LLMQType llmqType, const uint256& quorumHash) const;
     CFinalCommitmentPtr GetMinedCommitment(Consensus::LLMQType llmqType, const uint256& quorumHash, uint256& retMinedBlockHash) const;
+
+    /**
+     * Serialized hashes of the commitments mined for the quorums active as of pindexPrev.
+     *
+     * Memoized; returns nullopt if a commitment recorded as mined could not be read back,
+     * which should never happen. (dash#7491)
+     */
+    std::optional<std::pair<QcHashMap, QcIndexedHashMap>> GetQcHashes(const CBlockIndex* pindexPrev) const
+        EXCLUSIVE_LOCKS_REQUIRED(!m_qc_hashes_cache_mutex);
 
     std::vector<const CBlockIndex*> GetMinedCommitmentsUntilBlock(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindex, size_t maxCount) const;
     std::map<Consensus::LLMQType, std::vector<const CBlockIndex*>> GetMinedAndActiveCommitmentsUntilBlock(gsl::not_null<const CBlockIndex*> pindex) const;
