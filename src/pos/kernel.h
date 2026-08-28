@@ -26,10 +26,24 @@ double GetPoSKernelPS(CBlockIndex *pindex, const Consensus::Params& params);
 uint256 ComputeStakeModifier(const CBlockIndex *pindexPrev, const uint256 &kernel);
 
 /**
+ * Whether the corrected kernel rules apply to a block at nHeight. One-way and
+ * height-only by design: the staker and every validator have to reach the same
+ * answer from the height alone, never from local configuration.
+ */
+[[nodiscard]] inline bool IsPosKernelV2(const Consensus::Params& params, int nHeight)
+{
+    return nHeight >= params.nPosKernelV2ActivationHeight;
+}
+
+/**
  * Check whether stake kernel meets hash target
  * Sets hashProofOfStake on success return
+ *
+ * Takes the consensus parameters rather than reading the global chainparams so
+ * that the rules in force can be stated by the caller -- which is what lets a
+ * test drive both sides of the activation height.
  */
-bool CheckStakeKernelHash(const CBlockIndex *pindexPrev,
+bool CheckStakeKernelHash(const CBlockIndex *pindexPrev, const Consensus::Params &params,
     uint32_t nBits, uint32_t nBlockFromTime,
     CAmount prevOutAmount, const COutPoint &prevout, uint32_t nTimeTx,
     uint256 &hashProofOfStake, uint256 &targetProofOfStake,
