@@ -697,7 +697,7 @@ void RPCConsole::setClientModel(ClientModel *model, int bestblock_height, int64_
         setNumConnections(model->getNumConnections());
         connect(model, &ClientModel::numConnectionsChanged, this, &RPCConsole::setNumConnections);
 
-        setNumBlocks(bestblock_height, QDateTime::fromSecsSinceEpoch(bestblock_date), QString::fromStdString(bestblock_hash.ToString()), verification_progress, false);
+        setNumBlocks(bestblock_height, QDateTime::fromSecsSinceEpoch(bestblock_date), QString::fromStdString(bestblock_hash.ToString()), verification_progress, SyncType::BLOCK_SYNC);
         connect(model, &ClientModel::numBlocksChanged, this, &RPCConsole::setNumBlocks);
 
         connect(model, &ClientModel::chainLockChanged, this, &RPCConsole::setChainLock);
@@ -1059,9 +1059,9 @@ void RPCConsole::setNetworkActive(bool networkActive)
     updateNetworkState();
 }
 
-void RPCConsole::setNumBlocks(int count, const QDateTime& blockDate, const QString& blockHash, double nVerificationProgress, bool headers)
+void RPCConsole::setNumBlocks(int count, const QDateTime& blockDate, const QString& blockHash, double nVerificationProgress, SyncType synctype)
 {
-    if (!headers) {
+    if (synctype == SyncType::BLOCK_SYNC) {
         ui->numberOfBlocks->setText(QString::number(count));
         ui->lastBlockTime->setText(blockDate.toString());
         ui->lastBlockHash->setText(blockHash);
