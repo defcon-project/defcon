@@ -1043,9 +1043,11 @@ static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& reques
 
     FundSpecialTx(*wallet, tx, ptx, feeSource);
 
-    const bool isV19active = DeploymentActiveAfter(WITH_LOCK(cs_main, return chainman.ActiveChain().Tip();),
-                                                   Params().GetConsensus(), Consensus::DEPLOYMENT_V19);
-    SignSpecialTxPayloadByHash(tx, ptx, keyOperator, !isV19active);
+    // The signing scheme must follow the payload version, not the deployment:
+    // ptx.nVersion comes from the masternode state above, and a legacy
+    // masternode past V19 would otherwise get a legacy payload carrying a
+    // basic-scheme signature, which consensus rejects. (dash#7096, adapted)
+    SignSpecialTxPayloadByHash(tx, ptx, keyOperator, ptx.nVersion == CProUpServTx::LEGACY_BLS_VERSION);
     SetTxPayload(tx, ptx);
 
     return SignAndSendSpecialTx(request, chain_helper, chainman, tx);
@@ -1198,9 +1200,7 @@ static RPCHelpMan protx_revoke()
 
     EnsureWalletIsUnlocked(*pwallet);
 
-    const bool isV19active{DeploymentActiveAfter(WITH_LOCK(cs_main, return chainman.ActiveChain().Tip();), Params().GetConsensus(), Consensus::DEPLOYMENT_V19)};
     CProUpRevTx ptx;
-    ptx.nVersion = CProUpRevTx::GetVersion(isV19active);
     ptx.proTxHash = ParseHashV(request.params[0], "proTxHash");
 
     CBLSSecretKey keyOperator = ParseBLSSecretKey(request.params[1].get_str(), "operatorKey");
@@ -1221,6 +1221,12 @@ static RPCHelpMan protx_revoke()
     if (keyOperator.GetPublicKey() != dmn->pdmnState->pubKeyOperator.Get()) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("the operator key does not belong to the registered public key"));
     }
+
+    // Follow the masternode state version instead of forcing the deployment
+    // maximum: a legacy masternode past V19 got a basic-version payload whose
+    // signing scheme no longer matched its registered key encoding.
+    // (dash#7096, adapted)
+    ptx.nVersion = dmn->pdmnState->nVersion;
 
     CMutableTransaction tx;
     tx.nVersion = 3;
@@ -1245,7 +1251,7 @@ static RPCHelpMan protx_revoke()
         throw JSONRPCError(RPC_INTERNAL_ERROR, "No payout or fee source addresses found, can't revoke");
     }
 
-    SignSpecialTxPayloadByHash(tx, ptx, keyOperator, !isV19active);
+    SignSpecialTxPayloadByHash(tx, ptx, keyOperator, ptx.nVersion == CProUpRevTx::LEGACY_BLS_VERSION);
     SetTxPayload(tx, ptx);
 
     return SignAndSendSpecialTx(request, chain_helper, chainman, tx);
