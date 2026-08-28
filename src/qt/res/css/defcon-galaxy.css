@@ -5,7 +5,7 @@ file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 ---------------------------------------------------------------------
 
- * DeFCon Galaxy
+ * Nebula
  *
  * A warm cosmic presentation layered on top of general.css and dark.css.
  * The default, Dark, DeFCon Dark and DeFCon Light themes remain untouched.
@@ -528,4 +528,59 @@ filled button style, whose text is unreadable there.
 #btnVerifyMessage:hover:!checked {
     background-color: #10263e;
     color: #ffffff;
+}
+
+
+/******************************************************
+Nebula polish: focus visibility and table readability
+
+Appended override layer: keyboard focus gets the accent
+border everywhere text is entered, and the dense views
+(transactions, peers, addresses) get zebra rows, a hover
+row and an unmistakable selection.
+******************************************************/
+
+QLineEdit:focus,
+QPlainTextEdit:focus,
+QTextEdit:focus,
+QComboBox:focus,
+QSpinBox:focus,
+QDoubleSpinBox:focus,
+QDateTimeEdit:focus {
+    border: 1px solid #d93672;
+}
+
+QTreeWidget,
+QTreeView,
+QTableView {
+    alternate-background-color: #261329;
+}
+
+QTreeWidget::item:hover,
+QTreeView::item:hover,
+QTableView::item:hover {
+    background-color: #321a37;
+}
+
+QTreeWidget::item:selected,
+QTreeView::item:selected,
+QTableView::item:selected {
+    background-color: #d93672;
+    color: #fff4f8;
+}
+
+
+/******************************************************
+Overview network card
+******************************************************/
+
+QWidget#OverviewPage QFrame#networkCard {
+    background-color: #29152e;
+    border: 1px solid #553049;
+    border-radius: 10px;
+}
+
+QWidget#OverviewPage QLabel#labelNetworkStatus {
+    color: #d8c4d2;
+    font-size: 12px;
 }
