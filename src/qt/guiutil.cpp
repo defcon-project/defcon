@@ -220,7 +220,11 @@ static const std::map<ThemedColor, QColor> themedDefconGalaxyColors = {
     { ThemedColor::BLUE, QColor(240, 68, 167) },
     { ThemedColor::ORANGE, QColor(245, 193, 91) },
     { ThemedColor::RED, QColor(255, 122, 102) },
-    { ThemedColor::GREEN, QColor(245, 193, 91) },
+    // Not the ORANGE value: received amounts and warnings were the same
+    // amber, so credit and caution were indistinguishable at a glance. Mint
+    // reads as green against the plum background without fighting the
+    // magenta accent.
+    { ThemedColor::GREEN, QColor(94, 214, 167) },
     { ThemedColor::BAREADDRESS, QColor(173, 143, 169) },
     { ThemedColor::TX_STATUS_OPENUNTILDATE, QColor(200, 167, 255) },
     { ThemedColor::BACKGROUND_WIDGET, QColor(33, 17, 38) },
@@ -233,7 +237,9 @@ static const std::map<ThemedColor, QColor> themedDefconGalaxyColors = {
 
 static const std::map<ThemedColor, QColor> themedDefconLightColors = {
     { ThemedColor::DEFAULT, QColor(11, 31, 68) },
-    { ThemedColor::UNCONFIRMED, QColor(102, 117, 142) },
+    // Kept in step with the stylesheet's secondary text (#5a6a84): #66758e on
+    // white sat at the AA boundary for small type.
+    { ThemedColor::UNCONFIRMED, QColor(90, 106, 132) },
     { ThemedColor::BLUE, QColor(8, 124, 240) },
     { ThemedColor::ORANGE, QColor(227, 154, 0) },
     { ThemedColor::RED, QColor(211, 47, 47) },

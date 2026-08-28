@@ -5,7 +5,7 @@ file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 ---------------------------------------------------------------------
 
- * DeFCon Dark
+ * Abyss
  *
  * Modern DeFCoN wallet presentation. This file is intentionally an override
  * layer on top of general.css and dark.css so the original themes remain
@@ -499,4 +499,100 @@ filled button style, whose text is unreadable there.
 #btnVerifyMessage:hover:!checked {
     background-color: #10263e;
     color: #ffffff;
+}
+
+
+/******************************************************
+Abyss scrollbars
+
+The one surface this theme left to the base layer: a
+light scrollbar in a dark window. Slim, track invisible,
+handle one elevation step above the panels.
+******************************************************/
+
+QScrollBar:vertical,
+QScrollBar:horizontal {
+    background-color: #0d1c2e;
+    border: none;
+    margin: 0;
+    width: 10px;
+    height: 10px;
+}
+
+QScrollBar::handle:vertical,
+QScrollBar::handle:horizontal {
+    background-color: #29435f;
+    border-radius: 5px;
+    min-height: 28px;
+    min-width: 28px;
+}
+
+QScrollBar::handle:vertical:hover,
+QScrollBar::handle:horizontal:hover {
+    background-color: #3a5878;
+}
+
+QScrollBar::add-line,
+QScrollBar::sub-line,
+QScrollBar::add-page,
+QScrollBar::sub-page {
+    background: none;
+    border: none;
+    height: 0;
+    width: 0;
+}
+
+
+/******************************************************
+Abyss polish: focus visibility and table readability
+
+Appended override layer: keyboard focus gets the accent
+border everywhere text is entered, and the dense views
+(transactions, peers, addresses) get zebra rows, a hover
+row and an unmistakable selection.
+******************************************************/
+
+QLineEdit:focus,
+QPlainTextEdit:focus,
+QTextEdit:focus,
+QComboBox:focus,
+QSpinBox:focus,
+QDoubleSpinBox:focus,
+QDateTimeEdit:focus {
+    border: 1px solid #1297ff;
+}
+
+QTreeWidget,
+QTreeView,
+QTableView {
+    alternate-background-color: #0e1f33;
+}
+
+QTreeWidget::item:hover,
+QTreeView::item:hover,
+QTableView::item:hover {
+    background-color: #16283e;
+}
+
+QTreeWidget::item:selected,
+QTreeView::item:selected,
+QTableView::item:selected {
+    background-color: #0b6cc6;
+    color: #f7fbff;
+}
+
+
+/******************************************************
+Overview network card
+******************************************************/
+
+QWidget#OverviewPage QFrame#networkCard {
+    background-color: #0b1727;
+    border: 1px solid #20344c;
+    border-radius: 10px;
+}
+
+QWidget#OverviewPage QLabel#labelNetworkStatus {
+    color: #91a5bc;
+    font-size: 12px;
 }

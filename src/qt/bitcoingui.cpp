@@ -881,7 +881,10 @@ void BitcoinGUI::applyThemeLayout()
         // icons, so Qt fell back to text; the moment the modern branch set
         // icons, every label vanished.
         button->setToolButtonStyle(modern ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonTextOnly);
-        const int fontSize = galaxy ? 11 : (modern ? 12 : 16);
+        // Nebula ran the smallest type in the app (11px on the horizontal tab
+        // bar); readability complaints started exactly there. One size up
+        // still fits the bar.
+        const int fontSize = modern ? 12 : 16;
         GUIUtil::setFont({button}, button->isChecked() ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal, fontSize);
         if (!modern) {
             button->setIcon(QIcon());
@@ -904,7 +907,7 @@ void BitcoinGUI::applyThemeLayout()
             governanceButton->setIcon(GUIUtil::getIcon("synced"));
         }
         for (QAbstractButton* button : tabGroup->buttons()) {
-            button->setIconSize(galaxy ? QSize(18, 18) : QSize(22, 22));
+            button->setIconSize(galaxy ? QSize(20, 20) : QSize(22, 22));
         }
 
         if (appToolBarLogoAction && firstNavigationAction) {
@@ -1336,7 +1339,7 @@ void BitcoinGUI::openClicked()
 
 void BitcoinGUI::highlightTabButton(QAbstractButton *button, bool checked)
 {
-    const int fontSize = GUIUtil::isDefconGalaxyTheme() ? 11 : (GUIUtil::isModernTheme() ? 12 : 16);
+    const int fontSize = GUIUtil::isModernTheme() ? 12 : 16;
     GUIUtil::setFont({button}, checked ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal,
                      fontSize);
     GUIUtil::updateFonts();
