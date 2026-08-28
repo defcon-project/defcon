@@ -300,6 +300,10 @@ bool CQuorumBlockProcessor::ProcessCommitment(int nHeight, const uint256& blockH
         m_evoDb.Write(BuildInversedHeightKey(llmq_params.type, nHeight), pQuorumBaseBlockIndex->nHeight);
     }
 
+    // Only once this commitment is fully recorded, so the cache can never be
+    // repopulated from a half-updated view.
+    DropQcHashesCache();
+
     {
         LOCK(minableCommitmentsCs);
         mapHasMinedCommitmentCache[qc.llmqType].erase(qc.quorumHash);
@@ -311,6 +315,54 @@ bool CQuorumBlockProcessor::ProcessCommitment(int nHeight, const uint256& blockH
              ToUnderlying(qc.llmqType), qc.quorumIndex, quorumHash.ToString(), qc.CountSigners(), qc.CountValidMembers(), qc.quorumPublicKey.ToString());
 
     return true;
+}
+
+void CQuorumBlockProcessor::DropQcHashesCache()
+{
+    LOCK(m_qc_hashes_cache_mutex);
+    m_quorums_cached.clear();
+    m_qc_hashes_cached.clear();
+    m_qc_indexed_hashes_cached.clear();
+}
+
+std::optional<std::pair<QcHashMap, QcIndexedHashMap>> CQuorumBlockProcessor::GetQcHashes(const CBlockIndex* pindexPrev) const
+{
+    auto quorums = GetMinedAndActiveCommitmentsUntilBlock(pindexPrev);
+
+    LOCK(m_qc_hashes_cache_mutex);
+    if (quorums == m_quorums_cached) {
+        return std::make_pair(m_qc_hashes_cached, m_qc_indexed_hashes_cached);
+    }
+
+    // Quorums set is different, reset cached values
+    m_quorums_cached.clear();
+    m_qc_hashes_cached.clear();
+    m_qc_indexed_hashes_cached.clear();
+
+    for (const auto& [llmqType, vecBlockIndexes] : quorums) {
+        const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
+        assert(llmq_params_opt.has_value());
+        bool rotation_enabled = IsQuorumRotationEnabled(llmq_params_opt.value(), pindexPrev);
+        auto& vec_hashes = m_qc_hashes_cached[llmqType];
+        vec_hashes.reserve(vecBlockIndexes.size());
+        auto& map_indexed_hashes = m_qc_indexed_hashes_cached[llmqType];
+        for (const auto& blockIndex : vecBlockIndexes) {
+            uint256 dummyHash;
+            CFinalCommitmentPtr pqc = GetMinedCommitment(llmqType, blockIndex->GetBlockHash(), dummyHash);
+            if (pqc == nullptr) {
+                // this should never happen
+                return std::nullopt;
+            }
+            auto qcHash = ::SerializeHash(*pqc);
+            if (rotation_enabled) {
+                map_indexed_hashes[pqc->quorumIndex] = qcHash;
+            } else {
+                vec_hashes.emplace_back(qcHash);
+            }
+        }
+    }
+    m_quorums_cached = std::move(quorums);
+    return std::make_pair(m_qc_hashes_cached, m_qc_indexed_hashes_cached);
 }
 
 bool CQuorumBlockProcessor::UndoBlock(const CBlock& block, gsl::not_null<const CBlockIndex*> pindex)
@@ -340,6 +392,9 @@ bool CQuorumBlockProcessor::UndoBlock(const CBlock& block, gsl::not_null<const C
         } else {
             m_evoDb.Erase(BuildInversedHeightKey(qc.llmqType, pindex->nHeight));
         }
+
+        // Only once this commitment is fully unrecorded; see ProcessCommitment.
+        DropQcHashesCache();
 
         WITH_LOCK(minableCommitmentsCs, mapHasMinedCommitmentCache[qc.llmqType].erase(qc.quorumHash));
 
