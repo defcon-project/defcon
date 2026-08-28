@@ -51,6 +51,24 @@ struct CNodeStateStats {
     ServiceFlags their_services;
 };
 
+/** Outcome of authorising an incoming object against what we asked a peer for.
+ *
+ * Used by object types that only ever travel inv -> getdata -> object, to tell an unsolicited push
+ * apart from an honest answer to a GETDATA of ours whose bookkeeping is already gone. The latter is
+ * routine: accepting the object from any source erases the announcements for it, and the expiry
+ * sweep drops requests a peer answered too slowly. (dash#7484, adapted) */
+enum class GetDataResponse {
+    //! We had this object in flight from the peer; the request has now been consumed.
+    REQUESTED,
+    //! No in-flight request, but we did send this peer a GETDATA for this object recently, so the
+    //! answer is merely late or was superseded. Process it, but do not treat it as unsolicited.
+    LATE,
+    //! We have no record of asking this peer for this object. Usually that is because we never did,
+    //! which is what makes it worth scoring -- but a record we did keep is also gone once it ages
+    //! out or is evicted, so an answer late enough is treated the same as one never asked for.
+    UNREQUESTED,
+};
+
 class PeerManager : public CValidationInterface, public NetEventsInterface
 {
 public:
@@ -143,6 +161,12 @@ public:
     virtual bool IsBanned(NodeId pnode) = 0;
 
     virtual void EraseObjectRequest(NodeId nodeid, const CInv& inv) = 0;
+    /** Consume this peer's in-flight GETDATA for the inv and report how the object was authorised.
+     *  A bare announcement does not qualify, only a request we actually sent. Use for object types
+     *  that are only ever sent in reply to a GETDATA (see IsGetDataOnlyObject), so a peer cannot
+     *  authorise its own payload by announcing it first. Only UNREQUESTED leaves us with nothing to
+     *  show we asked; see GetDataResponse. (dash#7484, adapted) */
+    virtual GetDataResponse ConsumeGetDataResponse(NodeId nodeid, const CInv& inv) = 0;
     virtual void RequestObject(NodeId nodeid, const CInv& inv, std::chrono::microseconds current_time,
                                bool is_masternode, bool fForce = false) = 0;
     virtual size_t GetRequestedObjectCount(NodeId nodeid) const = 0;

@@ -345,6 +345,40 @@ void CDKGSessionHandler::ProcessMessage(const CNode& pfrom, PeerManager& peerman
         return;
     }
 
+    // DKG messages are only ever sent in reply to a GETDATA (see ProcessGetData), so one we never
+    // asked this peer for was pushed at us and must not reach the pending queues, where it would be
+    // retained until a worker gets around to verifying its signature. A bare announcement
+    // deliberately does not qualify: it would let the peer authorise its own payload by sending INV
+    // first.
+    //
+    // This check runs last so that every pre-existing rejection above -- and the heavier penalty it
+    // carries -- is unchanged. It therefore bounds retention and signature verification, not the
+    // parsing and structural validation above, which an unsolicited sender still gets to trigger.
+    // (dash#7484, adapted)
+    {
+        int inv_type{0};
+        if (msg_type == NetMsgType::QCONTRIB) {
+            inv_type = MSG_QUORUM_CONTRIB;
+        } else if (msg_type == NetMsgType::QCOMPLAINT) {
+            inv_type = MSG_QUORUM_COMPLAINT;
+        } else if (msg_type == NetMsgType::QJUSTIFICATION) {
+            inv_type = MSG_QUORUM_JUSTIFICATION;
+        } else if (msg_type == NetMsgType::QPCOMMITMENT) {
+            inv_type = MSG_QUORUM_PREMATURE_COMMITMENT;
+        }
+        // Same hash the pending queue will key retention on: the whole remaining payload.
+        CHashWriter hw(SER_GETHASH, 0);
+        hw.write(AsWritableBytes(Span{vRecv}));
+        const uint256 hash = hw.GetHash();
+        if (WITH_LOCK(::cs_main, return peerman.ConsumeGetDataResponse(pfrom.GetId(), CInv(inv_type, hash))) ==
+            GetDataResponse::UNREQUESTED) {
+            LogPrint(BCLog::LLMQ_DKG, "CDKGSessionHandler -- received unrequested %s %s, peer=%d\n", msg_type,
+                     hash.ToString(), pfrom.GetId());
+            peerman.Misbehaving(pfrom.GetId(), UNREQUESTED_OBJECT_MISBEHAVIOR_SCORE, "unrequested DKG message");
+            return;
+        }
+    }
+
     // We don't handle messages in the calling thread as deserialization/processing of these would block everything
     if (msg_type == NetMsgType::QCONTRIB) {
         pendingContributions.PushPendingMessage(pfrom.GetId(), sender_protx, vRecv, peerman);
