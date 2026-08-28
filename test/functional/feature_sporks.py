@@ -3,7 +3,15 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+import struct
+
+from test_framework.messages import msg_generic, ser_compact_size
+from test_framework.p2p import P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
+
+# serialize.h MAX_SIZE: the largest count ReadCompactSize() accepts, so a declared
+# vchSig length of this value reaches the signature cap, not the compact-size guard.
+MAX_SIZE = 0x02000000
 
 '''
 '''
@@ -60,6 +68,14 @@ class SporkTest(BitcoinTestFramework):
         self.wait_until(lambda: self.get_test_spork_state(self.nodes[2]), timeout=10)
 
         assert "" not in self.nodes[0].spork('show').keys()
+
+        # An oversized signature length prefix must be punished before allocation,
+        # not silently dropped by the outer catch. (dash#7438)
+        bad_payload = struct.pack("<iqq", 10001, 0, 0) + ser_compact_size(MAX_SIZE)
+        bad_peer = self.nodes[0].add_p2p_connection(P2PInterface())
+        with self.nodes[0].assert_debug_log(['Misbehaving']):
+            bad_peer.send_message(msg_generic(b'spork', bad_payload))
+            bad_peer.wait_for_disconnect()
 
 
 if __name__ == '__main__':
