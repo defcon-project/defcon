@@ -213,6 +213,7 @@ BASE_SCRIPTS = [
     'p2p_disconnect_ban.py --v1transport',
     'p2p_disconnect_ban.py --v2transport',
     'feature_addressindex.py',
+    'rpc_addressindex_bls.py',
     'feature_timestampindex.py',
     'feature_spentindex.py',
     'rpc_decodescript.py',
