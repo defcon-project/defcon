@@ -53,6 +53,25 @@ public:
 };
 } // anonymous namespace
 
+namespace {
+bool IsSyncableObject(const CGovernanceObject& obj)
+{
+    return !obj.IsSetCachedDelete() && !obj.IsSetExpired();
+}
+
+bool IsEmptyBloomFilter(const CBloomFilter& filter)
+{
+    // CBloomFilter does not expose its backing bytes. Governance uses an empty
+    // filter as an object-fetch signal, so inspect the serialized vector field.
+    CDataStream serialized_filter{SER_NETWORK, PROTOCOL_VERSION};
+    serialized_filter << filter;
+
+    std::vector<unsigned char> filter_data;
+    serialized_filter >> filter_data;
+    return filter_data.empty();
+}
+} // namespace
+
 GovernanceStore::GovernanceStore() :
     cs(),
     mapObjects(),
@@ -104,6 +123,36 @@ bool CGovernanceManager::HaveObjectForHash(const uint256& nHash) const
 {
     LOCK(cs);
     return (mapObjects.count(nHash) == 1 || mapPostponedObjects.count(nHash) == 1);
+}
+
+bool CGovernanceManager::HaveObjectForFetch(const uint256& nHash) const
+{
+    LOCK(cs);
+
+    if (mapErasedGovernanceObjects.count(nHash) != 0) {
+        return false;
+    }
+
+    if (auto it = mapObjects.find(nHash); it != mapObjects.end()) {
+        return IsSyncableObject(it->second);
+    }
+
+    if (auto it = mapPostponedObjects.find(nHash); it != mapPostponedObjects.end()) {
+        return IsSyncableObject(it->second);
+    }
+
+    return false;
+}
+
+bool CGovernanceManager::HaveSyncableObjectForHash(const uint256& nHash) const
+{
+    LOCK(cs);
+    const auto it = mapObjects.find(nHash);
+    if (it == mapObjects.end()) {
+        return false;
+    }
+
+    return IsSyncableObject(it->second);
 }
 
 bool CGovernanceManager::SerializeObjectForHash(const uint256& nHash, CDataStream& ss) const
@@ -168,11 +217,39 @@ PeerMsgRet CGovernanceManager::ProcessMessage(CNode& peer, CConnman& connman, Pe
         }
 
         LogPrint(BCLog::GOBJECT, "MNGOVERNANCESYNC -- syncing governance objects to our peer %s\n", peer.GetLogString());
-        if (nProp == uint256()) {
-            return SyncObjects(peer, peerman, connman);
-        } else {
-            SyncSingleObjVotes(peer, peerman, nProp, filter, connman);
+        const bool full_sync{nProp == uint256()};
+        const bool object_fetch{!full_sync && IsEmptyBloomFilter(filter)};
+        // Nonzero govsync with an empty filter is what RequestGovernanceObject sends to fetch a
+        // missing object for an orphan vote. Only full sync and actual known-object vote sync are
+        // fulfilled-request limited. (dash#7414, adapted)
+        const bool track_request{full_sync || (!object_fetch && HaveSyncableObjectForHash(nProp))};
+        const std::string fulfilled_request{full_sync ? NetMsgType::MNGOVERNANCESYNC
+                                                      : strprintf("%s-votes-%s", NetMsgType::MNGOVERNANCESYNC,
+                                                                  nProp.ToString())};
+        assert(m_netfulfilledman.IsValid());
+        if (track_request && m_netfulfilledman.HasFulfilledRequest(peer.addr, fulfilled_request)) {
+            // Asking for the same governance data multiple times in a short period of time is no good
+            LogPrint(BCLog::GOBJECT, "MNGOVERNANCESYNC -- peer already asked me for %s\n",
+                     full_sync ? "the list" : strprintf("votes for %s", nProp.ToString()));
+            return tl::unexpected{20};
         }
+        if (track_request) {
+            m_netfulfilledman.AddFulfilledRequest(peer.addr, fulfilled_request);
+        }
+
+        if (object_fetch) {
+            if (HaveObjectForFetch(nProp)) {
+                CNetMsgMaker msgMaker(peer.GetCommonVersion());
+                connman.PushMessage(&peer, msgMaker.Make(NetMsgType::INV,
+                                                         std::vector<CInv>{CInv{MSG_GOVERNANCE_OBJECT, nProp}}));
+            }
+            return {};
+        }
+
+        if (full_sync) {
+            return SyncObjects(peer, peerman, connman);
+        }
+        SyncSingleObjVotes(peer, peerman, nProp, filter, connman);
     }
 
     // A NEW GOVERNANCE OBJECT HAS ARRIVED
@@ -975,12 +1052,7 @@ PeerMsgRet CGovernanceManager::SyncObjects(CNode& peer, PeerManager& peerman, CC
     // do not provide any data until our node is synced
     if (!m_mn_sync.IsSynced()) return {};
 
-    if (m_netfulfilledman.HasFulfilledRequest(peer.addr, NetMsgType::MNGOVERNANCESYNC)) {
-        // Asking for the whole list multiple times in a short period of time is no good
-        LogPrint(BCLog::GOBJECT, "CGovernanceManager::%s -- peer already asked me for the list\n", __func__);
-        return tl::unexpected{20};
-    }
-    m_netfulfilledman.AddFulfilledRequest(peer.addr, NetMsgType::MNGOVERNANCESYNC);
+    // The repeated-request gate lives in ProcessMessage, which also quotas per-object vote syncs.
 
     int nObjCount = 0;
 
