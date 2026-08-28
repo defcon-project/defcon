@@ -196,6 +196,14 @@ struct Params {
     int32_t evoVoteWeight;
     int minStaticCollateral;
     CScript premineAddress;
+    /** Height from which the corrected proof-of-stake kernel rules apply: the
+     *  weighted target stops being computed by a multiplication that truncates
+     *  to 256 bits, and the upper bound of stakeAgeRange stops applying.
+     *  One-way and height-only by design, so a block's rules follow from its
+     *  height alone and blocks made under the original rules stay valid under
+     *  them forever. The default -- an unreachable height -- means the original
+     *  rules, which is what every network keeps until it is set. */
+    int nPosKernelV2ActivationHeight{std::numeric_limits<int>::max()};
 
     /** these parameters are only used on devnet and can be configured from the outside */
     int nMinimumDifficultyBlocks{0};
