@@ -129,6 +129,20 @@ QComboBox::drop-down {
     width: 28px;
 }
 
+/* Without an explicit image Qt falls back to the Fusion style's own
+   steel-blue triangle, which belongs to no palette of ours. */
+QComboBox::down-arrow {
+    image: url(':/images/arrow_down_arctic');
+}
+
+QAbstractSpinBox::up-arrow {
+    image: url(':/images/arrow_up_arctic');
+}
+
+QAbstractSpinBox::down-arrow {
+    image: url(':/images/arrow_down_arctic');
+}
+
 QComboBox QAbstractItemView {
     background-color: #ffffff;
     border: 1px solid #cbd7e6;
