@@ -155,11 +155,17 @@ PeerMsgRet CGovernanceManager::ProcessMessage(CNode& peer, CConnman& connman, Pe
         if (!m_mn_sync.IsSynced()) return {};
 
         uint256 nProp;
-        CBloomFilter filter;
-
         vRecv >> nProp;
 
-        vRecv >> filter;
+        CBloomFilter filter;
+        try {
+            vRecv >> filter;
+        } catch (const std::ios_base::failure& e) {
+            // An oversized filter now throws pre-allocation; attribute it to the peer
+            // instead of letting the outer catch drop it silently. (dash#7444, adapted)
+            LogPrint(BCLog::GOBJECT, "MNGOVERNANCESYNC -- malformed govsync bloom filter, peer=%d error=%s\n", peer.GetId(), e.what());
+            return tl::unexpected{100};
+        }
 
         LogPrint(BCLog::GOBJECT, "MNGOVERNANCESYNC -- syncing governance objects to our peer %s\n", peer.GetLogString());
         if (nProp == uint256()) {
