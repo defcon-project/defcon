@@ -13,10 +13,6 @@ Such outputs are never written to the address index in the first place:
 AddressBytesFromScript() only recognises P2SH, P2PKH and P2PK and answers UNKNOWN
 for everything else, and the indexer skips UNKNOWN. There is therefore nothing to
 look up, and the honest answer is "Invalid address".
-
-The address used here is the premine address from chainparams -- a real, public
-48-byte BLS key, identical on every network -- so this is the exact input a block
-explorer would hand the node.
 """
 
 from test_framework.test_framework import BitcoinTestFramework

@@ -215,6 +215,7 @@ BASE_SCRIPTS = [
     'feature_addressindex.py',
     'rpc_addressindex_bls.py',
     'wallet_dumpwallet_bls.py',
+    'wallet_importmulti_bls.py',
     'feature_timestampindex.py',
     'feature_spentindex.py',
     'rpc_decodescript.py',

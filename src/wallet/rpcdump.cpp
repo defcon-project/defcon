@@ -1230,6 +1230,15 @@ static std::string RecurseImportData(const CScript& script, ImportData& import_d
     }
     case TxoutType::NULL_DATA:
         return "unspendable script";
+    case TxoutType::BLSPUBKEY:
+        // This import path has no way to express a BLS key: the machinery it feeds
+        // works in CPubKey/CKeyID terms that carry no BLS association, so a key
+        // accepted here would come back as an ordinary ECDSA one. importblsprivkey
+        // is the path for these. Naming the type is what lets the caller report
+        // that -- without a case here the script reached NONFATAL_UNREACHABLE,
+        // whose throw the caller's catch-all turned into "Missing required
+        // fields", an answer about the wrong thing entirely.
+        return "BLS scripts cannot be imported this way, use importblsprivkey";
     case TxoutType::NONSTANDARD:
         return "unrecognized script";
     } // no default case, so the compiler can warn about missing cases
