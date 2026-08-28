@@ -183,7 +183,7 @@ bool CheckProofOfStake(CChainState& chain_state, BlockValidationState& state, co
     int nDepth = pindexPrev->nHeight - coin.nHeight;
     if (nRequiredDepth > nDepth) {
         LogPrint(BCLog::POS, "ERROR: %s: Tried to stake at depth %d\n", __func__, nDepth + 1);
-        return false;
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-stake-depth");
     }
 
     CAmount amount = coin.out.nValue;
@@ -191,25 +191,25 @@ bool CheckProofOfStake(CChainState& chain_state, BlockValidationState& state, co
     if (amount < params.stakeValueRange[0] || amount > params.stakeValueRange[1]) {
         LogPrint(BCLog::POS, "ERROR: %s: Stake input amount is out of range (amount %d, min %d, max %d)\n",
                              __func__, amount / COIN, params.stakeValueRange[0] / COIN, params.stakeValueRange[1] / COIN);
-        return false;
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-stake-amount");
     }
 
     int64_t inputAge = nTime - nBlockFromTime;
     if (inputAge < params.stakeAgeRange[0] || inputAge > params.stakeAgeRange[1]) {
         LogPrint(BCLog::POS, "ERROR: %s: Stake input age is out of range (age: %d min: %d, max: %d)\n",
                              __func__, inputAge, params.stakeAgeRange[0], params.stakeAgeRange[1]);
-        return false;
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-stake-age");
     }
 
     ScriptError serror = SCRIPT_ERR_OK;
     if (!VerifyScript(txin.scriptSig, coin.out.scriptPubKey, STANDARD_SCRIPT_VERIFY_FLAGS, TransactionSignatureChecker(&tx, 0, coin.out.nValue, MissingDataBehavior::ASSERT_FAIL), &serror)) {
         LogPrint(BCLog::POS, "ERROR: %s: verify-script-failed, txn %s, reason %s\n", __func__, tx.GetHash().ToString(), ScriptErrorString(serror));
-        return false;
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-stake-signature");
     }
 
     if (!CheckStakeKernelHash(pindexPrev, nBits, nBlockFromTime, coin.out.nValue, txin.prevout, nTime, hashProofOfStake, targetProofOfStake)) {
         LogPrint(BCLog::POS, "ERROR: %s: Check kernel failed on coinstake %s, hashProof=%s\n", __func__, tx.GetHash().ToString(), hashProofOfStake.ToString());
-        return false;
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-stake-kernel");
     }
 
     return true;
