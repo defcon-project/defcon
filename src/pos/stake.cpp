@@ -95,6 +95,28 @@ StakeSkipReport CStakeWallet::ExplainExcludedCoins(int nHeight) const
     return report;
 }
 
+std::vector<CAmount> CStakeWallet::SplitStakeCredit(CAmount nCredit, CAmount threshold) const
+{
+    // Splitting must not manufacture an output that can never stake again.
+    // Under stakeValueRange[0] a coin is skipped for good, and so is one sitting
+    // exactly on a collateral amount. The halving repeats on every win, walking
+    // an output down by a factor of two each time, so a single unguarded split
+    // retires the coin -- silently, and for the rest of its life. Roughly a
+    // third of starting sizes reach a dead half this way.
+    const CAmount first = (nCredit / 2 / CENT) * CENT;
+    const CAmount second = nCredit - first;
+    const auto stakeable = [this](CAmount value) {
+        return value >= params.stakeValueRange[0] &&
+               value != params.regularMnCollateral &&
+               value != params.evoMnCollateral;
+    };
+
+    if (nCredit >= threshold && stakeable(first) && stakeable(second)) {
+        return {first, second};
+    }
+    return {nCredit};
+}
+
 uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 {
     // Choose coins to use
@@ -447,19 +469,13 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
 
     nCredit += nReward;
     {
-        if (nCredit >= wallet->nStakeSplitThreshold) {
+        const std::vector<CAmount> outputs = SplitStakeCredit(nCredit, wallet->nStakeSplitThreshold);
+        if (outputs.size() == 2) {
             txNew.vout.push_back(CTxOut(0, txNew.vout[1].scriptPubKey));
-        }
-
-        // Set output amount
-        if (txNew.vout.size() == 3)
-        {
-            txNew.vout[1].nValue = (nCredit / 2 / CENT) * CENT;
-            txNew.vout[2].nValue = nCredit - txNew.vout[1].nValue;
-        }
-        else
-        {
-            txNew.vout[1].nValue = nCredit;
+            txNew.vout[1].nValue = outputs[0];
+            txNew.vout[2].nValue = outputs[1];
+        } else {
+            txNew.vout[1].nValue = outputs[0];
         }
     }
 

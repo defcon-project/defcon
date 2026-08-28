@@ -106,6 +106,13 @@ class CStakeWallet
         /** Tally every coin the wallet holds that the rules keep out. */
         StakeSkipReport ExplainExcludedCoins(int nHeight) const;
 
+        /**
+         * How a coinstake's credit is laid out: one output, or two that can each
+         * stake again. Takes the threshold rather than reading it from the
+         * wallet so the decision can be exercised on its own.
+         */
+        std::vector<CAmount> SplitStakeCredit(CAmount nCredit, CAmount threshold) const;
+
         uint64_t GetStakeWeight(int64_t nTime, int nHeight) const;
         bool SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight, std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet, CAmount& nValueRet) const;
         bool CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key);
