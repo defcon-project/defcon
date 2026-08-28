@@ -128,6 +128,20 @@ QComboBox::drop-down {
     width: 28px;
 }
 
+/* Without an explicit image Qt falls back to the Fusion style's own
+   steel-blue triangle, which belongs to no palette of ours. */
+QComboBox::down-arrow {
+    image: url(':/images/arrow_down_nebula');
+}
+
+QAbstractSpinBox::up-arrow {
+    image: url(':/images/arrow_up_nebula');
+}
+
+QAbstractSpinBox::down-arrow {
+    image: url(':/images/arrow_down_nebula');
+}
+
 QComboBox QAbstractItemView {
     background-color: #211126;
     border: 1px solid #653052;
@@ -322,20 +336,20 @@ QToolBar#navigationToolBar[galaxy="true"] QLabel#lblToolbarLogo {
 }
 
 QToolBar#navigationToolBar[galaxy="true"] QWidget#walletSelector {
-    background-color: #211126;
-    border: 1px solid #653052;
-    border-radius: 18px;
-    margin: 2px 4px 2px 8px;
+    /* No pill: the bar's own surface is the background, exactly like the
+       category buttons beside it. A boxed selector kept clipping against the
+       toolbar extent whatever height it was given. */
+    background-color: transparent;
+    border: none;
+    margin: 0 4px 0 8px;
     min-width: 112px;
     max-width: 180px;
-    min-height: 40px;
-    max-height: 40px;
 }
 
 QToolBar#navigationToolBar[galaxy="true"] QWidget#walletSelector QComboBox {
+    background-color: transparent;
     border: none;
     min-width: 88px;
-    min-height: 30px;
 }
 
 /******************************************************

@@ -64,6 +64,12 @@
     </qresource>
     <qresource prefix="/images">
         <file alias="arrow_down_dark">res/images/arrow_down_dark.png</file>
+        <file alias="arrow_down_abyss">res/images/arrow_down_abyss.png</file>
+        <file alias="arrow_down_arctic">res/images/arrow_down_arctic.png</file>
+        <file alias="arrow_down_nebula">res/images/arrow_down_nebula.png</file>
+        <file alias="arrow_up_abyss">res/images/arrow_up_abyss.png</file>
+        <file alias="arrow_up_arctic">res/images/arrow_up_arctic.png</file>
+        <file alias="arrow_up_nebula">res/images/arrow_up_nebula.png</file>
         <file alias="arrow_down_light">res/images/arrow_down_light.png</file>
         <file alias="arrow_left_dark">res/images/arrow_left_dark.png</file>
         <file alias="arrow_left_light">res/images/arrow_left_light.png</file>
