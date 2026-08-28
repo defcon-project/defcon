@@ -980,10 +980,12 @@ RPCHelpMan dumphdinfo()
 RPCHelpMan dumpwallet()
 {
     return RPCHelpMan{"dumpwallet",
-        "\nDumps all wallet keys in a human-readable format to a server-side file. This does not allow overwriting existing files.\n"
+        "\nDumps the wallet's ECDSA keys in a human-readable format to a server-side file. This does not allow overwriting existing files.\n"
         "Imported scripts are included in the dumpfile too, their corresponding addresses will be added automatically by importwallet.\n"
         "Note that if your wallet contains keys which are not derived from your HD seed (e.g. imported keys), these are not covered by\n"
-        "only backing up the seed itself, and must be backed up too (e.g. ensure you back up the whole dumpfile).\n",
+        "only backing up the seed itself, and must be backed up too (e.g. ensure you back up the whole dumpfile).\n"
+        "\nBLS private keys are NOT written to the dumpfile, and importwallet cannot restore them. A wallet holding BLS keys is not\n"
+        "fully backed up by this command: keep a copy of the wallet file itself, or of the BLS keys as given to importblsprivkey.\n",
         {
             {"filename", RPCArg::Type::STR, RPCArg::Optional::NO, "The filename with path (absolute path recommended)"},
         },
@@ -993,6 +995,7 @@ RPCHelpMan dumpwallet()
                         {RPCResult::Type::NUM, "keys", "The number of keys contained in the wallet dump"},
                         {RPCResult::Type::STR, "filename", "The filename with full absolute path"},
                         {RPCResult::Type::STR, "warning", "A warning about not sharing the wallet dump with anyone"},
+                        {RPCResult::Type::NUM, "bls_keys_not_dumped", /*optional=*/true, "How many BLS private keys this wallet holds that the dump does not contain. Present only when there are any."},
                 }
         },
         RPCExamples{
@@ -1141,13 +1144,31 @@ RPCHelpMan dumpwallet()
         }
     }
     file << "\n";
+
+    // BLS keys live in their own wallet records and never reach vKeyBirth, so the
+    // loop above cannot have written them. Say so where it will be found: in the
+    // file, which is what someone restores from years later, and in the reply.
+    const size_t bls_key_count = wallet.GetBLSKeypairs().size();
+    if (bls_key_count > 0) {
+        file << strprintf("# WARNING: this wallet also holds %u BLS private key(s), which are NOT in this dump\n",
+                          bls_key_count);
+        file << "# and cannot be restored by importwallet. Back up the wallet file itself to keep them.\n\n";
+    }
+
     file << "# End of dump\n";
     file.close();
 
-    std::string strWarning = strprintf(_("%s file contains all private keys from this wallet. Do not share it with anyone!").translated, request.params[0].get_str());
+    std::string strWarning = strprintf(_("%s file contains the ECDSA private keys from this wallet. Do not share it with anyone!").translated, request.params[0].get_str());
+    if (bls_key_count > 0) {
+        strWarning += strprintf(_(" It does NOT contain the %u BLS private key(s) this wallet holds; back up the wallet file itself to keep those.").translated,
+                                bls_key_count);
+    }
     obj.pushKV("keys", int(vKeyBirth.size()));
     obj.pushKV("filename", filepath.u8string());
     obj.pushKV("warning", strWarning);
+    if (bls_key_count > 0) {
+        obj.pushKV("bls_keys_not_dumped", (int)bls_key_count);
+    }
 
     return obj;
 },
