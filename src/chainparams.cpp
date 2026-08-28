@@ -571,7 +571,7 @@ public:
         consensus.posTimestampMask = 5;
         consensus.stakeValueRange = { 10000 * COIN, 12500000 * COIN };
         consensus.stakeAgeRange = { 60 * 60, 60 * 60 * 24 * 60 };
-        consensus.nPosKernelV2ActivationHeight = 5000;
+        consensus.nPosKernelV2ActivationHeight = 4000;
         consensus.posLimit = uint256S("0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
