@@ -141,7 +141,14 @@ PeerMsgRet CSporkManager::ProcessMessage(CNode& peer, CConnman& connman, PeerMan
 PeerMsgRet CSporkManager::ProcessSpork(const CNode& peer, PeerManager& peerman, CDataStream& vRecv)
 {
     CSporkMessage spork;
-    vRecv >> spork;
+    try {
+        vRecv >> spork;
+    } catch (const std::ios_base::failure& e) {
+        // vchSig is bounded, so a malformed spork throws pre-allocation; attribute
+        // it to the peer instead of surfacing through the outer catch. (dash#7438, adapted)
+        LogPrint(BCLog::SPORK, "CSporkManager::ProcessSpork -- ERROR: malformed spork, peer=%d error=%s\n", peer.GetId(), e.what());
+        return tl::unexpected{100};
+    }
 
     uint256 hash = spork.GetHash();
 
