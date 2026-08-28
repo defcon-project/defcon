@@ -111,6 +111,16 @@ public:
         } else {
             try {
                 impl = ImplType::FromBytes(bls::Bytes(vecBytes.data(), vecBytes.size()), specificLegacyScheme);
+                // The identity element deserializes cleanly but is poison: an
+                // identity public key or signature passes aggregate
+                // verification trivially, and an identity secret signs
+                // nothing. No honest encoder ever produces it, so it is
+                // invalid input, not a value. (dash#7193)
+                if (impl == ImplType()) {
+                    Reset();
+                    cachedHash.SetNull();
+                    return;
+                }
                 fValid = true;
             } catch (...) {
                 Reset();
