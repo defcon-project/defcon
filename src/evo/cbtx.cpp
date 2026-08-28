@@ -176,59 +176,8 @@ bool CalcCbTxMerkleRootMNList(const CBlock& block, const CBlockIndex* pindexPrev
     }
 }
 
-using QcHashMap = std::map<Consensus::LLMQType, std::vector<uint256>>;
-using QcIndexedHashMap = std::map<Consensus::LLMQType, std::map<int16_t, uint256>>;
-
-/**
- * Handles the calculation or caching of qcHashes and qcIndexedHashes
- * @param pindexPrev The const CBlockIndex* (ie a block) of a block. Both the Quorum list and quorum rotation activation status will be retrieved based on this block.
- * @return nullopt if quorumCommitment was unable to be found, otherwise returns the qcHashes and qcIndexedHashes that were calculated or cached
- */
-auto CachedGetQcHashesQcIndexedHashes(const CBlockIndex* pindexPrev, const llmq::CQuorumBlockProcessor& quorum_block_processor) ->
-        std::optional<std::pair<QcHashMap /*qcHashes*/, QcIndexedHashMap /*qcIndexedHashes*/>> {
-    auto quorums = quorum_block_processor.GetMinedAndActiveCommitmentsUntilBlock(pindexPrev);
-
-    static Mutex cs_cache;
-    static std::map<Consensus::LLMQType, std::vector<const CBlockIndex*>> quorums_cached GUARDED_BY(cs_cache);
-    static QcHashMap qcHashes_cached GUARDED_BY(cs_cache);
-    static QcIndexedHashMap qcIndexedHashes_cached GUARDED_BY(cs_cache);
-
-    LOCK(cs_cache);
-
-    if (quorums == quorums_cached) {
-        return std::make_pair(qcHashes_cached, qcIndexedHashes_cached);
-    }
-
-    // Quorums set is different, reset cached values
-    quorums_cached.clear();
-    qcHashes_cached.clear();
-    qcIndexedHashes_cached.clear();
-
-    for (const auto& [llmqType, vecBlockIndexes] : quorums) {
-        const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
-        assert(llmq_params_opt.has_value());
-        bool rotation_enabled = llmq::IsQuorumRotationEnabled(llmq_params_opt.value(), pindexPrev);
-        auto& vec_hashes = qcHashes_cached[llmqType];
-        vec_hashes.reserve(vecBlockIndexes.size());
-        auto& map_indexed_hashes = qcIndexedHashes_cached[llmqType];
-        for (const auto& blockIndex : vecBlockIndexes) {
-            uint256 dummyHash;
-            llmq::CFinalCommitmentPtr pqc = quorum_block_processor.GetMinedCommitment(llmqType, blockIndex->GetBlockHash(), dummyHash);
-            if (pqc == nullptr) {
-                // this should never happen
-                return std::nullopt;
-            }
-            auto qcHash = ::SerializeHash(*pqc);
-            if (rotation_enabled) {
-                map_indexed_hashes[pqc->quorumIndex] = qcHash;
-            } else {
-                vec_hashes.emplace_back(qcHash);
-            }
-        }
-    }
-    quorums_cached = quorums;
-    return std::make_pair(qcHashes_cached, qcIndexedHashes_cached);
-}
+using llmq::QcHashMap;
+using llmq::QcIndexedHashMap;
 
 auto CalcHashCountFromQCHashes(const QcHashMap& qcHashes)
 {
@@ -249,7 +198,7 @@ bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPre
 
     int64_t nTime1 = GetTimeMicros();
 
-    auto retVal = CachedGetQcHashesQcIndexedHashes(pindexPrev, quorum_block_processor);
+    auto retVal = quorum_block_processor.GetQcHashes(pindexPrev);
     if (!retVal) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "commitment-not-found");
     }
@@ -257,7 +206,7 @@ bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPre
     auto [qcHashes, qcIndexedHashes] = retVal.value();
 
     int64_t nTime2 = GetTimeMicros(); nTimeMined += nTime2 - nTime1;
-    LogPrint(BCLog::BENCHMARK, "            - CachedGetQcHashesQcIndexedHashes: %.2fms [%.2fs]\n", 0.001 * (nTime2 - nTime1), nTimeMined * 0.000001);
+    LogPrint(BCLog::BENCHMARK, "            - GetQcHashes: %.2fms [%.2fs]\n", 0.001 * (nTime2 - nTime1), nTimeMined * 0.000001);
 
     // now add the commitments from the current block, which are not returned by GetMinedAndActiveCommitmentsUntilBlock
     // due to the use of pindexPrev (we don't have the tip index here)
@@ -370,12 +319,24 @@ bool CheckCbTxBestChainlock(const CBlock& block, const CBlockIndex* pindex,
 
     // IsNull() doesn't exist for CBLSSignature: we assume that a valid BLS sig is non-null
     if (cbTx.bestCLSignature.IsValid()) {
+        // Reject out-of-range bestCLHeightDiff that would yield a pre-genesis ancestor
+        // height: GetAncestor() below returns nullptr for it, and dereferencing that
+        // crashed the node on a crafted block. (dash#7363)
+        if (cbTx.bestCLHeightDiff >= static_cast<uint32_t>(pindex->nHeight)) {
+            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cbtx-cldiff");
+        }
         int curBlockCoinbaseCLHeight = pindex->nHeight - static_cast<int>(cbTx.bestCLHeightDiff) - 1;
         if (best_clsig.getHeight() == curBlockCoinbaseCLHeight && best_clsig.getSig() == cbTx.bestCLSignature) {
             // matches our best (but outdated) clsig, no need to verify it again
             return true;
         }
-        uint256 curBlockCoinbaseCLBlockHash = pindex->GetAncestor(curBlockCoinbaseCLHeight)->GetBlockHash();
+        const CBlockIndex* pAncestor = pindex->GetAncestor(curBlockCoinbaseCLHeight);
+        if (pAncestor == nullptr) {
+            // Defense-in-depth: the range check above keeps curBlockCoinbaseCLHeight in
+            // [0, pindex->nHeight - 1], for which GetAncestor() never returns nullptr.
+            return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cbtx-cldiff-ancestor");
+        }
+        uint256 curBlockCoinbaseCLBlockHash = pAncestor->GetBlockHash();
         if (chainlock_handler.VerifyChainLock(llmq::CChainLockSig(curBlockCoinbaseCLHeight, curBlockCoinbaseCLBlockHash, cbTx.bestCLSignature)) != llmq::VerifyRecSigStatus::Valid) {
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cbtx-invalid-clsig");
         }
