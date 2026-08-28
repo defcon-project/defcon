@@ -87,6 +87,19 @@ MultisigPage::MultisigPage(QWidget* parent) :
     m_table->horizontalHeader()->setSectionResizeMode(COLUMN_SCHEME, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(COLUMN_BALANCE, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(COLUMN_UTXOS, QHeaderView::ResizeToContents);
+    // ResizeToContents under a styled header underestimates the title width --
+    // the stylesheet's padding and centring are not part of the size hint --
+    // so a column whose rows are narrower than its title ("3-of-6" under
+    // "Scheme") clipped the title at both ends. Let no section shrink below
+    // the widest title plus the themes' horizontal padding.
+    {
+        const QFontMetrics fm = m_table->horizontalHeader()->fontMetrics();
+        int min_section = 0;
+        for (int c = 0; c < COLUMN_COUNT; ++c) {
+            min_section = std::max(min_section, fm.horizontalAdvance(m_table->horizontalHeaderItem(c)->text()));
+        }
+        m_table->horizontalHeader()->setMinimumSectionSize(min_section + 24);
+    }
     root->addWidget(m_table, 1);
 
     m_empty_label = new QLabel(tr("No multisig profiles yet. Use \"Create / Add…\" to set one up, or \"Import setup…\" if a cosigner sent you a setup file."), this);
