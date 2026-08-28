@@ -904,7 +904,9 @@ void BitcoinGUI::applyThemeLayout()
     }
 
     if (modern) {
-        overviewButton->setIcon(QIcon(":/icons/dash"));
+        // Not the coin logo: it already brands the sidebar header, and a
+        // check-circle reads as "the wallet at a glance".
+        overviewButton->setIcon(GUIUtil::getIcon("synced"));
         sendCoinsButton->setIcon(GUIUtil::getIcon("transaction_0"));
         receiveCoinsButton->setIcon(GUIUtil::getIcon("transaction_5"));
         historyButton->setIcon(GUIUtil::getIcon("transaction_locked"));

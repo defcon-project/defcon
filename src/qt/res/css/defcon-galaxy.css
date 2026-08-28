@@ -401,17 +401,6 @@ QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelSubmittedDenomText {
     color: #ad8fa9;
 }
 
-QWidget#OverviewPage QFrame#frame QLabel#modernBalanceLogo {
-    background-color: rgba(16, 8, 20, 180);
-    border: 1px solid #f044a7;
-    border-radius: 27px;
-    margin: 0 4px;
-    min-width: 54px;
-    max-width: 54px;
-    min-height: 54px;
-    max-height: 54px;
-}
-
 QWidget#OverviewPage QFrame#frame_2 QListView {
     background-color: transparent;
     border: none;
