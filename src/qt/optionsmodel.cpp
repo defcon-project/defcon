@@ -908,7 +908,10 @@ void OptionsModel::checkAndMigrate()
         settings.setValue("addrSeparateProxyTor", GetDefaultProxyAddress());
     }
 
-    // Make sure there is a valid theme set in the options.
+    // Make sure there is a valid theme set in the options. Runs after the
+    // legacy-name migration, or a selection stored under a former theme name
+    // would be judged invalid here and silently reset to the default.
+    GUIUtil::migrateThemeSetting();
     QString strActiveTheme = settings.value("theme", GUIUtil::getDefaultTheme()).toString();
     if (!GUIUtil::isValidTheme(strActiveTheme)) {
         settings.setValue("theme", GUIUtil::getDefaultTheme());

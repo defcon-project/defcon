@@ -5,7 +5,7 @@ file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 ---------------------------------------------------------------------
 
- * DeFCon Galaxy
+ * Nebula
  *
  * A warm cosmic presentation layered on top of general.css and dark.css.
  * The default, Dark, DeFCon Dark and DeFCon Light themes remain untouched.
@@ -284,8 +284,11 @@ QToolBar#navigationToolBar[galaxy="true"] > QToolButton {
     border-radius: 20px;
     color: #d8c4d2;
     margin: 1px 1px;
-    min-width: 82px;
-    max-width: 154px;
+    /* Wide enough for the longest label ("Transactions") with its icon:
+       anything narrower elides to "Tra...ons", and a tab the bar cannot
+       name in full is worse than a wider pill. Five tabs fit at min 1280. */
+    min-width: 132px;
+    max-width: 16777215px;
     min-height: 40px;
     max-height: 40px;
     padding: 0 8px;
@@ -401,17 +404,6 @@ QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelSubmittedDenomText {
     color: #ad8fa9;
 }
 
-QWidget#OverviewPage QFrame#frame QLabel#modernBalanceLogo {
-    background-color: rgba(16, 8, 20, 180);
-    border: 1px solid #f044a7;
-    border-radius: 27px;
-    margin: 0 4px;
-    min-width: 54px;
-    max-width: 54px;
-    min-height: 54px;
-    max-height: 54px;
-}
-
 QWidget#OverviewPage QFrame#frame_2 QListView {
     background-color: transparent;
     border: none;
@@ -465,4 +457,140 @@ QDialog#OptionsDialog QWidget {
 
 QDialog#OptionsDialog QPushButton {
     background-color: #b82e76;
+}
+
+
+/******************************************************
+QPushButton - Special case, tabbar replacement buttons
+
+Without these the dialog "tabs" fall back to the theme's
+filled button style, whose text is unreadable there.
+******************************************************/
+
+#btnInfo,
+#btnConsole,
+#btnNetTraffic,
+#btnPeers,
+#btnRepair,
+#btnMain,
+#btnWallet,
+#btnCoinJoin,
+#btnNetwork,
+#btnDisplay,
+#btnAppearance,
+#btnSignMessage,
+#btnVerifyMessage {
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    color: #a8b9cc;
+    padding: 6px 14px;
+}
+
+#btnInfo:checked,
+#btnConsole:checked,
+#btnNetTraffic:checked,
+#btnPeers:checked,
+#btnRepair:checked,
+#btnMain:checked,
+#btnWallet:checked,
+#btnCoinJoin:checked,
+#btnNetwork:checked,
+#btnDisplay:checked,
+#btnAppearance:checked,
+#btnSignMessage:checked,
+#btnVerifyMessage:checked {
+    border-bottom: 2px solid #1297ff;
+    color: #ffffff;
+}
+
+#btnInfo:hover:!checked,
+#btnConsole:hover:!checked,
+#btnNetTraffic:hover:!checked,
+#btnPeers:hover:!checked,
+#btnRepair:hover:!checked,
+#btnMain:hover:!checked,
+#btnWallet:hover:!checked,
+#btnCoinJoin:hover:!checked,
+#btnNetwork:hover:!checked,
+#btnDisplay:hover:!checked,
+#btnAppearance:hover:!checked,
+#btnSignMessage:hover:!checked,
+#btnVerifyMessage:hover:!checked {
+    background-color: #10263e;
+    color: #ffffff;
+}
+
+
+/******************************************************
+Nebula polish: focus visibility and table readability
+
+Appended override layer: keyboard focus gets the accent
+border everywhere text is entered, and the dense views
+(transactions, peers, addresses) get zebra rows, a hover
+row and an unmistakable selection.
+******************************************************/
+
+QLineEdit:focus,
+QPlainTextEdit:focus,
+QTextEdit:focus,
+QComboBox:focus,
+QSpinBox:focus,
+QDoubleSpinBox:focus,
+QDateTimeEdit:focus {
+    border: 1px solid #d93672;
+}
+
+QTreeWidget,
+QTreeView,
+QTableView {
+    alternate-background-color: #261329;
+}
+
+QTreeWidget::item:hover,
+QTreeView::item:hover,
+QTableView::item:hover {
+    background-color: #321a37;
+}
+
+QTreeWidget::item:selected,
+QTreeView::item:selected,
+QTableView::item:selected {
+    background-color: #d93672;
+    color: #fff4f8;
+}
+
+
+/******************************************************
+Overview network card
+******************************************************/
+
+QWidget#OverviewPage QFrame#networkCard {
+    background-color: #29152e;
+    border: 1px solid #553049;
+    border-radius: 10px;
+}
+
+QWidget#OverviewPage QLabel#labelNetworkStatus {
+    color: #d8c4d2;
+    font-size: 12px;
+}
+
+
+/******************************************************
+Devnet badge
+******************************************************/
+
+QLabel#devnetBadge {
+    color: #f5c15b;
+    background-color: #3f2139;
+    border: 1px solid #f5c15b;
+    border-radius: 6px;
+    padding: 3px 10px;
+    margin: 6px 10px;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }

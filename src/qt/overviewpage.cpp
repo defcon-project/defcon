@@ -19,6 +19,9 @@
 #include <coinjoin/options.h>
 #include <interfaces/coinjoin.h>
 
+#include <QFrame>
+#include <QHBoxLayout>
+
 #include <algorithm>
 #include <map>
 #include <cmath>
@@ -168,11 +171,19 @@ OverviewPage::OverviewPage(QWidget* parent) :
     modernHeaderLayout->addWidget(modernSubtitle);
     ui->topLayout->insertWidget(0, modernHeader);
 
-    modernBalanceLogo = new QLabel(ui->frame);
-    modernBalanceLogo->setObjectName("modernBalanceLogo");
-    modernBalanceLogo->setPixmap(QIcon(":/icons/dash").pixmap(42, 42));
-    modernBalanceLogo->setAlignment(Qt::AlignCenter);
-    ui->horizontalLayout_4->addWidget(modernBalanceLogo);
+    // The network's pulse belongs on the front page, not only in the status
+    // bar: one quiet line above the cards, fed from the client model.
+    networkCard = new QFrame(this);
+    networkCard->setObjectName("networkCard");
+    auto* networkLayout = new QHBoxLayout(networkCard);
+    networkLayout->setContentsMargins(14, 8, 14, 8);
+    labelNetworkStatus = new QLabel(networkCard);
+    labelNetworkStatus->setObjectName("labelNetworkStatus");
+    labelNetworkStatus->setText(tr("Connecting to network…"));
+    networkLayout->addWidget(labelNetworkStatus);
+    networkLayout->addStretch();
+    ui->topLayout->insertWidget(1, networkCard);
+
     updateThemePresentation();
 
     GUIUtil::setFont({ui->label_4,
@@ -191,6 +202,11 @@ OverviewPage::OverviewPage(QWidget* parent) :
                       ui->labelWatchonly,
                       ui->labelSpendable
                      }, GUIUtil::FontWeight::Bold);
+
+    if (GUIUtil::isModernTheme()) {
+        // The hero number: the one figure this page exists to show.
+        GUIUtil::setFont({ui->labelTotal}, GUIUtil::FontWeight::Bold, 26);
+    }
 
     GUIUtil::updateFonts();
 
@@ -298,18 +314,22 @@ void OverviewPage::updateThemePresentation()
     if (modernHeader) {
         modernHeader->setVisible(modern && !galaxy);
     }
-    if (modernBalanceLogo) {
-        modernBalanceLogo->setVisible(modern);
-        const int logoSize = galaxy ? 54 : 42;
-        modernBalanceLogo->setPixmap(galaxy ? GUIUtil::getIcon("dash").pixmap(logoSize, logoSize)
-                                            : QIcon(":/icons/dash").pixmap(logoSize, logoSize));
+    if (networkCard) {
+        networkCard->setVisible(modern);
     }
-
     const int outerMargin = galaxy ? 18 : 11;
     ui->topLayout->setContentsMargins(outerMargin, outerMargin, outerMargin, outerMargin);
     ui->topLayout->setSpacing(galaxy ? 14 : 6);
     ui->horizontalLayout->setSpacing(galaxy ? 14 : 6);
     update();
+}
+
+void OverviewPage::updateNetworkState()
+{
+    if (labelNetworkStatus == nullptr || clientModel == nullptr) return;
+    const int height = clientModel->getNumBlocks();
+    const int peers = clientModel->getNumConnections();
+    labelNetworkStatus->setText(tr("Block %1 · %2 peer(s)").arg(height).arg(peers));
 }
 
 OverviewPage::~OverviewPage()
@@ -393,6 +413,10 @@ void OverviewPage::setClientModel(ClientModel *model)
         // Show warning, for example if this is a prerelease version
         connect(model, &ClientModel::alertsChanged, this, &OverviewPage::updateAlerts);
         updateAlerts(model->getStatusBarWarnings());
+
+        connect(model, &ClientModel::numConnectionsChanged, this, &OverviewPage::updateNetworkState);
+        connect(model, &ClientModel::numBlocksChanged, this, &OverviewPage::updateNetworkState);
+        updateNetworkState();
     }
 }
 

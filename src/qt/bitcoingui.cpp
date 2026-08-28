@@ -68,6 +68,7 @@
 #include <QStyle>
 #include <QSystemTrayIcon>
 #include <QTimer>
+#include <QPainter>
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrlQuery>
@@ -718,6 +719,45 @@ void BitcoinGUI::createMenuBar()
     help->addAction(aboutQtAction);
 }
 
+namespace {
+/** Some late layout pass re-applies a stale sidebar width to the navigation
+ *  bar after the theme layout has already run -- observed live on Nebula,
+ *  where the horizontal bar collapsed to the width of a single sidebar item
+ *  and every tab vanished into the overflow chevron. The writer acts between
+ *  theme application and the first paints, so a one-shot reset cannot win;
+ *  this guard undoes the constraint the moment it lands. Vertical mode sizes
+ *  its width through the stylesheet and is deliberately left alone. */
+class ToolBarWidthGuard final : public QObject
+{
+public:
+    explicit ToolBarWidthGuard(QToolBar* tb) : QObject(tb), m_tb(tb) {}
+    bool eventFilter(QObject*, QEvent*) override
+    {
+        if (m_tb->orientation() == Qt::Horizontal) {
+            if (m_tb->maximumWidth() != QWIDGETSIZE_MAX) {
+                m_tb->setMinimumWidth(0);
+                m_tb->setMaximumWidth(QWIDGETSIZE_MAX);
+            }
+            // The same stale constraints land on the tab buttons themselves
+            // (a 120px cap elides "Overview" to "Ov...ew"); the horizontal
+            // bar wants every label whole, so free the buttons with the bar.
+            for (QObject* child : m_tb->children()) {
+                auto* button = qobject_cast<QToolButton*>(child);
+                if (button && button->maximumWidth() != QWIDGETSIZE_MAX) {
+                    button->setMinimumSize(0, 0);
+                    button->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+                }
+            }
+        }
+        return false;
+    }
+
+private:
+    QToolBar* const m_tb;
+};
+
+} // namespace
+
 void BitcoinGUI::createToolBars()
 {
 #ifdef ENABLE_WALLET
@@ -729,6 +769,7 @@ void BitcoinGUI::createToolBars()
         toolbar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
         toolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
         toolbar->setMovable(false); // remove unused icon in upper left corner
+        toolbar->installEventFilter(new ToolBarWidthGuard(toolbar));
 
         tabGroup = new QButtonGroup(this);
 
@@ -849,6 +890,39 @@ void BitcoinGUI::createToolBars()
 #endif // ENABLE_WALLET
 }
 
+namespace {
+/** A diagonal arrow the icon set does not carry: send points up-right, out of
+ *  the wallet; receive points down-left, into it. Drawn in the same themed
+ *  color the template icons are tinted with, and redrawn on every theme
+ *  switch because applyThemeLayout re-runs. */
+QIcon makeDiagonalArrowIcon(bool up_right)
+{
+    constexpr int S = 64;
+    QPixmap pm(S, S);
+    pm.fill(Qt::transparent);
+    QPainter painter(&pm);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BLUE));
+    pen.setWidthF(6.5);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+
+    const QPointF tail = up_right ? QPointF(16, 48) : QPointF(48, 16);
+    const QPointF head = up_right ? QPointF(48, 16) : QPointF(16, 48);
+    painter.drawLine(tail, head);
+    constexpr qreal wing = 17.0;
+    if (up_right) {
+        painter.drawLine(head, head + QPointF(-wing, 0));
+        painter.drawLine(head, head + QPointF(0, wing));
+    } else {
+        painter.drawLine(head, head + QPointF(wing, 0));
+        painter.drawLine(head, head + QPointF(0, -wing));
+    }
+    return QIcon(pm);
+}
+} // namespace
+
 void BitcoinGUI::applyThemeLayout()
 {
 #ifdef ENABLE_WALLET
@@ -859,6 +933,18 @@ void BitcoinGUI::applyThemeLayout()
     const bool galaxy = GUIUtil::isDefconGalaxyTheme();
     const bool modern = GUIUtil::isModernTheme();
     const bool vertical = modern && !galaxy;
+
+    // A wallet on a test chain must say so where the eye rests. The window
+    // title already carries the network suffix, but nobody reads the title
+    // bar; a badge in the navigation is unmissable and cannot be mistaken
+    // for mainnet. Mainnet has no suffix, so the badge never exists there.
+    if (devnetBadgeLabel == nullptr && !m_network_style->getTitleAddText().isEmpty()) {
+        devnetBadgeLabel = new QLabel(m_network_style->getTitleAddText().trimmed());
+        devnetBadgeLabel->setObjectName("devnetBadge");
+        devnetBadgeLabel->setAlignment(Qt::AlignCenter);
+        devnetBadgeLabel->setToolTip(tr("This wallet is not on mainnet."));
+        devnetBadgeAction = appToolBar->addWidget(devnetBadgeLabel);
+    }
     appToolBar->setProperty("modern", modern);
     appToolBar->setProperty("galaxy", galaxy);
     appToolBar->setOrientation(vertical ? Qt::Vertical : Qt::Horizontal);
@@ -874,7 +960,17 @@ void BitcoinGUI::applyThemeLayout()
         }
         button->setSizePolicy(galaxy ? QSizePolicy::Preferred : QSizePolicy::Expanding,
                               modern ? QSizePolicy::Fixed : QSizePolicy::Preferred);
-        const int fontSize = galaxy ? 11 : (modern ? 12 : 16);
+        // The toolbar-level setToolButtonStyle() above only reaches buttons a
+        // toolbar creates for QActions; these are hand-made QToolButtons added
+        // as widgets, which keep their own style -- and their default is
+        // icon-only. The classic themes never noticed because they carry no
+        // icons, so Qt fell back to text; the moment the modern branch set
+        // icons, every label vanished.
+        button->setToolButtonStyle(modern ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonTextOnly);
+        // Nebula ran the smallest type in the app (11px on the horizontal tab
+        // bar); readability complaints started exactly there. One size up
+        // still fits the bar.
+        const int fontSize = modern ? 12 : 16;
         GUIUtil::setFont({button}, button->isChecked() ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal, fontSize);
         if (!modern) {
             button->setIcon(QIcon());
@@ -882,9 +978,11 @@ void BitcoinGUI::applyThemeLayout()
     }
 
     if (modern) {
-        overviewButton->setIcon(QIcon(":/icons/dash"));
-        sendCoinsButton->setIcon(GUIUtil::getIcon("transaction_0"));
-        receiveCoinsButton->setIcon(GUIUtil::getIcon("transaction_5"));
+        // Not the coin logo: it already brands the sidebar header, and a
+        // check-circle reads as "the wallet at a glance".
+        overviewButton->setIcon(GUIUtil::getIcon("synced"));
+        sendCoinsButton->setIcon(makeDiagonalArrowIcon(/*up_right=*/true));
+        receiveCoinsButton->setIcon(makeDiagonalArrowIcon(/*up_right=*/false));
         historyButton->setIcon(GUIUtil::getIcon("transaction_locked"));
         coinJoinCoinsButton->setIcon(GUIUtil::getIcon("eye"));
         if (multisigButton) {
@@ -897,7 +995,7 @@ void BitcoinGUI::applyThemeLayout()
             governanceButton->setIcon(GUIUtil::getIcon("synced"));
         }
         for (QAbstractButton* button : tabGroup->buttons()) {
-            button->setIconSize(galaxy ? QSize(18, 18) : QSize(22, 22));
+            button->setIconSize(galaxy ? QSize(20, 20) : QSize(22, 22));
         }
 
         if (appToolBarLogoAction && firstNavigationAction) {
@@ -923,12 +1021,29 @@ void BitcoinGUI::applyThemeLayout()
         }
     }
 
+    if (devnetBadgeAction) {
+        // Always the last item, whichever orientation the theme just chose.
+        appToolBar->removeAction(devnetBadgeAction);
+        appToolBar->addAction(devnetBadgeAction);
+        devnetBadgeAction->setVisible(modern);
+    }
+
     GUIUtil::updateFonts();
     appToolBar->style()->unpolish(appToolBar);
     appToolBar->style()->polish(appToolBar);
     for (QWidget* child : appToolBar->findChildren<QWidget*>()) {
         child->style()->unpolish(child);
         child->style()->polish(child);
+    }
+    if (!vertical) {
+        // Coming from (or racing with) the vertical layout, a stale fixed
+        // width can survive on the toolbar and squeeze the whole horizontal
+        // tab row into an extension chevron -- observed live on Nebula, where
+        // the bar collapsed to the width of one sidebar item and every
+        // navigation button vanished into the overflow popup. Horizontal mode
+        // never wants a width constraint, so clear it explicitly.
+        appToolBar->setMinimumWidth(0);
+        appToolBar->setMaximumWidth(QWIDGETSIZE_MAX);
     }
     appToolBar->updateGeometry();
     updateWidth();
@@ -1329,7 +1444,7 @@ void BitcoinGUI::openClicked()
 
 void BitcoinGUI::highlightTabButton(QAbstractButton *button, bool checked)
 {
-    const int fontSize = GUIUtil::isDefconGalaxyTheme() ? 11 : (GUIUtil::isModernTheme() ? 12 : 16);
+    const int fontSize = GUIUtil::isModernTheme() ? 12 : 16;
     GUIUtil::setFont({button}, checked ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal,
                      fontSize);
     GUIUtil::updateFonts();

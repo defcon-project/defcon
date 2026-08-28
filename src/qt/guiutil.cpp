@@ -48,6 +48,8 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QFontMetrics>
+#include <optional>
+
 #include <QGuiApplication>
 #include <QJsonObject>
 #include <QKeyEvent>
@@ -101,10 +103,19 @@ static const QString traditionalTheme = "Traditional";
 static const QString defaultTheme = "Light";
 // Names of the built-in and modern DeFCoN themes
 static const QString darkTheme = "Dark";
-static const QString defconDarkTheme = "DeFCon Dark";
-static const QString defconGalaxyTheme = "DeFCon Galaxy";
+static const QString defconDarkTheme = "Abyss";
+static const QString defconGalaxyTheme = "Nebula";
 static const QString lightTheme = "Light";
-static const QString defconLightTheme = "DeFCon Light";
+static const QString defconLightTheme = "Arctic";
+// Former names of the modern themes. A stored selection under an old name is
+// accepted on read and rewritten once, so renaming a theme never resets a
+// user's appearance to the default -- that regression already happened once
+// with the theme setting and must not come back.
+static const std::map<QString, QString> mapLegacyThemeNames{
+    {"DeFCon Dark", defconDarkTheme},
+    {"DeFCon Galaxy", defconGalaxyTheme},
+    {"DeFCon Light", defconLightTheme},
+};
 // The theme to set as a base one for non-traditional themes
 static const QString generalTheme = "general";
 // Mapping theme => css file
@@ -209,7 +220,11 @@ static const std::map<ThemedColor, QColor> themedDefconGalaxyColors = {
     { ThemedColor::BLUE, QColor(240, 68, 167) },
     { ThemedColor::ORANGE, QColor(245, 193, 91) },
     { ThemedColor::RED, QColor(255, 122, 102) },
-    { ThemedColor::GREEN, QColor(245, 193, 91) },
+    // Not the ORANGE value: received amounts and warnings were the same
+    // amber, so credit and caution were indistinguishable at a glance. Mint
+    // reads as green against the plum background without fighting the
+    // magenta accent.
+    { ThemedColor::GREEN, QColor(94, 214, 167) },
     { ThemedColor::BAREADDRESS, QColor(173, 143, 169) },
     { ThemedColor::TX_STATUS_OPENUNTILDATE, QColor(200, 167, 255) },
     { ThemedColor::BACKGROUND_WIDGET, QColor(33, 17, 38) },
@@ -222,7 +237,9 @@ static const std::map<ThemedColor, QColor> themedDefconGalaxyColors = {
 
 static const std::map<ThemedColor, QColor> themedDefconLightColors = {
     { ThemedColor::DEFAULT, QColor(11, 31, 68) },
-    { ThemedColor::UNCONFIRMED, QColor(102, 117, 142) },
+    // Kept in step with the stylesheet's secondary text (#5a6a84): #66758e on
+    // white sat at the AA boundary for small type.
+    { ThemedColor::UNCONFIRMED, QColor(90, 106, 132) },
     { ThemedColor::BLUE, QColor(8, 124, 240) },
     { ThemedColor::ORANGE, QColor(227, 154, 0) },
     { ThemedColor::RED, QColor(211, 47, 47) },
@@ -289,7 +306,7 @@ static const std::map<ThemedStyle, QString> themedDefconLightStyles = {
 
 QColor getThemedQColor(ThemedColor color)
 {
-    QString theme = QSettings().value("theme", "").toString();
+    const QString theme = getActiveTheme();
     if (theme == defconDarkTheme) {
         return themedDefconDarkColors.at(color);
     }
@@ -304,7 +321,7 @@ QColor getThemedQColor(ThemedColor color)
 
 QString getThemedStyleQString(ThemedStyle style)
 {
-    QString theme = QSettings().value("theme", "").toString();
+    const QString theme = getActiveTheme();
     if (theme == defconDarkTheme) {
         return themedDefconDarkStyles.at(style);
     }
@@ -1476,6 +1493,26 @@ void setFont(const std::vector<QWidget*>& vecWidgets, FontWeight weight, int nPo
     }
 }
 
+
+//! Return the font's size in points, converting from pixels when a stylesheet
+//! sized it that way: `font-size: Npx` leaves pointSize() at -1, and QFont
+//! stores exactly one of the two units. Returns nullopt when no usable size
+//! can be derived -- a font can carry no valid size at all, and a widget's
+//! logicalDpiY() is not guaranteed positive. Mirrors dash#7465.
+static std::optional<double> EffectivePointSize(const QFont& font, int dpi_y)
+{
+    // Compare against 0 rather than the -1 sentinel: a box-engine fallback
+    // can report values such as -0.72.
+    if (const double point_size{font.pointSizeF()}; point_size > 0) {
+        return point_size;
+    }
+    if (const int pixel_size{font.pixelSize()}; pixel_size > 0 && dpi_y > 0) {
+        // Qt's own pixel-to-point conversion from QFontDatabase::load().
+        return pixel_size * 72.0 / dpi_y;
+    }
+    return std::nullopt;
+}
+
 void updateFonts()
 {
     // Fonts need to be loaded by GUIIUtil::loadFonts(), if not just return.
@@ -1526,17 +1563,25 @@ void updateFonts()
             std::find(vecIgnoreObjects.begin(), vecIgnoreObjects.end(), w->objectName()) != vecIgnoreObjects.end()) {
             continue;
         }
-        ++nUpdatable;
-
         QFont font = w->font();
-        assert(font.pointSize() > 0);
+        // A stylesheet rule such as `font-size: Npx` leaves the widget with a
+        // pixel-sized font, which reports no point size; the assert that used
+        // to sit here aborted the whole GUI the moment a theme did that --
+        // selecting DeFCon Dark killed the process in OverviewPage. Convert
+        // instead, and skip the widget when no size can be derived: one
+        // unscaled widget beats a dead process. (dash#7465, adapted.)
+        const std::optional<double> base_size{EffectivePointSize(font, w->logicalDpiY())};
+        if (!base_size) {
+            continue;
+        }
+        ++nUpdatable;
         font.setFamily(qApp->font().family());
         font.setWeight(getFontWeightNormal());
         font.setStyleName(qApp->font().styleName());
         font.setStyle(qApp->font().style());
 
         // Insert/Get the default font size of the widget
-        auto itDefault = mapWidgetDefaultFontSizes.emplace(w, font.pointSize());
+        auto itDefault = mapWidgetDefaultFontSizes.emplace(w, std::max(1, qRound(*base_size)));
 
         auto it = mapFontUpdates.find(w);
         if (it != mapFontUpdates.end()) {
@@ -1569,10 +1614,19 @@ void updateFonts()
     static std::map<std::string, int> mapClassFontUpdates{
         {"QTipLabel", -1}, {"QMenu", -1}, {"QMessageBox", -1}
     };
+    // These fonts belong to no widget, so the primary screen supplies the DPI
+    // for any pixel-to-point conversion.
+    const QScreen* primary_screen{QGuiApplication::primaryScreen()};
+    const int screen_dpi_y{primary_screen ? qRound(primary_screen->logicalDotsPerInchY()) : 0};
     for (auto& it : mapClassFontUpdates) {
         QFont fontClass = qApp->font(it.first.c_str());
         if (it.second == -1) {
-            it.second = fontClass.pointSize();
+            const std::optional<double> class_size{EffectivePointSize(fontClass, screen_dpi_y)};
+            if (!class_size) {
+                // Leave the entry uncaptured and retry on the next pass.
+                continue;
+            }
+            it.second = std::max(1, qRound(*class_size));
         }
         double dSize = getScaledFontSize(it.second);
         if (fontClass.pointSizeF() != dSize) {
@@ -1713,10 +1767,23 @@ QString getActiveTheme()
 {
     QSettings settings;
     QString theme = settings.value("theme", defaultTheme).toString();
+    if (const auto it = mapLegacyThemeNames.find(theme); it != mapLegacyThemeNames.end()) {
+        theme = it->second;
+    }
     if (!isValidTheme(theme)) {
         return defaultTheme;
     }
     return theme;
+}
+
+void migrateThemeSetting()
+{
+    QSettings settings;
+    const QString stored = settings.value("theme", "").toString();
+    const auto it = mapLegacyThemeNames.find(stored);
+    if (it != mapLegacyThemeNames.end()) {
+        settings.setValue("theme", it->second);
+    }
 }
 
 bool dashThemeActive()

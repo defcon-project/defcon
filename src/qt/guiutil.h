@@ -298,13 +298,13 @@ namespace GUIUtil
     /** Check if the given theme name is valid or not */
     bool isValidTheme(const QString& strTheme);
 
-    /** Check if the modern DeFCon Dark theme is active. */
+    /** Check if the modern Abyss (dark) theme is active. */
     bool isDefconDarkTheme();
 
-    /** Check if the DeFCon Galaxy theme is active. */
+    /** Check if the Nebula (galaxy) theme is active. */
     bool isDefconGalaxyTheme();
 
-    /** Check if the modern DeFCon Light theme is active. */
+    /** Check if the modern Arctic (light) theme is active. */
     bool isDefconLightTheme();
 
     /** Check if any modern DeFCon theme is active. */
@@ -400,6 +400,9 @@ namespace GUIUtil
 
     /** Return the name of the currently active theme.*/
     QString getActiveTheme();
+
+    /** Rewrite a theme name stored under a former name to its current one. */
+    void migrateThemeSetting();
 
     /** Check if a dash specific theme is activated (light/dark).*/
     bool dashThemeActive();

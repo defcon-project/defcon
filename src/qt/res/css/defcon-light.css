@@ -5,7 +5,7 @@ file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 ---------------------------------------------------------------------
 
- * DeFCon Light
+ * Arctic
  *
  * Modern light DeFCoN wallet presentation. This file is intentionally an
  * override layer on top of general.css and light.css so the original themes
@@ -203,7 +203,7 @@ QHeaderView::section {
     background-color: #f4f7fb;
     border: none;
     border-bottom: 1px solid #d7e1ed;
-    color: #66758e;
+    color: #5a6a84;
     padding: 7px;
 }
 
@@ -216,7 +216,7 @@ QTabWidget::pane {
 QTabBar::tab {
     background-color: transparent;
     border: none;
-    color: #66758e;
+    color: #5a6a84;
     min-height: 34px;
     padding: 5px 14px;
 }
@@ -350,7 +350,7 @@ QWidget#OverviewPage QLabel#modernOverviewTitle {
 }
 
 QWidget#OverviewPage QLabel#modernOverviewSubtitle {
-    color: #66758e;
+    color: #5a6a84;
     font-size: 12px;
 }
 
@@ -401,15 +401,7 @@ QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCompletitionText,
 QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelAnonymizedText,
 QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelAmountAndRoundsText,
 QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelSubmittedDenomText {
-    color: #66758e;
-}
-
-QWidget#OverviewPage QFrame#frame QLabel#modernBalanceLogo {
-    margin: 0 4px;
-    min-width: 42px;
-    max-width: 42px;
-    min-height: 42px;
-    max-height: 42px;
+    color: #5a6a84;
 }
 
 QWidget#OverviewPage QFrame#frame_2 QListView {
@@ -457,4 +449,140 @@ QDialog#OptionsDialog QWidget {
 
 QDialog#OptionsDialog QPushButton {
     background-color: #087cf0;
+}
+
+
+/******************************************************
+QPushButton - Special case, tabbar replacement buttons
+
+Without these the dialog "tabs" fall back to the theme's
+filled button style, whose text is unreadable there.
+******************************************************/
+
+#btnInfo,
+#btnConsole,
+#btnNetTraffic,
+#btnPeers,
+#btnRepair,
+#btnMain,
+#btnWallet,
+#btnCoinJoin,
+#btnNetwork,
+#btnDisplay,
+#btnAppearance,
+#btnSignMessage,
+#btnVerifyMessage {
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    color: #5d6d7b;
+    padding: 6px 14px;
+}
+
+#btnInfo:checked,
+#btnConsole:checked,
+#btnNetTraffic:checked,
+#btnPeers:checked,
+#btnRepair:checked,
+#btnMain:checked,
+#btnWallet:checked,
+#btnCoinJoin:checked,
+#btnNetwork:checked,
+#btnDisplay:checked,
+#btnAppearance:checked,
+#btnSignMessage:checked,
+#btnVerifyMessage:checked {
+    border-bottom: 2px solid #0b6fd0;
+    color: #0b2740;
+}
+
+#btnInfo:hover:!checked,
+#btnConsole:hover:!checked,
+#btnNetTraffic:hover:!checked,
+#btnPeers:hover:!checked,
+#btnRepair:hover:!checked,
+#btnMain:hover:!checked,
+#btnWallet:hover:!checked,
+#btnCoinJoin:hover:!checked,
+#btnNetwork:hover:!checked,
+#btnDisplay:hover:!checked,
+#btnAppearance:hover:!checked,
+#btnSignMessage:hover:!checked,
+#btnVerifyMessage:hover:!checked {
+    background-color: #e2ecf5;
+    color: #0b2740;
+}
+
+
+/******************************************************
+Arctic polish: focus visibility and table readability
+
+Appended override layer: keyboard focus gets the accent
+border everywhere text is entered, and the dense views
+(transactions, peers, addresses) get zebra rows, a hover
+row and an unmistakable selection.
+******************************************************/
+
+QLineEdit:focus,
+QPlainTextEdit:focus,
+QTextEdit:focus,
+QComboBox:focus,
+QSpinBox:focus,
+QDoubleSpinBox:focus,
+QDateTimeEdit:focus {
+    border: 1px solid #087cf0;
+}
+
+QTreeWidget,
+QTreeView,
+QTableView {
+    alternate-background-color: #f2f6fb;
+}
+
+QTreeWidget::item:hover,
+QTreeView::item:hover,
+QTableView::item:hover {
+    background-color: #e8f1fb;
+}
+
+QTreeWidget::item:selected,
+QTreeView::item:selected,
+QTableView::item:selected {
+    background-color: #087cf0;
+    color: #ffffff;
+}
+
+
+/******************************************************
+Overview network card
+******************************************************/
+
+QWidget#OverviewPage QFrame#networkCard {
+    background-color: #ffffff;
+    border: 1px solid #d7e1ed;
+    border-radius: 10px;
+}
+
+QWidget#OverviewPage QLabel#labelNetworkStatus {
+    color: #5a6a84;
+    font-size: 12px;
+}
+
+
+/******************************************************
+Devnet badge
+******************************************************/
+
+QLabel#devnetBadge {
+    color: #a86f24;
+    background-color: #fdf4e0;
+    border: 1px solid #e39a00;
+    border-radius: 6px;
+    padding: 3px 10px;
+    margin: 6px 10px;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }

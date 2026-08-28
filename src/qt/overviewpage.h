@@ -21,6 +21,7 @@ namespace Ui {
 
 QT_BEGIN_NAMESPACE
 class QEvent;
+class QFrame;
 class QLabel;
 class QModelIndex;
 class QPaintEvent;
@@ -66,11 +67,13 @@ private:
     TxViewDelegate *txdelegate;
     std::unique_ptr<TransactionFilterProxy> filter;
     QWidget* modernHeader{nullptr};
-    QLabel* modernBalanceLogo{nullptr};
+    QFrame* networkCard{nullptr};
+    QLabel* labelNetworkStatus{nullptr};
 
     void SetupTransactionList(int nNumItems);
     void DisableCoinJoinCompletely();
     void updateThemePresentation();
+    void updateNetworkState();
 
 private Q_SLOTS:
     void toggleCoinJoin();
