@@ -19,6 +19,7 @@
 #include <gsl/pointers.h>
 #include <optional>
 #include <unordered_set>
+#include <vector>
 
 class BlockManager;
 class CBlock;
@@ -86,7 +87,19 @@ public:
      * to change amount of credit pool
      * @return true if transaction can be included in this block
      */
-    bool ProcessLockUnlockTransaction(const BlockManager& blockman, const llmq::CQuorumManager& qman, const CTransaction& tx, TxValidationState& state);
+    bool ProcessLockUnlockTransaction(const BlockManager& blockman, const llmq::CQuorumManager& qman,
+                                      const CTransaction& tx, TxValidationState& state,
+                                      std::optional<uint64_t>* inserted_index = nullptr);
+
+    /**
+     * Process a package of Asset Lock/Unlock transactions atomically: Asset Unlock
+     * limits are cumulative, so a package may exceed the block's limit even though
+     * its transactions were accepted individually. On failure the diff is rolled
+     * back to its state before the call. (dash#7570)
+     * @return true if all transactions can be included in this block
+     */
+    bool ProcessLockUnlockTransactions(const BlockManager& blockman, const llmq::CQuorumManager& qman,
+                                       const std::vector<CTransactionRef>& txs, TxValidationState& state);
 
     /**
      * this function returns total amount of credits for the next block
@@ -101,7 +114,7 @@ public:
 
 private:
     bool Lock(const CTransaction& tx, TxValidationState& state);
-    bool Unlock(const CTransaction& tx, TxValidationState& state);
+    bool Unlock(const CTransaction& tx, TxValidationState& state, std::optional<uint64_t>* inserted_index = nullptr);
 };
 
 class CCreditPoolManager
