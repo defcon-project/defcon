@@ -1206,6 +1206,11 @@ bool CGovernanceManager::ProcessVoteAndRelay(const CGovernanceVote& vote, CGover
 
 bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, CGovernanceException& exception, CConnman& connman)
 {
+    // Fetched before taking cs: GetListAtChainTip acquires the deterministic
+    // masternode manager's own locks, and it is needed on the unknown-parent
+    // path below as well as for the object's vote processing.
+    const auto tip_mn_list{Assert(m_dmnman)->GetListAtChainTip()};
+
     ENTER_CRITICAL_SECTION(cs);
     uint256 nHashVote = vote.GetHash();
     uint256 nHashGovobj = vote.GetParentHash();
@@ -1229,9 +1234,24 @@ bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, 
 
     auto it = mapObjects.find(nHashGovobj);
     if (it == mapObjects.end()) {
+        // A vote reaching the orphan cache must first prove masternode authorship; without this an
+        // attacker floods the cache -- and triggers object re-requests -- with unsigned garbage for
+        // free. (dash#7527, adapted)
+        if (!vote.IsValidForUnknownParent(tip_mn_list)) {
+            std::ostringstream ostr;
+            ostr << "CGovernanceManager::ProcessVote -- Invalid vote for unknown parent object " << nHashGovobj.ToString()
+                 << ", MN outpoint = " << vote.GetMasternodeOutpoint().ToStringShort()
+                 << ", vote hash = " << nHashVote.ToString();
+            LogPrint(BCLog::GOBJECT, "%s\n", ostr.str());
+            exception = CGovernanceException(ostr.str(), GOVERNANCE_EXCEPTION_PERMANENT_ERROR, 20);
+            LEAVE_CRITICAL_SECTION(cs);
+            return false;
+        }
         std::ostringstream ostr;
         ostr << "CGovernanceManager::ProcessVote -- Unknown parent object " << nHashGovobj.ToString()
              << ", MN outpoint = " << vote.GetMasternodeOutpoint().ToStringShort();
+        // No penalty: the vote is signed by a masternode, it just arrived before its parent object,
+        // which routinely happens during governance sync. Misbehaviour scores never decay.
         exception = CGovernanceException(ostr.str(), GOVERNANCE_EXCEPTION_WARNING);
         if (cmmapOrphanVotes.Insert(nHashGovobj, vote_time_pair_t(vote, GetTime<std::chrono::seconds>().count() + GOVERNANCE_ORPHAN_EXPIRATION_TIME))) {
             LEAVE_CRITICAL_SECTION(cs);
@@ -1253,7 +1273,7 @@ bool CGovernanceManager::ProcessVote(CNode* pfrom, const CGovernanceVote& vote, 
         return false;
     }
 
-    bool fOk = govobj.ProcessVote(m_mn_metaman, *this, Assert(m_dmnman)->GetListAtChainTip(), vote, exception) && cmapVoteToObject.Insert(nHashVote, &govobj);
+    bool fOk = govobj.ProcessVote(m_mn_metaman, *this, tip_mn_list, vote, exception) && cmapVoteToObject.Insert(nHashVote, &govobj);
     LEAVE_CRITICAL_SECTION(cs);
     return fOk;
 }
