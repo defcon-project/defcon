@@ -257,6 +257,8 @@ BASE_SCRIPTS = [
     'feature_backwards_compatibility.py --descriptors',
     'wallet_txn_clone.py --mineblock',
     'rpc_getblockfilter.py',
+    'rpc_getmerkleblocks.py',
+    'p2p_govsync_bloom.py',
     'rpc_getblockfrompeer.py',
     'rpc_invalidateblock.py',
     'feature_txindex.py',
@@ -897,8 +899,6 @@ class RPCCoverage():
         covered_cmds = set({'generate'})
         # TODO: implement functional tests for voteraw
         covered_cmds.add('voteraw')
-        # TODO: implement functional tests for getmerkleblocks
-        covered_cmds.add('getmerkleblocks')
         # TODO: drop it with v23+: remove `debug` in favour of `logging`
         covered_cmds.add('debug')
 
