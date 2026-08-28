@@ -31,6 +31,12 @@ bool CheckStake(ChainstateManager& chainman, CBlock *pblock)
     }
 
     {
+        // m_block_index is GUARDED_BY(cs_main) and CheckProofOfStake is declared
+        // EXCLUSIVE_LOCKS_REQUIRED(cs_main); the lookup, the chain-membership test and the
+        // tip comparison below must all see one consistent view. GCC does not run Clang's
+        // thread-safety analysis, so nothing flagged the missing lock. (cs_main is
+        // recursive, so the LOCK inside CheckProofOfStake stays valid.)
+        LOCK(cs_main);
         BlockMap::iterator mi{chainman.m_blockman.m_block_index.find(pblock->hashPrevBlock)};
         if (mi == chainman.m_blockman.m_block_index.end()) {
             LogPrint(BCLog::POS, "%s: %s prev block not found: %s.", __func__, hashBlock.GetHex(), pblock->hashPrevBlock.GetHex());
@@ -196,7 +202,6 @@ void PoSMiner(NodeContext& node)
                     continue;
                 }
 
-                int64_t nNextSearch = nSearchTime + nMask;
                 continue;
             }
 
@@ -204,7 +209,6 @@ void PoSMiner(NodeContext& node)
 
             std::unique_ptr<CBlockTemplate> pblocktemplate;
 
-            size_t i = 0;
             CAmount reserve_balance;
             {
                 {
@@ -215,7 +219,7 @@ void PoSMiner(NodeContext& node)
 
                     if (this_wallet->IsLocked()) {
                         this_wallet->m_is_staking = NOT_STAKING_LOCKED;
-                        LogPrint(BCLog::POS, "%s: Wallet %d, locked wallet.\n", __func__, i);
+                        LogPrint(BCLog::POS, "%s: Wallet %d, locked wallet.\n", __func__, y);
                         UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
                         continue;
                     }
@@ -229,7 +233,7 @@ void PoSMiner(NodeContext& node)
                     LOCK(this_wallet->cs_wallet);
                     this_wallet->m_is_staking = NOT_STAKING_BALANCE;
                     this_wallet->nLastCoinStakeSearchTime = nSearchTime + 60;
-                    LogPrint(BCLog::POS, "%s: Wallet %d, low balance.\n", __func__, i);
+                    LogPrint(BCLog::POS, "%s: Wallet %d, low balance.\n", __func__, y);
                     UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
                     continue;
                 }

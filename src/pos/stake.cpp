@@ -293,7 +293,6 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
     }
 
     CAmount nCredit = 0;
-    CScript scriptPubKeyKernel;
     std::set<std::pair<const CWalletTx*, unsigned int>>::iterator it = setCoins.begin();
 
     for (; it != setCoins.end(); ++it)
@@ -456,7 +455,10 @@ bool CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktem
     }
 
     CAmount nFees = -pblocktemplate->vTxFees[0];
-    CBlockIndex* pindexPrev = chain_state.m_chainman.ActiveChain().Tip();
+    // Read the tip under the lock that guards it. The pointer stays valid afterwards
+    // (block index entries are never freed) and CheckStake re-checks staleness, so the
+    // lock is not held across coinstake creation, which takes wallet locks.
+    CBlockIndex* pindexPrev = WITH_LOCK(::cs_main, return chain_state.m_chainman.ActiveChain().Tip());
 
     CKey key;
     pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, Params().GetConsensus());
