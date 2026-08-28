@@ -68,6 +68,7 @@
 #include <QStyle>
 #include <QSystemTrayIcon>
 #include <QTimer>
+#include <QPainter>
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrlQuery>
@@ -849,6 +850,39 @@ void BitcoinGUI::createToolBars()
 #endif // ENABLE_WALLET
 }
 
+namespace {
+/** A diagonal arrow the icon set does not carry: send points up-right, out of
+ *  the wallet; receive points down-left, into it. Drawn in the same themed
+ *  color the template icons are tinted with, and redrawn on every theme
+ *  switch because applyThemeLayout re-runs. */
+QIcon makeDiagonalArrowIcon(bool up_right)
+{
+    constexpr int S = 64;
+    QPixmap pm(S, S);
+    pm.fill(Qt::transparent);
+    QPainter painter(&pm);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BLUE));
+    pen.setWidthF(6.5);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+
+    const QPointF tail = up_right ? QPointF(16, 48) : QPointF(48, 16);
+    const QPointF head = up_right ? QPointF(48, 16) : QPointF(16, 48);
+    painter.drawLine(tail, head);
+    constexpr qreal wing = 17.0;
+    if (up_right) {
+        painter.drawLine(head, head + QPointF(-wing, 0));
+        painter.drawLine(head, head + QPointF(0, wing));
+    } else {
+        painter.drawLine(head, head + QPointF(wing, 0));
+        painter.drawLine(head, head + QPointF(0, -wing));
+    }
+    return QIcon(pm);
+}
+} // namespace
+
 void BitcoinGUI::applyThemeLayout()
 {
 #ifdef ENABLE_WALLET
@@ -907,8 +941,8 @@ void BitcoinGUI::applyThemeLayout()
         // Not the coin logo: it already brands the sidebar header, and a
         // check-circle reads as "the wallet at a glance".
         overviewButton->setIcon(GUIUtil::getIcon("synced"));
-        sendCoinsButton->setIcon(GUIUtil::getIcon("transaction_0"));
-        receiveCoinsButton->setIcon(GUIUtil::getIcon("transaction_5"));
+        sendCoinsButton->setIcon(makeDiagonalArrowIcon(/*up_right=*/true));
+        receiveCoinsButton->setIcon(makeDiagonalArrowIcon(/*up_right=*/false));
         historyButton->setIcon(GUIUtil::getIcon("transaction_locked"));
         coinJoinCoinsButton->setIcon(GUIUtil::getIcon("eye"));
         if (multisigButton) {
