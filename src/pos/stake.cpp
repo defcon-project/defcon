@@ -20,6 +20,103 @@ static constexpr CAmount CENT{1000000};
 
 extern std::atomic<bool> fStopMinerProc;
 
+void StakeSkipReport::Add(StakeEligibility why, CAmount value)
+{
+    switch (why) {
+    case StakeEligibility::Eligible:   break;
+    case StakeEligibility::Immature:   immature   += value; break;
+    case StakeEligibility::BLSAddress: bls        += value; break;
+    case StakeEligibility::BelowMin:   below_min  += value; break;
+    case StakeEligibility::AboveMax:   above_max  += value; break;
+    case StakeEligibility::Collateral: collateral += value; break;
+    case StakeEligibility::TooYoung:   too_young  += value; break;
+    case StakeEligibility::TooOld:     too_old    += value; break;
+    } // no default case, so the compiler can warn about missing cases
+}
+
+CAmount StakeSkipReport::Total() const
+{
+    return immature + bls + below_min + above_max + collateral + too_young + too_old;
+}
+
+StakeEligibility CStakeWallet::ClassifyForStaking(CAmount value, bool generated, int depth,
+                                                  TxoutType type, int64_t inputAge, int nHeight) const
+{
+    if (generated && depth < COINBASE_MATURITY + 1) return StakeEligibility::Immature;
+    if (type == TxoutType::BLSPUBKEY) return StakeEligibility::BLSAddress;
+    if (value < params.stakeValueRange[0]) return StakeEligibility::BelowMin;
+    if (value > params.stakeValueRange[1]) return StakeEligibility::AboveMax;
+    if (value == params.regularMnCollateral || value == params.evoMnCollateral) {
+        return StakeEligibility::Collateral;
+    }
+    if (inputAge < params.stakeAgeRange[0]) return StakeEligibility::TooYoung;
+    // Matches validation exactly, resolved from the height being mined.
+    if (!IsPosKernelV2(params, nHeight) && inputAge > params.stakeAgeRange[1]) {
+        return StakeEligibility::TooOld;
+    }
+    return StakeEligibility::Eligible;
+}
+
+StakeSkipReport CStakeWallet::ExplainExcludedCoins(int nHeight) const
+{
+    StakeSkipReport report;
+    if (!wallet) {
+        return report;
+    }
+
+    // Deliberately unfiltered, unlike the selection loop: a coin kept out by its
+    // value has to reach the classifier to be counted, and AvailableCoins would
+    // otherwise drop it before anything could name the reason.
+    std::vector<COutput> vCoins;
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->AvailableCoins(vCoins);
+    }
+
+    for (const auto& output : vCoins) {
+        const CWalletTx* pcoin = output.tx;
+        const int i = output.i;
+
+        int nDepth;
+        {
+            LOCK(wallet->cs_wallet);
+            nDepth = pcoin->GetDepthInMainChain();
+        }
+
+        std::vector<valtype> vSolutions;
+        const TxoutType type = Solver(pcoin->tx->vout[i].scriptPubKey, vSolutions);
+        const CAmount value = pcoin->tx->vout[i].nValue;
+        const int64_t inputAge = GetTime() - pcoin->GetTxTime();
+        const bool generated = pcoin->IsCoinBase() || pcoin->IsCoinStake();
+
+        report.Add(ClassifyForStaking(value, generated, nDepth, type, inputAge, nHeight), value);
+    }
+
+    return report;
+}
+
+std::vector<CAmount> CStakeWallet::SplitStakeCredit(CAmount nCredit, CAmount threshold) const
+{
+    // Splitting must not manufacture an output that can never stake again.
+    // Under stakeValueRange[0] a coin is skipped for good, and so is one sitting
+    // exactly on a collateral amount. The halving repeats on every win, walking
+    // an output down by a factor of two each time, so a single unguarded split
+    // retires the coin -- silently, and for the rest of its life. Roughly a
+    // third of starting sizes reach a dead half this way.
+    const CAmount first = (nCredit / 2 / CENT) * CENT;
+    const CAmount second = nCredit - first;
+    const auto stakeable = [this](CAmount value) {
+        return value >= params.stakeValueRange[0] &&
+               value != params.regularMnCollateral &&
+               value != params.evoMnCollateral;
+    };
+
+    if (nCredit >= threshold && stakeable(first) && stakeable(second)) {
+        return {first, second};
+    }
+    return {nCredit};
+}
+
 uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 {
     // Choose coins to use
@@ -62,7 +159,6 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
 
     setCoinsRet.clear();
     nValueRet = 0;
-    int nRequiredDepth = COINBASE_MATURITY + 1;
 
     for (const auto& output : vCoins)
     {
@@ -81,34 +177,14 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
             nDepth = pcoin->GetDepthInMainChain();
         }
 
-        // If coinbase/stake, ensure it has reached maturity
-        bool nGenerated = pcoin->IsCoinBase() || pcoin->IsCoinStake();
-        if (nGenerated && (nDepth < nRequiredDepth)) {
-            continue;
-        }
-
-        // Do not include BLS addresses
         std::vector<valtype> vSolutions;
-        CScript scriptPubKeyKernel = pcoin->tx->vout[i].scriptPubKey;
-        TxoutType whichType = Solver(scriptPubKeyKernel, vSolutions);
-        if (whichType == TxoutType::BLSPUBKEY) {
-            continue;
-        }
+        const TxoutType whichType = Solver(pcoin->tx->vout[i].scriptPubKey, vSolutions);
+        const CAmount inputValue = pcoin->tx->vout[i].nValue;
+        const int64_t inputAge = GetTime() - pcoin->GetTxTime();
+        const bool nGenerated = pcoin->IsCoinBase() || pcoin->IsCoinStake();
 
-        // Skip inputs that dont meet age, value requirements or are collaterals
-        CAmount inputValue = pcoin->tx->vout[i].nValue;
-        int64_t inputAge = GetTime() - pcoin->GetTxTime();
-        if (inputValue < params.stakeValueRange[0] || inputValue > params.stakeValueRange[1]) {
-            continue;
-        }
-        if (inputValue == params.regularMnCollateral || inputValue == params.evoMnCollateral) {
-            continue;
-        }
-        // Matches the validation rule exactly, resolved from the height being
-        // mined: selecting a coin the network would then reject would cost a
-        // block, and skipping one it would accept would cost the reward.
-        const bool age_capped = !IsPosKernelV2(params, nHeight);
-        if (inputAge < params.stakeAgeRange[0] || (age_capped && inputAge > params.stakeAgeRange[1])) {
+        if (ClassifyForStaking(inputValue, nGenerated, nDepth, whichType, inputAge, nHeight)
+                != StakeEligibility::Eligible) {
             continue;
         }
 
@@ -393,19 +469,13 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
 
     nCredit += nReward;
     {
-        if (nCredit >= wallet->nStakeSplitThreshold) {
+        const std::vector<CAmount> outputs = SplitStakeCredit(nCredit, wallet->nStakeSplitThreshold);
+        if (outputs.size() == 2) {
             txNew.vout.push_back(CTxOut(0, txNew.vout[1].scriptPubKey));
-        }
-
-        // Set output amount
-        if (txNew.vout.size() == 3)
-        {
-            txNew.vout[1].nValue = (nCredit / 2 / CENT) * CENT;
-            txNew.vout[2].nValue = nCredit - txNew.vout[1].nValue;
-        }
-        else
-        {
-            txNew.vout[1].nValue = nCredit;
+            txNew.vout[1].nValue = outputs[0];
+            txNew.vout[2].nValue = outputs[1];
+        } else {
+            txNew.vout[1].nValue = outputs[0];
         }
     }
 

@@ -40,6 +40,16 @@ static RPCHelpMan getstakinginfo()
                         {RPCResult::Type::NUM, "weight", "The staker weight"},
                         {RPCResult::Type::NUM, "netstakeweight", "Network stake weight"},
                         {RPCResult::Type::NUM, "expectedtime", "Expected time to earn reward"},
+                        {RPCResult::Type::OBJ, "excluded", /*optional=*/true, "Coins the staking rules keep out, by reason. Absent when none are.",
+                        {
+                            {RPCResult::Type::STR_AMOUNT, "immature", /*optional=*/true, "Rewards not yet deep enough to spend"},
+                            {RPCResult::Type::STR_AMOUNT, "bls", /*optional=*/true, "Held at a BLS address, which cannot stake"},
+                            {RPCResult::Type::STR_AMOUNT, "too_small", /*optional=*/true, "Under the minimum stakeable amount"},
+                            {RPCResult::Type::STR_AMOUNT, "too_large", /*optional=*/true, "Over the maximum stakeable amount"},
+                            {RPCResult::Type::STR_AMOUNT, "collateral_amount", /*optional=*/true, "Exactly a masternode collateral amount"},
+                            {RPCResult::Type::STR_AMOUNT, "too_young", /*optional=*/true, "Not yet old enough to stake"},
+                            {RPCResult::Type::STR_AMOUNT, "too_old", /*optional=*/true, "Older than the stake age limit"},
+                        }},
                     }
                 },
                 RPCExamples{
@@ -96,6 +106,22 @@ static RPCHelpMan getstakinginfo()
         obj2.pushKV("netstakeweight", (uint64_t)nNetworkWeight);
         if (nWeight > 0) {
             obj2.pushKV("expectedtime", nExpectedTime);
+        }
+
+        // A full balance next to a weight of zero used to have no explanation
+        // anywhere. Report what the rules held back, and only what they held
+        // back, so an empty field means there is nothing to explain.
+        const StakeSkipReport skipped = stakable_wallets[y].ExplainExcludedCoins(pindex->nHeight + 1);
+        if (skipped.Total() > 0) {
+            UniValue excluded(UniValue::VOBJ);
+            if (skipped.immature > 0)   excluded.pushKV("immature", ValueFromAmount(skipped.immature));
+            if (skipped.bls > 0)        excluded.pushKV("bls", ValueFromAmount(skipped.bls));
+            if (skipped.below_min > 0)  excluded.pushKV("too_small", ValueFromAmount(skipped.below_min));
+            if (skipped.above_max > 0)  excluded.pushKV("too_large", ValueFromAmount(skipped.above_max));
+            if (skipped.collateral > 0) excluded.pushKV("collateral_amount", ValueFromAmount(skipped.collateral));
+            if (skipped.too_young > 0)  excluded.pushKV("too_young", ValueFromAmount(skipped.too_young));
+            if (skipped.too_old > 0)    excluded.pushKV("too_old", ValueFromAmount(skipped.too_old));
+            obj2.pushKV("excluded", excluded);
         }
 
         obj.pushKV(std::to_string(y), obj2);
