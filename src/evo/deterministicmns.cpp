@@ -649,7 +649,10 @@ bool CDeterministicMNManager::ProcessBlock(const CBlock& block, gsl::not_null<co
     }
 
     if (diff.HasChanges()) {
-        updatesRet = {newList, oldList, diff};
+        // Designated so the fix is visible: the positional form passed newList
+        // into old_list and oldList into new_list, so every listener -- the
+        // GUI, governance, coinjoin -- saw the two lists swapped. (dash#7154)
+        updatesRet = {.old_list = oldList, .new_list = newList, .diff = diff};
     }
 
     if (nHeight == consensusParams.DIP0003EnforcementHeight) {
@@ -691,7 +694,7 @@ bool CDeterministicMNManager::UndoBlock(gsl::not_null<const CBlockIndex*> pindex
 
     if (diff.HasChanges()) {
         auto inversedDiff = curList.BuildDiff(prevList);
-        updatesRet = {curList, prevList, inversedDiff};
+        updatesRet = {.old_list = curList, .new_list = prevList, .diff = inversedDiff};
     }
 
     const auto& consensusParams = Params().GetConsensus();
