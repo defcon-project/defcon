@@ -6,7 +6,10 @@
 #include <test/data/trivially_valid.json.h>
 #include <test/util/setup_common.h>
 
+#include <bls/bls.h>
+#include <evo/dmn_types.h>
 #include <evo/providertx.h>
+#include <netbase.h>
 #include <primitives/transaction.h>
 
 #include <boost/test/unit_test.hpp>
@@ -121,6 +124,37 @@ BOOST_AUTO_TEST_CASE(trivialvalidation_invalid)
 
     bls::bls_legacy_scheme.store(false);
     trivialvalidation_runner(json);
+}
+
+// Regression for dash#7488: CProUpServTx::IsTriviallyValid must reject an
+// out-of-range nType, matching CProRegTx and the block-connect check in
+// BuildNewListFromBlock. Without this, a ProUpServTx with nType >= MnType::COUNT
+// is mempool-valid but block-invalid, which stalls CreateNewBlock /
+// getblocktemplate once the tx is relayed.
+BOOST_AUTO_TEST_CASE(proupserv_rejects_invalid_ntype)
+{
+    auto make_proupserv = [](MnType nType) {
+        CProUpServTx proTx;
+        proTx.nVersion = CProUpServTx::BASIC_BLS_VERSION;
+        proTx.nType = nType;
+        proTx.addr = LookupNumeric("1.1.1.1", 1000);
+        return proTx;
+    };
+
+    // Valid types must still pass trivial validation.
+    {
+        TxValidationState state;
+        BOOST_CHECK(make_proupserv(MnType::Regular).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
+        state = {};
+        BOOST_CHECK(make_proupserv(MnType::Evo).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
+    }
+
+    // Out-of-range nType (raw uint16 deserialised into the enum) must be rejected.
+    for (const MnType bad_type : {static_cast<MnType>(2), static_cast<MnType>(42), static_cast<MnType>(0xFFFF)}) {
+        TxValidationState state;
+        BOOST_CHECK(!make_proupserv(bad_type).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
+        BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-protx-type");
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
