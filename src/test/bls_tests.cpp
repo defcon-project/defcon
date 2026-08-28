@@ -606,6 +606,40 @@ BOOST_AUTO_TEST_CASE(bls_verify_contribution_shares_honest_tests)
     FuncVerifyContributionSharesHonest(false);
 }
 
+// dash#7193: the identity element deserializes cleanly but is poison -- an
+// identity public key or signature passes aggregate verification trivially.
+// The compressed infinity encoding (0xc0 then zeros) is the crafted input an
+// attacker would send; the all-zero buffer was already treated as null. Under
+// the legacy scheme the header bits differ, so there FromBytes itself may
+// reject the bytes -- either way the wrapper must come out invalid.
+void FuncRejectIdentityElements(const bool legacy_scheme)
+{
+    bls::bls_legacy_scheme.store(legacy_scheme);
+
+    std::vector<uint8_t> g1_infinity(48, 0);
+    g1_infinity[0] = 0xc0;
+    CBLSPublicKey pk;
+    pk.SetBytes(g1_infinity, legacy_scheme);
+    BOOST_CHECK(!pk.IsValid());
+
+    std::vector<uint8_t> g2_infinity(96, 0);
+    g2_infinity[0] = 0xc0;
+    CBLSSignature sig;
+    sig.SetBytes(g2_infinity, legacy_scheme);
+    BOOST_CHECK(!sig.IsValid());
+
+    // A freshly generated secret key is never the rejected zero scalar.
+    CBLSSecretKey sk;
+    sk.MakeNewKey();
+    BOOST_CHECK(sk.IsValid());
+}
+
+BOOST_AUTO_TEST_CASE(bls_identity_elements_rejected)
+{
+    FuncRejectIdentityElements(true);
+    FuncRejectIdentityElements(false);
+}
+
 // A dummy BLS object that satisfies the minimal interface expected by CBLSLazyWrapper.
 class DummyBLS
 {
