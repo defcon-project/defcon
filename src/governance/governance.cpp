@@ -1025,20 +1025,22 @@ void CGovernanceManager::SyncSingleObjVotes(CNode& peer, PeerManager& peerman, c
         return;
     }
 
-    const auto& fileVotes = govobj.GetVoteFile();
     const auto tip_mn_list = Assert(m_dmnman)->GetListAtChainTip();
 
-    for (const auto& vote : fileVotes.GetVotes()) {
+    // Visit the stored votes in place: CheckSignature memoises its verdict on
+    // the vote instance, and a GetVotes() copy would discard that memo, so every
+    // walk would pay a fresh ECDSA recovery or BLS pairing per vote. (dash#7518)
+    govobj.GetVoteFile().ForEachVote([&](const CGovernanceVote& vote) {
         uint256 nVoteHash = vote.GetHash();
 
         bool onlyVotingKeyAllowed = govobj.GetObjectType() == GovernanceObject::PROPOSAL && vote.GetSignal() == VOTE_SIGNAL_FUNDING;
 
         if (filter.contains(nVoteHash) || !vote.IsValid(tip_mn_list, onlyVotingKeyAllowed)) {
-            continue;
+            return;
         }
         peerman.PushInventory(peer.GetId(), CInv(MSG_GOVERNANCE_OBJECT_VOTE, nVoteHash));
         ++nVoteCount;
-    }
+    });
 
     CNetMsgMaker msgMaker(peer.GetCommonVersion());
     connman.PushMessage(&peer, msgMaker.Make(NetMsgType::SYNCSTATUSCOUNT, MASTERNODE_SYNC_GOVOBJ_VOTE, nVoteCount));
