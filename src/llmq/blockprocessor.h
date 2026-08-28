@@ -14,6 +14,8 @@
 
 #include <gsl/pointers.h>
 
+#include <functional>
+
 #include <optional>
 
 class BlockValidationState;
@@ -65,7 +67,16 @@ public:
     explicit CQuorumBlockProcessor(CChainState& chainstate, CDeterministicMNManager& dmnman, CEvoDB& evoDb,
                                    CQuorumSnapshotManager& qsnapman);
 
-    MessageProcessingResult ProcessMessage(const CNode& peer, std::string_view msg_type, CDataStream& vRecv);
+    //! Predicate answering "do we have any record of asking this peer for the inv?", consuming that
+    //! record as a side effect. An answer that is merely late or was superseded still returns true;
+    //! false means we have nothing to show we asked. Passed in rather than reached through
+    //! PeerManager because net_processing already depends on this header; see ProcessMessage for how
+    //! it is used. Must be invoked without ::cs_main held -- the implementation takes it.
+    //! (dash#7484, adapted)
+    using ConsumeRequestFn = std::function<bool(const CInv&)>;
+
+    MessageProcessingResult ProcessMessage(const CNode& peer, std::string_view msg_type, CDataStream& vRecv,
+                                           const ConsumeRequestFn& consume_request);
 
     bool ProcessBlock(const CBlock& block, gsl::not_null<const CBlockIndex*> pindex, BlockValidationState& state, bool fJustCheck, bool fBLSChecks) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     bool UndoBlock(const CBlock& block, gsl::not_null<const CBlockIndex*> pindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
