@@ -11,6 +11,7 @@
 #include <evo/creditpool.h>
 #include <evo/deterministicmns.h>
 #include <evo/mnhftx.h>
+#include <evo/pose_service.h>
 #include <evo/providertx.h>
 #include <evo/assetlocktx.h>
 #include <hash.h>
@@ -51,6 +52,8 @@ static bool CheckSpecialTxInner(CDeterministicMNManager& dmnman, llmq::CQuorumSn
             return llmq::CheckLLMQCommitment(dmnman, qsnapman, chainman, tx, pindexPrev, state);
         case TRANSACTION_MNHF_SIGNAL:
             return CheckMNHFTx(chainman, qman, tx, pindexPrev, state);
+        case TRANSACTION_POSE_SERVICE_COMMITMENT:
+            return CheckPoSeServiceCommitmentTx(chainman, qman, tx, pindexPrev, state);
         case TRANSACTION_ASSET_LOCK:
             return CheckAssetLockUnlockTx(chainman.m_blockman, qman, tx, pindexPrev, indexes, state);
         case TRANSACTION_ASSET_UNLOCK:
@@ -92,6 +95,8 @@ bool CSpecialTxProcessor::CheckSpecialTx(const CTransaction& tx, const CBlockInd
         return true; // handled per block
     case TRANSACTION_MNHF_SIGNAL:
         return true; // handled per block
+    case TRANSACTION_POSE_SERVICE_COMMITMENT:
+        return true; // no state application yet (see the DSL series)
     }
 
     return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-tx-type-proc");
@@ -118,6 +123,8 @@ bool CSpecialTxProcessor::CheckSpecialTx(const CTransaction& tx, const CBlockInd
         return true; // handled per block
     case TRANSACTION_MNHF_SIGNAL:
         return true; // handled per block
+    case TRANSACTION_POSE_SERVICE_COMMITMENT:
+        return true; // no state application yet (see the DSL series)
     }
 
     return false;
