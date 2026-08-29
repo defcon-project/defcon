@@ -44,6 +44,7 @@ public:
     CScript scriptOperatorPayout; // mem-only
     uint16_t nVersion{LEGACY_BLS_VERSION};
     MnType nType{MnType::Regular};
+    uint256 computeDescriptorHash;
 
     CSimplifiedMNListEntry() = default;
     explicit CSimplifiedMNListEntry(const CDeterministicMN& dmn);
@@ -57,7 +58,8 @@ public:
                keyIDVoting == rhs.keyIDVoting &&
                isValid == rhs.isValid &&
                nVersion == rhs.nVersion &&
-               nType == rhs.nType;
+               nType == rhs.nType &&
+               computeDescriptorHash == rhs.computeDescriptorHash;
     }
 
     bool operator!=(const CSimplifiedMNListEntry& rhs) const
@@ -83,6 +85,9 @@ public:
         }
         if (obj.nVersion == BASIC_BLS_VERSION) {
             READWRITE(obj.nType);
+            if (obj.nType == MnType::Compute) {
+                READWRITE(obj.computeDescriptorHash);
+            }
         }
     }
 

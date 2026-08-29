@@ -26,8 +26,8 @@
 #include <optional>
 #include <memory>
 
-static const std::string DB_LIST_SNAPSHOT = "dmn_S3";
-static const std::string DB_LIST_DIFF = "dmn_D3";
+static const std::string DB_LIST_SNAPSHOT = "dmn_S4";
+static const std::string DB_LIST_DIFF = "dmn_D4";
 static const std::string DB_LIST_REPAIRED = "dmn_R1";
 
 uint64_t CDeterministicMN::GetInternalId() const
@@ -192,7 +192,7 @@ CDeterministicMNCPtr CDeterministicMNList::GetMNPayee(gsl::not_null<const CBlock
             if (dmn->pdmnState->nLastPaidHeight == nHeight) {
                 // We found the last MN payee. If its type grants more than one
                 // payout slot, it is paid again until its run is exhausted.
-                const auto payment_weight = GetMnType(dmn->nType).payment_weight;
+                const auto payment_weight = GetEffectivePaymentWeight(*dmn);
                 if (payment_weight > 1 && dmn->pdmnState->nConsecutivePayments < payment_weight) {
                     best = dmn;
                 }
@@ -235,7 +235,7 @@ std::vector<CDeterministicMNCPtr> CDeterministicMNList::GetProjectedMNPayees(gsl
                 // We found the last MN payee. If its type grants more than one
                 // payout slot and its run is not exhausted, the remaining slots
                 // come first in the projection.
-                const auto payment_weight = GetMnType(dmn->nType).payment_weight;
+                const auto payment_weight = GetEffectivePaymentWeight(*dmn);
                 if (payment_weight > 1 && dmn->pdmnState->nConsecutivePayments < payment_weight) {
                     remaining_weighted_payments = payment_weight - dmn->pdmnState->nConsecutivePayments;
                     for ([[maybe_unused]] auto _ : irange::range(remaining_weighted_payments)) {
@@ -249,7 +249,7 @@ std::vector<CDeterministicMNCPtr> CDeterministicMNList::GetProjectedMNPayees(gsl
 
     ForEachMNShared(true, [&](const CDeterministicMNCPtr& dmn) {
         if (dmn == mn_to_be_skipped) return;
-        for ([[maybe_unused]] auto _ : irange::range(isMNRewardReallocation ? 1 : GetMnType(dmn->nType).payment_weight)) {
+        for ([[maybe_unused]] auto _ : irange::range(isMNRewardReallocation ? 1 : GetEffectivePaymentWeight(*dmn))) {
             result.emplace_back(dmn);
         }
     });
@@ -847,6 +847,9 @@ bool CDeterministicMNManager::RebuildListFromBlock(const CBlock& block, gsl::not
             auto newState = std::make_shared<CDeterministicMNState>(*dmn->pdmnState);
             newState->addr = opt_proTx->addr;
             newState->scriptOperatorPayout = opt_proTx->scriptOperatorPayout;
+            if (opt_proTx->nType == MnType::Compute) {
+                newState->computeDescriptor = opt_proTx->computeDescriptor;
+            }
             if (newState->IsBanned()) {
                 // only revive when all keys are set
                 if (newState->pubKeyOperator != CBLSLazyPublicKey() && !newState->keyIDVoting.IsNull() &&
@@ -976,7 +979,7 @@ bool CDeterministicMNManager::RebuildListFromBlock(const CBlock& block, gsl::not
         // Until MNRewardReallocation, a type whose payment weight is above one
         // is paid that many blocks in a row; count where in its run this payee is.
         // Note: If the payee wasn't found in the current block that's fine
-        if (GetMnType(dmn->nType).payment_weight > 1 && !isMNRewardReallocation) {
+        if (newList.GetEffectivePaymentWeight(*dmn) > 1 && !isMNRewardReallocation) {
             ++newState->nConsecutivePayments;
             if (debugLogs) {
                 LogPrint(BCLog::MNPAYMENTS, "CDeterministicMNManager::%s -- MN %s holds multiple payout slots, bumping nConsecutivePayments to %d\n",
@@ -997,6 +1000,8 @@ bool CDeterministicMNManager::RebuildListFromBlock(const CBlock& block, gsl::not
     // reset nConsecutivePayments on non-paid weighted-payout masternodes
     auto newList2 = newList;
     newList2.ForEachMN(false, [&](auto& dmn) {
+        // type weight rather than effective: a stale run counter must clear
+        // even while the node's certificate is lapsed
         if (GetMnType(dmn.nType).payment_weight <= 1) return;
         if (payee != nullptr && dmn.proTxHash == payee->proTxHash && !isMNRewardReallocation) return;
         if (dmn.pdmnState->nConsecutivePayments == 0) return;
@@ -1429,6 +1434,115 @@ bool CDeterministicMNManager::MigrateDBIfNeeded2()
     m_evoDb.GetRawDB().WriteBatch(batch);
 
     // Writing EVODB_BEST_BLOCK (which is b_b4 now) marks the DB as upgraded
+    auto dbTx = m_evoDb.BeginTransaction();
+    m_evoDb.WriteBestBlock(m_chainstate.m_chain.Tip()->GetBlockHash());
+    dbTx->Commit();
+
+    LogPrintf("CDeterministicMNManager::%s -- done migrating\n", __func__);
+
+    if (EraseOldDBData(m_evoDb.GetRawDB(), {DB_OLD_LIST_DIFF, DB_OLD_LIST_SNAPSHOT})) {
+        LogPrintf("CDeterministicMNManager::%s -- done cleaning old data\n", __func__);
+    }
+
+    m_evoDb.GetRawDB().CompactFull();
+
+    LogPrintf("CDeterministicMNManager::%s -- done compacting database\n", __func__);
+
+    // flush it to disk
+    if (!m_evoDb.CommitRootTransaction()) {
+        LogPrintf("CDeterministicMNManager::%s -- failed to commit to evoDB\n", __func__);
+        return false;
+    }
+
+    return true;
+}
+
+bool CDeterministicMNManager::MigrateDBIfNeeded3()
+{
+    static const std::string DB_OLD_LIST_SNAPSHOT = "dmn_S3";
+    static const std::string DB_OLD_LIST_DIFF = "dmn_D3";
+    static const std::string DB_OLD_BEST_BLOCK = "b_b4";
+
+    LOCK(cs_main);
+
+    LogPrintf("CDeterministicMNManager::%s -- upgrading DB to store compute service descriptors\n", __func__);
+
+    if (m_chainstate.m_chain.Tip() == nullptr) {
+        // should have no records
+        LogPrintf("CDeterministicMNManager::%s -- Chain empty. evoDB:%d.\n", __func__, m_evoDb.IsEmpty());
+        return m_evoDb.IsEmpty();
+    }
+
+    if (m_evoDb.GetRawDB().Exists(EVODB_BEST_BLOCK)) {
+        if (EraseOldDBData(m_evoDb.GetRawDB(), {DB_OLD_LIST_DIFF, DB_OLD_LIST_SNAPSHOT})) {
+            // we messed up, make sure this time we actually drop old data
+            LogPrintf("CDeterministicMNManager::%s -- migration already done. cleaned old data.\n", __func__);
+            m_evoDb.GetRawDB().CompactFull();
+            LogPrintf("CDeterministicMNManager::%s -- done compacting database\n", __func__);
+            // flush it to disk
+            if (!m_evoDb.CommitRootTransaction()) {
+                LogPrintf("CDeterministicMNManager::%s -- failed to commit to evoDB\n", __func__);
+                return false;
+            }
+        } else {
+            LogPrintf("CDeterministicMNManager::%s -- migration already done. skipping.\n", __func__);
+        }
+        return true;
+    }
+
+    // Removing the old EVODB_BEST_BLOCK value early results in older version to crash immediately, even if the upgrade
+    // process is cancelled in-between. But if the new version sees that the old EVODB_BEST_BLOCK is already removed,
+    // then we must assume that the upgrade process was already running before but was interrupted.
+    if (m_chainstate.m_chain.Height() > 1 && !m_evoDb.GetRawDB().Exists(DB_OLD_BEST_BLOCK)) {
+        LogPrintf("CDeterministicMNManager::%s -- previous migration attempt failed.\n", __func__);
+        return false;
+    }
+    m_evoDb.GetRawDB().Erase(DB_OLD_BEST_BLOCK);
+
+    if (!DeploymentActiveAt(*m_chainstate.m_chain.Tip(), Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0003)) {
+        // not reached DIP3 height yet, so no upgrade needed
+        LogPrintf("CDeterministicMNManager::%s -- migration not needed. dip3 not reached\n", __func__);
+        auto dbTx = m_evoDb.BeginTransaction();
+        m_evoDb.WriteBestBlock(m_chainstate.m_chain.Tip()->GetBlockHash());
+        dbTx->Commit();
+        if (!m_evoDb.CommitRootTransaction()) {
+            LogPrintf("CDeterministicMNManager::%s -- failed to commit to evoDB\n", __func__);
+            return false;
+        }
+        return true;
+    }
+
+    CDBBatch batch(m_evoDb.GetRawDB());
+
+    for (const auto nHeight : irange::range(Params().GetConsensus().DIP0003Height, m_chainstate.m_chain.Height() + 1)) {
+        auto pindex = m_chainstate.m_chain[nHeight];
+        // Re-serialize with the current format. The descriptor deserializes
+        // to its default for every masternode: none could exist before this
+        // format, so the rewrite is value-preserving by construction.
+        CDataStream diff_data(SER_DISK, CLIENT_VERSION);
+        if (!m_evoDb.GetRawDB().ReadDataStream(std::make_pair(DB_OLD_LIST_DIFF, pindex->GetBlockHash()), diff_data)) {
+            LogPrintf("CDeterministicMNManager::%s -- missing CDeterministicMNListDiff at height %d\n", __func__, nHeight);
+            return false;
+        }
+        CDeterministicMNListDiff mndiff;
+        mndiff.Unserialize(diff_data, CDeterministicMN::MN_VERSION_FORMAT);
+        batch.Write(std::make_pair(DB_LIST_DIFF, pindex->GetBlockHash()), mndiff);
+        CDataStream snapshot_data(SER_DISK, CLIENT_VERSION);
+        if (!m_evoDb.GetRawDB().ReadDataStream(std::make_pair(DB_OLD_LIST_SNAPSHOT, pindex->GetBlockHash()), snapshot_data)) {
+            // it's ok, we write snapshots every DISK_SNAPSHOT_PERIOD blocks only
+            continue;
+        }
+        CDeterministicMNList mnList;
+        mnList.Unserialize(snapshot_data, CDeterministicMN::MN_VERSION_FORMAT);
+        batch.Write(std::make_pair(DB_LIST_SNAPSHOT, pindex->GetBlockHash()), mnList);
+        m_evoDb.GetRawDB().WriteBatch(batch);
+        batch.Clear();
+        LogPrintf("CDeterministicMNManager::%s -- wrote snapshot at height %d\n", __func__, nHeight);
+    }
+
+    m_evoDb.GetRawDB().WriteBatch(batch);
+
+    // Writing EVODB_BEST_BLOCK (which is b_b5 now) marks the DB as upgraded
     auto dbTx = m_evoDb.BeginTransaction();
     m_evoDb.WriteBestBlock(m_chainstate.m_chain.Tip()->GetBlockHash());
     dbTx->Commit();

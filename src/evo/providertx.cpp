@@ -12,6 +12,27 @@
 #include <tinyformat.h>
 #include <util/underlying.h>
 
+// Shared by ProRegTx and ProUpServTx: the descriptor's shape is a trivial
+// rule, the activation height a contextual one.
+static bool CheckComputeDescriptor(const CComputeServiceDescriptor& d, TxValidationState& state)
+{
+    if (d.nVersion == 0 || d.nVersion > CComputeServiceDescriptor::CURRENT_VERSION) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-compute-descriptor-version");
+    }
+    if (d.vchOracleKey.size() != CComputeServiceDescriptor::ORACLE_KEY_SIZE ||
+        (d.vchOracleKey[0] != 0x02 && d.vchOracleKey[0] != 0x03) ||
+        !CPubKey(d.vchOracleKey.begin(), d.vchOracleKey.end()).IsFullyValid()) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-compute-oracle-key");
+    }
+    if (!d.vchBlsReserved.empty()) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-compute-bls-reserved");
+    }
+    if (d.certHash.IsNull() != (d.certExpiryHeight == 0) || d.certExpiryHeight < 0) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-compute-cert");
+    }
+    return true;
+}
+
 bool CProRegTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const
 {
     if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
@@ -22,6 +43,10 @@ bool CProRegTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState&
     // contextual checks.
     if (nType != MnType::Regular && nType != MnType::Compute) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
+    }
+    if (nType == MnType::Compute && !CheckComputeDescriptor(computeDescriptor, state)) {
+        // pass the state returned by the function above
+        return false;
     }
     if (nMode != 0) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-mode");
@@ -106,6 +131,10 @@ bool CProUpServTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationSta
     // activation height is enforced in the contextual checks.
     if (nType != MnType::Regular && nType != MnType::Compute) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
+    }
+    if (nType == MnType::Compute && !CheckComputeDescriptor(computeDescriptor, state)) {
+        // pass the state returned by the function above
+        return false;
     }
 
     return true;

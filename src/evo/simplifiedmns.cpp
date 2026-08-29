@@ -37,7 +37,8 @@ CSimplifiedMNListEntry::CSimplifiedMNListEntry(const CDeterministicMN& dmn) :
     scriptPayout(dmn.pdmnState->scriptPayout),
     scriptOperatorPayout(dmn.pdmnState->scriptOperatorPayout),
     nVersion(dmn.pdmnState->nVersion == CProRegTx::LEGACY_BLS_VERSION ? LEGACY_BLS_VERSION : BASIC_BLS_VERSION),
-    nType(dmn.nType)
+    nType(dmn.nType),
+    computeDescriptorHash(dmn.nType == MnType::Compute ? ::SerializeHash(dmn.pdmnState->computeDescriptor) : uint256())
 {
 }
 
@@ -79,6 +80,9 @@ UniValue CSimplifiedMNListEntry::ToJson(bool extended) const
     obj.pushKV("pubKeyOperator", pubKeyOperator.ToString());
     obj.pushKV("votingAddress", EncodeDestination(PKHash(keyIDVoting)));
     obj.pushKV("isValid", isValid);
+    if (nType == MnType::Compute) {
+        obj.pushKV("computeDescriptorHash", computeDescriptorHash.ToString());
+    }
 
     if (extended) {
         CTxDestination dest;

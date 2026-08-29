@@ -11,7 +11,7 @@
  */
 
 
-static const int PROTOCOL_VERSION = 70239;
+static const int PROTOCOL_VERSION = 70240;
 
 //! initial proto version, to be increased after version/verack negotiation
 static const int INIT_PROTO_VERSION = 209;
@@ -51,6 +51,9 @@ static const int SMNLE_VERSIONED_PROTO_VERSION = 70228;
 
 //! Versioned Simplified Masternode List Entries were introduced in this version
 static const int MNLISTDIFF_VERSION_ORDER = 70229;
+
+//! Compute masternode service descriptors were introduced in this version
+static const int MN_COMPUTE_PROTO_VERSION = 70240;
 
 //! Masternode type was introduced in this version
 static const int MNLISTDIFF_CHAINLOCKS_PROTO_VERSION = 70230;
