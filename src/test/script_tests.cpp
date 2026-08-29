@@ -1511,4 +1511,86 @@ BOOST_AUTO_TEST_CASE(dashconsensus_verify_script_invalid_flags)
 }
 
 #endif
+
+/**
+ * The strict BLS signature-size rule, both sides of its activation.
+ *
+ * IsBLSSig used to treat any signature of BLS size or larger as BLS, which
+ * returned true from CheckSignatureEncoding and skipped DERSIG/LOW_S/STRICTENC.
+ * A signature that is not exactly the BLS size then fell through to the ECDSA
+ * path. The affected set is not empty: the lax DER parser strips leading zeroes
+ * from R and S, so any valid ECDSA signature can be padded past the BLS size
+ * and still verifies -- while bypassing the encoding checks it should have met.
+ *
+ * SCRIPT_VERIFY_STRICT_BLS_SIG_SIZE, set by GetBlockScriptFlags at the
+ * activation height, closes that: only the exact BLS size is BLS, and an
+ * oversized signature is judged as the ECDSA signature it is.
+ */
+BOOST_AUTO_TEST_CASE(strict_bls_sig_size_gate)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    const CPubKey pubkey = key.GetPubKey();
+    const uint256 hash = uint256::ONE;
+
+    std::vector<unsigned char> sig;
+    BOOST_REQUIRE(key.Sign(hash, sig));
+    BOOST_REQUIRE(pubkey.Verify(hash, sig));
+    BOOST_REQUIRE(sig.size() < CPubKey::BLS_SIGNATURE_SIZE);
+    BOOST_REQUIRE_EQUAL(sig[0], 0x30);
+
+    // Rebuild the DER with leading zeroes on R and S so the blob passes the BLS
+    // size, without changing the values the lax parser will recover.
+    const size_t rlen = sig[3];
+    const std::vector<unsigned char> R(sig.begin() + 4, sig.begin() + 4 + rlen);
+    const size_t spos = 4 + rlen;
+    BOOST_REQUIRE_EQUAL(sig[spos], 0x02);
+    const size_t slen = sig[spos + 1];
+    const std::vector<unsigned char> S(sig.begin() + spos + 2, sig.begin() + spos + 2 + slen);
+
+    const size_t pad = (CPubKey::BLS_SIGNATURE_SIZE - sig.size()) / 2 + 8;
+    auto lead_zero = [&](const std::vector<unsigned char>& v) {
+        std::vector<unsigned char> out(pad, 0x00);
+        out.insert(out.end(), v.begin(), v.end());
+        return out;
+    };
+    const std::vector<unsigned char> Rp = lead_zero(R), Sp = lead_zero(S);
+
+    std::vector<unsigned char> padded;
+    padded.push_back(0x30);
+    padded.push_back(0x00);  // sequence length, filled in below
+    padded.push_back(0x02);
+    padded.push_back(static_cast<unsigned char>(Rp.size()));
+    padded.insert(padded.end(), Rp.begin(), Rp.end());
+    padded.push_back(0x02);
+    padded.push_back(static_cast<unsigned char>(Sp.size()));
+    padded.insert(padded.end(), Sp.begin(), Sp.end());
+    padded[1] = static_cast<unsigned char>(padded.size() - 2);
+    BOOST_REQUIRE(padded.size() - 2 < 0x80);  // single-byte lengths stay valid
+
+    // The padded blob is over the BLS size and still verifies: this is the
+    // transaction the loose rule accepted.
+    BOOST_REQUIRE_GT(padded.size(), size_t{CPubKey::BLS_SIGNATURE_SIZE});
+    BOOST_CHECK(pubkey.Verify(hash, padded));
+
+    ScriptError err = SCRIPT_ERR_OK;
+
+    // Before activation (flag unset): waved past the encoding checks as if BLS.
+    BOOST_CHECK(CheckSignatureEncoding(padded, SCRIPT_VERIFY_DERSIG, &err));
+
+    // At and above activation (flag set): judged as the non-canonical ECDSA
+    // signature it is, and rejected.
+    err = SCRIPT_ERR_OK;
+    BOOST_CHECK(!CheckSignatureEncoding(padded,
+        SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_STRICT_BLS_SIG_SIZE, &err));
+    BOOST_CHECK_EQUAL(err, SCRIPT_ERR_SIG_DER);
+
+    // A signature of exactly the BLS size is still BLS with the flag set, so a
+    // real BLS signature is untouched.
+    const std::vector<unsigned char> bls_sized(CPubKey::BLS_SIGNATURE_SIZE, 0x11);
+    err = SCRIPT_ERR_OK;
+    BOOST_CHECK(CheckSignatureEncoding(bls_sized,
+        SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_STRICT_BLS_SIG_SIZE, &err));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

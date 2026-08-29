@@ -572,6 +572,9 @@ public:
         consensus.stakeValueRange = { 10000 * COIN, 12500000 * COIN };
         consensus.stakeAgeRange = { 60 * 60, 60 * 60 * 24 * 60 };
         consensus.nPosKernelV2ActivationHeight = 4000;
+        // Provisional, kernel-v2 style: set high, bring forward once the fleet
+        // is confirmed rolled. mainnet/testnet stay unset.
+        consensus.nStrictBLSSigSizeActivationHeight = 6000;
         consensus.posLimit = uint256S("0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
@@ -840,6 +843,7 @@ public:
         consensus.stakeValueRange = { 0 * COIN, MAX_MONEY };
         consensus.stakeAgeRange = { 10 * 60, 60 * 60 * 24 * 30 };
         consensus.nPosKernelV2ActivationHeight = 0;
+        consensus.nStrictBLSSigSizeActivationHeight = 0;
         consensus.posLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000 * COIN;
         consensus.regularVoteWeight = 1;

@@ -284,4 +284,29 @@ BOOST_AUTO_TEST_CASE(kernel_v2_activation_heights_are_pinned)
     gArgs.ForceRemoveArg("devnet");
 }
 
+
+/**
+ * The strict BLS signature-size rule is a rollout too, and unset means off.
+ *
+ * mainnet and testnet must stay unset until the rule is deliberately scheduled
+ * -- an activation height that appeared here by accident is a consensus change
+ * nobody decided to make. Devnet carries a provisional height, brought forward
+ * at rollout; regtest is always on for the encoding tests.
+ */
+BOOST_AUTO_TEST_CASE(strict_bls_sig_size_activation_heights_are_pinned)
+{
+    const auto& args = *m_node.args;
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nStrictBLSSigSizeActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nStrictBLSSigSizeActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nStrictBLSSigSizeActivationHeight,
+                      0);
+
+    gArgs.SoftSetBoolArg("-devnet", true);
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::DEVNET)->GetConsensus().nStrictBLSSigSizeActivationHeight,
+                      6000);
+    gArgs.ForceRemoveArg("devnet");
+}
+
 BOOST_AUTO_TEST_SUITE_END()
