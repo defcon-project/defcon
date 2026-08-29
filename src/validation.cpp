@@ -2054,6 +2054,11 @@ static unsigned int GetBlockScriptFlags(const CBlockIndex* pindex, const Consens
         flags |= SCRIPT_VERIFY_NULLDUMMY;
     }
 
+    // Require the exact BLS signature size (M-02).
+    if (pindex->nHeight >= consensusparams.nStrictBLSSigSizeActivationHeight) {
+        flags |= SCRIPT_VERIFY_STRICT_BLS_SIG_SIZE;
+    }
+
     return flags;
 }
 

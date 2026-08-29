@@ -105,6 +105,11 @@ enum : uint32_t {
     //
     SCRIPT_VERIFY_CONST_SCRIPTCODE = (1U << 16),
 
+    // Require a BLS signature to be exactly BLS_SIGNATURE_SIZE. Without this an
+    // oversized signature is taken as BLS and waved past the ECDSA encoding
+    // checks (DERSIG/LOW_S/STRICTENC) before falling through to ECDSA verify.
+    SCRIPT_VERIFY_STRICT_BLS_SIG_SIZE = (1U << 17),
+
     // Constants to point to the highest flag in use. Add new flags above this line.
     //
     SCRIPT_VERIFY_END_MARKER
