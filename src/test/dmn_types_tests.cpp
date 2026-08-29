@@ -3,6 +3,10 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chainparams.h>
+#include <chainparamsbase.h>
+#include <util/system.h>
+
+#include <limits>
 #include <evo/dmn_types.h>
 #include <test/util/setup_common.h>
 
@@ -28,9 +32,27 @@ BOOST_AUTO_TEST_CASE(weights_map_to_their_params)
     BOOST_CHECK_EQUAL(evo.payment_weight, params.evoPaymentWeight);
     BOOST_CHECK_EQUAL(evo.collat_amount, params.evoMnCollateral);
 
+    const auto compute = GetMnType(MnType::Compute);
+    BOOST_CHECK_EQUAL(compute.voting_weight, params.computeVoteWeight);
+    BOOST_CHECK_EQUAL(compute.payment_weight, params.computePaymentWeight);
+    BOOST_CHECK_EQUAL(compute.collat_amount, params.computeMnCollateral);
+
     const auto invalid = GetMnType(MnType::Invalid);
     BOOST_CHECK_EQUAL(invalid.voting_weight, 0);
     BOOST_CHECK_EQUAL(invalid.payment_weight, 0);
+}
+
+// The Compute type ships dormant: its activation height must stay unset --
+// an unreachable maximum -- on every network until a coordinated release
+// sets it. A height that drifts in by accident would activate a masternode
+// type nobody scheduled.
+BOOST_AUTO_TEST_CASE(compute_activation_height_is_pinned_dormant)
+{
+    for (const auto& chain : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET, CBaseChainParams::REGTEST}) {
+        const auto params = CreateChainParams(ArgsManager{}, chain);
+        BOOST_CHECK_EQUAL(params->GetConsensus().nComputeNodeActivationHeight, std::numeric_limits<int>::max());
+        BOOST_CHECK(!IsComputeTypeActive(std::numeric_limits<int>::max() - 1, params->GetConsensus()));
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
