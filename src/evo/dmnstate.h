@@ -6,9 +6,12 @@
 #define BITCOIN_EVO_DMNSTATE_H
 
 #include <bls/bls.h>
+#include <clientversion.h>
 #include <crypto/sha256.h>
+#include <evo/compute_descriptor.h>
 #include <evo/providertx.h>
 #include <netaddress.h>
+#include <version.h>
 #include <pubkey.h>
 #include <script/script.h>
 
@@ -128,6 +131,65 @@ public:
     }
 };
 
+// The masternode-state layout as written before the Compute service
+// descriptor existed (the MN_VERSION_FORMAT era). Kept only to read stored
+// data from that era; CDeterministicMNState converts from it.
+class CDeterministicMNState_no_compute_format
+{
+private:
+    int nPoSeBanHeight{-1};
+
+    friend class CDeterministicMNState;
+
+public:
+    int nVersion{CProRegTx::LEGACY_BLS_VERSION};
+    int nRegisteredHeight{-1};
+    int nLastPaidHeight{0};
+    int nConsecutivePayments{0};
+    int nPoSePenalty{0};
+    int nPoSeRevivedHeight{-1};
+    uint16_t nRevocationReason{CProUpRevTx::REASON_NOT_SPECIFIED};
+    uint256 confirmedHash;
+    uint256 confirmedHashWithProRegTxHash;
+    CKeyID keyIDOwner;
+    CBLSLazyPublicKey pubKeyOperator;
+    CKeyID keyIDVoting;
+    CService addr;
+    CScript scriptPayout;
+    CScript scriptOperatorPayout;
+    uint160 platformNodeID{};
+    uint16_t platformP2PPort{0};
+    uint16_t platformHTTPPort{0};
+
+public:
+    CDeterministicMNState_no_compute_format() = default;
+
+    SERIALIZE_METHODS(CDeterministicMNState_no_compute_format, obj)
+    {
+        READWRITE(
+            obj.nVersion,
+            obj.nRegisteredHeight,
+            obj.nLastPaidHeight,
+            obj.nConsecutivePayments,
+            obj.nPoSePenalty,
+            obj.nPoSeRevivedHeight,
+            obj.nPoSeBanHeight,
+            obj.nRevocationReason,
+            obj.confirmedHash,
+            obj.confirmedHashWithProRegTxHash,
+            obj.keyIDOwner);
+        READWRITE(CBLSLazyPublicKeyVersionWrapper(const_cast<CBLSLazyPublicKey&>(obj.pubKeyOperator), obj.nVersion == CProRegTx::LEGACY_BLS_VERSION));
+        READWRITE(
+            obj.keyIDVoting,
+            obj.addr,
+            obj.scriptPayout,
+            obj.scriptOperatorPayout,
+            obj.platformNodeID,
+            obj.platformP2PPort,
+            obj.platformHTTPPort);
+    }
+};
+
 class CDeterministicMNState
 {
 private:
@@ -165,6 +227,10 @@ public:
     uint16_t platformP2PPort{0};
     uint16_t platformHTTPPort{0};
 
+    // The DefCompute oracle service record; meaningful only on a Compute
+    // masternode, default-valued everywhere else.
+    CComputeServiceDescriptor computeDescriptor;
+
 public:
     CDeterministicMNState() = default;
     explicit CDeterministicMNState(const CProRegTx& proTx) :
@@ -173,7 +239,8 @@ public:
         pubKeyOperator(proTx.pubKeyOperator),
         keyIDVoting(proTx.keyIDVoting),
         addr(proTx.addr),
-        scriptPayout(proTx.scriptPayout)
+        scriptPayout(proTx.scriptPayout),
+        computeDescriptor(proTx.computeDescriptor)
     {
     }
     explicit CDeterministicMNState(const CDeterministicMNState_Oldformat& s) :
@@ -194,6 +261,27 @@ public:
 
     explicit CDeterministicMNState(const CDeterministicMNState_mntype_format& s) :
         nPoSeBanHeight(s.nPoSeBanHeight),
+        nRegisteredHeight(s.nRegisteredHeight),
+        nLastPaidHeight(s.nLastPaidHeight),
+        nConsecutivePayments(s.nConsecutivePayments),
+        nPoSePenalty(s.nPoSePenalty),
+        nPoSeRevivedHeight(s.nPoSeRevivedHeight),
+        nRevocationReason(s.nRevocationReason),
+        confirmedHash(s.confirmedHash),
+        confirmedHashWithProRegTxHash(s.confirmedHashWithProRegTxHash),
+        keyIDOwner(s.keyIDOwner),
+        pubKeyOperator(s.pubKeyOperator),
+        keyIDVoting(s.keyIDVoting),
+        addr(s.addr),
+        scriptPayout(s.scriptPayout),
+        scriptOperatorPayout(s.scriptOperatorPayout),
+        platformNodeID(s.platformNodeID),
+        platformP2PPort(s.platformP2PPort),
+        platformHTTPPort(s.platformHTTPPort) {}
+
+    explicit CDeterministicMNState(const CDeterministicMNState_no_compute_format& s) :
+        nPoSeBanHeight(s.nPoSeBanHeight),
+        nVersion(s.nVersion),
         nRegisteredHeight(s.nRegisteredHeight),
         nLastPaidHeight(s.nLastPaidHeight),
         nConsecutivePayments(s.nConsecutivePayments),
@@ -241,6 +329,11 @@ public:
             obj.platformNodeID,
             obj.platformP2PPort,
             obj.platformHTTPPort);
+        // Same shape as the nType field on CDeterministicMN: disk always
+        // carries it, the network only to peers new enough to expect it.
+        if (s.GetVersion() == CLIENT_VERSION || s.GetVersion() >= MN_COMPUTE_PROTO_VERSION) {
+            READWRITE(obj.computeDescriptor);
+        }
     }
 
     void ResetOperatorFields()
@@ -309,6 +402,7 @@ public:
         Field_platformP2PPort = 0x10000,
         Field_platformHTTPPort = 0x20000,
         Field_nVersion = 0x40000,
+        Field_computeDescriptor = 0x80000,
     };
 
 #define DMN_STATE_DIFF_ALL_FIELDS                      \
@@ -330,7 +424,8 @@ public:
     DMN_STATE_DIFF_LINE(platformNodeID)                \
     DMN_STATE_DIFF_LINE(platformP2PPort)               \
     DMN_STATE_DIFF_LINE(platformHTTPPort)              \
-    DMN_STATE_DIFF_LINE(nVersion)
+    DMN_STATE_DIFF_LINE(nVersion)                      \
+    DMN_STATE_DIFF_LINE(computeDescriptor)
 
 public:
     uint32_t fields{0};
