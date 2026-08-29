@@ -364,7 +364,7 @@ void GovernanceList::updateProposalList()
         // A proposal is considered passing if (YES votes - NO votes) >= (Total Weight of Masternodes / 10),
         // count total valid (ENABLED) masternodes to determine passing threshold.
         // Need to query number of masternodes here with access to clientModel.
-        const int nWeightedMnCount = clientModel->getMasternodeList().first.GetValidWeightedMNsCount();
+        const int nWeightedMnCount = clientModel->getMasternodeList().first.GetValidVoteWeightedMNsCount();
         const int nAbsVoteReq = std::max(Params().GetConsensus().nGovernanceMinQuorum, nWeightedMnCount / 10);
         proposalModel->setVotingParams(nAbsVoteReq);
 

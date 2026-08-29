@@ -1087,7 +1087,7 @@ bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, 
     if (m_queueman == nullptr) return false;
 
     const auto mnList = m_dmnman.GetListAtChainTip();
-    const int nWeightedMnCount = mnList.GetValidWeightedMNsCount();
+    const int nWeightedMnCount = mnList.GetValidPaymentWeightedMNsCount();
 
     // Look through the queues and see if anything matches
     CCoinJoinQueue dsq;
@@ -1149,7 +1149,7 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
     int nTries = 0;
     const auto mnList = m_dmnman.GetListAtChainTip();
     const int nMnCount = mnList.GetValidMNsCount();
-    const int nWeightedMnCount = mnList.GetValidWeightedMNsCount();
+    const int nWeightedMnCount = mnList.GetValidPaymentWeightedMNsCount();
 
     // find available denominated amounts
     std::set<CAmount> setAmounts;

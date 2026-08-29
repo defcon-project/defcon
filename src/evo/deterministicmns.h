@@ -255,11 +255,22 @@ public:
                                 [](const auto& p) { return p.second->nType == MnType::Evo && IsMNValid(*p.second); });
     }
 
-    [[nodiscard]] size_t GetValidWeightedMNsCount() const
+    /** Valid masternodes summed by governance vote weight. */
+    [[nodiscard]] size_t GetValidVoteWeightedMNsCount() const
     {
         return std::accumulate(mnMap.begin(), mnMap.end(), 0, [](auto res, const auto& p) {
             if (!IsMNValid(*p.second)) return res;
             return res + GetMnType(p.second->nType).voting_weight;
+        });
+    }
+
+    /** Valid masternodes summed by payout-slot weight: the length of one
+     *  full payment cycle in blocks. */
+    [[nodiscard]] size_t GetValidPaymentWeightedMNsCount() const
+    {
+        return std::accumulate(mnMap.begin(), mnMap.end(), 0, [](auto res, const auto& p) {
+            if (!IsMNValid(*p.second)) return res;
+            return res + GetMnType(p.second->nType).payment_weight;
         });
     }
 
@@ -348,7 +359,7 @@ public:
     /**
      * Calculates the projected MN payees for the next *count* blocks. The result is not guaranteed to be correct
      * as PoSe banning might occur later
-     * @param nCount the number of payees to return. "nCount = max()"" means "all", use it to avoid calling GetValidWeightedMNsCount twice.
+     * @param nCount the number of payees to return. "nCount = max()"" means "all", use it to avoid calling GetValidPaymentWeightedMNsCount twice.
      */
     [[nodiscard]] std::vector<CDeterministicMNCPtr> GetProjectedMNPayees(gsl::not_null<const CBlockIndex* const> pindexPrev, int nCount = std::numeric_limits<int>::max()) const;
 

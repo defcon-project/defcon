@@ -26,7 +26,12 @@ namespace dmn_types {
 
 struct mntype_struct
 {
+    // A masternode type carries two separate dials: voting_weight scales its
+    // governance votes, payment_weight is how many consecutive payout slots it
+    // occupies in the payment cycle. They share values today; nothing requires
+    // that they stay equal, so every reader must name the dial it means.
     int32_t voting_weight;
+    int32_t payment_weight;
     CAmount collat_amount;
     std::string_view description;
 };
