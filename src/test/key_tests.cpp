@@ -331,4 +331,41 @@ BOOST_AUTO_TEST_CASE(verifybls_rejects_malformed_without_throwing)
     BOOST_CHECK(!ok);
 }
 
+/**
+ * An invalid key must not report itself valid.
+ *
+ * IsValid() is consensus-critical -- CheckSig() calls it -- and reads only
+ * size() > 0. Invalidate() used to set the length to COMPRESSED_SIZE, so a
+ * default-constructed key, and any key a wrong length was rejected into, passed
+ * IsValid() over an uninitialised or stale buffer. Set() also stored any length
+ * up to SIZE, so a blob of some other length became a "valid" key of that
+ * length. Both are closed here.
+ */
+BOOST_AUTO_TEST_CASE(pubkey_invalid_is_never_valid)
+{
+    BOOST_CHECK(!CPubKey().IsValid());
+    BOOST_CHECK_EQUAL(CPubKey().size(), 0U);
+
+    // A blob whose length is not one of the three key sizes is not a key.
+    const std::vector<unsigned char> twenty(20, 0x02);
+    CPubKey pk;
+    pk.Set(twenty.begin(), twenty.end());
+    BOOST_CHECK(!pk.IsValid());
+    BOOST_CHECK_EQUAL(pk.size(), 0U);
+
+    // The wire path agrees: a wrong-length pubkey unserialises to invalid.
+    CDataStream ss(SER_NETWORK, 0);
+    ss << twenty;
+    CPubKey wire;
+    ss >> wire;
+    BOOST_CHECK(!wire.IsValid());
+
+    // A real compressed key is still valid, and keeps its length.
+    CKey key;
+    key.MakeNewKey(true);
+    const CPubKey good = key.GetPubKey();
+    BOOST_CHECK(good.IsValid());
+    BOOST_CHECK_EQUAL(good.size(), CPubKey::COMPRESSED_SIZE);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
