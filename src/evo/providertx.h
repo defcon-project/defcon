@@ -10,6 +10,7 @@
 #include <primitives/transaction.h>
 
 #include <consensus/validation.h>
+#include <evo/compute_descriptor.h>
 #include <evo/dmn_types.h>
 #include <key_io.h>
 #include <netaddress.h>
@@ -41,6 +42,7 @@ public:
     CKeyID keyIDVoting;
     uint16_t nOperatorReward{0};
     CScript scriptPayout;
+    CComputeServiceDescriptor computeDescriptor;
     uint256 inputsHash; // replay protection
     std::vector<unsigned char> vchSig;
 
@@ -66,6 +68,9 @@ public:
                 obj.scriptPayout,
                 obj.inputsHash
         );
+        if (obj.nType == MnType::Compute) {
+            READWRITE(obj.computeDescriptor);
+        }
         if (!(s.GetType() & SER_GETHASH)) {
             READWRITE(obj.vchSig);
         }
@@ -94,6 +99,9 @@ public:
         }
         obj.pushKV("pubKeyOperator", pubKeyOperator.ToString());
         obj.pushKV("operatorReward", (double)nOperatorReward / 100);
+        if (nType == MnType::Compute) {
+            obj.pushKV("computeDescriptor", computeDescriptor.ToJson());
+        }
         obj.pushKV("inputsHash", inputsHash.ToString());
         return obj;
     }
@@ -118,6 +126,7 @@ public:
     uint256 proTxHash;
     CService addr;
     CScript scriptOperatorPayout;
+    CComputeServiceDescriptor computeDescriptor;
     uint256 inputsHash; // replay protection
     CBLSSignature sig;
 
@@ -140,6 +149,9 @@ public:
                 obj.scriptOperatorPayout,
                 obj.inputsHash
         );
+        if (obj.nType == MnType::Compute) {
+            READWRITE(obj.computeDescriptor);
+        }
         if (!(s.GetType() & SER_GETHASH)) {
             READWRITE(
                     CBLSSignatureVersionWrapper(const_cast<CBLSSignature&>(obj.sig), (obj.nVersion == LEGACY_BLS_VERSION))
@@ -159,6 +171,9 @@ public:
         obj.pushKV("service", addr.ToStringAddrPort());
         if (CTxDestination dest; ExtractDestination(scriptOperatorPayout, dest)) {
             obj.pushKV("operatorPayoutAddress", EncodeDestination(dest));
+        }
+        if (nType == MnType::Compute) {
+            obj.pushKV("computeDescriptor", computeDescriptor.ToJson());
         }
         obj.pushKV("inputsHash", inputsHash.ToString());
         return obj;

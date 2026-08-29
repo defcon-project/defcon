@@ -13,7 +13,8 @@ class uint256;
 // "b_b2" was used after compact diffs were introduced
 // "b_b3" was used after masternode type introduction in evoDB
 // "b_b4" was used after storing protx version for each masternode in evoDB
-static const std::string EVODB_BEST_BLOCK = "b_b4";
+// "b_b5" is used after storing compute service descriptors in evoDB
+static const std::string EVODB_BEST_BLOCK = "b_b5";
 
 class CEvoDB;
 

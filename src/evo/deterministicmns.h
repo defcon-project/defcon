@@ -50,7 +50,8 @@ public:
     static constexpr uint16_t MN_OLD_FORMAT = 0;
     static constexpr uint16_t MN_TYPE_FORMAT = 1;
     static constexpr uint16_t MN_VERSION_FORMAT = 2;
-    static constexpr uint16_t MN_CURRENT_FORMAT = MN_VERSION_FORMAT;
+    static constexpr uint16_t MN_COMPUTE_FORMAT = 3;
+    static constexpr uint16_t MN_CURRENT_FORMAT = MN_COMPUTE_FORMAT;
 
     uint256 proTxHash;
     COutPoint collateralOutpoint;
@@ -88,6 +89,10 @@ public:
             pdmnState = std::make_shared<const CDeterministicMNState>(old_state);
         } else if (ser_action.ForRead() && format_version == MN_TYPE_FORMAT) {
             CDeterministicMNState_mntype_format old_state;
+            READWRITE(old_state);
+            pdmnState = std::make_shared<const CDeterministicMNState>(old_state);
+        } else if (ser_action.ForRead() && format_version == MN_VERSION_FORMAT) {
+            CDeterministicMNState_no_compute_format old_state;
             READWRITE(old_state);
             pdmnState = std::make_shared<const CDeterministicMNState>(old_state);
         } else {
@@ -257,10 +262,24 @@ public:
      *  full payment cycle in blocks. */
     [[nodiscard]] size_t GetValidPaymentWeightedMNsCount() const
     {
-        return std::accumulate(mnMap.begin(), mnMap.end(), 0, [](auto res, const auto& p) {
+        return std::accumulate(mnMap.begin(), mnMap.end(), 0, [this](auto res, const auto& p) {
             if (!IsMNValid(*p.second)) return res;
-            return res + GetMnType(p.second->nType).payment_weight;
+            return res + GetEffectivePaymentWeight(*p.second);
         });
+    }
+
+    /** The payout-slot weight a masternode actually holds at this list's
+     *  height: a Compute node without a live service certificate falls back
+     *  to a single slot -- the premium pays for the oracle service, not for
+     *  the type itself. */
+    [[nodiscard]] int32_t GetEffectivePaymentWeight(const CDeterministicMN& dmn) const
+    {
+        const auto payment_weight = GetMnType(dmn.nType).payment_weight;
+        if (payment_weight > 1 && dmn.nType == MnType::Compute &&
+            !dmn.pdmnState->computeDescriptor.IsCertValidAt(nHeight)) {
+            return 1;
+        }
+        return payment_weight;
     }
 
     /**
@@ -708,6 +727,7 @@ public:
 
     bool MigrateDBIfNeeded();
     bool MigrateDBIfNeeded2();
+    bool MigrateDBIfNeeded3();
 
     void DoMaintenance() EXCLUSIVE_LOCKS_REQUIRED(!cs);
 

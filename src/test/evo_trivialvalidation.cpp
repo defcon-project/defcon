@@ -10,6 +10,7 @@
 #include <evo/dmn_types.h>
 #include <evo/providertx.h>
 #include <netbase.h>
+#include <util/strencodings.h>
 #include <primitives/transaction.h>
 
 #include <boost/test/unit_test.hpp>
@@ -147,7 +148,9 @@ BOOST_AUTO_TEST_CASE(proupserv_rejects_invalid_ntype)
         TxValidationState state;
         BOOST_CHECK(make_proupserv(MnType::Regular).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
         state = {};
-        BOOST_CHECK(make_proupserv(MnType::Compute).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
+        auto compute = make_proupserv(MnType::Compute);
+        compute.computeDescriptor.vchOracleKey = ParseHex("0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
+        BOOST_CHECK(compute.IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
         state = {};
         BOOST_CHECK(!make_proupserv(MnType::Evo).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
     }

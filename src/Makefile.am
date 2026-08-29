@@ -182,6 +182,7 @@ BITCOIN_CORE_H = \
   deploymentinfo.h \
   deploymentstatus.h \
   evo/assetlocktx.h \
+  evo/compute_descriptor.h \
   evo/dmn_types.h \
   evo/cbtx.h \
   evo/chainhelper.h \

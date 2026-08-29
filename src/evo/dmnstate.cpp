@@ -59,6 +59,9 @@ UniValue CDeterministicMNState::ToJson(MnType nType) const
     if (ExtractDestination(scriptOperatorPayout, dest)) {
         obj.pushKV("operatorPayoutAddress", EncodeDestination(dest));
     }
+    if (nType == MnType::Compute) {
+        obj.pushKV("computeDescriptor", computeDescriptor.ToJson());
+    }
     return obj;
 }
 
@@ -113,6 +116,9 @@ UniValue CDeterministicMNStateDiff::ToJson(MnType nType) const
     }
     if (fields & Field_pubKeyOperator) {
         obj.pushKV("pubKeyOperator", state.pubKeyOperator.ToString());
+    }
+    if (fields & Field_computeDescriptor) {
+        obj.pushKV("computeDescriptor", state.computeDescriptor.ToJson());
     }
     return obj;
 }
