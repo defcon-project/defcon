@@ -121,6 +121,7 @@ BASE_SCRIPTS = [
     'wallet_dump.py --legacy-wallet',
     'feature_multikeysporks.py',
     'feature_dip3_v19.py',
+    'feature_compute_mn.py',
     'feature_asset_locks.py', # NOTE: needs dash_hash to pass
     'feature_llmq_connections.py', # NOTE: needs dash_hash to pass
     'feature_llmq_is_retroactive.py', # NOTE: needs dash_hash to pass
