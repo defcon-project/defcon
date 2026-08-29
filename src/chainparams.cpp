@@ -1057,6 +1057,8 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
             consensus.V20Height = int{height};
         } else if (name == "mn_rr") {
             consensus.MN_RRHeight = int{height};
+        } else if (name == "posv2") {
+            consensus.nPosKernelV2ActivationHeight = int{height};
         } else {
             throw std::runtime_error(strprintf("Invalid name (%s) for -testactivationheight=name@height.", arg));
         }
