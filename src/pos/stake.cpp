@@ -39,10 +39,15 @@ CAmount StakeSkipReport::Total() const
     return immature + bls + below_min + above_max + collateral + too_young + too_old;
 }
 
-StakeEligibility CStakeWallet::ClassifyForStaking(CAmount value, bool generated, int depth,
+StakeEligibility CStakeWallet::ClassifyForStaking(CAmount value, int depth,
                                                   TxoutType type, int64_t inputAge, int nHeight) const
 {
-    if (generated && depth < COINBASE_MATURITY + 1) return StakeEligibility::Immature;
+    // CheckProofOfStake measures depth as pindexPrev->nHeight - coin.nHeight,
+    // which does not count the coin's own block, while GetDepthInMainChain()
+    // does: the wallet's number is one larger for the same coin. It also
+    // applies the rule to every staking input, not only to generated ones, so
+    // restricting it here let the wallet offer coins the kernel would refuse.
+    if (depth - 1 < COINBASE_MATURITY + 1) return StakeEligibility::Immature;
     if (type == TxoutType::BLSPUBKEY) return StakeEligibility::BLSAddress;
     if (value < params.stakeValueRange[0]) return StakeEligibility::BelowMin;
     if (value > params.stakeValueRange[1]) return StakeEligibility::AboveMax;
@@ -87,9 +92,8 @@ StakeSkipReport CStakeWallet::ExplainExcludedCoins(int nHeight) const
         const TxoutType type = Solver(pcoin->tx->vout[i].scriptPubKey, vSolutions);
         const CAmount value = pcoin->tx->vout[i].nValue;
         const int64_t inputAge = GetTime() - pcoin->GetTxTime();
-        const bool generated = pcoin->IsCoinBase() || pcoin->IsCoinStake();
 
-        report.Add(ClassifyForStaking(value, generated, nDepth, type, inputAge, nHeight), value);
+        report.Add(ClassifyForStaking(value, nDepth, type, inputAge, nHeight), value);
     }
 
     return report;
@@ -138,11 +142,13 @@ uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
         return 0;
     }
 
+    // Every coin here already passed ClassifyForStaking, which applies the
+    // kernel's depth rule. The second, looser test this replaced admitted coins
+    // two blocks before the kernel would, so the weight reported to callers
+    // disagreed with the loop that had just produced it.
     uint64_t nWeight = 0;
     for(std::pair<const CWalletTx* ,unsigned int> pcoin : setCoins) {
-        if (pcoin.first->GetDepthInMainChain() >= COINBASE_MATURITY) {
-            nWeight += pcoin.first->tx->vout[pcoin.second].nValue;
-        }
+        nWeight += pcoin.first->tx->vout[pcoin.second].nValue;
     }
 
     return nWeight;
@@ -181,9 +187,8 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
         const TxoutType whichType = Solver(pcoin->tx->vout[i].scriptPubKey, vSolutions);
         const CAmount inputValue = pcoin->tx->vout[i].nValue;
         const int64_t inputAge = GetTime() - pcoin->GetTxTime();
-        const bool nGenerated = pcoin->IsCoinBase() || pcoin->IsCoinStake();
 
-        if (ClassifyForStaking(inputValue, nGenerated, nDepth, whichType, inputAge, nHeight)
+        if (ClassifyForStaking(inputValue, nDepth, whichType, inputAge, nHeight)
                 != StakeEligibility::Eligible) {
             continue;
         }

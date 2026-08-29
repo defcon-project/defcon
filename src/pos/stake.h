@@ -29,7 +29,7 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet);
 /** Why a coin is, or is not, available to the staking loop. */
 enum class StakeEligibility {
     Eligible,
-    Immature,    //!< a generated output not yet COINBASE_MATURITY + 1 deep
+    Immature,    //!< not yet COINBASE_MATURITY + 1 deep in the kernel's terms
     BLSAddress,  //!< held at a BLS address, which cannot stake
     BelowMin,    //!< under stakeValueRange[0]
     AboveMax,    //!< over stakeValueRange[1]
@@ -100,7 +100,7 @@ class CStakeWallet
          * and by the report below. One implementation, so the two cannot drift
          * apart and start describing different rules.
          */
-        StakeEligibility ClassifyForStaking(CAmount value, bool generated, int depth,
+        StakeEligibility ClassifyForStaking(CAmount value, int depth,
                                             TxoutType type, int64_t inputAge, int nHeight) const;
 
         /** Tally every coin the wallet holds that the rules keep out. */
