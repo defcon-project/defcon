@@ -24,6 +24,13 @@ mntype_struct BuildMnStruct(MnType mn_type)
             this_mn.collat_amount = params.evoMnCollateral;
             this_mn.description = "Evo";
             break;
+        case MnType::Compute:
+            this_mn.voting_weight = params.computeVoteWeight;
+            this_mn.payment_weight = params.computePaymentWeight;
+            this_mn.collat_amount = params.computeMnCollateral;
+            this_mn.description = "Compute";
+            break;
+        case MnType::COUNT:
         case MnType::Invalid:
             this_mn.voting_weight = 0;
             this_mn.payment_weight = 0;
@@ -37,7 +44,7 @@ mntype_struct BuildMnStruct(MnType mn_type)
 bool IsCollateralAmount(CAmount amount)
 {
     return amount == dmn_types::BuildMnStruct(MnType::Regular).collat_amount ||
-        amount == dmn_types::BuildMnStruct(MnType::Evo).collat_amount;
+        amount == dmn_types::BuildMnStruct(MnType::Compute).collat_amount;
 }
 
 } // namespace dmn_types
@@ -47,6 +54,7 @@ dmn_types::mntype_struct GetMnType(MnType type)
     switch (type) {
         case MnType::Regular: return dmn_types::BuildMnStruct(MnType::Regular);
         case MnType::Evo: return dmn_types::BuildMnStruct(MnType::Evo);
+        case MnType::Compute: return dmn_types::BuildMnStruct(MnType::Compute);
         default: return dmn_types::BuildMnStruct(MnType::Invalid);
     }
 }

@@ -196,6 +196,9 @@ struct Params {
     CAmount evoMnCollateral;
     int32_t evoVoteWeight;
     int32_t evoPaymentWeight;
+    CAmount computeMnCollateral;
+    int32_t computeVoteWeight;
+    int32_t computePaymentWeight;
     int minStaticCollateral;
     CScript premineAddress;
     /** Height from which the corrected proof-of-stake kernel rules apply: the
@@ -213,6 +216,14 @@ struct Params {
      *  unreachable height means the original rule, which every network keeps
      *  until this is set. */
     int nStrictBLSSigSizeActivationHeight{std::numeric_limits<int>::max()};
+
+    /** Height from which the Compute masternode type (MnType 2) may
+     *  register. The type ships fully wired but dormant: below this height
+     *  no ProRegTx or ProUpServTx may carry it, so it cannot enter the
+     *  deterministic list, earn payouts, vote or join quorums. The default
+     *  unreachable height keeps it dormant on every network until a
+     *  coordinated activation sets it. */
+    int nComputeNodeActivationHeight{std::numeric_limits<int>::max()};
 
     /** these parameters are only used on devnet and can be configured from the outside */
     int nMinimumDifficultyBlocks{0};

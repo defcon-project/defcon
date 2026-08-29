@@ -141,16 +141,19 @@ BOOST_AUTO_TEST_CASE(proupserv_rejects_invalid_ntype)
         return proTx;
     };
 
-    // Regular must still pass trivial validation; the retired Evo type must not.
+    // Regular and Compute pass trivial validation (Compute's activation
+    // height is a contextual rule); the retired Evo type must not.
     {
         TxValidationState state;
         BOOST_CHECK(make_proupserv(MnType::Regular).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
+        state = {};
+        BOOST_CHECK(make_proupserv(MnType::Compute).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
         state = {};
         BOOST_CHECK(!make_proupserv(MnType::Evo).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
     }
 
     // Out-of-range nType (raw uint16 deserialised into the enum) must be rejected.
-    for (const MnType bad_type : {static_cast<MnType>(2), static_cast<MnType>(42), static_cast<MnType>(0xFFFF)}) {
+    for (const MnType bad_type : {static_cast<MnType>(3), static_cast<MnType>(42), static_cast<MnType>(0xFFFF)}) {
         TxValidationState state;
         BOOST_CHECK(!make_proupserv(bad_type).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-protx-type");

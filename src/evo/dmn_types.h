@@ -17,6 +17,9 @@ enum class MnType : uint16_t {
     // Retired. The value stays reserved so serialized data carrying it can
     // never be reinterpreted as a future type; no transaction may use it.
     Evo = 1,
+    // The DefCompute oracle masternode. Registrable only at or above
+    // Consensus::Params::nComputeNodeActivationHeight.
+    Compute = 2,
     COUNT,
     Invalid = std::numeric_limits<uint16_t>::max(),
 };
@@ -46,5 +49,13 @@ bool IsCollateralAmount(CAmount amount);
 dmn_types::mntype_struct GetMnType(MnType type);
 
 [[nodiscard]] constexpr bool IsValidMnType(MnType type) { return type < MnType::COUNT; }
+
+/** The one resolver for whether the Compute type may exist at a height.
+ *  Every enforcement point funnels through this, so activation is a single
+ *  one-way, height-only switch. */
+[[nodiscard]] constexpr bool IsComputeTypeActive(int nHeight, const Consensus::Params& params)
+{
+    return nHeight >= params.nComputeNodeActivationHeight;
+}
 
 #endif // BITCOIN_EVO_DMN_TYPES_H

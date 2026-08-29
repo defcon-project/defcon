@@ -17,9 +17,10 @@ bool CProRegTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState&
     if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version");
     }
-    // The Evo type is retired: its enum value stays reserved so historic
-    // serialization cannot be reused, but no transaction may carry it.
-    if (nType != MnType::Regular) {
+    // The retired Evo type stays reserved but unusable; Compute is only
+    // trivially acceptable here -- its activation height is enforced in the
+    // contextual checks.
+    if (nType != MnType::Regular && nType != MnType::Compute) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
     }
     if (nMode != 0) {
@@ -101,8 +102,9 @@ bool CProUpServTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationSta
     // Mirror CProRegTx: an out-of-range nType is mempool-acceptable without
     // this but block-invalid in BuildNewListFromBlock, so a single relayed
     // ProUpServTx would stall CreateNewBlock/getblocktemplate. (dash#7488)
-    // The retired Evo type is rejected here the same way.
-    if (nType != MnType::Regular) {
+    // The retired Evo type is rejected here the same way; Compute's
+    // activation height is enforced in the contextual checks.
+    if (nType != MnType::Regular && nType != MnType::Compute) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
     }
 
