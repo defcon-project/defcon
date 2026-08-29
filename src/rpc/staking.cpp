@@ -83,7 +83,11 @@ static RPCHelpMan getstakinginfo()
         {
             LOCK(cs_main);
             pindex = active_chain.Tip();
-            nWeight = stakable_wallets[y].GetStakeWeight(pindex->GetBlockTime(), pindex->nHeight);
+            // Resolved from the height being mined, which is the one after
+            // the tip and the same height ExplainExcludedCoins is given below.
+            // Read a block apart, the two halves of this answer could describe
+            // different rules across an activation height.
+            nWeight = stakable_wallets[y].GetStakeWeight(pindex->GetBlockTime(), pindex->nHeight + 1);
             lastCoinStakeSearchInterval = this_wallet->nLastCoinStakeSearchTime;
         }
 
