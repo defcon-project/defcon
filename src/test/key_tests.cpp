@@ -368,4 +368,32 @@ BOOST_AUTO_TEST_CASE(pubkey_invalid_is_never_valid)
     BOOST_CHECK_EQUAL(good.size(), CPubKey::COMPRESSED_SIZE);
 }
 
+/**
+ * ValidSize checks the secp256k1 header byte, not only the length.
+ *
+ * It feeds Solver's script classification, so a blob of key length whose header
+ * byte belongs to a different length used to classify as a pubkey. A BLS key,
+ * which has no header-byte convention, is judged by length alone.
+ */
+BOOST_AUTO_TEST_CASE(validsize_checks_the_header_byte)
+{
+    // Compressed: 33 bytes led by 0x02 or 0x03.
+    BOOST_CHECK(CPubKey::ValidSize(std::vector<unsigned char>(CPubKey::COMPRESSED_SIZE, 0x02)));
+    BOOST_CHECK(CPubKey::ValidSize(std::vector<unsigned char>(CPubKey::COMPRESSED_SIZE, 0x03)));
+    // 33 bytes led by an uncompressed prefix is not a well-formed key.
+    BOOST_CHECK(!CPubKey::ValidSize(std::vector<unsigned char>(CPubKey::COMPRESSED_SIZE, 0x07)));
+
+    // Uncompressed: 65 bytes led by 0x04/0x06/0x07.
+    BOOST_CHECK(CPubKey::ValidSize(std::vector<unsigned char>(CPubKey::SIZE, 0x04)));
+    // 65 bytes led by a compressed prefix is not well-formed.
+    BOOST_CHECK(!CPubKey::ValidSize(std::vector<unsigned char>(CPubKey::SIZE, 0x02)));
+
+    // BLS: 48 bytes accepted whatever the first byte.
+    BOOST_CHECK(CPubKey::ValidSize(std::vector<unsigned char>(CPubKey::BLS_PUBLIC_KEY_SIZE, 0xAB)));
+
+    // Wrong lengths, and empty, are rejected.
+    BOOST_CHECK(!CPubKey::ValidSize(std::vector<unsigned char>(20, 0x02)));
+    BOOST_CHECK(!CPubKey::ValidSize(std::vector<unsigned char>{}));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
