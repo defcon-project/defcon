@@ -141,12 +141,12 @@ BOOST_AUTO_TEST_CASE(proupserv_rejects_invalid_ntype)
         return proTx;
     };
 
-    // Valid types must still pass trivial validation.
+    // Regular must still pass trivial validation; the retired Evo type must not.
     {
         TxValidationState state;
         BOOST_CHECK(make_proupserv(MnType::Regular).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
         state = {};
-        BOOST_CHECK(make_proupserv(MnType::Evo).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
+        BOOST_CHECK(!make_proupserv(MnType::Evo).IsTriviallyValid(/*is_basic_scheme_active=*/true, state));
     }
 
     // Out-of-range nType (raw uint16 deserialised into the enum) must be rejected.

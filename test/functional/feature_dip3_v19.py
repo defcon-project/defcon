@@ -46,7 +46,7 @@ class DIP3V19Test(DashTestFramework):
         self.extra_args = [[
             '-testactivationheight=v19@200',
         ]] * 6
-        self.set_dash_test_params(6, 5, evo_count=2, extra_args=self.extra_args)
+        self.set_dash_test_params(6, 5, extra_args=self.extra_args)
 
 
     def run_test(self):
@@ -78,30 +78,20 @@ class DIP3V19Test(DashTestFramework):
         self.log.info("pubkeyoperator should still be shown using legacy scheme")
         assert_equal(pubkeyoperator_list_before, pubkeyoperator_list_after)
 
-        evo_info_0 = self.dynamically_add_masternode(evo=True, rnd=7)
-        assert evo_info_0 is not None
-
-        self.log.info("Checking that protxs with duplicate EvoNodes fields are rejected")
-        evo_info_1 = self.dynamically_add_masternode(evo=True, rnd=7, should_be_rejected=True)
-        assert evo_info_1 is None
-        self.dynamically_evo_update_service(evo_info_0, 8)
-        evo_info_2 = self.dynamically_add_masternode(evo=True, rnd=8, should_be_rejected=True)
-        assert evo_info_2 is None
-        evo_info_3 = self.dynamically_add_masternode(evo=True, rnd=9)
-        assert evo_info_3 is not None
-        self.dynamically_evo_update_service(evo_info_0, 9, should_be_rejected=True)
+        mn_info = self.dynamically_add_masternode(rnd=7)
+        assert mn_info is not None
 
         revoke_protx = self.mninfo[-1].proTxHash
         revoke_keyoperator = self.mninfo[-1].keyOperator
         self.log.info(f"Trying to revoke proTx:{revoke_protx}")
-        self.test_revoke_protx(evo_info_3.nodeIdx, revoke_protx, revoke_keyoperator)
+        self.test_revoke_protx(mn_info.nodeIdx, revoke_protx, revoke_keyoperator)
 
         self.mine_quorum(llmq_type_name='llmq_test', llmq_type=100)
 
         self.log.info("Checking that adding more regular MNs after v19 doesn't break DKGs and IS/CLs")
 
         for i in range(6):
-            new_mn = self.dynamically_add_masternode(evo=False, rnd=(10 + i))
+            new_mn = self.dynamically_add_masternode(rnd=(10 + i))
             assert new_mn is not None
 
         # mine more quorums and make sure everything still works
@@ -123,9 +113,16 @@ class DIP3V19Test(DashTestFramework):
         self.bump_mocktime(10 * 60 + 1) # to make tx safe to include in block
         tip = self.generate(self.nodes[0], 1, sync_fun=self.no_op)[0]
         assert_equal(self.nodes[0].getrawtransaction(protx_result, 1, tip)['confirmations'], 1)
-        # Revoking a MN results in disconnects. Wait for disconnects to actually happen
-        # and then reconnect the corresponding node back to let sync_blocks finish correctly.
-        self.wait_until(lambda: self.nodes[node_idx].getconnectioncount() == 0)
+        # The revocation must land in the deterministic list: the operator
+        # fields are reset and the masternode is banned out of the valid set.
+        # (Waiting for every socket to drop instead would depend on quorum
+        # connection sets that keep a revoked member until they rotate.)
+        def revoked():
+            state = self.nodes[0].protx('info', revoke_protx)['state']
+            return state['PoSeBanHeight'] != -1 and state['revocationReason'] == 1
+        self.wait_until(revoked)
+        # a revoked masternode falls out of the mesh; keep the node connected
+        # so the final sync still works
         self.connect_nodes(node_idx, 0)
         self.sync_all()
         self.log.info(f"Successfully revoked={revoke_protx}")

@@ -1305,7 +1305,7 @@ class CMnEhf:
 
 
 class CSimplifiedMNListEntry:
-    __slots__ = ("proRegTxHash", "confirmedHash", "service", "pubKeyOperator", "keyIDVoting", "isValid", "nVersion", "type", "platformHTTPPort", "platformNodeID")
+    __slots__ = ("proRegTxHash", "confirmedHash", "service", "pubKeyOperator", "keyIDVoting", "isValid", "nVersion", "type")
 
     def __init__(self):
         self.set_null()
@@ -1319,8 +1319,6 @@ class CSimplifiedMNListEntry:
         self.isValid = False
         self.nVersion = 0
         self.type = 0
-        self.platformHTTPPort = 0
-        self.platformNodeID = b'\x00' * 20
 
     def deserialize(self, f):
         self.nVersion = struct.unpack("<H", f.read(2))[0]
@@ -1332,9 +1330,6 @@ class CSimplifiedMNListEntry:
         self.isValid = struct.unpack("<?", f.read(1))[0]
         if self.nVersion == 2:
             self.type = struct.unpack("<H", f.read(2))[0]
-            if self.type == 1:
-                self.platformHTTPPort = struct.unpack("<H", f.read(2))[0]
-                self.platformNodeID = f.read(20)
 
     def serialize(self, with_version = True):
         r = b""
@@ -1348,9 +1343,6 @@ class CSimplifiedMNListEntry:
         r += struct.pack("<?", self.isValid)
         if self.nVersion == 2:
             r += struct.pack("<H", self.type)
-            if self.type == 1:
-                r += struct.pack("<H", self.platformHTTPPort)
-                r += self.platformNodeID
         return r
 
 
