@@ -157,6 +157,22 @@ static RPCArg GetRpcArg(const std::string& strParamName)
                 "It has to match the private key which is later used when voting on proposals.\n"
                 "If set to an empty string, the currently active voting key address is reused."}
         },
+        {"oracleKey",
+            {"oracleKey", RPCArg::Type::STR_HEX, RPCArg::Optional::NO,
+                "The compressed secp256k1 oracle identity key of the Compute masternode."}
+        },
+        {"oracleEndpoint",
+            {"oracleEndpoint", RPCArg::Type::STR, RPCArg::Optional::NO,
+                "The oracle service endpoint, e.g. host:port. May be empty until the service goes live."}
+        },
+        {"oracleCertHash",
+            {"oracleCertHash", RPCArg::Type::STR_HEX, RPCArg::Optional::NO,
+                "Hash of the service certificate, or an empty string for none."}
+        },
+        {"oracleCertExpiryHeight",
+            {"oracleCertExpiryHeight", RPCArg::Type::NUM, RPCArg::Optional::NO,
+                "Block height at which the service certificate expires; 0 for none."}
+        },
     };
 
     auto it = mapParamHelp.find(strParamName);
@@ -361,9 +377,10 @@ enum class ProTxRegisterAction
 
 static UniValue protx_register_common_wrapper(const JSONRPCRequest& request,
                                               const bool specific_legacy_bls_scheme,
-                                              ProTxRegisterAction action);
+                                              ProTxRegisterAction action,
+                                              MnType mnType);
 
-static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& request);
+static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& request, MnType mnType);
 
 
 static RPCHelpMan protx_register_fund_wrapper(const bool legacy)
@@ -401,7 +418,7 @@ static RPCHelpMan protx_register_fund_wrapper(const bool legacy)
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    return protx_register_common_wrapper(request, self.m_name == "protx register_fund_legacy", ProTxRegisterAction::Fund);
+    return protx_register_common_wrapper(request, self.m_name == "protx register_fund_legacy", ProTxRegisterAction::Fund, MnType::Regular);
 },
     };
 }
@@ -448,7 +465,7 @@ static RPCHelpMan protx_register_wrapper(bool legacy)
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    return protx_register_common_wrapper(request, self.m_name == "protx register_legacy", ProTxRegisterAction::External);
+    return protx_register_common_wrapper(request, self.m_name == "protx register_legacy", ProTxRegisterAction::External, MnType::Regular);
 },
     };
 }
@@ -496,7 +513,7 @@ static RPCHelpMan protx_register_prepare_wrapper(const bool legacy)
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    return protx_register_common_wrapper(request, self.m_name == "protx register_prepare_legacy", ProTxRegisterAction::Prepare);
+    return protx_register_common_wrapper(request, self.m_name == "protx register_prepare_legacy", ProTxRegisterAction::Prepare, MnType::Regular);
 },
     };
 }
@@ -511,9 +528,110 @@ static RPCHelpMan protx_register_prepare_legacy()
     return protx_register_prepare_wrapper(true);
 }
 
+static RPCHelpMan protx_register_fund_compute()
+{
+    return RPCHelpMan{"protx register_fund_compute",
+        "\nSame as \"protx register_fund\", but registers a Compute masternode carrying its oracle service\n"
+        "descriptor. Only accepted once the Compute activation height is reached.\n"
+        + HELP_REQUIRING_PASSPHRASE,
+        {
+            GetRpcArg("collateralAddress"),
+            GetRpcArg("ipAndPort"),
+            GetRpcArg("ownerAddress"),
+            GetRpcArg("operatorPubKey_register"),
+            GetRpcArg("votingAddress_register"),
+            GetRpcArg("operatorReward"),
+            GetRpcArg("payoutAddress_register"),
+            GetRpcArg("oracleKey"),
+            GetRpcArg("oracleEndpoint"),
+            GetRpcArg("fundAddress"),
+            GetRpcArg("submit"),
+        },
+        {
+            RPCResult{"if \"submit\" is not set or set to true",
+                RPCResult::Type::STR_HEX, "txid", "The transaction id"},
+            RPCResult{"if \"submit\" is set to false",
+                RPCResult::Type::STR_HEX, "hex", "The serialized signed ProTx in hex format"},
+        },
+        RPCExamples{""},
+        [](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    return protx_register_common_wrapper(request, false, ProTxRegisterAction::Fund, MnType::Compute);
+},
+    };
+}
+
+static RPCHelpMan protx_register_compute()
+{
+    return RPCHelpMan{"protx register_compute",
+        "\nSame as \"protx register\", but registers a Compute masternode carrying its oracle service\n"
+        "descriptor. Only accepted once the Compute activation height is reached.\n"
+        + HELP_REQUIRING_PASSPHRASE,
+        {
+            GetRpcArg("collateralHash"),
+            GetRpcArg("collateralIndex"),
+            GetRpcArg("ipAndPort"),
+            GetRpcArg("ownerAddress"),
+            GetRpcArg("operatorPubKey_register"),
+            GetRpcArg("votingAddress_register"),
+            GetRpcArg("operatorReward"),
+            GetRpcArg("payoutAddress_register"),
+            GetRpcArg("oracleKey"),
+            GetRpcArg("oracleEndpoint"),
+            GetRpcArg("feeSourceAddress"),
+            GetRpcArg("submit"),
+        },
+        {
+            RPCResult{"if \"submit\" is not set or set to true",
+                RPCResult::Type::STR_HEX, "txid", "The transaction id"},
+            RPCResult{"if \"submit\" is set to false",
+                RPCResult::Type::STR_HEX, "hex", "The serialized signed ProTx in hex format"},
+        },
+        RPCExamples{""},
+        [](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    return protx_register_common_wrapper(request, false, ProTxRegisterAction::External, MnType::Compute);
+},
+    };
+}
+
+static RPCHelpMan protx_register_prepare_compute()
+{
+    return RPCHelpMan{"protx register_prepare_compute",
+        "\nSame as \"protx register_prepare\", but for a Compute masternode carrying its oracle service\n"
+        "descriptor. Only accepted once the Compute activation height is reached.\n",
+        {
+            GetRpcArg("collateralHash"),
+            GetRpcArg("collateralIndex"),
+            GetRpcArg("ipAndPort"),
+            GetRpcArg("ownerAddress"),
+            GetRpcArg("operatorPubKey_register"),
+            GetRpcArg("votingAddress_register"),
+            GetRpcArg("operatorReward"),
+            GetRpcArg("payoutAddress_register"),
+            GetRpcArg("oracleKey"),
+            GetRpcArg("oracleEndpoint"),
+            GetRpcArg("feeSourceAddress"),
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::STR_HEX, "tx", "The serialized unsigned ProTx in hex format"},
+                {RPCResult::Type::STR_HEX, "collateralAddress", "The collateral address"},
+                {RPCResult::Type::STR_HEX, "signMessage", "The string message that needs to be signed with the collateral key"},
+            }},
+        RPCExamples{""},
+        [](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    return protx_register_common_wrapper(request, false, ProTxRegisterAction::Prepare, MnType::Compute);
+},
+    };
+}
+
 static UniValue protx_register_common_wrapper(const JSONRPCRequest& request,
                                               const bool specific_legacy_bls_scheme,
-                                              const ProTxRegisterAction action)
+                                              const ProTxRegisterAction action,
+                                              const MnType mnType)
 {
     const NodeContext& node = EnsureAnyNodeContext(request.context);
     const ChainstateManager& chainman = EnsureChainman(node);
@@ -535,7 +653,7 @@ static UniValue protx_register_common_wrapper(const JSONRPCRequest& request,
     const bool use_legacy = specific_legacy_bls_scheme;
 
     CProRegTx ptx;
-    ptx.nType = MnType::Regular;
+    ptx.nType = mnType;
 
     if (action == ProTxRegisterAction::Fund) {
         CTxDestination collateralDest = DecodeDestination(request.params[paramIdx].get_str());
@@ -544,7 +662,7 @@ static UniValue protx_register_common_wrapper(const JSONRPCRequest& request,
         }
         CScript collateralScript = GetScriptForDestination(collateralDest);
 
-        CAmount fundCollateral = GetMnType(MnType::Regular).collat_amount;
+        CAmount fundCollateral = GetMnType(mnType).collat_amount;
         CTxOut collateralTxOut(fundCollateral, collateralScript);
         tx.vout.emplace_back(collateralTxOut);
 
@@ -593,6 +711,15 @@ static UniValue protx_register_common_wrapper(const JSONRPCRequest& request,
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("invalid payout address: %s", request.params[paramIdx + 5].get_str()));
     }
 
+    if (mnType == MnType::Compute) {
+        if (!IsHex(request.params[paramIdx + 6].get_str())) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "oracleKey must be a hexadecimal string");
+        }
+        ptx.computeDescriptor.vchOracleKey = ParseHex(request.params[paramIdx + 6].get_str());
+        ptx.computeDescriptor.endpoint = request.params[paramIdx + 7].get_str();
+        paramIdx += 2;
+    }
+
     ptx.keyIDVoting = keyIDVoting;
     ptx.scriptPayout = GetScriptForDestination(payoutDest);
 
@@ -616,7 +743,7 @@ static UniValue protx_register_common_wrapper(const JSONRPCRequest& request,
     if (action == ProTxRegisterAction::Fund) {
         FundSpecialTx(*pwallet, tx, ptx, fundDest);
         UpdateSpecialTxInputsHash(tx, ptx);
-        CAmount fundCollateral = GetMnType(MnType::Regular).collat_amount;
+        CAmount fundCollateral = GetMnType(mnType).collat_amount;
         uint32_t collateralIndex = (uint32_t) -1;
         for (uint32_t i = 0; i < tx.vout.size(); i++) {
             if (tx.vout[i].nValue == fundCollateral) {
@@ -773,12 +900,40 @@ static RPCHelpMan protx_update_service()
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
-    return protx_update_service_common_wrapper(request);
+    return protx_update_service_common_wrapper(request, MnType::Regular);
 },
     };
 }
 
-static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& request)
+static RPCHelpMan protx_update_service_compute()
+{
+    return RPCHelpMan{"protx update_service_compute",
+        "\nSame as \"protx update_service\", but for a Compute masternode: replaces its oracle service\n"
+        "descriptor, which is how a service certificate is renewed.\n"
+        + HELP_REQUIRING_PASSPHRASE,
+        {
+            GetRpcArg("proTxHash"),
+            GetRpcArg("ipAndPort_update"),
+            GetRpcArg("operatorKey"),
+            GetRpcArg("oracleKey"),
+            GetRpcArg("oracleEndpoint"),
+            GetRpcArg("oracleCertHash"),
+            GetRpcArg("oracleCertExpiryHeight"),
+            GetRpcArg("operatorPayoutAddress"),
+            GetRpcArg("feeSourceAddress"),
+        },
+        RPCResult{
+            RPCResult::Type::STR_HEX, "txid", "The transaction id"
+        },
+        RPCExamples{""},
+        [](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    return protx_update_service_common_wrapper(request, MnType::Compute);
+},
+    };
+}
+
+static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& request, const MnType mnType)
 {
     const NodeContext& node = EnsureAnyNodeContext(request.context);
     const ChainstateManager& chainman = EnsureChainman(node);
@@ -792,7 +947,7 @@ static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& reques
     EnsureWalletIsUnlocked(*wallet);
 
     CProUpServTx ptx;
-    ptx.nType = MnType::Regular;
+    ptx.nType = mnType;
     ptx.proTxHash = ParseHashV(request.params[0], "proTxHash");
 
     if (auto addr = Lookup(request.params[1].get_str().c_str(), Params().GetDefaultPort(), false); addr.has_value()) {
@@ -805,12 +960,25 @@ static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& reques
 
     size_t paramIdx = 3;
 
+    if (mnType == MnType::Compute) {
+        if (!IsHex(request.params[paramIdx].get_str())) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "oracleKey must be a hexadecimal string");
+        }
+        ptx.computeDescriptor.vchOracleKey = ParseHex(request.params[paramIdx].get_str());
+        ptx.computeDescriptor.endpoint = request.params[paramIdx + 1].get_str();
+        if (!request.params[paramIdx + 2].get_str().empty()) {
+            ptx.computeDescriptor.certHash = ParseHashV(request.params[paramIdx + 2], "oracleCertHash");
+        }
+        ptx.computeDescriptor.certExpiryHeight = ParseInt32V(request.params[paramIdx + 3], "oracleCertExpiryHeight");
+        paramIdx += 4;
+    }
+
     auto dmn = dmnman.GetListAtChainTip().GetMN(ptx.proTxHash);
     if (!dmn) {
         throw std::runtime_error(strprintf("masternode with proTxHash %s not found", ptx.proTxHash.ToString()));
     }
-    if (dmn->nType != MnType::Regular) {
-        throw std::runtime_error(strprintf("masternode with proTxHash %s is not a %s", ptx.proTxHash.ToString(), GetMnType(MnType::Regular).description));
+    if (dmn->nType != mnType) {
+        throw std::runtime_error(strprintf("masternode with proTxHash %s is not a %s", ptx.proTxHash.ToString(), GetMnType(mnType).description));
     }
     ptx.nVersion = dmn->pdmnState->nVersion;
 
@@ -1677,12 +1845,16 @@ static RPCHelpMan protx_help()
         "  register_legacy          - Create a ProTx by parsing BLS using the legacy scheme and send it to network\n"
         "  register_fund_legacy     - Fund and create a ProTx by parsing BLS using the legacy scheme, then send it to network\n"
         "  register_prepare_legacy  - Create an unsigned ProTx by parsing BLS using the legacy scheme\n"
+        "  register_compute         - Create and send ProTx to network for a Compute masternode\n"
+        "  register_fund_compute    - Fund, create and send ProTx to network for a Compute masternode\n"
+        "  register_prepare_compute - Create an unsigned ProTx for a Compute masternode\n"
         "  register_submit          - Sign and submit a ProTx\n"
 #endif
         "  list                     - List ProTxs\n"
         "  info                     - Return information about a ProTx\n"
 #ifdef ENABLE_WALLET
         "  update_service           - Create and send ProUpServTx to network\n"
+        "  update_service_compute   - Create and send ProUpServTx to network for a Compute masternode\n"
         "  update_registrar         - Create and send ProUpRegTx to network\n"
         "  update_registrar_legacy  - Create ProUpRegTx by parsing BLS using the legacy scheme, then send it to network\n"
         "  revoke                   - Create and send ProUpRevTx to network\n"
@@ -1811,12 +1983,16 @@ static const CRPCCommand commands[] =
     { "evo",                &protx_help,                       },
 #ifdef ENABLE_WALLET
     { "evo",                &protx_register,                   },
+    { "evo",                &protx_register_compute,           },
     { "evo",                &protx_register_legacy,            },
     { "evo",                &protx_register_fund,              },
+    { "evo",                &protx_register_fund_compute,      },
     { "evo",                &protx_register_fund_legacy,       },
     { "evo",                &protx_register_prepare,           },
+    { "evo",                &protx_register_prepare_compute,   },
     { "evo",                &protx_register_prepare_legacy,    },
     { "evo",                &protx_update_service,             },
+    { "evo",                &protx_update_service_compute,     },
     { "evo",                &protx_register_submit,            },
     { "evo",                &protx_update_registrar,           },
     { "evo",                &protx_update_registrar_legacy,    },

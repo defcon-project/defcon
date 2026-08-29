@@ -1125,6 +1125,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         return self.config["components"].getboolean("USE_BDB")
 
 MASTERNODE_COLLATERAL = 1000
+COMPUTENODE_COLLATERAL = 4000
 
 class MasternodeInfo:
     def __init__(self, proTxHash, ownerAddr, votingAddr, rewards_address, operator_reward, pubKeyOperator, keyOperator, collateral_address, collateral_txid, collateral_vout, addr):
@@ -1256,7 +1257,7 @@ class DashTestFramework(BitcoinTestFramework):
         for i in range(0, idx):
             self.connect_nodes(i, idx)
 
-    def dynamically_add_masternode(self, rnd=None, should_be_rejected=False):
+    def dynamically_add_masternode(self, compute=False, rnd=None, should_be_rejected=False):
         mn_idx = len(self.nodes)
 
         node_p2p_port = p2p_port(mn_idx)
@@ -1264,7 +1265,7 @@ class DashTestFramework(BitcoinTestFramework):
 
         protx_success = False
         try:
-            created_mn_info = self.dynamically_prepare_masternode(mn_idx, node_p2p_port, rnd)
+            created_mn_info = self.dynamically_prepare_masternode(mn_idx, node_p2p_port, compute, rnd)
             protx_success = True
         except:
             self.log.info("dynamically_prepare_masternode failed")
@@ -1295,7 +1296,7 @@ class DashTestFramework(BitcoinTestFramework):
         self.log.info("Successfully started and synced proTx:"+str(created_mn_info.proTxHash))
         return created_mn_info
 
-    def dynamically_prepare_masternode(self, idx, node_p2p_port, rnd=None):
+    def dynamically_prepare_masternode(self, idx, node_p2p_port, compute=False, rnd=None):
         v19_active = softfork_active(self.nodes[0], 'v19')
         bls = self.nodes[0].bls('generate') if v19_active else self.nodes[0].bls('generate', True)
         collateral_address = self.nodes[0].getnewaddress()
@@ -1304,7 +1305,7 @@ class DashTestFramework(BitcoinTestFramework):
         voting_address = self.nodes[0].getnewaddress()
         reward_address = self.nodes[0].getnewaddress()
 
-        collateral_amount = MASTERNODE_COLLATERAL
+        collateral_amount = COMPUTENODE_COLLATERAL if compute else MASTERNODE_COLLATERAL
         outputs = {collateral_address: collateral_amount, funds_address: 1}
         collateral_txid = self.nodes[0].sendmany("", outputs)
         self.bump_mocktime(10 * 60 + 1) # to make tx safe to include in block
@@ -1322,7 +1323,12 @@ class DashTestFramework(BitcoinTestFramework):
         ipAndPort = '127.0.0.1:%d' % node_p2p_port
         operatorReward = idx
 
-        protx_result = self.nodes[0].protx("register" if v19_active else "register_legacy", collateral_txid, collateral_vout, ipAndPort, owner_address, bls['public'], voting_address, operatorReward, reward_address, funds_address, True)
+        if compute:
+            # the secp256k1 generator point: a stable, always-valid oracle key
+            oracle_key = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+            protx_result = self.nodes[0].protx("register_compute", collateral_txid, collateral_vout, ipAndPort, owner_address, bls['public'], voting_address, operatorReward, reward_address, oracle_key, "oracle.example:443", funds_address, True)
+        else:
+            protx_result = self.nodes[0].protx("register" if v19_active else "register_legacy", collateral_txid, collateral_vout, ipAndPort, owner_address, bls['public'], voting_address, operatorReward, reward_address, funds_address, True)
 
         self.bump_mocktime(10 * 60 + 1) # to make tx safe to include in block
         tip = self.generate(self.nodes[0], 1)[0]
@@ -1331,7 +1337,7 @@ class DashTestFramework(BitcoinTestFramework):
         mn_info = MasternodeInfo(protx_result, owner_address, voting_address, reward_address, operatorReward, bls['public'], bls['secret'], collateral_address, collateral_txid, collateral_vout, ipAndPort)
         self.mninfo.append(mn_info)
 
-        self.log.info("Prepared MN %d: collateral_txid=%s, collateral_vout=%d, protxHash=%s" % (idx, collateral_txid, collateral_vout, protx_result))
+        self.log.info("Prepared %s %d: collateral_txid=%s, collateral_vout=%d, protxHash=%s" % ("ComputeNode" if compute else "MN", idx, collateral_txid, collateral_vout, protx_result))
         return mn_info
 
     def prepare_masternodes(self):
