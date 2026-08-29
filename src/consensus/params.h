@@ -205,6 +205,13 @@ struct Params {
      *  rules, which is what every network keeps until it is set. */
     int nPosKernelV2ActivationHeight{std::numeric_limits<int>::max()};
 
+    /** M-02: below this height IsBLSSig accepts any signature of BLS size or
+     *  larger, letting an oversized signature skip the ECDSA encoding checks;
+     *  at or above it, only the exact BLS size is treated as BLS. The default
+     *  unreachable height means the original rule, which every network keeps
+     *  until this is set. */
+    int nStrictBLSSigSizeActivationHeight{std::numeric_limits<int>::max()};
+
     /** these parameters are only used on devnet and can be configured from the outside */
     int nMinimumDifficultyBlocks{0};
     int nHighSubsidyBlocks{0};
