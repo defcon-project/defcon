@@ -5,6 +5,7 @@
 #include <evo/chainhelper.h>
 
 #include <consensus/params.h>
+#include <evo/deterministicmns.h>
 #include <evo/specialtxman.h>
 #include <llmq/chainlocks.h>
 #include <llmq/instantsend.h>
@@ -18,6 +19,7 @@ CChainstateHelper::CChainstateHelper(CCreditPoolManager& cpoolman, CDeterministi
                                      const llmq::CChainLocksHandler& clhandler, const llmq::CQuorumManager& qman) :
     isman{isman},
     clhandler{clhandler},
+    m_dmnman{dmnman},
     mn_payments{std::make_unique<CMNPaymentsProcessor>(dmnman, govman, chainman, consensus_params, mn_sync, sporkman)},
     special_tx{std::make_unique<CSpecialTxProcessor>(cpoolman, dmnman, mnhfman, qblockman, qsnapman, chainman,
                                                      consensus_params, clhandler, qman)}
@@ -37,6 +39,16 @@ bool CChainstateHelper::HasChainLock(int nHeight, const uint256& blockHash) cons
 }
 
 int32_t CChainstateHelper::GetBestChainLockHeight() const { return clhandler.GetBestChainLock().getHeight(); }
+
+CDeterministicMNList CChainstateHelper::GetMNListForBlock(const CBlockIndex* pindex) const
+{
+    return m_dmnman.GetListForBlock(pindex);
+}
+
+CDeterministicMNList CChainstateHelper::GetMNListAtTip() const
+{
+    return m_dmnman.GetListAtChainTip();
+}
 
 /** Passthrough functions to CInstantSendManager */
 std::optional<std::pair</*islock_hash=*/uint256, /*txid=*/uint256>> CChainstateHelper::ConflictingISLockIfAny(

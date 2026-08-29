@@ -800,7 +800,7 @@ bool MemPoolAccept::PreChecks(ATMPArgs& args, Workspace& ws)
         }
 
         // Check to see if any collaterals are spent early
-        if (!CheckPrematureCollateralMovement(txin.prevout, m_active_chainstate.m_chain.Height(), chainparams.GetConsensus())) {
+        if (!CheckPrematureCollateralMovement(m_chain_helper.GetMNListAtTip(), txin.prevout, m_active_chainstate.m_chain.Height(), chainparams.GetConsensus())) {
             return state.Invalid(TxValidationResult::TX_CONSENSUS, "txn-spends-premature-collateral");
         }
 
@@ -2324,6 +2324,11 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         stakeValueIn = view.GetValueIn(*(block.vtx[1]));
     }
 
+    // Registered collaterals as of the previous block: the deterministic list
+    // every node holds, so the premature-spend check below is startup-independent.
+    const CDeterministicMNList mnListForCollateral =
+        pindex->pprev ? ChainHelper().GetMNListForBlock(pindex->pprev) : CDeterministicMNList();
+
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
         const CTransaction &tx = *(block.vtx[i]);
@@ -2355,7 +2360,7 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
 
             // Check to see if any collaterals are spent early
             for (size_t j = 0; j < tx.vin.size(); j++) {
-                if (!CheckPrematureCollateralMovement(tx.vin[j].prevout, pindex->nHeight, m_params.GetConsensus())) {
+                if (!CheckPrematureCollateralMovement(mnListForCollateral, tx.vin[j].prevout, pindex->nHeight, m_params.GetConsensus())) {
                     return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "txn-spends-premature-collateral");
                 }
             }
@@ -4381,7 +4386,7 @@ MempoolAcceptResult ChainstateManager::ProcessTransaction(const CTransactionRef&
 
     for (const CTxIn& txin : tx->vin) {
         // Check to see if any collaterals are spent early
-        if (!CheckPrematureCollateralMovement(txin.prevout, m_active_chainstate->m_chain.Height(), Params().GetConsensus())) {
+        if (!CheckPrematureCollateralMovement(active_chainstate.ChainHelper().GetMNListAtTip(), txin.prevout, m_active_chainstate->m_chain.Height(), Params().GetConsensus())) {
             TxValidationState state;
             state.Invalid(TxValidationResult::TX_CONSENSUS, "txn-spends-premature-collateral");
             return MempoolAcceptResult::Failure(state);
