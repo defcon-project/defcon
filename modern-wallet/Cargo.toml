@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["bridge-core", "launcher", "src-tauri"]
+# src-tauri needs a webview toolchain (WebView2 on Windows, webkit2gtk on
+# Linux). Plain `cargo test` / `cargo build` in this directory covers the two
+# platform-independent crates; the Tauri shell builds through `npm run tauri`.
+default-members = ["bridge-core", "launcher"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
