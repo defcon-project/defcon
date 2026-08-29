@@ -293,4 +293,42 @@ BOOST_AUTO_TEST_CASE(key_ellswift)
     }
 }
 
+/**
+ * A malformed BLS key or signature is a failed check, never a crash.
+ *
+ * VerifySignature routes every 96-byte signature to CPubKey::VerifyBLS, whose
+ * bytes come straight from the script. dashbls reports a point that is the
+ * wrong length or not on the curve by throwing, and the call sits on the
+ * script-check threads with no handler above it, so before the guard an
+ * escaping exception was std::terminate. A non-BLS key reaching the same path
+ * used to be read past its own length, giving a per-node result. Neither may
+ * happen: the answer is a clean false.
+ */
+BOOST_AUTO_TEST_CASE(verifybls_rejects_malformed_without_throwing)
+{
+    const uint256 hash = uint256::ONE;
+    const std::vector<uint8_t> bad_sig(CPubKey::BLS_SIGNATURE_SIZE, 0xCD);
+
+    // 48 bytes shaped like a BLS key but not a valid point.
+    const std::vector<unsigned char> bad_bls(CPubKey::BLS_PUBLIC_KEY_SIZE, 0xAB);
+    CPubKey bls_key;
+    bls_key.Set(bad_bls.begin(), bad_bls.end());
+    BOOST_REQUIRE(bls_key.IsBLS());
+    bool ok = true;
+    BOOST_CHECK_NO_THROW(ok = bls_key.VerifyBLS(hash, bad_sig));
+    BOOST_CHECK(!ok);
+
+    // A non-BLS key must be turned away before the copy, deterministically.
+    const std::vector<unsigned char> thirtythree(CPubKey::COMPRESSED_SIZE, 0x02);
+    CPubKey ecdsa_key;
+    ecdsa_key.Set(thirtythree.begin(), thirtythree.end());
+    BOOST_REQUIRE(!ecdsa_key.IsBLS());
+    BOOST_CHECK(!ecdsa_key.VerifyBLS(hash, bad_sig));
+
+    // A signature of the wrong length never reaches dashbls either.
+    const std::vector<uint8_t> short_sig(CPubKey::BLS_SIGNATURE_SIZE - 1, 0xCD);
+    BOOST_CHECK_NO_THROW(ok = bls_key.VerifyBLS(hash, short_sig));
+    BOOST_CHECK(!ok);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
