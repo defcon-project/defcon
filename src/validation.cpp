@@ -4125,12 +4125,11 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
             return true;
         }
 
-        if (!CheckBlockHeader(block, hash, state, chainparams.GetConsensus(), !block.IsProofOfStake())) {
-            LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
-            return false;
-        }
-
-        // Get prev block index
+        // Find the previous block first: whether a header must carry proof of
+        // work is a function of its height, which the previous block fixes.
+        // Deciding it from the header's own nNonce -- chosen by whoever sent it
+        // -- let a peer skip the PoW check on any header it labelled
+        // proof-of-stake, and so extend the header chain for free.
         CBlockIndex* pindexPrev = nullptr;
         BlockMap::iterator mi{m_blockman.m_block_index.find(block.hashPrevBlock)};
         if (mi == m_blockman.m_block_index.end()) {
@@ -4139,6 +4138,13 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
         }
         pindexPrev = &((*mi).second);
         assert(pindexPrev);
+
+        // Same boundary the block-level pos-early/pow-late check uses.
+        const bool require_pow = (pindexPrev->nHeight + 1) <= chainparams.GetConsensus().lastPowBlock;
+        if (!CheckBlockHeader(block, hash, state, chainparams.GetConsensus(), require_pow)) {
+            LogPrint(BCLog::VALIDATION, "%s: Consensus::CheckBlockHeader: %s, %s\n", __func__, hash.ToString(), state.ToString());
+            return false;
+        }
 
         if (pindexPrev->nStatus & BLOCK_FAILED_MASK) {
             LogPrint(BCLog::VALIDATION, "%s: %s prev block invalid\n", __func__, hash.ToString());
