@@ -1,0 +1,16 @@
+[package]
+name = "defcon-launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Starts defcon-qt (classic) or defcon-wallet (modern) according to gui.conf. No GUI of its own; the safe default is classic."
+
+[[bin]]
+name = "defcon-launcher"
+path = "src/main.rs"
+
+[dependencies]
+defcon-bridge-core = { path = "../bridge-core" }
+
+[dev-dependencies]
+tempfile = "3"

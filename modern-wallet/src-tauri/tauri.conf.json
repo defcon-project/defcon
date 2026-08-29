@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DeFCoN Wallet",
+  "version": "0.1.0",
+  "identifier": "org.defcon.wallet",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:4180",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "DeFCoN Wallet",
+        "width": 1500,
+        "height": 960,
+        "minWidth": 1040,
+        "minHeight": 720,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "deb", "appimage"],
+    "icon": ["icons/icon.ico"]
+  }
+}
