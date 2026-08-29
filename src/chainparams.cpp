@@ -235,6 +235,9 @@ public:
         consensus.evoMnCollateral = 4000000 * COIN;
         consensus.evoVoteWeight = 4;
         consensus.evoPaymentWeight = 4;
+        consensus.computeMnCollateral = 4000000 * COIN;
+        consensus.computeVoteWeight = 1;
+        consensus.computePaymentWeight = 5;
         consensus.minStaticCollateral = 8064;
 
         // The best chain should have at least this much work.
@@ -414,6 +417,9 @@ public:
         consensus.evoMnCollateral = 4000000 * COIN;
         consensus.evoVoteWeight = 4;
         consensus.evoPaymentWeight = 4;
+        consensus.computeMnCollateral = 4000000 * COIN;
+        consensus.computeVoteWeight = 1;
+        consensus.computePaymentWeight = 5;
         consensus.minStaticCollateral = 8064;
 
         // The best chain should have at least this much work.
@@ -586,6 +592,9 @@ public:
         consensus.evoMnCollateral = 4000000 * COIN;
         consensus.evoVoteWeight = 4;
         consensus.evoPaymentWeight = 4;
+        consensus.computeMnCollateral = 4000000 * COIN;
+        consensus.computeVoteWeight = 1;
+        consensus.computePaymentWeight = 5;
         consensus.minStaticCollateral = 8064;
 
         // The best chain should have at least this much work.
@@ -857,6 +866,9 @@ public:
         consensus.evoMnCollateral = 4000 * COIN;
         consensus.evoVoteWeight = 4;
         consensus.evoPaymentWeight = 4;
+        consensus.computeMnCollateral = 4000 * COIN;
+        consensus.computeVoteWeight = 1;
+        consensus.computePaymentWeight = 5;
         consensus.minStaticCollateral = 8064;
 
         // The best chain should have at least this much work.
@@ -1071,6 +1083,8 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
             consensus.MN_RRHeight = int{height};
         } else if (name == "posv2") {
             consensus.nPosKernelV2ActivationHeight = int{height};
+        } else if (name == "compute") {
+            consensus.nComputeNodeActivationHeight = int{height};
         } else {
             throw std::runtime_error(strprintf("Invalid name (%s) for -testactivationheight=name@height.", arg));
         }

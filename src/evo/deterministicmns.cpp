@@ -1542,6 +1542,11 @@ bool CheckProRegTx(CDeterministicMNManager& dmnman, const CTransaction& tx, gsl:
         return false;
     }
 
+    if (opt_ptx->nType == MnType::Compute &&
+        !IsComputeTypeActive(pindexPrev->nHeight + 1, Params().GetConsensus())) {
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-compute-early");
+    }
+
     CTxDestination collateralTxDest;
     const PKHash *keyForPayloadSig = nullptr;
     COutPoint collateralOutpoint;
@@ -1649,6 +1654,11 @@ bool CheckProUpServTx(CDeterministicMNManager& dmnman, const CTransaction& tx, g
     if (!CheckService(*opt_ptx, state)) {
         // pass the state returned by the function above
         return false;
+    }
+
+    if (opt_ptx->nType == MnType::Compute &&
+        !IsComputeTypeActive(pindexPrev->nHeight + 1, Params().GetConsensus())) {
+        return state.Invalid(TxValidationResult::TX_BAD_SPECIAL, "bad-protx-compute-early");
     }
 
     auto mnList = dmnman.GetListForBlock(pindexPrev);
