@@ -100,16 +100,17 @@ pub fn wait_for_rpc(
     timeout: Duration,
 ) -> Result<RpcClient, String> {
     let deadline = Instant::now() + timeout;
-    let mut last: String = "node did not answer".to_owned();
     loop {
-        match make_client() {
+        // The failure reason from this attempt; -28 is warmup progress, and
+        // the latest reason is what a timeout reports.
+        let last = match make_client() {
             Ok(client) => match client.call("getblockchaininfo", serde_json::json!([])) {
                 Ok(_) => return Ok(client),
-                Err(RpcError::Node { code: -28, message }) => last = message, // warming up
-                Err(e) => last = e.to_string(),
+                Err(RpcError::Node { code: -28, message }) => message,
+                Err(e) => e.to_string(),
             },
-            Err(e) => last = e.to_string(), // cookie not written yet
-        }
+            Err(e) => e.to_string(), // cookie not written yet
+        };
         if Instant::now() >= deadline {
             return Err(last);
         }
