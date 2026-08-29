@@ -103,39 +103,46 @@ BOOST_AUTO_TEST_CASE(every_exclusion_has_a_name)
     const CAmount good = 100000 * COIN;
     const int64_t min_age = params.stakeAgeRange[0];
     const int64_t max_age = params.stakeAgeRange[1];
-    const int deep = COINBASE_MATURITY + 1;
+    // GetDepthInMainChain() counts the coin's own block and the kernel does
+    // not, so a coin the kernel accepts at COINBASE_MATURITY + 1 is one
+    // deeper by the wallet's measure.
+    const int deep = COINBASE_MATURITY + 2;
     const int before_v2 = params.nPosKernelV2ActivationHeight - 1;
     const int after_v2 = params.nPosKernelV2ActivationHeight;
 
-    const auto why = [&](CAmount value, bool generated, int depth, TxoutType type,
+    const auto why = [&](CAmount value, int depth, TxoutType type,
                          int64_t age, int height) {
-        return staker.ClassifyForStaking(value, generated, depth, type, age, height);
+        return staker.ClassifyForStaking(value, depth, type, age, height);
     };
 
-    BOOST_CHECK(why(good, false, 0, TxoutType::PUBKEYHASH, min_age, before_v2) == StakeEligibility::Eligible);
+    BOOST_CHECK(why(good, deep, TxoutType::PUBKEYHASH, min_age, before_v2) == StakeEligibility::Eligible);
+    BOOST_CHECK(why(good, deep - 1, TxoutType::PUBKEYHASH, min_age, before_v2) == StakeEligibility::Immature);
 
-    BOOST_CHECK(why(good, true, deep - 1, TxoutType::PUBKEYHASH, min_age, before_v2) == StakeEligibility::Immature);
-    BOOST_CHECK(why(good, true, deep, TxoutType::PUBKEYHASH, min_age, before_v2) == StakeEligibility::Eligible);
+    // The rule is not restricted to generated outputs: CheckProofOfStake applies
+    // it to every staking input. A received coin this shallow answered Eligible
+    // until the classifier was brought in line, and the selection loop then
+    // spent kernel attempts on a coin the network would have refused.
+    BOOST_CHECK(why(good, 1, TxoutType::PUBKEYHASH, min_age, before_v2) == StakeEligibility::Immature);
 
-    BOOST_CHECK(why(good, false, 0, TxoutType::BLSPUBKEY, min_age, before_v2) == StakeEligibility::BLSAddress);
+    BOOST_CHECK(why(good, deep, TxoutType::BLSPUBKEY, min_age, before_v2) == StakeEligibility::BLSAddress);
 
-    BOOST_CHECK(why(params.stakeValueRange[0] - 1, false, 0, TxoutType::PUBKEYHASH, min_age, before_v2)
+    BOOST_CHECK(why(params.stakeValueRange[0] - 1, deep, TxoutType::PUBKEYHASH, min_age, before_v2)
                 == StakeEligibility::BelowMin);
-    BOOST_CHECK(why(params.stakeValueRange[1] + 1, false, 0, TxoutType::PUBKEYHASH, min_age, before_v2)
+    BOOST_CHECK(why(params.stakeValueRange[1] + 1, deep, TxoutType::PUBKEYHASH, min_age, before_v2)
                 == StakeEligibility::AboveMax);
 
-    BOOST_CHECK(why(params.regularMnCollateral, false, 0, TxoutType::PUBKEYHASH, min_age, before_v2)
+    BOOST_CHECK(why(params.regularMnCollateral, deep, TxoutType::PUBKEYHASH, min_age, before_v2)
                 == StakeEligibility::Collateral);
-    BOOST_CHECK(why(params.evoMnCollateral, false, 0, TxoutType::PUBKEYHASH, min_age, before_v2)
+    BOOST_CHECK(why(params.evoMnCollateral, deep, TxoutType::PUBKEYHASH, min_age, before_v2)
                 == StakeEligibility::Collateral);
 
-    BOOST_CHECK(why(good, false, 0, TxoutType::PUBKEYHASH, min_age - 1, before_v2) == StakeEligibility::TooYoung);
+    BOOST_CHECK(why(good, deep, TxoutType::PUBKEYHASH, min_age - 1, before_v2) == StakeEligibility::TooYoung);
 
     // The age cap is one of the rules the activation height lifts, and coin
     // selection has to follow validation across that line or the wallet either
     // builds blocks the network rejects or skips coins it would accept.
-    BOOST_CHECK(why(good, false, 0, TxoutType::PUBKEYHASH, max_age + 1, before_v2) == StakeEligibility::TooOld);
-    BOOST_CHECK(why(good, false, 0, TxoutType::PUBKEYHASH, max_age + 1, after_v2) == StakeEligibility::Eligible);
+    BOOST_CHECK(why(good, deep, TxoutType::PUBKEYHASH, max_age + 1, before_v2) == StakeEligibility::TooOld);
+    BOOST_CHECK(why(good, deep, TxoutType::PUBKEYHASH, max_age + 1, after_v2) == StakeEligibility::Eligible);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
