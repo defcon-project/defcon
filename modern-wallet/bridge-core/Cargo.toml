@@ -1,0 +1,15 @@
+[package]
+name = "defcon-bridge-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-independent core of the DeFCoN modern wallet bridge: gui.conf, datadir resolution, cookie auth, JSON-RPC client and defcond lifecycle. No GUI toolkit dependency, so it tests everywhere with plain cargo."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ureq = { version = "2.12", features = ["json"] }
+base64 = "0.22"
+
+[dev-dependencies]
+tempfile = "3"
