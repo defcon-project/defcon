@@ -2299,10 +2299,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     LogPrintf("nBestHeight = %d\n", chain_active_height);
     if (node.peerman) node.peerman->SetBestHeight(chain_active_height);
 
-    // Fill cache with info about registered masternodes
-    const CBlockIndex* pscan = chainman.ActiveTip();
-    PrescanOnClientInitialise(pscan, chainparams.GetConsensus());
-
     // Map ports with UPnP or NAT-PMP.
     StartMapPort(args.GetBoolArg("-upnp", DEFAULT_UPNP), args.GetBoolArg("-natpmp", DEFAULT_NATPMP));
 
