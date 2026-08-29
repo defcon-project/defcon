@@ -112,6 +112,7 @@ BITCOIN_TESTS =\
   test/evo_cbtx_tests.cpp \
   test/evo_deterministicmns_tests.cpp \
   test/collateral_tests.cpp \
+  test/dmn_types_tests.cpp \
   test/header_pow_gate_tests.cpp \
   test/evo_mnauth_tests.cpp \
   test/evo_mnhf_tests.cpp \
