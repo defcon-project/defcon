@@ -77,13 +77,31 @@ private:
 public:
 
     bool static ValidSize(const std::vector<unsigned char> &vch) {
-      if (vch.size() > 0 &&
-          ((vch.size() == BLS_PUBLIC_KEY_SIZE) ||
-           (vch.size() == COMPRESSED_SIZE) ||
-           (vch.size() == SIZE))) {
+      // A BLS key is a fixed length with no header-byte convention.
+      if (vch.size() == BLS_PUBLIC_KEY_SIZE) {
           return true;
       }
-      return false;
+      // secp256k1: the header byte fixes the length, so a blob of key length
+      // whose header byte belongs to a different length -- or to no key at all
+      // -- is not a well-formed key. Length alone was accepted before, which
+      // let e.g. a 33-byte blob led by 0x07 (an uncompressed prefix) classify
+      // as a pubkey in Solver. This does not gate consensus: ValidSize feeds
+      // only Solver (script classification / standardness), never the script
+      // interpreter.
+      if (vch.empty()) {
+          return false;
+      }
+      switch (vch[0]) {
+      case 0x02:
+      case 0x03:
+          return vch.size() == COMPRESSED_SIZE;
+      case 0x04:
+      case 0x06:
+      case 0x07:
+          return vch.size() == SIZE;
+      default:
+          return false;
+      }
     }
 
     //! Construct an invalid public key.
