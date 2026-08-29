@@ -231,8 +231,10 @@ public:
         consensus.posLimit = uint256S("0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
+        consensus.regularPaymentWeight = 1;
         consensus.evoMnCollateral = 4000000 * COIN;
         consensus.evoVoteWeight = 4;
+        consensus.evoPaymentWeight = 4;
         consensus.minStaticCollateral = 8064;
 
         // The best chain should have at least this much work.
@@ -408,8 +410,10 @@ public:
         consensus.posLimit = uint256S("0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
+        consensus.regularPaymentWeight = 1;
         consensus.evoMnCollateral = 4000000 * COIN;
         consensus.evoVoteWeight = 4;
+        consensus.evoPaymentWeight = 4;
         consensus.minStaticCollateral = 8064;
 
         // The best chain should have at least this much work.
@@ -578,8 +582,10 @@ public:
         consensus.posLimit = uint256S("0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
+        consensus.regularPaymentWeight = 1;
         consensus.evoMnCollateral = 4000000 * COIN;
         consensus.evoVoteWeight = 4;
+        consensus.evoPaymentWeight = 4;
         consensus.minStaticCollateral = 8064;
 
         // The best chain should have at least this much work.
@@ -847,8 +853,10 @@ public:
         consensus.posLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000 * COIN;
         consensus.regularVoteWeight = 1;
+        consensus.regularPaymentWeight = 1;
         consensus.evoMnCollateral = 4000 * COIN;
         consensus.evoVoteWeight = 4;
+        consensus.evoPaymentWeight = 4;
         consensus.minStaticCollateral = 8064;
 
         // The best chain should have at least this much work.

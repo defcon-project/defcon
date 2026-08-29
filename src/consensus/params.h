@@ -192,8 +192,10 @@ struct Params {
     std::vector<int64_t> stakeAgeRange;
     CAmount regularMnCollateral;
     int32_t regularVoteWeight;
+    int32_t regularPaymentWeight;
     CAmount evoMnCollateral;
     int32_t evoVoteWeight;
+    int32_t evoPaymentWeight;
     int minStaticCollateral;
     CScript premineAddress;
     /** Height from which the corrected proof-of-stake kernel rules apply: the

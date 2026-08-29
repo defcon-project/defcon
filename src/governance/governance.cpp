@@ -677,7 +677,7 @@ std::optional<const CSuperblock> CGovernanceManager::CreateSuperblockCandidate(i
     // A proposal is considered passing if (YES votes) >= (Total Weight of Masternodes / 10),
     // count total valid (ENABLED) masternodes to determine passing threshold.
     const auto tip_mn_list = Assert(m_dmnman)->GetListAtChainTip();
-    const int nWeightedMnCount = tip_mn_list.GetValidWeightedMNsCount();
+    const int nWeightedMnCount = tip_mn_list.GetValidVoteWeightedMNsCount();
     const int nAbsVoteReq = std::max(Params().GetConsensus().nGovernanceMinQuorum, nWeightedMnCount / 10);
 
     // Use std::vector of std::shared_ptr<const CGovernanceObject> because CGovernanceObject doesn't support move operations (needed for sorting the vector later)

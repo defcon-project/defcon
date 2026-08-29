@@ -14,16 +14,19 @@ mntype_struct BuildMnStruct(MnType mn_type)
     switch (mn_type) {
         case MnType::Regular:
             this_mn.voting_weight = params.regularVoteWeight;
+            this_mn.payment_weight = params.regularPaymentWeight;
             this_mn.collat_amount = params.regularMnCollateral;
             this_mn.description = "Regular";
             break;
         case MnType::Evo:
             this_mn.voting_weight = params.evoVoteWeight;
+            this_mn.payment_weight = params.evoPaymentWeight;
             this_mn.collat_amount = params.evoMnCollateral;
             this_mn.description = "Evo";
             break;
         case MnType::Invalid:
             this_mn.voting_weight = 0;
+            this_mn.payment_weight = 0;
             this_mn.collat_amount = MAX_MONEY;
             this_mn.description = "Invalid";
             break;
