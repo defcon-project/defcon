@@ -55,18 +55,23 @@ public:
         SIZE >= COMPRESSED_SIZE,
         "COMPRESSED_SIZE is larger than SIZE");
 
+private:
     /**
-     * Just store the serialized data.
-     * Its length can very cheaply be computed from the first byte.
+     * The serialized key data. Kept private: nothing outside the class sets
+     * these, and a length past the buffer would make end() and operator[]
+     * read out of bounds.
      */
     unsigned int vchlen;
     unsigned char vch[SIZE];
 
-private:
-    //! Set this key data to be invalid
+    //! Set this key data to be invalid.
     void Invalidate()
     {
-        vchlen = COMPRESSED_SIZE;
+        // Zero length is the only value IsValid() (size() > 0) reads as
+        // invalid. The old COMPRESSED_SIZE left every default-constructed key,
+        // and every key a wrong length was rejected into, reporting itself
+        // valid over an uninitialised or stale buffer.
+        vchlen = 0;
     }
 
 public:
@@ -91,14 +96,14 @@ public:
     template <typename T>
     void Set(const T pbegin, const T pend)
     {
-        vchlen = pend - pbegin;
-        // The devault adaptation capped this copy at the BLS size, so a
-        // 65-byte uncompressed pubkey recorded its length but copied nothing
-        // and carried whatever the buffer held before. Unserialize has always
-        // accepted all three sizes; this path must too -- the buffer is SIZE
-        // bytes, exactly the largest of them.
-        if (vchlen <= SIZE) {
-            memcpy(vch, (unsigned char*)&pbegin[0], vchlen);
+        // Store only the three real key sizes; any other length is not a key
+        // and invalidates. The earlier version accepted any length up to SIZE,
+        // which is how a blob of some other length became a "valid" key of
+        // that length -- IsValid() only reads size() > 0.
+        const size_t len = static_cast<size_t>(pend - pbegin);
+        if (len == COMPRESSED_SIZE || len == SIZE || len == BLS_PUBLIC_KEY_SIZE) {
+            vchlen = static_cast<unsigned int>(len);
+            memcpy(vch, (unsigned char*)&pbegin[0], len);
         } else {
             Invalidate();
         }
