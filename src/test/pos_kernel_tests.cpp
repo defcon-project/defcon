@@ -4,9 +4,11 @@
 
 #include <arith_uint256.h>
 #include <chainparams.h>
+#include <chainparamsbase.h>
 #include <consensus/validation.h>
 #include <pos/kernel.h>
 #include <primitives/transaction.h>
+#include <util/system.h>
 #include <validation.h>
 
 #include <test/util/setup_common.h>
@@ -215,6 +217,71 @@ BOOST_AUTO_TEST_CASE(an_old_coin_may_still_stake)
     BOOST_CHECK(state.IsInvalid());
     BOOST_CHECK_MESSAGE(state.GetRejectReason() != "bad-stake-age",
                         "an over-age coin was still turned away for its age");
+}
+
+/**
+ * The same coin, under the rules the change replaced.
+ *
+ * an_old_coin_may_still_stake shows the corrected kernel letting an over-age
+ * coin through. That only means something if the original kernel turned the
+ * same coin away for the same reason, so this runs the identical fixture with
+ * the activation height pushed out of reach. The age check sits ahead of the
+ * signature check in CheckProofOfStake, which is why an unsigned coinstake is
+ * enough to read the verdict: under these rules it never gets far enough to
+ * fail for anything else.
+ */
+struct PosKernelOriginalRulesSetup : public TestChain100Setup {
+    PosKernelOriginalRulesSetup() : TestChain100Setup{{"-testactivationheight=posv2@1000000"}} {}
+};
+
+BOOST_FIXTURE_TEST_CASE(an_old_coin_is_retired_under_the_original_rules, PosKernelOriginalRulesSetup)
+{
+    LOCK(cs_main);
+    CChainState& chainstate = m_node.chainman->ActiveChainstate();
+    const CBlockIndex* tip = chainstate.m_chain.Tip();
+    BOOST_REQUIRE(tip != nullptr);
+
+    const Consensus::Params& params = Params().GetConsensus();
+    BOOST_REQUIRE_MESSAGE(!IsPosKernelV2(params, tip->nHeight + 1),
+                          "this test needs the original rules, so the override must have applied");
+
+    const CBlockIndex* funding = chainstate.m_chain[1];
+    BOOST_REQUIRE(funding != nullptr);
+    const int64_t past_the_cap = funding->GetBlockTime() + params.stakeAgeRange[1] + 1;
+
+    const auto tx = MakeCoinstakeSpending(COutPoint(m_coinbase_txns[0]->GetHash(), 0));
+    BlockValidationState state;
+    uint256 hashProof, target;
+    BOOST_CHECK(!CheckProofOfStake(chainstate, state, tip, CTransaction(tx), past_the_cap,
+                                   tip->nBits, hashProof, target));
+    BOOST_CHECK(state.IsInvalid());
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-stake-age");
+}
+
+/**
+ * The activation height is the rollout, so it belongs in a test.
+ *
+ * Both halves matter and they fail in opposite directions. A devnet height
+ * that moves invalidates every measurement taken across it -- the chain says
+ * one rule applied where the record says another. A mainnet or testnet height
+ * that appears by accident is a consensus change nobody decided to make, on a
+ * network that is still running the original kernel deliberately.
+ */
+BOOST_AUTO_TEST_CASE(kernel_v2_activation_heights_are_pinned)
+{
+    const auto& args = *m_node.args;
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nPosKernelV2ActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nPosKernelV2ActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosKernelV2ActivationHeight,
+                      0);
+
+    // Devnet params assert on a devnet name being set; pow_tests does the same dance.
+    gArgs.SoftSetBoolArg("-devnet", true);
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::DEVNET)->GetConsensus().nPosKernelV2ActivationHeight,
+                      4000);
+    gArgs.ForceRemoveArg("devnet");
 }
 
 BOOST_AUTO_TEST_SUITE_END()
