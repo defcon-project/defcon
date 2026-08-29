@@ -158,6 +158,9 @@ public:
     CScript scriptPayout;
     CScript scriptOperatorPayout;
 
+    // Fields of the retired Evo type. They stay because every stored
+    // masternode state serializes them; nothing writes anything but
+    // their defaults any more.
     uint160 platformNodeID{};
     uint16_t platformP2PPort{0};
     uint16_t platformHTTPPort{0};
@@ -170,10 +173,7 @@ public:
         pubKeyOperator(proTx.pubKeyOperator),
         keyIDVoting(proTx.keyIDVoting),
         addr(proTx.addr),
-        scriptPayout(proTx.scriptPayout),
-        platformNodeID(proTx.platformNodeID),
-        platformP2PPort(proTx.platformP2PPort),
-        platformHTTPPort(proTx.platformHTTPPort)
+        scriptPayout(proTx.scriptPayout)
     {
     }
     explicit CDeterministicMNState(const CDeterministicMNState_Oldformat& s) :
