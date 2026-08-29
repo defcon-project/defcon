@@ -330,10 +330,20 @@ bool CExtPubKey::Derive(CExtPubKey &out, unsigned int _nChild) const {
 ////////////////////////////
 
 bool CPubKey::VerifyBLS(const uint256 &hash, const std::vector<uint8_t> &vchSig) const {
-    std::vector<uint8_t> v(BLS_PUBLIC_KEY_SIZE);
-    for (size_t i=0; i < v.size(); i++) {
-         v[i] = vch[i];
+    // A malformed point or signature is a failed check, not a fault. dashbls
+    // reports both by throwing, and this runs on the script-check threads,
+    // where an exception that escapes is std::terminate -- and the inputs are
+    // attacker-chosen script data. The IsBLS() guard also keeps a non-BLS key
+    // out of the copy below, which would otherwise read past its own length
+    // into unrelated buffer bytes and verify differently on each node.
+    if (!IsBLS() || vchSig.size() != BLS_SIGNATURE_SIZE) {
+        return false;
     }
-    std::vector<uint8_t> message(hash.begin(), hash.end());
-    return bls::AugSchemeMPL().Verify(v, message, vchSig);
+    const std::vector<uint8_t> v(vch, vch + BLS_PUBLIC_KEY_SIZE);
+    const std::vector<uint8_t> message(hash.begin(), hash.end());
+    try {
+        return bls::AugSchemeMPL().Verify(v, message, vchSig);
+    } catch (const std::exception&) {
+        return false;
+    }
 }
