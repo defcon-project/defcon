@@ -5,18 +5,16 @@
 #ifndef BITCOIN_MASTERNODE_COLLATERAL_H
 #define BITCOIN_MASTERNODE_COLLATERAL_H
 
-#include <chainparams.h>
-#include <evo/chainhelper.h>
 #include <evo/deterministicmns.h>
 #include <logging.h>
-#include <masternode/node.h>
-#include <masternode/payments.h>
-#include <node/blockstorage.h>
+#include <primitives/transaction.h>
 
-void MaintainCollateralCache(COutPoint& outpoint, int nHeight);
-void MaintainCollateralCache(const CDeterministicMNList& mnList);
-void PrescanOnClientInitialise(const CBlockIndex* pscan, const Consensus::Params& params);
-bool CheckPrematureCollateralMovement(const COutPoint& txout, int nHeight, const Consensus::Params& params);
+namespace Consensus { struct Params; }
+
+// True unless `txout` is a masternode collateral registered fewer than
+// minStaticCollateral blocks before nHeight. Derived from the deterministic MN
+// list, so the verdict does not depend on how the node started up.
+bool CheckPrematureCollateralMovement(const CDeterministicMNList& mnList, const COutPoint& txout,
+                                      int nHeight, const Consensus::Params& params);
 
 #endif // BITCOIN_MASTERNODE_COLLATERAL_H
-

@@ -4,69 +4,26 @@
 
 #include <masternode/collateral.h>
 
-Mutex cs_mncache;
-std::map<COutPoint, int> mapCollaterals GUARDED_BY(cs_mncache);
+#include <consensus/params.h>
 
-void MaintainCollateralCache(COutPoint& outpoint, int nHeight)
+bool CheckPrematureCollateralMovement(const CDeterministicMNList& mnList, const COutPoint& txout,
+                                      int nHeight, const Consensus::Params& params)
 {
-    LOCK(cs_mncache);
-
-    COutPoint mnOutpoint(outpoint);
-    int mnRegHeight(nHeight);
-    if (mapCollaterals.find(mnOutpoint) == mapCollaterals.end()) {
-        mapCollaterals.insert({mnOutpoint, mnRegHeight});
-    }
-}
-
-void MaintainCollateralCache(const CDeterministicMNList& mnList)
-{
-    LOCK(cs_mncache);
-
-    mnList.ForEachMN(false, [&](auto& dmn) {
-        COutPoint mnOutpoint(dmn.collateralOutpoint);
-        int mnRegHeight(dmn.pdmnState->nRegisteredHeight);
-        if (mapCollaterals.find(mnOutpoint) == mapCollaterals.end()) {
-            mapCollaterals.insert({mnOutpoint, mnRegHeight});
-        }
-    });
-}
-
-void PrescanOnClientInitialise(const CBlockIndex* pscan, const Consensus::Params& params)
-{
-    CBlock scanBlock;
-    while (!fReindex) {
-        if (pscan->nHeight <= params.DIP0003Height) break;
-        if (ReadBlockFromDisk(scanBlock, pscan, params)) {
-            for (int i=0; i<scanBlock.vtx.size(); i++) {
-                CTransactionRef tx(scanBlock.vtx[i]);
-                if (tx->IsSpecialTxVersion() && tx->nType == TRANSACTION_PROVIDER_REGISTER) {
-                    const auto opt_proTx = GetTxPayload<CProRegTx>(*tx);
-                    COutPoint collateralOutpoint(opt_proTx->collateralOutpoint);
-                    MaintainCollateralCache(collateralOutpoint, pscan->nHeight);
-                }
-            }
-        }
-        pscan = pscan->pprev;
-    }
-}
-
-bool CheckPrematureCollateralMovement(const COutPoint& txout, int nHeight, const Consensus::Params& params)
-{
-    LOCK(cs_mncache);
-
-    if (!mapCollaterals.size())
+    // The registration height comes from the deterministic list the node keeps
+    // reorg-correct, so every node reaches the same verdict for the same block.
+    // This replaced a process-local std::map filled at startup by a disk walk
+    // that did not run during reindex, leaving the rule silently off -- two
+    // nodes with different startup history could judge the same block
+    // differently, which is a fork, not a missing check.
+    const auto dmn = mnList.GetMNByCollateral(txout);
+    if (dmn == nullptr) {
         return true;
-
-    auto it = mapCollaterals.find(txout);
-    if (it != mapCollaterals.end()) {
-        int elapsedSinceReg = nHeight - it->second;
-        if (elapsedSinceReg < params.minStaticCollateral) {
-            int blocksTillMovement = params.minStaticCollateral - elapsedSinceReg;
-            LogPrint(BCLog::MNPAYMENTS, "%s -- masternode collateral (%s) attempt to spend (%d/%d blocks)\n",
-                                        __func__, txout.ToString(), elapsedSinceReg, params.minStaticCollateral);
-            return false;
-        }
     }
-
+    const int elapsedSinceReg = nHeight - dmn->pdmnState->nRegisteredHeight;
+    if (elapsedSinceReg < params.minStaticCollateral) {
+        LogPrint(BCLog::MNPAYMENTS, "%s -- masternode collateral (%s) attempt to spend (%d/%d blocks)\n",
+                 __func__, txout.ToString(), elapsedSinceReg, params.minStaticCollateral);
+        return false;
+    }
     return true;
 }

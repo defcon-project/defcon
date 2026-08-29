@@ -238,9 +238,7 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const int nBlo
         return true;
     }
 
-    // cache the tip_mn_list for use with collateral compliance checking
     const auto tip_mn_list = m_dmnman.GetListAtChainTip();
-    MaintainCollateralCache(tip_mn_list);
 
     // we are synced and possibly on a superblock now
 
@@ -291,10 +289,6 @@ bool CMNPaymentsProcessor::IsBlockPayeeValid(const CTransaction& txNew, const CB
         LogPrintf("CMNPaymentsProcessor::%s -- ERROR! Invalid masternode payment detected at height %d: %s", __func__, nBlockHeight, txNew.ToString()); /* Continued */
         return false;
     }
-
-    // cache the tip_mn_list for use with collateral compliance checking
-    const auto tip_mn_list = m_dmnman.GetListAtChainTip();
-    MaintainCollateralCache(tip_mn_list);
 
     if (!m_mn_sync.IsSynced() || !m_govman.IsValid()) {
         // governance data is either incomplete or non-existent

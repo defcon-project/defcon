@@ -9,6 +9,8 @@
 #include <optional>
 
 class CCreditPoolManager;
+class CBlockIndex;
+class CDeterministicMNList;
 class CDeterministicMNManager;
 class ChainstateManager;
 class CMNHFManager;
@@ -34,6 +36,7 @@ class CChainstateHelper
 private:
     llmq::CInstantSendManager& isman;
     const llmq::CChainLocksHandler& clhandler;
+    CDeterministicMNManager& m_dmnman;
 
 public:
     explicit CChainstateHelper(CCreditPoolManager& cpoolman, CDeterministicMNManager& dmnman, CMNHFManager& mnhfman,
@@ -57,6 +60,12 @@ public:
     bool IsInstantSendWaitingForTx(const uint256& hash) const;
     bool RemoveConflictingISLockByTx(const CTransaction& tx);
     bool ShouldInstantSendRejectConflicts() const;
+
+    /** The deterministic masternode list. Consensus checks that must reach the
+     *  same verdict on every node regardless of startup history read it from
+     *  here rather than from any process-local cache. */
+    CDeterministicMNList GetMNListForBlock(const CBlockIndex* pindex) const;
+    CDeterministicMNList GetMNListAtTip() const;
 
 public:
     const std::unique_ptr<CMNPaymentsProcessor> mn_payments;
