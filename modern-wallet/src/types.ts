@@ -89,6 +89,7 @@ export interface MasternodeEntry {
   status: string
   posePenalty: number
   lastPaidHeight: number
+  mine: boolean
 }
 
 export interface Proposal {

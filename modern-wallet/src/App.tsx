@@ -1,4 +1,4 @@
-import { Blocks, CheckCircle2, ChevronRight, LockKeyhole, Menu, Search, ShieldCheck, UnlockKeyhole, WalletCards, Wifi, X } from 'lucide-react'
+import { Blocks, CheckCircle2, ChevronRight, LockKeyhole, Menu, Search, ShieldCheck, Terminal, UnlockKeyhole, WalletCards, Wifi, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import {
   getCoinJoinInfo,
@@ -17,6 +17,7 @@ import { navigation, viewCopy, type View } from './nav'
 import type { ConnectionInfo } from './types'
 import { usePoll } from './usePoll'
 import { ConnectScreen } from './views/Connect'
+import { ConsoleOverlay } from './views/Console'
 import { CoinJoinView, GovernanceView, MasternodesView } from './views/Extras'
 import { Overview } from './views/Overview'
 import { ReceiveView } from './views/Receive'
@@ -57,7 +58,7 @@ function UnlockDialog({ open, onClose, notify }: { open: boolean; onClose: () =>
   }
   return (
     <div className="command-backdrop" onMouseDown={onClose}>
-      <section className="command-palette confirm-dialog" onMouseDown={(event) => event.stopPropagation()}>
+      <section className="command-palette confirm-dialog unlock-dialog" onMouseDown={(event) => event.stopPropagation()}>
         <h2>Unlock wallet</h2>
         <label className="field"><span>Passphrase</span><div className="input-shell"><input type="password" autoFocus value={passphrase} onChange={(event) => setPassphrase(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void unlock() }} /></div></label>
         <p className="table-note">Sent once to the Core wallet over the local bridge; never stored.</p>
@@ -75,6 +76,7 @@ function App() {
   const [activeView, setActiveView] = useState<View>('overview')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [commandOpen, setCommandOpen] = useState(false)
+  const [consoleOpen, setConsoleOpen] = useState(false)
   const [unlockOpen, setUnlockOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -142,6 +144,7 @@ function App() {
   return (
     <main className="app-shell">
       <CommandPalette open={commandOpen} onClose={() => setCommandOpen(false)} onNavigate={navigate} />
+      <ConsoleOverlay open={consoleOpen} onClose={() => setConsoleOpen(false)} />
       <UnlockDialog open={unlockOpen} onClose={() => { setUnlockOpen(false); summary.refresh() }} notify={setNotice} />
       {notice ? <div className="toast"><CheckCircle2 size={18} /><span>{notice}</span><button onClick={() => setNotice(null)}><X size={15} /></button></div> : null}
 
@@ -159,7 +162,7 @@ function App() {
           <div className="page-title"><p className="eyebrow">{copy.eyebrow}</p><h1>{copy.title}</h1><p>{copy.caption}</p></div>
           <div className="top-actions">
             <span className="api-pill"><span /> {status.error ? 'Core unreachable' : 'Core connected'}</span>
-            <button className="button secondary command-button" onClick={() => setCommandOpen(true)}><Search size={17} /><span>Command</span><kbd>Ctrl K</kbd></button>
+            <button className="button secondary command-button" onClick={() => setConsoleOpen(true)}><Terminal size={17} /><span>Console</span></button>
             {summary.data?.encrypted ? (
               locked ? (
                 <button className="button primary" onClick={() => setUnlockOpen(true)}><UnlockKeyhole size={17} /> Unlock</button>

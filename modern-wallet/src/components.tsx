@@ -4,19 +4,14 @@ import type { ReactNode } from 'react'
 import { formatDfcn, formatTimeAgo } from './format'
 import type { TxItem } from './types'
 
+import defconLogo from './assets/defcon-logo.png'
+
 export function BrandGlyph({ compact = false }: { compact?: boolean }) {
+  // The project's real logo, straight from the Core Qt resources
+  // (src/qt/res/icons), so the two wallets share one identity.
   return (
     <div className={`brand-glyph ${compact ? 'compact' : ''}`} aria-hidden="true">
-      <svg viewBox="0 0 64 64" role="img">
-        <defs>
-          <linearGradient id="defcon-gradient" x1="7" y1="5" x2="57" y2="59" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#2fb8ff" />
-            <stop offset="1" stopColor="#37d69c" />
-          </linearGradient>
-        </defs>
-        <path d="M14 10h19c14 0 24 9 24 22S47 54 33 54H14l9-10h10c8 0 13-5 13-12s-5-12-13-12H23L14 10Z" fill="url(#defcon-gradient)" />
-        <path d="M8 14h13l9 10H18l-5 7h18l-9 10H8l11-14L8 14Z" fill="#f4f8ff" fillOpacity=".96" />
-      </svg>
+      <img src={defconLogo} alt="" draggable={false} />
     </div>
   )
 }

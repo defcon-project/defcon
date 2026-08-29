@@ -188,9 +188,35 @@ fn pick_default_wallet(state: &Shared) {
     }
 }
 
+/// Every wallet the node can offer: the loaded ones (listwallets) plus
+/// everything sitting in the wallet directory (listwalletdir), deduplicated
+/// in order. The picker must show a wallet that exists but is not loaded --
+/// select_wallet does the loading.
 #[tauri::command]
 fn list_wallets(state: Shared) -> Result<Value, String> {
-    ncall(&state.lock().unwrap(), "listwallets", json!([]))
+    let s = state.lock().unwrap();
+    let mut names: Vec<String> = Vec::new();
+    if let Ok(Value::Array(loaded)) = ncall(&s, "listwallets", json!([])) {
+        for entry in loaded {
+            if let Value::String(name) = entry {
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+        }
+    }
+    if let Ok(dir) = ncall(&s, "listwalletdir", json!([])) {
+        if let Some(Value::Array(wallets)) = dir.get("wallets").cloned() {
+            for wallet in wallets {
+                if let Some(Value::String(name)) = wallet.get("name").cloned() {
+                    if !names.contains(&name) {
+                        names.push(name);
+                    }
+                }
+            }
+        }
+    }
+    Ok(json!(names))
 }
 
 #[tauri::command]
@@ -236,10 +262,40 @@ fn list_transactions(state: Shared, count: u32, skip: u32) -> Result<Value, Stri
     wcall(&s, "listtransactions", json!(["*", count, skip]))
 }
 
+/// The deterministic masternode list, each entry flagged `mine` when one of its
+/// addresses (payee, owner, voting, collateral) is a receiving address of the
+/// active wallet -- the same idea as the Qt wallet's "My masternodes" tab.
 #[tauri::command]
 fn masternode_list(state: Shared) -> Result<Value, String> {
     let s = state.lock().unwrap();
-    ncall(&s, "masternodelist", json!(["json"]))
+    let raw = ncall(&s, "masternodelist", json!(["json"]))?;
+
+    let mut mine_addrs: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if let Ok(Value::Array(received)) =
+        wcall(&s, "listreceivedbyaddress", json!([0, true, true]))
+    {
+        for entry in received {
+            if let Some(addr) = entry.get("address").and_then(Value::as_str) {
+                mine_addrs.insert(addr.to_owned());
+            }
+        }
+    }
+
+    let mut out: Vec<Value> = Vec::new();
+    if let Value::Object(map) = raw {
+        for (_key, value) in map {
+            let owns = ["payee", "owneraddress", "votingaddress", "collateraladdress"]
+                .iter()
+                .filter_map(|k| value.get(*k).and_then(Value::as_str))
+                .any(|addr| mine_addrs.contains(addr));
+            let mut entry = value;
+            if let Value::Object(ref mut obj) = entry {
+                obj.insert("mine".to_owned(), Value::Bool(owns));
+            }
+            out.push(entry);
+        }
+    }
+    Ok(Value::Array(out))
 }
 
 #[tauri::command]
@@ -315,6 +371,51 @@ fn wallet_unlock(state: Shared, passphrase: String, timeout_seconds: u32) -> Res
     wcall(&s, "walletpassphrase", json!([passphrase, timeout_seconds])).map(|_| ())
 }
 
+// ---------------------------------------------------------------- console
+
+/// The debug console, the Qt wallet's equivalent. One line in, one RPC out:
+/// the first token is the method, every further token is parsed as JSON when
+/// it parses and passed as a string when it does not -- defcon-cli semantics.
+/// Runs against the wallet endpoint when a wallet is selected, so wallet
+/// methods work; node-level methods pass through that endpoint unchanged.
+#[tauri::command]
+fn console_execute(state: Shared, command: String) -> Result<Value, String> {
+    let mut tokens = tokenize(&command);
+    if tokens.is_empty() {
+        return Err("empty command".to_owned());
+    }
+    let method = tokens.remove(0);
+    let params: Vec<Value> = tokens
+        .iter()
+        .map(|t| serde_json::from_str(t).unwrap_or(Value::String(t.clone())))
+        .collect();
+    let s = state.lock().unwrap();
+    wcall(&s, &method, Value::Array(params))
+}
+
+/// Whitespace splitting with double-quoted strings kept whole (quotes
+/// stripped), so `createwallet "my wallet"` carries one argument.
+fn tokenize(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    for ch in line.chars() {
+        match ch {
+            '"' => in_quotes = !in_quotes,
+            c if c.is_whitespace() && !in_quotes => {
+                if !current.is_empty() {
+                    out.push(std::mem::take(&mut current));
+                }
+            }
+            c => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    out
+}
+
 // ---------------------------------------------------------------- gui.conf
 
 #[tauri::command]
@@ -374,6 +475,7 @@ pub fn run() {
             send_to_address,
             wallet_lock,
             wallet_unlock,
+            console_execute,
             gui_get_mode,
             gui_set_mode,
             preview_defcond_args,

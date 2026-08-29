@@ -1,27 +1,25 @@
 import { Copy, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import QRCode from 'qrcode'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { copyText, getNewAddress, getReceiveAddresses } from '../api'
 import { ErrorNote, LoadingNote, StatusPill } from '../components'
 import { formatDfcn } from '../format'
 import type { ReceiveAddress } from '../types'
 
-/** A deterministic visual fingerprint of the address — not a scannable QR
- * (that needs a QR library), but stable per address so two addresses never
- * look alike. Marked clearly as a fingerprint in the UI. */
-function AddressFingerprint({ address }: { address: string }) {
-  const cells = Array.from({ length: 169 }, (_, index) => {
-    let h = 2166136261
-    const key = `${address}:${index}`
-    for (let i = 0; i < key.length; i++) {
-      h ^= key.charCodeAt(i)
-      h = Math.imul(h, 16777619)
-    }
-    const row = Math.floor(index / 13)
-    const col = index % 13
-    const finder = (row < 4 && col < 4) || (row < 4 && col > 8) || (row > 8 && col < 4)
-    return <i className={finder || (h >>> 0) % 5 < 2 ? 'filled' : ''} key={index} />
-  })
-  return <div className="mock-qr" aria-label="Address visual fingerprint">{cells}</div>
+/** A real, scannable QR of the address, drawn locally to a canvas — no network,
+ * so it stays within the app's content-security policy. */
+function AddressQr({ address }: { address: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    if (!canvasRef.current) return
+    void QRCode.toCanvas(canvasRef.current, address, {
+      width: 190,
+      margin: 1,
+      color: { dark: '#0a121c', light: '#f4f8ff' },
+      errorCorrectionLevel: 'M',
+    }).catch(() => {})
+  }, [address])
+  return <canvas ref={canvasRef} className="address-qr" width={190} height={190} aria-label="Receiving address QR code" />
 }
 
 export function ReceiveView({ notify }: { notify: (message: string) => void }) {
@@ -51,6 +49,7 @@ export function ReceiveView({ notify }: { notify: (message: string) => void }) {
     try {
       const address = await getNewAddress(label)
       setCurrent(address)
+      setLabel('')
       notify('New address created by the Core wallet.')
       await load()
     } catch (e) {
@@ -63,17 +62,36 @@ export function ReceiveView({ notify }: { notify: (message: string) => void }) {
   return (
     <div className="receive-layout">
       <section className="panel receive-card">
-        <div className="panel-heading"><div><p className="section-eyebrow">Current receiving address</p><h2>Share to receive DFCN</h2></div><StatusPill tone={current ? 'online' : 'warning'}>{current ? 'Ready' : 'No address yet'}</StatusPill></div>
+        <div className="panel-heading">
+          <div><p className="section-eyebrow">Current receiving address</p><h2>Share to receive DFCN</h2></div>
+          <StatusPill tone={current ? 'online' : 'warning'}>{current ? 'Ready' : 'No address'}</StatusPill>
+        </div>
+
         {current ? (
-          <>
-            <div className="qr-stage"><AddressFingerprint address={current} /><div className="qr-halo" /></div>
-            <div className="address-box"><span>{current}</span><button className="icon-button" onClick={() => { void copyText(current).then(() => notify('Address copied to clipboard.')) }} aria-label="Copy address"><Copy size={17} /></button></div>
-          </>
+          <div className="receive-body">
+            <div className="qr-frame"><AddressQr address={current} /></div>
+            <button
+              className="address-chip"
+              onClick={() => { void copyText(current).then(() => notify('Address copied to clipboard.')) }}
+              title="Copy address"
+            >
+              <code>{current}</code>
+              <Copy size={16} />
+            </button>
+          </div>
         ) : (
           <LoadingNote label={error ?? 'Create the first address below.'} />
         )}
-        <label className="field"><span>Label for the next address</span><div className="input-shell"><input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Invoice or contact name" /></div></label>
-        <div className="button-row"><button className="button primary" disabled={busy} onClick={() => void fresh()}><RefreshCw size={16} /> {busy ? 'Creating…' : 'New address'}</button></div>
+
+        <div className="receive-new">
+          <label className="field">
+            <span>Label for the next address</span>
+            <div className="input-shell"><input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Invoice or contact name" /></div>
+          </label>
+          <button className="button primary receive-new-button" disabled={busy} onClick={() => void fresh()}>
+            <RefreshCw size={16} /> {busy ? 'Creating…' : 'New address'}
+          </button>
+        </div>
       </section>
 
       <section className="panel request-panel">
@@ -82,7 +100,7 @@ export function ReceiveView({ notify }: { notify: (message: string) => void }) {
         {known === null && !error ? <LoadingNote /> : null}
         <div className="transaction-list">
           {(known ?? []).map((entry) => (
-            <article className="transaction-row" key={entry.address}>
+            <article className="transaction-row receive-known" key={entry.address}>
               <div className="transaction-main">
                 <strong>{entry.label || 'no label'}</strong>
                 <span>{entry.address}</span>
@@ -91,7 +109,7 @@ export function ReceiveView({ notify }: { notify: (message: string) => void }) {
                 <strong>{formatDfcn(entry.amount)} DFCN</strong>
                 <span>received in total</span>
               </div>
-              <button className="icon-button" onClick={() => { setCurrent(entry.address) }} aria-label="Show this address">→</button>
+              <button className="button secondary receive-use" onClick={() => setCurrent(entry.address)}>Show</button>
             </article>
           ))}
           {known !== null && known.length === 0 ? <LoadingNote label="No addresses with history yet." /> : null}

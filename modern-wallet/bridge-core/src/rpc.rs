@@ -47,11 +47,16 @@ impl fmt::Display for RpcError {
 impl std::error::Error for RpcError {}
 
 /// One authenticated connection target. Cheap to clone.
+///
+/// Deliberately no shared agent: a pooled keep-alive connection the node
+/// closes while idle surfaces as a transport abort on the next call (WSA
+/// 10053 against the Qt wallet's RPC server). A fresh connection per call to
+/// 127.0.0.1 costs microseconds and removes that failure class entirely --
+/// safer than retrying, which must never happen for a spending call.
 #[derive(Clone)]
 pub struct RpcClient {
     url: String,
     auth_header: String,
-    agent: ureq::Agent,
 }
 
 impl RpcClient {
@@ -61,10 +66,6 @@ impl RpcClient {
         RpcClient {
             url: format!("http://127.0.0.1:{port}/"),
             auth_header: format!("Basic {auth}"),
-            agent: ureq::AgentBuilder::new()
-                .timeout_connect(Duration::from_secs(3))
-                .timeout(Duration::from_secs(120)) // rescans and long calls
-                .build(),
         }
     }
 
@@ -93,8 +94,11 @@ impl RpcClient {
         };
         let body = json!({ "jsonrpc": "1.0", "id": "defcon-wallet", "method": method, "params": params });
 
-        let response = self
-            .agent
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(3))
+            .timeout(Duration::from_secs(120)) // rescans and long calls
+            .build();
+        let response = agent
             .post(&url)
             .set("Authorization", &self.auth_header)
             .set("Content-Type", "application/json")

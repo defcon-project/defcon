@@ -119,14 +119,15 @@ export const getTransactions = async (count = 100, skip = 0): Promise<TxItem[]> 
 }
 
 export const getMasternodes = async (): Promise<MasternodeEntry[]> => {
-  const raw = await invoke<Record<string, any>>('masternode_list')
-  return Object.values(raw ?? {}).map((v) => ({
+  const raw = await invoke<any[]>('masternode_list')
+  return (raw ?? []).map((v) => ({
     proTxHash: v.proTxHash ?? '',
     address: v.address ?? '',
     payee: v.payee ?? '',
     status: v.status ?? '?',
     posePenalty: v.pospenaltyscore ?? v.posepenalty ?? 0,
     lastPaidHeight: v.lastpaidblock ?? 0,
+    mine: v.mine === true,
   }))
 }
 
@@ -188,6 +189,8 @@ export const validateAddress = async (address: string): Promise<boolean> => {
 
 export const sendToAddress = (address: string, amount: string, label?: string) =>
   invoke<string>('send_to_address', { address, amount, label: label ?? null })
+
+export const consoleExecute = (command: string) => invoke<unknown>('console_execute', { command })
 
 export const walletLock = () => invoke<void>('wallet_lock')
 export const walletUnlock = (passphrase: string, timeoutSeconds: number) =>

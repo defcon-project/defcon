@@ -4,6 +4,7 @@
 // discipline as Send.
 
 import { Blocks, CheckCircle2, Clock3, Coins, Network, RefreshCw, ShieldCheck } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { ErrorNote, LoadingNote, MetricCard, StatusPill } from '../components'
 import { formatCompact, shortHash } from '../format'
 import type { CoinJoinInfo, MasternodeEntry, Proposal } from '../types'
@@ -31,32 +32,54 @@ export function CoinJoinView({ info, error, onRetry }: { info: CoinJoinInfo | nu
 }
 
 export function MasternodesView({ list, error, onRetry }: { list: MasternodeEntry[] | null; error: string | null; onRetry: () => void }) {
-  const enabled = list?.filter((mn) => mn.status === 'ENABLED').length ?? 0
-  const banned = list?.filter((mn) => mn.status === 'POSE_BANNED').length ?? 0
+  const [scope, setScope] = useState<'mine' | 'all'>('all')
+  const mineCount = list?.filter((mn) => mn.mine).length ?? 0
+  // On the first load, open on "My nodes" when the wallet actually owns some;
+  // otherwise stay on "All". Only auto-selects once, so a later manual switch
+  // is never overridden.
+  const autoPicked = useRef(false)
+  useEffect(() => {
+    if (autoPicked.current || list === null) return
+    autoPicked.current = true
+    if (mineCount > 0) setScope('mine')
+  }, [list, mineCount])
+  const shown = scope === 'mine' ? (list ?? []).filter((mn) => mn.mine) : (list ?? [])
+  const enabled = shown.filter((mn) => mn.status === 'ENABLED').length
+  const banned = shown.filter((mn) => mn.status === 'POSE_BANNED').length
   return (
     <div className="view-stack">
       <section className="kpi-grid three">
-        <MetricCard icon={Network} label="Registered" value={list ? String(list.length) : '…'} hint="deterministic list entries" tone="blue" />
+        <MetricCard icon={Network} label={scope === 'mine' ? 'My masternodes' : 'Registered'} value={list ? String(shown.length) : '…'} hint={scope === 'mine' ? 'owned by this wallet' : 'deterministic list entries'} tone="blue" />
         <MetricCard icon={CheckCircle2} label="Enabled" value={list ? String(enabled) : '…'} hint="in the active set" tone="green" />
         <MetricCard icon={ShieldCheck} label="PoSe banned" value={list ? String(banned) : '…'} hint="penalty reached the ban score" tone={banned ? 'red' : 'green'} />
       </section>
       <section className="panel">
-        <div className="panel-heading"><div><p className="section-eyebrow">Network list</p><h2>Masternodes</h2></div><button className="button secondary" onClick={onRetry}><RefreshCw size={16} /> Refresh</button></div>
+        <div className="panel-heading">
+          <div><p className="section-eyebrow">Network list</p><h2>Masternodes</h2></div>
+          <div className="mn-toolbar">
+            <div className="segmented">
+              <button className={scope === 'mine' ? 'active' : ''} onClick={() => setScope('mine')}>My nodes{list ? ` (${mineCount})` : ''}</button>
+              <button className={scope === 'all' ? 'active' : ''} onClick={() => setScope('all')}>All{list ? ` (${list.length})` : ''}</button>
+            </div>
+            <button className="button secondary" onClick={onRetry}><RefreshCw size={16} /> Refresh</button>
+          </div>
+        </div>
         {error ? <ErrorNote message={error} onRetry={onRetry} /> : null}
         {list === null && !error ? <LoadingNote /> : null}
         <div className="data-table mn-table">
           <div className="data-head"><span>ProTx</span><span>Service</span><span>Status</span><span>PoSe</span><span>Last paid</span></div>
-          {(list ?? []).slice(0, 200).map((mn) => (
-            <div className="data-row" key={mn.proTxHash}>
-              <code>{shortHash(mn.proTxHash, 8)}</code>
+          {shown.slice(0, 200).map((mn) => (
+            <div className={`data-row ${mn.mine ? 'is-mine' : ''}`} key={mn.proTxHash}>
+              <code>{shortHash(mn.proTxHash, 8)}{mn.mine ? <span className="mine-tag">mine</span> : null}</code>
               <code>{mn.address}</code>
               <StatusPill tone={mn.status === 'ENABLED' ? 'online' : mn.status === 'POSE_BANNED' ? 'offline' : 'warning'}>{mn.status}</StatusPill>
               <span>{mn.posePenalty}</span>
               <span>{mn.lastPaidHeight ? `#${mn.lastPaidHeight.toLocaleString()}` : '—'}</span>
             </div>
           ))}
+          {list !== null && shown.length === 0 ? <LoadingNote label={scope === 'mine' ? 'This wallet owns no masternodes.' : 'No masternodes.'} /> : null}
         </div>
-        {list && list.length > 200 ? <p className="table-note">Showing the first 200 of {list.length}.</p> : null}
+        {shown.length > 200 ? <p className="table-note">Showing the first 200 of {shown.length}.</p> : null}
       </section>
     </div>
   )

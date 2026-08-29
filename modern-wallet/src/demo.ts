@@ -43,11 +43,12 @@ export const demoResponses: Record<string, unknown> = {
     { txid: 'd4'.repeat(32), category: 'stake', amount: 500, confirmations: 350, time: nowSec - 172000, address: 'DGR5G59z7hCh4Trq3ZjvuDgbsecbUUF5UM', label: '' },
     { txid: 'e5'.repeat(32), category: 'receive', amount: 250000, confirmations: 1200, time: nowSec - 400000, address: 'DQm8N3vR6xT1cY4bA7sW2eK9uJ5hL0pGzf', label: 'exchange' },
   ],
-  masternode_list: {
-    'demo-1-0': { proTxHash: 'f0'.repeat(32), address: '203.0.113.10:9999', payee: 'DP1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', status: 'ENABLED', pospenaltyscore: 0, lastpaidblock: 123950 },
-    'demo-2-0': { proTxHash: 'f1'.repeat(32), address: '203.0.113.11:9999', payee: 'DP1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', status: 'ENABLED', pospenaltyscore: 0, lastpaidblock: 123890 },
-    'demo-3-0': { proTxHash: 'f2'.repeat(32), address: '203.0.113.12:9999', payee: 'DP1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', status: 'POSE_BANNED', pospenaltyscore: 100, lastpaidblock: 123500 },
-  },
+  masternode_list: [
+    { proTxHash: 'f0'.repeat(32), address: '203.0.113.10:9999', payee: 'DP1demo', status: 'ENABLED', pospenaltyscore: 0, lastpaidblock: 123950, mine: true },
+    { proTxHash: 'f1'.repeat(32), address: '203.0.113.11:9999', payee: 'DP1demo', status: 'ENABLED', pospenaltyscore: 0, lastpaidblock: 123890, mine: true },
+    { proTxHash: 'f2'.repeat(32), address: '203.0.113.12:9999', payee: 'DP1other', status: 'POSE_BANNED', pospenaltyscore: 100, lastpaidblock: 123500, mine: false },
+    { proTxHash: 'f3'.repeat(32), address: '203.0.113.13:9999', payee: 'DP1other', status: 'ENABLED', pospenaltyscore: 0, lastpaidblock: 124000, mine: false },
+  ],
   governance_list: {
     'g1': {
       DataString: '{"name":"core-development-q4","payment_amount":"120000","url":"https://example.invalid/dev"}',
@@ -94,6 +95,13 @@ export const demoResponses: Record<string, unknown> = {
 export async function demoInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   await new Promise((resolve) => setTimeout(resolve, 120))
   if (command === 'gui_set_mode') return (args?.mode ?? 'modern') as T
+  if (command === 'console_execute') {
+    if (args?.command === 'help')
+      return ['getblockchaininfo', 'getstakinginfo', 'getbalances', 'getnetworkinfo',
+        'listwallets', 'listtransactions', 'validateaddress', 'masternodelist', 'help',
+      ].join(String.fromCharCode(10)) as T
+    return { demo: true, echo: args?.command ?? '', note: 'browser demo: no node behind this console' } as T
+  }
   if (!(command in demoResponses)) throw new Error(`demo mode has no handler for ${command}`)
   return structuredClone(demoResponses[command]) as T
 }

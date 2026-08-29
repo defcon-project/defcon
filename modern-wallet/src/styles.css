@@ -80,6 +80,9 @@ select {
 }
 
 .app-shell {
+  /* Everything 15% larger, logo included, in one place. zoom reflows layout
+     (unlike transform: scale) and is native in the WebView2/Chromium runtime. */
+  zoom: 1.15;
   display: grid;
   grid-template-columns: 264px minmax(0, 1fr);
   min-height: 100vh;
@@ -563,7 +566,8 @@ kbd {
 .wallet-hero {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  /* Single column: the decorative right-hand visual was removed by request. */
+  grid-template-columns: 1fr;
   min-height: 274px;
   overflow: hidden;
   background:
@@ -619,10 +623,10 @@ kbd {
 
 .ghost-icon {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 52px;
+  height: 52px;
   place-items: center;
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--control-soft);
   color: var(--muted);
 }
@@ -1295,73 +1299,76 @@ kbd {
 }
 
 .receive-card {
-  display: grid;
-  justify-items: center;
+  display: flex;
+  flex-direction: column;
 }
 
-.receive-card .panel-heading {
-  justify-self: stretch;
-}
-
-.qr-stage {
-  position: relative;
-  display: grid;
-  width: 248px;
-  height: 248px;
-  margin: 5px auto 20px;
-  place-items: center;
-}
-
-.qr-halo {
-  position: absolute;
-  z-index: -1;
-  inset: 12%;
-  border-radius: 50%;
-  background: var(--blue);
-  filter: blur(48px);
-  opacity: 0.16;
-}
-
-.mock-qr {
-  display: grid;
-  grid-template-columns: repeat(13, 1fr);
-  gap: 3px;
-  width: 220px;
-  height: 220px;
-  padding: 15px;
+/* The address block: a fixed, self-contained card centered in the panel, so it
+   never stretches into a giant empty tile. */
+.receive-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 20px;
+  margin: 6px 0 20px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #eefaff;
-  box-shadow: 0 15px 46px rgba(0, 0, 0, 0.38);
-}
-
-.mock-qr i {
-  border-radius: 1px;
-}
-
-.mock-qr i.filled {
-  background: #06111e;
-}
-
-.address-box {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 40px;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 10px 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 16px;
   background: var(--surface-strong);
 }
 
-.address-box > span {
-  align-self: center;
-  overflow: hidden;
-  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.qr-frame {
+  padding: 12px;
+  border-radius: 12px;
+  background: #f4f8ff;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+  line-height: 0;
 }
+
+.address-qr {
+  display: block;
+  width: 190px;
+  height: 190px;
+}
+
+/* One click copies; the whole chip is the button. */
+.address-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--control-soft);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.address-chip:hover {
+  border-color: rgba(47, 184, 255, 0.5);
+  background: rgba(47, 184, 255, 0.08);
+}
+.address-chip code {
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 15px;
+  letter-spacing: 0.2px;
+  word-break: break-all;
+  text-align: center;
+}
+.address-chip svg { flex-shrink: 0; color: var(--muted); }
+
+/* The "new address" row: label left-aligned, input and button on one line. */
+.receive-new {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+.receive-new .field { margin-bottom: 0; }
+.receive-new-button { height: 44px; white-space: nowrap; }
+
+.receive-known .receive-use { padding: 8px 16px; }
 
 .button-row {
   justify-content: center;
@@ -1487,6 +1494,8 @@ kbd {
   gap: 14px;
   min-width: 740px;
   align-items: center;
+  /* First column (ProTx) nudged ~3mm in from the panel edge. */
+  padding-left: 11px;
 }
 
 .data-head {
@@ -2064,6 +2073,9 @@ kbd {
 }
 
 .connect-stage {
+  /* The shell is a flex row (sidebar + main); before any connection there is
+     no sidebar, so the stage must claim the whole row itself. */
+  flex: 1;
   display: grid;
   place-items: center;
   width: 100%;
@@ -2071,11 +2083,13 @@ kbd {
   padding: 32px;
 }
 .connect-card {
-  width: min(560px, 100%);
+  width: min(560px, calc(100vw - 64px));
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
+.connect-card .form-actions { flex-wrap: wrap; }
+.connect-card .form-actions .button { white-space: nowrap; }
 .connect-brand {
   display: flex;
   align-items: center;
@@ -2093,3 +2107,87 @@ kbd {
 .table-note { color: var(--text-soft, #8fa0b4); font-size: 12px; }
 
 .context-bar.error { border-color: rgba(255, 107, 107, 0.4); }
+
+.brand-glyph img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+/* RPC console */
+.console-panel { width: min(1240px, calc(100vw - 48px)); height: min(86vh, 900px); max-height: 86vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.console-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid rgba(120, 150, 190, 0.14); }
+.console-head strong { display: block; font-size: 16px; }
+.console-head small { color: var(--text-soft, #8fa0b4); font-size: 13px; }
+.console-head .icon-button { margin-left: auto; }
+.console-scroll { flex: 1; overflow-y: auto; padding: 18px 20px; min-height: 45vh; }
+.console-scroll .table-note { font-size: 14px; }
+.console-entry { margin-bottom: 14px; }
+.console-cmd { font-family: ui-monospace, Consolas, monospace; font-size: 18px; color: #7cc5ff; margin-bottom: 6px; }
+.console-entry pre { margin: 0; padding: 12px 14px; border-radius: 10px; background: rgba(10, 16, 24, 0.7); border: 1px solid rgba(120, 150, 190, 0.12); font-size: 17px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+.console-entry pre.console-err { border-color: rgba(255, 107, 107, 0.35); color: #ff9d9d; }
+.console-input { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-top: 1px solid rgba(120, 150, 190, 0.14); }
+.console-input > span { font-family: ui-monospace, monospace; font-size: 17px; color: #7cc5ff; }
+.console-input input { flex: 1; background: none; border: none; outline: none; color: inherit; font-family: ui-monospace, Consolas, monospace; font-size: 17px; }
+
+.console-clear { padding: 10px 18px; font-size: 14px; }
+.console-input kbd {
+  /* Same visual weight as the Clear button beside it. */
+  padding: 10px 18px;
+  font-size: 14px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.console-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 20px;
+  border-top: 1px solid rgba(120, 150, 190, 0.14);
+  max-height: 132px;
+  overflow-y: auto;
+}
+.console-suggest button {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 14px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(120, 150, 190, 0.2);
+  background: rgba(47, 184, 255, 0.08);
+  color: #9fd6ff;
+  cursor: pointer;
+}
+.console-suggest button:hover {
+  background: rgba(47, 184, 255, 0.18);
+  border-color: rgba(47, 184, 255, 0.4);
+}
+
+/* Unlock dialog: larger, centered, ~15% larger type. */
+.unlock-dialog { width: min(640px, calc(100vw - 48px)); padding: 30px 32px; gap: 18px; }
+.unlock-dialog h2 { font-size: 26px; text-align: center; }
+.unlock-dialog .field > span { font-size: 15px; }
+.unlock-dialog .input-shell { padding: 6px 8px; }
+.unlock-dialog .input-shell input { font-size: 20px; padding: 14px 12px; text-align: center; letter-spacing: 4px; }
+.unlock-dialog .table-note { text-align: center; font-size: 14px; }
+.unlock-dialog .form-actions { justify-content: center; gap: 14px; }
+.unlock-dialog .form-actions .button { font-size: 16px; padding: 12px 28px; }
+
+.barcode-frame {
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #f4f8ff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  max-width: 100%;
+  overflow-x: auto;
+  line-height: 0;
+}
+.address-barcode { display: block; height: 56px; }
+
+.console-run { padding: 10px 22px; font-size: 14px; }
+
+.mn-toolbar { display: flex; align-items: center; gap: 12px; }
+.mine-tag { margin-left: 8px; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; background: rgba(55, 214, 156, 0.16); color: #6fe0b4; }
+.data-row.is-mine { background: rgba(47, 184, 255, 0.05); }

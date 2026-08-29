@@ -22,8 +22,14 @@ export function Overview({
   const balances = summary?.balances
   const total = balances ? balances.trusted + balances.pending + balances.immature + balances.watchonly : null
   const staking = summary?.staking ?? null
-  const progress = status ? Math.min(100, Math.round(status.blockchain.verificationprogress * 100)) : 0
-  const synced = status ? status.blockchain.verificationprogress > 0.9999 : false
+  // GuessVerificationProgress estimates from a per-chain tx-rate table this
+  // fork inherited from its parent, so on a young chain it reads near zero at
+  // the tip. Header distance is the signal the node itself acts on: caught up
+  // means blocks have reached the best known header.
+  const blocks = status?.blockchain.blocks ?? 0
+  const headers = status?.blockchain.headers ?? 0
+  const synced = status !== null && blocks > 0 && blocks >= headers
+  const progress = status === null || headers === 0 ? 0 : Math.min(100, Math.floor((blocks / headers) * 100))
 
   return (
     <div className="view-stack">
@@ -34,7 +40,7 @@ export function Overview({
             <strong>{total === null ? '…' : balanceVisible ? formatDfcn(total) : '••••••••'}</strong>
             <span>DFCN</span>
             <button className="ghost-icon" onClick={() => setBalanceVisible((value) => !value)} aria-label="Toggle balance visibility">
-              {balanceVisible ? <Eye size={18} /> : <EyeOff size={18} />}
+              {balanceVisible ? <Eye size={30} /> : <EyeOff size={30} />}
             </button>
           </div>
           <div className="hero-metrics">
@@ -47,11 +53,6 @@ export function Overview({
             <button className="button secondary" onClick={() => onNavigate('receive')}><QrCode size={17} /> Receive</button>
             <button className="button secondary" onClick={() => onNavigate('transactions')}><History size={17} /> History</button>
           </div>
-        </div>
-        <div className="hero-visual">
-          <div className="orbital orbital-one" />
-          <div className="orbital orbital-two" />
-          <span>SECURED BY CORE</span>
         </div>
       </section>
 
