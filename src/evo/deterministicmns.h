@@ -244,17 +244,6 @@ public:
         return ranges::count_if(mnMap, [](const auto& p) { return IsMNValid(*p.second); });
     }
 
-    [[nodiscard]] size_t GetAllEvoCount() const
-    {
-        return ranges::count_if(mnMap, [](const auto& p) { return p.second->nType == MnType::Evo; });
-    }
-
-    [[nodiscard]] size_t GetValidEvoCount() const
-    {
-        return ranges::count_if(mnMap,
-                                [](const auto& p) { return p.second->nType == MnType::Evo && IsMNValid(*p.second); });
-    }
-
     /** Valid masternodes summed by governance vote weight. */
     [[nodiscard]] size_t GetValidVoteWeightedMNsCount() const
     {
@@ -366,8 +355,8 @@ public:
     /**
      * Calculate a quorum based on the modifier. The resulting list is deterministically sorted by score
      */
-    [[nodiscard]] std::vector<CDeterministicMNCPtr> CalculateQuorum(size_t maxSize, const uint256& modifier, const bool onlyEvoNodes = false) const;
-    [[nodiscard]] std::vector<std::pair<arith_uint256, CDeterministicMNCPtr>> CalculateScores(const uint256& modifier, const bool onlyEvoNodes) const;
+    [[nodiscard]] std::vector<CDeterministicMNCPtr> CalculateQuorum(size_t maxSize, const uint256& modifier) const;
+    [[nodiscard]] std::vector<std::pair<arith_uint256, CDeterministicMNCPtr>> CalculateScores(const uint256& modifier) const;
 
     /**
      * Calculates the maximum penalty which is allowed at the height of this MN list. It is dynamic and might change

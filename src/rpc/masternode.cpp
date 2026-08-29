@@ -90,22 +90,6 @@ static RPCHelpMan masternode_count()
     obj.pushKV("total", total);
     obj.pushKV("enabled", enabled);
 
-    int evo_total = mnList.GetAllEvoCount();
-    int evo_enabled = mnList.GetValidEvoCount();
-
-    UniValue evoObj(UniValue::VOBJ);
-    evoObj.pushKV("total", evo_total);
-    evoObj.pushKV("enabled", evo_enabled);
-
-    UniValue regularObj(UniValue::VOBJ);
-    regularObj.pushKV("total", total - evo_total);
-    regularObj.pushKV("enabled", enabled - evo_enabled);
-
-    UniValue detailedObj(UniValue::VOBJ);
-    detailedObj.pushKV("regular", regularObj);
-    detailedObj.pushKV("evo", evoObj);
-    obj.pushKV("detailed", detailedObj);
-
     return obj;
 },
     };
@@ -532,7 +516,6 @@ static RPCHelpMan masternodelist_helper(bool is_composite)
         "Available modes:\n"
         "  addr           - Print ip address associated with a masternode (can be additionally filtered, partial match)\n"
         "  recent         - Print info in JSON format for active and recently banned masternodes (can be additionally filtered, partial match)\n"
-        "  evo            - Print info in JSON format for EvoNodes only\n"
         "  full           - Print info in format 'status payee lastpaidtime lastpaidblock IP'\n"
         "                   (can be additionally filtered, partial match)\n"
         "  info           - Print info in format 'status payee IP'\n"
@@ -568,7 +551,7 @@ static RPCHelpMan masternodelist_helper(bool is_composite)
                 strMode != "owneraddress" && strMode != "votingaddress" &&
                 strMode != "lastpaidtime" && strMode != "lastpaidblock" &&
                 strMode != "payee" && strMode != "pubkeyoperator" &&
-                strMode != "status" && strMode != "recent" && strMode != "evo")
+                strMode != "status" && strMode != "recent")
     {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("strMode %s not found", strMode));
     }
@@ -599,16 +582,12 @@ static RPCHelpMan masternodelist_helper(bool is_composite)
     };
 
     const bool showRecentMnsOnly = strMode == "recent";
-    const bool showEvoOnly = strMode == "evo";
     const int tipHeight = WITH_LOCK(cs_main, return chainman.ActiveChain().Tip()->nHeight);
     mnList.ForEachMN(false, [&](auto& dmn) {
         if (showRecentMnsOnly && mnList.IsMNPoSeBanned(dmn)) {
             if (tipHeight - dmn.pdmnState->GetBannedHeight() > Params().GetConsensus().nSuperblockCycle) {
                 return;
             }
-        }
-        if (showEvoOnly && dmn.nType != MnType::Evo) {
-            return;
         }
 
         std::string strOutpoint = dmn.collateralOutpoint.ToStringShort();
@@ -657,7 +636,7 @@ static RPCHelpMan masternodelist_helper(bool is_composite)
             if (strFilter !="" && strInfo.find(strFilter) == std::string::npos &&
                 strOutpoint.find(strFilter) == std::string::npos) return;
             obj.pushKV(strOutpoint, strInfo);
-        } else if (strMode == "json" || strMode == "recent" || strMode == "evo") {
+        } else if (strMode == "json" || strMode == "recent") {
             std::ostringstream streamInfo;
             streamInfo <<  dmn.proTxHash.ToString() << " " <<
                            dmn.pdmnState->addr.ToStringAddrPort() << " " <<
@@ -679,11 +658,6 @@ static RPCHelpMan masternodelist_helper(bool is_composite)
             objMN.pushKV("payee", payeeStr);
             objMN.pushKV("status", dmnToStatus(dmn));
             objMN.pushKV("type", std::string(GetMnType(dmn.nType).description));
-            if (dmn.nType == MnType::Evo) {
-                objMN.pushKV("platformNodeID", dmn.pdmnState->platformNodeID.ToString());
-                objMN.pushKV("platformP2PPort", dmn.pdmnState->platformP2PPort);
-                objMN.pushKV("platformHTTPPort", dmn.pdmnState->platformHTTPPort);
-            }
             objMN.pushKV("pospenaltyscore", dmn.pdmnState->nPoSePenalty);
             objMN.pushKV("consecutivePayments", dmn.pdmnState->nConsecutivePayments);
             objMN.pushKV("lastpaidtime", dmnToLastPaidTime(dmn));

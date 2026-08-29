@@ -14,6 +14,8 @@
 
 enum class MnType : uint16_t {
     Regular = 0,
+    // Retired. The value stays reserved so serialized data carrying it can
+    // never be reinterpreted as a future type; no transaction may use it.
     Evo = 1,
     COUNT,
     Invalid = std::numeric_limits<uint16_t>::max(),

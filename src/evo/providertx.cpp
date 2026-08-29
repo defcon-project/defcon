@@ -17,10 +17,9 @@ bool CProRegTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState&
     if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version");
     }
-    if (nVersion != BASIC_BLS_VERSION && nType == MnType::Evo) {
-        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-evo-version");
-    }
-    if (!IsValidMnType(nType)) {
+    // The Evo type is retired: its enum value stays reserved so historic
+    // serialization cannot be reused, but no transaction may carry it.
+    if (nType != MnType::Regular) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
     }
     if (nMode != 0) {
@@ -88,12 +87,10 @@ std::string CProRegTx::ToString() const
     }
 
     return strprintf("CProRegTx(nVersion=%d, nType=%d, collateralOutpoint=%s, addr=%s, nOperatorReward=%f, "
-                     "ownerAddress=%s, pubKeyOperator=%s, votingAddress=%s, scriptPayout=%s, platformNodeID=%s, "
-                     "platformP2PPort=%d, platformHTTPPort=%d)",
+                     "ownerAddress=%s, pubKeyOperator=%s, votingAddress=%s, scriptPayout=%s)",
                      nVersion, ToUnderlying(nType), collateralOutpoint.ToStringShort(), addr.ToStringAddrPort(),
                      (double)nOperatorReward / 100, EncodeDestination(PKHash(keyIDOwner)), pubKeyOperator.ToString(),
-                     EncodeDestination(PKHash(keyIDVoting)), payee, platformNodeID.ToString(), platformP2PPort,
-                     platformHTTPPort);
+                     EncodeDestination(PKHash(keyIDVoting)), payee);
 }
 
 bool CProUpServTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const
@@ -101,13 +98,11 @@ bool CProUpServTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationSta
     if (nVersion == 0 || nVersion > GetVersion(is_basic_scheme_active)) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-version");
     }
-    if (nVersion != BASIC_BLS_VERSION && nType == MnType::Evo) {
-        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-evo-version");
-    }
     // Mirror CProRegTx: an out-of-range nType is mempool-acceptable without
     // this but block-invalid in BuildNewListFromBlock, so a single relayed
     // ProUpServTx would stall CreateNewBlock/getblocktemplate. (dash#7488)
-    if (!IsValidMnType(nType)) {
+    // The retired Evo type is rejected here the same way.
+    if (nType != MnType::Regular) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-protx-type");
     }
 
@@ -122,10 +117,8 @@ std::string CProUpServTx::ToString() const
         payee = EncodeDestination(dest);
     }
 
-    return strprintf("CProUpServTx(nVersion=%d, nType=%d, proTxHash=%s, addr=%s, operatorPayoutAddress=%s, "
-                     "platformNodeID=%s, platformP2PPort=%d, platformHTTPPort=%d)",
-                     nVersion, ToUnderlying(nType), proTxHash.ToString(), addr.ToStringAddrPort(), payee,
-                     platformNodeID.ToString(), platformP2PPort, platformHTTPPort);
+    return strprintf("CProUpServTx(nVersion=%d, nType=%d, proTxHash=%s, addr=%s, operatorPayoutAddress=%s)",
+                     nVersion, ToUnderlying(nType), proTxHash.ToString(), addr.ToStringAddrPort(), payee);
 }
 
 bool CProUpRegTx::IsTriviallyValid(bool is_basic_scheme_active, TxValidationState& state) const

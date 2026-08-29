@@ -40,8 +40,6 @@ public:
     CBLSLazyPublicKey pubKeyOperator;
     CKeyID keyIDVoting;
     bool isValid{false};
-    uint16_t platformHTTPPort{0};
-    uint160 platformNodeID{};
     CScript scriptPayout; // mem-only
     CScript scriptOperatorPayout; // mem-only
     uint16_t nVersion{LEGACY_BLS_VERSION};
@@ -59,9 +57,7 @@ public:
                keyIDVoting == rhs.keyIDVoting &&
                isValid == rhs.isValid &&
                nVersion == rhs.nVersion &&
-               nType == rhs.nType &&
-               platformHTTPPort == rhs.platformHTTPPort &&
-               platformNodeID == rhs.platformNodeID;
+               nType == rhs.nType;
     }
 
     bool operator!=(const CSimplifiedMNListEntry& rhs) const
@@ -87,10 +83,6 @@ public:
         }
         if (obj.nVersion == BASIC_BLS_VERSION) {
             READWRITE(obj.nType);
-            if (obj.nType == MnType::Evo) {
-                READWRITE(obj.platformHTTPPort);
-                READWRITE(obj.platformNodeID);
-            }
         }
     }
 

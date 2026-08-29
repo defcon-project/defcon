@@ -196,7 +196,6 @@ std::vector<CDeterministicMNCPtr> GetAllQuorumMembers(Consensus::LLMQType llmqTy
 std::vector<CDeterministicMNCPtr> ComputeQuorumMembers(Consensus::LLMQType llmqType, CDeterministicMNManager& dmnman,
                                                        const CBlockIndex* pQuorumBaseBlockIndex)
 {
-    bool EvoOnly = (Params().GetConsensus().llmqTypePlatform == llmqType) && IsV19Active(pQuorumBaseBlockIndex);
     const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
     assert(llmq_params_opt.has_value());
     if (llmq_params_opt->useRotation || pQuorumBaseBlockIndex->nHeight % llmq_params_opt->dkgInterval != 0) {
@@ -209,14 +208,13 @@ std::vector<CDeterministicMNCPtr> ComputeQuorumMembers(Consensus::LLMQType llmqT
             pQuorumBaseBlockIndex;
     const auto modifier = GetHashModifier(llmq_params_opt.value(), pQuorumBaseBlockIndex);
     auto allMns = dmnman.GetListForBlock(pWorkBlockIndex);
-    return allMns.CalculateQuorum(llmq_params_opt->size, modifier, EvoOnly);
+    return allMns.CalculateQuorum(llmq_params_opt->size, modifier);
 }
 
 std::optional<std::vector<CDeterministicMNCPtr>> ComputeQuorumMembersFromWorkBlock(
     Consensus::LLMQType llmqType, CDeterministicMNManager& dmnman,
     gsl::not_null<const CBlockIndex*> pWorkBlockIndex, int quorumHeight)
 {
-    const Consensus::Params& consensus{Params().GetConsensus()};
     const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
     if (!llmq_params_opt.has_value()) {
         ASSERT_IF_DEBUG(false);
@@ -246,12 +244,7 @@ std::optional<std::vector<CDeterministicMNCPtr>> ComputeQuorumMembersFromWorkBlo
     }
 
     const auto modifier = GetHashModifierFromWorkBlock(llmq_params, pWorkBlockIndex.get());
-    // Canonical member selection gates EvoOnly on V19 at the future quorum base block; V19 is
-    // a buried deployment, so its state there is a pure height check even though the block
-    // itself is not mined yet.
-    const bool EvoOnly = llmq_params.type == consensus.llmqTypePlatform &&
-                         quorumHeight + 1 >= consensus.DeploymentHeight(Consensus::DEPLOYMENT_V19);
-    return dmnman.GetListForBlock(pWorkBlockIndex).CalculateQuorum(llmq_params.size, modifier, EvoOnly);
+    return dmnman.GetListForBlock(pWorkBlockIndex).CalculateQuorum(llmq_params.size, modifier);
 }
 
 std::vector<std::vector<CDeterministicMNCPtr>> ComputeQuorumMembersByQuarterRotation(

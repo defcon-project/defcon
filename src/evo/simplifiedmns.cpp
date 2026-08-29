@@ -34,8 +34,6 @@ CSimplifiedMNListEntry::CSimplifiedMNListEntry(const CDeterministicMN& dmn) :
     pubKeyOperator(dmn.pdmnState->pubKeyOperator),
     keyIDVoting(dmn.pdmnState->keyIDVoting),
     isValid(!dmn.pdmnState->IsBanned()),
-    platformHTTPPort(dmn.pdmnState->platformHTTPPort),
-    platformNodeID(dmn.pdmnState->platformNodeID),
     scriptPayout(dmn.pdmnState->scriptPayout),
     scriptOperatorPayout(dmn.pdmnState->scriptOperatorPayout),
     nVersion(dmn.pdmnState->nVersion == CProRegTx::LEGACY_BLS_VERSION ? LEGACY_BLS_VERSION : BASIC_BLS_VERSION),
@@ -63,11 +61,10 @@ std::string CSimplifiedMNListEntry::ToString() const
     }
 
     return strprintf("CSimplifiedMNListEntry(nVersion=%d, nType=%d, proRegTxHash=%s, confirmedHash=%s, service=%s, "
-                     "pubKeyOperator=%s, votingAddress=%s, isValid=%d, payoutAddress=%s, operatorPayoutAddress=%s, "
-                     "platformHTTPPort=%d, platformNodeID=%s)",
+                     "pubKeyOperator=%s, votingAddress=%s, isValid=%d, payoutAddress=%s, operatorPayoutAddress=%s)",
                      nVersion, ToUnderlying(nType), proRegTxHash.ToString(), confirmedHash.ToString(),
                      service.ToStringAddrPort(), pubKeyOperator.ToString(), EncodeDestination(PKHash(keyIDVoting)),
-                     isValid, payoutAddress, operatorPayoutAddress, platformHTTPPort, platformNodeID.ToString());
+                     isValid, payoutAddress, operatorPayoutAddress);
 }
 
 UniValue CSimplifiedMNListEntry::ToJson(bool extended) const
@@ -82,10 +79,6 @@ UniValue CSimplifiedMNListEntry::ToJson(bool extended) const
     obj.pushKV("pubKeyOperator", pubKeyOperator.ToString());
     obj.pushKV("votingAddress", EncodeDestination(PKHash(keyIDVoting)));
     obj.pushKV("isValid", isValid);
-    if (nType == MnType::Evo) {
-        obj.pushKV("platformHTTPPort", platformHTTPPort);
-        obj.pushKV("platformNodeID", platformNodeID.ToString());
-    }
 
     if (extended) {
         CTxDestination dest;

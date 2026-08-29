@@ -143,7 +143,7 @@ struct Params {
     int DIP0024Height;
     /** Block height at which the first DIP0024 quorum was mined */
     int DIP0024QuorumsHeight;
-    /** Block height at which V19 (Basic BLS and EvoNodes) becomes active */
+    /** Block height at which V19 (Basic BLS) becomes active */
     int V19Height;
     /** Block height at which V20 (Deployment of EHF, LLMQ Randomness Beacon) becomes active */
     int V20Height;

@@ -1125,10 +1125,9 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         return self.config["components"].getboolean("USE_BDB")
 
 MASTERNODE_COLLATERAL = 1000
-EVONODE_COLLATERAL = 4000
 
 class MasternodeInfo:
-    def __init__(self, proTxHash, ownerAddr, votingAddr, rewards_address, operator_reward, pubKeyOperator, keyOperator, collateral_address, collateral_txid, collateral_vout, addr, evo=False):
+    def __init__(self, proTxHash, ownerAddr, votingAddr, rewards_address, operator_reward, pubKeyOperator, keyOperator, collateral_address, collateral_txid, collateral_vout, addr):
         self.proTxHash = proTxHash
         self.ownerAddr = ownerAddr
         self.votingAddr = votingAddr
@@ -1140,7 +1139,6 @@ class MasternodeInfo:
         self.collateral_txid = collateral_txid
         self.collateral_vout = collateral_vout
         self.addr = addr
-        self.evo = evo
         self.node = None
         self.nodeIdx = None
 
@@ -1175,9 +1173,8 @@ class DashTestFramework(BitcoinTestFramework):
             if mn2.node is not None:
                 mn2.node.setmnthreadactive(True)
 
-    def set_dash_test_params(self, num_nodes, masterodes_count, extra_args=None, evo_count=0):
+    def set_dash_test_params(self, num_nodes, masterodes_count, extra_args=None):
         self.mn_count = masterodes_count
-        self.evo_count = evo_count
         self.num_nodes = num_nodes
         self.mninfo = []
         self.setup_clean_chain = True
@@ -1259,8 +1256,7 @@ class DashTestFramework(BitcoinTestFramework):
         for i in range(0, idx):
             self.connect_nodes(i, idx)
 
-    # TODO: to let creating Evo Nodes without instant-send available
-    def dynamically_add_masternode(self, evo=False, rnd=None, should_be_rejected=False):
+    def dynamically_add_masternode(self, rnd=None, should_be_rejected=False):
         mn_idx = len(self.nodes)
 
         node_p2p_port = p2p_port(mn_idx)
@@ -1268,7 +1264,7 @@ class DashTestFramework(BitcoinTestFramework):
 
         protx_success = False
         try:
-            created_mn_info = self.dynamically_prepare_masternode(mn_idx, node_p2p_port, evo, rnd)
+            created_mn_info = self.dynamically_prepare_masternode(mn_idx, node_p2p_port, rnd)
             protx_success = True
         except:
             self.log.info("dynamically_prepare_masternode failed")
@@ -1299,7 +1295,7 @@ class DashTestFramework(BitcoinTestFramework):
         self.log.info("Successfully started and synced proTx:"+str(created_mn_info.proTxHash))
         return created_mn_info
 
-    def dynamically_prepare_masternode(self, idx, node_p2p_port, evo=False, rnd=None):
+    def dynamically_prepare_masternode(self, idx, node_p2p_port, rnd=None):
         v19_active = softfork_active(self.nodes[0], 'v19')
         bls = self.nodes[0].bls('generate') if v19_active else self.nodes[0].bls('generate', True)
         collateral_address = self.nodes[0].getnewaddress()
@@ -1308,11 +1304,7 @@ class DashTestFramework(BitcoinTestFramework):
         voting_address = self.nodes[0].getnewaddress()
         reward_address = self.nodes[0].getnewaddress()
 
-        platform_node_id = hash160(b'%d' % rnd).hex() if rnd is not None else hash160(b'%d' % node_p2p_port).hex()
-        platform_p2p_port = '%d' % (node_p2p_port + 101)
-        platform_http_port = '%d' % (node_p2p_port + 102)
-
-        collateral_amount = EVONODE_COLLATERAL if evo else MASTERNODE_COLLATERAL
+        collateral_amount = MASTERNODE_COLLATERAL
         outputs = {collateral_address: collateral_amount, funds_address: 1}
         collateral_txid = self.nodes[0].sendmany("", outputs)
         self.bump_mocktime(10 * 60 + 1) # to make tx safe to include in block
@@ -1330,50 +1322,17 @@ class DashTestFramework(BitcoinTestFramework):
         ipAndPort = '127.0.0.1:%d' % node_p2p_port
         operatorReward = idx
 
-        protx_result = None
-        if evo:
-            protx_result = self.nodes[0].protx("register_evo", collateral_txid, collateral_vout, ipAndPort, owner_address, bls['public'], voting_address, operatorReward, reward_address, platform_node_id, platform_p2p_port, platform_http_port, funds_address, True)
-        else:
-            protx_result = self.nodes[0].protx("register" if v19_active else "register_legacy", collateral_txid, collateral_vout, ipAndPort, owner_address, bls['public'], voting_address, operatorReward, reward_address, funds_address, True)
+        protx_result = self.nodes[0].protx("register" if v19_active else "register_legacy", collateral_txid, collateral_vout, ipAndPort, owner_address, bls['public'], voting_address, operatorReward, reward_address, funds_address, True)
 
         self.bump_mocktime(10 * 60 + 1) # to make tx safe to include in block
         tip = self.generate(self.nodes[0], 1)[0]
 
         assert_equal(self.nodes[0].getrawtransaction(protx_result, 1, tip)['confirmations'], 1)
-        mn_info = MasternodeInfo(protx_result, owner_address, voting_address, reward_address, operatorReward, bls['public'], bls['secret'], collateral_address, collateral_txid, collateral_vout, ipAndPort, evo)
+        mn_info = MasternodeInfo(protx_result, owner_address, voting_address, reward_address, operatorReward, bls['public'], bls['secret'], collateral_address, collateral_txid, collateral_vout, ipAndPort)
         self.mninfo.append(mn_info)
 
-        mn_type_str = "EvoNode" if evo else "MN"
-        self.log.info("Prepared %s %d: collateral_txid=%s, collateral_vout=%d, protxHash=%s" % (mn_type_str, idx, collateral_txid, collateral_vout, protx_result))
+        self.log.info("Prepared MN %d: collateral_txid=%s, collateral_vout=%d, protxHash=%s" % (idx, collateral_txid, collateral_vout, protx_result))
         return mn_info
-
-    def dynamically_evo_update_service(self, evo_info, rnd=None, should_be_rejected=False):
-        funds_address = self.nodes[0].getnewaddress()
-        operator_reward_address = self.nodes[0].getnewaddress()
-
-        # For the sake of the test, generate random nodeid, p2p and http platform values
-        r = rnd if rnd is not None else random.randint(21000, 65000)
-        platform_node_id = hash160(b'%d' % r).hex()
-        platform_p2p_port = '%d' % (r + 1)
-        platform_http_port = '%d' % (r + 2)
-
-        fund_txid = self.nodes[0].sendtoaddress(funds_address, 1)
-        self.bump_mocktime(10 * 60 + 1) # to make tx safe to include in block
-        tip = self.generate(self.nodes[0], 1)[0]
-        assert_equal(self.nodes[0].getrawtransaction(fund_txid, 1, tip)['confirmations'], 1)
-
-        protx_success = False
-        try:
-            protx_result = self.nodes[0].protx('update_service_evo', evo_info.proTxHash, evo_info.addr, evo_info.keyOperator, platform_node_id, platform_p2p_port, platform_http_port, operator_reward_address, funds_address)
-            self.bump_mocktime(10 * 60 + 1) # to make tx safe to include in block
-            tip = self.generate(self.nodes[0], 1)[0]
-            assert_equal(self.nodes[0].getrawtransaction(protx_result, 1, tip)['confirmations'], 1)
-            self.log.info("Updated EvoNode %s: platformNodeID=%s, platformP2PPort=%s, platformHTTPPort=%s" % (evo_info.proTxHash, platform_node_id, platform_p2p_port, platform_http_port))
-            protx_success = True
-        except:
-            self.log.info("protx_evo rejected")
-
-        assert_equal(protx_success, not should_be_rejected)
 
     def prepare_masternodes(self):
         self.log.info("Preparing %d masternodes" % self.mn_count)
@@ -1431,7 +1390,7 @@ class DashTestFramework(BitcoinTestFramework):
             operatorPayoutAddress = self.nodes[0].getnewaddress()
             self.nodes[0].protx('update_service', proTxHash, ipAndPort, bls['secret'], operatorPayoutAddress, address)
 
-        self.mninfo.append(MasternodeInfo(proTxHash, ownerAddr, votingAddr, rewardsAddr, operatorReward, bls['public'], bls['secret'], address, txid, collateral_vout, ipAndPort, False))
+        self.mninfo.append(MasternodeInfo(proTxHash, ownerAddr, votingAddr, rewardsAddr, operatorReward, bls['public'], bls['secret'], address, txid, collateral_vout, ipAndPort))
 
         self.log.info("Prepared MN %d: collateral_txid=%s, collateral_vout=%d, protxHash=%s" % (idx, txid, collateral_vout, proTxHash))
 
@@ -1499,8 +1458,7 @@ class DashTestFramework(BitcoinTestFramework):
             self.create_simple_node(extra_args)
         if self.requires_wallet:
             self.import_deterministic_coinbase_privkeys()
-        required_balance = EVONODE_COLLATERAL * self.evo_count
-        required_balance += MASTERNODE_COLLATERAL * (self.mn_count - self.evo_count) + 100
+        required_balance = MASTERNODE_COLLATERAL * self.mn_count + 100
         self.log.info("Generating %d coins" % required_balance)
         while self.nodes[0].getbalance() < required_balance:
             self.bump_mocktime(1)
