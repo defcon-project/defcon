@@ -73,8 +73,8 @@ void CPoSeServiceManager::RecordResponse(const uint256& target)
     m_responded.insert(target);
 }
 
-bool CPoSeServiceManager::ProcessResponse(const uint256& fromProTxHash, const CPoSeServiceResponse& resp,
-                                          const CDeterministicMNList& list)
+CPoSeServiceResponse CPoSeServiceManager::AnnounceLiveness(const uint256& myProTxHash,
+                                                           const CBLSSecretKey& myOperatorKey) const
 {
     uint32_t epoch;
     uint256 epochHash;
@@ -83,14 +83,32 @@ bool CPoSeServiceManager::ProcessResponse(const uint256& fromProTxHash, const CP
         epoch = m_epoch;
         epochHash = m_epochBlockHash;
     }
-    if (resp.nEpoch != epoch) return false;
-    const auto dmn = list.GetMN(fromProTxHash);
+    CPoSeServiceResponse resp;
+    resp.nEpoch = epoch;
+    resp.proTxHash = myProTxHash;
+    resp.sig = SignChallengeResponse(myOperatorKey, epochHash, myProTxHash);
+    return resp;
+}
+
+bool CPoSeServiceManager::ProcessResponse(const CPoSeServiceResponse& resp, const CDeterministicMNList& list)
+{
+    uint32_t epoch;
+    uint256 epochHash;
+    {
+        LOCK(m_mutex);
+        epoch = m_epoch;
+        epochHash = m_epochBlockHash;
+        if (resp.nEpoch != epoch) return false;
+        if (m_responded.count(resp.proTxHash)) return false; // seen already -- do not re-relay
+    }
+    const auto dmn = list.GetMN(resp.proTxHash);
     if (!dmn) return false;
-    if (!VerifyChallengeResponse(resp.sig, dmn->pdmnState->pubKeyOperator.Get(), epochHash, fromProTxHash)) {
+    if (!VerifyChallengeResponse(resp.sig, dmn->pdmnState->pubKeyOperator.Get(), epochHash, resp.proTxHash)) {
         return false;
     }
-    RecordResponse(fromProTxHash);
-    return true;
+    LOCK(m_mutex);
+    if (resp.nEpoch != m_epoch) return false; // epoch rolled while verifying
+    return m_responded.insert(resp.proTxHash).second;
 }
 
 bool CPoSeServiceManager::ProcessReport(const CPoSeServiceReport& report, const CDeterministicMNList& list,

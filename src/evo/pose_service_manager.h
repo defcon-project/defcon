@@ -68,14 +68,22 @@ public:
     void RecordResponse(const uint256& target);
 
     /**
-     * Ingest a liveness response received on the wire. `fromProTxHash` is the
-     * responder's identity taken from the authenticated masternode connection,
-     * not the wire. Accepts only a response for the current epoch whose signature
-     * verifies against that masternode's operator key; on success the target is
-     * recorded as responding. Returns whether it was accepted.
+     * This node's own liveness announcement for the current epoch, for the
+     * caller to flood to its peers: the epoch, this node's proTxHash, and the
+     * challenge nonce signed with its operator key.
      */
-    bool ProcessResponse(const uint256& fromProTxHash, const CPoSeServiceResponse& resp,
-                         const CDeterministicMNList& list);
+    CPoSeServiceResponse AnnounceLiveness(const uint256& myProTxHash,
+                                          const CBLSSecretKey& myOperatorKey) const;
+
+    /**
+     * Ingest a liveness announcement received from the flood. Accepts only an
+     * announcement for the current epoch, from a masternode on the list, whose
+     * signature verifies against that masternode's operator key -- so claiming
+     * another node's identity fails on its key. On first sight the node is
+     * recorded as responding and true is returned, telling the caller to relay
+     * it onward; a duplicate or invalid announcement returns false.
+     */
+    bool ProcessResponse(const CPoSeServiceResponse& resp, const CDeterministicMNList& list);
 
     /**
      * Ingest a signed report received on the wire into the relay pool, using the

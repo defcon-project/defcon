@@ -111,19 +111,24 @@ public:
 };
 
 /**
- * Wire message: a target's signed liveness proof for an epoch. The responder's
- * proTxHash is not on the wire -- it comes from the authenticated masternode
- * connection the response arrived on, so a peer cannot answer for another node.
+ * Wire message: a masternode's self-announced liveness proof for an epoch,
+ * flooded across the masternode mesh. It names itself (proTxHash) so any node in
+ * the flood can verify it without a direct connection, and the signature binds
+ * the proof to that identity and epoch -- claiming to be another node fails,
+ * because the signature is checked against the claimed node's operator key. A
+ * sentinel that sees a verifying announcement from one of its targets records it
+ * ONLINE; a target that never announces is what it reports MISSED.
  */
 class CPoSeServiceResponse
 {
 public:
     uint32_t nEpoch{0};
+    uint256 proTxHash;
     CBLSSignature sig;
 
     SERIALIZE_METHODS(CPoSeServiceResponse, obj)
     {
-        READWRITE(obj.nEpoch);
+        READWRITE(obj.nEpoch, obj.proTxHash);
         READWRITE(CBLSSignatureVersionWrapper(const_cast<CBLSSignature&>(obj.sig), /*fLegacy=*/false));
     }
 };
