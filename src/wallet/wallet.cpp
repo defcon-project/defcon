@@ -6088,19 +6088,6 @@ void CleanseString(std::string& str)
 }
 } // namespace
 
-void CWallet::PrintBLSKey(std::vector<uint8_t>& in, std::string in2)
-{
-    char blshex[256];
-    memset(blshex, 0, sizeof(blshex));
-
-    unsigned int len = in.size();
-    for (unsigned int i = 0; i < len; i++) {
-        sprintf(blshex+(i*2), "%02hhx", in[i]);
-    }
-
-    WalletLogPrintf("%s (%s)\n", blshex, in2.c_str());
-}
-
 bool CWallet::EncryptBLSKeySecret(const CKeyingMaterial& master_key, const std::string& keydata, CPubKey& pubkey, std::vector<unsigned char>& crypted_secret) const
 {
     CBLSSecretKey sk;
