@@ -5613,14 +5613,20 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
     const uint32_t pos = static_cast<uint32_t>(pindexNew->nHeight) % interval;
     const auto change = m_dslman->BeginEpoch(epoch, pindexBase->GetBlockHash());
 
-    // A reorg that swapped this epoch's base block: the manager discarded the
-    // stale responses and reports, so re-run every once-per-epoch action
-    // against the new base.
-    if (change == dsl::CPoSeServiceManager::EpochChange::Rebased) {
+    // A reorg changed this epoch's base block (Rebased) or moved the tip back
+    // across a boundary into it (Rewound): the manager discarded the stale
+    // responses and reports, so re-run every once-per-epoch action against the
+    // new base. Treat the epoch as a warm-up as well -- the announcements from
+    // before the reorg are gone, and judging the freshly-cleared set would
+    // report honest nodes MISSED. The next full epoch is observed normally.
+    if (change == dsl::CPoSeServiceManager::EpochChange::Rebased ||
+        change == dsl::CPoSeServiceManager::EpochChange::Rewound) {
         m_dsl_last_announced_epoch = -1;
         m_dsl_last_emitted_epoch = -1;
         m_dsl_last_signed_epoch = -1;
-        LogPrint(BCLog::NET, "DSL -- epoch %d rebased by a reorg, re-observing\n", epoch);
+        m_dsl_warmup_epoch = epoch;
+        LogPrint(BCLog::NET, "DSL -- epoch %d %s by a reorg, re-observing as warm-up\n", epoch,
+                 change == dsl::CPoSeServiceManager::EpochChange::Rewound ? "rewound" : "rebased");
     }
 
     // A start or restart part-way through an epoch cannot judge it: the
@@ -5692,21 +5698,34 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
                 ::SerializeHash(std::make_pair(std::string{"dslcommitment"}, epoch)),
                 /*signHeight=*/pindexBase->nHeight);
             if (quorum != nullptr) {
-                const auto candidate = dsl::BuildServiceCommitmentTx(
-                    epoch, pindexBase->GetBlockHash(), llmqType, quorum->qc->quorumHash,
-                    m_dslman->Store().GetReportsForEpoch(epoch),
-                    m_dmnman->GetListForBlock(pindexBase), consensus);
-                // AsyncSignIfMember returns false when the quorum could not be
-                // used or the signing session failed to start; only a true
-                // return retires the epoch.
-                if (m_llmq_ctx->sigman->AsyncSignIfMember(llmqType, *m_llmq_ctx->shareman,
-                                                          candidate.commitment.GetRequestId(),
-                                                          candidate.msgHash, quorum->qc->quorumHash)) {
+                // Only a member of the selected quorum signs it. For a 60-of-N
+                // quorum that leaves most of the network out, and a non-member
+                // would fail AsyncSignIfMember on every block of the window
+                // while rebuilding the commitment each time for nothing.
+                // Membership is fixed for the epoch, so a non-member has nothing
+                // to sign -- retire the epoch here rather than retry it. This
+                // mirrors AsyncSignIfMember's own IsValidMember gate.
+                if (!quorum->IsValidMember(myProTxHash)) {
                     m_dsl_last_signed_epoch = epoch;
-                    LogPrint(BCLog::NET, "DSL -- asked quorum %s to sign epoch %d, missed=%d\n",
-                             quorum->qc->quorumHash.ToString(), epoch, candidate.commitment.CountMissed());
+                    LogPrint(BCLog::NET, "DSL -- not in the signing quorum for epoch %d, nothing to sign\n", epoch);
                 } else {
-                    LogPrint(BCLog::NET, "DSL -- sign start failed for epoch %d, retrying next block\n", epoch);
+                    const auto candidate = dsl::BuildServiceCommitmentTx(
+                        epoch, pindexBase->GetBlockHash(), llmqType, quorum->qc->quorumHash,
+                        m_dslman->Store().GetReportsForEpoch(epoch),
+                        m_dmnman->GetListForBlock(pindexBase), consensus);
+                    // Here AsyncSignIfMember can only fail if the signing session
+                    // did not start (quorum state still loading); only a true
+                    // return retires the epoch, so a transient delay is retried
+                    // on the next block instead of losing the commitment.
+                    if (m_llmq_ctx->sigman->AsyncSignIfMember(llmqType, *m_llmq_ctx->shareman,
+                                                              candidate.commitment.GetRequestId(),
+                                                              candidate.msgHash, quorum->qc->quorumHash)) {
+                        m_dsl_last_signed_epoch = epoch;
+                        LogPrint(BCLog::NET, "DSL -- asked quorum %s to sign epoch %d, missed=%d\n",
+                                 quorum->qc->quorumHash.ToString(), epoch, candidate.commitment.CountMissed());
+                    } else {
+                        LogPrint(BCLog::NET, "DSL -- sign start failed for epoch %d, retrying next block\n", epoch);
+                    }
                 }
             }
             // quorum still loading: flag left unset, retried next block
