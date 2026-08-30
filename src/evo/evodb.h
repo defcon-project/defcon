@@ -14,7 +14,8 @@ class uint256;
 // "b_b3" was used after masternode type introduction in evoDB
 // "b_b4" was used after storing protx version for each masternode in evoDB
 // "b_b5" is used after storing compute service descriptors in evoDB
-static const std::string EVODB_BEST_BLOCK = "b_b5";
+// "b_b6" is used after storing service-PoSe (DSL) state in evoDB
+static const std::string EVODB_BEST_BLOCK = "b_b6";
 
 class CEvoDB;
 
