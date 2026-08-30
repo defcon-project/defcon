@@ -40,34 +40,10 @@ bool CPoSeServiceCommitment::Verify(const llmq::CQuorumManager& qman, const uint
     return true;
 }
 
-UniValue CPoSeServiceCommitment::ToJson() const
-{
-    UniValue obj(UniValue::VOBJ);
-    obj.pushKV("version", nVersion);
-    obj.pushKV("epoch", (int64_t)nEpoch);
-    obj.pushKV("epochBlockHash", epochBlockHash.ToString());
-    obj.pushKV("llmqType", ToUnderlying(llmqType));
-    obj.pushKV("quorumHash", quorumHash.ToString());
-    obj.pushKV("missedCount", CountMissed());
-    obj.pushKV("size", (int64_t)missed.size());
-    // The set bits by canonical index, so an observer can resolve WHO was
-    // missed against the deterministic list at epochBlockHash without
-    // reimplementing the bitfield's serialization.
-    UniValue missedIndices(UniValue::VARR);
-    for (size_t i = 0; i < missed.size(); ++i) {
-        if (missed[i]) missedIndices.push_back((int64_t)i);
-    }
-    obj.pushKV("missedIndices", missedIndices);
-    return obj;
-}
-
-UniValue CPoSeServiceCommitmentTxPayload::ToJson() const
-{
-    UniValue obj(UniValue::VOBJ);
-    obj.pushKV("version", nVersion);
-    obj.pushKV("commitment", commitment.ToJson());
-    return obj;
-}
+// CPoSeServiceCommitment::ToJson and CPoSeServiceCommitmentTxPayload::ToJson
+// are defined inline in the header, so core_write.cpp (libbitcoin_common) can
+// resolve them without pulling in the server library -- the pattern every
+// other special-transaction payload follows.
 
 bool CheckPoSeServiceCommitmentTx(const ChainstateManager& chainman, const llmq::CQuorumManager& qman,
                                   const CTransaction& tx, const CBlockIndex* pindexPrev,
