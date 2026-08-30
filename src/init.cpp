@@ -86,6 +86,7 @@
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
+#include <evo/pose_service_manager.h>
 #include <flat-database.h>
 #include <governance/governance.h>
 #include <llmq/context.h>
@@ -1990,11 +1991,14 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     ChainstateManager& chainman = *Assert(node.chainman);
 
+    assert(!node.dslman);
+    node.dslman = std::make_unique<dsl::CPoSeServiceManager>();
+
     assert(!node.peerman);
     node.peerman = PeerManager::make(chainparams, *node.connman, *node.addrman, node.banman.get(),
                                      chainman, *node.mempool, *node.mn_metaman, *node.mn_sync,
                                      *node.govman, *node.sporkman, node.mn_activeman.get(), node.dmnman,
-                                     node.cj_ctx, node.llmq_ctx, ignores_incoming_txs);
+                                     node.cj_ctx, node.llmq_ctx, node.dslman, ignores_incoming_txs);
     RegisterValidationInterface(node.peerman.get());
 
     g_ds_notification_interface = std::make_unique<CDSNotificationInterface>(

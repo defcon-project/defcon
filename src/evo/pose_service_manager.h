@@ -11,6 +11,7 @@
 #include <uint256.h>
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <set>
 #include <vector>
@@ -40,6 +41,10 @@ namespace dsl {
 class CPoSeServiceManager
 {
 public:
+    /** Signs a hash with this node's operator key without exposing the key --
+     *  the live node passes CActiveMasternodeManager::Sign, tests a lambda. */
+    using SignerFn = std::function<CBLSSignature(const uint256&)>;
+
     explicit CPoSeServiceManager(uint32_t keepEpochs = 8) : m_store(keepEpochs), m_keepEpochs(keepEpochs) {}
 
     CServiceReportStore& Store() { return m_store; }
@@ -74,25 +79,32 @@ public:
      */
     CPoSeServiceResponse AnnounceLiveness(const uint256& myProTxHash,
                                           const CBLSSecretKey& myOperatorKey) const;
+    CPoSeServiceResponse AnnounceLiveness(const uint256& myProTxHash, const SignerFn& signer) const;
 
     /**
-     * Ingest a liveness announcement received from the flood. Accepts only an
-     * announcement for the current epoch, from a masternode on the list, whose
-     * signature verifies against that masternode's operator key -- so claiming
-     * another node's identity fails on its key. On first sight the node is
-     * recorded as responding and true is returned, telling the caller to relay
-     * it onward; a duplicate or invalid announcement returns false.
+     * Ingest a liveness announcement received from the flood. The caller derives
+     * `epochBaseHash` for the announcement's own epoch from its active chain --
+     * verification binds to the chain, not to this manager's tick, so an
+     * announcement that outruns the local epoch tick is still accepted rather
+     * than lost (the flood forwards each copy only once, so a rejection here is
+     * permanent). Accepts only an epoch inside the retained window, from a
+     * masternode on the list, with a signature that verifies against that
+     * masternode's operator key -- claiming another node's identity fails on its
+     * key. On first sight the node is recorded as responding for that epoch and
+     * true is returned, telling the caller to relay it onward; a duplicate or
+     * invalid announcement returns false.
      */
-    bool ProcessResponse(const CPoSeServiceResponse& resp, const CDeterministicMNList& list);
+    bool ProcessResponse(const CPoSeServiceResponse& resp, const CDeterministicMNList& list,
+                         const uint256& epochBaseHash);
 
     /**
-     * Ingest a signed report received on the wire into the relay pool, using the
-     * epoch-base hash this node recorded for the report's epoch. Returns whether
-     * it was newly accepted -- the caller then relays it onward. A report for an
-     * epoch this node never entered is refused.
+     * Ingest a signed report received on the wire into the relay pool, with the
+     * epoch-base hash for the report's epoch derived by the caller from its
+     * active chain -- the same tick-independence as ProcessResponse. Returns
+     * whether it was newly accepted -- the caller then relays it onward.
      */
     bool ProcessReport(const CPoSeServiceReport& report, const CDeterministicMNList& list,
-                       const Consensus::Params& params);
+                       const uint256& epochBaseHash, const Consensus::Params& params);
 
     /**
      * This node's signed reports for the current epoch: for every target it was
@@ -104,6 +116,14 @@ public:
                                                 const uint256& myProTxHash,
                                                 const CBLSSecretKey& myOperatorKey,
                                                 const Consensus::Params& params) const;
+    std::vector<CPoSeServiceReport> EmitReports(const CDeterministicMNList& list,
+                                                const uint256& myProTxHash, const SignerFn& signer,
+                                                const Consensus::Params& params) const;
+
+    /** How many masternodes have announced liveness this epoch. */
+    size_t RespondedCount() const;
+    /** Whether this masternode's announcement was already seen this epoch. */
+    bool HasResponded(const uint256& proTxHash) const;
 
 private:
     mutable Mutex m_mutex;
@@ -111,8 +131,10 @@ private:
     const uint32_t m_keepEpochs;
     uint32_t m_epoch GUARDED_BY(m_mutex){0};
     uint256 m_epochBlockHash GUARDED_BY(m_mutex);
-    std::set<uint256> m_responded GUARDED_BY(m_mutex);       // targets that answered this epoch
-    std::map<uint32_t, uint256> m_epochHashes GUARDED_BY(m_mutex); // epoch -> base hash, within the window
+    // per-epoch: which masternodes have announced liveness. Kept for the same
+    // window as the store, so an announcement racing the local epoch tick in
+    // either direction still lands in its own epoch's set.
+    std::map<uint32_t, std::set<uint256>> m_responded GUARDED_BY(m_mutex);
 };
 
 } // namespace dsl

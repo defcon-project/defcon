@@ -177,22 +177,23 @@ BOOST_AUTO_TEST_CASE(liveness_announcements_flood_once_and_bind_identity)
     BOOST_CHECK(ann.proTxHash == target);
 
     // ...and is accepted here on first sight (relay) and refused as a duplicate
-    BOOST_CHECK(mgr.ProcessResponse(ann, fx.list));
-    BOOST_CHECK(!mgr.ProcessResponse(ann, fx.list));
+    BOOST_CHECK(mgr.ProcessResponse(ann, fx.list, fx.epoch));
+    BOOST_CHECK(!mgr.ProcessResponse(ann, fx.list, fx.epoch));
     const auto after = mgr.PendingChallenges(fx.list, me, params);
     BOOST_CHECK(std::find(after.begin(), after.end(), target) == after.end());
 
-    // a wrong epoch is refused
-    dsl::CPoSeServiceResponse wrongEpoch = ann;
-    wrongEpoch.nEpoch = 499;
-    BOOST_CHECK(!mgr.ProcessResponse(wrongEpoch, fx.list));
+    // a replay into another epoch fails: that epoch's base hash differs, and the
+    // signature was bound to this one
+    dsl::CPoSeServiceResponse replayed = ann;
+    replayed.nEpoch = 499;
+    BOOST_CHECK(!mgr.ProcessResponse(replayed, fx.list, TaggedHash(499, 0, "epoch")));
 
     // claiming another node's identity fails on its operator key
     dsl::CPoSeServiceResponse stolen;
     stolen.nEpoch = 500;
     stolen.proTxHash = me; // claims to be `me`, but signs with the target's key
     stolen.sig = dsl::SignChallengeResponse(fx.opKeys[target], fx.epoch, me);
-    BOOST_CHECK(!mgr.ProcessResponse(stolen, fx.list));
+    BOOST_CHECK(!mgr.ProcessResponse(stolen, fx.list, fx.epoch));
 
     // an announcement from a node not on the list is refused
     dsl::CPoSeServiceResponse ghost;
@@ -201,7 +202,39 @@ BOOST_AUTO_TEST_CASE(liveness_announcements_flood_once_and_bind_identity)
     CBLSSecretKey ghostKey;
     ghostKey.MakeNewKey();
     ghost.sig = dsl::SignChallengeResponse(ghostKey, fx.epoch, ghost.proTxHash);
-    BOOST_CHECK(!mgr.ProcessResponse(ghost, fx.list));
+    BOOST_CHECK(!mgr.ProcessResponse(ghost, fx.list, fx.epoch));
+}
+
+// An announcement that outruns the local epoch tick -- seen on a live regtest
+// network, where the wire beat the validation-interface queue by an epoch --
+// must be accepted into its own epoch's set, not dropped, because the flood
+// forwards each copy only once and a drop is permanent.
+BOOST_AUTO_TEST_CASE(announcement_ahead_of_the_local_tick_is_kept)
+{
+    auto fx = MakeFixture(40);
+    Consensus::Params params;
+    const uint256 me = PickSentinelWithTargets(fx, params);
+    BOOST_REQUIRE(!me.IsNull());
+
+    dsl::CPoSeServiceManager mgr;
+    mgr.BeginEpoch(500, fx.epoch);
+
+    // a target announces for epoch 501 before this node's tick got there
+    const uint256 epoch501 = TaggedHash(501, 0, "epoch");
+    dsl::CPoSeServiceManager targetMgr;
+    targetMgr.BeginEpoch(501, epoch501);
+    const uint256 target = TaggedHash(3, 0, "protx");
+    const auto ann = targetMgr.AnnounceLiveness(target, fx.opKeys[target]);
+    BOOST_CHECK_EQUAL(ann.nEpoch, 501u);
+
+    // accepted while we still sit in epoch 500 (the caller supplies 501's hash)
+    BOOST_CHECK(mgr.ProcessResponse(ann, fx.list, epoch501));
+    // it does not pollute the current epoch...
+    BOOST_CHECK(!mgr.HasResponded(target));
+    // ...and once our tick catches up, it is already there
+    mgr.BeginEpoch(501, epoch501);
+    BOOST_CHECK(mgr.HasResponded(target));
+    BOOST_CHECK_EQUAL(mgr.RespondedCount(), 1u);
 }
 
 BOOST_AUTO_TEST_CASE(process_report_pools_and_refuses_unknown_epoch)
@@ -225,15 +258,15 @@ BOOST_AUTO_TEST_CASE(process_report_pools_and_refuses_unknown_epoch)
     rep.Sign(fx.opKeys[sentinel]);
 
     // a valid peer report pools once (and would be relayed); a duplicate does not
-    BOOST_CHECK(mgr.ProcessReport(rep, fx.list, params));
-    BOOST_CHECK(!mgr.ProcessReport(rep, fx.list, params));
+    BOOST_CHECK(mgr.ProcessReport(rep, fx.list, fx.epoch, params));
+    BOOST_CHECK(!mgr.ProcessReport(rep, fx.list, fx.epoch, params));
     BOOST_CHECK_EQUAL(mgr.Store().GetReportsForEpoch(500).size(), 1u);
 
-    // a report for an epoch this node never entered is refused
+    // a report for an epoch far outside the retained window is refused
     dsl::CPoSeServiceReport ancient = rep;
     ancient.nEpoch = 400;
     ancient.Sign(fx.opKeys[sentinel]);
-    BOOST_CHECK(!mgr.ProcessReport(ancient, fx.list, params));
+    BOOST_CHECK(!mgr.ProcessReport(ancient, fx.list, fx.epoch, params));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
