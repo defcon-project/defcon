@@ -238,6 +238,16 @@ struct Params {
     int nDSLEnforcementHeight{std::numeric_limits<int>::max()};
     int nDSLEpochInterval{24};
 
+    /** DSL rule constants (measured on the simulator): a masternode is
+     *  reward-suspended after nDSLSuspendEpochs consecutive missed epochs and
+     *  service-banned after nDSLBanEpochs; no penalty is applied in an epoch
+     *  whose missed fraction reaches nDSLMassOutagePct percent (the
+     *  mass-outage guard, which keeps a correlated outage from mass-banning
+     *  honest nodes). */
+    int nDSLSuspendEpochs{4};
+    int nDSLBanEpochs{5};
+    int nDSLMassOutagePct{15};
+
     /** these parameters are only used on devnet and can be configured from the outside */
     int nMinimumDifficultyBlocks{0};
     int nHighSubsidyBlocks{0};
