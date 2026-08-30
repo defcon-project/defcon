@@ -247,28 +247,27 @@ bool CheckProofOfStake(CChainState& chain_state, BlockValidationState& state, co
 bool CheckKernel(CChainState& chain_state, const CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, const COutPoint& prevout, int64_t* pBlockTime)
 {
     Coin coin;
+    int64_t nBlockFromTime;
     {
+        // CoinsTip, m_chain and the block index it returns are all cs_main-
+        // guarded chain state. GetCoin used to release the lock before reading
+        // m_chain, which raced a concurrent reorg; the sibling staking sites got
+        // a single lock in #104, CheckKernel was missed. Hold it across the whole
+        // read. CheckStakeKernelHash below is pure arithmetic on locals and needs
+        // no lock, so the script's expensive path stays outside it.
         LOCK(cs_main);
-        if (!chain_state.CoinsTip().GetCoin(prevout, coin))
+        if (!chain_state.CoinsTip().GetCoin(prevout, coin) || coin.IsSpent())
             return false;
+        const CBlockIndex* pindex = chain_state.m_chain[coin.nHeight];
+        if (!pindex)
+            return false;
+        if (COINBASE_MATURITY + 1 > pindexPrev->nHeight - coin.nHeight)
+            return false;
+        nBlockFromTime = pindex->GetBlockTime();
     }
 
-    if (coin.IsSpent())
-        return false;
-
-    CBlockIndex* pindex = chain_state.m_chain[coin.nHeight];
-    if (!pindex)
-        return false;
-
-    int nRequiredDepth = COINBASE_MATURITY + 1;
-    int nDepth = pindexPrev->nHeight - coin.nHeight;
-
-    if (nRequiredDepth > nDepth)
-        return false;
-
-    // Read the time into a local first: pBlockTime is optional and defaults to
-    // nullptr, and the call below used to dereference it either way.
-    const int64_t nBlockFromTime = pindex->GetBlockTime();
+    // pBlockTime is optional and defaults to nullptr, so read the time into a
+    // local first rather than dereferencing it either way.
     if (pBlockTime)
         *pBlockTime = nBlockFromTime;
 

@@ -55,7 +55,12 @@ StakeEligibility CStakeWallet::ClassifyForStaking(CAmount value, int depth,
         return StakeEligibility::Collateral;
     }
     if (inputAge < params.stakeAgeRange[0]) return StakeEligibility::TooYoung;
-    // Matches validation exactly, resolved from the height being mined.
+    // The v2 age-cap GATE is resolved from the height being mined, exactly as
+    // validation resolves it. The age VALUE is not the same quantity, though:
+    // callers pass the wallet's estimate (GetTime() - GetTxTime(), wall clock
+    // and wallet time), while CheckProofOfStake measures nTime minus the coin's
+    // own block time. So this is the wallet's eligibility view -- close to
+    // consensus but not identical; the kernel remains the authority.
     if (!IsPosKernelV2(params, nHeight) && inputAge > params.stakeAgeRange[1]) {
         return StakeEligibility::TooOld;
     }
@@ -109,8 +114,14 @@ std::vector<CAmount> CStakeWallet::SplitStakeCredit(CAmount nCredit, CAmount thr
     // third of starting sizes reach a dead half this way.
     const CAmount first = (nCredit / 2 / CENT) * CENT;
     const CAmount second = nCredit - first;
+    // The full stakeable predicate, mirroring ClassifyForStaking's amount rules:
+    // both bounds and the collateral exclusions. The upper bound cannot bite
+    // while a split only ever shrinks an output, but leaving it out let the test
+    // repeat the same partial rule and so could never catch a regression if the
+    // halving ever grew a side.
     const auto stakeable = [this](CAmount value) {
         return value >= params.stakeValueRange[0] &&
+               value <= params.stakeValueRange[1] &&
                value != params.regularMnCollateral &&
                value != params.evoMnCollateral;
     };
