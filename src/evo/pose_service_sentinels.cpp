@@ -74,21 +74,24 @@ bool VerifyChallengeResponse(const CBLSSignature& sig, const CBLSPublicKey& targ
                               /*specificLegacyScheme=*/false);
 }
 
-uint256 CPoSeServiceReport::GetSignHash() const
+uint256 CPoSeServiceReport::GetSignHash(const uint256& epochBlockHash) const
 {
+    // Binding the signature to the epoch base means a report signed for epoch N
+    // on one base cannot be replayed onto a different base that a reorg gave the
+    // same epoch number -- the base the reviewer noted the report omitted.
     CHashWriter w(SER_GETHASH, 0);
-    w << std::string{"dslreport"} << nEpoch << targetProTxHash << sentinelProTxHash << status;
+    w << std::string{"dslreport"} << nEpoch << epochBlockHash << targetProTxHash << sentinelProTxHash << status;
     return w.GetHash();
 }
 
-void CPoSeServiceReport::Sign(const CBLSSecretKey& operatorKey)
+void CPoSeServiceReport::Sign(const CBLSSecretKey& operatorKey, const uint256& epochBlockHash)
 {
-    sig = operatorKey.Sign(GetSignHash(), /*specificLegacyScheme=*/false);
+    sig = operatorKey.Sign(GetSignHash(epochBlockHash), /*specificLegacyScheme=*/false);
 }
 
-bool CPoSeServiceReport::VerifySig(const CBLSPublicKey& operatorPubKey) const
+bool CPoSeServiceReport::VerifySig(const CBLSPublicKey& operatorPubKey, const uint256& epochBlockHash) const
 {
-    return sig.VerifyInsecure(operatorPubKey, GetSignHash(), /*specificLegacyScheme=*/false);
+    return sig.VerifyInsecure(operatorPubKey, GetSignHash(epochBlockHash), /*specificLegacyScheme=*/false);
 }
 
 CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& epochBlockHash,
@@ -128,7 +131,7 @@ CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& ep
                 if (!counted.insert(r->sentinelProTxHash).second) continue; // one report per sentinel
                 const auto sdmn = epochBaseList.GetMN(r->sentinelProTxHash);
                 if (!sdmn) continue;
-                if (!r->VerifySig(sdmn->pdmnState->pubKeyOperator.Get())) continue;
+                if (!r->VerifySig(sdmn->pdmnState->pubKeyOperator.Get(), epochBlockHash)) continue;
                 if (r->status == static_cast<uint8_t>(ServiceStatus::MISSED)) ++missedCount;
             }
         }

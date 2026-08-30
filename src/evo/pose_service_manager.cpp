@@ -165,7 +165,7 @@ std::vector<CPoSeServiceReport> CPoSeServiceManager::EmitReports(const CDetermin
         r.targetProTxHash = t;
         r.sentinelProTxHash = myProTxHash;
         r.status = static_cast<uint8_t>(responded.count(t) ? ServiceStatus::ONLINE : ServiceStatus::MISSED);
-        r.sig = signer(r.GetSignHash());
+        r.sig = signer(r.GetSignHash(epochHash));
         out.push_back(std::move(r));
     }
     return out;

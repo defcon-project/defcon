@@ -142,6 +142,9 @@ BOOST_AUTO_TEST_CASE(online_resets_and_service_revives)
     BOOST_CHECK_EQUAL(st->nDSLBanHeight, -1);
     BOOST_CHECK_EQUAL(st->nMissedEpochs, 0u);
     BOOST_CHECK(!st->fRewardSuspended);
+    // the service revive stays in its own domain: it never stamps the DKG-PoSe
+    // revival height, so it cannot re-enable a node held by a live PoSe ban
+    BOOST_CHECK(st->nPoSeRevivedHeight != 106);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

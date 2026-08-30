@@ -93,9 +93,12 @@ public:
         READWRITE(CBLSSignatureVersionWrapper(const_cast<CBLSSignature&>(obj.sig), /*fLegacy=*/false));
     }
 
-    [[nodiscard]] uint256 GetSignHash() const;
-    void Sign(const CBLSSecretKey& operatorKey);
-    [[nodiscard]] bool VerifySig(const CBLSPublicKey& operatorPubKey) const;
+    // All three take the epoch base hash, so the signature is bound to the
+    // block the epoch was observed against and cannot be replayed onto another
+    // base a reorg gave the same epoch number.
+    [[nodiscard]] uint256 GetSignHash(const uint256& epochBlockHash) const;
+    void Sign(const CBLSSecretKey& operatorKey, const uint256& epochBlockHash);
+    [[nodiscard]] bool VerifySig(const CBLSPublicKey& operatorPubKey, const uint256& epochBlockHash) const;
 };
 
 /**

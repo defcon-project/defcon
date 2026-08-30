@@ -20,7 +20,11 @@
 
 uint256 CPoSeServiceCommitment::GetRequestId() const
 {
-    return ::SerializeHash(std::make_pair(std::string{"dslcommitment"}, nEpoch));
+    // The epoch base joins the id so a reorg that gives the epoch a new base
+    // opens a distinct signing session rather than colliding with the old one.
+    CHashWriter w(SER_GETHASH, 0);
+    w << std::string{"dslcommitment"} << nEpoch << epochBlockHash;
+    return w.GetHash();
 }
 
 bool CPoSeServiceCommitment::Verify(const llmq::CQuorumManager& qman, const uint256& msgHash,
