@@ -5,6 +5,7 @@
 #include <evo/deterministicmns.h>
 #include <evo/dmn_types.h>
 #include <evo/dmnstate.h>
+#include <evo/pose_service.h>
 #include <evo/evodb.h>
 #include <evo/providertx.h>
 #include <evo/specialtx.h>
@@ -387,6 +388,67 @@ void CDeterministicMNList::PoSeDecrease(const CDeterministicMN& dmn)
     auto newState = std::make_shared<CDeterministicMNState>(*dmn.pdmnState);
     newState->nPoSePenalty--;
     UpdateMN(dmn, newState);
+}
+
+void CDeterministicMNList::ApplyServiceCommitment(const CPoSeServiceCommitment& commitment,
+                                                    const CDeterministicMNList& epochBaseList, int nHeight,
+                                                    const Consensus::Params& params, bool debugLogs)
+{
+    // Canonical order: the epoch-base list sorted by proTxHash. The caller has
+    // already rejected the block if the bitfield size does not match.
+    std::vector<uint256> order;
+    order.reserve(epochBaseList.GetAllMNsCount());
+    epochBaseList.ForEachMN(false, [&](const auto& dmn) { order.push_back(dmn.proTxHash); });
+    std::sort(order.begin(), order.end());
+    if (order.size() != commitment.missed.size()) return;
+
+    const size_t size = order.size();
+    const size_t missedCount = static_cast<size_t>(commitment.CountMissed());
+    const bool massOutage = size > 0 && missedCount * 100 >= size * static_cast<size_t>(params.nDSLMassOutagePct);
+    const bool enforce = nHeight >= params.nDSLEnforcementHeight;
+
+    for (size_t i = 0; i < size; ++i) {
+        auto dmn = GetMN(order[i]);
+        if (!dmn) continue; // removed from the list since the epoch base
+        auto newState = std::make_shared<CDeterministicMNState>(*dmn->pdmnState);
+        newState->nLastServiceEpoch = commitment.nEpoch;
+        if (massOutage) {
+            // network-wide trouble: record the epoch, apply no penalty and do
+            // not advance the counter -- a correlated outage neither bans nor heals.
+            UpdateMN(order[i], newState);
+            continue;
+        }
+        if (!commitment.missed[i]) {
+            newState->nMissedEpochs = 0;
+            if (enforce) {
+                newState->fRewardSuspended = false;
+                if (newState->nDSLBanHeight != -1) {
+                    // service revive: a fresh online observation clears a service ban
+                    newState->nDSLBanHeight = -1;
+                    newState->nPoSeRevivedHeight = nHeight;
+                    if (debugLogs) {
+                        LogPrintf("CDeterministicMNList::%s -- service-revived MN %s at height %d\n",
+                                  __func__, order[i].ToString(), nHeight);
+                    }
+                }
+            }
+        } else {
+            newState->nMissedEpochs += 1;
+            if (enforce) {
+                if (static_cast<int>(newState->nMissedEpochs) >= params.nDSLSuspendEpochs) {
+                    newState->fRewardSuspended = true;
+                }
+                if (static_cast<int>(newState->nMissedEpochs) >= params.nDSLBanEpochs && newState->nDSLBanHeight == -1) {
+                    newState->nDSLBanHeight = nHeight;
+                    if (debugLogs) {
+                        LogPrintf("CDeterministicMNList::%s -- service-banned MN %s at height %d (missed %d epochs)\n",
+                                  __func__, order[i].ToString(), nHeight, newState->nMissedEpochs);
+                    }
+                }
+            }
+        }
+        UpdateMN(order[i], newState);
+    }
 }
 
 CDeterministicMNListDiff CDeterministicMNList::BuildDiff(const CDeterministicMNList& to) const
@@ -947,6 +1009,15 @@ bool CDeterministicMNManager::RebuildListFromBlock(const CBlock& block, gsl::not
 
                 HandleQuorumCommitment(opt_qc->commitment, pQuorumBaseBlockIndex, newList, qsnapman, debugLogs);
             }
+        } else if (tx.nType == TRANSACTION_POSE_SERVICE_COMMITMENT) {
+            const auto opt_dsl = GetTxPayload<CPoSeServiceCommitmentTxPayload>(tx);
+            if (!opt_dsl) {
+                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-dsl-payload");
+            }
+            if (opt_dsl->commitment.missed.size() != oldList.GetAllMNsCount()) {
+                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-dsl-bitfield-size");
+            }
+            newList.ApplyServiceCommitment(opt_dsl->commitment, oldList, nHeight, Params().GetConsensus(), debugLogs);
         }
     }
 
