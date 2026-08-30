@@ -89,10 +89,12 @@ public:
 /**
  * Consensus check for a service-commitment special transaction: it is rejected
  * below the activation height (the type ships dormant), it may appear only at an
- * epoch-boundary height with a matching epoch and epoch-base hash, its attesting
- * quorum type must be the ChainLock quorum resolved at that height, and its
- * quorum threshold signature must verify. The bitfield is NOT applied to
- * masternode state here -- that is a later step.
+ * epoch-boundary height, it closes the observation epoch that ended at that
+ * boundary -- nEpoch is that epoch's number and epochBlockHash the hash of its
+ * first block, the one the sentinel selection and challenge nonces were keyed
+ * on -- its attesting quorum type must be the ChainLock quorum resolved at that
+ * height, and its quorum threshold signature must verify. The bitfield is NOT
+ * applied to masternode state here -- that is a later step.
  */
 [[nodiscard]] bool CheckPoSeServiceCommitmentTx(const ChainstateManager& chainman,
                                                 const llmq::CQuorumManager& qman,
