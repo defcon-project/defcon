@@ -44,6 +44,35 @@ uint256 ServiceChallengeNonce(const uint256& epochBlockHash, const uint256& targ
     return w.GetHash();
 }
 
+std::vector<uint256> GetProbeTargetsForSentinel(const CDeterministicMNList& list,
+                                                const uint256& sentinelProTxHash,
+                                                const uint256& epochBlockHash, size_t count)
+{
+    std::vector<uint256> out;
+    list.ForEachMN(false, [&](const auto& dmn) {
+        if (dmn.proTxHash == sentinelProTxHash) return;
+        const auto sentinels = CalcSentinelsForMN(list, dmn.proTxHash, epochBlockHash, count);
+        if (std::find(sentinels.begin(), sentinels.end(), sentinelProTxHash) != sentinels.end()) {
+            out.push_back(dmn.proTxHash);
+        }
+    });
+    return out;
+}
+
+CBLSSignature SignChallengeResponse(const CBLSSecretKey& targetOperatorKey,
+                                    const uint256& epochBlockHash, const uint256& targetProTxHash)
+{
+    return targetOperatorKey.Sign(ServiceChallengeNonce(epochBlockHash, targetProTxHash),
+                                  /*specificLegacyScheme=*/false);
+}
+
+bool VerifyChallengeResponse(const CBLSSignature& sig, const CBLSPublicKey& targetOperatorKey,
+                             const uint256& epochBlockHash, const uint256& targetProTxHash)
+{
+    return sig.VerifyInsecure(targetOperatorKey, ServiceChallengeNonce(epochBlockHash, targetProTxHash),
+                              /*specificLegacyScheme=*/false);
+}
+
 uint256 CPoSeServiceReport::GetSignHash() const
 {
     CHashWriter w(SER_GETHASH, 0);

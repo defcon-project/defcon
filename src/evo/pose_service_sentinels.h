@@ -40,11 +40,36 @@ std::vector<uint256> CalcSentinelsForMN(const CDeterministicMNList& list,
                                         size_t count);
 
 /**
+ * The targets `sentinelProTxHash` must probe this epoch: every masternode
+ * whose assigned sentinel set (CalcSentinelsForMN) contains it. This is the
+ * inverse of the assignment -- a node probes exactly those masternodes that
+ * the epoch selected it to watch -- and is what a masternode iterates each
+ * epoch to decide whom to challenge. Off-chain, like the assignment it mirrors.
+ */
+std::vector<uint256> GetProbeTargetsForSentinel(const CDeterministicMNList& list,
+                                                const uint256& sentinelProTxHash,
+                                                const uint256& epochBlockHash,
+                                                size_t count);
+
+/**
  * The challenge nonce a sentinel sends its target: bound to the epoch base and
  * the target so a captured response cannot be replayed into another epoch or
  * against another node.
  */
 uint256 ServiceChallengeNonce(const uint256& epochBlockHash, const uint256& targetProTxHash);
+
+/**
+ * A target proves it is alive this epoch by signing its own challenge nonce
+ * with its operator BLS key -- the same key it signs quorum shares with. The
+ * nonce binds the proof to the epoch base and the target, so a captured
+ * response cannot be replayed into another epoch or on another node's behalf.
+ * A sentinel that receives a verifying response records the target ONLINE;
+ * silence past the epoch cutoff is what it reports as MISSED.
+ */
+CBLSSignature SignChallengeResponse(const CBLSSecretKey& targetOperatorKey,
+                                    const uint256& epochBlockHash, const uint256& targetProTxHash);
+[[nodiscard]] bool VerifyChallengeResponse(const CBLSSignature& sig, const CBLSPublicKey& targetOperatorKey,
+                                           const uint256& epochBlockHash, const uint256& targetProTxHash);
 
 /**
  * A sentinel's signed observation of one target for one epoch. Gossiped between
