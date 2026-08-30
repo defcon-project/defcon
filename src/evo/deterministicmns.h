@@ -51,7 +51,8 @@ public:
     static constexpr uint16_t MN_TYPE_FORMAT = 1;
     static constexpr uint16_t MN_VERSION_FORMAT = 2;
     static constexpr uint16_t MN_COMPUTE_FORMAT = 3;
-    static constexpr uint16_t MN_CURRENT_FORMAT = MN_COMPUTE_FORMAT;
+    static constexpr uint16_t MN_DSL_FORMAT = 4;
+    static constexpr uint16_t MN_CURRENT_FORMAT = MN_DSL_FORMAT;
 
     uint256 proTxHash;
     COutPoint collateralOutpoint;
@@ -93,6 +94,10 @@ public:
             pdmnState = std::make_shared<const CDeterministicMNState>(old_state);
         } else if (ser_action.ForRead() && format_version == MN_VERSION_FORMAT) {
             CDeterministicMNState_no_compute_format old_state;
+            READWRITE(old_state);
+            pdmnState = std::make_shared<const CDeterministicMNState>(old_state);
+        } else if (ser_action.ForRead() && format_version == MN_COMPUTE_FORMAT) {
+            CDeterministicMNState_no_dsl_format old_state;
             READWRITE(old_state);
             pdmnState = std::make_shared<const CDeterministicMNState>(old_state);
         } else {
@@ -728,6 +733,7 @@ public:
     bool MigrateDBIfNeeded();
     bool MigrateDBIfNeeded2();
     bool MigrateDBIfNeeded3();
+    bool MigrateDBIfNeeded4();
 
     void DoMaintenance() EXCLUSIVE_LOCKS_REQUIRED(!cs);
 

@@ -11,7 +11,7 @@
  */
 
 
-static const int PROTOCOL_VERSION = 70240;
+static const int PROTOCOL_VERSION = 70241;
 
 //! initial proto version, to be increased after version/verack negotiation
 static const int INIT_PROTO_VERSION = 209;
@@ -54,6 +54,9 @@ static const int MNLISTDIFF_VERSION_ORDER = 70229;
 
 //! Compute masternode service descriptors were introduced in this version
 static const int MN_COMPUTE_PROTO_VERSION = 70240;
+
+//! Service-PoSe (DSL) masternode-state fields were introduced in this version
+static const int MN_DSL_PROTO_VERSION = 70241;
 
 //! Masternode type was introduced in this version
 static const int MNLISTDIFF_CHAINLOCKS_PROTO_VERSION = 70230;

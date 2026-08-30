@@ -190,6 +190,67 @@ public:
     }
 };
 
+// The masternode-state layout as written before the service-PoSe fields
+// existed (the MN_COMPUTE_FORMAT era). Kept only to read stored data from
+// that era; CDeterministicMNState converts from it.
+class CDeterministicMNState_no_dsl_format
+{
+private:
+    int nPoSeBanHeight{-1};
+
+    friend class CDeterministicMNState;
+
+public:
+    int nVersion{CProRegTx::LEGACY_BLS_VERSION};
+    int nRegisteredHeight{-1};
+    int nLastPaidHeight{0};
+    int nConsecutivePayments{0};
+    int nPoSePenalty{0};
+    int nPoSeRevivedHeight{-1};
+    uint16_t nRevocationReason{CProUpRevTx::REASON_NOT_SPECIFIED};
+    uint256 confirmedHash;
+    uint256 confirmedHashWithProRegTxHash;
+    CKeyID keyIDOwner;
+    CBLSLazyPublicKey pubKeyOperator;
+    CKeyID keyIDVoting;
+    CService addr;
+    CScript scriptPayout;
+    CScript scriptOperatorPayout;
+    uint160 platformNodeID{};
+    uint16_t platformP2PPort{0};
+    uint16_t platformHTTPPort{0};
+    CComputeServiceDescriptor computeDescriptor;
+
+public:
+    CDeterministicMNState_no_dsl_format() = default;
+
+    SERIALIZE_METHODS(CDeterministicMNState_no_dsl_format, obj)
+    {
+        READWRITE(
+            obj.nVersion,
+            obj.nRegisteredHeight,
+            obj.nLastPaidHeight,
+            obj.nConsecutivePayments,
+            obj.nPoSePenalty,
+            obj.nPoSeRevivedHeight,
+            obj.nPoSeBanHeight,
+            obj.nRevocationReason,
+            obj.confirmedHash,
+            obj.confirmedHashWithProRegTxHash,
+            obj.keyIDOwner);
+        READWRITE(CBLSLazyPublicKeyVersionWrapper(const_cast<CBLSLazyPublicKey&>(obj.pubKeyOperator), obj.nVersion == CProRegTx::LEGACY_BLS_VERSION));
+        READWRITE(
+            obj.keyIDVoting,
+            obj.addr,
+            obj.scriptPayout,
+            obj.scriptOperatorPayout,
+            obj.platformNodeID,
+            obj.platformP2PPort,
+            obj.platformHTTPPort,
+            obj.computeDescriptor);
+    }
+};
+
 class CDeterministicMNState
 {
 private:
@@ -230,6 +291,14 @@ public:
     // The DefCompute oracle service record; meaningful only on a Compute
     // masternode, default-valued everywhere else.
     CComputeServiceDescriptor computeDescriptor;
+
+    // DeFCon Sentinel Layer service-PoSe tracking; default-valued until DSL
+    // is active. nDSLBanHeight is kept separate from the DKG PoSe ban so a
+    // service ban clears only via the service path, not a ProUpServTx revive.
+    uint32_t nMissedEpochs{0};
+    uint32_t nLastServiceEpoch{0};
+    bool fRewardSuspended{false};
+    int nDSLBanHeight{-1};
 
 public:
     CDeterministicMNState() = default;
@@ -300,6 +369,28 @@ public:
         platformP2PPort(s.platformP2PPort),
         platformHTTPPort(s.platformHTTPPort) {}
 
+    explicit CDeterministicMNState(const CDeterministicMNState_no_dsl_format& s) :
+        nPoSeBanHeight(s.nPoSeBanHeight),
+        nVersion(s.nVersion),
+        nRegisteredHeight(s.nRegisteredHeight),
+        nLastPaidHeight(s.nLastPaidHeight),
+        nConsecutivePayments(s.nConsecutivePayments),
+        nPoSePenalty(s.nPoSePenalty),
+        nPoSeRevivedHeight(s.nPoSeRevivedHeight),
+        nRevocationReason(s.nRevocationReason),
+        confirmedHash(s.confirmedHash),
+        confirmedHashWithProRegTxHash(s.confirmedHashWithProRegTxHash),
+        keyIDOwner(s.keyIDOwner),
+        pubKeyOperator(s.pubKeyOperator),
+        keyIDVoting(s.keyIDVoting),
+        addr(s.addr),
+        scriptPayout(s.scriptPayout),
+        scriptOperatorPayout(s.scriptOperatorPayout),
+        platformNodeID(s.platformNodeID),
+        platformP2PPort(s.platformP2PPort),
+        platformHTTPPort(s.platformHTTPPort),
+        computeDescriptor(s.computeDescriptor) {}
+
     template <typename Stream>
     CDeterministicMNState(deserialize_type, Stream& s)
     {
@@ -334,6 +425,9 @@ public:
         if (s.GetVersion() == CLIENT_VERSION || s.GetVersion() >= MN_COMPUTE_PROTO_VERSION) {
             READWRITE(obj.computeDescriptor);
         }
+        if (s.GetVersion() == CLIENT_VERSION || s.GetVersion() >= MN_DSL_PROTO_VERSION) {
+            READWRITE(obj.nMissedEpochs, obj.nLastServiceEpoch, obj.fRewardSuspended, obj.nDSLBanHeight);
+        }
     }
 
     void ResetOperatorFields()
@@ -357,7 +451,7 @@ public:
     }
     bool IsBanned() const
     {
-        return nPoSeBanHeight != -1;
+        return nPoSeBanHeight != -1 || nDSLBanHeight != -1;
     }
     void Revive(int nRevivedHeight)
     {
@@ -403,6 +497,10 @@ public:
         Field_platformHTTPPort = 0x20000,
         Field_nVersion = 0x40000,
         Field_computeDescriptor = 0x80000,
+        Field_nMissedEpochs = 0x100000,
+        Field_nLastServiceEpoch = 0x200000,
+        Field_fRewardSuspended = 0x400000,
+        Field_nDSLBanHeight = 0x800000,
     };
 
 #define DMN_STATE_DIFF_ALL_FIELDS                      \
@@ -425,7 +523,11 @@ public:
     DMN_STATE_DIFF_LINE(platformP2PPort)               \
     DMN_STATE_DIFF_LINE(platformHTTPPort)              \
     DMN_STATE_DIFF_LINE(nVersion)                      \
-    DMN_STATE_DIFF_LINE(computeDescriptor)
+    DMN_STATE_DIFF_LINE(computeDescriptor)                \
+    DMN_STATE_DIFF_LINE(nMissedEpochs)                    \
+    DMN_STATE_DIFF_LINE(nLastServiceEpoch)                \
+    DMN_STATE_DIFF_LINE(fRewardSuspended)                 \
+    DMN_STATE_DIFF_LINE(nDSLBanHeight)
 
 public:
     uint32_t fields{0};
