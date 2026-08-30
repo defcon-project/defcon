@@ -42,7 +42,7 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
     // And the signature must verify against that sentinel's operator key.
     const auto sdmn = epochList.GetMN(report.sentinelProTxHash);
     if (!sdmn) return false;
-    if (!report.VerifySig(sdmn->pdmnState->pubKeyOperator.Get())) return false;
+    if (!report.VerifySig(sdmn->pdmnState->pubKeyOperator.Get(), epochBlockHash)) return false;
 
     m_reports.emplace(key, report);
     return true;

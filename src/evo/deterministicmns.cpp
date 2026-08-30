@@ -207,6 +207,12 @@ CDeterministicMNCPtr CDeterministicMNList::GetMNPayee(gsl::not_null<const CBlock
     }
 
     ForEachMNShared(true, [&](const CDeterministicMNCPtr& dmn) {
+        // A reward-suspended masternode has an effective payment weight of zero,
+        // but the classic single-payee path never consults that weight, so
+        // exclude it here too -- otherwise the DSL suspension records the fault
+        // and the node is still paid. Dormant until the enforcement height is
+        // reachable, which keeps fRewardSuspended false network-wide.
+        if (dmn->pdmnState->fRewardSuspended) return;
         if (best == nullptr || CompareByLastPaid(dmn.get(), best.get())) {
             best = dmn;
         }
@@ -423,9 +429,13 @@ void CDeterministicMNList::ApplyServiceCommitment(const CPoSeServiceCommitment& 
             if (enforce) {
                 newState->fRewardSuspended = false;
                 if (newState->nDSLBanHeight != -1) {
-                    // service revive: a fresh online observation clears a service ban
+                    // Service revive: a fresh online observation clears a DSL
+                    // ban and nothing else. It must NOT touch nPoSeRevivedHeight
+                    // or any DKG-PoSe field -- the two ban domains are
+                    // independent (IsBanned is their union), and a DSL revive
+                    // reaching into the PoSe domain could re-enable a node still
+                    // held by a live PoSe ban.
                     newState->nDSLBanHeight = -1;
-                    newState->nPoSeRevivedHeight = nHeight;
                     if (debugLogs) {
                         LogPrintf("CDeterministicMNList::%s -- service-revived MN %s at height %d\n",
                                   __func__, order[i].ToString(), nHeight);

@@ -200,6 +200,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
             llmq::CRecoveredSig recSig;
             CPoSeServiceCommitment requestProbe;
             requestProbe.nEpoch = closedEpoch;
+            // The request id is bound to the epoch base, so the probe must carry
+            // it too or it would look for a session that was never opened.
+            if (pindexEpochBase != nullptr) requestProbe.epochBlockHash = pindexEpochBase->GetBlockHash();
             if (pindexEpochBase != nullptr &&
                 m_sigman->GetRecoveredSigForId(llmqType, requestProbe.GetRequestId(), recSig)) {
                 auto candidate = dsl::BuildServiceCommitmentTx(

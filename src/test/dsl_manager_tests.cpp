@@ -102,7 +102,7 @@ BOOST_AUTO_TEST_CASE(emits_online_for_responders_and_missed_for_silence)
     for (const auto& r : reports) {
         BOOST_CHECK_EQUAL(r.nEpoch, 500u);
         BOOST_CHECK(r.sentinelProTxHash == me);
-        BOOST_CHECK(r.VerifySig(pk));
+        BOOST_CHECK(r.VerifySig(pk, fx.epoch));
         const auto want = responders.count(r.targetProTxHash) ? dsl::ServiceStatus::ONLINE
                                                               : dsl::ServiceStatus::MISSED;
         BOOST_CHECK_EQUAL(r.status, static_cast<uint8_t>(want));
@@ -255,7 +255,7 @@ BOOST_AUTO_TEST_CASE(process_report_pools_and_refuses_unknown_epoch)
     rep.targetProTxHash = target;
     rep.sentinelProTxHash = sentinel;
     rep.status = static_cast<uint8_t>(dsl::ServiceStatus::MISSED);
-    rep.Sign(fx.opKeys[sentinel]);
+    rep.Sign(fx.opKeys[sentinel], fx.epoch);
 
     // a valid peer report pools once (and would be relayed); a duplicate does not
     BOOST_CHECK(mgr.ProcessReport(rep, fx.list, fx.epoch, params));
@@ -265,7 +265,7 @@ BOOST_AUTO_TEST_CASE(process_report_pools_and_refuses_unknown_epoch)
     // a report for an epoch far outside the retained window is refused
     dsl::CPoSeServiceReport ancient = rep;
     ancient.nEpoch = 400;
-    ancient.Sign(fx.opKeys[sentinel]);
+    ancient.Sign(fx.opKeys[sentinel], fx.epoch);
     BOOST_CHECK(!mgr.ProcessReport(ancient, fx.list, fx.epoch, params));
 }
 
@@ -302,7 +302,7 @@ BOOST_AUTO_TEST_CASE(reorg_rebasing_an_epoch_clears_its_state)
     rep.targetProTxHash = target;
     rep.sentinelProTxHash = sentinels.front();
     rep.status = static_cast<uint8_t>(dsl::ServiceStatus::MISSED);
-    rep.Sign(fx.opKeys[sentinels.front()]);
+    rep.Sign(fx.opKeys[sentinels.front()], baseA);
     BOOST_CHECK(mgr.ProcessReport(rep, fx.list, baseA, params));
     BOOST_CHECK_EQUAL(mgr.Store().GetReportsForEpoch(500).size(), 1u);
 

@@ -68,9 +68,14 @@ BOOST_AUTO_TEST_CASE(request_id_is_per_epoch)
     b.nEpoch = a.nEpoch + 1;
     BOOST_CHECK(a.GetRequestId() != b.GetRequestId());
 
-    // the id depends only on the epoch, not on the bitfield or the block hash
+    // it also depends on the epoch base, so a reorg that rebases the same epoch
+    // opens a distinct signing session instead of colliding with the old one
+    CPoSeServiceCommitment d = MakeCommitment();
+    d.epochBlockHash = uint256::TWO;
+    BOOST_CHECK(a.GetRequestId() != d.GetRequestId());
+
+    // but not on the bitfield -- the same epoch and base sign the same session
     CPoSeServiceCommitment c = MakeCommitment();
-    c.epochBlockHash = uint256();
     c.missed = {false, false};
     BOOST_CHECK(a.GetRequestId() == c.GetRequestId());
 }
