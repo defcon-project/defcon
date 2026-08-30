@@ -26,8 +26,8 @@
 #include <optional>
 #include <memory>
 
-static const std::string DB_LIST_SNAPSHOT = "dmn_S4";
-static const std::string DB_LIST_DIFF = "dmn_D4";
+static const std::string DB_LIST_SNAPSHOT = "dmn_S5";
+static const std::string DB_LIST_DIFF = "dmn_D5";
 static const std::string DB_LIST_REPAIRED = "dmn_R1";
 
 uint64_t CDeterministicMN::GetInternalId() const
@@ -1434,6 +1434,115 @@ bool CDeterministicMNManager::MigrateDBIfNeeded2()
     m_evoDb.GetRawDB().WriteBatch(batch);
 
     // Writing EVODB_BEST_BLOCK (which is b_b4 now) marks the DB as upgraded
+    auto dbTx = m_evoDb.BeginTransaction();
+    m_evoDb.WriteBestBlock(m_chainstate.m_chain.Tip()->GetBlockHash());
+    dbTx->Commit();
+
+    LogPrintf("CDeterministicMNManager::%s -- done migrating\n", __func__);
+
+    if (EraseOldDBData(m_evoDb.GetRawDB(), {DB_OLD_LIST_DIFF, DB_OLD_LIST_SNAPSHOT})) {
+        LogPrintf("CDeterministicMNManager::%s -- done cleaning old data\n", __func__);
+    }
+
+    m_evoDb.GetRawDB().CompactFull();
+
+    LogPrintf("CDeterministicMNManager::%s -- done compacting database\n", __func__);
+
+    // flush it to disk
+    if (!m_evoDb.CommitRootTransaction()) {
+        LogPrintf("CDeterministicMNManager::%s -- failed to commit to evoDB\n", __func__);
+        return false;
+    }
+
+    return true;
+}
+
+bool CDeterministicMNManager::MigrateDBIfNeeded4()
+{
+    static const std::string DB_OLD_LIST_SNAPSHOT = "dmn_S4";
+    static const std::string DB_OLD_LIST_DIFF = "dmn_D4";
+    static const std::string DB_OLD_BEST_BLOCK = "b_b5";
+
+    LOCK(cs_main);
+
+    LogPrintf("CDeterministicMNManager::%s -- upgrading DB to store service-PoSe state\n", __func__);
+
+    if (m_chainstate.m_chain.Tip() == nullptr) {
+        // should have no records
+        LogPrintf("CDeterministicMNManager::%s -- Chain empty. evoDB:%d.\n", __func__, m_evoDb.IsEmpty());
+        return m_evoDb.IsEmpty();
+    }
+
+    if (m_evoDb.GetRawDB().Exists(EVODB_BEST_BLOCK)) {
+        if (EraseOldDBData(m_evoDb.GetRawDB(), {DB_OLD_LIST_DIFF, DB_OLD_LIST_SNAPSHOT})) {
+            // we messed up, make sure this time we actually drop old data
+            LogPrintf("CDeterministicMNManager::%s -- migration already done. cleaned old data.\n", __func__);
+            m_evoDb.GetRawDB().CompactFull();
+            LogPrintf("CDeterministicMNManager::%s -- done compacting database\n", __func__);
+            // flush it to disk
+            if (!m_evoDb.CommitRootTransaction()) {
+                LogPrintf("CDeterministicMNManager::%s -- failed to commit to evoDB\n", __func__);
+                return false;
+            }
+        } else {
+            LogPrintf("CDeterministicMNManager::%s -- migration already done. skipping.\n", __func__);
+        }
+        return true;
+    }
+
+    // Removing the old EVODB_BEST_BLOCK value early results in older version to crash immediately, even if the upgrade
+    // process is cancelled in-between. But if the new version sees that the old EVODB_BEST_BLOCK is already removed,
+    // then we must assume that the upgrade process was already running before but was interrupted.
+    if (m_chainstate.m_chain.Height() > 1 && !m_evoDb.GetRawDB().Exists(DB_OLD_BEST_BLOCK)) {
+        LogPrintf("CDeterministicMNManager::%s -- previous migration attempt failed.\n", __func__);
+        return false;
+    }
+    m_evoDb.GetRawDB().Erase(DB_OLD_BEST_BLOCK);
+
+    if (!DeploymentActiveAt(*m_chainstate.m_chain.Tip(), Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0003)) {
+        // not reached DIP3 height yet, so no upgrade needed
+        LogPrintf("CDeterministicMNManager::%s -- migration not needed. dip3 not reached\n", __func__);
+        auto dbTx = m_evoDb.BeginTransaction();
+        m_evoDb.WriteBestBlock(m_chainstate.m_chain.Tip()->GetBlockHash());
+        dbTx->Commit();
+        if (!m_evoDb.CommitRootTransaction()) {
+            LogPrintf("CDeterministicMNManager::%s -- failed to commit to evoDB\n", __func__);
+            return false;
+        }
+        return true;
+    }
+
+    CDBBatch batch(m_evoDb.GetRawDB());
+
+    for (const auto nHeight : irange::range(Params().GetConsensus().DIP0003Height, m_chainstate.m_chain.Height() + 1)) {
+        auto pindex = m_chainstate.m_chain[nHeight];
+        // Re-serialize with the current format. The service-PoSe fields
+        // deserialize to their defaults for every masternode: none could exist
+        // before this format, so the rewrite is value-preserving by construction.
+        CDataStream diff_data(SER_DISK, CLIENT_VERSION);
+        if (!m_evoDb.GetRawDB().ReadDataStream(std::make_pair(DB_OLD_LIST_DIFF, pindex->GetBlockHash()), diff_data)) {
+            LogPrintf("CDeterministicMNManager::%s -- missing CDeterministicMNListDiff at height %d\n", __func__, nHeight);
+            return false;
+        }
+        CDeterministicMNListDiff mndiff;
+        mndiff.Unserialize(diff_data, CDeterministicMN::MN_COMPUTE_FORMAT);
+        batch.Write(std::make_pair(DB_LIST_DIFF, pindex->GetBlockHash()), mndiff);
+        CDataStream snapshot_data(SER_DISK, CLIENT_VERSION);
+        if (!m_evoDb.GetRawDB().ReadDataStream(std::make_pair(DB_OLD_LIST_SNAPSHOT, pindex->GetBlockHash()), snapshot_data)) {
+            // it's ok, we write snapshots every DISK_SNAPSHOT_PERIOD blocks only
+            continue;
+        }
+        CDeterministicMNList mnList;
+        mnList.Unserialize(snapshot_data, CDeterministicMN::MN_COMPUTE_FORMAT);
+        batch.Write(std::make_pair(DB_LIST_SNAPSHOT, pindex->GetBlockHash()), mnList);
+        m_evoDb.GetRawDB().WriteBatch(batch);
+        batch.Clear();
+        LogPrintf("CDeterministicMNManager::%s -- wrote snapshot at height %d\n", __func__, nHeight);
+    }
+
+    m_evoDb.GetRawDB().WriteBatch(batch);
+
+    // Writing EVODB_BEST_BLOCK (which is b_b6 now) marks the DB as upgraded
     auto dbTx = m_evoDb.BeginTransaction();
     m_evoDb.WriteBestBlock(m_chainstate.m_chain.Tip()->GetBlockHash());
     dbTx->Commit();
