@@ -50,12 +50,24 @@ public:
     CServiceReportStore& Store() { return m_store; }
     const CServiceReportStore& Store() const { return m_store; }
 
+    /** What BeginEpoch did, so the caller can re-run its per-epoch actions. */
+    enum class EpochChange {
+        None,     //!< already on this exact (epoch, base hash)
+        Entered,  //!< a different epoch number
+        Rebased,  //!< same epoch, but a reorg swapped its base block
+    };
+
     /**
-     * Enter a new epoch: advance the store window and forget the previous
-     * epoch's responses. Idempotent -- calling it again for the current epoch
-     * does nothing, so a per-block tick can call it unconditionally.
+     * Enter an epoch on a given base block: advance the store window and forget
+     * the previous epoch's responses. Idempotent for the same (epoch, base
+     * hash), so a per-block tick can call it unconditionally. When a reorg keeps
+     * the epoch number but swaps its base block, the responses and reports
+     * gathered under the old base are discarded -- they were about a chain that
+     * no longer exists, and left in place they would both feed the new base's
+     * verdict and block fresh announcements as duplicates -- and Rebased is
+     * returned so the caller re-runs the once-per-epoch announce/emit/sign.
      */
-    void BeginEpoch(uint32_t nEpoch, const uint256& epochBlockHash);
+    EpochChange BeginEpoch(uint32_t nEpoch, const uint256& epochBlockHash);
 
     /** The epoch and epoch-base hash currently being probed. */
     uint32_t CurrentEpoch() const;

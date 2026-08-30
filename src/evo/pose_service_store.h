@@ -64,6 +64,13 @@ public:
     /** Advance the current epoch and drop everything older than the window. */
     void SetCurrentEpoch(uint32_t nEpoch);
 
+    /**
+     * Discard every report for one epoch. Used when a reorg swaps that epoch's
+     * base block: reports gathered under the old base were about a chain that no
+     * longer exists and must not count toward the new base's verdict.
+     */
+    void DropEpoch(uint32_t nEpoch);
+
     size_t Size() const;
 
 private:
