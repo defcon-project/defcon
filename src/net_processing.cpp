@@ -53,6 +53,7 @@
 
 #include <spork.h>
 #include <governance/governance.h>
+#include <masternode/node.h>
 #include <masternode/sync.h>
 #include <masternode/meta.h>
 #ifdef ENABLE_WALLET
@@ -63,6 +64,7 @@
 
 #include <evo/deterministicmns.h>
 #include <evo/mnauth.h>
+#include <evo/pose_service_manager.h>
 #include <evo/simplifiedmns.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/chainlocks.h>
@@ -643,6 +645,7 @@ public:
                     const std::unique_ptr<CDeterministicMNManager>& dmnman,
                     const std::unique_ptr<CJContext>& cj_ctx,
                     const std::unique_ptr<LLMQContext>& llmq_ctx,
+                    const std::unique_ptr<dsl::CPoSeServiceManager>& dslman,
                     bool ignore_incoming_txs);
 
     /** Overridden from CValidationInterface. */
@@ -695,6 +698,16 @@ public:
     bool IsInvInFilter(NodeId nodeid, const uint256& hash) const override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void AskPeersForTransaction(const uint256& txid, bool is_masternode) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
 private:
+    /** The DSL service probe: ingest a probe message from a peer and relay it on
+     *  first sight. No-ops below the DSL activation height. */
+    void ProcessDSLMessage(CNode& pfrom, const std::string& msg_type, CDataStream& vRecv);
+    /** Per-block DSL epoch tick: roll the epoch, announce our own liveness, and
+     *  at the cutoff turn silence into signed reports. */
+    void ProcessDSLTick(const CBlockIndex* pindexNew);
+    /** Flood a DSL probe message to every full-relay peer except `skip_id`. */
+    template <typename T>
+    void RelayDSLMessage(const std::string& msg_type, const T& obj, NodeId skip_id);
+
     void _RelayTransaction(const uint256& txid) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
     /** Helpers to process result of external handlers of message */
@@ -823,6 +836,13 @@ private:
     CGovernanceManager& m_govman;
     CSporkManager& m_sporkman;
     const CActiveMasternodeManager* const m_mn_activeman;
+    const std::unique_ptr<dsl::CPoSeServiceManager>& m_dslman;
+
+    /** The last epoch this node announced its own liveness in, and the last it
+     *  emitted its sentinel reports for; -1 before the first. Only the
+     *  validation-interface thread writes them. */
+    std::atomic<int64_t> m_dsl_last_announced_epoch{-1};
+    std::atomic<int64_t> m_dsl_last_emitted_epoch{-1};
 
     /** The height of the best chain */
     std::atomic<int> m_best_height{-1};
@@ -2066,9 +2086,11 @@ std::unique_ptr<PeerManager> PeerManager::make(const CChainParams& chainparams, 
                                                const CActiveMasternodeManager* const mn_activeman,
                                                const std::unique_ptr<CDeterministicMNManager>& dmnman,
                                                const std::unique_ptr<CJContext>& cj_ctx,
-                                               const std::unique_ptr<LLMQContext>& llmq_ctx, bool ignore_incoming_txs)
+                                               const std::unique_ptr<LLMQContext>& llmq_ctx,
+                                               const std::unique_ptr<dsl::CPoSeServiceManager>& dslman,
+                                               bool ignore_incoming_txs)
 {
-    return std::make_unique<PeerManagerImpl>(chainparams, connman, addrman, banman, chainman, pool, mn_metaman, mn_sync, govman, sporkman, mn_activeman, dmnman, cj_ctx, llmq_ctx, ignore_incoming_txs);
+    return std::make_unique<PeerManagerImpl>(chainparams, connman, addrman, banman, chainman, pool, mn_metaman, mn_sync, govman, sporkman, mn_activeman, dmnman, cj_ctx, llmq_ctx, dslman, ignore_incoming_txs);
 }
 
 PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& connman, AddrMan& addrman, BanMan* banman,
@@ -2079,6 +2101,7 @@ PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& conn
                                  const std::unique_ptr<CDeterministicMNManager>& dmnman,
                                  const std::unique_ptr<CJContext>& cj_ctx,
                                  const std::unique_ptr<LLMQContext>& llmq_ctx,
+                                 const std::unique_ptr<dsl::CPoSeServiceManager>& dslman,
                                  bool ignore_incoming_txs)
     : m_chainparams(chainparams),
       m_connman(connman),
@@ -2094,6 +2117,7 @@ PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& conn
       m_govman(govman),
       m_sporkman(sporkman),
       m_mn_activeman(mn_activeman),
+      m_dslman(dslman),
       m_ignore_incoming_txs(ignore_incoming_txs)
 {
     // While Erlay support is incomplete, it must be enabled explicitly via -txreconciliation.
@@ -2253,6 +2277,8 @@ void PeerManagerImpl::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlock
         }
     });
     m_connman.WakeMessageHandler();
+
+    ProcessDSLTick(pindexNew);
 }
 
 /**
@@ -5432,6 +5458,7 @@ void PeerManagerImpl::ProcessMessage(
         m_mn_sync.ProcessMessage(pfrom, msg_type, vRecv);
         ProcessPeerMsgRet(m_govman.ProcessMessage(pfrom, m_connman, *this, msg_type, vRecv), pfrom);
         ProcessPeerMsgRet(CMNAuth::ProcessMessage(pfrom, peer->m_their_services, m_connman, m_mn_metaman, m_mn_activeman, m_mn_sync, m_dmnman->GetListAtChainTip(), msg_type, vRecv), pfrom);
+        ProcessDSLMessage(pfrom, msg_type, vRecv);
         PostProcessMessage(m_llmq_ctx->quorum_block_processor->ProcessMessage(
                                pfrom, msg_type, vRecv,
                                [this, &pfrom](const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(!::cs_main) {
@@ -5478,6 +5505,133 @@ void PeerManagerImpl::ProcessMessage(
     LogPrint(BCLog::NET, "Unknown command \"%s\" from peer=%d\n", SanitizeString(msg_type), pfrom.GetId());
 
     return;
+}
+
+template <typename T>
+void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj, NodeId skip_id)
+{
+    m_connman.ForEachNode([&](CNode* pnode) {
+        if (pnode->GetId() == skip_id) return;
+        if (!pnode->fSuccessfullyConnected || pnode->fDisconnect) return;
+        if (pnode->IsBlockOnlyConn() || !pnode->CanRelay()) return;
+        const CNetMsgMaker msgMaker(pnode->GetCommonVersion());
+        m_connman.PushMessage(pnode, msgMaker.Make(msg_type, obj));
+    });
+}
+
+void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_type, CDataStream& vRecv)
+{
+    if (msg_type != NetMsgType::POSECHALLENGE && msg_type != NetMsgType::POSERESPONSE &&
+        msg_type != NetMsgType::POSEREPORT) {
+        return;
+    }
+    if (m_dslman == nullptr || m_dmnman == nullptr) return;
+    const Consensus::Params& consensus = m_chainparams.GetConsensus();
+    if (m_best_height < consensus.nDSLActivationHeight) return;
+    const auto mn_list = m_dmnman->GetListAtChainTip();
+
+    // The epoch base hash comes from this node's active chain, not from the
+    // manager's tick: the tick runs on the validation-interface queue and can
+    // lag the wire by an epoch, and the flood forwards each copy only once, so
+    // a rejection for "not my epoch yet" would lose the message permanently.
+    const auto epoch_base_hash = [this, &consensus](uint32_t nEpoch) -> std::optional<uint256> {
+        const int base_height{static_cast<int>(nEpoch) * consensus.nDSLEpochInterval};
+        LOCK(cs_main);
+        const CBlockIndex* pindex = m_chainman.ActiveChain()[base_height];
+        if (pindex == nullptr) return std::nullopt;
+        return pindex->GetBlockHash();
+    };
+
+    if (msg_type == NetMsgType::POSERESPONSE) {
+        dsl::CPoSeServiceResponse resp;
+        vRecv >> resp;
+        const auto base_hash = epoch_base_hash(resp.nEpoch);
+        // the duplicate check inside ProcessResponse is what terminates the flood
+        const bool accepted = base_hash && m_dslman->ProcessResponse(resp, mn_list, *base_hash);
+        LogPrint(BCLog::NET, "DSL -- poseresp epoch=%d proTx=%s accepted=%d, peer=%d\n",
+                 resp.nEpoch, resp.proTxHash.ToString(), accepted, pfrom.GetId());
+        if (accepted) {
+            RelayDSLMessage(NetMsgType::POSERESPONSE, resp, pfrom.GetId());
+        }
+        return;
+    }
+    if (msg_type == NetMsgType::POSEREPORT) {
+        dsl::CPoSeServiceReport report;
+        vRecv >> report;
+        const auto base_hash = epoch_base_hash(report.nEpoch);
+        const bool accepted = base_hash && m_dslman->ProcessReport(report, mn_list, *base_hash, consensus);
+        LogPrint(BCLog::NET, "DSL -- posereport epoch=%d target=%s accepted=%d, peer=%d\n",
+                 report.nEpoch, report.targetProTxHash.ToString(), accepted, pfrom.GetId());
+        if (accepted) {
+            RelayDSLMessage(NetMsgType::POSEREPORT, report, pfrom.GetId());
+        }
+        return;
+    }
+
+    // POSECHALLENGE: a targeted re-request. If we are a masternode and the
+    // challenge names our current epoch, re-announce directly to the asker.
+    dsl::CPoSeServiceChallenge challenge;
+    vRecv >> challenge;
+    if (m_mn_activeman == nullptr) return;
+    const uint256 myProTxHash = m_mn_activeman->GetProTxHash();
+    if (myProTxHash.IsNull() || challenge.nEpoch != m_dslman->CurrentEpoch()) return;
+    const auto ann = m_dslman->AnnounceLiveness(myProTxHash, [this](const uint256& hash) {
+        return m_mn_activeman->Sign(hash, /*is_legacy=*/false);
+    });
+    const CNetMsgMaker msgMaker(pfrom.GetCommonVersion());
+    m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::POSERESPONSE, ann));
+}
+
+void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
+{
+    if (m_dslman == nullptr || m_dmnman == nullptr) return;
+    const Consensus::Params& consensus = m_chainparams.GetConsensus();
+    if (pindexNew->nHeight < consensus.nDSLActivationHeight) return;
+    if (!m_mn_sync.IsBlockchainSynced()) {
+        LogPrint(BCLog::NET, "DSL -- tick at height %d skipped, masternode sync not finished\n", pindexNew->nHeight);
+        return;
+    }
+
+    const uint32_t interval{static_cast<uint32_t>(consensus.nDSLEpochInterval)};
+    const uint32_t epoch = static_cast<uint32_t>(pindexNew->nHeight) / interval;
+    const CBlockIndex* pindexBase = pindexNew->GetAncestor(static_cast<int>(epoch * interval));
+    if (pindexBase == nullptr) return;
+    m_dslman->BeginEpoch(epoch, pindexBase->GetBlockHash());
+
+    // only a listed masternode announces and reports
+    if (m_mn_activeman == nullptr) return;
+    const uint256 myProTxHash = m_mn_activeman->GetProTxHash();
+    if (myProTxHash.IsNull()) {
+        LogPrint(BCLog::NET, "DSL -- tick at height %d skipped, active masternode not ready\n", pindexNew->nHeight);
+        return;
+    }
+    const auto mn_list = m_dmnman->GetListAtChainTip();
+    if (!mn_list.HasMN(myProTxHash)) return;
+    const auto signer = [this](const uint256& hash) {
+        return m_mn_activeman->Sign(hash, /*is_legacy=*/false);
+    };
+
+    // announce our own liveness once per epoch, and flood it
+    if (m_dsl_last_announced_epoch.exchange(epoch) != static_cast<int64_t>(epoch)) {
+        const auto ann = m_dslman->AnnounceLiveness(myProTxHash, signer);
+        LogPrint(BCLog::NET, "DSL -- announcing liveness for epoch %d\n", epoch);
+        if (m_dslman->ProcessResponse(ann, mn_list, pindexBase->GetBlockHash())) {
+            RelayDSLMessage(NetMsgType::POSERESPONSE, ann, /*skip_id=*/-1);
+        }
+    }
+
+    // at the cutoff, turn what we saw -- and did not see -- into signed reports
+    const uint32_t pos = static_cast<uint32_t>(pindexNew->nHeight) % interval;
+    if (pos >= interval - interval / 4 &&
+        m_dsl_last_emitted_epoch.exchange(epoch) != static_cast<int64_t>(epoch)) {
+        const auto reports = m_dslman->EmitReports(mn_list, myProTxHash, signer, consensus);
+        LogPrint(BCLog::NET, "DSL -- emitting %d sentinel reports for epoch %d\n", reports.size(), epoch);
+        for (const auto& report : reports) {
+            if (m_dslman->ProcessReport(report, mn_list, pindexBase->GetBlockHash(), consensus)) {
+                RelayDSLMessage(NetMsgType::POSEREPORT, report, /*skip_id=*/-1);
+            }
+        }
+    }
 }
 
 bool PeerManagerImpl::MaybeDiscourageAndDisconnect(CNode& pnode, Peer& peer)

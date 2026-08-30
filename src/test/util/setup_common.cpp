@@ -51,6 +51,7 @@
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
+#include <evo/pose_service_manager.h>
 #include <evo/specialtx.h>
 #include <flat-database.h>
 #include <governance/governance.h>
@@ -330,10 +331,11 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
     assert(!maybe_verify_error.has_value());
 
     m_node.banman = std::make_unique<BanMan>(m_args.GetDataDirBase() / "banlist", nullptr, DEFAULT_MISBEHAVING_BANTIME);
+    m_node.dslman = std::make_unique<dsl::CPoSeServiceManager>();
     m_node.peerman = PeerManager::make(chainparams, *m_node.connman, *m_node.addrman, m_node.banman.get(),
                                        *m_node.chainman, *m_node.mempool, *m_node.mn_metaman, *m_node.mn_sync,
                                        *m_node.govman, *m_node.sporkman, /* mn_activeman = */ nullptr, m_node.dmnman,
-                                       m_node.cj_ctx, m_node.llmq_ctx, /* ignore_incoming_txs = */ false);
+                                       m_node.cj_ctx, m_node.llmq_ctx, m_node.dslman, /* ignore_incoming_txs = */ false);
     {
         CConnman::Options options;
         options.m_msgproc = m_node.peerman.get();

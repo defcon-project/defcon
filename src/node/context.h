@@ -34,6 +34,10 @@ class PeerManager;
 struct CJContext;
 struct LLMQContext;
 
+namespace dsl {
+class CPoSeServiceManager;
+} // namespace dsl
+
 namespace interfaces {
 class Chain;
 class ChainClient;
@@ -89,6 +93,7 @@ struct NodeContext {
     std::unique_ptr<CNetFulfilledRequestManager> netfulfilledman;
     std::unique_ptr<CSporkManager> sporkman;
     std::unique_ptr<LLMQContext> llmq_ctx;
+    std::unique_ptr<dsl::CPoSeServiceManager> dslman;
 
     //! Declare default constructor and destructor that are not inline, so code
     //! instantiating the NodeContext struct doesn't need to #include class

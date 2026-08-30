@@ -12,6 +12,7 @@
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
+#include <evo/pose_service_manager.h>
 #include <governance/governance.h>
 #include <interfaces/chain.h>
 #include <interfaces/coinjoin.h>
