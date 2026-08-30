@@ -228,6 +228,16 @@ public:
         consensus.posTimestampMask = 5;
         consensus.stakeValueRange = { 10000 * COIN, 12500000 * COIN };
         consensus.stakeAgeRange = { 60 * 60, 60 * 60 * 24 * 60 };
+        // Gated consensus activations are deliberately left at their unreachable
+        // default (std::numeric_limits<int>::max()) here and set only at the
+        // coordinated mainnet release -- there is no explicit assignment above
+        // precisely because it is not time yet. UNTIL THEN THE PoS KERNEL RUNS
+        // THE PRE-#109 RULES ON MAINNET: the weighted-target multiply that
+        // truncates at 256 bits, and the stakeAgeRange upper bound just above.
+        // At release, nPosKernelV2ActivationHeight must flip at the SAME block as
+        // nStrictBLSSigSizeActivationHeight (M-02) and the K-03 chainwork fix --
+        // one release decision, not three. Do not set any of them in isolation.
+        // (Testnet is in the same state and gets its heights in the same pass.)
         consensus.posLimit = uint256S("0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;

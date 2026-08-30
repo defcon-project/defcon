@@ -1571,7 +1571,6 @@ public:
     ScriptPubKeyMan* AddWalletDescriptor(WalletDescriptor& desc, const FlatSigningProvider& signing_provider, const std::string& label, bool internal);
 
     //! BLS Key Functions
-    void PrintBLSKey(std::vector<uint8_t>& in, std::string in2);
     bool ReadFromBLSWallet(const std::string& keydata);
     bool WriteToBLSWallet(const std::string& keydata);
     std::map<unsigned int, std::string> GetBLSAddresses();
