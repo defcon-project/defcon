@@ -50,6 +50,14 @@ UniValue CPoSeServiceCommitment::ToJson() const
     obj.pushKV("quorumHash", quorumHash.ToString());
     obj.pushKV("missedCount", CountMissed());
     obj.pushKV("size", (int64_t)missed.size());
+    // The set bits by canonical index, so an observer can resolve WHO was
+    // missed against the deterministic list at epochBlockHash without
+    // reimplementing the bitfield's serialization.
+    UniValue missedIndices(UniValue::VARR);
+    for (size_t i = 0; i < missed.size(); ++i) {
+        if (missed[i]) missedIndices.push_back((int64_t)i);
+    }
+    obj.pushKV("missedIndices", missedIndices);
     return obj;
 }
 

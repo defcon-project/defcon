@@ -24,6 +24,7 @@
 #include <evo/assetlocktx.h>
 #include <evo/cbtx.h>
 #include <evo/mnhftx.h>
+#include <evo/pose_service.h>
 #include <evo/providertx.h>
 #include <evo/specialtx.h>
 #include <llmq/commitment.h>
@@ -337,6 +338,10 @@ void TxToUniv(const CTransaction& tx, const uint256& hashBlock, bool include_add
     } else if (tx.nType == TRANSACTION_ASSET_UNLOCK) {
         if (const auto opt_assetUnlockTx = GetTxPayload<CAssetUnlockPayload>(tx)) {
             entry.pushKV("assetUnlockTx", opt_assetUnlockTx->ToJson());
+        }
+    } else if (tx.nType == TRANSACTION_POSE_SERVICE_COMMITMENT) {
+        if (const auto opt_poseTx = GetTxPayload<CPoSeServiceCommitmentTxPayload>(tx)) {
+            entry.pushKV("poseServiceTx", opt_poseTx->ToJson());
         }
     }
 
