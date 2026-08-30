@@ -10,6 +10,8 @@
 #include <primitives/transaction.h>
 #include <serialize.h>
 #include <uint256.h>
+#include <univalue.h>
+#include <util/underlying.h>
 
 #include <algorithm>
 #include <vector>
@@ -17,7 +19,6 @@
 class CBlockIndex;
 class ChainstateManager;
 class TxValidationState;
-class UniValue;
 namespace llmq {
 class CQuorumManager;
 } // namespace llmq
@@ -66,7 +67,29 @@ public:
     [[nodiscard]] bool Verify(const llmq::CQuorumManager& qman, const uint256& msgHash,
                               TxValidationState& state) const;
 
-    [[nodiscard]] UniValue ToJson() const;
+    // Defined inline, like the other special-transaction payloads (mnhftx.h,
+    // commitment.h): core_write.cpp lives in libbitcoin_common, so an
+    // out-of-line body in the server library leaves defcon-tx unable to link.
+    [[nodiscard]] UniValue ToJson() const
+    {
+        UniValue obj(UniValue::VOBJ);
+        obj.pushKV("version", nVersion);
+        obj.pushKV("epoch", (int64_t)nEpoch);
+        obj.pushKV("epochBlockHash", epochBlockHash.ToString());
+        obj.pushKV("llmqType", ToUnderlying(llmqType));
+        obj.pushKV("quorumHash", quorumHash.ToString());
+        obj.pushKV("missedCount", CountMissed());
+        obj.pushKV("size", (int64_t)missed.size());
+        // The set bits by canonical index, so an observer can resolve WHO was
+        // missed against the deterministic list at epochBlockHash without
+        // reimplementing the bitfield's serialization.
+        UniValue missedIndices(UniValue::VARR);
+        for (size_t i = 0; i < missed.size(); ++i) {
+            if (missed[i]) missedIndices.push_back((int64_t)i);
+        }
+        obj.pushKV("missedIndices", missedIndices);
+        return obj;
+    }
 };
 
 class CPoSeServiceCommitmentTxPayload
@@ -83,7 +106,13 @@ public:
         READWRITE(obj.nVersion, obj.commitment);
     }
 
-    [[nodiscard]] UniValue ToJson() const;
+    [[nodiscard]] UniValue ToJson() const
+    {
+        UniValue obj(UniValue::VOBJ);
+        obj.pushKV("version", nVersion);
+        obj.pushKV("commitment", commitment.ToJson());
+        return obj;
+    }
 };
 
 /**
