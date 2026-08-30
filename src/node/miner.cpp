@@ -29,7 +29,10 @@
 #include <evo/chainhelper.h>
 #include <evo/specialtxman.h>
 #include <evo/creditpool.h>
+#include <evo/deterministicmns.h>
 #include <evo/mnhftx.h>
+#include <evo/pose_service.h>
+#include <evo/pose_service_manager.h>
 #include <evo/simplifiedmns.h>
 #include <governance/governance.h>
 #include <llmq/blockprocessor.h>
@@ -37,6 +40,7 @@
 #include <llmq/context.h>
 #include <llmq/instantsend.h>
 #include <llmq/options.h>
+#include <llmq/signing.h>
 #include <llmq/snapshot.h>
 #include <masternode/payments.h>
 #include <spork.h>
@@ -81,7 +85,9 @@ BlockAssembler::BlockAssembler(CChainState& chainstate, const NodeContext& node,
       chainparams(params),
       m_mempool(mempool),
       m_quorum_block_processor(*Assert(Assert(node.llmq_ctx)->quorum_block_processor)),
-      m_qman(*Assert(Assert(node.llmq_ctx)->qman))
+      m_qman(*Assert(Assert(node.llmq_ctx)->qman)),
+      m_dslman(node.dslman.get()),
+      m_sigman(node.llmq_ctx->sigman.get())
 {
     blockMinFeeRate = options.blockMinFeeRate;
     nBlockMaxSize = options.nBlockMaxSize;
@@ -174,6 +180,48 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
                     pblocktemplate->vTxSigOps.emplace_back(0);
                     nBlockSize += qcTx->GetTotalSize();
                     ++nBlockTx;
+                }
+            }
+        }
+
+        // A DSL service commitment closes the observation epoch that ended at
+        // this boundary. The miner rebuilds the commitment from its own report
+        // pool and attaches the quorum's recovered signature only when the hash
+        // it signed matches -- a pool that diverged from the quorum's yields no
+        // commitment this epoch, never a wrong one.
+        const auto& consensus = chainparams.GetConsensus();
+        if (m_dslman != nullptr && m_sigman != nullptr && consensus.nDSLEpochInterval > 0 &&
+            nHeight >= consensus.nDSLActivationHeight &&
+            nHeight - consensus.nDSLEpochInterval >= consensus.nDSLActivationHeight &&
+            nHeight % consensus.nDSLEpochInterval == 0) {
+            const uint32_t closedEpoch = static_cast<uint32_t>(nHeight / consensus.nDSLEpochInterval) - 1;
+            const CBlockIndex* pindexEpochBase = pindexPrev->GetAncestor(nHeight - consensus.nDSLEpochInterval);
+            const auto llmqType = llmq::GetChainLocksLLMQType(consensus, nHeight);
+            llmq::CRecoveredSig recSig;
+            CPoSeServiceCommitment requestProbe;
+            requestProbe.nEpoch = closedEpoch;
+            if (pindexEpochBase != nullptr &&
+                m_sigman->GetRecoveredSigForId(llmqType, requestProbe.GetRequestId(), recSig)) {
+                auto candidate = dsl::BuildServiceCommitmentTx(
+                    closedEpoch, pindexEpochBase->GetBlockHash(), llmqType, recSig.getQuorumHash(),
+                    m_dslman->Store().GetReportsForEpoch(closedEpoch),
+                    m_dmnman.GetListForBlock(pindexEpochBase), consensus);
+                if (candidate.msgHash == recSig.getMsgHash()) {
+                    CPoSeServiceCommitmentTxPayload payload;
+                    payload.commitment = candidate.commitment;
+                    payload.commitment.quorumSig = recSig.sig.Get();
+                    SetTxPayload(candidate.tx, payload);
+                    const CTransactionRef dslTx = MakeTransactionRef(candidate.tx);
+                    pblock->vtx.emplace_back(dslTx);
+                    pblocktemplate->vTxFees.emplace_back(0);
+                    pblocktemplate->vTxSigOps.emplace_back(0);
+                    nBlockSize += dslTx->GetTotalSize();
+                    ++nBlockTx;
+                    LogPrintf("%s: attached DSL service commitment for epoch %d, missed=%d\n",
+                              __func__, closedEpoch, candidate.commitment.CountMissed());
+                } else {
+                    LogPrintf("%s: DSL report pool diverged from the quorum for epoch %d, no commitment\n",
+                              __func__, closedEpoch);
                 }
             }
         }

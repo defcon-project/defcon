@@ -47,6 +47,10 @@ UniValue CDeterministicMNState::ToJson(MnType nType) const
     obj.pushKV("PoSePenalty", nPoSePenalty);
     obj.pushKV("PoSeRevivedHeight", nPoSeRevivedHeight);
     obj.pushKV("PoSeBanHeight", nPoSeBanHeight);
+    obj.pushKV("missedServiceEpochs", (int64_t)nMissedEpochs);
+    obj.pushKV("lastServiceEpoch", (int64_t)nLastServiceEpoch);
+    obj.pushKV("rewardSuspended", fRewardSuspended);
+    obj.pushKV("dslBanHeight", nDSLBanHeight);
     obj.pushKV("revocationReason", nRevocationReason);
     obj.pushKV("ownerAddress", EncodeDestination(PKHash(keyIDOwner)));
     obj.pushKV("votingAddress", EncodeDestination(PKHash(keyIDVoting)));

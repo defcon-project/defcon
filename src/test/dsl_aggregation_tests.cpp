@@ -167,4 +167,40 @@ BOOST_AUTO_TEST_CASE(reports_from_another_epoch_are_ignored)
     BOOST_CHECK_EQUAL(c.CountMissed(), 0);
 }
 
+// Quorum members with the same report pool must sign the same hash, and the
+// hash must be over the transaction with the signature still zeroed -- that is
+// what consensus recomputes when it verifies the mined commitment.
+BOOST_AUTO_TEST_CASE(commitment_tx_candidate_is_deterministic_and_unsigned)
+{
+    auto fx = MakeFixture(30);
+    Consensus::Params params;
+    const uint256 target = TaggedHash(3, 0, "protx");
+    const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, fx.epoch,
+                                                   static_cast<size_t>(params.nDSLSentinelCount));
+    std::vector<dsl::CPoSeServiceReport> reports;
+    for (size_t k = 0; k < 5; ++k) {
+        reports.push_back(SignedReport(500, target, sentinels[k], dsl::ServiceStatus::MISSED,
+                                       fx.opKeys[sentinels[k]]));
+    }
+
+    const auto a = dsl::BuildServiceCommitmentTx(500, fx.epoch, Consensus::LLMQType::LLMQ_50_60,
+                                                 uint256::ONE, reports, fx.list, params);
+    const auto b = dsl::BuildServiceCommitmentTx(500, fx.epoch, Consensus::LLMQType::LLMQ_50_60,
+                                                 uint256::ONE, reports, fx.list, params);
+    BOOST_CHECK(a.msgHash == b.msgHash);
+    BOOST_CHECK(a.commitment.missed == b.commitment.missed);
+    BOOST_CHECK_EQUAL(a.commitment.CountMissed(), 1);
+    BOOST_CHECK(!a.commitment.quorumSig.IsValid()); // unsigned until the quorum answers
+    BOOST_CHECK_EQUAL(a.tx.nType, TRANSACTION_POSE_SERVICE_COMMITMENT);
+    BOOST_CHECK_EQUAL(a.tx.nVersion, 3);
+    BOOST_CHECK(a.tx.vin.empty() && a.tx.vout.empty());
+
+    // a different report set signs a different hash
+    reports.pop_back();
+    const auto c = dsl::BuildServiceCommitmentTx(500, fx.epoch, Consensus::LLMQType::LLMQ_50_60,
+                                                 uint256::ONE, reports, fx.list, params);
+    BOOST_CHECK(c.msgHash != a.msgHash);
+    BOOST_CHECK_EQUAL(c.commitment.CountMissed(), 0);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
