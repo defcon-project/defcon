@@ -11,6 +11,7 @@
 #include <evo/chainhelper.h>
 #include <evo/deterministicmns.h>
 #include <evo/dmn_types.h>
+#include <evo/pose_service_manager.h>
 #include <evo/providertx.h>
 #include <evo/simplifiedmns.h>
 #include <evo/specialtx.h>
@@ -1971,6 +1972,54 @@ static RPCHelpMan bls_help()
     };
 }
 
+static RPCHelpMan dslstatus()
+{
+    return RPCHelpMan{"dslstatus",
+        "\nReturns this node's DeFCon Sentinel Layer probe state for the current epoch.\n"
+        "The pool is off-chain observation state; nothing here is a consensus verdict.\n",
+        {},
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::BOOL, "active", "Whether the chain has reached the DSL activation height"},
+                {RPCResult::Type::NUM, "epoch", "The epoch currently being probed"},
+                {RPCResult::Type::STR_HEX, "epochblockhash", "The epoch's base block hash"},
+                {RPCResult::Type::NUM, "respondedcount", "Masternodes whose liveness announcement this node has seen this epoch"},
+                {RPCResult::Type::NUM, "epochreports", "Signed sentinel reports pooled for the current epoch"},
+                {RPCResult::Type::NUM, "onlinereports", "Of those, reports that observed the target online"},
+                {RPCResult::Type::NUM, "missedreports", "Of those, reports that observed the target missing"},
+                {RPCResult::Type::NUM, "storesize", "Reports held across the whole retained epoch window"},
+            }},
+        RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    const ChainstateManager& chainman = EnsureChainman(node);
+    dsl::CPoSeServiceManager& mgr = *CHECK_NONFATAL(node.dslman);
+
+    const int tip_height = WITH_LOCK(cs_main, return chainman.ActiveChain().Height());
+    const uint32_t epoch = mgr.CurrentEpoch();
+    const auto reports = mgr.Store().GetReportsForEpoch(epoch);
+    int64_t online{0}, missed{0};
+    for (const auto& report : reports) {
+        if (report.status == static_cast<uint8_t>(dsl::ServiceStatus::ONLINE)) ++online;
+        if (report.status == static_cast<uint8_t>(dsl::ServiceStatus::MISSED)) ++missed;
+    }
+
+    UniValue ret(UniValue::VOBJ);
+    ret.pushKV("active", tip_height >= Params().GetConsensus().nDSLActivationHeight);
+    ret.pushKV("epoch", static_cast<int64_t>(epoch));
+    ret.pushKV("epochblockhash", mgr.CurrentEpochHash().ToString());
+    ret.pushKV("respondedcount", static_cast<int64_t>(mgr.RespondedCount()));
+    ret.pushKV("epochreports", static_cast<int64_t>(reports.size()));
+    ret.pushKV("onlinereports", online);
+    ret.pushKV("missedreports", missed);
+    ret.pushKV("storesize", static_cast<int64_t>(mgr.Store().Size()));
+    return ret;
+},
+    };
+}
+
 void RegisterEvoRPCCommands(CRPCTable &tableRPC)
 {
 // clang-format off
@@ -1998,6 +2047,7 @@ static const CRPCCommand commands[] =
     { "evo",                &protx_update_registrar_legacy,    },
     { "evo",                &protx_revoke,                     },
 #endif
+    { "evo",                &dslstatus,                        },
     { "evo",                &protx_list,                       },
     { "evo",                &protx_info,                       },
     { "evo",                &protx_diff,                       },

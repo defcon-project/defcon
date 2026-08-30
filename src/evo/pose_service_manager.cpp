@@ -19,15 +19,12 @@ void CPoSeServiceManager::BeginEpoch(uint32_t nEpoch, const uint256& epochBlockH
         if (nEpoch == m_epoch && epochBlockHash == m_epochBlockHash) return;
         m_epoch = nEpoch;
         m_epochBlockHash = epochBlockHash;
-        m_responded.clear();
 
-        // Remember this epoch's base hash so a slightly-late report for it can
-        // still be validated, and drop hashes that have left the window.
-        m_epochHashes[nEpoch] = epochBlockHash;
+        // drop announcement sets that have left the retained window
         const uint32_t oldest = nEpoch >= m_keepEpochs ? nEpoch - m_keepEpochs + 1 : 0;
-        for (auto it = m_epochHashes.begin(); it != m_epochHashes.end();) {
+        for (auto it = m_responded.begin(); it != m_responded.end();) {
             if (it->first < oldest) {
-                it = m_epochHashes.erase(it);
+                it = m_responded.erase(it);
             } else {
                 ++it;
             }
@@ -57,7 +54,7 @@ std::vector<uint256> CPoSeServiceManager::PendingChallenges(const CDeterministic
     {
         LOCK(m_mutex);
         epochHash = m_epochBlockHash;
-        responded = m_responded;
+        if (const auto it = m_responded.find(m_epoch); it != m_responded.end()) responded = it->second;
     }
     auto targets = GetProbeTargetsForSentinel(list, myProTxHash, epochHash,
                                               static_cast<size_t>(params.nDSLSentinelCount));
@@ -70,11 +67,18 @@ std::vector<uint256> CPoSeServiceManager::PendingChallenges(const CDeterministic
 void CPoSeServiceManager::RecordResponse(const uint256& target)
 {
     LOCK(m_mutex);
-    m_responded.insert(target);
+    m_responded[m_epoch].insert(target);
 }
 
 CPoSeServiceResponse CPoSeServiceManager::AnnounceLiveness(const uint256& myProTxHash,
                                                            const CBLSSecretKey& myOperatorKey) const
+{
+    return AnnounceLiveness(myProTxHash, [&myOperatorKey](const uint256& hash) {
+        return myOperatorKey.Sign(hash, /*specificLegacyScheme=*/false);
+    });
+}
+
+CPoSeServiceResponse CPoSeServiceManager::AnnounceLiveness(const uint256& myProTxHash, const SignerFn& signer) const
 {
     uint32_t epoch;
     uint256 epochHash;
@@ -86,47 +90,49 @@ CPoSeServiceResponse CPoSeServiceManager::AnnounceLiveness(const uint256& myProT
     CPoSeServiceResponse resp;
     resp.nEpoch = epoch;
     resp.proTxHash = myProTxHash;
-    resp.sig = SignChallengeResponse(myOperatorKey, epochHash, myProTxHash);
+    resp.sig = signer(ServiceChallengeNonce(epochHash, myProTxHash));
     return resp;
 }
 
-bool CPoSeServiceManager::ProcessResponse(const CPoSeServiceResponse& resp, const CDeterministicMNList& list)
+bool CPoSeServiceManager::ProcessResponse(const CPoSeServiceResponse& resp, const CDeterministicMNList& list,
+                                          const uint256& epochBaseHash)
 {
-    uint32_t epoch;
-    uint256 epochHash;
     {
         LOCK(m_mutex);
-        epoch = m_epoch;
-        epochHash = m_epochBlockHash;
-        if (resp.nEpoch != epoch) return false;
-        if (m_responded.count(resp.proTxHash)) return false; // seen already -- do not re-relay
+        // inside the retained window, in both directions -- the caller verified
+        // the epoch's base block exists on its chain, this only bounds memory
+        if (resp.nEpoch + m_keepEpochs <= m_epoch) return false;
+        if (resp.nEpoch > m_epoch + m_keepEpochs) return false;
+        const auto it = m_responded.find(resp.nEpoch);
+        if (it != m_responded.end() && it->second.count(resp.proTxHash)) return false; // seen -- do not re-relay
     }
     const auto dmn = list.GetMN(resp.proTxHash);
     if (!dmn) return false;
-    if (!VerifyChallengeResponse(resp.sig, dmn->pdmnState->pubKeyOperator.Get(), epochHash, resp.proTxHash)) {
+    if (!VerifyChallengeResponse(resp.sig, dmn->pdmnState->pubKeyOperator.Get(), epochBaseHash, resp.proTxHash)) {
         return false;
     }
     LOCK(m_mutex);
-    if (resp.nEpoch != m_epoch) return false; // epoch rolled while verifying
-    return m_responded.insert(resp.proTxHash).second;
+    return m_responded[resp.nEpoch].insert(resp.proTxHash).second;
 }
 
 bool CPoSeServiceManager::ProcessReport(const CPoSeServiceReport& report, const CDeterministicMNList& list,
-                                        const Consensus::Params& params)
+                                        const uint256& epochBaseHash, const Consensus::Params& params)
 {
-    uint256 epochHash;
-    {
-        LOCK(m_mutex);
-        const auto it = m_epochHashes.find(report.nEpoch);
-        if (it == m_epochHashes.end()) return false; // an epoch this node never entered
-        epochHash = it->second;
-    }
-    return m_store.AddReport(report, list, epochHash, params);
+    return m_store.AddReport(report, list, epochBaseHash, params);
 }
 
 std::vector<CPoSeServiceReport> CPoSeServiceManager::EmitReports(const CDeterministicMNList& list,
                                                                 const uint256& myProTxHash,
                                                                 const CBLSSecretKey& myOperatorKey,
+                                                                const Consensus::Params& params) const
+{
+    return EmitReports(list, myProTxHash, [&myOperatorKey](const uint256& hash) {
+        return myOperatorKey.Sign(hash, /*specificLegacyScheme=*/false);
+    }, params);
+}
+
+std::vector<CPoSeServiceReport> CPoSeServiceManager::EmitReports(const CDeterministicMNList& list,
+                                                                const uint256& myProTxHash, const SignerFn& signer,
                                                                 const Consensus::Params& params) const
 {
     uint32_t epoch;
@@ -136,7 +142,7 @@ std::vector<CPoSeServiceReport> CPoSeServiceManager::EmitReports(const CDetermin
         LOCK(m_mutex);
         epoch = m_epoch;
         epochHash = m_epochBlockHash;
-        responded = m_responded;
+        if (const auto it = m_responded.find(m_epoch); it != m_responded.end()) responded = it->second;
     }
     const auto targets = GetProbeTargetsForSentinel(list, myProTxHash, epochHash,
                                                     static_cast<size_t>(params.nDSLSentinelCount));
@@ -148,10 +154,24 @@ std::vector<CPoSeServiceReport> CPoSeServiceManager::EmitReports(const CDetermin
         r.targetProTxHash = t;
         r.sentinelProTxHash = myProTxHash;
         r.status = static_cast<uint8_t>(responded.count(t) ? ServiceStatus::ONLINE : ServiceStatus::MISSED);
-        r.Sign(myOperatorKey);
+        r.sig = signer(r.GetSignHash());
         out.push_back(std::move(r));
     }
     return out;
+}
+
+size_t CPoSeServiceManager::RespondedCount() const
+{
+    LOCK(m_mutex);
+    const auto it = m_responded.find(m_epoch);
+    return it == m_responded.end() ? 0 : it->second.size();
+}
+
+bool CPoSeServiceManager::HasResponded(const uint256& proTxHash) const
+{
+    LOCK(m_mutex);
+    const auto it = m_responded.find(m_epoch);
+    return it != m_responded.end() && it->second.count(proTxHash) > 0;
 }
 
 } // namespace dsl

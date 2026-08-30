@@ -28,6 +28,10 @@ class CTransaction;
 struct CJContext;
 struct LLMQContext;
 
+namespace dsl {
+class CPoSeServiceManager;
+} // namespace dsl
+
 /** Default for -maxorphantxsize, maximum size in megabytes the orphan map can grow before entries are removed */
 static const unsigned int DEFAULT_MAX_ORPHAN_TRANSACTIONS_SIZE = 10; // this allows around 100 TXs of max size (and many more of normal size)
 /** Default number of orphan+recently-replaced txn to keep around for block reconstruction */
@@ -79,7 +83,9 @@ public:
                                              const CActiveMasternodeManager* const mn_activeman,
                                              const std::unique_ptr<CDeterministicMNManager>& dmnman,
                                              const std::unique_ptr<CJContext>& cj_ctx,
-                                             const std::unique_ptr<LLMQContext>& llmq_ctx, bool ignore_incoming_txs);
+                                             const std::unique_ptr<LLMQContext>& llmq_ctx,
+                                             const std::unique_ptr<dsl::CPoSeServiceManager>& dslman,
+                                             bool ignore_incoming_txs);
     virtual ~PeerManager() { }
 
     /**
