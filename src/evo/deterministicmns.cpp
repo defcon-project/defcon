@@ -1306,12 +1306,28 @@ void CDeterministicMNManager::CleanupCache(int nHeight)
     return erased;
 }
 
+bool CDeterministicMNManager::MigrationAlreadyDone(CDBWrapper& db, int migration)
+{
+    // Each migration's output marker, oldest to newest; the last entry tracks
+    // the live constant so the next bump keeps counting. A migration is behind
+    // us when its own output or ANY newer marker is present: normal operation
+    // rewrites the best-block key under the newest constant only, so a healthy
+    // database upgraded across several versions carries just one late marker --
+    // which is exactly how a whole fleet of good databases once read as
+    // "previous migration attempt failed" and refused to start.
+    static const std::vector<std::string> markers{"b_b3", "b_b4", "b_b5", EVODB_BEST_BLOCK};
+    assert(migration >= 1 && migration <= static_cast<int>(markers.size()));
+    for (size_t i = static_cast<size_t>(migration - 1); i < markers.size(); ++i) {
+        if (db.Exists(markers[i])) return true;
+    }
+    return false;
+}
+
 bool CDeterministicMNManager::MigrateDBIfNeeded()
 {
     static const std::string DB_OLD_LIST_SNAPSHOT = "dmn_S";
     static const std::string DB_OLD_LIST_DIFF = "dmn_D";
     static const std::string DB_OLD_BEST_BLOCK = "b_b2";
-    static const std::string DB_OLD_BEST_BLOCK2 = "b_b3";
     const auto& consensusParams = Params().GetConsensus();
 
     LOCK(cs_main);
@@ -1324,7 +1340,7 @@ bool CDeterministicMNManager::MigrateDBIfNeeded()
         return m_evoDb.IsEmpty();
     }
 
-    if (m_evoDb.GetRawDB().Exists(EVODB_BEST_BLOCK) || m_evoDb.GetRawDB().Exists(DB_OLD_BEST_BLOCK2)) {
+    if (MigrationAlreadyDone(m_evoDb.GetRawDB(), 1)) {
         if (EraseOldDBData(m_evoDb.GetRawDB(), {DB_OLD_LIST_DIFF, DB_OLD_LIST_SNAPSHOT})) {
             // we messed up, make sure this time we actually drop old data
             LogPrintf("CDeterministicMNManager::%s -- migration already done. cleaned old data.\n", __func__);
@@ -1440,7 +1456,7 @@ bool CDeterministicMNManager::MigrateDBIfNeeded2()
         return m_evoDb.IsEmpty();
     }
 
-    if (m_evoDb.GetRawDB().Exists(EVODB_BEST_BLOCK)) {
+    if (MigrationAlreadyDone(m_evoDb.GetRawDB(), 2)) {
         if (EraseOldDBData(m_evoDb.GetRawDB(), {DB_OLD_LIST_DIFF, DB_OLD_LIST_SNAPSHOT})) {
             // we messed up, make sure this time we actually drop old data
             LogPrintf("CDeterministicMNManager::%s -- migration already done. cleaned old data.\n", __func__);
@@ -1554,7 +1570,7 @@ bool CDeterministicMNManager::MigrateDBIfNeeded4()
         return m_evoDb.IsEmpty();
     }
 
-    if (m_evoDb.GetRawDB().Exists(EVODB_BEST_BLOCK)) {
+    if (MigrationAlreadyDone(m_evoDb.GetRawDB(), 4)) {
         if (EraseOldDBData(m_evoDb.GetRawDB(), {DB_OLD_LIST_DIFF, DB_OLD_LIST_SNAPSHOT})) {
             // we messed up, make sure this time we actually drop old data
             LogPrintf("CDeterministicMNManager::%s -- migration already done. cleaned old data.\n", __func__);
@@ -1663,7 +1679,7 @@ bool CDeterministicMNManager::MigrateDBIfNeeded3()
         return m_evoDb.IsEmpty();
     }
 
-    if (m_evoDb.GetRawDB().Exists(EVODB_BEST_BLOCK)) {
+    if (MigrationAlreadyDone(m_evoDb.GetRawDB(), 3)) {
         if (EraseOldDBData(m_evoDb.GetRawDB(), {DB_OLD_LIST_DIFF, DB_OLD_LIST_SNAPSHOT})) {
             // we messed up, make sure this time we actually drop old data
             LogPrintf("CDeterministicMNManager::%s -- migration already done. cleaned old data.\n", __func__);

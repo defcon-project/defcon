@@ -111,6 +111,7 @@ BITCOIN_TESTS =\
   test/evo_assetlocks_tests.cpp \
   test/evo_cbtx_tests.cpp \
   test/evo_deterministicmns_tests.cpp \
+  test/evo_migration_marker_tests.cpp \
   test/collateral_tests.cpp \
   test/pose_service_sentinels_tests.cpp \
   test/dsl_aggregation_tests.cpp \
