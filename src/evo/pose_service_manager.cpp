@@ -12,11 +12,20 @@
 
 namespace dsl {
 
-void CPoSeServiceManager::BeginEpoch(uint32_t nEpoch, const uint256& epochBlockHash)
+CPoSeServiceManager::EpochChange CPoSeServiceManager::BeginEpoch(uint32_t nEpoch,
+                                                                const uint256& epochBlockHash)
 {
+    bool rebased = false;
     {
         LOCK(m_mutex);
-        if (nEpoch == m_epoch && epochBlockHash == m_epochBlockHash) return;
+        if (nEpoch == m_epoch && epochBlockHash == m_epochBlockHash) return EpochChange::None;
+        // A reorg that keeps the epoch number but swaps its base block: the
+        // responses gathered under the old base are stale and, worse, would
+        // count each responder as "seen" and block its fresh announcement as a
+        // duplicate. Drop them so the epoch is re-observed from the new base.
+        rebased = (nEpoch == m_epoch) && (epochBlockHash != m_epochBlockHash);
+        if (rebased) m_responded.erase(nEpoch);
+
         m_epoch = nEpoch;
         m_epochBlockHash = epochBlockHash;
 
@@ -30,7 +39,9 @@ void CPoSeServiceManager::BeginEpoch(uint32_t nEpoch, const uint256& epochBlockH
             }
         }
     }
+    if (rebased) m_store.DropEpoch(nEpoch);
     m_store.SetCurrentEpoch(nEpoch);
+    return rebased ? EpochChange::Rebased : EpochChange::Entered;
 }
 
 uint32_t CPoSeServiceManager::CurrentEpoch() const

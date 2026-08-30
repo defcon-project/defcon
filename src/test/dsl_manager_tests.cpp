@@ -269,4 +269,58 @@ BOOST_AUTO_TEST_CASE(process_report_pools_and_refuses_unknown_epoch)
     BOOST_CHECK(!mgr.ProcessReport(ancient, fx.list, fx.epoch, params));
 }
 
+// A reorg that swaps an epoch's base block must discard the state gathered
+// under the old base -- otherwise a responder counts as seen and its fresh
+// announcement is refused as a duplicate -- and report the rebase so the net
+// layer re-runs its once-per-epoch actions.
+BOOST_AUTO_TEST_CASE(reorg_rebasing_an_epoch_clears_its_state)
+{
+    using EpochChange = dsl::CPoSeServiceManager::EpochChange;
+    auto fx = MakeFixture(40);
+    Consensus::Params params;
+    const uint256 me = PickSentinelWithTargets(fx, params);
+    BOOST_REQUIRE(!me.IsNull());
+
+    dsl::CPoSeServiceManager mgr;
+    const uint256 baseA = fx.epoch;
+    BOOST_CHECK(mgr.BeginEpoch(500, baseA) == EpochChange::Entered);
+
+    // a target announces under base A, and a report for it pools
+    const auto targets = mgr.PendingChallenges(fx.list, me, params);
+    BOOST_REQUIRE(!targets.empty());
+    const uint256 target = targets.front();
+    dsl::CPoSeServiceResponse ann;
+    ann.nEpoch = 500;
+    ann.proTxHash = target;
+    ann.sig = dsl::SignChallengeResponse(fx.opKeys[target], baseA, target);
+    BOOST_CHECK(mgr.ProcessResponse(ann, fx.list, baseA));
+    BOOST_CHECK(mgr.HasResponded(target));
+    const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, baseA,
+                                                   static_cast<size_t>(params.nDSLSentinelCount));
+    dsl::CPoSeServiceReport rep;
+    rep.nEpoch = 500;
+    rep.targetProTxHash = target;
+    rep.sentinelProTxHash = sentinels.front();
+    rep.status = static_cast<uint8_t>(dsl::ServiceStatus::MISSED);
+    rep.Sign(fx.opKeys[sentinels.front()]);
+    BOOST_CHECK(mgr.ProcessReport(rep, fx.list, baseA, params));
+    BOOST_CHECK_EQUAL(mgr.Store().GetReportsForEpoch(500).size(), 1u);
+
+    // a same-epoch reorg to a new base clears both, and reports Rebased
+    const uint256 baseB = TaggedHash(500, 1, "epoch");
+    BOOST_CHECK(mgr.BeginEpoch(500, baseB) == EpochChange::Rebased);
+    BOOST_CHECK(!mgr.HasResponded(target));
+    BOOST_CHECK_EQUAL(mgr.Store().GetReportsForEpoch(500).size(), 0u);
+
+    // the target can announce fresh under base B
+    dsl::CPoSeServiceResponse annB;
+    annB.nEpoch = 500;
+    annB.proTxHash = target;
+    annB.sig = dsl::SignChallengeResponse(fx.opKeys[target], baseB, target);
+    BOOST_CHECK(mgr.ProcessResponse(annB, fx.list, baseB));
+
+    // and calling again for the same (epoch, base) is a no-op
+    BOOST_CHECK(mgr.BeginEpoch(500, baseB) == EpochChange::None);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

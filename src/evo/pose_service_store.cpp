@@ -78,6 +78,18 @@ void CServiceReportStore::SetCurrentEpoch(uint32_t nEpoch)
     }
 }
 
+void CServiceReportStore::DropEpoch(uint32_t nEpoch)
+{
+    LOCK(m_mutex);
+    for (auto it = m_reports.begin(); it != m_reports.end();) {
+        if (std::get<0>(it->first) == nEpoch) {
+            it = m_reports.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 size_t CServiceReportStore::Size() const
 {
     LOCK(m_mutex);
