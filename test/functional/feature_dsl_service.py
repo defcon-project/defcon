@@ -113,6 +113,12 @@ class DSLServiceTest(DashTestFramework):
             dsl_txs = [tx for tx in block["tx"] if tx.get("type") == 10]
             if dsl_txs:
                 found_commitment = True
+                # the RPC payload is what an observer indexes: the epoch it
+                # closed, and the set bits by canonical index
+                payload = dsl_txs[0]["poseServiceTx"]["commitment"]
+                assert_equal(payload["epoch"], block["height"] // EPOCH_INTERVAL - 1)
+                assert payload["missedCount"] >= 1
+                assert_equal(len(payload["missedIndices"]), payload["missedCount"])
                 break
         assert found_commitment, "no service commitment was mined within four epochs"
 
