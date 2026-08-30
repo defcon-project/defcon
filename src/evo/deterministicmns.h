@@ -30,6 +30,7 @@ class CBlock;
 class CBlockIndex;
 class CChainState;
 class CCoinsViewCache;
+class CDBWrapper;
 class CEvoDB;
 class ChainstateManager;
 class TxValidationState;
@@ -744,6 +745,16 @@ public:
 
     // Test if given TX is a ProRegTx which also contains the collateral at index n
     static bool IsProTxWithCollateral(const CTransactionRef& tx, uint32_t n);
+
+    /**
+     * True when the evo database already carries migration N's output marker or
+     * any newer one. The database rewrites its best-block key under the newest
+     * constant during normal operation, so a healthy database several versions
+     * ahead holds only a marker the older short-circuits never named -- checking
+     * one fixed key made such a database read as a broken migration attempt and
+     * refuse to start. Every MigrateDBIfNeededN gate goes through this instead.
+     */
+    static bool MigrationAlreadyDone(CDBWrapper& db, int migration);
 
     bool MigrateDBIfNeeded();
     bool MigrateDBIfNeeded2();
