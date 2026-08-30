@@ -225,6 +225,19 @@ struct Params {
      *  coordinated activation sets it. */
     int nComputeNodeActivationHeight{std::numeric_limits<int>::max()};
 
+    /** DeFCon Sentinel Layer (DSL / "Service PoSe"). nDSLActivationHeight:
+     *  the height from which a service-commitment special tx may appear and
+     *  the sentinel protocol runs. nDSLEnforcementHeight: at/above it the
+     *  committed bitfield actually suspends rewards and bans -- the shadow
+     *  window is the gap between the two, where a commitment is mined and
+     *  verified but applies no penalty. Both default to an unreachable
+     *  height, so DSL is dormant on every network until a coordinated
+     *  activation sets them. nDSLEpochInterval: blocks per epoch, matching
+     *  the attesting (Q60) quorum's DKG interval. */
+    int nDSLActivationHeight{std::numeric_limits<int>::max()};
+    int nDSLEnforcementHeight{std::numeric_limits<int>::max()};
+    int nDSLEpochInterval{24};
+
     /** these parameters are only used on devnet and can be configured from the outside */
     int nMinimumDifficultyBlocks{0};
     int nHighSubsidyBlocks{0};
