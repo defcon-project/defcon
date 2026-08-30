@@ -96,7 +96,7 @@ bool CSpecialTxProcessor::CheckSpecialTx(const CTransaction& tx, const CBlockInd
     case TRANSACTION_MNHF_SIGNAL:
         return true; // handled per block
     case TRANSACTION_POSE_SERVICE_COMMITMENT:
-        return true; // no state application yet (see the DSL series)
+        return true; // applied per block in BuildNewListFromBlock
     }
 
     return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-tx-type-proc");
@@ -124,7 +124,7 @@ bool CSpecialTxProcessor::CheckSpecialTx(const CTransaction& tx, const CBlockInd
     case TRANSACTION_MNHF_SIGNAL:
         return true; // handled per block
     case TRANSACTION_POSE_SERVICE_COMMITMENT:
-        return true; // no state application yet (see the DSL series)
+        return true; // applied per block in BuildNewListFromBlock
     }
 
     return false;

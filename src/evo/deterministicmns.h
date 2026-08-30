@@ -135,6 +135,7 @@ public:
 using CDeterministicMNCPtr = std::shared_ptr<const CDeterministicMN>;
 
 class CDeterministicMNListDiff;
+class CPoSeServiceCommitment;
 
 template <typename Stream, typename K, typename T, typename Hash, typename Equal>
 void SerializeImmerMap(Stream& os, const immer::map<K, T, Hash, Equal>& m)
@@ -279,6 +280,11 @@ public:
      *  the type itself. */
     [[nodiscard]] int32_t GetEffectivePaymentWeight(const CDeterministicMN& dmn) const
     {
+        // A reward-suspended masternode earns nothing until it reports online
+        // again -- the service-PoSe soft penalty, one step before a ban.
+        if (dmn.pdmnState->fRewardSuspended) {
+            return 0;
+        }
         const auto payment_weight = GetMnType(dmn.nType).payment_weight;
         if (payment_weight > 1 && dmn.nType == MnType::Compute &&
             !dmn.pdmnState->computeDescriptor.IsCertValidAt(nHeight)) {
@@ -402,6 +408,15 @@ public:
      * might appear lower then the current max penalty, while the MN is still banned.
      */
     void PoSePunish(const uint256& proTxHash, int penalty, bool debugLogs);
+    /** Apply a verified service commitment: advance each masternode's
+     *  missed-epoch counter by the committed bitfield and, at or above the
+     *  enforcement height, suspend rewards, service-ban, or service-revive.
+     *  The bitfield indexes epochBaseList in proTxHash order. Below the
+     *  enforcement height it only records the counters (shadow mode).
+     *  A mass-outage epoch records the epoch but applies no change. */
+    void ApplyServiceCommitment(const CPoSeServiceCommitment& commitment,
+                                const CDeterministicMNList& epochBaseList, int nHeight,
+                                const Consensus::Params& params, bool debugLogs);
 
     void DecreaseScores();
     /**
