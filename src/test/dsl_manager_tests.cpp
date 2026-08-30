@@ -156,7 +156,7 @@ BOOST_AUTO_TEST_CASE(new_epoch_clears_responses)
     }
 }
 
-BOOST_AUTO_TEST_CASE(process_response_records_verified_liveness)
+BOOST_AUTO_TEST_CASE(liveness_announcements_flood_once_and_bind_identity)
 {
     auto fx = MakeFixture(40);
     Consensus::Params params;
@@ -169,24 +169,39 @@ BOOST_AUTO_TEST_CASE(process_response_records_verified_liveness)
     BOOST_REQUIRE(!targets.empty());
     const uint256 target = targets.front();
 
-    // a genuine signed response from the target is accepted and marks it online
-    dsl::CPoSeServiceResponse resp;
-    resp.nEpoch = 500;
-    resp.sig = dsl::SignChallengeResponse(fx.opKeys[target], fx.epoch, target);
-    BOOST_CHECK(mgr.ProcessResponse(target, resp, fx.list));
+    // the target's own announcement builds against its manager view...
+    dsl::CPoSeServiceManager targetMgr;
+    targetMgr.BeginEpoch(500, fx.epoch);
+    const auto ann = targetMgr.AnnounceLiveness(target, fx.opKeys[target]);
+    BOOST_CHECK_EQUAL(ann.nEpoch, 500u);
+    BOOST_CHECK(ann.proTxHash == target);
+
+    // ...and is accepted here on first sight (relay) and refused as a duplicate
+    BOOST_CHECK(mgr.ProcessResponse(ann, fx.list));
+    BOOST_CHECK(!mgr.ProcessResponse(ann, fx.list));
     const auto after = mgr.PendingChallenges(fx.list, me, params);
     BOOST_CHECK(std::find(after.begin(), after.end(), target) == after.end());
 
-    // a response for the wrong epoch is refused
-    dsl::CPoSeServiceResponse wrongEpoch = resp;
+    // a wrong epoch is refused
+    dsl::CPoSeServiceResponse wrongEpoch = ann;
     wrongEpoch.nEpoch = 499;
-    BOOST_CHECK(!mgr.ProcessResponse(target, wrongEpoch, fx.list));
+    BOOST_CHECK(!mgr.ProcessResponse(wrongEpoch, fx.list));
 
-    // a response signed by another node's key is refused
-    dsl::CPoSeServiceResponse forged;
-    forged.nEpoch = 500;
-    forged.sig = dsl::SignChallengeResponse(fx.opKeys[me], fx.epoch, target);
-    BOOST_CHECK(!mgr.ProcessResponse(target, forged, fx.list));
+    // claiming another node's identity fails on its operator key
+    dsl::CPoSeServiceResponse stolen;
+    stolen.nEpoch = 500;
+    stolen.proTxHash = me; // claims to be `me`, but signs with the target's key
+    stolen.sig = dsl::SignChallengeResponse(fx.opKeys[target], fx.epoch, me);
+    BOOST_CHECK(!mgr.ProcessResponse(stolen, fx.list));
+
+    // an announcement from a node not on the list is refused
+    dsl::CPoSeServiceResponse ghost;
+    ghost.nEpoch = 500;
+    ghost.proTxHash = TaggedHash(999, 0, "protx");
+    CBLSSecretKey ghostKey;
+    ghostKey.MakeNewKey();
+    ghost.sig = dsl::SignChallengeResponse(ghostKey, fx.epoch, ghost.proTxHash);
+    BOOST_CHECK(!mgr.ProcessResponse(ghost, fx.list));
 }
 
 BOOST_AUTO_TEST_CASE(process_report_pools_and_refuses_unknown_epoch)
