@@ -1993,6 +1993,21 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     assert(!node.dslman);
     node.dslman = std::make_unique<dsl::CPoSeServiceManager>();
+    // Bootstrap the service-probe epoch from the loaded tip. The per-block tick
+    // that normally advances it fires only on a *new* block, so a node that
+    // starts already synced would sit at epoch 0 and reject every DSL message
+    // for the real epoch until the next block arrives. Only meaningful once the
+    // chain is past the activation height; harmless before it.
+    {
+        const auto& consensus = chainparams.GetConsensus();
+        const CBlockIndex* tip = WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip());
+        if (tip != nullptr && consensus.nDSLEpochInterval > 0 &&
+            tip->nHeight >= consensus.nDSLActivationHeight) {
+            const uint32_t epoch = static_cast<uint32_t>(tip->nHeight) / consensus.nDSLEpochInterval;
+            const CBlockIndex* base = tip->GetAncestor(static_cast<int>(epoch) * consensus.nDSLEpochInterval);
+            if (base != nullptr) node.dslman->BeginEpoch(epoch, base->GetBlockHash());
+        }
+    }
 
     assert(!node.peerman);
     node.peerman = PeerManager::make(chainparams, *node.connman, *node.addrman, node.banman.get(),

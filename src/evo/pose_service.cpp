@@ -16,8 +16,6 @@
 #include <node/blockstorage.h>
 #include <primitives/transaction.h>
 #include <sync.h>
-#include <univalue.h>
-#include <util/underlying.h>
 #include <validation.h>
 
 uint256 CPoSeServiceCommitment::GetRequestId() const

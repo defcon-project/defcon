@@ -845,6 +845,11 @@ private:
     std::atomic<int64_t> m_dsl_last_announced_epoch{-1};
     std::atomic<int64_t> m_dsl_last_emitted_epoch{-1};
     std::atomic<int64_t> m_dsl_last_signed_epoch{-1};
+    /** An epoch entered mid-way (a start or restart inside it): its verdict is
+     *  a warm-up, never emitted, since this node did not watch it from the
+     *  start and would report announcements it simply never saw as MISSED. */
+    std::atomic<int64_t> m_dsl_warmup_epoch{-1};
+    bool m_dsl_first_tick{true};
 
     /** The height of the best chain */
     std::atomic<int> m_best_height{-1};
@@ -5537,9 +5542,16 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
     // lag the wire by an epoch, and the flood forwards each copy only once, so
     // a rejection for "not my epoch yet" would lose the message permanently.
     const auto epoch_base_hash = [this, &consensus](uint32_t nEpoch) -> std::optional<uint256> {
-        const int base_height{static_cast<int>(nEpoch) * consensus.nDSLEpochInterval};
+        if (consensus.nDSLEpochInterval <= 0) return std::nullopt;
+        // nEpoch is attacker-controlled off the wire. Compute the base height in
+        // int64 and bound it against the tip before narrowing to the int the
+        // chain indexer takes -- a huge value would otherwise overflow the
+        // signed multiply (UB) even though the indexer's own bounds check would
+        // catch the result.
         LOCK(cs_main);
-        const CBlockIndex* pindex = m_chainman.ActiveChain()[base_height];
+        const int64_t base_height = static_cast<int64_t>(nEpoch) * consensus.nDSLEpochInterval;
+        if (base_height < 0 || base_height > m_chainman.ActiveChain().Height()) return std::nullopt;
+        const CBlockIndex* pindex = m_chainman.ActiveChain()[static_cast<int>(base_height)];
         if (pindex == nullptr) return std::nullopt;
         return pindex->GetBlockHash();
     };
@@ -5598,7 +5610,30 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
     const uint32_t epoch = static_cast<uint32_t>(pindexNew->nHeight) / interval;
     const CBlockIndex* pindexBase = pindexNew->GetAncestor(static_cast<int>(epoch * interval));
     if (pindexBase == nullptr) return;
-    m_dslman->BeginEpoch(epoch, pindexBase->GetBlockHash());
+    const uint32_t pos = static_cast<uint32_t>(pindexNew->nHeight) % interval;
+    const auto change = m_dslman->BeginEpoch(epoch, pindexBase->GetBlockHash());
+
+    // A reorg that swapped this epoch's base block: the manager discarded the
+    // stale responses and reports, so re-run every once-per-epoch action
+    // against the new base.
+    if (change == dsl::CPoSeServiceManager::EpochChange::Rebased) {
+        m_dsl_last_announced_epoch = -1;
+        m_dsl_last_emitted_epoch = -1;
+        m_dsl_last_signed_epoch = -1;
+        LogPrint(BCLog::NET, "DSL -- epoch %d rebased by a reorg, re-observing\n", epoch);
+    }
+
+    // A start or restart part-way through an epoch cannot judge it: the
+    // announcements before this node arrived are gone, and reporting them
+    // MISSED would be false. Mark the in-progress epoch a warm-up once, on the
+    // first tick of this process.
+    if (m_dsl_first_tick) {
+        m_dsl_first_tick = false;
+        if (pos != 0) {
+            m_dsl_warmup_epoch = epoch;
+            LogPrint(BCLog::NET, "DSL -- entered epoch %d mid-way (pos %d), treating as warm-up\n", epoch, pos);
+        }
+    }
 
     // only a listed masternode announces and reports
     if (m_mn_activeman == nullptr) return;
@@ -5622,9 +5657,10 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
         }
     }
 
-    // at the cutoff, turn what we saw -- and did not see -- into signed reports
-    const uint32_t pos = static_cast<uint32_t>(pindexNew->nHeight) % interval;
+    // at the cutoff, turn what we saw -- and did not see -- into signed reports,
+    // unless this epoch is a warm-up we cannot fairly judge
     if (pos >= interval - interval / 4 &&
+        static_cast<int64_t>(epoch) != m_dsl_warmup_epoch.load() &&
         m_dsl_last_emitted_epoch.exchange(epoch) != static_cast<int64_t>(epoch)) {
         const auto reports = m_dslman->EmitReports(mn_list, myProTxHash, signer, consensus);
         LogPrint(BCLog::NET, "DSL -- emitting %d sentinel reports for epoch %d\n", reports.size(), epoch);
@@ -5639,8 +5675,14 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
     // aggregates them and asks the quorum to threshold-sign the bitfield. The
     // signing quorum is selected deterministically against the epoch base, so
     // every member -- and later the miner -- names the same one.
+    // Not exchange(): the signing quorum can still be loading when the offset
+    // is first reached, and marking the epoch signed on that first look would
+    // spend the whole three-block window on one failed attempt. The flag is set
+    // only once signing actually starts, so a transient quorum-state delay is
+    // retried on the next block instead of losing the epoch's commitment.
     if (pos >= interval - interval / 8 &&
-        m_dsl_last_signed_epoch.exchange(epoch) != static_cast<int64_t>(epoch)) {
+        static_cast<int64_t>(epoch) != m_dsl_warmup_epoch.load() &&
+        m_dsl_last_signed_epoch.load() != static_cast<int64_t>(epoch)) {
         const int boundaryHeight = static_cast<int>((epoch + 1) * interval);
         const auto llmqType = llmq::GetChainLocksLLMQType(consensus, boundaryHeight);
         const auto llmq_params_opt = Params().GetLLMQ(llmqType);
@@ -5654,12 +5696,20 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
                     epoch, pindexBase->GetBlockHash(), llmqType, quorum->qc->quorumHash,
                     m_dslman->Store().GetReportsForEpoch(epoch),
                     m_dmnman->GetListForBlock(pindexBase), consensus);
-                LogPrint(BCLog::NET, "DSL -- asking quorum %s to sign epoch %d, missed=%d\n",
-                         quorum->qc->quorumHash.ToString(), epoch, candidate.commitment.CountMissed());
-                m_llmq_ctx->sigman->AsyncSignIfMember(llmqType, *m_llmq_ctx->shareman,
-                                                      candidate.commitment.GetRequestId(),
-                                                      candidate.msgHash, quorum->qc->quorumHash);
+                // AsyncSignIfMember returns false when the quorum could not be
+                // used or the signing session failed to start; only a true
+                // return retires the epoch.
+                if (m_llmq_ctx->sigman->AsyncSignIfMember(llmqType, *m_llmq_ctx->shareman,
+                                                          candidate.commitment.GetRequestId(),
+                                                          candidate.msgHash, quorum->qc->quorumHash)) {
+                    m_dsl_last_signed_epoch = epoch;
+                    LogPrint(BCLog::NET, "DSL -- asked quorum %s to sign epoch %d, missed=%d\n",
+                             quorum->qc->quorumHash.ToString(), epoch, candidate.commitment.CountMissed());
+                } else {
+                    LogPrint(BCLog::NET, "DSL -- sign start failed for epoch %d, retrying next block\n", epoch);
+                }
             }
+            // quorum still loading: flag left unset, retried next block
         }
     }
 }
