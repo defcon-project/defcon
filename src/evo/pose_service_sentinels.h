@@ -6,6 +6,7 @@
 #define BITCOIN_EVO_POSE_SERVICE_SENTINELS_H
 
 #include <bls/bls.h>
+#include <consensus/params.h>
 #include <serialize.h>
 #include <uint256.h>
 
@@ -13,6 +14,7 @@
 #include <vector>
 
 class CDeterministicMNList;
+class CPoSeServiceCommitment;
 
 namespace dsl {
 
@@ -69,6 +71,25 @@ public:
     void Sign(const CBLSSecretKey& operatorKey);
     [[nodiscard]] bool VerifySig(const CBLSPublicKey& operatorPubKey) const;
 };
+
+/**
+ * Aggregate a set of signed sentinel reports into an unsigned service
+ * commitment for the epoch. For each masternode in canonical (proTxHash)
+ * order the MISSED bit is set only when at least nDSLSentinelAgree of its
+ * assigned sentinels returned a valid, signed MISSED observation; a target
+ * with too few such reports, or a majority reporting online, is left unset
+ * (no verdict is not a punishment). A report counts only once per sentinel,
+ * only from an assigned sentinel, and only with a signature that verifies
+ * against that sentinel's operator key. Deterministic in its inputs -- the
+ * quorum members must feed it the same report set to sign the same bitfield,
+ * which the shadow phase measures. The returned commitment carries no
+ * signature; the quorum signs it.
+ */
+CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& epochBlockHash,
+                                              Consensus::LLMQType llmqType, const uint256& quorumHash,
+                                              const std::vector<CPoSeServiceReport>& reports,
+                                              const CDeterministicMNList& epochBaseList,
+                                              const Consensus::Params& params);
 
 } // namespace dsl
 

@@ -247,6 +247,12 @@ struct Params {
     int nDSLSuspendEpochs{4};
     int nDSLBanEpochs{5};
     int nDSLMassOutagePct{15};
+    /** How many sentinels probe each masternode per epoch, and how many must
+     *  agree for a verdict (the aggregation threshold). Measured on the
+     *  simulator: 7 sentinels, at-least-5 agreement resists shielding and
+     *  griefing up to about 30 percent single-operator concentration. */
+    int nDSLSentinelCount{7};
+    int nDSLSentinelAgree{5};
 
     /** these parameters are only used on devnet and can be configured from the outside */
     int nMinimumDifficultyBlocks{0};
