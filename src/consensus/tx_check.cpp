@@ -15,7 +15,8 @@ bool CheckTransaction(const CTransaction& tx, TxValidationState& state)
 {
     bool allowEmptyTxIn = false;
     bool allowEmptyTxOut = false;
-    if (tx.nType == TRANSACTION_QUORUM_COMMITMENT || tx.nType == TRANSACTION_MNHF_SIGNAL) {
+    if (tx.nType == TRANSACTION_QUORUM_COMMITMENT || tx.nType == TRANSACTION_MNHF_SIGNAL ||
+        tx.nType == TRANSACTION_POSE_SERVICE_COMMITMENT) {
         allowEmptyTxIn = true;
         allowEmptyTxOut = true;
     }

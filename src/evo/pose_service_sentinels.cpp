@@ -6,6 +6,7 @@
 
 #include <evo/deterministicmns.h>
 #include <evo/pose_service.h>
+#include <evo/specialtx.h>
 #include <hash.h>
 
 #include <algorithm>
@@ -136,6 +137,26 @@ CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& ep
         }
     }
     return c;
+}
+
+ServiceCommitmentTxCandidate BuildServiceCommitmentTx(uint32_t nEpoch, const uint256& epochBlockHash,
+                                                      Consensus::LLMQType llmqType, const uint256& quorumHash,
+                                                      const std::vector<CPoSeServiceReport>& reports,
+                                                      const CDeterministicMNList& epochBaseList,
+                                                      const Consensus::Params& params)
+{
+    ServiceCommitmentTxCandidate out;
+    out.commitment = BuildServiceCommitment(nEpoch, epochBlockHash, llmqType, quorumHash,
+                                            reports, epochBaseList, params);
+
+    CPoSeServiceCommitmentTxPayload payload;
+    payload.commitment = out.commitment;
+
+    out.tx.nVersion = 3;
+    out.tx.nType = TRANSACTION_POSE_SERVICE_COMMITMENT;
+    SetTxPayload(out.tx, payload);
+    out.msgHash = out.tx.GetHash();
+    return out;
 }
 
 } // namespace dsl

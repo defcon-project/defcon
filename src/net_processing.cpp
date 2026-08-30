@@ -838,11 +838,13 @@ private:
     const CActiveMasternodeManager* const m_mn_activeman;
     const std::unique_ptr<dsl::CPoSeServiceManager>& m_dslman;
 
-    /** The last epoch this node announced its own liveness in, and the last it
-     *  emitted its sentinel reports for; -1 before the first. Only the
-     *  validation-interface thread writes them. */
+    /** The last epoch this node announced its own liveness in, the last it
+     *  emitted its sentinel reports for, and the last it asked the attesting
+     *  quorum to sign; -1 before the first. Only the validation-interface
+     *  thread writes them. */
     std::atomic<int64_t> m_dsl_last_announced_epoch{-1};
     std::atomic<int64_t> m_dsl_last_emitted_epoch{-1};
+    std::atomic<int64_t> m_dsl_last_signed_epoch{-1};
 
     /** The height of the best chain */
     std::atomic<int> m_best_height{-1};
@@ -5629,6 +5631,34 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
         for (const auto& report : reports) {
             if (m_dslman->ProcessReport(report, mn_list, pindexBase->GetBlockHash(), consensus)) {
                 RelayDSLMessage(NetMsgType::POSEREPORT, report, /*skip_id=*/-1);
+            }
+        }
+    }
+
+    // once the reports have had time to pool, a member of the attesting quorum
+    // aggregates them and asks the quorum to threshold-sign the bitfield. The
+    // signing quorum is selected deterministically against the epoch base, so
+    // every member -- and later the miner -- names the same one.
+    if (pos >= interval - interval / 8 &&
+        m_dsl_last_signed_epoch.exchange(epoch) != static_cast<int64_t>(epoch)) {
+        const int boundaryHeight = static_cast<int>((epoch + 1) * interval);
+        const auto llmqType = llmq::GetChainLocksLLMQType(consensus, boundaryHeight);
+        const auto llmq_params_opt = Params().GetLLMQ(llmqType);
+        if (llmq_params_opt.has_value()) {
+            const auto quorum = llmq::SelectQuorumForSigning(
+                *llmq_params_opt, m_chainman.ActiveChain(), *m_llmq_ctx->qman,
+                ::SerializeHash(std::make_pair(std::string{"dslcommitment"}, epoch)),
+                /*signHeight=*/pindexBase->nHeight);
+            if (quorum != nullptr) {
+                const auto candidate = dsl::BuildServiceCommitmentTx(
+                    epoch, pindexBase->GetBlockHash(), llmqType, quorum->qc->quorumHash,
+                    m_dslman->Store().GetReportsForEpoch(epoch),
+                    m_dmnman->GetListForBlock(pindexBase), consensus);
+                LogPrint(BCLog::NET, "DSL -- asking quorum %s to sign epoch %d, missed=%d\n",
+                         quorum->qc->quorumHash.ToString(), epoch, candidate.commitment.CountMissed());
+                m_llmq_ctx->sigman->AsyncSignIfMember(llmqType, *m_llmq_ctx->shareman,
+                                                      candidate.commitment.GetRequestId(),
+                                                      candidate.msgHash, quorum->qc->quorumHash);
             }
         }
     }

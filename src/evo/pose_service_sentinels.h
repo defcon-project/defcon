@@ -7,6 +7,8 @@
 
 #include <bls/bls.h>
 #include <consensus/params.h>
+#include <evo/pose_service.h>
+#include <primitives/transaction.h>
 #include <serialize.h>
 #include <uint256.h>
 
@@ -14,7 +16,6 @@
 #include <vector>
 
 class CDeterministicMNList;
-class CPoSeServiceCommitment;
 
 namespace dsl {
 
@@ -151,6 +152,28 @@ CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& ep
                                               const std::vector<CPoSeServiceReport>& reports,
                                               const CDeterministicMNList& epochBaseList,
                                               const Consensus::Params& params);
+
+/**
+ * The commitment transaction as the quorum signs it: the special transaction
+ * carrying the aggregated bitfield with the signature still zeroed, and the
+ * message hash the threshold signature commits to -- the hash of exactly this
+ * transaction, matching what consensus recomputes in
+ * CheckPoSeServiceCommitmentTx. Deterministic in its inputs, so quorum members
+ * with the same report pool sign the same hash, and a miner with the same pool
+ * can rebuild the transaction and attach the recovered signature only when its
+ * own hash matches -- a diverged pool yields no commitment, never a wrong one.
+ */
+struct ServiceCommitmentTxCandidate {
+    CMutableTransaction tx;        // signature zeroed
+    uint256 msgHash;               // hash of `tx`
+    CPoSeServiceCommitment commitment;
+};
+
+ServiceCommitmentTxCandidate BuildServiceCommitmentTx(uint32_t nEpoch, const uint256& epochBlockHash,
+                                                      Consensus::LLMQType llmqType, const uint256& quorumHash,
+                                                      const std::vector<CPoSeServiceReport>& reports,
+                                                      const CDeterministicMNList& epochBaseList,
+                                                      const Consensus::Params& params);
 
 } // namespace dsl
 

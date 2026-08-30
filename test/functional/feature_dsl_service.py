@@ -13,6 +13,8 @@ epoch's cutoff report it MISSED. Everything observed here is the off-chain
 pool; no consensus rule is exercised.
 """
 
+import time
+
 from test_framework.test_framework import DashTestFramework
 from test_framework.util import assert_equal, force_finish_mnsync
 
@@ -22,8 +24,14 @@ CUTOFF = EPOCH_INTERVAL - EPOCH_INTERVAL // 4  # reports are emitted from this o
 
 class DSLServiceTest(DashTestFramework):
     def set_test_params(self):
-        self.extra_args = [["-testactivationheight=dsl@1"]] * 5
-        self.set_dash_test_params(5, 4, extra_args=self.extra_args)
+        # Seven masternodes, for two thresholds at once: a stopped node's
+        # sentinels are all the others, and the aggregation threshold
+        # (nDSLSentinelAgree = 5) needs five of them to agree before its MISSED
+        # bit can set -- and one node out of seven is 14.3%, just under the
+        # mass-outage guard (15%), so the missed-epoch counter actually
+        # advances instead of the guard freezing the epoch.
+        self.extra_args = [["-testactivationheight=dsl@1"]] * 8
+        self.set_dash_test_params(8, 7, extra_args=self.extra_args)
 
     def run_test(self):
         node = self.nodes[0]
@@ -56,14 +64,63 @@ class DSLServiceTest(DashTestFramework):
         alive = [n for i, n in enumerate(self.nodes) if i != stopped.nodeIdx]
 
         self.log.info("The next epoch's cutoff reports it MISSED")
+        # enter the next epoch first and let the survivors' announcements flood
+        # before the cutoff -- a block burst straight to the cutoff would give
+        # the flood no time and make everyone look missed
         height = node.getblockcount()
-        to_next_cutoff = (EPOCH_INTERVAL - height % EPOCH_INTERVAL) + CUTOFF
         self.bump_mocktime(300, nodes=alive)
-        self.generate(node, to_next_cutoff, sync_fun=lambda: self.sync_blocks(alive))
-        self.wait_until(lambda: node.dslstatus()["missedreports"] > 0, timeout=90)
-        status = node.dslstatus()
-        assert_equal(status["respondedcount"], len(self.mninfo) - 1)
-        assert status["onlinereports"] > 0
+        self.generate(node, EPOCH_INTERVAL - height % EPOCH_INTERVAL, sync_fun=lambda: self.sync_blocks(alive))
+        self.wait_until(lambda: node.dslstatus()["respondedcount"] == len(self.mninfo) - 1, timeout=60)
+        self.bump_mocktime(60, nodes=alive)
+        self.generate(node, CUTOFF, sync_fun=lambda: self.sync_blocks(alive))
+        self.wait_until(lambda: node.dslstatus()["missedreports"] > 0 and node.dslstatus()["onlinereports"] > 0,
+                        timeout=90)
+
+        self.log.info("Restarting the stopped masternode and forming the attesting quorum")
+        self.start_masternode(stopped)
+        # the restarted node came back with the mocktime it was stopped at, and
+        # headers arriving before its clock catches up read as time-too-new --
+        # which costs it its only peer. Clock first, connection second.
+        self.bump_mocktime(1)
+        self.connect_nodes(stopped.nodeIdx, 0)
+        self.sync_blocks()
+        self.nodes[0].sporkupdate("SPORK_17_QUORUM_DKG_ENABLED", 0)
+        self.wait_for_sporks_same()
+        self.mine_quorum()
+
+        self.log.info("A commitment lands on an epoch boundary and applies in shadow")
+        stopped_protx = stopped.proTxHash
+        self.stop_node(stopped.nodeIdx)
+        alive = [n for i, n in enumerate(self.nodes) if i != stopped.nodeIdx]
+
+        found_commitment = False
+        for _ in range(4):  # observe up to four epochs
+            # phase the epoch honestly: enter it, let announcements flood, walk
+            # to the cutoff so reports pool, pause at the signing offset so the
+            # quorum's threshold signature can recover, then cross the boundary
+            height = node.getblockcount()
+            self.bump_mocktime(60, nodes=alive)
+            self.generate(node, EPOCH_INTERVAL - (height % EPOCH_INTERVAL), sync_fun=lambda: self.sync_blocks(alive))
+            self.wait_until(lambda: node.dslstatus()["respondedcount"] == len(self.mninfo) - 1, timeout=60)
+            self.bump_mocktime(30, nodes=alive)
+            self.generate(node, CUTOFF, sync_fun=lambda: self.sync_blocks(alive))
+            self.wait_until(lambda: node.dslstatus()["missedreports"] > 0, timeout=60)
+            self.generate(node, EPOCH_INTERVAL - CUTOFF - 2, sync_fun=lambda: self.sync_blocks(alive))
+            self.bump_mocktime(10, nodes=alive)
+            time.sleep(3)
+            self.generate(node, 2, sync_fun=lambda: self.sync_blocks(alive))
+            block = node.getblock(node.getbestblockhash(), 2)
+            dsl_txs = [tx for tx in block["tx"] if tx.get("type") == 10]
+            if dsl_txs:
+                found_commitment = True
+                break
+        assert found_commitment, "no service commitment was mined within four epochs"
+
+        info = node.protx("info", stopped_protx)
+        assert info["state"]["missedServiceEpochs"] >= 1
+        # shadow mode records, but never penalises
+        assert_equal(info["state"]["rewardSuspended"], False)
+        assert_equal(info["state"]["dslBanHeight"], -1)
 
         self.log.info("Tests successful")
 

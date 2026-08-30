@@ -33,12 +33,16 @@ struct LLMQContext;
 struct NodeContext;
 
 namespace Consensus { struct Params; };
+namespace dsl {
+class CPoSeServiceManager;
+} // namespace dsl
 namespace llmq {
 class CChainLocksHandler;
 class CInstantSendManager;
 class CQuorumBlockProcessor;
 class CQuorumManager;
 class CQuorumSnapshotManager;
+class CSigningManager;
 } // namespace llmq
 
 static const bool DEFAULT_PRINTPRIORITY = false;
@@ -180,6 +184,9 @@ private:
     const CTxMemPool& m_mempool;
     const llmq::CQuorumBlockProcessor& m_quorum_block_processor;
     const llmq::CQuorumManager& m_qman;
+    // DSL service commitments: nullable, absent in tests that build without them
+    dsl::CPoSeServiceManager* m_dslman{nullptr};
+    const llmq::CSigningManager* m_sigman{nullptr};
 
 public:
     struct Options {

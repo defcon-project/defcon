@@ -298,6 +298,8 @@ static bool ContextualCheckTransaction(const CTransaction& tx, TxValidationState
     if (fDIP0003Active_context) {
         // check version 3 transaction types
         if (tx.IsSpecialTxVersion()) {
+            // the DSL service commitment only becomes a known type once DSL is active
+            const bool fDSLActive_context = nHeight >= consensusParams.nDSLActivationHeight;
             if (tx.nType != TRANSACTION_NORMAL &&
                 tx.nType != TRANSACTION_PROVIDER_REGISTER &&
                 tx.nType != TRANSACTION_PROVIDER_UPDATE_SERVICE &&
@@ -307,7 +309,8 @@ static bool ContextualCheckTransaction(const CTransaction& tx, TxValidationState
                 tx.nType != TRANSACTION_QUORUM_COMMITMENT &&
                 tx.nType != TRANSACTION_MNHF_SIGNAL &&
                 tx.nType != TRANSACTION_ASSET_LOCK &&
-                tx.nType != TRANSACTION_ASSET_UNLOCK) {
+                tx.nType != TRANSACTION_ASSET_UNLOCK &&
+                !(fDSLActive_context && tx.nType == TRANSACTION_POSE_SERVICE_COMMITMENT)) {
                 return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-txns-type");
             }
             if (tx.IsCoinBase() && tx.nType != TRANSACTION_COINBASE)
