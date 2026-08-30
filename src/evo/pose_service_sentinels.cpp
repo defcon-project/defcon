@@ -5,9 +5,12 @@
 #include <evo/pose_service_sentinels.h>
 
 #include <evo/deterministicmns.h>
+#include <evo/pose_service.h>
 #include <hash.h>
 
 #include <algorithm>
+#include <map>
+#include <set>
 #include <utility>
 
 namespace dsl {
@@ -56,6 +59,54 @@ void CPoSeServiceReport::Sign(const CBLSSecretKey& operatorKey)
 bool CPoSeServiceReport::VerifySig(const CBLSPublicKey& operatorPubKey) const
 {
     return sig.VerifyInsecure(operatorPubKey, GetSignHash(), /*specificLegacyScheme=*/false);
+}
+
+CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& epochBlockHash,
+                                              Consensus::LLMQType llmqType, const uint256& quorumHash,
+                                              const std::vector<CPoSeServiceReport>& reports,
+                                              const CDeterministicMNList& epochBaseList,
+                                              const Consensus::Params& params)
+{
+    // canonical order the bitfield indexes
+    std::vector<uint256> order;
+    order.reserve(epochBaseList.GetAllMNsCount());
+    epochBaseList.ForEachMN(false, [&](const auto& dmn) { order.push_back(dmn.proTxHash); });
+    std::sort(order.begin(), order.end());
+
+    std::map<uint256, std::vector<const CPoSeServiceReport*>> byTarget;
+    for (const auto& r : reports) {
+        if (r.nEpoch == nEpoch) byTarget[r.targetProTxHash].push_back(&r);
+    }
+
+    CPoSeServiceCommitment c;
+    c.nEpoch = nEpoch;
+    c.epochBlockHash = epochBlockHash;
+    c.llmqType = llmqType;
+    c.quorumHash = quorumHash;
+    c.missed.assign(order.size(), false);
+
+    for (size_t i = 0; i < order.size(); ++i) {
+        const auto sentinels = CalcSentinelsForMN(epochBaseList, order[i], epochBlockHash,
+                                                  static_cast<size_t>(params.nDSLSentinelCount));
+        const std::set<uint256> assigned(sentinels.begin(), sentinels.end());
+        std::set<uint256> counted;
+        size_t missedCount = 0;
+        auto it = byTarget.find(order[i]);
+        if (it != byTarget.end()) {
+            for (const auto* r : it->second) {
+                if (!assigned.count(r->sentinelProTxHash)) continue;      // not an assigned sentinel
+                if (!counted.insert(r->sentinelProTxHash).second) continue; // one report per sentinel
+                const auto sdmn = epochBaseList.GetMN(r->sentinelProTxHash);
+                if (!sdmn) continue;
+                if (!r->VerifySig(sdmn->pdmnState->pubKeyOperator.Get())) continue;
+                if (r->status == static_cast<uint8_t>(ServiceStatus::MISSED)) ++missedCount;
+            }
+        }
+        if (static_cast<int>(missedCount) >= params.nDSLSentinelAgree) {
+            c.missed[i] = true;
+        }
+    }
+    return c;
 }
 
 } // namespace dsl

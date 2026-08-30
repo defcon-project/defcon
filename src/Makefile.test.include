@@ -113,6 +113,7 @@ BITCOIN_TESTS =\
   test/evo_deterministicmns_tests.cpp \
   test/collateral_tests.cpp \
   test/pose_service_sentinels_tests.cpp \
+  test/dsl_aggregation_tests.cpp \
   test/dsl_apply_tests.cpp \
   test/pose_service_tests.cpp \
   test/mn_dsl_state_tests.cpp \
