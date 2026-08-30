@@ -5535,33 +5535,32 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
     if (m_dslman == nullptr || m_dmnman == nullptr) return;
     const Consensus::Params& consensus = m_chainparams.GetConsensus();
     if (m_best_height < consensus.nDSLActivationHeight) return;
-    const auto mn_list = m_dmnman->GetListAtChainTip();
 
-    // The epoch base hash comes from this node's active chain, not from the
-    // manager's tick: the tick runs on the validation-interface queue and can
-    // lag the wire by an epoch, and the flood forwards each copy only once, so
-    // a rejection for "not my epoch yet" would lose the message permanently.
-    const auto epoch_base_hash = [this, &consensus](uint32_t nEpoch) -> std::optional<uint256> {
-        if (consensus.nDSLEpochInterval <= 0) return std::nullopt;
-        // nEpoch is attacker-controlled off the wire. Compute the base height in
-        // int64 and bound it against the tip before narrowing to the int the
-        // chain indexer takes -- a huge value would otherwise overflow the
-        // signed multiply (UB) even though the indexer's own bounds check would
-        // catch the result.
+    // The epoch base block for a wire-supplied epoch, off this node's active
+    // chain (not the manager's tick, which runs on the validation-interface
+    // queue and can lag the wire by an epoch -- and the flood forwards each copy
+    // only once, so a "not my epoch yet" rejection would lose the message).
+    // nEpoch is attacker-controlled, so the base height is computed in int64 and
+    // bounded against the tip before it indexes the chain. Ingest is then
+    // validated against the masternode list AT THIS BASE -- the same list the
+    // aggregator builds the bitfield from -- so a mid-epoch registration, removal
+    // or operator-key change cannot make one node accept a report another rejects
+    // and split the pool the quorum has to converge on.
+    const auto epoch_base = [this, &consensus](uint32_t nEpoch) -> const CBlockIndex* {
+        if (consensus.nDSLEpochInterval <= 0) return nullptr;
         LOCK(cs_main);
         const int64_t base_height = static_cast<int64_t>(nEpoch) * consensus.nDSLEpochInterval;
-        if (base_height < 0 || base_height > m_chainman.ActiveChain().Height()) return std::nullopt;
-        const CBlockIndex* pindex = m_chainman.ActiveChain()[static_cast<int>(base_height)];
-        if (pindex == nullptr) return std::nullopt;
-        return pindex->GetBlockHash();
+        if (base_height < 0 || base_height > m_chainman.ActiveChain().Height()) return nullptr;
+        return m_chainman.ActiveChain()[static_cast<int>(base_height)];
     };
 
     if (msg_type == NetMsgType::POSERESPONSE) {
         dsl::CPoSeServiceResponse resp;
         vRecv >> resp;
-        const auto base_hash = epoch_base_hash(resp.nEpoch);
+        const CBlockIndex* base = epoch_base(resp.nEpoch);
         // the duplicate check inside ProcessResponse is what terminates the flood
-        const bool accepted = base_hash && m_dslman->ProcessResponse(resp, mn_list, *base_hash);
+        const bool accepted = base != nullptr &&
+            m_dslman->ProcessResponse(resp, m_dmnman->GetListForBlock(base), base->GetBlockHash());
         LogPrint(BCLog::NET, "DSL -- poseresp epoch=%d proTx=%s accepted=%d, peer=%d\n",
                  resp.nEpoch, resp.proTxHash.ToString(), accepted, pfrom.GetId());
         if (accepted) {
@@ -5572,8 +5571,9 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
     if (msg_type == NetMsgType::POSEREPORT) {
         dsl::CPoSeServiceReport report;
         vRecv >> report;
-        const auto base_hash = epoch_base_hash(report.nEpoch);
-        const bool accepted = base_hash && m_dslman->ProcessReport(report, mn_list, *base_hash, consensus);
+        const CBlockIndex* base = epoch_base(report.nEpoch);
+        const bool accepted = base != nullptr &&
+            m_dslman->ProcessReport(report, m_dmnman->GetListForBlock(base), base->GetBlockHash(), consensus);
         LogPrint(BCLog::NET, "DSL -- posereport epoch=%d target=%s accepted=%d, peer=%d\n",
                  report.nEpoch, report.targetProTxHash.ToString(), accepted, pfrom.GetId());
         if (accepted) {

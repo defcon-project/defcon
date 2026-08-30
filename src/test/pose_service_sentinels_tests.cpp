@@ -97,18 +97,22 @@ BOOST_AUTO_TEST_CASE(report_signature_roundtrips)
     rep.targetProTxHash = uint256::ONE;
     rep.sentinelProTxHash = uint256::TWO;
     rep.status = static_cast<uint8_t>(dsl::ServiceStatus::MISSED);
-    rep.Sign(sk);
-    BOOST_CHECK(rep.VerifySig(pk));
+    const uint256 base = TaggedHash(7, 0, "epoch");
+    rep.Sign(sk, base);
+    BOOST_CHECK(rep.VerifySig(pk, base));
 
     // any tampering breaks the signature
     dsl::CPoSeServiceReport tampered = rep;
     tampered.status = static_cast<uint8_t>(dsl::ServiceStatus::ONLINE);
-    BOOST_CHECK(!tampered.VerifySig(pk));
+    BOOST_CHECK(!tampered.VerifySig(pk, base));
 
-    // and a different key does not verify
+    // a different key does not verify
     CBLSSecretKey other;
     other.MakeNewKey();
-    BOOST_CHECK(!rep.VerifySig(other.GetPublicKey()));
+    BOOST_CHECK(!rep.VerifySig(other.GetPublicKey(), base));
+
+    // and neither does a different epoch base -- the signature is bound to it
+    BOOST_CHECK(!rep.VerifySig(pk, TaggedHash(8, 0, "epoch")));
 }
 
 // The challenge nonce is bound to the epoch base and the target, so a response

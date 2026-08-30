@@ -68,7 +68,7 @@ dsl::CPoSeServiceReport SignedReport(uint32_t epoch, const uint256& target, cons
     r.targetProTxHash = target;
     r.sentinelProTxHash = sentinel;
     r.status = static_cast<uint8_t>(status);
-    r.Sign(key);
+    r.Sign(key, TaggedHash(500, 0, "epoch")); // the fixture's epoch base
     return r;
 }
 } // namespace
