@@ -1014,10 +1014,20 @@ bool CDeterministicMNManager::RebuildListFromBlock(const CBlock& block, gsl::not
             if (!opt_dsl) {
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-dsl-payload");
             }
-            if (opt_dsl->commitment.missed.size() != oldList.GetAllMNsCount()) {
+            // The bitfield indexes the canonical list at the epoch base -- the
+            // first block of the observed epoch, where the sentinel selection
+            // was keyed -- not the list at pindexPrev. Same resolution as the
+            // quorum-commitment branch above.
+            const auto pindexEpochBase = pindexPrev->GetAncestor(nHeight - Params().GetConsensus().nDSLEpochInterval);
+            if (!pindexEpochBase || pindexEpochBase->GetBlockHash() != opt_dsl->commitment.epochBlockHash) {
+                // validation should have caught it, but let's be sure
+                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-dsl-epoch-hash");
+            }
+            const auto epochBaseList = GetListForBlock(pindexEpochBase);
+            if (opt_dsl->commitment.missed.size() != epochBaseList.GetAllMNsCount()) {
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-dsl-bitfield-size");
             }
-            newList.ApplyServiceCommitment(opt_dsl->commitment, oldList, nHeight, Params().GetConsensus(), debugLogs);
+            newList.ApplyServiceCommitment(opt_dsl->commitment, epochBaseList, nHeight, Params().GetConsensus(), debugLogs);
         }
     }
 
