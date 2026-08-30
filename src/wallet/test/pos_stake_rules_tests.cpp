@@ -44,8 +44,12 @@ BOOST_AUTO_TEST_CASE(a_split_never_produces_an_output_that_cannot_stake)
     Consensus::Params params = MainnetLikeLimits();
     CStakeWallet staker(nullptr, params);
 
+    // The full stakeable rule -- both bounds and the collateral exclusions. If
+    // it repeated the code's earlier partial predicate (no upper bound) it could
+    // never catch a regression that let a split cross the ceiling.
     const auto stakeable = [&](CAmount value) {
         return value >= params.stakeValueRange[0] &&
+               value <= params.stakeValueRange[1] &&
                value != params.regularMnCollateral &&
                value != params.evoMnCollateral;
     };
@@ -84,6 +88,14 @@ BOOST_AUTO_TEST_CASE(a_split_never_produces_an_output_that_cannot_stake)
 
     // A comfortable size still splits, or the wallet would stop spreading coins.
     BOOST_CHECK_EQUAL(staker.SplitStakeCredit(12000000 * COIN, SPLIT_THRESHOLD).size(), 2u);
+
+    // The upper bound the predicate now carries: a credit whose halves would
+    // both exceed the ceiling must stay whole rather than fragment into two
+    // outputs that equally cannot stake. Unreachable with real rewards, but it
+    // is what pins the completed rule -- and what the old partial lambda missed.
+    const CAmount over = 3 * params.stakeValueRange[1];
+    BOOST_CHECK(!stakeable(over / 2));
+    BOOST_CHECK_EQUAL(staker.SplitStakeCredit(over, SPLIT_THRESHOLD).size(), 1u);
 }
 
 /**
