@@ -323,4 +323,60 @@ BOOST_AUTO_TEST_CASE(reorg_rebasing_an_epoch_clears_its_state)
     BOOST_CHECK(mgr.BeginEpoch(500, baseB) == EpochChange::None);
 }
 
+// A reorg that moves the tip back across an epoch boundary must drop every
+// epoch it rewound through -- the one it lands on (whose base block changed too)
+// and every higher one observed on the abandoned chain -- so no stale response
+// or report survives into the re-observation, and Rewound is reported.
+BOOST_AUTO_TEST_CASE(reorg_rewinding_past_a_boundary_drops_stale_epochs)
+{
+    using EpochChange = dsl::CPoSeServiceManager::EpochChange;
+    auto fx = MakeFixture(40);
+    Consensus::Params params;
+
+    const uint256 target = TaggedHash(3, 0, "protx");
+    const auto seed = [&](dsl::CPoSeServiceManager& m, uint32_t epoch, const uint256& base) {
+        dsl::CPoSeServiceResponse ann;
+        ann.nEpoch = epoch;
+        ann.proTxHash = target;
+        ann.sig = dsl::SignChallengeResponse(fx.opKeys[target], base, target);
+        BOOST_CHECK(m.ProcessResponse(ann, fx.list, base));
+        const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, base,
+                                                       static_cast<size_t>(params.nDSLSentinelCount));
+        dsl::CPoSeServiceReport rep;
+        rep.nEpoch = epoch;
+        rep.targetProTxHash = target;
+        rep.sentinelProTxHash = sentinels.front();
+        rep.status = static_cast<uint8_t>(dsl::ServiceStatus::MISSED);
+        rep.Sign(fx.opKeys[sentinels.front()], base);
+        BOOST_CHECK(m.ProcessReport(rep, fx.list, base, params));
+    };
+
+    dsl::CPoSeServiceManager mgr;
+    const uint256 base500 = fx.epoch; // TaggedHash(500, 0, "epoch")
+    const uint256 base501 = TaggedHash(501, 0, "epoch");
+
+    BOOST_CHECK(mgr.BeginEpoch(500, base500) == EpochChange::Entered);
+    seed(mgr, 500, base500);
+    BOOST_CHECK(mgr.BeginEpoch(501, base501) == EpochChange::Entered);
+    seed(mgr, 501, base501);
+    BOOST_CHECK_EQUAL(mgr.Store().GetReportsForEpoch(500).size(), 1u);
+    BOOST_CHECK_EQUAL(mgr.Store().GetReportsForEpoch(501).size(), 1u);
+
+    // the tip is reorged back into epoch 500 on a new base: 500 (its base
+    // changed) and 501 (gone with the abandoned chain) are both dropped
+    const uint256 base500b = TaggedHash(500, 2, "epoch");
+    BOOST_CHECK(mgr.BeginEpoch(500, base500b) == EpochChange::Rewound);
+    BOOST_CHECK(!mgr.HasResponded(target));
+    BOOST_CHECK_EQUAL(mgr.Store().GetReportsForEpoch(500).size(), 0u);
+    BOOST_CHECK_EQUAL(mgr.Store().GetReportsForEpoch(501).size(), 0u);
+
+    // the target announces fresh under the new base, unblocked by the stale seen-set
+    dsl::CPoSeServiceResponse annB;
+    annB.nEpoch = 500;
+    annB.proTxHash = target;
+    annB.sig = dsl::SignChallengeResponse(fx.opKeys[target], base500b, target);
+    BOOST_CHECK(mgr.ProcessResponse(annB, fx.list, base500b));
+    BOOST_CHECK(mgr.HasResponded(target));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

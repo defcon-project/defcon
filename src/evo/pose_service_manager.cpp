@@ -15,16 +15,38 @@ namespace dsl {
 CPoSeServiceManager::EpochChange CPoSeServiceManager::BeginEpoch(uint32_t nEpoch,
                                                                 const uint256& epochBlockHash)
 {
-    bool rebased = false;
+    EpochChange result = EpochChange::Entered;
+    // Epochs whose store data a reorg invalidated. Collected under the lock but
+    // dropped after it, matching how SetCurrentEpoch is called: the store has
+    // its own synchronisation and must not be touched while m_mutex is held.
+    std::vector<uint32_t> stale;
     {
         LOCK(m_mutex);
         if (nEpoch == m_epoch && epochBlockHash == m_epochBlockHash) return EpochChange::None;
-        // A reorg that keeps the epoch number but swaps its base block: the
-        // responses gathered under the old base are stale and, worse, would
-        // count each responder as "seen" and block its fresh announcement as a
-        // duplicate. Drop them so the epoch is re-observed from the new base.
-        rebased = (nEpoch == m_epoch) && (epochBlockHash != m_epochBlockHash);
-        if (rebased) m_responded.erase(nEpoch);
+
+        if (nEpoch < m_epoch) {
+            // A reorg moved the tip back across a boundary. Every epoch from the
+            // new one up to the old tip -- the new one included, since its base
+            // block changed too -- was observed on a chain that no longer
+            // exists. Drop all of them so nothing stale survives the rewind.
+            for (auto it = m_responded.begin(); it != m_responded.end();) {
+                if (it->first >= nEpoch) {
+                    stale.push_back(it->first);
+                    it = m_responded.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+            result = EpochChange::Rewound;
+        } else if (nEpoch == m_epoch && epochBlockHash != m_epochBlockHash) {
+            // Same epoch number, base block swapped by a shallow reorg: the
+            // responses gathered under the old base would count each responder
+            // as "seen" and block its fresh announcement as a duplicate.
+            m_responded.erase(nEpoch);
+            stale.push_back(nEpoch);
+            result = EpochChange::Rebased;
+        }
+        // else nEpoch > m_epoch: ordinary forward progress, nothing is stale.
 
         m_epoch = nEpoch;
         m_epochBlockHash = epochBlockHash;
@@ -39,9 +61,9 @@ CPoSeServiceManager::EpochChange CPoSeServiceManager::BeginEpoch(uint32_t nEpoch
             }
         }
     }
-    if (rebased) m_store.DropEpoch(nEpoch);
+    for (const uint32_t e : stale) m_store.DropEpoch(e);
     m_store.SetCurrentEpoch(nEpoch);
-    return rebased ? EpochChange::Rebased : EpochChange::Entered;
+    return result;
 }
 
 uint32_t CPoSeServiceManager::CurrentEpoch() const

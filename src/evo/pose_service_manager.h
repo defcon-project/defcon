@@ -53,19 +53,26 @@ public:
     /** What BeginEpoch did, so the caller can re-run its per-epoch actions. */
     enum class EpochChange {
         None,     //!< already on this exact (epoch, base hash)
-        Entered,  //!< a different epoch number
+        Entered,  //!< a higher epoch number: ordinary forward progress
         Rebased,  //!< same epoch, but a reorg swapped its base block
+        Rewound,  //!< a reorg moved the tip back across an epoch boundary
     };
 
     /**
      * Enter an epoch on a given base block: advance the store window and forget
      * the previous epoch's responses. Idempotent for the same (epoch, base
-     * hash), so a per-block tick can call it unconditionally. When a reorg keeps
-     * the epoch number but swaps its base block, the responses and reports
-     * gathered under the old base are discarded -- they were about a chain that
-     * no longer exists, and left in place they would both feed the new base's
-     * verdict and block fresh announcements as duplicates -- and Rebased is
-     * returned so the caller re-runs the once-per-epoch announce/emit/sign.
+     * hash), so a per-block tick can call it unconditionally.
+     *
+     * A reorg is detected two ways, and both discard the stale state -- it was
+     * about a chain that no longer exists, and left in place it would feed the
+     * new base's verdict and block fresh announcements as duplicates:
+     *  - Rebased: the epoch number is unchanged but its base block swapped; the
+     *    responses and reports for that one epoch are dropped.
+     *  - Rewound: the tip moved back across a boundary to a lower epoch; every
+     *    epoch from the new one up to the old tip was observed on the abandoned
+     *    chain, so all of their responses and reports are dropped.
+     * In both cases the caller re-runs the once-per-epoch announce/emit/sign,
+     * and treats the reorged epoch as a warm-up it cannot fairly judge.
      */
     EpochChange BeginEpoch(uint32_t nEpoch, const uint256& epochBlockHash);
 
