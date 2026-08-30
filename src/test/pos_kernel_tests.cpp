@@ -305,7 +305,7 @@ BOOST_AUTO_TEST_CASE(strict_bls_sig_size_activation_heights_are_pinned)
 
     gArgs.SoftSetBoolArg("-devnet", true);
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::DEVNET)->GetConsensus().nStrictBLSSigSizeActivationHeight,
-                      6000);
+                      5250);
     gArgs.ForceRemoveArg("devnet");
 }
 

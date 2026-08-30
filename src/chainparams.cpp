@@ -592,9 +592,11 @@ public:
         consensus.stakeValueRange = { 10000 * COIN, 12500000 * COIN };
         consensus.stakeAgeRange = { 60 * 60, 60 * 60 * 24 * 60 };
         consensus.nPosKernelV2ActivationHeight = 4000;
-        // Provisional, kernel-v2 style: set high, bring forward once the fleet
-        // is confirmed rolled. mainnet/testnet stay unset.
-        consensus.nStrictBLSSigSizeActivationHeight = 6000;
+        // Brought forward from 6000 for the coordinated fleet roll that also
+        // ships the DSL reorg/signing hardening: every daemon must run this
+        // binary before the height, which the roll ensures with margin over the
+        // tip. mainnet/testnet stay unset (see the release note above).
+        consensus.nStrictBLSSigSizeActivationHeight = 5250;
         consensus.posLimit = uint256S("0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
