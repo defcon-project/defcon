@@ -98,6 +98,37 @@ public:
 };
 
 /**
+ * Wire message: a sentinel asks a target to prove it is alive for an epoch.
+ * The nonce is deterministic from (epoch base, target), so the challenge need
+ * only name the epoch -- the target derives the rest and signs it.
+ */
+class CPoSeServiceChallenge
+{
+public:
+    uint32_t nEpoch{0};
+
+    SERIALIZE_METHODS(CPoSeServiceChallenge, obj) { READWRITE(obj.nEpoch); }
+};
+
+/**
+ * Wire message: a target's signed liveness proof for an epoch. The responder's
+ * proTxHash is not on the wire -- it comes from the authenticated masternode
+ * connection the response arrived on, so a peer cannot answer for another node.
+ */
+class CPoSeServiceResponse
+{
+public:
+    uint32_t nEpoch{0};
+    CBLSSignature sig;
+
+    SERIALIZE_METHODS(CPoSeServiceResponse, obj)
+    {
+        READWRITE(obj.nEpoch);
+        READWRITE(CBLSSignatureVersionWrapper(const_cast<CBLSSignature&>(obj.sig), /*fLegacy=*/false));
+    }
+};
+
+/**
  * Aggregate a set of signed sentinel reports into an unsigned service
  * commitment for the epoch. For each masternode in canonical (proTxHash)
  * order the MISSED bit is set only when at least nDSLSentinelAgree of its
