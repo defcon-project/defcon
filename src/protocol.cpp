@@ -90,6 +90,9 @@ MAKE_MSG(SENDHEADERS2, "sendheaders2");
 MAKE_MSG(HEADERS2, "headers2");
 MAKE_MSG(GETQUORUMROTATIONINFO, "getqrinfo");
 MAKE_MSG(QUORUMROTATIONINFO, "qrinfo");
+MAKE_MSG(POSECHALLENGE, "posechal");
+MAKE_MSG(POSERESPONSE, "poseresp");
+MAKE_MSG(POSEREPORT, "posereport");
 }; // namespace NetMsgType
 
 /** All known message types. Keep this in the same order as the list of
@@ -170,7 +173,10 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::SENDHEADERS2,
     NetMsgType::HEADERS2,
     NetMsgType::GETQUORUMROTATIONINFO,
-    NetMsgType::QUORUMROTATIONINFO
+    NetMsgType::QUORUMROTATIONINFO,
+    NetMsgType::POSECHALLENGE,
+    NetMsgType::POSERESPONSE,
+    NetMsgType::POSEREPORT
 };
 const static std::vector<std::string> allNetMessageTypesVec(std::begin(allNetMessageTypes), std::end(allNetMessageTypes));
 
@@ -190,6 +196,9 @@ const static std::string netMessageTypesViolateBlocksOnly[] = {
     NetMsgType::DSTX,
     NetMsgType::DSVIN,
     NetMsgType::GETQUORUMROTATIONINFO,
+    NetMsgType::POSECHALLENGE,
+    NetMsgType::POSEREPORT,
+    NetMsgType::POSERESPONSE,
     NetMsgType::QBSIGSHARES,
     NetMsgType::QCOMPLAINT,
     NetMsgType::QCONTRIB,

@@ -156,4 +156,69 @@ BOOST_AUTO_TEST_CASE(new_epoch_clears_responses)
     }
 }
 
+BOOST_AUTO_TEST_CASE(process_response_records_verified_liveness)
+{
+    auto fx = MakeFixture(40);
+    Consensus::Params params;
+    const uint256 me = PickSentinelWithTargets(fx, params);
+    BOOST_REQUIRE(!me.IsNull());
+
+    dsl::CPoSeServiceManager mgr;
+    mgr.BeginEpoch(500, fx.epoch);
+    const auto targets = mgr.PendingChallenges(fx.list, me, params);
+    BOOST_REQUIRE(!targets.empty());
+    const uint256 target = targets.front();
+
+    // a genuine signed response from the target is accepted and marks it online
+    dsl::CPoSeServiceResponse resp;
+    resp.nEpoch = 500;
+    resp.sig = dsl::SignChallengeResponse(fx.opKeys[target], fx.epoch, target);
+    BOOST_CHECK(mgr.ProcessResponse(target, resp, fx.list));
+    const auto after = mgr.PendingChallenges(fx.list, me, params);
+    BOOST_CHECK(std::find(after.begin(), after.end(), target) == after.end());
+
+    // a response for the wrong epoch is refused
+    dsl::CPoSeServiceResponse wrongEpoch = resp;
+    wrongEpoch.nEpoch = 499;
+    BOOST_CHECK(!mgr.ProcessResponse(target, wrongEpoch, fx.list));
+
+    // a response signed by another node's key is refused
+    dsl::CPoSeServiceResponse forged;
+    forged.nEpoch = 500;
+    forged.sig = dsl::SignChallengeResponse(fx.opKeys[me], fx.epoch, target);
+    BOOST_CHECK(!mgr.ProcessResponse(target, forged, fx.list));
+}
+
+BOOST_AUTO_TEST_CASE(process_report_pools_and_refuses_unknown_epoch)
+{
+    auto fx = MakeFixture(40);
+    Consensus::Params params;
+    const uint256 target = TaggedHash(3, 0, "protx");
+    const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, fx.epoch,
+                                                   static_cast<size_t>(params.nDSLSentinelCount));
+    BOOST_REQUIRE(!sentinels.empty());
+    const uint256 sentinel = sentinels.front();
+
+    dsl::CPoSeServiceManager mgr;
+    mgr.BeginEpoch(500, fx.epoch);
+
+    dsl::CPoSeServiceReport rep;
+    rep.nEpoch = 500;
+    rep.targetProTxHash = target;
+    rep.sentinelProTxHash = sentinel;
+    rep.status = static_cast<uint8_t>(dsl::ServiceStatus::MISSED);
+    rep.Sign(fx.opKeys[sentinel]);
+
+    // a valid peer report pools once (and would be relayed); a duplicate does not
+    BOOST_CHECK(mgr.ProcessReport(rep, fx.list, params));
+    BOOST_CHECK(!mgr.ProcessReport(rep, fx.list, params));
+    BOOST_CHECK_EQUAL(mgr.Store().GetReportsForEpoch(500).size(), 1u);
+
+    // a report for an epoch this node never entered is refused
+    dsl::CPoSeServiceReport ancient = rep;
+    ancient.nEpoch = 400;
+    ancient.Sign(fx.opKeys[sentinel]);
+    BOOST_CHECK(!mgr.ProcessReport(ancient, fx.list, params));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

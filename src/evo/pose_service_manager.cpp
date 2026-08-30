@@ -20,6 +20,18 @@ void CPoSeServiceManager::BeginEpoch(uint32_t nEpoch, const uint256& epochBlockH
         m_epoch = nEpoch;
         m_epochBlockHash = epochBlockHash;
         m_responded.clear();
+
+        // Remember this epoch's base hash so a slightly-late report for it can
+        // still be validated, and drop hashes that have left the window.
+        m_epochHashes[nEpoch] = epochBlockHash;
+        const uint32_t oldest = nEpoch >= m_keepEpochs ? nEpoch - m_keepEpochs + 1 : 0;
+        for (auto it = m_epochHashes.begin(); it != m_epochHashes.end();) {
+            if (it->first < oldest) {
+                it = m_epochHashes.erase(it);
+            } else {
+                ++it;
+            }
+        }
     }
     m_store.SetCurrentEpoch(nEpoch);
 }
@@ -59,6 +71,39 @@ void CPoSeServiceManager::RecordResponse(const uint256& target)
 {
     LOCK(m_mutex);
     m_responded.insert(target);
+}
+
+bool CPoSeServiceManager::ProcessResponse(const uint256& fromProTxHash, const CPoSeServiceResponse& resp,
+                                          const CDeterministicMNList& list)
+{
+    uint32_t epoch;
+    uint256 epochHash;
+    {
+        LOCK(m_mutex);
+        epoch = m_epoch;
+        epochHash = m_epochBlockHash;
+    }
+    if (resp.nEpoch != epoch) return false;
+    const auto dmn = list.GetMN(fromProTxHash);
+    if (!dmn) return false;
+    if (!VerifyChallengeResponse(resp.sig, dmn->pdmnState->pubKeyOperator.Get(), epochHash, fromProTxHash)) {
+        return false;
+    }
+    RecordResponse(fromProTxHash);
+    return true;
+}
+
+bool CPoSeServiceManager::ProcessReport(const CPoSeServiceReport& report, const CDeterministicMNList& list,
+                                        const Consensus::Params& params)
+{
+    uint256 epochHash;
+    {
+        LOCK(m_mutex);
+        const auto it = m_epochHashes.find(report.nEpoch);
+        if (it == m_epochHashes.end()) return false; // an epoch this node never entered
+        epochHash = it->second;
+    }
+    return m_store.AddReport(report, list, epochHash, params);
 }
 
 std::vector<CPoSeServiceReport> CPoSeServiceManager::EmitReports(const CDeterministicMNList& list,

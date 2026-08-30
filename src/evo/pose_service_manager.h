@@ -11,6 +11,7 @@
 #include <uint256.h>
 
 #include <cstdint>
+#include <map>
 #include <set>
 #include <vector>
 
@@ -26,18 +27,20 @@ namespace dsl {
  * The per-epoch state a masternode keeps to run the service probe: which of its
  * assigned targets have answered this epoch, and the report store it fills. This
  * is the off-chain engine the network layer drives -- it decides what to
- * challenge, records the answers, and emits this node's signed reports at the
- * epoch cutoff -- but holds no sockets itself, so it is exercised in isolation.
+ * challenge, ingests the answers and peers' reports, and emits this node's own
+ * signed reports at the epoch cutoff -- but holds no sockets itself, so it is
+ * exercised in isolation.
  *
  * One epoch is live at a time. BeginEpoch rolls the window forward and clears
- * the previous epoch's answers; RecordResponse notes a verified liveness proof;
- * EmitReports turns "probed and answered" into ONLINE and "probed and silent"
- * into MISSED. The store it owns is the relay pool the aggregator later reads.
+ * the previous epoch's answers; ProcessResponse ingests a verified liveness
+ * proof; ProcessReport ingests a peer's report into the relay pool; EmitReports
+ * turns "probed and answered" into ONLINE and "probed and silent" into MISSED.
+ * The store it owns is the relay pool the aggregator later reads.
  */
 class CPoSeServiceManager
 {
 public:
-    explicit CPoSeServiceManager(uint32_t keepEpochs = 8) : m_store(keepEpochs) {}
+    explicit CPoSeServiceManager(uint32_t keepEpochs = 8) : m_store(keepEpochs), m_keepEpochs(keepEpochs) {}
 
     CServiceReportStore& Store() { return m_store; }
     const CServiceReportStore& Store() const { return m_store; }
@@ -65,6 +68,25 @@ public:
     void RecordResponse(const uint256& target);
 
     /**
+     * Ingest a liveness response received on the wire. `fromProTxHash` is the
+     * responder's identity taken from the authenticated masternode connection,
+     * not the wire. Accepts only a response for the current epoch whose signature
+     * verifies against that masternode's operator key; on success the target is
+     * recorded as responding. Returns whether it was accepted.
+     */
+    bool ProcessResponse(const uint256& fromProTxHash, const CPoSeServiceResponse& resp,
+                         const CDeterministicMNList& list);
+
+    /**
+     * Ingest a signed report received on the wire into the relay pool, using the
+     * epoch-base hash this node recorded for the report's epoch. Returns whether
+     * it was newly accepted -- the caller then relays it onward. A report for an
+     * epoch this node never entered is refused.
+     */
+    bool ProcessReport(const CPoSeServiceReport& report, const CDeterministicMNList& list,
+                       const Consensus::Params& params);
+
+    /**
      * This node's signed reports for the current epoch: for every target it was
      * assigned to probe, ONLINE if that target responded and MISSED otherwise,
      * each signed with this node's operator key. The caller stores and relays
@@ -78,9 +100,11 @@ public:
 private:
     mutable Mutex m_mutex;
     CServiceReportStore m_store;
+    const uint32_t m_keepEpochs;
     uint32_t m_epoch GUARDED_BY(m_mutex){0};
     uint256 m_epochBlockHash GUARDED_BY(m_mutex);
-    std::set<uint256> m_responded GUARDED_BY(m_mutex); // targets that answered this epoch
+    std::set<uint256> m_responded GUARDED_BY(m_mutex);       // targets that answered this epoch
+    std::map<uint32_t, uint256> m_epochHashes GUARDED_BY(m_mutex); // epoch -> base hash, within the window
 };
 
 } // namespace dsl

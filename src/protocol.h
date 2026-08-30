@@ -298,6 +298,9 @@ extern const char* SENDHEADERS2;
 extern const char* HEADERS2;
 extern const char* GETQUORUMROTATIONINFO;
 extern const char* QUORUMROTATIONINFO;
+extern const char* POSECHALLENGE;
+extern const char* POSERESPONSE;
+extern const char* POSEREPORT;
 };
 
 /* Get a vector of all valid message types (see above) */
