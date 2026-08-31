@@ -170,6 +170,23 @@ jobs:
           ./ci/dash/build_src.sh
         shell: bash
 
+      # The full upstream suite still carries stale Dash fixtures, so the CI
+      # env keeps RUN_UNIT_TESTS=false. This gate runs only the suites that are
+      # green and that guard this fork's own consensus/DSL/staking code, so a
+      # real regression in them fails the build instead of slipping through.
+      - name: Targeted unit suites (green gate)
+        run: |
+          BASE_OUTDIR="/output"
+          BUILD_TARGET="${{ matrix.build_target }}"
+          source ./ci/dash/matrix.sh
+          export LD_LIBRARY_PATH="$DEPENDS_DIR/$HOST/lib"
+          cd "build-ci/DeFCoN-${{ matrix.build_target }}"
+          make -j"$(nproc)" -C src test/test_defcon
+          ./src/test/test_defcon \
+            --run_test=dsl_manager_tests,dsl_aggregation_tests,dsl_apply_tests,dsl_report_store_tests,pose_service_tests,pose_service_sentinels_tests,dsl_probe_tests,pos_kernel_tests,dmn_types_tests,pos_stake_rules_tests \
+            --catch_system_errors=no -l test_suite
+        shell: bash
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
