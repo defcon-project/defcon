@@ -709,9 +709,31 @@ bool SignBlockWithKey(CBlock& block, const CKey& key)
 
 bool CheckBlockSignature(const CBlock block)
 {
+    // The shape this reads is guaranteed by IsProofOfStake() at the only call
+    // site today, but the function is declared in a header and the subscripts
+    // below are unconditional, so say it here rather than rely on every future
+    // caller having read that.
+    if (block.vtx.size() < 2 || block.vtx[1]->vout.size() < 2) {
+        return false;
+    }
+
     std::vector<valtype> vSolutions;
     const CTxOut& txout = block.vtx[1]->vout[1];
     TxoutType whichType = Solver(txout.scriptPubKey, vSolutions);
+
+    // Solver clears vSolutions and leaves it empty for OP_RETURN and for any
+    // non-standard script, so this subscript has to wait until there is
+    // something to read. It is reachable: CheckBlock runs the block signature
+    // ahead of the merkle root and the transaction loop, and a proof-of-stake
+    // block is never asked for proof of work, so one unsolicited block from any
+    // peer reaches it for free. On a release build the reference binds without
+    // dereferencing and both branches below fall through to false, but it is
+    // undefined behaviour all the same, and it aborts under _GLIBCXX_ASSERTIONS
+    // or _GLIBCXX_DEBUG -- which is what this project's own ubsan and fuzz CI
+    // configurations build with.
+    if (vSolutions.empty()) {
+        return false;
+    }
     valtype& vchPubKey = vSolutions[0];
 
     if (whichType == TxoutType::PUBKEY) {

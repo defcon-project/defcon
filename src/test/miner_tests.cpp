@@ -549,4 +549,50 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     fCheckpointsEnabled = true;
 }
 
+// A coinstake whose vout[1] is not a script Solver can resolve used to reach an
+// unguarded vSolutions[0]. Nothing rejects such a block earlier: CheckBlock
+// verifies the block signature before the merkle root and before the
+// transaction loop, and a proof-of-stake block is not asked for proof of work,
+// so any peer could drive this path with one unsolicited block. A zero-value
+// OP_RETURN output is structurally valid, so reordering the checks would not
+// have helped -- the subscript itself had to wait for a solution.
+BOOST_AUTO_TEST_CASE(check_block_signature_survives_an_unsolvable_coinstake)
+{
+    auto block_paying = [](const CScript& script) {
+        CMutableTransaction coinbase;
+        coinbase.vin.resize(1);
+        coinbase.vin[0].prevout.SetNull();
+        coinbase.vout.resize(1);
+
+        CMutableTransaction coinstake;
+        coinstake.vin.resize(1);
+        coinstake.vin[0].prevout = COutPoint(uint256::ONE, 0);
+        coinstake.vout.resize(2);
+        coinstake.vout[0].SetEmpty();
+        coinstake.vout[1] = CTxOut(1 * COIN, script);
+
+        CBlock block;
+        block.vtx.push_back(MakeTransactionRef(coinbase));
+        block.vtx.push_back(MakeTransactionRef(coinstake));
+        BOOST_REQUIRE(block.IsProofOfStake());
+        return block;
+    };
+
+    // Solver returns an empty solution set for each of these.
+    BOOST_CHECK(!CheckBlockSignature(block_paying(CScript() << OP_RETURN << std::vector<unsigned char>{0x01})));
+    BOOST_CHECK(!CheckBlockSignature(block_paying(CScript() << OP_RETURN)));
+    BOOST_CHECK(!CheckBlockSignature(block_paying(CScript() << OP_1 << OP_DROP << OP_TRUE)));
+    BOOST_CHECK(!CheckBlockSignature(block_paying(CScript())));
+
+    // And the shape the caller is trusted to provide is no longer assumed.
+    CBlock empty;
+    BOOST_CHECK(!CheckBlockSignature(empty));
+
+    // A script Solver does resolve still reaches the branch it should, and is
+    // refused for the right reason: the block carries no signature.
+    CKey key;
+    key.MakeNewKey(true);
+    BOOST_CHECK(!CheckBlockSignature(block_paying(CScript() << ToByteVector(key.GetPubKey()) << OP_CHECKSIG)));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
