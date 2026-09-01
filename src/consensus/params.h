@@ -267,6 +267,14 @@ struct Params {
      *  forever; both must be set for the resolver to ever switch. */
     LLMQType llmqTypeChainLocksV2{LLMQType::LLMQ_NONE};
     int nChainLocksV2ActivationHeight{std::numeric_limits<int>::max()};
+    /** Height at and above which a profile that carries a dkgBadVotesThresholdV2
+     *  uses it in place of dkgBadVotesThreshold. Height-only and one-way, like
+     *  the ChainLock switchover above: a DKG session must resolve the same
+     *  threshold from its own quorum height alone, or its members compute
+     *  different valid-member sets and agree on no commitment at all. The
+     *  default -- an unreachable height -- leaves every network on the value it
+     *  has today until one is set deliberately. */
+    int nDkgBadVotesV2ActivationHeight{std::numeric_limits<int>::max()};
     LLMQType llmqTypeDIP0024InstantSend{LLMQType::LLMQ_NONE};
     LLMQType llmqTypePlatform{LLMQType::LLMQ_NONE};
     LLMQType llmqTypeMnhf{LLMQType::LLMQ_NONE};

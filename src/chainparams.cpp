@@ -671,6 +671,7 @@ public:
         // the deadline for every node to run a binary that knows the type.
         consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
         consensus.nChainLocksV2ActivationHeight = 3240;
+        consensus.nDkgBadVotesV2ActivationHeight = 6336;
 
         UpdateDevnetLLMQChainLocksFromArgs(args);
         UpdateDevnetLLMQInstantSendDIP0024FromArgs(args);

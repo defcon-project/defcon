@@ -129,6 +129,15 @@ Consensus::LLMQType GetChainLocksLLMQType(const ::Consensus::Params& params, int
     return params.llmqTypeChainLocks;
 }
 
+int GetDkgBadVotesThreshold(const ::Consensus::Params& params, const Consensus::LLMQParams& llmqParams,
+                            int nHeight)
+{
+    if (llmqParams.dkgBadVotesThresholdV2 > 0 && nHeight >= params.nDkgBadVotesV2ActivationHeight) {
+        return llmqParams.dkgBadVotesThresholdV2;
+    }
+    return llmqParams.dkgBadVotesThreshold;
+}
+
 bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev,
                                 std::optional<bool> optDIP0024IsActive, std::optional<bool> optHaveDIP0024Quorums)
 {
