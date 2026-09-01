@@ -161,6 +161,26 @@ StakeSkipReport CStakeWallet::ExplainExcludedCoins(int64_t nTime, int nHeight) c
         report.Add(ClassifyForStaking(value, nDepth, type, inputAge, nHeight), value);
     }
 
+    // The loop above cannot see every immature coin any more.
+    //
+    // Holding back immature coinstake outputs made AvailableCoins drop them
+    // before this classifier runs, which is right for spending and wrong here:
+    // this function exists to name what the rules removed, and it was reporting
+    // 10,000 against an immature balance of 2.68 million on the devnet seed.
+    // The value has to come from the balance instead.
+    //
+    // The two sets do not overlap, and the reason is a one-block gap in the
+    // thresholds: AvailableCoins releases a generated coin at depth
+    // COINBASE_MATURITY + 1, while ClassifyForStaking still calls it Immature
+    // until depth COINBASE_MATURITY + 2. The loop counts exactly that sliver;
+    // the balance counts everything below it. stake_immature_accounting_has_no_gap
+    // pins the relationship, because adding these two numbers is only correct
+    // while it holds.
+    {
+        LOCK(wallet->cs_wallet);
+        report.immature += wallet->GetBalance().m_mine_immature;
+    }
+
     return report;
 }
 
