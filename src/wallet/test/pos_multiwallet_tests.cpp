@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <pos/minter.h>
 #include <pos/multiwallet.h>
 #include <wallet/test/wallet_test_fixture.h>
 #include <wallet/wallet.h>
@@ -53,6 +54,71 @@ BOOST_AUTO_TEST_CASE(reinitialize_preserves_staking_switch)
     RemoveWallet(wallet, std::nullopt);
     // Leave clean process-global state for whatever test runs next.
     MultiwalletInitialize();
+}
+
+// Whether a wallet is switched on for staking and whether anything is actually
+// staking it are different facts, and the reason getstakinginfo now reports both
+// is that they can disagree. When the minter thread died on its first attempt,
+// eight nodes went on answering staking:true with a full weight; every field the
+// RPC had described the wallet, and the wallet was fine. Nothing in it could
+// have said that the thread was gone.
+//
+// So the assertion that matters is not that the flag has some value -- it is
+// that the flag and the wallet's switch move independently of each other.
+BOOST_AUTO_TEST_CASE(minter_liveness_is_independent_of_wallet_state)
+{
+    std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                                                "pos-minter-liveness-test", CreateDummyWalletDatabase());
+    AddWallet(wallet);
+    MultiwalletInitialize();
+
+    // No minter thread runs in a unit test, which is exactly the state the old
+    // RPC could not describe.
+    BOOST_CHECK(!fMinterRunning);
+
+    BOOST_CHECK(ToggleWalletStaking("pos-minter-liveness-test"));
+    BOOST_CHECK(IsWalletStaking("pos-minter-liveness-test"));
+
+    // The wallet says it is staking. Nothing is staking it, and now that is
+    // visible rather than merely true.
+    BOOST_CHECK(!fMinterRunning);
+
+    // And the other direction: a live minter says nothing about any one wallet's
+    // switch, so turning the wallet off must not move the flag.
+    fMinterRunning = true;
+    BOOST_CHECK(!ToggleWalletStaking("pos-minter-liveness-test"));
+    BOOST_CHECK(!IsWalletStaking("pos-minter-liveness-test"));
+    BOOST_CHECK(fMinterRunning);
+    fMinterRunning = false;
+
+    RemoveWallet(wallet, std::nullopt);
+    MultiwalletInitialize();
+}
+
+// The minter's failure has to survive the throw that caused it, because the one
+// that started this could not even be printed: JSONRPCError throws a UniValue,
+// which is not a std::exception, so the handler had no what() to log and wrote
+// "Exception: <null>". Recording the message under its own lock is what lets the
+// RPC answer with something a reader can act on.
+BOOST_AUTO_TEST_CASE(minter_last_error_round_trips)
+{
+    SetMinterLastError("no signing provider for the kernel script");
+    BOOST_CHECK_EQUAL(MinterLastError(), "no signing provider for the kernel script");
+
+    const int64_t first = MinterLastErrorTime();
+    BOOST_CHECK(first > 0);
+
+    // A later failure replaces the earlier one. Keeping only the most recent is
+    // deliberate: a node failing every retry would otherwise grow an unbounded
+    // list of identical messages, and the newest is the one worth reporting.
+    SetMinterLastError("second failure");
+    BOOST_CHECK_EQUAL(MinterLastError(), "second failure");
+    BOOST_CHECK(MinterLastErrorTime() >= first);
+
+    // Empty means "has not failed", and getstakinginfo omits the field entirely
+    // in that state -- so an empty string has to be storable, not just initial.
+    SetMinterLastError("");
+    BOOST_CHECK(MinterLastError().empty());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

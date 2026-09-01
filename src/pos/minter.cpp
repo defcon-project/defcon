@@ -6,7 +6,9 @@
 
 #include <masternode/sync.h>
 #include <pos/multiwallet.h>
+#include <sync.h>
 #include <timedata.h>
+#include <util/time.h>
 #include <net.h>
 
 extern int stakable_sz;
@@ -19,6 +21,32 @@ std::atomic<bool> fStopMinerProc(false);
 std::atomic<bool> fTryToSync(false);
 std::atomic<bool> fIsStaking(false);
 std::atomic<int64_t> nTimeLastStake(0);
+std::atomic<bool> fMinterRunning(false);
+
+namespace {
+Mutex g_minter_error_mutex;
+std::string g_minter_last_error GUARDED_BY(g_minter_error_mutex);
+int64_t g_minter_last_error_time GUARDED_BY(g_minter_error_mutex){0};
+} // namespace
+
+void SetMinterLastError(const std::string& what)
+{
+    LOCK(g_minter_error_mutex);
+    g_minter_last_error = what;
+    g_minter_last_error_time = GetTime();
+}
+
+std::string MinterLastError()
+{
+    LOCK(g_minter_error_mutex);
+    return g_minter_last_error;
+}
+
+int64_t MinterLastErrorTime()
+{
+    LOCK(g_minter_error_mutex);
+    return g_minter_last_error_time;
+}
 
 bool CheckStake(ChainstateManager& chainman, CBlock *pblock)
 {
@@ -276,6 +304,19 @@ void PoSMiner(NodeContext& node)
     }
 }
 
+namespace {
+/**
+ * Holds fMinterRunning true for exactly as long as the miner is inside its
+ * loop -- including on the way out through an exception, which is the case
+ * that matters. Setting the flag by hand after PoSMiner returns would leave
+ * it stuck true for the one exit that means the miner stopped working.
+ */
+struct MinterRunningScope {
+    MinterRunningScope() { fMinterRunning = true; }
+    ~MinterRunningScope() { fMinterRunning = false; }
+};
+} // namespace
+
 void ThreadStakeMiner(NodeContext& node)
 {
     // Restart the miner after an unexpected failure rather than returning.
@@ -285,16 +326,26 @@ void ThreadStakeMiner(NodeContext& node)
     // kept reporting a healthy staking wallet, and no block was ever produced
     // again. A fault that recurs is at least visible in the log now, and a
     // transient one no longer costs the node its ability to stake.
+    //
+    // Restarting moved the problem rather than removing it, though: a node that
+    // fails on every attempt now retries forever, and from RPC that is still
+    // indistinguishable from one that simply has not won a block yet. So each
+    // failure is recorded where getstakinginfo can report it, not only logged.
     while (!fStopMinerProc) {
         try {
+            MinterRunningScope running;
             PoSMiner(node);
             return; // clean return: shutdown was requested
         } catch (const std::exception& e) {
+            SetMinterLastError(e.what());
             PrintExceptionContinue(std::current_exception(), e.what());
         } catch (...) {
             // Not a std::exception -- a thrown UniValue, for instance, which is
             // what JSONRPCError produces. There is no message to recover, so
             // say what happened instead of printing a bare null.
+            static const char* kOpaque = "staking failed with a non-standard exception "
+                                         "(a thrown UniValue, for instance) and will be retried";
+            SetMinterLastError(kOpaque);
             PrintExceptionContinue(nullptr, "ThreadStakeMiner(): staking failed and will be retried");
         }
 

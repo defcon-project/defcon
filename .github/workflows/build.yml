@@ -183,7 +183,7 @@ jobs:
           cd "build-ci/DeFCoN-${{ matrix.build_target }}"
           make -j"$(nproc)" -C src test/test_defcon
           ./src/test/test_defcon \
-            --run_test=dsl_manager_tests,dsl_aggregation_tests,dsl_apply_tests,dsl_report_store_tests,pose_service_tests,pose_service_sentinels_tests,dsl_probe_tests,pos_kernel_tests,dmn_types_tests,pos_stake_rules_tests \
+            --run_test=dsl_manager_tests,dsl_aggregation_tests,dsl_apply_tests,dsl_report_store_tests,pose_service_tests,pose_service_sentinels_tests,dsl_probe_tests,pos_kernel_tests,dmn_types_tests,pos_stake_rules_tests,pos_multiwallet_tests \
             --catch_system_errors=no -l test_suite
         shell: bash
 
