@@ -60,6 +60,38 @@ struct StakeSkipReport
     CAmount Total() const;
 };
 
+/**
+ * The part of a report that will not resolve on its own.
+ *
+ * `immature` clears with depth and `too_young` with time, so both describe
+ * coins that are on their way in. The rest do not move: an amount under the
+ * floor, over the ceiling, equal to a masternode collateral, or held at a BLS
+ * address stays out until someone spends it into a different shape, and
+ * `too_old` only ever drifts further out of range.
+ */
+CAmount PermanentlyExcluded(const StakeSkipReport& report);
+
+/**
+ * Whether a wallet holds enough permanently-excluded value to be worth saying
+ * so unprompted.
+ *
+ * The line is one whole stake's worth, taken from the network's own
+ * stakeValueRange floor rather than invented: under it there is nothing a
+ * consolidating transaction could turn back into a working stake, and at or
+ * over it there is at least one.
+ *
+ * Deliberately not a percentage. The case this exists for was 700,800 DFCN
+ * held permanently outside the rules by a wallet carrying 567 million -- worth
+ * seventy stakes, and 0.12% of the balance. Any share-based threshold loose
+ * enough to catch it would fire on almost anything.
+ *
+ * Pure, so the decision can be exercised without a wallet, a chain or a clock.
+ */
+bool ShouldWarnAboutExcludedValue(const StakeSkipReport& report, CAmount min_stake_value);
+
+/** Names the non-zero permanent reasons, for the warning's text. */
+std::string DescribePermanentExclusions(const StakeSkipReport& report);
+
 class CStakeWallet
 {
     private:
