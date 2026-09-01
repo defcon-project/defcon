@@ -61,6 +61,8 @@ int64_t StakeInputAge(int64_t candidate_time, int64_t coin_block_time, int64_t w
 
 int64_t CStakeWallet::CoinBlockTime(const CWalletTx& coin) const
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
+    if (!wallet) return 0;
     // A CONFLICTED entry reuses these fields for the block of the conflicting
     // transaction, not the one holding this coin, so only CONFIRMED names the
     // block whose time consensus would measure against.
@@ -129,6 +131,7 @@ StakeEligibility CStakeWallet::ClassifyForStaking(CAmount value, int depth,
 
 StakeSkipReport CStakeWallet::ExplainExcludedCoins(int64_t nTime, int nHeight) const
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
     StakeSkipReport report;
     if (!wallet) {
         return report;
@@ -214,6 +217,8 @@ std::vector<CAmount> CStakeWallet::SplitStakeCredit(CAmount nCredit, CAmount thr
 
 uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
+    if (!wallet) return 0;
     // Choose coins to use
     CAmount nBalance = wallet->GetBalance().m_mine_trusted;
     if (nBalance <= wallet->nReserveBalance) {
@@ -247,6 +252,8 @@ uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 
 bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight, std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet, CAmount& nValueRet) const
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
+    if (!wallet) return false;
     std::vector<COutput> vCoins;
 
     {
@@ -443,6 +450,8 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
 
 StakeAttempt CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key)
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
+    if (!wallet) return StakeAttempt::Error;
     arith_uint256 bnTargetPerCoinDay;
     bnTargetPerCoinDay.SetCompact(nBits);
     CAmount nBalance = wallet->GetAvailableBalance();
@@ -620,6 +629,8 @@ StakeAttempt CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex
 
 StakeAttempt CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktemplate, int nHeight, int64_t nSearchTime)
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
+    if (!wallet) return StakeAttempt::Error;
     LogPrint(BCLog::POS, "%s, Height %d\n", __func__, nHeight);
 
     assert(pblocktemplate);

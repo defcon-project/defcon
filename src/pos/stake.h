@@ -154,7 +154,17 @@ class CStakeWallet
 {
     private:
         bool staking;
-        CWallet* wallet;
+        /**
+         * Weak by design.
+         *
+         * An entry outlives the wallet it names: the registry is rebuilt when a
+         * toggle arrives, the miner works from a copy of it for seconds at a
+         * time, and unloadwallet can free the wallet in between. Holding a raw
+         * pointer contributed nothing to the wallet's refcount, so UnloadWallet's
+         * wait for the last owner could not see this reference at all and
+         * returned at exactly the moment the wallet was deleted.
+         */
+        std::weak_ptr<CWallet> m_wallet;
         std::string name;
         Consensus::Params params;
 
@@ -162,9 +172,9 @@ class CStakeWallet
         static const int SHORTDELAY = 2500;
         static const int LARGEDELAY = 10000;
 
-        CStakeWallet(CWallet* walletIn, Consensus::Params& paramsIn) {
+        CStakeWallet(const std::shared_ptr<CWallet>& walletIn, Consensus::Params& paramsIn) {
             staking = false;
-            wallet = walletIn;
+            m_wallet = walletIn;
             name = walletIn ? walletIn->GetName() : std::string{};
             params = paramsIn;
         }
@@ -173,12 +183,19 @@ class CStakeWallet
         void StakingEnabled() { staking = true; }
         void StakingDisabled() { staking = false; }
 
-        void RemoveWallet() {
-            wallet = nullptr;
-        }
-
-        CWallet* GetWallet() {
-            return wallet;
+        /**
+         * A strong reference, or null when the wallet is gone.
+         *
+         * The caller must keep the returned pointer for the whole of whatever it
+         * does with the wallet; that is the entire point of returning one. There
+         * is deliberately no accessor that hands back a bare CWallet*.
+         *
+         * This replaces a RemoveWallet() that set the pointer to null and had no
+         * caller anywhere in the tree -- the hazard was known and the guard was
+         * never wired up.
+         */
+        std::shared_ptr<CWallet> GetWallet() const {
+            return m_wallet.lock();
         }
 
         // Captured at construction: an entry can outlive the wallet it points

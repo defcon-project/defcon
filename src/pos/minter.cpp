@@ -214,7 +214,7 @@ void PoSMiner(NodeContext& node)
                 return;
             if (!wallets_snapshot[y].CanStake())
                 continue;
-            CWallet* this_wallet = wallets_snapshot[y].GetWallet();
+            const std::shared_ptr<CWallet> this_wallet = wallets_snapshot[y].GetWallet();
             if (!this_wallet)
                 continue;
             if (foundBlock)

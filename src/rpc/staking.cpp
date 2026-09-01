@@ -80,7 +80,7 @@ static RPCHelpMan getstakinginfo()
     //multiwallet loop
     for (int y = 0; y < stakable_sz; y++)
     {
-        CWallet* this_wallet = stakable_wallets[y].GetWallet();
+        const std::shared_ptr<CWallet> this_wallet = stakable_wallets[y].GetWallet();
         if (!this_wallet)
             continue;
 
@@ -190,7 +190,7 @@ static RPCHelpMan liststakingwallets()
     for (int y = 0; y < stakable_sz; y++)
     {
         UniValue obj2(UniValue::VOBJ);
-        CWallet* this_wallet = stakable_wallets[y].GetWallet();
+        const std::shared_ptr<CWallet> this_wallet = stakable_wallets[y].GetWallet();
         if (!this_wallet)
             continue;
         obj2.pushKV("name", this_wallet->GetName());
