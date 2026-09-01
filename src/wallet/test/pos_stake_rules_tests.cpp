@@ -9,6 +9,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <string>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(pos_stake_rules_tests, WalletTestingSetup)
@@ -155,6 +156,88 @@ BOOST_AUTO_TEST_CASE(every_exclusion_has_a_name)
     // builds blocks the network rejects or skips coins it would accept.
     BOOST_CHECK(why(good, deep, TxoutType::PUBKEYHASH, max_age + 1, before_v2) == StakeEligibility::TooOld);
     BOOST_CHECK(why(good, deep, TxoutType::PUBKEYHASH, max_age + 1, after_v2) == StakeEligibility::Eligible);
+}
+
+/**
+ * Value that is waiting and value that is stuck are different answers.
+ *
+ * A coin that is immature becomes stakeable with depth, and one that is too
+ * young becomes stakeable with time; warning about either would be noise that
+ * clears itself. The rest do not clear: under the floor, over the ceiling, on a
+ * collateral amount, or at a BLS address, a coin stays out until somebody spends
+ * it into a different shape, and too_old only drifts further out.
+ */
+BOOST_AUTO_TEST_CASE(only_the_stuck_value_counts_as_permanently_excluded)
+{
+    StakeSkipReport report;
+    report.immature = 500 * COIN;
+    report.too_young = 700 * COIN;
+    BOOST_CHECK_EQUAL(PermanentlyExcluded(report), 0);
+    BOOST_CHECK_EQUAL(report.Total(), 1200 * COIN);
+
+    report.below_min = 11 * COIN;
+    report.above_max = 13 * COIN;
+    report.collateral = 17 * COIN;
+    report.bls = 19 * COIN;
+    report.too_old = 23 * COIN;
+    BOOST_CHECK_EQUAL(PermanentlyExcluded(report), 83 * COIN);
+
+    // Total still counts everything: the two answers are different questions,
+    // and getstakinginfo reports the full breakdown either way.
+    BOOST_CHECK_EQUAL(report.Total(), 1283 * COIN);
+}
+
+/**
+ * The warning fires on an amount, not on a share.
+ *
+ * The case it exists for was 700,800 DFCN held permanently outside the rules by
+ * a wallet carrying 567 million -- worth seventy stakes, and 0.12% of the
+ * balance. A percentage threshold loose enough to catch that would fire on
+ * almost anything, so the line is one whole stake's worth, taken from the
+ * network's own stakeValueRange floor: under it nothing could be recovered by a
+ * consolidating transaction, and at or over it something can.
+ */
+BOOST_AUTO_TEST_CASE(the_excluded_value_warning_triggers_on_a_recoverable_stake)
+{
+    const CAmount floor_value = 10000 * COIN;
+
+    StakeSkipReport report;
+    BOOST_CHECK(!ShouldWarnAboutExcludedValue(report, floor_value));
+
+    // Waiting value never triggers it, however much of it there is.
+    report.immature = 50000000 * COIN;
+    report.too_young = 50000000 * COIN;
+    BOOST_CHECK(!ShouldWarnAboutExcludedValue(report, floor_value));
+
+    // A satoshi under a whole stake is still nothing anyone could act on.
+    report.below_min = floor_value - 1;
+    BOOST_CHECK(!ShouldWarnAboutExcludedValue(report, floor_value));
+
+    // Exactly one stake's worth is the first amount worth reporting.
+    report.below_min = floor_value;
+    BOOST_CHECK(ShouldWarnAboutExcludedValue(report, floor_value));
+
+    // The real case, at the real proportion: 0.12% of the balance, and seventy
+    // stakes' worth of it.
+    StakeSkipReport observed;
+    observed.below_min = 70080094336983;
+    BOOST_CHECK(ShouldWarnAboutExcludedValue(observed, floor_value));
+
+    // Regtest lifts the amount rules entirely, so nothing can be excluded by
+    // amount and the question does not arise.
+    BOOST_CHECK(!ShouldWarnAboutExcludedValue(observed, 0));
+
+    // The reasons are named with the same words getstakinginfo uses, so the log
+    // line and the RPC cannot describe the same coins differently.
+    StakeSkipReport named;
+    named.below_min = 1 * COIN;
+    named.collateral = 2 * COIN;
+    named.immature = 99 * COIN;
+    const std::string described = DescribePermanentExclusions(named);
+    BOOST_CHECK(described.find("too_small") != std::string::npos);
+    BOOST_CHECK(described.find("collateral_amount") != std::string::npos);
+    // Waiting value is not a reason to warn, so it is not named as one either.
+    BOOST_CHECK(described.find("immature") == std::string::npos);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

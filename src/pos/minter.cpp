@@ -8,8 +8,11 @@
 #include <pos/multiwallet.h>
 #include <sync.h>
 #include <timedata.h>
+#include <util/moneystr.h>
 #include <util/time.h>
 #include <net.h>
+
+#include <map>
 
 extern int stakable_sz;
 extern RecursiveMutex stakable_mutex;
@@ -47,6 +50,53 @@ int64_t MinterLastErrorTime()
     LOCK(g_minter_error_mutex);
     return g_minter_last_error_time;
 }
+
+namespace {
+/**
+ * When each wallet was last examined for permanently-excluded value.
+ *
+ * Keyed by name rather than index: maintenance rebuilds the stakable vector and
+ * the indices move, while the name is what an operator reads in the message.
+ */
+Mutex g_excluded_scan_mutex;
+std::map<std::string, int64_t> g_excluded_scanned_at GUARDED_BY(g_excluded_scan_mutex);
+
+constexpr int64_t EXCLUDED_SCAN_INTERVAL = 60 * 60;
+
+/**
+ * Say, at ordinary log level, that a wallet holds value the staking rules will
+ * not release.
+ *
+ * The breakdown itself already existed, but only through getstakinginfo -- so
+ * it answered whoever thought to ask, and a wallet could carry a large
+ * permanently unstakeable balance for months while looking entirely normal.
+ * One did: 700,800 DFCN, found only because somebody went looking for it.
+ */
+void MaybeWarnAboutExcludedValue(const std::string& name, const CStakeWallet& wallet,
+                                 int height, CAmount min_stake_value)
+{
+    const int64_t now = GetTime();
+    {
+        LOCK(g_excluded_scan_mutex);
+        auto it = g_excluded_scanned_at.find(name);
+        if (it != g_excluded_scanned_at.end() && now - it->second < EXCLUDED_SCAN_INTERVAL) return;
+        // Stamped before the scan rather than after, and only on the way to a
+        // scan: ExplainExcludedCoins walks every coin the wallet holds, and the
+        // miner arrives here every 2.5 seconds. Rate-limiting the message alone
+        // would leave that walk running on every tick.
+        g_excluded_scanned_at[name] = now;
+    }
+
+    const StakeSkipReport report = wallet.ExplainExcludedCoins(height);
+    if (!ShouldWarnAboutExcludedValue(report, min_stake_value)) return;
+
+    // LogPrintf, not LogPrint(BCLog::POS, ...). The point of the warning is to
+    // reach an operator who did not know to turn staking debug logging on.
+    LogPrintf("Staking: wallet %s holds %s that the staking rules will not release (%s). "
+              "This does not clear on its own; the coins have to be spent into a stakeable shape.\n",
+              name, FormatMoney(PermanentlyExcluded(report)), DescribePermanentExclusions(report));
+}
+} // namespace
 
 bool CheckStake(ChainstateManager& chainman, CBlock *pblock)
 {
@@ -234,6 +284,12 @@ void PoSMiner(NodeContext& node)
             }
 
             LogPrint(BCLog::POS, "%s - using wallet %d\n", __func__, y);
+
+            // Placed after the sync, PoW-boundary and masternode-sync gates, so
+            // anything still held back at this point is held back by the staking
+            // rules themselves rather than by the state of the chain.
+            MaybeWarnAboutExcludedValue(this_wallet->GetName(), wallets_snapshot[y],
+                                        nBestHeight + 1, params.GetConsensus().stakeValueRange[0]);
 
             std::unique_ptr<CBlockTemplate> pblocktemplate;
 

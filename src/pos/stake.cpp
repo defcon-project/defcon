@@ -15,6 +15,7 @@ static constexpr CAmount CENT{1000000};
 #include <pow.h>
 #include <rpc/util.h>
 #include <script/descriptor.h>
+#include <util/moneystr.h>
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/walletutil.h>
 
@@ -37,6 +38,40 @@ void StakeSkipReport::Add(StakeEligibility why, CAmount value)
 CAmount StakeSkipReport::Total() const
 {
     return immature + bls + below_min + above_max + collateral + too_young + too_old;
+}
+
+CAmount PermanentlyExcluded(const StakeSkipReport& report)
+{
+    return report.bls + report.below_min + report.above_max + report.collateral + report.too_old;
+}
+
+bool ShouldWarnAboutExcludedValue(const StakeSkipReport& report, CAmount min_stake_value)
+{
+    // A floor of zero is regtest's "everything stakes", where nothing can be
+    // permanently excluded by amount and the question does not arise.
+    if (min_stake_value <= 0) return false;
+    return PermanentlyExcluded(report) >= min_stake_value;
+}
+
+std::string DescribePermanentExclusions(const StakeSkipReport& report)
+{
+    // Same names getstakinginfo already uses, so the log line and the RPC
+    // cannot drift into describing the same coins differently.
+    const std::pair<const char*, CAmount> reasons[] = {
+        {"too_small", report.below_min},
+        {"too_large", report.above_max},
+        {"collateral_amount", report.collateral},
+        {"bls", report.bls},
+        {"too_old", report.too_old},
+    };
+
+    std::string out;
+    for (const auto& [name, amount] : reasons) {
+        if (amount <= 0) continue;
+        if (!out.empty()) out += ", ";
+        out += strprintf("%s: %s", name, FormatMoney(amount));
+    }
+    return out;
 }
 
 StakeEligibility CStakeWallet::ClassifyForStaking(CAmount value, int depth,
