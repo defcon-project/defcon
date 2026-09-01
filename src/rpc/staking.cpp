@@ -135,7 +135,10 @@ static RPCHelpMan getstakinginfo()
         // A full balance next to a weight of zero used to have no explanation
         // anywhere. Report what the rules held back, and only what they held
         // back, so an empty field means there is nothing to explain.
-        const StakeSkipReport skipped = stakable_wallets[y].ExplainExcludedCoins(pindex->nHeight + 1);
+        // The tip's time and the height after it, matching GetStakeWeight above:
+        // age is measured against a candidate block, and the tip's timestamp is
+        // the closest one the node can state rather than guess.
+        const StakeSkipReport skipped = stakable_wallets[y].ExplainExcludedCoins(pindex->GetBlockTime(), pindex->nHeight + 1);
         if (skipped.Total() > 0) {
             UniValue excluded(UniValue::VOBJ);
             if (skipped.immature > 0)   excluded.pushKV("immature", ValueFromAmount(skipped.immature));

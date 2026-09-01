@@ -92,6 +92,27 @@ bool ShouldWarnAboutExcludedValue(const StakeSkipReport& report, CAmount min_sta
 /** Names the non-zero permanent reasons, for the warning's text. */
 std::string DescribePermanentExclusions(const StakeSkipReport& report);
 
+/**
+ * A coin's staking age, measured the way CheckProofOfStake measures it.
+ *
+ * Consensus takes the time of the block being mined and subtracts the time of
+ * the block that contains the coin (`pos/kernel.cpp`: `nTime - nBlockFromTime`).
+ * The wallet used to subtract its own bookkeeping time from the wall clock
+ * instead, which is a different quantity on both sides: `GetTxTime()` falls
+ * back to when the wallet first saw a transaction, and the wall clock is not
+ * the timestamp the block would carry.
+ *
+ * Near `stakeAgeRange[0]` the two disagree about which coins qualify, and every
+ * coin the wallet offers that the kernel then refuses is an attempt spent for
+ * nothing, in a loop that runs every 2.5 seconds. Nothing reports it either: a
+ * refused input looks exactly like one that did not win.
+ *
+ * `wallet_time` is used only when the coin has no block time to read. Such a
+ * coin is unconfirmed, so the depth rule excludes it regardless -- the fallback
+ * exists to keep the answer defined, not to decide anything.
+ */
+int64_t StakeInputAge(int64_t candidate_time, int64_t coin_block_time, int64_t wallet_time);
+
 class CStakeWallet
 {
     private:
@@ -135,8 +156,20 @@ class CStakeWallet
         StakeEligibility ClassifyForStaking(CAmount value, int depth,
                                             TxoutType type, int64_t inputAge, int nHeight) const;
 
-        /** Tally every coin the wallet holds that the rules keep out. */
-        StakeSkipReport ExplainExcludedCoins(int nHeight) const;
+        /**
+         * Tally every coin the wallet holds that the rules keep out.
+         *
+         * Takes the candidate block's time for the same reason the selection
+         * loop does: age is measured against it, not against the wall clock.
+         */
+        StakeSkipReport ExplainExcludedCoins(int64_t nTime, int nHeight) const;
+
+        /**
+         * The time of the block that contains `coin`, or 0 when there is none
+         * to read -- an unconfirmed coin, or one whose block the node no longer
+         * has.
+         */
+        int64_t CoinBlockTime(const CWalletTx& coin) const;
 
         /**
          * How a coinstake's credit is laid out: one output, or two that can each

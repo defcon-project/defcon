@@ -10,6 +10,7 @@ static constexpr CAmount CENT{1000000};
 
 #include <chainparams.h>
 #include <consensus/merkle.h>
+#include <interfaces/chain.h>
 #include <node/miner.h>
 #include <pos/minter.h>
 #include <pow.h>
@@ -53,6 +54,26 @@ bool ShouldWarnAboutExcludedValue(const StakeSkipReport& report, CAmount min_sta
     return PermanentlyExcluded(report) >= min_stake_value;
 }
 
+int64_t StakeInputAge(int64_t candidate_time, int64_t coin_block_time, int64_t wallet_time)
+{
+    return candidate_time - (coin_block_time > 0 ? coin_block_time : wallet_time);
+}
+
+int64_t CStakeWallet::CoinBlockTime(const CWalletTx& coin) const
+{
+    // A CONFLICTED entry reuses these fields for the block of the conflicting
+    // transaction, not the one holding this coin, so only CONFIRMED names the
+    // block whose time consensus would measure against.
+    if (coin.m_confirm.status != CWalletTx::CONFIRMED) return 0;
+    if (coin.m_confirm.hashBlock.IsNull()) return 0;
+
+    int64_t block_time = 0;
+    if (!wallet->chain().findBlock(coin.m_confirm.hashBlock, interfaces::FoundBlock().time(block_time))) {
+        return 0;
+    }
+    return block_time;
+}
+
 std::string DescribePermanentExclusions(const StakeSkipReport& report)
 {
     // Same names getstakinginfo already uses, so the log line and the RPC
@@ -90,19 +111,23 @@ StakeEligibility CStakeWallet::ClassifyForStaking(CAmount value, int depth,
         return StakeEligibility::Collateral;
     }
     if (inputAge < params.stakeAgeRange[0]) return StakeEligibility::TooYoung;
-    // The v2 age-cap GATE is resolved from the height being mined, exactly as
-    // validation resolves it. The age VALUE is not the same quantity, though:
-    // callers pass the wallet's estimate (GetTime() - GetTxTime(), wall clock
-    // and wallet time), while CheckProofOfStake measures nTime minus the coin's
-    // own block time. So this is the wallet's eligibility view -- close to
-    // consensus but not identical; the kernel remains the authority.
+    // Both halves of this rule now match validation. The v2 age-cap GATE is
+    // resolved from the height being mined, as validation resolves it, and the
+    // age VALUE is the same quantity CheckProofOfStake computes: callers build
+    // it with StakeInputAge, from the candidate block's time and the time of
+    // the block holding the coin. It used to be the wallet's own estimate --
+    // wall clock minus GetTxTime() -- which disagreed near stakeAgeRange[0] and
+    // had the wallet offering coins the kernel would refuse.
+    //
+    // The kernel remains the authority; the point is that the wallet no longer
+    // asks it a different question.
     if (!IsPosKernelV2(params, nHeight) && inputAge > params.stakeAgeRange[1]) {
         return StakeEligibility::TooOld;
     }
     return StakeEligibility::Eligible;
 }
 
-StakeSkipReport CStakeWallet::ExplainExcludedCoins(int nHeight) const
+StakeSkipReport CStakeWallet::ExplainExcludedCoins(int64_t nTime, int nHeight) const
 {
     StakeSkipReport report;
     if (!wallet) {
@@ -131,7 +156,7 @@ StakeSkipReport CStakeWallet::ExplainExcludedCoins(int nHeight) const
         std::vector<valtype> vSolutions;
         const TxoutType type = Solver(pcoin->tx->vout[i].scriptPubKey, vSolutions);
         const CAmount value = pcoin->tx->vout[i].nValue;
-        const int64_t inputAge = GetTime() - pcoin->GetTxTime();
+        const int64_t inputAge = StakeInputAge(nTime, CoinBlockTime(*pcoin), pcoin->GetTxTime());
 
         report.Add(ClassifyForStaking(value, nDepth, type, inputAge, nHeight), value);
     }
@@ -232,7 +257,10 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
         std::vector<valtype> vSolutions;
         const TxoutType whichType = Solver(pcoin->tx->vout[i].scriptPubKey, vSolutions);
         const CAmount inputValue = pcoin->tx->vout[i].nValue;
-        const int64_t inputAge = GetTime() - pcoin->GetTxTime();
+        // nTime is the block being mined, which is what CheckProofOfStake
+        // measures against. It was already being passed in here and ignored,
+        // while the age came from the wall clock instead.
+        const int64_t inputAge = StakeInputAge(nTime, CoinBlockTime(*pcoin), pcoin->GetTxTime());
 
         if (ClassifyForStaking(inputValue, nDepth, whichType, inputAge, nHeight)
                 != StakeEligibility::Eligible) {

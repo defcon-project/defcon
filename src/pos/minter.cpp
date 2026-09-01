@@ -73,7 +73,7 @@ constexpr int64_t EXCLUDED_SCAN_INTERVAL = 60 * 60;
  * One did: 700,800 DFCN, found only because somebody went looking for it.
  */
 void MaybeWarnAboutExcludedValue(const std::string& name, const CStakeWallet& wallet,
-                                 int height, CAmount min_stake_value)
+                                 int64_t candidate_time, int height, CAmount min_stake_value)
 {
     const int64_t now = GetTime();
     {
@@ -87,7 +87,7 @@ void MaybeWarnAboutExcludedValue(const std::string& name, const CStakeWallet& wa
         g_excluded_scanned_at[name] = now;
     }
 
-    const StakeSkipReport report = wallet.ExplainExcludedCoins(height);
+    const StakeSkipReport report = wallet.ExplainExcludedCoins(candidate_time, height);
     if (!ShouldWarnAboutExcludedValue(report, min_stake_value)) return;
 
     // LogPrintf, not LogPrint(BCLog::POS, ...). The point of the warning is to
@@ -288,7 +288,7 @@ void PoSMiner(NodeContext& node)
             // Placed after the sync, PoW-boundary and masternode-sync gates, so
             // anything still held back at this point is held back by the staking
             // rules themselves rather than by the state of the chain.
-            MaybeWarnAboutExcludedValue(this_wallet->GetName(), wallets_snapshot[y],
+            MaybeWarnAboutExcludedValue(this_wallet->GetName(), wallets_snapshot[y], nSearchTime,
                                         nBestHeight + 1, params.GetConsensus().stakeValueRange[0]);
 
             std::unique_ptr<CBlockTemplate> pblocktemplate;
