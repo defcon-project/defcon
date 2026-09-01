@@ -165,7 +165,7 @@ void StopStaking()
 
 void PoSMiner(NodeContext& node)
 {
-    if (!gArgs.GetBoolArg("-staking", true)) {
+    if (!gArgs.GetBoolArg("-staking", DEFAULT_STAKING)) {
         LogPrint(BCLog::POS, "%s: -staking is false.\n", __func__);
         return;
     }
