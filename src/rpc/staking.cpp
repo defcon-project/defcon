@@ -9,6 +9,7 @@
 #include <consensus/validation.h>
 #include <node/context.h>
 #include <pos/kernel.h>
+#include <pos/minter.h>
 #include <pos/multiwallet.h>
 #include <pos/stake.h>
 #include <primitives/transaction.h>
@@ -33,6 +34,9 @@ static RPCHelpMan getstakinginfo()
                     RPCResult::Type::OBJ, "", "",
                     {
                         {RPCResult::Type::BOOL, "staking", "'true' if wallet is currently staking"},
+                        {RPCResult::Type::BOOL, "minter_running", "Whether the staking thread is inside its loop right now. Node-wide, not per wallet: one minter serves every staking wallet, so a false here means nothing is being staked whatever the fields above report."},
+                        {RPCResult::Type::STR, "last_error", /*optional=*/true, "The minter's last failure. Node-wide, and absent when it has not failed."},
+                        {RPCResult::Type::NUM_TIME, "last_error_time", /*optional=*/true, "When that failure happened (UNIX epoch seconds). Present only with last_error."},
                         {RPCResult::Type::STR, "errors", "Error messages"},
                         {RPCResult::Type::NUM, "pooledtx", "The size of the mempool"},
                         {RPCResult::Type::NUM, "difficulty", "The current difficulty"},
@@ -102,6 +106,22 @@ static RPCHelpMan getstakinginfo()
         UniValue obj2(UniValue::VOBJ);
         obj2.pushKV("name", this_wallet->GetName());
         obj2.pushKV("staking", stakable_wallets[y].CanStake() ? "true" : "false");
+
+        // Node-wide, and repeated on every wallet on purpose: one minter serves
+        // them all, so a wallet's own switch says nothing about whether anything
+        // is trying to stake it. Reported here rather than as a sibling key so
+        // the response stays a map of wallet ids and no existing reader breaks.
+        //
+        // "errors" below is GetWarnings("statusbar") -- the node's general
+        // warning text, which never carried the minter's failure and still
+        // does not. last_error is where that now lives.
+        obj2.pushKV("minter_running", fMinterRunning.load());
+        const std::string minter_error = MinterLastError();
+        if (!minter_error.empty()) {
+            obj2.pushKV("last_error", minter_error);
+            obj2.pushKV("last_error_time", MinterLastErrorTime());
+        }
+
         obj2.pushKV("errors", GetWarnings("statusbar").original);
         obj2.pushKV("pooledtx", (uint64_t)mempool.size());
         obj2.pushKV("difficulty", GetDifficulty(pindex));
