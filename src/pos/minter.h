@@ -16,6 +16,17 @@
 class CWallet;
 class CBlock;
 
+/**
+ * Whether the staking subsystem runs unless -staking says otherwise.
+ *
+ * Declared once and read by both the miner and the help text. They disagreed
+ * before this existed: the miner defaulted the argument to true while -staking
+ * advertised "(default: 0)", so the documented behaviour was the opposite of
+ * the real one, and a review reading the help concluded that a node could not
+ * stake until someone switched it on.
+ */
+static constexpr bool DEFAULT_STAKING{true};
+
 extern std::atomic<bool> fTryToSync;
 extern std::atomic<bool> fIsStaking;
 
