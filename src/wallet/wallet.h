@@ -302,6 +302,17 @@ public:
 int CalculateMaximumSignedInputSize(const CTxOut& txout, const CWallet* pwallet, bool use_max_sig = false);
 
 /**
+ * How many blocks a transaction's generated coins must still wait before they
+ * can be spent.
+ *
+ * Free and pure so the rule itself can be exercised: which kinds of transaction
+ * generate coins is the part that was wrong, not the arithmetic. A negative
+ * depth means the transaction is not in the chain -- possible for a coinstake,
+ * which an orphaned fork leaves behind, and never for a coinbase.
+ */
+int BlocksToMaturity(bool is_coinbase, bool is_coinstake, int chain_depth);
+
+/**
  * A transaction with a bunch of additional info that only the owner cares about.
  * It includes any unrecorded transactions needed to link it back to the block chain.
  */
@@ -588,8 +599,16 @@ public:
 
     /**
      * @return number of blocks to maturity for this transaction:
-     *  0 : is not a coinbase transaction, or is a mature coinbase transaction
-     * >0 : is a coinbase transaction which matures in this many blocks
+     *  0 : does not generate coins, or generates coins that have matured
+     * >0 : generates coins that mature in this many blocks
+     *
+     * "Generates" covers a coinstake as well as a coinbase, because consensus
+     * does: consensus/tx_verify.cpp holds back both under COINBASE_MATURITY.
+     * The two must agree. While this asked only about coinbases, a staking
+     * wallet counted its own immature coinstake outputs as spendable, coin
+     * selection picked one, and the transaction was built, signed and stored
+     * before failing at broadcast with bad-txns-premature-spend-of-coinbase --
+     * which the sender saw as a completed send.
      */
     int GetBlocksToMaturity() const;
     bool isAbandoned() const { return m_confirm.status == CWalletTx::ABANDONED; }
@@ -611,7 +630,13 @@ public:
     bool IsCoinStake() const { return tx->IsCoinStake(); }
     bool IsMasternodeReward() const { return tx->IsMasternodeReward(); }
     bool IsPlatformTransfer() const { return tx->IsPlatformTransfer(); }
-    bool IsImmatureCoinBase() const;
+    /**
+     * Coins this transaction generated that cannot be spent yet -- a coinbase
+     * or a coinstake still inside COINBASE_MATURITY. Named for what it covers:
+     * the previous name said CoinBase and was read as meaning only that, which
+     * is how coinstakes came to be treated as spendable the moment they landed.
+     */
+    bool IsImmatureGenerated() const;
 
     // Disable copying of CWalletTx objects to prevent bugs where instances get
     // copied in and out of the mapWallet map, and fields are updated in the

@@ -2257,7 +2257,7 @@ CAmount CWalletTx::GetDebit(const isminefilter& filter) const
 CAmount CWalletTx::GetCredit(const isminefilter& filter) const
 {
     // Must wait until coinbase is safely deep enough in the chain before valuing it
-    if (IsImmatureCoinBase())
+    if (IsImmatureGenerated())
         return 0;
 
     CAmount credit = 0;
@@ -2273,7 +2273,7 @@ CAmount CWalletTx::GetCredit(const isminefilter& filter) const
 
 CAmount CWalletTx::GetImmatureCredit(bool fUseCache) const
 {
-    if (IsImmatureCoinBase() && IsInMainChain()) {
+    if (IsImmatureGenerated() && IsInMainChain()) {
         return GetCachableAmount(IMMATURE_CREDIT, ISMINE_SPENDABLE, !fUseCache);
     }
 
@@ -2289,7 +2289,7 @@ CAmount CWalletTx::GetAvailableCredit(bool fUseCache, const isminefilter& filter
     bool allow_cache = (filter & ISMINE_ALL) && (filter & ISMINE_ALL) != ISMINE_ALL;
 
     // Must wait until coinbase is safely deep enough in the chain before valuing it
-    if (IsImmatureCoinBase())
+    if (IsImmatureGenerated())
         return 0;
 
     if (fUseCache && allow_cache && m_amounts[AVAILABLE_CREDIT].m_cached[filter]) {
@@ -2320,7 +2320,7 @@ CAmount CWalletTx::GetAvailableCredit(bool fUseCache, const isminefilter& filter
 
 CAmount CWalletTx::GetImmatureWatchOnlyCredit(const bool fUseCache) const
 {
-    if (IsImmatureCoinBase() && IsInMainChain()) {
+    if (IsImmatureGenerated() && IsInMainChain()) {
         return GetCachableAmount(IMMATURE_CREDIT, ISMINE_WATCH_ONLY, !fUseCache);
     }
 
@@ -2375,8 +2375,12 @@ CAmount CWalletTx::GetDenominatedCredit(bool unconfirmed, bool fUseCache) const
 
     AssertLockHeld(pwallet->cs_wallet);
 
-    // Must wait until coinbase is safely deep enough in the chain before valuing it
-    if (IsCoinBase() && GetBlocksToMaturity() > 0)
+    // Must wait until generated coins are safely deep enough in the chain before
+    // valuing them. The IsCoinBase() that used to guard this is gone on purpose:
+    // GetBlocksToMaturity answers for a coinstake too now, and keeping the guard
+    // would have valued immature coinstake outputs at full while every other
+    // path held them back.
+    if (GetBlocksToMaturity() > 0)
         return 0;
 
     int nDepth = GetDepthInMainChain();
@@ -2696,7 +2700,7 @@ void CWallet::AvailableCoins(std::vector<COutput> &vCoins, const CCoinControl* c
         if (!chain().checkFinalTx(*pcoin->tx))
             continue;
 
-        if (pcoin->IsImmatureCoinBase())
+        if (pcoin->IsImmatureGenerated())
             continue;
 
         int nDepth = pcoin->GetDepthInMainChain();
@@ -3397,7 +3401,10 @@ std::vector<CompactTallyItem> CWallet::SelectCoinsGroupedByAddresses(bool fSkipD
 
         const CWalletTx& wtx = (*it).second;
 
-        if(wtx.IsCoinBase() && wtx.GetBlocksToMaturity() > 0) continue;
+        // No IsCoinBase() guard: GetBlocksToMaturity covers a coinstake as well,
+        // and pairing it with a coinbase-only test would let exactly the outputs
+        // a staking wallet produces slip through.
+        if (wtx.GetBlocksToMaturity() > 0) continue;
         if(fSkipUnconfirmed && !wtx.IsTrusted()) continue;
         if (wtx.GetDepthInMainChain() < 0) continue;
 
@@ -4298,7 +4305,7 @@ std::map<CTxDestination, CAmount> CWallet::GetAddressBalances() const
             if (!IsTrusted(*pcoin, trusted_parents))
                 continue;
 
-            if (pcoin->IsImmatureCoinBase())
+            if (pcoin->IsImmatureGenerated())
                 continue;
 
             int nDepth = pcoin->GetDepthInMainChain();
@@ -5534,18 +5541,39 @@ bool CWalletTx::IsChainLocked() const
     return fIsChainlocked;
 }
 
-int CWalletTx::GetBlocksToMaturity() const
+int BlocksToMaturity(bool is_coinbase, bool is_coinstake, int chain_depth)
 {
-    if (!IsCoinBase())
-        return 0;
-    int chain_depth = GetDepthInMainChain();
-    assert(chain_depth >= 0); // coinbase tx should not be conflicted
-    return std::max(0, (COINBASE_MATURITY+1) - chain_depth);
+    // Both, because consensus holds back both:
+    //
+    //   consensus/tx_verify.cpp
+    //     // If prev is coinbase/coinstake, check that it's matured
+    //     if ((coin.IsCoinBase() || coin.IsCoinStake()) &&
+    //         nSpendHeight - coin.nHeight < COINBASE_MATURITY)
+    //
+    // Asking only about coinbases here is what let a staking wallet spend its
+    // own immature coinstake outputs: selection took one, the transaction was
+    // built, signed and written to the wallet, and only the broadcast failed --
+    // with bad-txns-premature-spend-of-coinbase, after the sender had already
+    // been shown a completed send.
+    if (!is_coinbase && !is_coinstake) return 0;
+
+    // A coinbase cannot be conflicted, which is why this used to assert on a
+    // negative depth. A coinstake can: the losing side of a fork orphans one,
+    // which is what AbandonOrphanedCoinstakes exists to clean up. Nothing about
+    // a transaction that is not in the chain is spendable, so the full wait is
+    // the honest answer -- and the assert would have been a crash.
+    if (chain_depth < 0) return COINBASE_MATURITY + 1;
+
+    return std::max(0, (COINBASE_MATURITY + 1) - chain_depth);
 }
 
-bool CWalletTx::IsImmatureCoinBase() const
+int CWalletTx::GetBlocksToMaturity() const
 {
-    // note GetBlocksToMaturity is 0 for non-coinbase tx
+    return BlocksToMaturity(IsCoinBase(), IsCoinStake(), GetDepthInMainChain());
+}
+
+bool CWalletTx::IsImmatureGenerated() const
+{
     return GetBlocksToMaturity() > 0;
 }
 
