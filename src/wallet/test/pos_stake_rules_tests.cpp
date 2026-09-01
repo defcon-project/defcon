@@ -338,4 +338,68 @@ BOOST_AUTO_TEST_CASE(a_coinstake_is_immature_to_the_wallet_as_well)
     BOOST_CHECK(BlocksToMaturity(true, false, -1) > 0);
 }
 
+/**
+ * Immature value is counted exactly once, by exactly one of two mechanisms.
+ *
+ * Holding back immature coinstake outputs made AvailableCoins drop them before
+ * ExplainExcludedCoins could classify them, so the staking report lost sight of
+ * them and read 10,000 against an immature balance of 2.68 million. The report
+ * now adds the wallet's immature balance to cover what the loop can no longer
+ * see -- which is only correct while the two sets stay disjoint.
+ *
+ * They are disjoint because the thresholds sit one block apart: AvailableCoins
+ * releases a generated coin at COINBASE_MATURITY + 1, and ClassifyForStaking
+ * calls it Immature until COINBASE_MATURITY + 2. Move either without the other
+ * and the sum double-counts a block or drops one, silently. That is what this
+ * pins.
+ *
+ * Neither fix could have caught this alone; it lives where the two meet.
+ */
+BOOST_AUTO_TEST_CASE(stake_immature_accounting_has_no_gap)
+{
+    Consensus::Params params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+
+    // What AvailableCoins releases: a generated coin whose maturity is done.
+    const auto released_for_spending = [](int depth) {
+        return BlocksToMaturity(/*is_coinbase=*/false, /*is_coinstake=*/true, depth) == 0;
+    };
+
+    // What the staking classifier still holds back, on depth alone: value, age
+    // and script are all chosen so nothing else can decide the answer.
+    const auto immature_to_staking = [&](int depth) {
+        return staker.ClassifyForStaking(100000 * COIN, depth, TxoutType::PUBKEYHASH,
+                                         params.stakeAgeRange[0], params.nPosKernelV2ActivationHeight)
+               == StakeEligibility::Immature;
+    };
+
+    // Below the spending threshold the loop never sees the coin, so only the
+    // balance can account for it.
+    for (int depth = 0; depth <= COINBASE_MATURITY; ++depth) {
+        BOOST_CHECK(!released_for_spending(depth));
+        BOOST_CHECK(immature_to_staking(depth));
+    }
+
+    // The sliver, exactly one block wide: released for spending, so the loop
+    // counts it, and still immature for staking, so it belongs in the report.
+    BOOST_CHECK(released_for_spending(COINBASE_MATURITY + 1));
+    BOOST_CHECK(immature_to_staking(COINBASE_MATURITY + 1));
+
+    // And past it, eligible -- counted by neither.
+    BOOST_CHECK(released_for_spending(COINBASE_MATURITY + 2));
+    BOOST_CHECK(!immature_to_staking(COINBASE_MATURITY + 2));
+
+    // The property the addition rests on, across the whole range: a coin the
+    // staking rules hold back is counted once, by the balance or by the loop
+    // and never by both, and a coin they accept is counted by neither.
+    for (int depth = 0; depth <= COINBASE_MATURITY + 4; ++depth) {
+        const int by_balance = released_for_spending(depth) ? 0 : 1;
+        const int by_loop = (released_for_spending(depth) && immature_to_staking(depth)) ? 1 : 0;
+        const int expected = immature_to_staking(depth) ? 1 : 0;
+        BOOST_CHECK_MESSAGE(by_balance + by_loop == expected,
+                            "depth " << depth << " counted " << (by_balance + by_loop)
+                                     << " times, expected " << expected);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
