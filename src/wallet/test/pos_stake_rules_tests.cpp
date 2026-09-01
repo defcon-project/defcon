@@ -240,4 +240,57 @@ BOOST_AUTO_TEST_CASE(the_excluded_value_warning_triggers_on_a_recoverable_stake)
     BOOST_CHECK(described.find("immature") == std::string::npos);
 }
 
+/**
+ * The wallet has to measure a coin's age the way the kernel does.
+ *
+ * CheckProofOfStake takes the time of the block being mined and subtracts the
+ * time of the block holding the coin. The wallet used to subtract its own
+ * bookkeeping time from the wall clock, which is a different quantity on both
+ * sides. Near stakeAgeRange[0] the two disagree, and each disagreement costs
+ * something in silence: either an attempt spent on a coin the kernel refuses,
+ * or a coin withheld that it would have accepted.
+ */
+BOOST_AUTO_TEST_CASE(stake_age_is_measured_the_way_consensus_measures_it)
+{
+    Consensus::Params params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+
+    const int64_t candidate = 2000000;
+    const int64_t min_age = params.stakeAgeRange[0];
+    const int64_t coin_block = candidate - min_age;   // exactly old enough
+
+    BOOST_CHECK_EQUAL(StakeInputAge(candidate, coin_block, /*wallet_time=*/0), min_age);
+
+    // A block time wins over the wallet's record even when the two disagree,
+    // which is the entire point: the record is not the quantity consensus uses.
+    const int64_t looks_brand_new = candidate;
+    BOOST_CHECK_EQUAL(StakeInputAge(candidate, coin_block, looks_brand_new), min_age);
+
+    const int deep = COINBASE_MATURITY + 2;
+    const auto classify = [&](int64_t age) {
+        return staker.ClassifyForStaking(100000 * COIN, deep, TxoutType::PUBKEYHASH, age,
+                                         params.nPosKernelV2ActivationHeight);
+    };
+
+    // The disagreement, both ways round. Measured against its block the coin
+    // qualifies and the kernel would take it; measured against a wallet record
+    // that says "seen just now" it does not, and the wallet would have held
+    // back a coin the network was willing to accept.
+    BOOST_CHECK(classify(StakeInputAge(candidate, coin_block, looks_brand_new)) == StakeEligibility::Eligible);
+    BOOST_CHECK(classify(StakeInputAge(candidate, /*coin_block_time=*/0, looks_brand_new)) == StakeEligibility::TooYoung);
+
+    // With no block time to read there is only the wallet's record. A coin in
+    // that state is unconfirmed, so the depth rule excludes it whatever the age
+    // says -- the fallback exists to keep the answer defined, not to decide.
+    BOOST_CHECK_EQUAL(StakeInputAge(candidate, /*coin_block_time=*/0, coin_block), min_age);
+    BOOST_CHECK(staker.ClassifyForStaking(100000 * COIN, 1, TxoutType::PUBKEYHASH,
+                                          StakeInputAge(candidate, 0, coin_block),
+                                          params.nPosKernelV2ActivationHeight)
+                == StakeEligibility::Immature);
+
+    // A coin younger than the floor by one second is still too young, so the
+    // change moves which quantity is measured and not where the line sits.
+    BOOST_CHECK(classify(StakeInputAge(candidate, coin_block + 1, 0)) == StakeEligibility::TooYoung);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
