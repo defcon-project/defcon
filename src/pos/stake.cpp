@@ -441,13 +441,13 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
     return ok;
 }
 
-bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key)
+StakeAttempt CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key)
 {
     arith_uint256 bnTargetPerCoinDay;
     bnTargetPerCoinDay.SetCompact(nBits);
     CAmount nBalance = wallet->GetAvailableBalance();
     if (nBalance <= wallet->nReserveBalance) {
-        return false;
+        return StakeAttempt::NoEligibleCoins;
     }
 
     // Ensure txn is empty
@@ -464,11 +464,11 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
     std::vector<const CWalletTx*> vwtxPrev;
     std::set<std::pair<const CWalletTx*, unsigned int>> setCoins;
     if (!SelectCoinsForStaking(nBalance - wallet->nReserveBalance, nTime, nBlockHeight, setCoins, nValueIn)) {
-        return false;
+        return StakeAttempt::NoEligibleCoins;
     }
 
     if (setCoins.empty()) {
-        return false;
+        return StakeAttempt::NoEligibleCoins;
     }
 
     CAmount nCredit = 0;
@@ -478,7 +478,7 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
     {
         auto pcoin = *it;
         if (fStopMinerProc)
-            return false;
+            return StakeAttempt::Stopped;
 
         int64_t nBlockTime;
         COutPoint prevoutStake = COutPoint(pcoin.first->GetHash(), pcoin.second);
@@ -557,13 +557,16 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
     }
 
     if (nCredit == 0 || nCredit > nBalance - wallet->nReserveBalance) {
-        return false;
+        // Coins were eligible and the loop above found no winning kernel at this
+        // timestamp. That is the ordinary outcome of an attempt, not a fault, and
+        // the caller must not treat it as one.
+        return StakeAttempt::NoKernelFound;
     }
 
     // Get block reward
     CAmount nReward = GetProofOfStakeReward();
     if (nReward < 0) {
-        return false;
+        return StakeAttempt::Error;
     }
 
     nCredit += nReward;
@@ -593,11 +596,11 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
         const SigningProvider* provider = GetStakingSigningProvider(*wallet, scriptPubKeyOut, provider_owned);
         if (!provider) {
             LogPrint(BCLog::POS, "%s: no signing provider for input %d.", __func__, nIn);
-            return false;
+            return StakeAttempt::Error;
         }
         if (!ProduceSignature(*provider, MutableTransactionSignatureCreator(&txNew, nIn, amount, SIGHASH_ALL), scriptPubKeyOut, sigdata)) {
             LogPrint(BCLog::POS, "%s: ProduceSignature failed.", __func__);
-            return false;
+            return StakeAttempt::Error;
         }
 
         UpdateInput(txNew.vin[nIn], sigdata);
@@ -608,14 +611,14 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
     unsigned int nBytes = ::GetSerializeSize(txNew, PROTOCOL_VERSION);
     if (nBytes >= MaxBlockSize() / 5) {
         LogPrint(BCLog::POS, "%s: Exceeded coinstake size limit.", __func__);
-        return false;
+        return StakeAttempt::Error;
     }
 
     // Successfully generated coinstake
-    return true;
+    return StakeAttempt::BlockFound;
 }
 
-bool CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktemplate, int nHeight, int64_t nSearchTime)
+StakeAttempt CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktemplate, int nHeight, int64_t nSearchTime)
 {
     LogPrint(BCLog::POS, "%s, Height %d\n", __func__, nHeight);
 
@@ -624,7 +627,7 @@ bool CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktem
     assert(pblock);
     if (pblock->vtx.size() < 1) {
         LogPrint(BCLog::POS, "%s: Malformed block.", __func__);
-        return false;
+        return StakeAttempt::Error;
     }
 
     CAmount nFees = -pblocktemplate->vTxFees[0];
@@ -638,8 +641,12 @@ bool CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktem
     LogPrint(BCLog::POS, "%s, nBits %d\n", __func__, pblock->nBits);
 
     CMutableTransaction txCoinStake;
-    if (CreateCoinStake(chain_state, pindexPrev, pblock->nBits, nSearchTime, nHeight, nFees, txCoinStake, key)) {
-
+    const StakeAttempt made = CreateCoinStake(chain_state, pindexPrev, pblock->nBits, nSearchTime, nHeight, nFees, txCoinStake, key);
+    if (made != StakeAttempt::BlockFound) {
+        wallet->nLastCoinStakeSearchTime = nSearchTime;
+        return made;
+    }
+    {
         LogPrint(BCLog::POS, "%s: Kernel found.\n", __func__);
 
         if (nSearchTime >= pindexPrev->GetPastTimeLimit() + 1) {
@@ -658,11 +665,14 @@ bool CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktem
             LogPrint(BCLog::POS, "%s: signing blockhash %s\n", __func__, blockhash.ToString());
 
             // Append a signature to the block
-            return SignBlockWithKey(*pblock, key);
+            return SignBlockWithKey(*pblock, key) ? StakeAttempt::BlockFound : StakeAttempt::Error;
         }
     }
 
     wallet->nLastCoinStakeSearchTime = nSearchTime;
 
-    return false;
+    // A kernel was found but this search time is not yet past the tip's median.
+    // Transient, and the next timestamp may serve, so it must not be reported as
+    // an eligibility problem.
+    return StakeAttempt::NoKernelFound;
 }
