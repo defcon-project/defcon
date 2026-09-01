@@ -69,6 +69,21 @@ BOOST_AUTO_TEST_CASE(q60_profile_shape)
     BOOST_CHECK_EQUAL(q60->dkgBadVotesThreshold, 48);
     BOOST_CHECK(q60->dkgBadVotesThreshold <= q60->size);
 
+    // The bound that survives review. A threshold at or below the Byzantine
+    // minority would let that minority alone expel honest members and have
+    // them PoSe-punished, since exclusion from validMembers is what the
+    // punishment loop acts on.
+    //
+    // There is deliberately no upper bound here. An earlier reading derived one
+    // from minSize -- at 44 seated only 43 can vote, so 48 cannot fire -- and
+    // concluded that expulsion becomes impossible when most needed. It does
+    // not: a member that sends no contribution is marked bad by every peer
+    // independently at dkgsession.cpp:458, with no vote cast, and one
+    // unanswered complaint is enough at :919. What this threshold governs is
+    // narrower and worth keeping high: how many accusers condemn a member
+    // before it is allowed to justify itself.
+    BOOST_CHECK(q60->dkgBadVotesThreshold > q60->size / 3);
+
     // The mining window must start after the last DKG phase.
     BOOST_CHECK(q60->dkgMiningWindowStart >= 5 * q60->dkgPhaseBlocks);
     BOOST_CHECK(q60->dkgMiningWindowEnd > q60->dkgMiningWindowStart);
