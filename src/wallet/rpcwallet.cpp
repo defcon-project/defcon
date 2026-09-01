@@ -1411,7 +1411,7 @@ static void ListTransactions(const CWallet& wallet, const CWalletTx& wtx, int nM
             {
                 if (wtx.GetDepthInMainChain() < 1)
                     entry.pushKV("category", "orphan");
-                else if (wtx.IsImmatureCoinBase())
+                else if (wtx.IsImmatureGenerated())
                     entry.pushKV("category", "immature");
                 else
                     entry.pushKV("category", "generate");

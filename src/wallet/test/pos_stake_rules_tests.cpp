@@ -6,6 +6,7 @@
 #include <consensus/consensus.h>
 #include <pos/stake.h>
 #include <wallet/test/wallet_test_fixture.h>
+#include <wallet/wallet.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -291,6 +292,50 @@ BOOST_AUTO_TEST_CASE(stake_age_is_measured_the_way_consensus_measures_it)
     // A coin younger than the floor by one second is still too young, so the
     // change moves which quantity is measured and not where the line sits.
     BOOST_CHECK(classify(StakeInputAge(candidate, coin_block + 1, 0)) == StakeEligibility::TooYoung);
+}
+
+/**
+ * The wallet has to hold back its own coinstake outputs, because consensus does.
+ *
+ * consensus/tx_verify.cpp refuses a spend of either a coinbase or a coinstake
+ * under COINBASE_MATURITY. The wallet asked only about coinbases, so a staking
+ * wallet counted its freshly won outputs as spendable: selection took one, the
+ * transaction was built, signed and written to the wallet, and only the
+ * broadcast failed -- with bad-txns-premature-spend-of-coinbase, after the
+ * sender had already been shown a completed send.
+ *
+ * The value being tested is which transactions generate coins at all. The
+ * arithmetic was never wrong.
+ */
+BOOST_AUTO_TEST_CASE(a_coinstake_is_immature_to_the_wallet_as_well)
+{
+    // Generates nothing: no wait, at any depth.
+    BOOST_CHECK_EQUAL(BlocksToMaturity(false, false, 0), 0);
+    BOOST_CHECK_EQUAL(BlocksToMaturity(false, false, 1), 0);
+    BOOST_CHECK_EQUAL(BlocksToMaturity(false, false, COINBASE_MATURITY + 5), 0);
+
+    // A coinbase behaves exactly as before.
+    BOOST_CHECK(BlocksToMaturity(true, false, 1) > 0);
+    BOOST_CHECK_EQUAL(BlocksToMaturity(true, false, COINBASE_MATURITY + 1), 0);
+
+    // The regression, at the depth that actually produced a failed send: this
+    // answered 0 -- mature -- and the coin was spent into a transaction the
+    // network would not take.
+    BOOST_CHECK(BlocksToMaturity(false, true, 8) > 0);
+
+    // A coinstake matures on the same schedule as a coinbase, because the rule
+    // consensus applies to the two is one rule.
+    for (int depth = 0; depth <= COINBASE_MATURITY + 2; ++depth) {
+        BOOST_CHECK_EQUAL(BlocksToMaturity(false, true, depth),
+                          BlocksToMaturity(true, false, depth));
+    }
+    BOOST_CHECK_EQUAL(BlocksToMaturity(false, true, COINBASE_MATURITY + 1), 0);
+
+    // Conflicted. A coinbase cannot reach this state, which is why the old code
+    // asserted on it; an orphaned coinstake can, and nothing about a
+    // transaction outside the chain is spendable.
+    BOOST_CHECK(BlocksToMaturity(false, true, -1) > 0);
+    BOOST_CHECK(BlocksToMaturity(true, false, -1) > 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
