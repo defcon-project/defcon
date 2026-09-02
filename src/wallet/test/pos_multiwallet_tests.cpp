@@ -2,7 +2,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <chainparams.h>
 #include <pos/minter.h>
+#include <pos/stake.h>
 #include <pos/multiwallet.h>
 #include <wallet/test/wallet_test_fixture.h>
 #include <wallet/wallet.h>
@@ -119,6 +121,81 @@ BOOST_AUTO_TEST_CASE(minter_last_error_round_trips)
     // in that state -- so an empty string has to be storable, not just initial.
     SetMinterLastError("");
     BOOST_CHECK(MinterLastError().empty());
+}
+
+// A registry entry outlives the wallet it names -- the list is rebuilt on every
+// toggle, the miner works from a copy of it for seconds at a time, and
+// unloadwallet can free the wallet in between. The entry used to hold a raw
+// CWallet*, which contributed nothing to the wallet's refcount: UnloadWallet's
+// wait for the last owner could not see this reference at all, and returned at
+// the moment the wallet was deleted. The one guard that existed for it,
+// RemoveWallet(), had no caller anywhere in the tree.
+BOOST_AUTO_TEST_CASE(a_registry_entry_cannot_hand_out_a_freed_wallet)
+{
+    Consensus::Params params = Params().GetConsensus();
+
+    std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                                                "pos-lifetime-test", CreateDummyWalletDatabase());
+    std::weak_ptr<CWallet> observer = wallet;
+    CStakeWallet entry(wallet, params);
+
+    {
+        // Asking for the wallet gives a reference that is strong for as long as
+        // the caller keeps it. That is the contract the miner relies on: it
+        // dereferences for the length of a staking attempt.
+        std::shared_ptr<CWallet> held = entry.GetWallet();
+        BOOST_REQUIRE(held != nullptr);
+
+        wallet.reset();
+        BOOST_CHECK(!observer.expired());
+    }
+
+    // Every strong reference is gone. The entry is still here, because nothing
+    // removes it -- so it has to say the wallet is gone rather than hand back a
+    // pointer to freed memory, which is exactly what it did before.
+    BOOST_CHECK(observer.expired());
+    BOOST_CHECK(entry.GetWallet() == nullptr);
+}
+
+// Enabling staking registers the pk() twin a descriptor wallet needs, because
+// a coinstake pays vout[1] to pay-to-pubkey and a wallet tracking only pkh()
+// does not recognise its own coinstake -- it books the staked amount and the
+// reward as an outgoing send. The registration could not happen on a wallet
+// whose private descriptors will not render, and it reported success anyway,
+// so the switch went on and the wallet staked into exactly that state.
+// Unlocking afterwards did not repair it: this runs on the off->on edge alone.
+BOOST_AUTO_TEST_CASE(coinstake_descriptors_refuse_a_wallet_that_cannot_provide_them)
+{
+    // A watch-only wallet holds no key that could sign a coinstake at all.
+    {
+        std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                                                    "pos-watchonly-test", CreateDummyWalletDatabase());
+        wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS | WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+        BOOST_CHECK(!EnsureCoinstakeDescriptors(*wallet));
+    }
+
+    // An encrypted wallet that is locked renders no private descriptor, so the
+    // loop finds nothing to mirror and used to call that success.
+    {
+        std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                                                    "pos-locked-test", CreateDummyWalletDatabase());
+        wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+        {
+            LOCK(wallet->cs_wallet);
+            wallet->SetupDescriptorScriptPubKeyMans();
+        }
+        BOOST_REQUIRE(wallet->EncryptWallet("pos-descriptor-test"));
+        BOOST_REQUIRE(wallet->Lock());
+        BOOST_REQUIRE(wallet->IsLocked());
+
+        BOOST_CHECK(!EnsureCoinstakeDescriptors(*wallet));
+
+        // The guard refuses a state, not a wallet. Unlocked, the same wallet
+        // must be served -- otherwise the fix would cost every encrypted wallet
+        // its staking rather than making it safe.
+        BOOST_REQUIRE(wallet->Unlock("pos-descriptor-test"));
+        BOOST_CHECK(EnsureCoinstakeDescriptors(*wallet));
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

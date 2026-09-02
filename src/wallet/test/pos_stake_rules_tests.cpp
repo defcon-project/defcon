@@ -402,4 +402,27 @@ BOOST_AUTO_TEST_CASE(stake_immature_accounting_has_no_gap)
     }
 }
 
+// The miner rested a wallet for a minute after every failed attempt, because
+// the guard it consulted compared a member that no code assigns against
+// COINBASE_MATURITY + 1 and was therefore always true. The outcome it treated
+// as a maturity problem is the ordinary result of a staking attempt, so a
+// wallet with perfectly good coins examined roughly one search time per minute
+// instead of every one it was offered.
+BOOST_AUTO_TEST_CASE(stake_attempt_rests_only_a_wallet_with_nothing_to_stake)
+{
+    // The regression. A kernel that did not win says nothing about the wallet's
+    // coins, and must cost it no search times at all.
+    BOOST_CHECK(!StakeAttemptWarrantsPause(StakeAttempt::NoKernelFound));
+
+    // The one case that earns a rest: there is nothing to look for.
+    BOOST_CHECK(StakeAttemptWarrantsPause(StakeAttempt::NoEligibleCoins));
+
+    // Success is not a reason to wait, and neither is a shutdown or a fault --
+    // one has its own delay after submitting, the other two want the loop to
+    // reach its own exit rather than sleep first.
+    BOOST_CHECK(!StakeAttemptWarrantsPause(StakeAttempt::BlockFound));
+    BOOST_CHECK(!StakeAttemptWarrantsPause(StakeAttempt::Stopped));
+    BOOST_CHECK(!StakeAttemptWarrantsPause(StakeAttempt::Error));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

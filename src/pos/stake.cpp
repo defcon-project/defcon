@@ -61,6 +61,8 @@ int64_t StakeInputAge(int64_t candidate_time, int64_t coin_block_time, int64_t w
 
 int64_t CStakeWallet::CoinBlockTime(const CWalletTx& coin) const
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
+    if (!wallet) return 0;
     // A CONFLICTED entry reuses these fields for the block of the conflicting
     // transaction, not the one holding this coin, so only CONFIRMED names the
     // block whose time consensus would measure against.
@@ -129,6 +131,7 @@ StakeEligibility CStakeWallet::ClassifyForStaking(CAmount value, int depth,
 
 StakeSkipReport CStakeWallet::ExplainExcludedCoins(int64_t nTime, int nHeight) const
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
     StakeSkipReport report;
     if (!wallet) {
         return report;
@@ -214,6 +217,8 @@ std::vector<CAmount> CStakeWallet::SplitStakeCredit(CAmount nCredit, CAmount thr
 
 uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
+    if (!wallet) return 0;
     // Choose coins to use
     CAmount nBalance = wallet->GetBalance().m_mine_trusted;
     if (nBalance <= wallet->nReserveBalance) {
@@ -247,6 +252,8 @@ uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 
 bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight, std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet, CAmount& nValueRet) const
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
+    if (!wallet) return false;
     std::vector<COutput> vCoins;
 
     {
@@ -364,7 +371,28 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
 {
     // A legacy keystore already matches any script form for a key it holds.
     if (!wallet.IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) return true;
-    if (wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) return true;
+
+    // A watch-only wallet holds no key that could sign a coinstake, so there is
+    // nothing here to register and nothing it could ever stake. Reporting
+    // success let the switch go on for a wallet that cannot produce a block,
+    // and getstakinginfo then said it was staking.
+    if (wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+        LogPrint(BCLog::POS, "%s: wallet holds no private keys and cannot stake\n", __func__);
+        return false;
+    }
+
+    // Locked, and encrypted: DescriptorScriptPubKeyMan::GetKeys() returns an
+    // empty map in that state, so every private descriptor below fails to
+    // render and the loop finds nothing to mirror. Reporting success then is
+    // the worst of both -- staking is enabled with no pk() twin registered,
+    // which is precisely the state this function exists to prevent, and
+    // unlocking afterwards does not repair it because ToggleWalletStaking is
+    // the only caller and runs on the off->on edge alone. Refuse, and say what
+    // to do about it.
+    if (wallet.IsLocked()) {
+        LogPrint(BCLog::POS, "%s: wallet is locked; unlock it before enabling staking\n", __func__);
+        return false;
+    }
 
     struct Wanted {
         std::string expression;
@@ -379,8 +407,16 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
             auto* desc_man = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man);
             if (desc_man == nullptr) continue;
 
+            // Past the locked check above, a private descriptor that will not
+            // render belongs to keys this wallet does not hold. Such a
+            // descriptor cannot stake -- its coins are not spendable here, so
+            // selection never offers them -- and skipping it is right. It must
+            // not condemn the wallet's own descriptors alongside it.
             std::string desc;
-            if (!desc_man->GetDescriptorString(desc, /*priv=*/true)) continue;
+            if (!desc_man->GetDescriptorString(desc, /*priv=*/true)) {
+                LogPrint(BCLog::POS, "%s: skipping a descriptor whose keys this wallet does not hold\n", __func__);
+                continue;
+            }
             // Only pkh needs a counterpart; a pk descriptor is what we add.
             if (desc.rfind("pkh(", 0) != 0) continue;
 
@@ -441,13 +477,15 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
     return ok;
 }
 
-bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key)
+StakeAttempt CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key)
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
+    if (!wallet) return StakeAttempt::Error;
     arith_uint256 bnTargetPerCoinDay;
     bnTargetPerCoinDay.SetCompact(nBits);
     CAmount nBalance = wallet->GetAvailableBalance();
     if (nBalance <= wallet->nReserveBalance) {
-        return false;
+        return StakeAttempt::NoEligibleCoins;
     }
 
     // Ensure txn is empty
@@ -464,11 +502,11 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
     std::vector<const CWalletTx*> vwtxPrev;
     std::set<std::pair<const CWalletTx*, unsigned int>> setCoins;
     if (!SelectCoinsForStaking(nBalance - wallet->nReserveBalance, nTime, nBlockHeight, setCoins, nValueIn)) {
-        return false;
+        return StakeAttempt::NoEligibleCoins;
     }
 
     if (setCoins.empty()) {
-        return false;
+        return StakeAttempt::NoEligibleCoins;
     }
 
     CAmount nCredit = 0;
@@ -478,7 +516,7 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
     {
         auto pcoin = *it;
         if (fStopMinerProc)
-            return false;
+            return StakeAttempt::Stopped;
 
         int64_t nBlockTime;
         COutPoint prevoutStake = COutPoint(pcoin.first->GetHash(), pcoin.second);
@@ -557,13 +595,16 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
     }
 
     if (nCredit == 0 || nCredit > nBalance - wallet->nReserveBalance) {
-        return false;
+        // Coins were eligible and the loop above found no winning kernel at this
+        // timestamp. That is the ordinary outcome of an attempt, not a fault, and
+        // the caller must not treat it as one.
+        return StakeAttempt::NoKernelFound;
     }
 
     // Get block reward
     CAmount nReward = GetProofOfStakeReward();
     if (nReward < 0) {
-        return false;
+        return StakeAttempt::Error;
     }
 
     nCredit += nReward;
@@ -593,11 +634,11 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
         const SigningProvider* provider = GetStakingSigningProvider(*wallet, scriptPubKeyOut, provider_owned);
         if (!provider) {
             LogPrint(BCLog::POS, "%s: no signing provider for input %d.", __func__, nIn);
-            return false;
+            return StakeAttempt::Error;
         }
         if (!ProduceSignature(*provider, MutableTransactionSignatureCreator(&txNew, nIn, amount, SIGHASH_ALL), scriptPubKeyOut, sigdata)) {
             LogPrint(BCLog::POS, "%s: ProduceSignature failed.", __func__);
-            return false;
+            return StakeAttempt::Error;
         }
 
         UpdateInput(txNew.vin[nIn], sigdata);
@@ -608,15 +649,17 @@ bool CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex* pindex
     unsigned int nBytes = ::GetSerializeSize(txNew, PROTOCOL_VERSION);
     if (nBytes >= MaxBlockSize() / 5) {
         LogPrint(BCLog::POS, "%s: Exceeded coinstake size limit.", __func__);
-        return false;
+        return StakeAttempt::Error;
     }
 
     // Successfully generated coinstake
-    return true;
+    return StakeAttempt::BlockFound;
 }
 
-bool CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktemplate, int nHeight, int64_t nSearchTime)
+StakeAttempt CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktemplate, int nHeight, int64_t nSearchTime)
 {
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
+    if (!wallet) return StakeAttempt::Error;
     LogPrint(BCLog::POS, "%s, Height %d\n", __func__, nHeight);
 
     assert(pblocktemplate);
@@ -624,7 +667,7 @@ bool CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktem
     assert(pblock);
     if (pblock->vtx.size() < 1) {
         LogPrint(BCLog::POS, "%s: Malformed block.", __func__);
-        return false;
+        return StakeAttempt::Error;
     }
 
     CAmount nFees = -pblocktemplate->vTxFees[0];
@@ -638,8 +681,12 @@ bool CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktem
     LogPrint(BCLog::POS, "%s, nBits %d\n", __func__, pblock->nBits);
 
     CMutableTransaction txCoinStake;
-    if (CreateCoinStake(chain_state, pindexPrev, pblock->nBits, nSearchTime, nHeight, nFees, txCoinStake, key)) {
-
+    const StakeAttempt made = CreateCoinStake(chain_state, pindexPrev, pblock->nBits, nSearchTime, nHeight, nFees, txCoinStake, key);
+    if (made != StakeAttempt::BlockFound) {
+        wallet->nLastCoinStakeSearchTime = nSearchTime;
+        return made;
+    }
+    {
         LogPrint(BCLog::POS, "%s: Kernel found.\n", __func__);
 
         if (nSearchTime >= pindexPrev->GetPastTimeLimit() + 1) {
@@ -658,11 +705,14 @@ bool CStakeWallet::SignBlock(CChainState& chain_state, CBlockTemplate* pblocktem
             LogPrint(BCLog::POS, "%s: signing blockhash %s\n", __func__, blockhash.ToString());
 
             // Append a signature to the block
-            return SignBlockWithKey(*pblock, key);
+            return SignBlockWithKey(*pblock, key) ? StakeAttempt::BlockFound : StakeAttempt::Error;
         }
     }
 
     wallet->nLastCoinStakeSearchTime = nSearchTime;
 
-    return false;
+    // A kernel was found but this search time is not yet past the tip's median.
+    // Transient, and the next timestamp may serve, so it must not be reported as
+    // an eligibility problem.
+    return StakeAttempt::NoKernelFound;
 }

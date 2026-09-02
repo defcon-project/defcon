@@ -1241,7 +1241,6 @@ public:
     CAmount nStakeSplitThreshold = 15000 * COIN;
     int64_t nLastCoinStakeSearchTime{0};
     std::atomic<int> m_is_staking{NOT_STAKING};
-    mutable int m_greatest_txn_depth = 0;
 
     /**
      * Create a new transaction paying the recipients with a set of coins

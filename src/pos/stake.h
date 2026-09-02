@@ -113,11 +113,58 @@ std::string DescribePermanentExclusions(const StakeSkipReport& report);
  */
 int64_t StakeInputAge(int64_t candidate_time, int64_t coin_block_time, int64_t wallet_time);
 
+/**
+ * Why a staking attempt ended.
+ *
+ * The miner has to tell an ordinary miss from a wallet that has nothing to
+ * stake, and it could not: both left SignBlock returning a plain false. Every
+ * failed attempt was therefore read as a maturity problem and the wallet was
+ * paused, when a failed kernel search is the normal outcome of nearly all of
+ * them.
+ */
+enum class StakeAttempt {
+    //! A coinstake was built and the block is signed.
+    BlockFound,
+    //! Coins were eligible and none won at this timestamp. The common case.
+    NoKernelFound,
+    //! Nothing this wallet holds can be staked at present.
+    NoEligibleCoins,
+    //! Shutdown was requested during the search.
+    Stopped,
+    //! A malformed template, an unusable reward, or an oversized coinstake.
+    Error,
+};
+
+/**
+ * Whether an attempt with this outcome should rest the wallet rather than move
+ * straight on to the next search time.
+ *
+ * Only a wallet that has nothing stakeable gains anything from waiting. A
+ * kernel that did not win is the ordinary result of an attempt, and resting
+ * after it costs the wallet the search times it would have tried -- which is
+ * exactly what the miner did for every failure while it read a member that was
+ * never assigned.
+ */
+constexpr bool StakeAttemptWarrantsPause(StakeAttempt attempt)
+{
+    return attempt == StakeAttempt::NoEligibleCoins;
+}
+
 class CStakeWallet
 {
     private:
         bool staking;
-        CWallet* wallet;
+        /**
+         * Weak by design.
+         *
+         * An entry outlives the wallet it names: the registry is rebuilt when a
+         * toggle arrives, the miner works from a copy of it for seconds at a
+         * time, and unloadwallet can free the wallet in between. Holding a raw
+         * pointer contributed nothing to the wallet's refcount, so UnloadWallet's
+         * wait for the last owner could not see this reference at all and
+         * returned at exactly the moment the wallet was deleted.
+         */
+        std::weak_ptr<CWallet> m_wallet;
         std::string name;
         Consensus::Params params;
 
@@ -125,9 +172,9 @@ class CStakeWallet
         static const int SHORTDELAY = 2500;
         static const int LARGEDELAY = 10000;
 
-        CStakeWallet(CWallet* walletIn, Consensus::Params& paramsIn) {
+        CStakeWallet(const std::shared_ptr<CWallet>& walletIn, Consensus::Params& paramsIn) {
             staking = false;
-            wallet = walletIn;
+            m_wallet = walletIn;
             name = walletIn ? walletIn->GetName() : std::string{};
             params = paramsIn;
         }
@@ -136,12 +183,19 @@ class CStakeWallet
         void StakingEnabled() { staking = true; }
         void StakingDisabled() { staking = false; }
 
-        void RemoveWallet() {
-            wallet = nullptr;
-        }
-
-        CWallet* GetWallet() {
-            return wallet;
+        /**
+         * A strong reference, or null when the wallet is gone.
+         *
+         * The caller must keep the returned pointer for the whole of whatever it
+         * does with the wallet; that is the entire point of returning one. There
+         * is deliberately no accessor that hands back a bare CWallet*.
+         *
+         * This replaces a RemoveWallet() that set the pointer to null and had no
+         * caller anywhere in the tree -- the hazard was known and the guard was
+         * never wired up.
+         */
+        std::shared_ptr<CWallet> GetWallet() const {
+            return m_wallet.lock();
         }
 
         // Captured at construction: an entry can outlive the wallet it points
@@ -180,8 +234,8 @@ class CStakeWallet
 
         uint64_t GetStakeWeight(int64_t nTime, int nHeight) const;
         bool SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight, std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet, CAmount& nValueRet) const;
-        bool CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key);
-        bool SignBlock(CChainState& chain_state, CBlockTemplate* pblocktemplate, int nHeight, int64_t nSearchTime);
+        StakeAttempt CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key);
+        StakeAttempt SignBlock(CChainState& chain_state, CBlockTemplate* pblocktemplate, int nHeight, int64_t nSearchTime);
 };
 
 #endif // STAKE_H

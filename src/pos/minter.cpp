@@ -214,7 +214,7 @@ void PoSMiner(NodeContext& node)
                 return;
             if (!wallets_snapshot[y].CanStake())
                 continue;
-            CWallet* this_wallet = wallets_snapshot[y].GetWallet();
+            const std::shared_ptr<CWallet> this_wallet = wallets_snapshot[y].GetWallet();
             if (!this_wallet)
                 continue;
             if (foundBlock)
@@ -334,7 +334,8 @@ void PoSMiner(NodeContext& node)
 
                 this_wallet->m_is_staking = IS_STAKING;
                 fIsStaking = true;
-                if (wallets_snapshot[y].SignBlock(chainman.ActiveChainstate(), pblocktemplate.get(), nBestHeight + 1, nSearchTime)) {
+                const StakeAttempt attempt = wallets_snapshot[y].SignBlock(chainman.ActiveChainstate(), pblocktemplate.get(), nBestHeight + 1, nSearchTime);
+                if (attempt == StakeAttempt::BlockFound) {
                     CBlock *pblock = &pblocktemplate->block;
                     if (CheckStake(chainman, pblock)) {
                         foundBlock = true;
@@ -343,18 +344,30 @@ void PoSMiner(NodeContext& node)
                         continue;
                     }
                 }
-                else
+                else if (StakeAttemptWarrantsPause(attempt))
                 {
-                    int nRequiredDepth = COINBASE_MATURITY + 1;
+                    // Nothing this wallet holds can be staked at all, so there is
+                    // nothing to gain from examining every timestamp in the next
+                    // minute. This case, and only this case, earns the pause.
+                    //
+                    // It used to be taken on every failed attempt. The guard it sat
+                    // behind compared m_greatest_txn_depth against COINBASE_MATURITY
+                    // + 1, and that member was initialised to zero and assigned
+                    // nowhere: f37365c03e deleted AvailableCoinsForStaking and with
+                    // it the only writer, leaving the reader behind. The comparison
+                    // was therefore a tautology, so an ordinary failed kernel search
+                    // -- the outcome of nearly every attempt -- was reported as "no
+                    // outputs with required depth" and cost the wallet the next
+                    // minute of search times.
                     LOCK(this_wallet->cs_wallet);
-                    if (this_wallet->m_greatest_txn_depth < nRequiredDepth) {
-                        this_wallet->m_is_staking = NOT_STAKING_DEPTH;
-                        this_wallet->nLastCoinStakeSearchTime = nSearchTime + 60;
-                        LogPrint(BCLog::POS, "%s: No outputs with required depth.\n", __func__);
-                        UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
-                        continue;
-                    }
+                    this_wallet->m_is_staking = NOT_STAKING_DEPTH;
+                    this_wallet->nLastCoinStakeSearchTime = nSearchTime + 60;
+                    LogPrint(BCLog::POS, "%s: No outputs eligible to stake.\n", __func__);
+                    UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
+                    continue;
                 }
+                // NoKernelFound is the ordinary outcome, and the wallet is staking
+                // perfectly well: fall through and try the next search time.
             }
         }
     }

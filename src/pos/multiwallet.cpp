@@ -31,7 +31,7 @@ void MultiwalletInitialize()
 
     for (auto p : GetWallets())
     {
-        CStakeWallet wallet(p.get(), (Consensus::Params&) params);
+        CStakeWallet wallet(p, (Consensus::Params&) params);
         if (was_staking.count(wallet.GetName())) {
             wallet.StakingEnabled();
         } else {
@@ -57,7 +57,7 @@ void MultiwalletMaintenance()
 
     for (auto p : GetWallets())
     {
-        CStakeWallet wallet(p.get(), (Consensus::Params&) params);
+        CStakeWallet wallet(p, (Consensus::Params&) params);
         wallet.StakingDisabled();
         //use temporary copy of old wallet list to determine which wallets were staking
         for (size_t i = 0; i < temp_wallets.size(); i++) {
@@ -86,7 +86,7 @@ bool ToggleWalletStaking(const std::string& name)
                 // watches its balance leave as it produces blocks. Enabling
                 // without them would reintroduce exactly that, so a failure
                 // keeps the switch off.
-                CWallet* this_wallet = stakable_wallets[y].GetWallet();
+                const std::shared_ptr<CWallet> this_wallet = stakable_wallets[y].GetWallet();
                 if (this_wallet == nullptr || !EnsureCoinstakeDescriptors(*this_wallet)) {
                     LogPrint(BCLog::POS, "%s - not enabling staking for wallet '%s': coinstake descriptors unavailable\n", __func__, name);
                     return false;
@@ -110,7 +110,7 @@ int ReturnActiveStakingWallets()
     int active_wallets = 0;
     for (int y = 0; y < stakable_sz; y++)
     {
-        CWallet* this_wallet = stakable_wallets[y].GetWallet();
+        const std::shared_ptr<CWallet> this_wallet = stakable_wallets[y].GetWallet();
         if (!this_wallet)
             continue;
         if (stakable_wallets[y].CanStake())
