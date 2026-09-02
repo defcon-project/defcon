@@ -3974,11 +3974,31 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
  *  in ConnectBlock().
  *  Note that -reindex-chainstate skips the validation that happens here!
  */
+bool CheckPosBlockNonce(int nHeight, uint32_t nNonce, const Consensus::Params& params)
+{
+    if (nHeight < params.nPosNonceActivationHeight) return true;
+    if (nHeight <= params.lastPowBlock) return true;
+    return nNonce == 0;
+}
+
 static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, BlockManager& blockman, const CChainParams& params, const CBlockIndex* pindexPrev, int64_t nAdjustedTime) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
 {
     AssertLockHeld(::cs_main);
     assert(pindexPrev != nullptr);
     const int nHeight = pindexPrev->nHeight + 1;
+
+    // Checked here, on the header and before it can enter the block index,
+    // because the index is where the harm is done: it decides proof-of-stake
+    // from the nonce, and LoadBlockIndexGuts re-checks proof of work on every
+    // index entry that says PoW. A coinstake block with a non-zero nonce would
+    // pass every block-level check (PoW is skipped for a block that carries a
+    // coinstake), be stored as PoW, and fail on the next restart -- on every
+    // node at once, and permanently once ChainLocked. Nothing about the block
+    // is examined here, only what the height already implies.
+    if (!CheckPosBlockNonce(nHeight, block.nNonce, params.GetConsensus())) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-pos-nonce",
+                             strprintf("non-zero nonce %u at proof-of-stake height %d", block.nNonce, nHeight));
+    }
 
     // Check proof of work
     const Consensus::Params& consensusParams = params.GetConsensus();

@@ -350,6 +350,18 @@ void InitScriptExecutionCache();
 bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true, bool fCheckMerkleRoot = true, bool fCheckSignature = true);
 
 /**
+ * Whether a header's nonce is acceptable at the height it claims.
+ *
+ * A pure function of (height, nonce, params) so the rule can be tested
+ * exhaustively: the caller that enforces it, ContextualCheckBlockHeader, is
+ * static and needs a live chain, and no unit fixture reaches a proof-of-stake
+ * height on regtest. Below the activation height every nonce is accepted, as
+ * before. From it on, a header at a proof-of-stake height must carry
+ * nNonce == 0 -- see nPosNonceActivationHeight for why.
+ */
+bool CheckPosBlockNonce(int nHeight, uint32_t nNonce, const Consensus::Params& params);
+
+/**
  * Check that a candidate chain descends from the configured canonical anchor
  * once fork-recovery enforcement is active.
  */

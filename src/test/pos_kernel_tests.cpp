@@ -267,6 +267,63 @@ BOOST_FIXTURE_TEST_CASE(an_old_coin_is_retired_under_the_original_rules, PosKern
  * that appears by accident is a consensus change nobody decided to make, on a
  * network that is still running the original kernel deliberately.
  */
+// The nonce rule is a pure function of height, nonce and params, and is tested
+// as one because no unit fixture reaches a proof-of-stake height on regtest
+// (lastPowBlock is 5000 there and TestChain100Setup mines 100 blocks). Every
+// combination that matters is enumerated: below and above lastPowBlock, nonce
+// zero and not, gate reached and not.
+BOOST_AUTO_TEST_CASE(pos_block_nonce_rule)
+{
+    Consensus::Params p;
+    p.lastPowBlock = 999;
+
+    // Gate unset: the original rule, every nonce accepted at every height.
+    p.nPosNonceActivationHeight = std::numeric_limits<int>::max();
+    BOOST_CHECK(CheckPosBlockNonce(500, 0, p));
+    BOOST_CHECK(CheckPosBlockNonce(500, 12345, p));
+    BOOST_CHECK(CheckPosBlockNonce(1000, 0, p));
+    BOOST_CHECK(CheckPosBlockNonce(1000, 12345, p));
+    BOOST_CHECK(CheckPosBlockNonce(7560, 12345, p));
+
+    // Gate active from 7560.
+    p.nPosNonceActivationHeight = 7560;
+    // Proof-of-work heights are untouched whatever the gate says.
+    BOOST_CHECK(CheckPosBlockNonce(500, 12345, p));
+    BOOST_CHECK(CheckPosBlockNonce(999, 12345, p));
+    // Proof-of-stake heights below the gate keep the original rule.
+    BOOST_CHECK(CheckPosBlockNonce(1000, 12345, p));
+    BOOST_CHECK(CheckPosBlockNonce(7559, 12345, p));
+    // At and above the gate a proof-of-stake header must carry nonce 0.
+    BOOST_CHECK(CheckPosBlockNonce(7560, 0, p));
+    BOOST_CHECK(!CheckPosBlockNonce(7560, 1, p));
+    BOOST_CHECK(!CheckPosBlockNonce(7560, 12345, p));
+    BOOST_CHECK(CheckPosBlockNonce(100000, 0, p));
+    BOOST_CHECK(!CheckPosBlockNonce(100000, 1, p));
+    // The boundary itself is a proof-of-work height and stays free.
+    BOOST_CHECK(CheckPosBlockNonce(999, 1, p));
+
+    // Gate at 0: the rule holds from the first proof-of-stake height.
+    p.nPosNonceActivationHeight = 0;
+    BOOST_CHECK(CheckPosBlockNonce(999, 7, p));
+    BOOST_CHECK(CheckPosBlockNonce(1000, 0, p));
+    BOOST_CHECK(!CheckPosBlockNonce(1000, 7, p));
+}
+
+BOOST_AUTO_TEST_CASE(pos_nonce_activation_heights_are_pinned)
+{
+    const auto& args = *m_node.args;
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nPosNonceActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nPosNonceActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosNonceActivationHeight,
+                      0);
+    gArgs.SoftSetBoolArg("-devnet", true);
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::DEVNET)->GetConsensus().nPosNonceActivationHeight,
+                      7560);
+    gArgs.ForceRemoveArg("devnet");
+}
+
 BOOST_AUTO_TEST_CASE(kernel_v2_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;
