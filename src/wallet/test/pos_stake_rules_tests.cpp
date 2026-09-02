@@ -4,7 +4,15 @@
 
 #include <chainparams.h>
 #include <consensus/consensus.h>
+#include <key.h>
 #include <pos/stake.h>
+#include <script/sign.h>
+#include <script/signingprovider.h>
+#include <script/standard.h>
+#include <test/util/setup_common.h>
+#include <util/time.h>
+#include <validation.h>
+#include <wallet/ismine.h>
 #include <wallet/test/wallet_test_fixture.h>
 #include <wallet/wallet.h>
 
@@ -423,6 +431,108 @@ BOOST_AUTO_TEST_CASE(stake_attempt_rests_only_a_wallet_with_nothing_to_stake)
     BOOST_CHECK(!StakeAttemptWarrantsPause(StakeAttempt::BlockFound));
     BOOST_CHECK(!StakeAttemptWarrantsPause(StakeAttempt::Stopped));
     BOOST_CHECK(!StakeAttemptWarrantsPause(StakeAttempt::Error));
+}
+
+/**
+ * A coin this wallet cannot sign must never be offered as a kernel.
+ *
+ * AvailableCoins lists watch-only outputs too, flagged not spendable, and the
+ * selection loop used to read only value, depth, script type and age -- all of
+ * which a watch-only coin can satisfy. The test builds two outputs that are
+ * identical in every one of those respects and differ only in whether the
+ * wallet holds the key, checks that the classifier really does accept them
+ * both, and then expects exactly one of them to be selected.
+ */
+BOOST_FIXTURE_TEST_CASE(a_watch_only_output_is_never_offered_as_a_kernel, TestChain100Setup)
+{
+    Consensus::Params params = Params().GetConsensus();
+    const CAmount value = 12345 * COIN; // not a collateral amount, inside the range
+
+    // One transaction, two equal outputs: to a key this wallet will hold, and
+    // to a key it will only watch. Funded from the fixture's first, long-mature
+    // coinbase and mined in the next block. The wallet is not given the
+    // coinbase key: selection stops as soon as it has gathered the target, and
+    // the fixture's coinbases would satisfy any target before the loop reached
+    // the outputs under test, so the held output must be the only spendable
+    // coin the wallet has.
+    CKey held;
+    held.MakeNewKey(true);
+    CKey watched;
+    watched.MakeNewKey(true);
+    const CScript spendable = GetScriptForDestination(PKHash(held.GetPubKey()));
+    const CScript watch_only = GetScriptForDestination(PKHash(watched.GetPubKey()));
+
+    CMutableTransaction funding;
+    funding.vin.emplace_back(COutPoint(m_coinbase_txns[0]->GetHash(), 0));
+    funding.vout.emplace_back(value, spendable);
+    funding.vout.emplace_back(value, watch_only);
+    {
+        FillableSigningProvider keystore;
+        keystore.AddKey(coinbaseKey);
+        BOOST_REQUIRE(SignSignature(keystore, *m_coinbase_txns[0], funding, 0, SIGHASH_ALL));
+    }
+    const uint256 funding_txid = funding.GetHash();
+    CreateAndProcessBlock({funding}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+    // Deep enough for the kernel's maturity rule, with room to spare.
+    for (int i = 0; i < COINBASE_MATURITY + 5; ++i) {
+        CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+    }
+
+    // The wallet: one key held, the other watched, then a rescan so both
+    // outputs are known with their confirmations.
+    auto wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "", CreateMockWalletDatabase());
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+    }
+    wallet->LoadWallet();
+    {
+        auto* spk_man = wallet->GetOrCreateLegacyScriptPubKeyMan();
+        LOCK2(wallet->cs_wallet, spk_man->cs_KeyStore);
+        BOOST_REQUIRE(spk_man->AddKeyPubKey(held, held.GetPubKey()));
+        BOOST_REQUIRE(spk_man->AddWatchOnly(watch_only, /*nCreateTime=*/0));
+    }
+    {
+        WalletRescanReserver reserver(*wallet);
+        reserver.reserve();
+        const CWallet::ScanResult result = wallet->ScanForWalletTransactions(
+            m_node.chainman->ActiveChain().Genesis()->GetBlockHash(), /*start_height=*/0, /*max_height=*/{}, reserver, /*fUpdate=*/true);
+        BOOST_REQUIRE_EQUAL(result.status, CWallet::ScanResult::SUCCESS);
+    }
+
+    // The setup is what it claims: the wallet sees both outputs, one as its own
+    // and one as watched, at the same depth.
+    const CWalletTx* wtx = nullptr;
+    int depth = 0;
+    {
+        LOCK(wallet->cs_wallet);
+        const auto it = wallet->mapWallet.find(funding_txid);
+        BOOST_REQUIRE(it != wallet->mapWallet.end());
+        wtx = &it->second;
+        depth = wtx->GetDepthInMainChain();
+        BOOST_CHECK(wallet->IsMine(wtx->tx->vout[0]) & ISMINE_SPENDABLE);
+        BOOST_CHECK(wallet->IsMine(wtx->tx->vout[1]) & ISMINE_WATCH_ONLY);
+        BOOST_CHECK(!(wallet->IsMine(wtx->tx->vout[1]) & ISMINE_SPENDABLE));
+    }
+    BOOST_REQUIRE(depth - 1 >= COINBASE_MATURITY + 1);
+
+    // A candidate block an hour past the wall clock, so every coin above is
+    // older than the minimum age by a wide margin; the age given to the
+    // classifier below is a conservative lower bound of what selection sees.
+    const int64_t nTime = GetTime() + 3600;
+    const int nHeight = m_node.chainman->ActiveChain().Height() + 1;
+    CStakeWallet staker(wallet, params);
+    BOOST_CHECK(staker.ClassifyForStaking(value, depth, TxoutType::PUBKEYHASH, 3600 - 60, nHeight) == StakeEligibility::Eligible);
+
+    // Every other rule accepts both outputs; only the key decides. The target
+    // is more than either output alone, so neither ends the search by itself
+    // and both would be taken if both were eligible.
+    std::set<std::pair<const CWalletTx*, unsigned int>> chosen;
+    CAmount chosen_value = 0;
+    BOOST_REQUIRE(staker.SelectCoinsForStaking(2 * value, nTime, nHeight, chosen, chosen_value));
+    BOOST_CHECK_EQUAL(chosen_value, value);
+    BOOST_CHECK_EQUAL(chosen.count({wtx, 0}), 1U);
+    BOOST_CHECK_EQUAL(chosen.count({wtx, 1}), 0U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
