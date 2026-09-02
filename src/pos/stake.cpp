@@ -269,6 +269,16 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
         const CWalletTx* pcoin = output.tx;
         int i = output.i;
 
+        // AvailableCoins lists watch-only outputs as well, marked not spendable,
+        // and nothing below ever asked. Such a coin passes every rule that
+        // follows -- value, depth, script type, age -- and can be chosen as a
+        // kernel this wallet cannot sign: the attempt then fails after the
+        // search instead of never starting, and if that kernel is the one that
+        // wins, the block is lost.
+        if (!output.fSpendable) {
+            continue;
+        }
+
         // Stop if we've chosen enough inputs
         if (nValueRet >= nTargetValue) {
             break;
