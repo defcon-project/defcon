@@ -26,6 +26,14 @@ double GetPoSKernelPS(CBlockIndex *pindex, const Consensus::Params& params);
 uint256 ComputeStakeModifier(const CBlockIndex *pindexPrev, const uint256 &kernel);
 
 /**
+ * Whether a block at nHeight computes its stake modifier from its real kernel
+ * (at connect time, once prevoutStake is known) rather than at header time
+ * from a kernel that has not been read yet. Below the activation height the
+ * header-time value stands, which keeps every existing index entry identical.
+ */
+bool StakeModifierFromKernel(int nHeight, const Consensus::Params& params);
+
+/**
  * Whether the corrected kernel rules apply to a block at nHeight. One-way and
  * height-only by design: the staker and every validator have to reach the same
  * answer from the height alone, never from local configuration.

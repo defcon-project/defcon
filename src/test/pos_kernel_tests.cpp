@@ -347,6 +347,51 @@ BOOST_AUTO_TEST_CASE(pos_coinbase_value_rule)
     BOOST_CHECK(!CheckPosCoinbaseValue(1000, expected + 1, expected, p));
 }
 
+// The modifier itself is a pure function of (previous modifier, kernel), and
+// the gate is a pure function of height, so both are tested as such. The
+// connect-time recomputation is one call to the former under the latter; a
+// fixture that reaches a proof-of-stake height on regtest does not exist.
+BOOST_AUTO_TEST_CASE(pos_stake_modifier_v2)
+{
+    Consensus::Params p;
+    p.nPosStakeModifierV2ActivationHeight = 7560;
+    BOOST_CHECK(!StakeModifierFromKernel(7559, p));
+    BOOST_CHECK(StakeModifierFromKernel(7560, p));
+    BOOST_CHECK(StakeModifierFromKernel(100000, p));
+    p.nPosStakeModifierV2ActivationHeight = std::numeric_limits<int>::max();
+    BOOST_CHECK(!StakeModifierFromKernel(100000, p));
+
+    // What the rule changes: with the kernel read, two blocks at the same
+    // height that staked different outputs get different modifiers; with the
+    // kernel unread -- the header-time value -- they do not, whatever they staked.
+    CBlockIndex prev;
+    prev.nStakeModifier = uint256S("11");
+    const uint256 kernelA = uint256S("aa");
+    const uint256 kernelB = uint256S("bb");
+    BOOST_CHECK(ComputeStakeModifier(&prev, kernelA) != ComputeStakeModifier(&prev, kernelB));
+    BOOST_CHECK_EQUAL(ComputeStakeModifier(&prev, uint256()), ComputeStakeModifier(&prev, uint256()));
+    // And the degenerate form this chain carries below the gate, stated so it
+    // is a documented fact rather than a surprise: null kernel, previous only.
+    CDataStream ss(SER_GETHASH, 0);
+    ss << uint256() << prev.nStakeModifier;
+    BOOST_CHECK_EQUAL(ComputeStakeModifier(&prev, uint256()), Hash(ss));
+}
+
+BOOST_AUTO_TEST_CASE(pos_stake_modifier_v2_activation_heights_are_pinned)
+{
+    const auto& args = *m_node.args;
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nPosStakeModifierV2ActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nPosStakeModifierV2ActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosStakeModifierV2ActivationHeight,
+                      0);
+    gArgs.SoftSetBoolArg("-devnet", true);
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::DEVNET)->GetConsensus().nPosStakeModifierV2ActivationHeight,
+                      7560);
+    gArgs.ForceRemoveArg("devnet");
+}
+
 BOOST_AUTO_TEST_CASE(pos_coinbase_bound_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;

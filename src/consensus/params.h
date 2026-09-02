@@ -232,6 +232,18 @@ struct Params {
      *  is set. */
     int nPosCoinbaseBoundActivationHeight{std::numeric_limits<int>::max()};
 
+    /** Height from which a proof-of-stake block's stake modifier is computed
+     *  at connect time from the kernel it actually staked, instead of at
+     *  header time from a kernel that has not been read yet. Below it the
+     *  modifier of every block is Hash(32 zero bytes || previous modifier): a
+     *  pure function of height, carrying no entropy from the chain, so every
+     *  future kernel could be searched in advance. The first block at or above
+     *  this height seeds from its (degenerate) predecessor, so no history is
+     *  rewritten and no reindex is needed -- but every node must carry the
+     *  rule before this height, or kernels diverge. One-way and height-only.
+     *  The default -- an unreachable height -- means the original rule. */
+    int nPosStakeModifierV2ActivationHeight{std::numeric_limits<int>::max()};
+
     /** M-02: below this height IsBLSSig accepts any signature of BLS size or
      *  larger, letting an oversized signature skip the ECDSA encoding checks;
      *  at or above it, only the exact BLS size is treated as BLS. The default
