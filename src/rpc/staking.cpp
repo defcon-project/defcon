@@ -64,11 +64,43 @@ static RPCHelpMan getstakinginfo()
 {
     ChainstateManager& chainman = EnsureAnyChainman(request.context);
     CTxMemPool& mempool = EnsureAnyMemPool(request.context);
-    LOCK(cs_main);
-    CChainState& active_chainstate = chainman.ActiveChainstate();
-    CChain& active_chain = active_chainstate.m_chain;
+    const Consensus::Params& consensusParams = Params().GetConsensus();
 
-    CBlockIndex* pindex;
+    // Everything the chain has to answer, taken in one short lock and copied
+    // out; nothing below this block touches cs_main again.
+    //
+    // This RPC used to hold cs_main across its whole body, which put it on the
+    // wrong side of the tree's lock order. Everywhere else the wallet lock is
+    // taken first and the chain lock from underneath it -- rpc/evo.cpp:1386
+    // writes that order out as LOCK2(wallet->cs_wallet, cs_main), and the
+    // wallet reaches the chain only through interfaces::Chain, which takes
+    // cs_main at the bottom. This was the single site that inverted it, and
+    // both halves of the resulting AB-BA pair shipped: this call held cs_main
+    // and then wanted cs_wallet inside GetStakeWeight, while listunspent holds
+    // cs_wallet and wants cs_main inside checkFinalTx. Two plain blocking locks
+    // with no timeout, on a window wide enough to meet in practice -- and the
+    // outcome of meeting is a node that stops, not one that slows down.
+    //
+    // The duration mattered too, though it was the milder half. On a wallet
+    // with a few thousand unspent outputs the body measured 227-286 ms against
+    // a 10 ms baseline, and ConnectTip, ActivateBestChainStep and AcceptBlock
+    // all require cs_main, so a block arriving mid-call waited that long.
+    int tip_height;
+    int64_t tip_time;
+    double tip_difficulty;
+    uint64_t nNetworkWeight;
+    {
+        LOCK(cs_main);
+        CBlockIndex* pindex = chainman.ActiveChainstate().m_chain.Tip();
+        if (pindex == nullptr) {
+            throw JSONRPCError(RPC_IN_WARMUP, "Chain tip not available yet");
+        }
+        tip_height = pindex->nHeight;
+        tip_time = pindex->GetBlockTime();
+        tip_difficulty = GetDifficulty(pindex);
+        nNetworkWeight = GetPoSKernelPS(pindex, consensusParams);
+    }
+
     uint64_t nWeight;
     uint64_t nExpectedTime;
     uint64_t lastCoinStakeSearchInterval;
@@ -84,19 +116,17 @@ static RPCHelpMan getstakinginfo()
         if (!this_wallet)
             continue;
 
-        {
-            LOCK(cs_main);
-            pindex = active_chain.Tip();
-            // Resolved from the height being mined, which is the one after
-            // the tip and the same height ExplainExcludedCoins is given below.
-            // Read a block apart, the two halves of this answer could describe
-            // different rules across an activation height.
-            nWeight = stakable_wallets[y].GetStakeWeight(pindex->GetBlockTime(), pindex->nHeight + 1);
-            lastCoinStakeSearchInterval = this_wallet->nLastCoinStakeSearchTime;
-        }
+        // Resolved from the height being mined, which is the one after the
+        // tip and the same height ExplainExcludedCoins is given below. Read a
+        // block apart, the two halves of this answer could describe different
+        // rules across an activation height -- which is why both are given the
+        // one snapshot taken above rather than each reading the tip again.
+        //
+        // No cs_main here: GetStakeWeight takes cs_wallet and reaches the chain
+        // from underneath it, which is the order the rest of the tree keeps.
+        nWeight = stakable_wallets[y].GetStakeWeight(tip_time, tip_height + 1);
+        lastCoinStakeSearchInterval = this_wallet->nLastCoinStakeSearchTime;
 
-        const Consensus::Params& consensusParams = Params().GetConsensus();
-        uint64_t nNetworkWeight = GetPoSKernelPS(pindex, consensusParams);
         int64_t nTargetSpacing = consensusParams.posTargetSpacing;
         nExpectedTime = 0;
         if (nWeight > 0) {
@@ -124,7 +154,7 @@ static RPCHelpMan getstakinginfo()
 
         obj2.pushKV("errors", GetWarnings("statusbar").original);
         obj2.pushKV("pooledtx", (uint64_t)mempool.size());
-        obj2.pushKV("difficulty", GetDifficulty(pindex));
+        obj2.pushKV("difficulty", tip_difficulty);
         obj2.pushKV("search-interval", (int)lastCoinStakeSearchInterval);
         obj2.pushKV("weight", (uint64_t)nWeight);
         obj2.pushKV("netstakeweight", (uint64_t)nNetworkWeight);
@@ -138,7 +168,7 @@ static RPCHelpMan getstakinginfo()
         // The tip's time and the height after it, matching GetStakeWeight above:
         // age is measured against a candidate block, and the tip's timestamp is
         // the closest one the node can state rather than guess.
-        const StakeSkipReport skipped = stakable_wallets[y].ExplainExcludedCoins(pindex->GetBlockTime(), pindex->nHeight + 1);
+        const StakeSkipReport skipped = stakable_wallets[y].ExplainExcludedCoins(tip_time, tip_height + 1);
         if (skipped.Total() > 0) {
             UniValue excluded(UniValue::VOBJ);
             if (skipped.immature > 0)   excluded.pushKV("immature", ValueFromAmount(skipped.immature));
