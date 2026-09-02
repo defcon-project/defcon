@@ -157,4 +157,45 @@ BOOST_AUTO_TEST_CASE(a_registry_entry_cannot_hand_out_a_freed_wallet)
     BOOST_CHECK(entry.GetWallet() == nullptr);
 }
 
+// Enabling staking registers the pk() twin a descriptor wallet needs, because
+// a coinstake pays vout[1] to pay-to-pubkey and a wallet tracking only pkh()
+// does not recognise its own coinstake -- it books the staked amount and the
+// reward as an outgoing send. The registration could not happen on a wallet
+// whose private descriptors will not render, and it reported success anyway,
+// so the switch went on and the wallet staked into exactly that state.
+// Unlocking afterwards did not repair it: this runs on the off->on edge alone.
+BOOST_AUTO_TEST_CASE(coinstake_descriptors_refuse_a_wallet_that_cannot_provide_them)
+{
+    // A watch-only wallet holds no key that could sign a coinstake at all.
+    {
+        std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                                                    "pos-watchonly-test", CreateDummyWalletDatabase());
+        wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS | WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+        BOOST_CHECK(!EnsureCoinstakeDescriptors(*wallet));
+    }
+
+    // An encrypted wallet that is locked renders no private descriptor, so the
+    // loop finds nothing to mirror and used to call that success.
+    {
+        std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                                                    "pos-locked-test", CreateDummyWalletDatabase());
+        wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+        {
+            LOCK(wallet->cs_wallet);
+            wallet->SetupDescriptorScriptPubKeyMans();
+        }
+        BOOST_REQUIRE(wallet->EncryptWallet("pos-descriptor-test"));
+        BOOST_REQUIRE(wallet->Lock());
+        BOOST_REQUIRE(wallet->IsLocked());
+
+        BOOST_CHECK(!EnsureCoinstakeDescriptors(*wallet));
+
+        // The guard refuses a state, not a wallet. Unlocked, the same wallet
+        // must be served -- otherwise the fix would cost every encrypted wallet
+        // its staking rather than making it safe.
+        BOOST_REQUIRE(wallet->Unlock("pos-descriptor-test"));
+        BOOST_CHECK(EnsureCoinstakeDescriptors(*wallet));
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

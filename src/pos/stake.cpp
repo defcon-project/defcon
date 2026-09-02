@@ -371,7 +371,28 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
 {
     // A legacy keystore already matches any script form for a key it holds.
     if (!wallet.IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) return true;
-    if (wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) return true;
+
+    // A watch-only wallet holds no key that could sign a coinstake, so there is
+    // nothing here to register and nothing it could ever stake. Reporting
+    // success let the switch go on for a wallet that cannot produce a block,
+    // and getstakinginfo then said it was staking.
+    if (wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+        LogPrint(BCLog::POS, "%s: wallet holds no private keys and cannot stake\n", __func__);
+        return false;
+    }
+
+    // Locked, and encrypted: DescriptorScriptPubKeyMan::GetKeys() returns an
+    // empty map in that state, so every private descriptor below fails to
+    // render and the loop finds nothing to mirror. Reporting success then is
+    // the worst of both -- staking is enabled with no pk() twin registered,
+    // which is precisely the state this function exists to prevent, and
+    // unlocking afterwards does not repair it because ToggleWalletStaking is
+    // the only caller and runs on the off->on edge alone. Refuse, and say what
+    // to do about it.
+    if (wallet.IsLocked()) {
+        LogPrint(BCLog::POS, "%s: wallet is locked; unlock it before enabling staking\n", __func__);
+        return false;
+    }
 
     struct Wanted {
         std::string expression;
@@ -386,8 +407,16 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
             auto* desc_man = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man);
             if (desc_man == nullptr) continue;
 
+            // Past the locked check above, a private descriptor that will not
+            // render belongs to keys this wallet does not hold. Such a
+            // descriptor cannot stake -- its coins are not spendable here, so
+            // selection never offers them -- and skipping it is right. It must
+            // not condemn the wallet's own descriptors alongside it.
             std::string desc;
-            if (!desc_man->GetDescriptorString(desc, /*priv=*/true)) continue;
+            if (!desc_man->GetDescriptorString(desc, /*priv=*/true)) {
+                LogPrint(BCLog::POS, "%s: skipping a descriptor whose keys this wallet does not hold\n", __func__);
+                continue;
+            }
             // Only pkh needs a counterpart; a pk descriptor is what we add.
             if (desc.rfind("pkh(", 0) != 0) continue;
 
