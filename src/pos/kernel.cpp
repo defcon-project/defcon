@@ -4,6 +4,10 @@
 
 #include <pos/kernel.h>
 
+#include <arith_uint256.h>
+
+#include <limits>
+
 /**
  * Check whether the coinstake timestamp mask has been adhered
  * to, preventing bruteforcing of the timestamp.
@@ -18,6 +22,15 @@ bool CheckCoinStakeTimestamp(int nTimeBlock, const Consensus::Params& params)
  * Returns the sum of difficulty of a series of blocks over an interval
  * divided by the total time taken between blocks in the interval.
  */
+int64_t ExpectedStakeTime(int64_t nTargetSpacing, uint64_t nNetworkWeight, uint64_t nWeight)
+{
+    if (nWeight == 0 || nTargetSpacing <= 0) return 0;
+    const arith_uint256 seconds = (arith_uint256(nNetworkWeight) * arith_uint256(static_cast<uint64_t>(nTargetSpacing))) / arith_uint256(nWeight);
+    const arith_uint256 max_seconds(static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
+    if (seconds > max_seconds) return std::numeric_limits<int64_t>::max();
+    return static_cast<int64_t>(seconds.GetLow64());
+}
+
 double GetPoSKernelPS(CBlockIndex *pindex, const Consensus::Params& params)
 {
     LOCK(cs_main);

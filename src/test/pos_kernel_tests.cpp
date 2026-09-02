@@ -407,6 +407,31 @@ BOOST_AUTO_TEST_CASE(pos_coinbase_bound_activation_heights_are_pinned)
     gArgs.ForceRemoveArg("devnet");
 }
 
+BOOST_AUTO_TEST_CASE(expected_stake_time_does_not_wrap)
+{
+    BOOST_CHECK_EQUAL(ExpectedStakeTime(150, 0, 0), 0);
+    BOOST_CHECK_EQUAL(ExpectedStakeTime(150, 1000, 0), 0);
+    BOOST_CHECK_EQUAL(ExpectedStakeTime(0, 1000, 1000), 0);
+    BOOST_CHECK_EQUAL(ExpectedStakeTime(150, 1000, 1000), 150);
+    BOOST_CHECK_EQUAL(ExpectedStakeTime(150, 3000, 1000), 450);
+
+    // The devnet as read on 2026-09-02: the 64-bit product is within two per
+    // cent of 2^64 and the answer, 351 s, matched what the node then reported.
+    const uint64_t net = 120870184417067680ULL;
+    const uint64_t mine = 51525888930772651ULL;
+    BOOST_CHECK_EQUAL(ExpectedStakeTime(150, net, mine), 351);
+
+    // Past that point 64-bit arithmetic wraps and answers 47 seconds for what
+    // is really 2911; stated so the reason for the 256-bit form is on record.
+    const uint64_t larger_net = 1000000000000000000ULL;
+    BOOST_CHECK_EQUAL(ExpectedStakeTime(150, larger_net, mine), 2911);
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(150) * larger_net / mine, 47U);
+
+    // The far end saturates instead of wrapping.
+    BOOST_CHECK_EQUAL(ExpectedStakeTime(std::numeric_limits<int64_t>::max(), std::numeric_limits<uint64_t>::max(), 1),
+                      std::numeric_limits<int64_t>::max());
+}
+
 BOOST_AUTO_TEST_CASE(pos_nonce_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;

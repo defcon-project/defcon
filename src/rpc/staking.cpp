@@ -129,10 +129,10 @@ static RPCHelpMan getstakinginfo()
         lastCoinStakeSearchInterval = this_wallet->nLastCoinStakeSearchTime;
 
         int64_t nTargetSpacing = consensusParams.posTargetSpacing;
-        nExpectedTime = 0;
-        if (nWeight > 0) {
-            nExpectedTime = nTargetSpacing * nNetworkWeight / nWeight;
-        }
+        // In 256-bit arithmetic: the 64-bit product of spacing and network
+        // weight was within two per cent of wrapping on the devnet, and would
+        // have wrapped to a small, believable number rather than an error.
+        nExpectedTime = ExpectedStakeTime(nTargetSpacing, nNetworkWeight, nWeight);
 
         UniValue obj2(UniValue::VOBJ);
         obj2.pushKV("name", this_wallet->GetName());

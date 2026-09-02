@@ -21,6 +21,16 @@ bool CheckCoinStakeTimestamp(int nTimeBlock, const Consensus::Params& params);
 double GetPoSKernelPS(CBlockIndex *pindex, const Consensus::Params& params);
 
 /**
+ * Expected seconds until a wallet of nWeight finds a kernel against a network
+ * of nNetworkWeight, at nTargetSpacing seconds per block. Computed in 256-bit
+ * arithmetic: the product nTargetSpacing * nNetworkWeight leaves 64 bits once
+ * the network weight passes about 1.2e17, and it wraps to a small, plausible
+ * nonsense rather than failing. Zero when the wallet has no weight; saturates
+ * at the largest int64 rather than wrapping.
+ */
+int64_t ExpectedStakeTime(int64_t nTargetSpacing, uint64_t nNetworkWeight, uint64_t nWeight);
+
+/**
  * Compute the hash modifier for proof-of-stake
  */
 uint256 ComputeStakeModifier(const CBlockIndex *pindexPrev, const uint256 &kernel);
