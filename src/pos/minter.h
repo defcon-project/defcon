@@ -56,6 +56,8 @@ extern std::atomic<bool> fMinterRunning;
  */
 std::string MinterLastError();
 int64_t MinterLastErrorTime();
+/** When the minter's current uninterrupted run began, or 0 if it is not running. */
+int64_t MinterRunningSince();
 void SetMinterLastError(const std::string& what);
 
 bool CheckStake(ChainstateManager& chainman, CBlock *pblock);

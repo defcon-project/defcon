@@ -26,6 +26,22 @@ std::atomic<bool> fIsStaking(false);
 std::atomic<int64_t> nTimeLastStake(0);
 std::atomic<bool> fMinterRunning(false);
 
+/**
+ * When the current uninterrupted run of the minter loop began, or 0 when it is
+ * not running.
+ *
+ * This exists so last_error can be read correctly. Nothing clears that message
+ * -- deliberately, because a fault that recurs must stay visible and clearing
+ * on the next success would hide it between failures. But then a transient
+ * fault that was recovered from an hour ago reports exactly like a live one,
+ * and during a rollout that is the difference between a healthy node and an
+ * incident.
+ *
+ * Comparing the two settles it without destroying the record: an error stamped
+ * before the current run started has already been survived.
+ */
+std::atomic<int64_t> g_minter_running_since(0);
+
 namespace {
 Mutex g_minter_error_mutex;
 std::string g_minter_last_error GUARDED_BY(g_minter_error_mutex);
@@ -49,6 +65,11 @@ int64_t MinterLastErrorTime()
 {
     LOCK(g_minter_error_mutex);
     return g_minter_last_error_time;
+}
+
+int64_t MinterRunningSince()
+{
+    return g_minter_running_since.load();
 }
 
 namespace {
@@ -381,8 +402,16 @@ namespace {
  * it stuck true for the one exit that means the miner stopped working.
  */
 struct MinterRunningScope {
-    MinterRunningScope() { fMinterRunning = true; }
-    ~MinterRunningScope() { fMinterRunning = false; }
+    MinterRunningScope()
+    {
+        g_minter_running_since = GetTime();
+        fMinterRunning = true;
+    }
+    ~MinterRunningScope()
+    {
+        fMinterRunning = false;
+        g_minter_running_since = 0;
+    }
 };
 } // namespace
 
