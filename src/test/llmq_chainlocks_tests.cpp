@@ -105,7 +105,7 @@ BOOST_AUTO_TEST_CASE(dkg_bad_votes_threshold_resolver)
     // A profile carrying no revision keeps its value at every height, even
     // once the network has an activation height.
     BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 0), 30);
-    params.nDkgBadVotesV2ActivationHeight = 6336;
+    params.nDkgBadVotesV2ActivationHeight = 7416;
     BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 1000000), 30);
 
     // A revision on a network that never activates it must never fire.
@@ -114,8 +114,8 @@ BOOST_AUTO_TEST_CASE(dkg_bad_votes_threshold_resolver)
     BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(never, profile, 1000000), 30);
 
     // The boundary is exact, and it only ever moves forwards.
-    BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 6335), 30);
-    BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 6336), 300);
+    BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 7415), 30);
+    BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 7416), 300);
     BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 1000000), 300);
 }
 
