@@ -671,6 +671,13 @@ public:
         // the deadline for every node to run a binary that knows the type.
         consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
         consensus.nChainLocksV2ActivationHeight = 3240;
+        // Re-check this against the tip before shipping the binary that
+        // carries it. A gate already in the past is worse than none: every
+        // node that takes the binary flips the moment it starts, so a rollout
+        // that is not instantaneous leaves the fleet resolving two different
+        // thresholds with no synchronised moment at all. 6336 went stale
+        // exactly that way while the rollout waited on host access.
+        consensus.nDkgBadVotesV2ActivationHeight = 7416;
 
         UpdateDevnetLLMQChainLocksFromArgs(args);
         UpdateDevnetLLMQInstantSendDIP0024FromArgs(args);

@@ -669,7 +669,9 @@ void CDKGSession::VerifyAndJustify(CDKGPendingMessages& pendingMessages, PeerMan
         if (m->bad) {
             continue;
         }
-        if (m->badMemberVotes.size() >= size_t(params.dkgBadVotesThreshold)) {
+        if (m->badMemberVotes.size() >=
+            size_t(GetDkgBadVotesThreshold(Params().GetConsensus(), params,
+                                           m_quorum_base_block_index->nHeight))) {
             logger.Batch("%s marked as bad as %d other members voted for this", m->dmn->proTxHash.ToString(), m->badMemberVotes.size());
             MarkBadMember(m->idx);
             continue;

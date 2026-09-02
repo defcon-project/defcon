@@ -52,6 +52,13 @@ bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBloc
  *  counts, sporks or local configuration. */
 [[nodiscard]] Consensus::LLMQType GetChainLocksLLMQType(const ::Consensus::Params& params, int nSignedHeight);
 
+/** The bad-votes threshold a DKG session applies, resolved from its own quorum
+ *  height. One-way and height-only for the same reason as the ChainLock
+ *  resolver: every member of a session must reach the same answer without
+ *  consulting anything local. */
+[[nodiscard]] int GetDkgBadVotesThreshold(const ::Consensus::Params& params,
+                                          const Consensus::LLMQParams& llmqParams, int nHeight);
+
 bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev, std::optional<bool> optDIP0024IsActive, std::optional<bool> optHaveDIP0024Quorums);
 
 std::vector<Consensus::LLMQType> GetEnabledQuorumTypes(gsl::not_null<const CBlockIndex*> pindex);

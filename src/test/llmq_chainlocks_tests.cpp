@@ -7,6 +7,8 @@
 #include <llmq/params.h>
 #include <test/util/setup_common.h>
 
+#include <string>
+
 #include <boost/test/unit_test.hpp>
 
 BOOST_FIXTURE_TEST_SUITE(llmq_chainlocks_tests, BasicTestingSetup)
@@ -67,10 +69,84 @@ BOOST_AUTO_TEST_CASE(q60_profile_shape)
     BOOST_CHECK_EQUAL(q60->dkgBadVotesThreshold, 48);
     BOOST_CHECK(q60->dkgBadVotesThreshold <= q60->size);
 
+    // The bound that survives review. A threshold at or below the Byzantine
+    // minority would let that minority alone expel honest members and have
+    // them PoSe-punished, since exclusion from validMembers is what the
+    // punishment loop acts on.
+    //
+    // There is deliberately no upper bound here. An earlier reading derived one
+    // from minSize -- at 44 seated only 43 can vote, so 48 cannot fire -- and
+    // concluded that expulsion becomes impossible when most needed. It does
+    // not: a member that sends no contribution is marked bad by every peer
+    // independently at dkgsession.cpp:458, with no vote cast, and one
+    // unanswered complaint is enough at :919. What this threshold governs is
+    // narrower and worth keeping high: how many accusers condemn a member
+    // before it is allowed to justify itself.
+    BOOST_CHECK(q60->dkgBadVotesThreshold > q60->size / 3);
+
     // The mining window must start after the last DKG phase.
     BOOST_CHECK(q60->dkgMiningWindowStart >= 5 * q60->dkgPhaseBlocks);
     BOOST_CHECK(q60->dkgMiningWindowEnd > q60->dkgMiningWindowStart);
     BOOST_CHECK(q60->dkgMiningWindowEnd < q60->dkgInterval);
+}
+
+// The bad-votes resolver carries the same obligation as the ChainLock one:
+// every member of a DKG session must resolve the same threshold from the
+// quorum height alone. A member that resolves a different one computes a
+// different valid-member set, and the session then agrees on no commitment at
+// all -- which is why this is height-only and one-way rather than a flag.
+BOOST_AUTO_TEST_CASE(dkg_bad_votes_threshold_resolver)
+{
+    Consensus::Params params;
+    Consensus::LLMQParams profile{};
+    profile.size = 400;
+    profile.dkgBadVotesThreshold = 30;
+
+    // A profile carrying no revision keeps its value at every height, even
+    // once the network has an activation height.
+    BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 0), 30);
+    params.nDkgBadVotesV2ActivationHeight = 7416;
+    BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 1000000), 30);
+
+    // A revision on a network that never activates it must never fire.
+    const Consensus::Params never{};
+    profile.dkgBadVotesThresholdV2 = 300;
+    BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(never, profile, 1000000), 30);
+
+    // The boundary is exact, and it only ever moves forwards.
+    BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 7415), 30);
+    BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 7416), 300);
+    BOOST_CHECK_EQUAL(llmq::GetDkgBadVotesThreshold(params, profile, 1000000), 300);
+}
+
+// What every profile does or does not revise, pinned.
+//
+// A zero is the deliberate "no revision", and it is also what a profile gets
+// when a designated-initializer literal simply does not name the field -- so
+// the danger is not a wrong number but a plausible one. Anything non-zero has
+// to raise the threshold and has to stay reachable, because a bad-votes value
+// that is too low is precisely what this revision exists to remove.
+BOOST_AUTO_TEST_CASE(bad_votes_revisions_are_sane)
+{
+    const Consensus::LLMQParams* p400{nullptr};
+    for (const auto& p : Consensus::available_llmqs) {
+        if (p.dkgBadVotesThresholdV2 != 0) {
+            BOOST_CHECK_MESSAGE(p.dkgBadVotesThresholdV2 > p.dkgBadVotesThreshold,
+                                std::string(p.name) + " revises its bad-votes threshold downwards");
+            BOOST_CHECK_MESSAGE(p.dkgBadVotesThresholdV2 <= p.size,
+                                std::string(p.name) + " cannot reach its revised bad-votes threshold");
+        }
+        if (p.type == Consensus::LLMQType::LLMQ_400_60) {
+            p400 = &p;
+        }
+    }
+    BOOST_REQUIRE(p400 != nullptr);
+
+    // 30 of 400 is 7.5% -- the same disproportion that made 3-of-50 the devnet
+    // ban-wave engine. 300 is the upstream value, and the one llmq_400_85 in
+    // this same table has carried all along.
+    BOOST_CHECK_EQUAL(p400->dkgBadVotesThreshold, 30);
+    BOOST_CHECK_EQUAL(p400->dkgBadVotesThresholdV2, 300);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

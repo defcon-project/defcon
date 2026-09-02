@@ -102,6 +102,12 @@ struct LLMQParams {
     // phase-transition, which would otherwise result in inconsistent views of the valid members set
     int dkgBadVotesThreshold;
 
+    // The revised bad-votes threshold this profile uses at and above
+    // Consensus::Params::nDkgBadVotesV2ActivationHeight. Zero -- the default for
+    // every profile that does not name it -- means the profile has no revision
+    // and keeps dkgBadVotesThreshold forever.
+    int dkgBadVotesThresholdV2{0};
+
     // Number of quorums to consider "active" for signing sessions
     int signingActiveQuorumCount;
 
@@ -416,6 +422,10 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
         .dkgMiningWindowStart = 20, // dkgPhaseBlocks * 5 = after finalization
         .dkgMiningWindowEnd = 28,
         .dkgBadVotesThreshold = 30,
+        // 30 of 400 is 7.5% -- the same disproportion that made 3-of-50 the
+        // devnet ban-wave engine. 300 is the upstream value and the one
+        // llmq_400_85 still carries below.
+        .dkgBadVotesThresholdV2 = 300,
 
         .signingActiveQuorumCount = 4, // two days worth of LLMQs
 
