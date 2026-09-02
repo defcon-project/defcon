@@ -3992,6 +3992,13 @@ bool CheckPosCoinbaseValue(int nHeight, CAmount coinbaseValueOut, CAmount expect
     return coinbaseValueOut <= expected;
 }
 
+bool CheckPosBlockTime(int nHeight, int64_t nTime, int64_t nPrevTime, const Consensus::Params& params)
+{
+    if (nHeight < params.nPosBlockTimeBoundActivationHeight) return true;
+    if (nHeight <= params.lastPowBlock) return true;
+    return nTime > nPrevTime;
+}
+
 bool CheckPosBlockNonce(int nHeight, uint32_t nNonce, const Consensus::Params& params)
 {
     if (nHeight < params.nPosNonceActivationHeight) return true;
@@ -4016,6 +4023,16 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
     if (!CheckPosBlockNonce(nHeight, block.nNonce, params.GetConsensus())) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-pos-nonce",
                              strprintf("non-zero nonce %u at proof-of-stake height %d", block.nNonce, nHeight));
+    }
+    // Strictly after the previous block, not merely after the median of the
+    // last eleven: the median lags the tip by most of an hour, and that span
+    // was a free choice of timestamp for whoever produced the block. Every
+    // block this chain holds already satisfies it, because the minter has
+    // always imposed it on itself; the rule makes it hold for everyone.
+    if (!CheckPosBlockTime(nHeight, block.GetBlockTime(), pindexPrev->GetBlockTime(), params.GetConsensus())) {
+        return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-pos-time",
+                             strprintf("proof-of-stake block time %d not after previous %d at height %d",
+                                       block.GetBlockTime(), pindexPrev->GetBlockTime(), nHeight));
     }
 
     // Check proof of work

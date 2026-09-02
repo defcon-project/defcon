@@ -244,6 +244,17 @@ struct Params {
      *  The default -- an unreachable height -- means the original rule. */
     int nPosStakeModifierV2ActivationHeight{std::numeric_limits<int>::max()};
 
+    /** Height from which a proof-of-stake block's time must be strictly after
+     *  its predecessor's, not merely after the median of the last eleven. The
+     *  median lags the tip by most of an hour, so the looser rule let a block
+     *  producer choose any timestamp in that span -- and choose it backwards,
+     *  which also makes chain time run backwards for every rule that measures
+     *  age in block time. The honest minter has always held itself to the
+     *  stricter bound; from this height the chain does too. One-way and
+     *  height-only. The default -- an unreachable height -- means the original
+     *  rule. */
+    int nPosBlockTimeBoundActivationHeight{std::numeric_limits<int>::max()};
+
     /** M-02: below this height IsBLSSig accepts any signature of BLS size or
      *  larger, letting an oversized signature skip the ECDSA encoding checks;
      *  at or above it, only the exact BLS size is treated as BLS. The default

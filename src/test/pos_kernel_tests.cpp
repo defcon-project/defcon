@@ -377,6 +377,45 @@ BOOST_AUTO_TEST_CASE(pos_stake_modifier_v2)
     BOOST_CHECK_EQUAL(ComputeStakeModifier(&prev, uint256()), Hash(ss));
 }
 
+BOOST_AUTO_TEST_CASE(pos_block_time_rule)
+{
+    Consensus::Params p;
+    p.lastPowBlock = 999;
+    const int64_t prev = 1700000000;
+
+    p.nPosBlockTimeBoundActivationHeight = std::numeric_limits<int>::max();
+    BOOST_CHECK(CheckPosBlockTime(1000, prev - 600, prev, p));   // backwards, original rule: allowed here
+    BOOST_CHECK(CheckPosBlockTime(7560, prev, prev, p));
+
+    p.nPosBlockTimeBoundActivationHeight = 7560;
+    BOOST_CHECK(CheckPosBlockTime(500, prev - 600, prev, p));    // proof-of-work height: untouched
+    BOOST_CHECK(CheckPosBlockTime(7559, prev - 600, prev, p));   // below the gate: original rule
+    BOOST_CHECK(CheckPosBlockTime(7560, prev + 1, prev, p));     // strictly after: passes
+    BOOST_CHECK(CheckPosBlockTime(7560, prev + 3600, prev, p));
+    BOOST_CHECK(!CheckPosBlockTime(7560, prev, prev, p));        // equal: rejected
+    BOOST_CHECK(!CheckPosBlockTime(7560, prev - 1, prev, p));    // backwards: rejected
+    BOOST_CHECK(!CheckPosBlockTime(100000, prev - 600, prev, p));
+
+    p.nPosBlockTimeBoundActivationHeight = 0;
+    BOOST_CHECK(CheckPosBlockTime(999, prev - 1, prev, p));
+    BOOST_CHECK(!CheckPosBlockTime(1000, prev - 1, prev, p));
+}
+
+BOOST_AUTO_TEST_CASE(pos_block_time_activation_heights_are_pinned)
+{
+    const auto& args = *m_node.args;
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nPosBlockTimeBoundActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nPosBlockTimeBoundActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosBlockTimeBoundActivationHeight,
+                      0);
+    gArgs.SoftSetBoolArg("-devnet", true);
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::DEVNET)->GetConsensus().nPosBlockTimeBoundActivationHeight,
+                      7560);
+    gArgs.ForceRemoveArg("devnet");
+}
+
 BOOST_AUTO_TEST_CASE(pos_stake_modifier_v2_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;
