@@ -143,7 +143,7 @@ MessageProcessingResult CQuorumBlockProcessor::ProcessMessage(const CNode& peer,
         auto it = minableCommitmentsByQuorum.find(k);
         if (it != minableCommitmentsByQuorum.end()) {
             auto jt = minableCommitments.find(it->second);
-            if (jt != minableCommitments.end() && jt->second.CountSigners() <= qc.CountSigners()) {
+            if (jt != minableCommitments.end() && jt->second.CountSigners() >= qc.CountSigners()) {
                 return ret;
             }
         }
@@ -727,11 +727,17 @@ std::optional<CInv> CQuorumBlockProcessor::AddMineableCommitment(const CFinalCom
             return true;
         } else {
             auto& insertedQuorumHash = itInserted->second;
-            const auto& oldFqc = minableCommitments.at(insertedQuorumHash);
-            if (fqc.CountSigners() > oldFqc.CountSigners()) {
-                // new commitment has more signers, so override the known one
-                insertedQuorumHash = commitmentHash;
+            const int oldSignerCount = minableCommitments.at(insertedQuorumHash).CountSigners();
+            if (fqc.CountSigners() > oldSignerCount) {
+                // New commitment has more signers, so override the known one.
+                // Erase by the OLD hash first: repointing before erasing removed
+                // a key that had not been inserted yet, so the superseded
+                // commitment stayed in the map and was still served by
+                // GetMineableCommitmentByHash. The signer count is taken by
+                // value rather than through a reference into the map, so the
+                // erase cannot leave a dangling read behind it.
                 minableCommitments.erase(insertedQuorumHash);
+                insertedQuorumHash = commitmentHash;
                 minableCommitments.try_emplace(commitmentHash, fqc);
                 return true;
             }
