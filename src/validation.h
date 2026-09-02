@@ -362,6 +362,20 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
 bool CheckPosBlockNonce(int nHeight, uint32_t nNonce, const Consensus::Params& params);
 
 /**
+ * Whether a proof-of-stake block's coinbase carries an acceptable value.
+ *
+ * `expected` is the sum of the payouts the rules require of that coinbase at
+ * that height -- the masternode payout, its operator split, and the platform
+ * share when reallocation is active -- or 0 when no masternode is registered
+ * to be paid. Pure, so it can be tested exhaustively; the enforcing function
+ * needs governance state and a masternode list. Below the activation height
+ * every value is accepted, as before. From it on, the coinbase may carry no
+ * more than what is expected of it. Presence of each expected payout is a
+ * separate rule (IsTransactionValid) and is not relaxed here.
+ */
+bool CheckPosCoinbaseValue(int nHeight, CAmount coinbaseValueOut, CAmount expected, const Consensus::Params& params);
+
+/**
  * Check that a candidate chain descends from the configured canonical anchor
  * once fork-recovery enforcement is active.
  */

@@ -2535,7 +2535,7 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
 
     const bool check_superblock = m_chain_helper->GetBestChainLockHeight() < pindex->nHeight;
 
-    if (!m_chain_helper->mn_payments->IsBlockValueValid(block, pindex->nHeight, blockSubsidy + feeReward, stakeValueIn, strError, check_superblock)) {
+    if (!m_chain_helper->mn_payments->IsBlockValueValid(block, pindex->pprev, blockSubsidy, feeReward, stakeValueIn, strError, check_superblock)) {
         // NOTE: Do not punish, the node might be missing governance data
         LogPrintf("ERROR: ConnectBlock(DFCN): %s\n", strError);
         return state.Invalid(BlockValidationResult::BLOCK_RESULT_UNSET, "bad-cb-amount");
@@ -3974,6 +3974,13 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
  *  in ConnectBlock().
  *  Note that -reindex-chainstate skips the validation that happens here!
  */
+bool CheckPosCoinbaseValue(int nHeight, CAmount coinbaseValueOut, CAmount expected, const Consensus::Params& params)
+{
+    if (nHeight < params.nPosCoinbaseBoundActivationHeight) return true;
+    if (nHeight <= params.lastPowBlock) return true;
+    return coinbaseValueOut <= expected;
+}
+
 bool CheckPosBlockNonce(int nHeight, uint32_t nNonce, const Consensus::Params& params)
 {
     if (nHeight < params.nPosNonceActivationHeight) return true;

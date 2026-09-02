@@ -190,11 +190,35 @@ CAmount PlatformShare(const CAmount reward)
 *   - Other blocks are 10% lower in outgoing value, so in total, no extra coins are created
 *   - When non-superblocks are detected, the normal schedule should be maintained
 */
-bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const int nBlockHeight, const CAmount blockReward, CAmount stakeValueIn, std::string& strErrorRet, const bool check_superblock)
+bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIndex* pindexPrev, const CAmount blockSubsidy, const CAmount feeReward,
+                                             CAmount stakeValueIn, std::string& strErrorRet, const bool check_superblock)
 {
+    const int nBlockHeight = pindexPrev == nullptr ? 0 : pindexPrev->nHeight + 1;
+    const CAmount blockReward = blockSubsidy + feeReward;
+
     bool isBlockRewardValueMet = (block.vtx[0]->GetValueOut() <= blockReward);
     if (block.IsProofOfStake()) {
         isBlockRewardValueMet = ((block.vtx[1]->GetValueOut() - stakeValueIn) <= blockReward);
+
+        // The coinstake is bounded above; the coinbase was not, except on
+        // superblock heights. On a proof-of-stake block the coinbase exists to
+        // carry the masternode payout and nothing else -- CheckBlock already
+        // forces its first output empty -- so past the gate its value may not
+        // exceed the sum of what the rules expect of it. The expected outputs
+        // come from the same function that builds and verifies them, so the
+        // bound cannot drift from the payout rule. If the payee cannot be
+        // resolved the existing code declines to verify rather than reject,
+        // and this follows it.
+        std::vector<CTxOut> voutExpected;
+        if (GetBlockTxOuts(pindexPrev, blockSubsidy, feeReward, voutExpected)) {
+            CAmount expected = 0;
+            for (const auto& out : voutExpected) expected += out.nValue;
+            if (!CheckPosCoinbaseValue(nBlockHeight, block.vtx[0]->GetValueOut(), expected, m_consensus_params)) {
+                strErrorRet = strprintf("coinbase pays too much at height %d (actual=%d vs expected=%d), proof-of-stake coinbase may carry only the required payouts",
+                                        nBlockHeight, block.vtx[0]->GetValueOut(), expected);
+                return false;
+            }
+        }
     }
 
     strErrorRet = "";

@@ -55,7 +55,8 @@ public:
         m_dmnman{dmnman}, m_govman{govman}, m_chainman{chainman}, m_consensus_params{consensus_params}, m_mn_sync{mn_sync},
         m_sporkman{sporkman} {}
 
-    bool IsBlockValueValid(const CBlock& block, const int nBlockHeight, const CAmount blockReward, CAmount stakeValueIn, std::string& strErrorRet, const bool check_superblock);
+    bool IsBlockValueValid(const CBlock& block, const CBlockIndex* pindexPrev, const CAmount blockSubsidy, const CAmount feeReward,
+                           CAmount stakeValueIn, std::string& strErrorRet, const bool check_superblock);
     bool IsBlockPayeeValid(const CTransaction& txNew, const CBlockIndex* pindexPrev, const CAmount blockSubsidy, const CAmount feeReward, const bool check_superblock);
     void FillBlockPayments(CMutableTransaction& txNew, const CBlockIndex* pindexPrev, const CAmount blockSubsidy, const CAmount feeReward,
                            std::vector<CTxOut>& voutMasternodePaymentsRet, std::vector<CTxOut>& voutSuperblockPaymentsRet);
