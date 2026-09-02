@@ -309,6 +309,59 @@ BOOST_AUTO_TEST_CASE(pos_block_nonce_rule)
     BOOST_CHECK(!CheckPosBlockNonce(1000, 7, p));
 }
 
+// Same shape as the nonce rule, for the same reason: the enforcing function
+// needs a masternode list and governance state, and no unit fixture reaches a
+// proof-of-stake height on regtest. The decision is enumerated instead.
+BOOST_AUTO_TEST_CASE(pos_coinbase_value_rule)
+{
+    Consensus::Params p;
+    p.lastPowBlock = 999;
+    const CAmount expected = 10000 * COIN;
+
+    // Gate unset: the original rule -- any coinbase value at any height.
+    p.nPosCoinbaseBoundActivationHeight = std::numeric_limits<int>::max();
+    BOOST_CHECK(CheckPosCoinbaseValue(1000, expected + 100000 * COIN, expected, p));
+    BOOST_CHECK(CheckPosCoinbaseValue(7560, expected + 100000 * COIN, expected, p));
+
+    p.nPosCoinbaseBoundActivationHeight = 7560;
+    // Proof-of-work heights are untouched: their coinbase is bounded elsewhere.
+    BOOST_CHECK(CheckPosCoinbaseValue(500, expected + 100000 * COIN, expected, p));
+    BOOST_CHECK(CheckPosCoinbaseValue(999, expected + 100000 * COIN, expected, p));
+    // Proof-of-stake heights below the gate keep the original rule.
+    BOOST_CHECK(CheckPosCoinbaseValue(1000, expected + 100000 * COIN, expected, p));
+    BOOST_CHECK(CheckPosCoinbaseValue(7559, expected + 100000 * COIN, expected, p));
+    // At and above the gate: exactly the expected payouts pass, less passes,
+    // one duff more does not.
+    BOOST_CHECK(CheckPosCoinbaseValue(7560, expected, expected, p));
+    BOOST_CHECK(CheckPosCoinbaseValue(7560, expected - 1, expected, p));
+    BOOST_CHECK(CheckPosCoinbaseValue(7560, 0, expected, p));
+    BOOST_CHECK(!CheckPosCoinbaseValue(7560, expected + 1, expected, p));
+    BOOST_CHECK(!CheckPosCoinbaseValue(7560, expected + 100000 * COIN, expected, p));
+    BOOST_CHECK(!CheckPosCoinbaseValue(100000, expected + 1, expected, p));
+    // The era with no masternode to pay expects nothing, and gets nothing.
+    BOOST_CHECK(CheckPosCoinbaseValue(7560, 0, 0, p));
+    BOOST_CHECK(!CheckPosCoinbaseValue(7560, 1, 0, p));
+
+    p.nPosCoinbaseBoundActivationHeight = 0;
+    BOOST_CHECK(CheckPosCoinbaseValue(999, expected + 1, expected, p));
+    BOOST_CHECK(!CheckPosCoinbaseValue(1000, expected + 1, expected, p));
+}
+
+BOOST_AUTO_TEST_CASE(pos_coinbase_bound_activation_heights_are_pinned)
+{
+    const auto& args = *m_node.args;
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nPosCoinbaseBoundActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nPosCoinbaseBoundActivationHeight,
+                      std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosCoinbaseBoundActivationHeight,
+                      0);
+    gArgs.SoftSetBoolArg("-devnet", true);
+    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::DEVNET)->GetConsensus().nPosCoinbaseBoundActivationHeight,
+                      7560);
+    gArgs.ForceRemoveArg("devnet");
+}
+
 BOOST_AUTO_TEST_CASE(pos_nonce_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;

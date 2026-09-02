@@ -222,6 +222,16 @@ struct Params {
      *  the original rule, which every network keeps until it is set. */
     int nPosNonceActivationHeight{std::numeric_limits<int>::max()};
 
+    /** Height from which the coinbase of a proof-of-stake block may carry no
+     *  more value than the payouts the rules expect of it. Below it, only the
+     *  coinstake is bounded on a proof-of-stake block: the coinbase's value was
+     *  checked on superblock heights alone, so at every other height a block
+     *  producer could add any amount to it, and nothing after the subsidy rule
+     *  would notice. One-way and height-only. The default -- an unreachable
+     *  height -- means the original rule, which every network keeps until it
+     *  is set. */
+    int nPosCoinbaseBoundActivationHeight{std::numeric_limits<int>::max()};
+
     /** M-02: below this height IsBLSSig accepts any signature of BLS size or
      *  larger, letting an oversized signature skip the ECDSA encoding checks;
      *  at or above it, only the exact BLS size is treated as BLS. The default
