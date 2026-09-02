@@ -362,6 +362,15 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
 bool CheckPosBlockNonce(int nHeight, uint32_t nNonce, const Consensus::Params& params);
 
 /**
+ * Whether a block's time is acceptable against its predecessor's at the height
+ * it claims. Below the activation height, and at proof-of-work heights, any
+ * time is accepted here (the median-time-past rule still applies, elsewhere).
+ * From it on, a proof-of-stake block's time must be strictly greater than the
+ * previous block's -- the bound the minter already imposes on itself.
+ */
+bool CheckPosBlockTime(int nHeight, int64_t nTime, int64_t nPrevTime, const Consensus::Params& params);
+
+/**
  * Whether a proof-of-stake block's coinbase carries an acceptable value.
  *
  * `expected` is the sum of the payouts the rules require of that coinbase at
