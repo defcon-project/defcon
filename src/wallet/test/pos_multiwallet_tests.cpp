@@ -123,6 +123,27 @@ BOOST_AUTO_TEST_CASE(minter_last_error_round_trips)
     BOOST_CHECK(MinterLastError().empty());
 }
 
+// last_error is never cleared, on purpose: a fault that recurs has to stay
+// visible instead of vanishing between failures. What makes that readable rather
+// than permanently alarming is comparing it against when the current run began --
+// an error stamped before that has already been survived.
+//
+// The safety-critical half of the rule is this one. If the timestamp were left
+// behind when the minter is NOT running, a reader would compare a live failure
+// against a stale start time and conclude the node had recovered from the very
+// fault that stopped it. Zero cannot be greater than any error time, so the
+// comparison fails closed.
+BOOST_AUTO_TEST_CASE(minter_running_since_is_zero_while_stopped)
+{
+    BOOST_CHECK_EQUAL(MinterRunningSince(), 0);
+
+    SetMinterLastError("a failure with the minter stopped");
+    BOOST_CHECK(MinterLastErrorTime() > 0);
+    BOOST_CHECK(MinterRunningSince() < MinterLastErrorTime());
+
+    SetMinterLastError("");
+}
+
 // A registry entry outlives the wallet it names -- the list is rebuilt on every
 // toggle, the miner works from a copy of it for seconds at a time, and
 // unloadwallet can free the wallet in between. The entry used to hold a raw

@@ -33,9 +33,10 @@ static RPCHelpMan getstakinginfo()
                 RPCResult{
                     RPCResult::Type::OBJ, "", "",
                     {
-                        {RPCResult::Type::BOOL, "staking", "'true' if wallet is currently staking"},
+                        {RPCResult::Type::BOOL, "staking", "Whether this wallet's staking switch is on"},
                         {RPCResult::Type::BOOL, "minter_running", "Whether the staking thread is inside its loop right now. Node-wide, not per wallet: one minter serves every staking wallet, so a false here means nothing is being staked whatever the fields above report."},
-                        {RPCResult::Type::STR, "last_error", /*optional=*/true, "The minter's last failure. Node-wide, and absent when it has not failed."},
+                        {RPCResult::Type::NUM_TIME, "minter_running_since", /*optional=*/true, "When the minter's current uninterrupted run began (UNIX epoch seconds). Absent when it is not running."},
+                        {RPCResult::Type::STR, "last_error", /*optional=*/true, "The minter's last failure. Node-wide, absent when it has never failed, and a HIGH-WATER MARK rather than a live status: nothing clears it, so that a fault which recurs stays visible instead of disappearing between failures. To tell a live fault from one already survived, compare last_error_time against minter_running_since -- an error stamped before the current run began has been recovered from."},
                         {RPCResult::Type::NUM_TIME, "last_error_time", /*optional=*/true, "When that failure happened (UNIX epoch seconds). Present only with last_error."},
                         {RPCResult::Type::STR, "errors", "Error messages"},
                         {RPCResult::Type::NUM, "pooledtx", "The size of the mempool"},
@@ -135,7 +136,9 @@ static RPCHelpMan getstakinginfo()
 
         UniValue obj2(UniValue::VOBJ);
         obj2.pushKV("name", this_wallet->GetName());
-        obj2.pushKV("staking", stakable_wallets[y].CanStake() ? "true" : "false");
+        // A real JSON boolean: the help has always documented BOOL here, while
+        // the ternary produced const char* and so a quoted string.
+        obj2.pushKV("staking", stakable_wallets[y].CanStake());
 
         // Node-wide, and repeated on every wallet on purpose: one minter serves
         // them all, so a wallet's own switch says nothing about whether anything
@@ -146,6 +149,10 @@ static RPCHelpMan getstakinginfo()
         // warning text, which never carried the minter's failure and still
         // does not. last_error is where that now lives.
         obj2.pushKV("minter_running", fMinterRunning.load());
+        const int64_t running_since = MinterRunningSince();
+        if (running_since != 0) {
+            obj2.pushKV("minter_running_since", running_since);
+        }
         const std::string minter_error = MinterLastError();
         if (!minter_error.empty()) {
             obj2.pushKV("last_error", minter_error);
@@ -224,7 +231,7 @@ static RPCHelpMan liststakingwallets()
         if (!this_wallet)
             continue;
         obj2.pushKV("name", this_wallet->GetName());
-        obj2.pushKV("enabled", stakable_wallets[y].CanStake() ? "true" : "false");
+        obj2.pushKV("enabled", stakable_wallets[y].CanStake());
         obj2.pushKV("balance", FormatMoney(this_wallet->GetAvailableBalance() - this_wallet->nReserveBalance));
         obj.pushKV(std::to_string(y), obj2);
     }
