@@ -2006,7 +2006,7 @@ static RPCHelpMan getblockstats()
                 {RPCResult::Type::NUM, "outs", "The number of outputs"},
                 {RPCResult::Type::NUM, "subsidy", "The block subsidy"},
                 {RPCResult::Type::NUM, "time", "The block time"},
-                {RPCResult::Type::NUM, "total_out", "Total amount in all outputs (excluding coinbase and thus reward [ie subsidy + totalfee])"},
+                {RPCResult::Type::NUM, "total_out", "Total amount in all outputs (excluding the coinbase, and on a proof-of-stake block the coinstake, and thus the reward)"},
                 {RPCResult::Type::NUM, "total_size", "Total size of all non-coinbase transactions"},
                 {RPCResult::Type::NUM, "totalfee", "The fee total"},
                 {RPCResult::Type::NUM, "txs", "The number of transactions (including coinbase)"},
@@ -2083,6 +2083,22 @@ static RPCHelpMan getblockstats()
         if (tx->IsCoinBase()) {
             continue;
         }
+        // The coinstake is the other reward transaction of a proof-of-stake
+        // block: its outputs exceed its inputs by the block reward, so "in
+        // minus out" is a mint, not a fee, and MoneyRange() on it aborted this
+        // RPC on every proof-of-stake block -- the failure getblock verbosity 2
+        // had until core_write.cpp learnt to skip it. Its spent inputs do leave
+        // the UTXO set, so that side of the accounting is kept; everything that
+        // describes ordinary transactions -- counts, sizes, fees -- excludes it,
+        // exactly as it excludes the coinbase.
+        if (tx->IsCoinStake()) {
+            if (loop_inputs) {
+                for (const Coin& coin : blockUndo.vtxundo.at(i - 1).vprevout) {
+                    utxo_size_inc -= GetSerializeSize(coin.out, PROTOCOL_VERSION) + PER_UTXO_OVERHEAD;
+                }
+            }
+            continue;
+        }
 
         inputs += tx->vin.size(); // Don't count coinbase's fake input
         total_out += tx_total_out; // Don't count coinbase reward
@@ -2143,7 +2159,9 @@ static RPCHelpMan getblockstats()
     }
 
     UniValue ret_all(UniValue::VOBJ);
-    ret_all.pushKV("avgfee", (block.vtx.size() > 1) ? totalfee / (block.vtx.size() - 1) : 0);
+    // One reward transaction on a proof-of-work block, two on a proof-of-stake one.
+    const size_t reward_txs = block.IsProofOfStake() ? 2 : 1;
+    ret_all.pushKV("avgfee", (block.vtx.size() > reward_txs) ? totalfee / (block.vtx.size() - reward_txs) : 0);
     ret_all.pushKV("avgfeerate", total_size ? totalfee / total_size : 0); // Unit: sat/byte
     ret_all.pushKV("avgtxsize", (block.vtx.size() > 1) ? total_size / (block.vtx.size() - 1) : 0);
     ret_all.pushKV("blockhash", pindex->GetBlockHash().GetHex());
