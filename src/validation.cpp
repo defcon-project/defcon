@@ -2168,6 +2168,17 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         uint256 hashProof, targetProofOfStake;
         m_blockman.m_dirty_blockindex.insert(pindex);
         pindex->prevoutStake = pindex->pprev->IsProofOfWork() ? COutPoint() : block.vtx[1]->vin[0].prevout;
+        // The modifier was written at header time from prevoutStake, which is
+        // only set here -- so every modifier so far is Hash(null || previous),
+        // a function of height alone, and the "prevent precomputing" comment
+        // beside that write described an intent the ordering defeated. From
+        // the gate, recompute it now from the kernel this block really staked.
+        // The next block's kernel check reads it from this index entry, and
+        // this entry is already marked dirty above, so the connect-time value
+        // is what gets persisted and what a reindex reproduces.
+        if (StakeModifierFromKernel(pindex->nHeight, m_params.GetConsensus())) {
+            pindex->nStakeModifier = ComputeStakeModifier(pindex->pprev, pindex->prevoutStake.hash);
+        }
         if (!CheckProofOfStake(*this, state, pindex->pprev, *block.vtx[1], block.nTime, block.nBits, hashProof, targetProofOfStake)) {
             return error("%s: Check proof of stake failed.", __func__);
         }

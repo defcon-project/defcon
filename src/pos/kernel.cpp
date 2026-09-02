@@ -58,6 +58,11 @@ double GetPoSKernelPS(CBlockIndex *pindex, const Consensus::Params& params)
  * of transaction confirmation. To meet kernel protocol, the txout
  * must hash with a future stake modifier to generate the proof.
  */
+bool StakeModifierFromKernel(int nHeight, const Consensus::Params& params)
+{
+    return nHeight >= params.nPosStakeModifierV2ActivationHeight;
+}
+
 uint256 ComputeStakeModifier(const CBlockIndex* pindexPrev, const uint256& kernel)
 {
     if (!pindexPrev)
