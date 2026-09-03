@@ -1077,24 +1077,24 @@ static const CRPCCommand commands[] =
 { //  category              actor (function)
   //  --------------------- -----------------------
     /* DeFCoN features */
-    { "dash",               &getgovernanceinfo,         },
-    { "dash",               &getsuperblockbudget,       },
-    { "dash",               &gobject,                   },
-    { "dash",               &gobject_count,             },
-    { "dash",               &gobject_deserialize,       },
-    { "dash",               &gobject_check,             },
+    { "DeFCoN",               &getgovernanceinfo,         },
+    { "DeFCoN",               &getsuperblockbudget,       },
+    { "DeFCoN",               &gobject,                   },
+    { "DeFCoN",               &gobject_count,             },
+    { "DeFCoN",               &gobject_deserialize,       },
+    { "DeFCoN",               &gobject_check,             },
 #ifdef ENABLE_WALLET
-    { "dash",               &gobject_prepare,           },
-    { "dash",               &gobject_list_prepared,     },
-    { "dash",               &gobject_vote_many,         },
-    { "dash",               &gobject_vote_alias,        },
+    { "DeFCoN",               &gobject_prepare,           },
+    { "DeFCoN",               &gobject_list_prepared,     },
+    { "DeFCoN",               &gobject_vote_many,         },
+    { "DeFCoN",               &gobject_vote_alias,        },
 #endif
-    { "dash",               &gobject_submit,            },
-    { "dash",               &gobject_list,              },
-    { "dash",               &gobject_diff,              },
-    { "dash",               &gobject_get,               },
-    { "dash",               &gobject_getcurrentvotes,   },
-    { "dash",               &voteraw,                   },
+    { "DeFCoN",               &gobject_submit,            },
+    { "DeFCoN",               &gobject_list,              },
+    { "DeFCoN",               &gobject_diff,              },
+    { "DeFCoN",               &gobject_get,               },
+    { "DeFCoN",               &gobject_getcurrentvotes,   },
+    { "DeFCoN",               &voteraw,                   },
 };
 // clang-format on
     for (const auto& command : commands) {

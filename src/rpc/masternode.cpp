@@ -716,17 +716,17 @@ void RegisterMasternodeRPCCommands(CRPCTable &t)
 static const CRPCCommand commands[] =
 { //  category              actor (function)
   //  --------------------- -----------------------
-    { "dash",               &masternode_help,          },
-    { "dash",               &masternodelist_composite, },
-    { "dash",               &masternodelist,           },
-    { "dash",               &masternode_connect,       },
-    { "dash",               &masternode_count,         },
+    { "DeFCoN",               &masternode_help,          },
+    { "DeFCoN",               &masternodelist_composite, },
+    { "DeFCoN",               &masternodelist,           },
+    { "DeFCoN",               &masternode_connect,       },
+    { "DeFCoN",               &masternode_count,         },
 #ifdef ENABLE_WALLET
-    { "dash",               &masternode_outputs,       },
+    { "DeFCoN",               &masternode_outputs,       },
 #endif // ENABLE_WALLET
-    { "dash",               &masternode_status,        },
-    { "dash",               &masternode_payments,      },
-    { "dash",               &masternode_winners,       },
+    { "DeFCoN",               &masternode_status,        },
+    { "DeFCoN",               &masternode_payments,      },
+    { "DeFCoN",               &masternode_winners,       },
     { "hidden",             &masternode_current,       },
     { "hidden",             &masternode_winner,        },
 };
