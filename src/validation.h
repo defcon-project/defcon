@@ -371,6 +371,13 @@ bool CheckPosBlockNonce(int nHeight, uint32_t nNonce, const Consensus::Params& p
 bool CheckPosBlockTime(int nHeight, int64_t nTime, int64_t nPrevTime, const Consensus::Params& params);
 
 /**
+ * Whether the transaction fees in a proof-of-stake block are destroyed rather
+ * than paid to whoever produced it. Below the activation height the coinstake
+ * may mint the subsidy plus the fees; from it on, the subsidy alone.
+ */
+bool PosFeesAreBurned(int nHeight, const Consensus::Params& params);
+
+/**
  * Whether a proof-of-stake block's coinbase carries an acceptable value.
  *
  * `expected` is the sum of the payouts the rules require of that coinbase at

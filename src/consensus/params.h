@@ -255,6 +255,17 @@ struct Params {
      *  rule. */
     int nPosBlockTimeBoundActivationHeight{std::numeric_limits<int>::max()};
 
+    /** Height from which a proof-of-stake block's coinstake may mint the block
+     *  subsidy and nothing more, so the fees of the transactions it carries are
+     *  destroyed by rule rather than by habit. Below it the ceiling is subsidy
+     *  plus fees, which is what every block on the chain has been built to
+     *  anyway: the wallet never claimed the fees, so no block is invalidated by
+     *  the tightening. What changes is that a producer running modified
+     *  software can no longer take them, which is the point -- an economic rule
+     *  nobody enforces is a rule anybody may rewrite. One-way and height-only.
+     *  The default -- an unreachable height -- means the original rule. */
+    int nPosFeeBurnActivationHeight{std::numeric_limits<int>::max()};
+
     /** M-02: below this height IsBLSSig accepts any signature of BLS size or
      *  larger, letting an oversized signature skip the ECDSA encoding checks;
      *  at or above it, only the exact BLS size is treated as BLS. The default
