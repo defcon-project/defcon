@@ -186,6 +186,7 @@ BITCOIN_QT_H = \
   qt/walletmodel.h \
   qt/walletmodeltransaction.h \
   qt/walletview.h \
+  qt/winframetheme.h \
   qt/winshutdownmonitor.h
 
 RES_ICONS = \
@@ -251,7 +252,9 @@ BITCOIN_QT_BASE_CPP = \
   qt/trafficgraphwidget.cpp \
   qt/utilitydialog.cpp
 
-BITCOIN_QT_WINDOWS_CPP = qt/winshutdownmonitor.cpp
+BITCOIN_QT_WINDOWS_CPP = \
+  qt/winframetheme.cpp \
+  qt/winshutdownmonitor.cpp
 
 BITCOIN_QT_WALLET_CPP = \
   qt/addressbookpage.cpp \

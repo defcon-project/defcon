@@ -101,6 +101,35 @@ void AppTests::appTests()
     // carrying when the themes were renamed -- so this check had been failing
     // on every build since, unnoticed, which is how a resource can go missing
     // and a test still be described as covering it.
+    // Which themes are dark. The window frame follows this and not the desktop,
+    // so a wallet and the bar above it can never contradict each other. The
+    // platform call that acts on the answer is Windows-only and is not even
+    // compiled here -- which is the reason the answer lives apart from it, and
+    // the reason this much can still be measured.
+    {
+        QSettings settings;
+        const QVariant saved = settings.value("theme");
+        const auto isDark = [&settings](const char* theme) {
+            settings.setValue("theme", QString(theme));
+            return GUIUtil::themeIsDark();
+        };
+        QVERIFY(isDark("Abyss"));
+        QVERIFY(isDark("Dark"));
+        QVERIFY(!isDark("Light"));
+        QVERIFY(!isDark("Traditional"));
+        // A removed theme is resolved before it is judged, so it inherits the
+        // brightness of the survivor it maps to rather than the default.
+        QVERIFY(isDark("Nebula"));
+        QVERIFY(!isDark("Arctic"));
+        // And a name nobody shipped follows the default, which is light.
+        QVERIFY(!isDark("NoSuchTheme"));
+        if (saved.isValid()) {
+            settings.setValue("theme", saved);
+        } else {
+            settings.remove("theme");
+        }
+    }
+
     QVERIFY(QFile(":/css/Abyss").exists());
     QVERIFY(QFile(":/css/Light").exists());
     QVERIFY(!QFile(":/css/Nebula").exists());

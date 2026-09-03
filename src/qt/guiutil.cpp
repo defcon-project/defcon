@@ -4,6 +4,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <qt/guiutil.h>
+#include <qt/winframetheme.h>
 
 #include <qt/appearancewidget.h>
 #include <qt/bitcoinaddressvalidator.h>
@@ -973,6 +974,12 @@ bool isDefconDarkTheme()
     return getActiveTheme() == defconDarkTheme;
 }
 
+bool themeIsDark()
+{
+    const QString theme = getActiveTheme();
+    return theme == defconDarkTheme || theme == darkTheme;
+}
+
 bool isModernTheme()
 {
     // Abyss is the only modern theme. The name stays because the question the
@@ -1081,6 +1088,9 @@ void loadStyleSheet(bool fForceUpdate)
     if (fUpdateStyleSheet && stylesheet != nullptr) {
         qApp->setStyleSheet(*stylesheet);
     }
+
+    // The frame is outside the reach of any stylesheet, so it has to be told.
+    applyWindowFrameThemeToAll();
 }
 
 FontFamily fontFamilyFromString(const QString& strFamily)
