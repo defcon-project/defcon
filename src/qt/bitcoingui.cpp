@@ -777,17 +777,30 @@ void BitcoinGUI::createMenuBar()
     consoleButton->setIcon(makeConsoleIcon());
     consoleButton->setEnabled(openRPCConsoleAction->isEnabled());
     connect(consoleButton, &QToolButton::clicked, openRPCConsoleAction, &QAction::trigger);
+    // The button is easy to miss: small, wordless, and in the one corner
+    // nothing else uses. A slow pulse every couple of minutes points at it
+    // without demanding anything, and gives up after a few tries.
+    //
+    // Deliberately not a one-shot at startup, which is what this was first.
+    // The console action is enabled from BitcoinGUI::showEvent, so a hint tied
+    // to it ran while the window was still being painted, and nobody ever saw
+    // it -- the feature looked broken because its premise was wrong.
+    consoleHintTimer = new QTimer(this);
+    consoleHintTimer->setInterval(120000);
+    connect(consoleHintTimer, &QTimer::timeout, this, &BitcoinGUI::pulseConsoleButton);
+    connect(openRPCConsoleAction, &QAction::triggered, this, [this] {
+        // Opened once, so the hint has done its work.
+        consoleHintsLeft = 0;
+        consoleHintTimer->stop();
+    });
+
     connect(openRPCConsoleAction, &QAction::changed, consoleButton, [this] {
         const bool usable = openRPCConsoleAction->isEnabled();
         consoleButton->setEnabled(usable);
-        // Point it out the first time it can actually be pressed. Startup is
-        // the wrong moment -- the button is disabled then, and blinking a
-        // control nobody can use is noise. This fires when the node finishes
-        // starting, which is both when the console becomes useful and when the
-        // window has been on screen long enough for the eye to be elsewhere.
-        if (usable && !consoleHintShown) {
-            consoleHintShown = true;
-            flashConsoleButton();
+        if (usable && consoleHintsLeft > 0) {
+            if (!consoleHintTimer->isActive()) consoleHintTimer->start();
+        } else {
+            consoleHintTimer->stop();
         }
     });
     appMenuBar->setCornerWidget(consoleButton, Qt::TopRightCorner);
@@ -1005,28 +1018,34 @@ QIcon makeDiagonalArrowIcon(bool up_right)
 }
 } // namespace
 
-void BitcoinGUI::flashConsoleButton()
+void BitcoinGUI::pulseConsoleButton()
 {
-    if (consoleButton == nullptr) {
+    if (consoleButton == nullptr || !consoleButton->isEnabled()) {
         return;
     }
-    // Two slow blinks, not a flash: enough to catch the eye at the edge of
-    // vision, not enough to read as an error. The button stays fully opaque at
-    // both ends, so an interrupted animation cannot leave it faded.
+    // No point spending a hint on a window nobody is looking at, and no point
+    // stacking a second animation on top of one already running.
+    if (!isVisible() || isMinimized() || consoleButton->graphicsEffect() != nullptr) {
+        return;
+    }
+    if (--consoleHintsLeft <= 0) {
+        consoleHintTimer->stop();
+    }
+
     auto* effect = new QGraphicsOpacityEffect(consoleButton);
     consoleButton->setGraphicsEffect(effect);
 
     auto* animation = new QPropertyAnimation(effect, "opacity", consoleButton);
-    animation->setDuration(460);
+    animation->setDuration(900);
     animation->setKeyValueAt(0.0, 1.0);
-    animation->setKeyValueAt(0.5, 0.15);
+    animation->setKeyValueAt(0.5, 0.30);
     animation->setKeyValueAt(1.0, 1.0);
     animation->setEasingCurve(QEasingCurve::InOutSine);
-    animation->setLoopCount(2);
 
-    // Take the effect away afterwards. An opacity effect renders its widget
-    // through an offscreen buffer for as long as it is installed, and there is
-    // no reason to pay that for the rest of the session.
+    // Take the effect away afterwards: while it is installed the widget is
+    // rendered through an offscreen buffer, and there is no reason to pay that
+    // between pulses. It is also what lets the check above tell "a pulse is
+    // running" from "none is".
     connect(animation, &QAbstractAnimation::finished, consoleButton, [this] {
         consoleButton->setGraphicsEffect(nullptr);
     });
