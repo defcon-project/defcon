@@ -49,7 +49,7 @@ static RPCHelpMan debug()
         "libevent logging is configured on startup and cannot be modified by this RPC during runtime.\n"
         "There are also a few meta-categories:\n"
         " - \"all\", \"1\" and \"\" activate all categories at once;\n"
-        " - \"dash\" activates all DeFCoN-specific categories at once;\n"
+        " - \"defcon\" activates all DeFCoN-specific categories at once;\n"
         " - \"none\" (or \"0\") deactivates all categories at once.\n"
         "Note: If specified category doesn't match any of the above, no error is thrown.\n",
         {
@@ -59,8 +59,8 @@ static RPCHelpMan debug()
             RPCResult::Type::STR, "result", "\"Debug mode: \" followed by the specified category",
         },
         RPCExamples {
-            HelpExampleCli("debug", "dash")
-    + HelpExampleRpc("debug", "dash+net")
+            HelpExampleCli("debug", "defcon")
+    + HelpExampleRpc("debug", "defcon+net")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1220,7 +1220,7 @@ static RPCHelpMan logging()
     "The valid logging categories are: " + LogInstance().LogCategoriesString() + "\n"
     "In addition, the following are available as category names with special meanings:\n"
     "  - \"all\",  \"1\" : represent all logging categories.\n"
-    "  - \"dash\" activates all DeFCoN-specific categories at once.\n"
+    "  - \"defcon\" activates all DeFCoN-specific categories at once.\n"
     "To deactivate all categories at once you can specify \"all\" in <exclude>.\n"
     "  - \"none\", \"0\" : even if other logging categories are specified, ignore all of them.\n"
     ,

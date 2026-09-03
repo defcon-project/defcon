@@ -253,4 +253,37 @@ BOOST_FIXTURE_TEST_CASE(logging_Conf, LogSetup)
     }
 }
 
+BOOST_AUTO_TEST_CASE(logging_defcon_umbrella_category)
+{
+    // One name switches on every category this chain added, and it used to be
+    // the name of the project this one forked from.
+    BCLog::LogFlags by_name{BCLog::NONE};
+    BOOST_REQUIRE(GetLogCategory(by_name, "defcon"));
+    BOOST_CHECK(by_name == BCLog::DEFCON);
+
+    // The old name still resolves, and to the same thing. This matters more
+    // than a rename usually would: GetLogCategory returning false is not an
+    // error anywhere -- an unrecognised -debug= value is ignored -- so without
+    // the alias an existing conf would quietly stop enabling anything at all,
+    // and look exactly like a node that was simply never asked to log.
+    BCLog::LogFlags by_old_name{BCLog::NONE};
+    BOOST_REQUIRE(GetLogCategory(by_old_name, "dash"));
+    BOOST_CHECK(by_old_name == BCLog::DEFCON);
+
+    // Neither is offered in the listing: LogCategoriesList skips the umbrella,
+    // which is what lets one name be documented and the other merely
+    // understood, instead of the help advertising two ways to say one thing.
+    const std::string listed{LogInstance().LogCategoriesString()};
+    BOOST_CHECK(listed.find("defcon") == std::string::npos);
+    BOOST_CHECK(listed.find("dash") == std::string::npos);
+
+    // The umbrella is a union, not a category of its own, so it has to carry
+    // its members -- a flag that resolves but enables nothing would pass every
+    // check above.
+    BOOST_CHECK((BCLog::DEFCON & BCLog::LLMQ) == BCLog::LLMQ);
+    BOOST_CHECK((BCLog::DEFCON & BCLog::CHAINLOCKS) == BCLog::CHAINLOCKS);
+    BOOST_CHECK((BCLog::DEFCON & BCLog::POS) == BCLog::POS);
+    BOOST_CHECK((BCLog::DEFCON & BCLog::NET) == 0);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
