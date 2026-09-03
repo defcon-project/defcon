@@ -755,19 +755,29 @@ void BitcoinGUI::createMenuBar()
 #ifndef Q_OS_MAC
     // The console, one click away, in the corner of the same bar as the menus.
     // Not on macOS: the menu bar there belongs to the system and shows no
-    // corner widget. The button takes the action itself rather than a copy of
-    // it, so it stays disabled until the node is ready and needs no second
-    // connection to keep the two in step.
+    // corner widget.
+    //
+    // Deliberately NOT setDefaultAction. A tool button with a default action
+    // re-reads that action's icon on every ActionChanged, and this action
+    // carries none -- so enabling it once the node is ready silently replaced
+    // the painted glyph with an empty icon. The button stayed clickable and
+    // showed nothing, which is a hard symptom to read backwards. Triggering
+    // the action and mirroring its enabled state keeps the two in step
+    // without letting it own what the button looks like.
     consoleButton = new QToolButton(this);
     consoleButton->setObjectName("consoleButton");
-    consoleButton->setDefaultAction(openRPCConsoleAction);
     consoleButton->setToolButtonStyle(Qt::ToolButtonIconOnly);
     consoleButton->setAutoRaise(true);
     consoleButton->setFocusPolicy(Qt::NoFocus);
     consoleButton->setCursor(Qt::PointingHandCursor);
     consoleButton->setIconSize(QSize(16, 16));
-    consoleButton->setToolTip(tr("Open the debug console"));
+    consoleButton->setToolTip(openRPCConsoleAction->statusTip());
     consoleButton->setIcon(makeConsoleIcon());
+    consoleButton->setEnabled(openRPCConsoleAction->isEnabled());
+    connect(consoleButton, &QToolButton::clicked, openRPCConsoleAction, &QAction::trigger);
+    connect(openRPCConsoleAction, &QAction::changed, consoleButton, [this] {
+        consoleButton->setEnabled(openRPCConsoleAction->isEnabled());
+    });
     appMenuBar->setCornerWidget(consoleButton, Qt::TopRightCorner);
 #endif // Q_OS_MAC
 
