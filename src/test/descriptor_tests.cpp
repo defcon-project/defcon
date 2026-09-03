@@ -96,8 +96,13 @@ void DoCheck(const std::string& prv, const std::string& pub, const std::string& 
         parse_pub = Parse(pub, keys_pub, error);
     }
 
-    BOOST_CHECK(parse_priv);
-    BOOST_CHECK(parse_pub);
+    // REQUIRE, not CHECK: everything below dereferences these pointers, so a
+    // descriptor this chain cannot parse used to take the whole test binary
+    // with it. That crash stopped the run at descriptor_tests and left every
+    // suite after it -- 115 of 148 -- unexecuted and unmeasured, which is why
+    // CI could only gate a hand-picked allowlist.
+    BOOST_REQUIRE(parse_priv);
+    BOOST_REQUIRE(parse_pub);
 
     // Check that the correct OutputType is inferred
     BOOST_CHECK(parse_priv->GetOutputType() == type);
