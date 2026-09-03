@@ -34,7 +34,6 @@
 #include <QLabel>
 #include <QPaintEvent>
 #include <QPainter>
-#include <QRadialGradient>
 #include <QSettings>
 #include <QStatusTipEvent>
 #include <QTimer>
@@ -266,6 +265,46 @@ void OverviewPage::changeEvent(QEvent* event)
     QWidget::changeEvent(event);
     if (event->type() == QEvent::StyleChange) {
         updateThemePresentation();
+    }
+}
+
+void OverviewPage::paintEvent(QPaintEvent* event)
+{
+    // The stylesheet paints the background; this only adds to it.
+    QWidget::paintEvent(event);
+    if (!GUIUtil::isDefconDarkTheme()) {
+        return;
+    }
+
+    // A quiet sky behind the dashboard. Deliberately not the nebula the removed
+    // galaxy theme drew: no gradients, no colour, nothing that competes with a
+    // balance for attention. If it is noticeable, it is wrong.
+    const int w = std::max(width(), 1);
+    const int h = std::max(height(), 1);
+    // Roughly one star per 22000 pixels of window, so a large window does not
+    // look empty and a small one does not look crowded.
+    const int count = std::clamp((w * h) / 22000, 24, 90);
+
+    QPainter painter(this);
+    painter.setClipRegion(event->region());
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(Qt::NoPen);
+
+    for (int i = 1; i <= count; ++i) {
+        // A fixed scatter rather than a random one: the same sky on every
+        // repaint, so it does not shimmer as the window redraws, and nothing
+        // has to be remembered between paints.
+        quint32 hash = static_cast<quint32>(i) * 2654435761u;
+        hash ^= hash >> 15;
+        const int x = static_cast<int>(hash % static_cast<quint32>(w));
+        hash *= 2246822519u;
+        hash ^= hash >> 13;
+        const int y = static_cast<int>(hash % static_cast<quint32>(h));
+
+        const int alpha = 24 + static_cast<int>(hash % 46u);
+        const qreal radius = (i % 9 == 0) ? 1.3 : 0.7;
+        painter.setBrush(QColor(214, 231, 255, alpha));
+        painter.drawEllipse(QPointF(x, y), radius, radius);
     }
 }
 

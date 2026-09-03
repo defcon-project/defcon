@@ -134,6 +134,35 @@ void AppTests::appTests()
     QVERIFY(QFile(":/css/Light").exists());
     QVERIFY(!QFile(":/css/Nebula").exists());
     QVERIFY(!QFile(":/css/Arctic").exists());
+    // Properties Qt Style Sheets do not implement. Qt drops them in silence, so
+    // a rule written with one reads correctly in the file and does nothing on
+    // screen. Abyss shipped text-transform and letter-spacing on the devnet
+    // badge for exactly that reason, and a change before it shipped opacity on
+    // a button. Neither was noticed by reading; a list is cheaper.
+    {
+        const QStringList unsupported{"text-transform", "letter-spacing", "box-shadow",
+                                      "text-shadow", "transition", "z-index",
+                                      "opacity", "float", "overflow"};
+        QStringList sheets{"general"};
+        for (const QString& theme : GUIUtil::listThemes()) {
+            sheets << theme;
+        }
+        for (const QString& sheet : sheets) {
+            QFile file(":/css/" + sheet);
+            QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Text),
+                     qPrintable("stylesheet resource missing: " + sheet));
+            const QString css = QString::fromUtf8(file.readAll());
+            for (const QString& property : unsupported) {
+                // Anchored where a property may begin, so the word inside
+                // "subcontrol-position" or a sentence in a comment is not a hit.
+                const QRegularExpression re("(^|[{;])\\s*" + property + "\\s*:",
+                                            QRegularExpression::MultilineOption);
+                QVERIFY2(!re.match(css).hasMatch(),
+                         qPrintable(sheet + " uses " + property + ", which Qt ignores"));
+            }
+        }
+    }
+
     QCOMPARE(GUIUtil::getDefaultTheme(), QString("Light"));
 
 #ifdef Q_OS_MAC

@@ -239,12 +239,19 @@ QTabBar::tab:selected {
     color: #ffffff;
 }
 
+/* general.css pins every progress bar to 10px tall, both minimum and maximum,
+   because its own bars carry no text. This theme centres text inside them, and
+   text does not fit in ten pixels -- the sync line at the bottom of the window
+   was cut through the middle. Asking for the text means having to ask for the
+   room as well. */
 QProgressBar {
     background-color: #122338;
     border: 1px solid #20344c;
     border-radius: 5px;
     color: #e6edf7;
     text-align: center;
+    min-height: 18px;
+    max-height: 18px;
 }
 
 QProgressBar::chunk {
@@ -263,8 +270,16 @@ QToolBar#navigationToolBar[modern="true"] {
     margin: 0;
     padding: 12px 8px;
     spacing: 4px;
+    /* Width: a minimum, not a fixed size. The sidebar is 238px in every
+       language that fits in 238px, and grows rather than truncating in one
+       that does not, because nothing inside it elides on its own.
+
+       Height: these two are not constraints, they are the removal of one.
+       general.css caps every QToolBar at 50px because in the classic themes
+       the bar is horizontal; this one is vertical and must be as tall as the
+       window. Deleting these lines as "fixed dimensions" collapsed the sidebar
+       to the height of its logo and took every navigation button with it. */
     min-width: 238px;
-    max-width: 238px;
     min-height: 0;
     max-height: 16777215px;
 }
@@ -276,7 +291,6 @@ QToolBar#navigationToolBar[modern="true"] > QToolButton {
     color: #cbd8e7;
     margin: 2px 4px;
     min-width: 206px;
-    max-width: 206px;
     min-height: 44px;
     max-height: 44px;
     padding: 0 10px;
@@ -315,7 +329,6 @@ QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector {
     border-radius: 8px;
     margin: 10px 5px 2px 5px;
     min-width: 202px;
-    max-width: 202px;
 }
 
 QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox {
@@ -347,6 +360,13 @@ QWidget#OverviewPage QLabel#modernOverviewSubtitle {
     font-size: 12px;
 }
 
+/* No min-width on these cards. A stylesheet min-width replaces the minimum a
+   layout derives from its children instead of adding to it, so the card could
+   be squeezed under the width its own labels need and the amounts were cut off
+   mid-digit -- worst on the watch-only column, which sits last. The stock Dark
+   theme sets no fixed dimensions anywhere and never had the fault. Letting the
+   content set the minimum is both the fix and the rule: a balance is the one
+   thing in this window that must never be half-shown. */
 QWidget#OverviewPage QFrame#frame,
 QWidget#OverviewPage QFrame#frameCoinJoin,
 QWidget#OverviewPage QFrame#frame_2 {
@@ -355,18 +375,10 @@ QWidget#OverviewPage QFrame#frame_2 {
     border-radius: 10px;
 }
 
-QWidget#OverviewPage QFrame#frame {
-    min-width: 490px;
-}
-
 QWidget#OverviewPage QFrame#frameCoinJoin {
     background-color: #0b1727;
     max-width: 16777215px;
     max-height: 16777215px;
-}
-
-QWidget#OverviewPage QFrame#frame_2 {
-    min-width: 430px;
 }
 
 QWidget#OverviewPage QFrame#frame QLabel#label_5,
@@ -617,6 +629,4 @@ QLabel#devnetBadge {
     margin: 6px 10px;
     font-size: 10px;
     font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 1px;
 }

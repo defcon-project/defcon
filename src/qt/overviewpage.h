@@ -51,6 +51,7 @@ Q_SIGNALS:
 
 protected:
     void changeEvent(QEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
 private:
     QTimer *timer;
     Ui::OverviewPage *ui;

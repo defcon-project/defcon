@@ -141,6 +141,8 @@ private:
     //! console is the one window a developer opens over and over on a devnet,
     //! and it was four clicks deep under Tools.
     QToolButton* consoleButton = nullptr;
+    //! The console button is pointed out once, when it first becomes usable.
+    bool consoleHintShown = false;
     QToolButton* overviewButton = nullptr;
     QToolButton* sendCoinsButton = nullptr;
     QToolButton* coinJoinCoinsButton = nullptr;
@@ -249,6 +251,8 @@ private:
     void createToolBars();
     /** Apply the selected theme's navigation orientation and sizing. */
     void applyThemeLayout();
+    /** Blink the console button twice, once, when the node makes it usable. */
+    void flashConsoleButton();
     /** Create system tray icon and notification */
     void createTrayIcon();
     /** Create system tray menu (or setup the dock menu) */
