@@ -137,6 +137,10 @@ private:
     QMenuBar* appMenuBar = nullptr;
     QToolBar* appToolBar = nullptr;
     QBoxLayout* walletLayout = nullptr;
+    //! Opens the debug console from the right corner of the menu bar. The
+    //! console is the one window a developer opens over and over on a devnet,
+    //! and it was four clicks deep under Tools.
+    QToolButton* consoleButton = nullptr;
     QToolButton* overviewButton = nullptr;
     QToolButton* sendCoinsButton = nullptr;
     QToolButton* coinJoinCoinsButton = nullptr;

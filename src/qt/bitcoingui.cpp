@@ -609,6 +609,47 @@ void BitcoinGUI::createActions()
 #endif // ENABLE_WALLET
 }
 
+namespace {
+/** A console glyph the icon set does not carry: a prompt chevron and the dot
+ *  that follows it.
+ *
+ *  Drawn at the size it is displayed at, multiplied by the screen's pixel
+ *  ratio, rather than on a large pixmap left for Qt to scale down. The first
+ *  version did the latter and was nearly invisible: a stroke a quarter of its
+ *  source width survives resampling as a grey smear, whatever colour it
+ *  started as. The colour is the theme's own text colour, so the glyph reads
+ *  on a dark bar and a light one without either being a special case. */
+QIcon makeConsoleIcon()
+{
+    constexpr int kSize = 16;
+    const qreal dpr = qApp->devicePixelRatio();
+
+    QPixmap pm(qRound(kSize * dpr), qRound(kSize * dpr));
+    pm.setDevicePixelRatio(dpr);
+    pm.fill(Qt::transparent);
+
+    QPainter painter(&pm);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    const QColor color = GUIUtil::getThemedQColor(GUIUtil::ThemedColor::DEFAULT);
+
+    // The prompt: >
+    QPen pen(color);
+    pen.setWidthF(1.7);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.drawLine(QPointF(3.5, 4.0), QPointF(7.75, 8.0));
+    painter.drawLine(QPointF(7.75, 8.0), QPointF(3.5, 12.0));
+
+    // The cursor waiting after it.
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
+    painter.drawEllipse(QPointF(11.25, 11.0), 1.5, 1.5);
+
+    return QIcon(pm);
+}
+} // namespace
+
 void BitcoinGUI::createMenuBar()
 {
 #ifdef Q_OS_MAC
@@ -710,6 +751,25 @@ void BitcoinGUI::createMenuBar()
             showDebugWindow();
         });
     }
+
+#ifndef Q_OS_MAC
+    // The console, one click away, in the corner of the same bar as the menus.
+    // Not on macOS: the menu bar there belongs to the system and shows no
+    // corner widget. The button takes the action itself rather than a copy of
+    // it, so it stays disabled until the node is ready and needs no second
+    // connection to keep the two in step.
+    consoleButton = new QToolButton(this);
+    consoleButton->setObjectName("consoleButton");
+    consoleButton->setDefaultAction(openRPCConsoleAction);
+    consoleButton->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    consoleButton->setAutoRaise(true);
+    consoleButton->setFocusPolicy(Qt::NoFocus);
+    consoleButton->setCursor(Qt::PointingHandCursor);
+    consoleButton->setIconSize(QSize(16, 16));
+    consoleButton->setToolTip(tr("Open the debug console"));
+    consoleButton->setIcon(makeConsoleIcon());
+    appMenuBar->setCornerWidget(consoleButton, Qt::TopRightCorner);
+#endif // Q_OS_MAC
 
     QMenu *help = appMenuBar->addMenu(tr("&Help"));
     help->addAction(showHelpMessageAction);
@@ -925,6 +985,12 @@ QIcon makeDiagonalArrowIcon(bool up_right)
 
 void BitcoinGUI::applyThemeLayout()
 {
+    // Before the wallet-only work below, and outside its early return: the
+    // console button exists in a build without a wallet too.
+    if (consoleButton != nullptr) {
+        consoleButton->setIcon(makeConsoleIcon());
+    }
+
 #ifdef ENABLE_WALLET
     if (!appToolBar || !walletLayout || !tabGroup) {
         return;

@@ -477,6 +477,31 @@ QMenuBar::item {
 QMenuBar::item:selected {
 }
 
+
+/******************************************************
+QToolButton#consoleButton
+******************************************************/
+
+/* The console shortcut in the corner of the menu bar. Flat, so it reads as
+part of the bar rather than as a control dropped on top of it, and given room
+on the right so it does not touch the window edge. */
+
+QToolButton#consoleButton {
+    background: transparent;
+    border: none;
+    margin: 0px 6px 0px 0px;
+    padding: 3px;
+}
+
+QToolButton#consoleButton:hover {
+    background-color: rgba(128, 128, 128, 0.18);
+    border-radius: 3px;
+}
+
+QToolButton#consoleButton:pressed {
+    background-color: rgba(128, 128, 128, 0.30);
+}
+
 /******************************************************
 QProgressBar
 ******************************************************/
