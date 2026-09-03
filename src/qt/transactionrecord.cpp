@@ -54,7 +54,24 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wal
                 if(wtx.is_coinstake)
                 {
                     sub.idx = 1; // vout index
-                    sub.credit = nNet;
+                    // The reward, and not the net of a half-counted
+                    // transaction. GetCredit() returns 0 while a coinstake
+                    // output is immature (wallet.cpp, "Must wait until
+                    // coinbase is safely deep enough in the chain before
+                    // valuing it") while GetDebit() still counts the input it
+                    // spent -- so nNet here is minus the entire stake, which
+                    // reads as a large loss for the twenty-five blocks it
+                    // takes to mature and then jumps to +500. Summing our own
+                    // outputs against our own inputs gives the reward from the
+                    // first moment the row exists, and leaves maturity to the
+                    // status column, which is what the status column is for.
+                    CAmount stakeOutputs = 0;
+                    for (size_t j = 0; j < wtx.tx->vout.size(); ++j) {
+                        if (wtx.txout_is_mine[j]) {
+                            stakeOutputs += wtx.tx->vout[j].nValue;
+                        }
+                    }
+                    sub.credit = stakeOutputs - nDebit;
                 }
                 else
                 {
