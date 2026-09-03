@@ -612,6 +612,15 @@ StakeAttempt CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex
     }
 
     // Get block reward
+    // The subsidy, and deliberately not the fees of the block being built.
+    //
+    // A coinstake may mint at most what IsBlockValueValid allows it, and past
+    // nPosFeeBurnActivationHeight that is the subsidy alone: the fees of the
+    // transactions in the block are destroyed. Adding them here would build a
+    // block the network refuses. Before that height the ceiling was subsidy
+    // plus fees and this line still minted the subsidy, which is why every
+    // block on the chain burns its fees -- the rule now says so rather than
+    // relying on this line to keep saying it.
     CAmount nReward = GetProofOfStakeReward();
     if (nReward < 0) {
         return StakeAttempt::Error;

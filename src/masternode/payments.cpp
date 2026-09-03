@@ -197,8 +197,18 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
     const CAmount blockReward = blockSubsidy + feeReward;
 
     bool isBlockRewardValueMet = (block.vtx[0]->GetValueOut() <= blockReward);
+
+    // What a proof-of-stake block's coinstake may mint. Below the gate it is
+    // the subsidy plus the fees of the transactions in the block, and the
+    // wallet has never claimed the second part -- every block on this chain
+    // mints exactly the subsidy. From the gate the ceiling says so: the fees
+    // are destroyed by rule, and a producer running modified software can no
+    // longer keep them. An economic rule nobody enforces is a rule anybody may
+    // rewrite, and this one had been enforced by nothing but our own wallet.
+    const CAmount coinstakeCeiling = PosFeesAreBurned(nBlockHeight, m_consensus_params) ? blockSubsidy : blockReward;
+
     if (block.IsProofOfStake()) {
-        isBlockRewardValueMet = ((block.vtx[1]->GetValueOut() - stakeValueIn) <= blockReward);
+        isBlockRewardValueMet = ((block.vtx[1]->GetValueOut() - stakeValueIn) <= coinstakeCeiling);
 
         // The coinstake is bounded above; the coinbase was not, except on
         // superblock heights. On a proof-of-stake block the coinbase exists to
@@ -242,8 +252,15 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
     if (!CSuperblock::IsValidBlockHeight(nBlockHeight)) {
         // can't possibly be a superblock, so lets just check for block reward limits
         if (!isBlockRewardValueMet) {
-            strErrorRet = strprintf("coinbase pays too much at height %d (actual=%d vs limit=%d), exceeded block reward, only regular blocks are allowed at this height",
-                                    nBlockHeight, block.vtx[0]->GetValueOut(), blockReward);
+            // On a proof-of-stake block the check above reads the coinstake, so
+            // the message reports the coinstake's mint and its own ceiling.
+            // Reporting the coinbase's value there sent readers to the wrong
+            // transaction.
+            strErrorRet = block.IsProofOfStake()
+                ? strprintf("coinstake mints too much at height %d (actual=%d vs limit=%d), exceeded block reward, only regular blocks are allowed at this height",
+                            nBlockHeight, block.vtx[1]->GetValueOut() - stakeValueIn, coinstakeCeiling)
+                : strprintf("coinbase pays too much at height %d (actual=%d vs limit=%d), exceeded block reward, only regular blocks are allowed at this height",
+                            nBlockHeight, block.vtx[0]->GetValueOut(), blockReward);
         }
         return isBlockRewardValueMet;
     }

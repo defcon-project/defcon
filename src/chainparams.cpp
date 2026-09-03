@@ -603,6 +603,7 @@ public:
         consensus.nPosCoinbaseBoundActivationHeight = 7560;
         consensus.nPosStakeModifierV2ActivationHeight = 7560;
         consensus.nPosBlockTimeBoundActivationHeight = 7560;
+        consensus.nPosFeeBurnActivationHeight = 7920;
         // Brought forward from 6000 for the coordinated fleet roll that also
         // ships the DSL reorg/signing hardening: every daemon must run this
         // binary before the height, which the roll ensures with margin over the
@@ -914,6 +915,7 @@ public:
         consensus.nPosCoinbaseBoundActivationHeight = 0;
         consensus.nPosStakeModifierV2ActivationHeight = 0;
         consensus.nPosBlockTimeBoundActivationHeight = 0;
+        consensus.nPosFeeBurnActivationHeight = 0;
         consensus.nStrictBLSSigSizeActivationHeight = 0;
         consensus.posLimit = uint256S("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000 * COIN;
@@ -1147,6 +1149,8 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
             consensus.nPosStakeModifierV2ActivationHeight = int{height};
         } else if (name == "postime") {
             consensus.nPosBlockTimeBoundActivationHeight = int{height};
+        } else if (name == "posfeeburn") {
+            consensus.nPosFeeBurnActivationHeight = int{height};
         } else if (name == "compute") {
             consensus.nComputeNodeActivationHeight = int{height};
         } else if (name == "dsl") {
@@ -1547,7 +1551,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-powtargetspacing=<n>", "Override the default PowTargetSpacing value in seconds (default: 2.5 minutes, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-computeactivationheight=<n>", "Height from which the Compute masternode type may register (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslactivationheight=<n>", "Height from which the DSL service-commitment protocol runs (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, posnonce, poscoinbase, posmodifier, postime, compute, dsl). (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, posnonce, poscoinbase, posmodifier, postime, posfeeburn, compute, dsl). (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-vbparams=<deployment>:<start>:<end>(:min_activation_height(:<window>:<threshold/thresholdstart>(:<thresholdmin>:<falloffcoeff>:<mnactivation>)))",
                  "Use given start/end times and min_activation_height for specified version bits deployment (regtest-only). "
                  "Specifying window, threshold/thresholdstart, thresholdmin, falloffcoeff and mnactivation is optional.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);

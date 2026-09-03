@@ -3992,6 +3992,11 @@ bool CheckPosCoinbaseValue(int nHeight, CAmount coinbaseValueOut, CAmount expect
     return coinbaseValueOut <= expected;
 }
 
+bool PosFeesAreBurned(int nHeight, const Consensus::Params& params)
+{
+    return nHeight >= params.nPosFeeBurnActivationHeight;
+}
+
 bool CheckPosBlockTime(int nHeight, int64_t nTime, int64_t nPrevTime, const Consensus::Params& params)
 {
     if (nHeight < params.nPosBlockTimeBoundActivationHeight) return true;
