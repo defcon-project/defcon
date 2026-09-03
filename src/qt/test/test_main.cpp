@@ -18,6 +18,7 @@
 
 #ifdef ENABLE_WALLET
 #include <qt/test/addressbooktests.h>
+#include <qt/test/masternodelisttests.h>
 #include <qt/test/wallettests.h>
 #endif // ENABLE_WALLET
 
@@ -87,6 +88,14 @@ int main(int argc, char* argv[])
     if (QTest::qExec(&app_tests) != 0) {
         fInvalid = true;
     }
+#ifdef ENABLE_WALLET
+    // Ahead of the wallet suite on purpose: that one still dies with a fatal
+    // error on this fork, and nothing queued behind it gets to run.
+    MasternodeListTests masternode_list_tests(app.node());
+    if (QTest::qExec(&masternode_list_tests) != 0) {
+        fInvalid = true;
+    }
+#endif
     URITests test1;
     if (QTest::qExec(&test1) != 0) {
         fInvalid = true;

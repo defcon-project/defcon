@@ -92,6 +92,22 @@ MasternodeList::MasternodeList(QWidget* parent) :
         const QSignalBlocker blocker(ui->checkBoxEssentialInfoOnly);
         ui->checkBoxEssentialInfoOnly->setChecked(essentialOnly);
     }
+
+    // Column widths, order and the sort choice come back the way the peers
+    // table's do. A restore that fails -- a layout saved with a different
+    // column count -- leaves the defaults set above in place. The restore runs
+    // before the visibility pass so the toggle, not an old session, decides
+    // which columns show; and the dummy column stays hidden whatever was saved.
+    {
+        QSettings settings;
+        QHeaderView* header = ui->tableWidgetMasternodesDIP3->horizontalHeader();
+        header->restoreState(settings.value("MasternodeListHeaderState").toByteArray());
+        ui->tableWidgetMasternodesDIP3->setColumnHidden(COLUMN_PROTX_HASH, true);
+        // Connected only now, so the restore itself is not written back.
+        connect(header, &QHeaderView::sectionResized, this, &MasternodeList::saveHeaderState);
+        connect(header, &QHeaderView::sectionMoved, this, &MasternodeList::saveHeaderState);
+        connect(header, &QHeaderView::sortIndicatorChanged, this, &MasternodeList::saveHeaderState);
+    }
     applyColumnVisibility();
 
     contextMenuDIP3 = new QMenu(this);
@@ -126,6 +142,32 @@ void MasternodeList::setWalletModel(WalletModel* model)
 {
     this->walletModel = model;
     ui->checkBoxMyMasternodesOnly->setEnabled(model != nullptr);
+    if (model == nullptr) return;
+
+    // "My masternodes only" is remembered, but restored only once a wallet can
+    // answer "mine": before that the box is disabled, and a tick restored into
+    // it would promise a filter nothing applies. Restored silently, like the
+    // column toggle above, then refreshed explicitly -- the slot would do both
+    // and also write back the value it just read.
+    QSettings settings;
+    const bool mineOnly = settings.value("fMasternodeMyMasternodesOnly", false).toBool();
+    if (ui->checkBoxMyMasternodesOnly->isChecked() != mineOnly) {
+        const QSignalBlocker blocker(ui->checkBoxMyMasternodesOnly);
+        ui->checkBoxMyMasternodesOnly->setChecked(mineOnly);
+    }
+    refreshFilterNow();
+}
+
+void MasternodeList::refreshFilterNow()
+{
+    nTimeFilterUpdatedDIP3 = GetTime() - MASTERNODELIST_FILTER_COOLDOWN_SECONDS;
+    fFilterUpdatedDIP3 = true;
+}
+
+void MasternodeList::saveHeaderState()
+{
+    QSettings settings;
+    settings.setValue("MasternodeListHeaderState", ui->tableWidgetMasternodesDIP3->horizontalHeader()->saveState());
 }
 
 void MasternodeList::showContextMenuDIP3(const QPoint& point)
@@ -366,9 +408,9 @@ void MasternodeList::on_checkBoxEssentialInfoOnly_stateChanged(int state)
 
 void MasternodeList::on_checkBoxMyMasternodesOnly_stateChanged(int state)
 {
-    // no cooldown
-    nTimeFilterUpdatedDIP3 = GetTime() - MASTERNODELIST_FILTER_COOLDOWN_SECONDS;
-    fFilterUpdatedDIP3 = true;
+    QSettings settings;
+    settings.setValue("fMasternodeMyMasternodesOnly", ui->checkBoxMyMasternodesOnly->isChecked());
+    refreshFilterNow();
 }
 
 CDeterministicMNCPtr MasternodeList::GetSelectedDIP3MN()

@@ -15,12 +15,14 @@ TEST_QT_MOC_CPP = \
 if ENABLE_WALLET
 TEST_QT_MOC_CPP += \
   qt/test/moc_addressbooktests.cpp \
+  qt/test/moc_masternodelisttests.cpp \
   qt/test/moc_wallettests.cpp
 endif # ENABLE_WALLET
 
 TEST_QT_H = \
   qt/test/addressbooktests.h \
   qt/test/apptests.h \
+  qt/test/masternodelisttests.h \
   qt/test/rpcnestedtests.h \
   qt/test/uritests.h \
   qt/test/util.h \
@@ -41,6 +43,7 @@ qt_test_test_defcon_qt_SOURCES = \
 if ENABLE_WALLET
 qt_test_test_defcon_qt_SOURCES += \
   qt/test/addressbooktests.cpp \
+  qt/test/masternodelisttests.cpp \
   qt/test/wallettests.cpp \
   wallet/test/wallet_test_fixture.cpp
 endif # ENABLE_WALLET
