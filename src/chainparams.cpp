@@ -702,7 +702,7 @@ public:
         consensus.nInstantSendV2ActivationHeight = 7200;
 
         UpdateDevnetLLMQChainLocksFromArgs(args);
-        UpdateDevnetLLMQInstantSendDIP0024FromArgs(args);
+        UpdateDevnetLLMQInstantSendFromArgs(args);
         UpdateDevnetLLMQPlatformFromArgs(args);
         UpdateDevnetLLMQMnhfFromArgs(args);
         UpdateLLMQDevnetParametersFromArgs(args);
@@ -838,7 +838,6 @@ public:
     }
     void UpdateLLMQDevnetParametersFromArgs(const ArgsManager& args);
     void UpdateDevnetLLMQInstantSendFromArgs(const ArgsManager& args);
-    void UpdateDevnetLLMQInstantSendDIP0024FromArgs(const ArgsManager& args);
     void UpdateDevnetLLMQPlatformFromArgs(const ArgsManager& args);
     void UpdateDevnetLLMQMnhfFromArgs(const ArgsManager& args);
     void UpdateDevnetPowTargetSpacingFromArgs(const ArgsManager& args);
@@ -1372,14 +1371,17 @@ void CDevNetParams::UpdateDevnetLLMQChainLocksFromArgs(const ArgsManager& args)
     UpdateDevnetLLMQChainLocks(llmqType);
 }
 
-void CDevNetParams::UpdateDevnetLLMQInstantSendDIP0024FromArgs(const ArgsManager& args)
+void CDevNetParams::UpdateDevnetLLMQInstantSendFromArgs(const ArgsManager& args)
 {
-    if (!args.IsArgSet("-llmqinstantsenddip0024")) return;
+    // The old name is a hidden alias; the new one wins when both are given.
+    const char* option = args.IsArgSet("-llmqinstantsend") ? "-llmqinstantsend" :
+                         args.IsArgSet("-llmqinstantsenddip0024") ? "-llmqinstantsenddip0024" : nullptr;
+    if (option == nullptr) return;
 
     const auto& llmq_params_opt = GetLLMQ(consensus.llmqTypeDIP0024InstantSend);
     assert(llmq_params_opt.has_value());
 
-    std::string strLLMQType = gArgs.GetArg("-llmqinstantsenddip0024", std::string(llmq_params_opt->name));
+    std::string strLLMQType = args.GetArg(option, std::string(llmq_params_opt->name));
 
     Consensus::LLMQType llmqType = Consensus::LLMQType::LLMQ_NONE;
     // Any registered profile will do: deterministic locks work on rotating and
@@ -1391,9 +1393,9 @@ void CDevNetParams::UpdateDevnetLLMQInstantSendDIP0024FromArgs(const ArgsManager
         }
     }
     if (llmqType == Consensus::LLMQType::LLMQ_NONE) {
-        throw std::runtime_error("Invalid LLMQ type specified for -llmqinstantsenddip0024.");
+        throw std::runtime_error(strprintf("Invalid LLMQ type specified for %s.", option));
     }
-    LogPrintf("Setting llmqinstantsenddip0024 to size=%ld\n", static_cast<uint8_t>(llmqType));
+    LogPrintf("Setting the InstantSend LLMQ type (%s) to %d\n", option, ToUnderlying(llmqType));
     UpdateDevnetLLMQDIP0024InstantSend(llmqType);
 }
 
@@ -1549,12 +1551,21 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-dip3params=<activation>:<enforcement>", "Override DIP3 activation and enforcement heights (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-highsubsidyblocks=<n>", "The number of blocks with a higher than normal subsidy to mine at the start of a chain. Block after that height will have fixed subsidy base. (default: 0, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-highsubsidyfactor=<n>", "The factor to multiply the normal block subsidy by while in the highsubsidyblocks window of a chain (default: 1, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-llmqchainlocks=<quorum name>", "Override the default LLMQ type used for ChainLocks. Allows using ChainLocks with smaller LLMQs. (default: llmq_400_60, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-llmqchainlocks=<quorum name>", "Override the LLMQ type that signs ChainLocks below the Q60 switchover height; at and above it llmq_defcon signs regardless. Allows ChainLocks with smaller LLMQs. (default: llmq_400_60, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqdevnetparams=<size>:<threshold>", "Override the default LLMQ size for the LLMQ_DEVNET quorum (devnet-only). Rejected when LLMQ_DEVNET is not registered on the network, which the mainnet-parity devnet profile set does not do", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-llmqinstantsenddip0024=<quorum name>", "Override the default LLMQ type used for InstantSendDIP0024. (default: llmq_60_75, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-llmqplatform=<quorum name>", "Override the default LLMQ type used for Platform. (default: llmq_100_67, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-llmqmnhf=<quorum name>", "Override the default LLMQ type used for EHF. (default: llmq_400_85, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-llmqtestinstantsenddip0024=<quorum name>", "Override the default LLMQ type used for InstantSendDIP0024. Used mainly to test Platform. (default: llmq_test_dip0024, regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    // DIP0024 (quorum rotation) never activates on this chain, so the option
+    // that used to carry its name now says what it does: pick the InstantSend
+    // profile used below the Q60 switchover height. The old name is still
+    // accepted, hidden.
+    argsman.AddArg("-llmqinstantsend=<quorum name>", "Override the LLMQ type that signs InstantSend locks below the Q60 switchover height; at and above it llmq_defcon signs regardless. (default: llmq_60_75, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
+    argsman.AddHiddenArgs({"-llmqinstantsenddip0024"});
+    // Two profiles that cannot form on any network of this chain: llmq_100_67
+    // sits behind a deployment left unreachable, and llmq_400_85 needs 340
+    // signers. The overrides keep working for anyone who reads the source,
+    // but a help page should not offer knobs that turn nothing.
+    argsman.AddArg("-llmqplatform=<quorum name>", "Override the LLMQ type recorded for the (unused) platform role. (default: llmq_100_67, devnet-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-llmqmnhf=<quorum name>", "Override the LLMQ type recorded for EHF signalling, which no deployment on this chain uses. (default: llmq_400_85, devnet-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-llmqtestinstantsenddip0024=<quorum name>", "Override the LLMQ type that signs InstantSend locks on regtest, e.g. llmq_test_instantsend for the non-rotating path this chain runs. (default: llmq_test_dip0024, regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqtestinstantsendparams=<size>:<threshold>", "Override the default LLMQ size for the LLMQ_TEST_INSTANTSEND quorums (default: 3:2, regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqtestparams=<size>:<threshold>", "Override the default LLMQ size for the LLMQ_TEST quorum (default: 3:2, regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-minimumdifficultyblocks=<n>", "The number of blocks that can be mined with the minimum difficulty at the start of a chain (default: 0, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);

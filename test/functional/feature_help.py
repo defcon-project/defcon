@@ -42,6 +42,24 @@ class HelpTest(BitcoinTestFramework):
         assert b'Options' in output
         self.log.info(f"Help text received: {output[0:60]} (...)")
 
+        # The wallet's "Command-line options" dialog shows this same text, so
+        # what it offers is what a user believes the node can do. Options that
+        # steer machinery this chain never runs stay out of it, and the name
+        # that promised DIP0024 says what it does instead.
+        self.log.info("The help offers no knob that turns nothing on this chain")
+        assert b'-llmqinstantsend=' in output
+        for hidden in (b'-llmqinstantsenddip0024', b'-llmqplatform', b'-llmqmnhf', b'-deprecated-platform-user'):
+            assert hidden not in output, hidden
+        assert b'Dash Platform' not in output
+        # The formatter wraps at 79 columns, so match a phrase, not a sentence.
+        assert b'A masternode refuses to start below' in output
+
+        self.log.info("The hidden ones are still there behind -help-debug")
+        self.nodes[0].start(extra_args=['-help-debug'])
+        output, _ = self.get_node_output(ret_code_expected=0)
+        for hidden in (b'-llmqplatform', b'-llmqmnhf', b'-deprecated-platform-user'):
+            assert hidden in output, hidden
+
         self.log.info("Start dashd with -version for version information")
         self.nodes[0].start(extra_args=['-version'])
         # Node should exit immediately and output version to stdout.
