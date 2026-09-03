@@ -791,9 +791,9 @@ void BitcoinGUI::createMenuBar()
 
 namespace {
 /** Some late layout pass re-applies a stale sidebar width to the navigation
- *  bar after the theme layout has already run -- observed live on Nebula,
- *  where the horizontal bar collapsed to the width of a single sidebar item
- *  and every tab vanished into the overflow chevron. The writer acts between
+ *  bar after the theme layout has already run -- first seen on a modern
+ *  theme in horizontal mode, where the bar collapsed to the width of a single
+ *  sidebar item and every tab vanished into the overflow chevron. The writer acts between
  *  theme application and the first paints, so a one-shot reset cannot win;
  *  this guard undoes the constraint the moment it lands. Vertical mode sizes
  *  its width through the stylesheet and is deliberately left alone. */
@@ -1006,9 +1006,8 @@ void BitcoinGUI::applyThemeLayout()
         return;
     }
 
-    const bool galaxy = GUIUtil::isDefconGalaxyTheme();
     const bool modern = GUIUtil::isModernTheme();
-    const bool vertical = modern && !galaxy;
+    const bool vertical = modern;
 
     // A wallet on a test chain must say so where the eye rests. The window
     // title already carries the network suffix, but nobody reads the title
@@ -1022,7 +1021,6 @@ void BitcoinGUI::applyThemeLayout()
         devnetBadgeAction = appToolBar->addWidget(devnetBadgeLabel);
     }
     appToolBar->setProperty("modern", modern);
-    appToolBar->setProperty("galaxy", galaxy);
     appToolBar->setOrientation(vertical ? Qt::Vertical : Qt::Horizontal);
     appToolBar->setToolButtonStyle(modern ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonTextOnly);
     appToolBar->setSizePolicy(vertical ? QSizePolicy::Fixed : QSizePolicy::Expanding,
@@ -1034,7 +1032,7 @@ void BitcoinGUI::applyThemeLayout()
         if (!button) {
             continue;
         }
-        button->setSizePolicy(galaxy ? QSizePolicy::Preferred : QSizePolicy::Expanding,
+        button->setSizePolicy(QSizePolicy::Expanding,
                               modern ? QSizePolicy::Fixed : QSizePolicy::Preferred);
         // The toolbar-level setToolButtonStyle() above only reaches buttons a
         // toolbar creates for QActions; these are hand-made QToolButtons added
@@ -1043,9 +1041,9 @@ void BitcoinGUI::applyThemeLayout()
         // icons, so Qt fell back to text; the moment the modern branch set
         // icons, every label vanished.
         button->setToolButtonStyle(modern ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonTextOnly);
-        // Nebula ran the smallest type in the app (11px on the horizontal tab
-        // bar); readability complaints started exactly there. One size up
-        // still fits the bar.
+        // The modern themes ran the smallest type in the app on the horizontal
+        // tab bar, at 11px, and readability complaints started exactly there.
+        // One size up still fits the bar.
         const int fontSize = modern ? 12 : 16;
         GUIUtil::setFont({button}, button->isChecked() ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal, fontSize);
         if (!modern) {
@@ -1071,7 +1069,7 @@ void BitcoinGUI::applyThemeLayout()
             governanceButton->setIcon(GUIUtil::getIcon("synced"));
         }
         for (QAbstractButton* button : tabGroup->buttons()) {
-            button->setIconSize(galaxy ? QSize(20, 20) : QSize(22, 22));
+            button->setIconSize(QSize(22, 22));
         }
 
         if (appToolBarLogoAction && firstNavigationAction) {
@@ -1080,11 +1078,7 @@ void BitcoinGUI::applyThemeLayout()
         }
         if (m_wallet_selector_action && firstNavigationAction) {
             appToolBar->removeAction(m_wallet_selector_action);
-            if (galaxy) {
-                appToolBar->addAction(m_wallet_selector_action);
-            } else {
-                appToolBar->insertAction(firstNavigationAction, m_wallet_selector_action);
-            }
+            appToolBar->insertAction(firstNavigationAction, m_wallet_selector_action);
         }
     } else {
         if (m_wallet_selector_action) {
@@ -1114,9 +1108,9 @@ void BitcoinGUI::applyThemeLayout()
     if (!vertical) {
         // Coming from (or racing with) the vertical layout, a stale fixed
         // width can survive on the toolbar and squeeze the whole horizontal
-        // tab row into an extension chevron -- observed live on Nebula, where
-        // the bar collapsed to the width of one sidebar item and every
-        // navigation button vanished into the overflow popup. Horizontal mode
+        // tab row into an extension chevron -- seen live, with the bar
+        // collapsed to the width of one sidebar item and every navigation
+        // button gone into the overflow popup. Horizontal mode
         // never wants a width constraint, so clear it explicitly.
         appToolBar->setMinimumWidth(0);
         appToolBar->setMaximumWidth(QWIDGETSIZE_MAX);
@@ -1775,7 +1769,7 @@ void BitcoinGUI::updateWidth()
         return;
     }
     if (GUIUtil::isModernTheme()) {
-        const int modernMinimumWidth = GUIUtil::isDefconGalaxyTheme() ? 1280 : 1200;
+        constexpr int modernMinimumWidth{1200};
         setMinimumWidth(modernMinimumWidth);
         resize(std::max(width(), modernMinimumWidth), height());
         return;

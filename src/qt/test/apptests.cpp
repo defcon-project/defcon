@@ -62,15 +62,49 @@ void TestRpcCommand(RPCConsole* console)
 void AppTests::appTests()
 {
     QVERIFY(GUIUtil::isValidTheme("Abyss"));
-    QVERIFY(GUIUtil::isValidTheme("Nebula"));
-    QVERIFY(GUIUtil::isValidTheme("Arctic"));
-    // The former names are no longer valid themes; migrateThemeSetting() and
-    // getActiveTheme() map them, so a stored selection survives the rename.
+    // Nebula and Arctic were removed, along with the former names of all three
+    // modern themes. None of them may be selectable any more.
+    QVERIFY(!GUIUtil::isValidTheme("Nebula"));
+    QVERIFY(!GUIUtil::isValidTheme("Arctic"));
     QVERIFY(!GUIUtil::isValidTheme("DeFCon Dark"));
     QVERIFY(!GUIUtil::isValidTheme("DeFCon Galaxy"));
     QVERIFY(!GUIUtil::isValidTheme("DeFCon Light"));
-    QVERIFY(QFile(":/css/DeFCon Galaxy").exists());
-    QVERIFY(QFile(":/css/DeFCon Light").exists());
+
+    // What matters more than the names is where a wallet that still has one
+    // stored ends up. Falling back to the default would hand a white wallet to
+    // someone who chose a dark one, silently, on the next start -- so each
+    // removed theme resolves to a survivor of its own kind instead.
+    {
+        QSettings settings;
+        const QVariant saved = settings.value("theme");
+        const auto resolves = [&settings](const char* stored) {
+            settings.setValue("theme", QString(stored));
+            return GUIUtil::getActiveTheme();
+        };
+        QCOMPARE(resolves("Nebula"), QString("Abyss"));
+        QCOMPARE(resolves("DeFCon Galaxy"), QString("Abyss"));
+        QCOMPARE(resolves("DeFCon Dark"), QString("Abyss"));
+        QCOMPARE(resolves("Arctic"), QString("Light"));
+        QCOMPARE(resolves("DeFCon Light"), QString("Light"));
+        // A name nobody ever shipped still falls back to the default, as before.
+        QCOMPARE(resolves("NoSuchTheme"), GUIUtil::getDefaultTheme());
+        if (saved.isValid()) {
+            settings.setValue("theme", saved);
+        } else {
+            settings.remove("theme");
+        }
+    }
+
+    // The stylesheets follow the themes: the survivors are in the resources and
+    // the removed ones are gone. The two assertions here previously named
+    // ":/css/DeFCon Galaxy" and ":/css/DeFCon Light", aliases the qrc stopped
+    // carrying when the themes were renamed -- so this check had been failing
+    // on every build since, unnoticed, which is how a resource can go missing
+    // and a test still be described as covering it.
+    QVERIFY(QFile(":/css/Abyss").exists());
+    QVERIFY(QFile(":/css/Light").exists());
+    QVERIFY(!QFile(":/css/Nebula").exists());
+    QVERIFY(!QFile(":/css/Arctic").exists());
     QCOMPARE(GUIUtil::getDefaultTheme(), QString("Light"));
 
 #ifdef Q_OS_MAC

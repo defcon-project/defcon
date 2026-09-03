@@ -104,17 +104,21 @@ static const QString defaultTheme = "Light";
 // Names of the built-in and modern DeFCoN themes
 static const QString darkTheme = "Dark";
 static const QString defconDarkTheme = "Abyss";
-static const QString defconGalaxyTheme = "Nebula";
 static const QString lightTheme = "Light";
-static const QString defconLightTheme = "Arctic";
-// Former names of the modern themes. A stored selection under an old name is
-// accepted on read and rewritten once, so renaming a theme never resets a
-// user's appearance to the default -- that regression already happened once
-// with the theme setting and must not come back.
+// Themes that no longer exist, and the surviving theme each stored selection
+// resolves to. A name here is accepted on read and rewritten once, so removing
+// a theme never resets a user's appearance to the default -- that regression
+// already happened once with the theme setting and must not come back.
+//
+// Each removed theme maps to its own kind rather than to the default: the dark
+// ones to Abyss and the light one to Light, so nobody who had chosen a dark
+// wallet is handed a white one on the next start.
 static const std::map<QString, QString> mapLegacyThemeNames{
     {"DeFCon Dark", defconDarkTheme},
-    {"DeFCon Galaxy", defconGalaxyTheme},
-    {"DeFCon Light", defconLightTheme},
+    {"DeFCon Galaxy", defconDarkTheme},
+    {"DeFCon Light", lightTheme},
+    {"Nebula", defconDarkTheme},
+    {"Arctic", lightTheme},
 };
 // The theme to set as a base one for non-traditional themes
 static const QString generalTheme = "general";
@@ -123,9 +127,7 @@ static const std::map<QString, QString> mapThemeToStyle{
     {generalTheme, "general.css"},
     {darkTheme, "dark.css"},
     {defconDarkTheme, "defcon-dark.css"},
-    {defconGalaxyTheme, "defcon-galaxy.css"},
     {lightTheme, "light.css"},
-    {defconLightTheme, "defcon-light.css"},
     {"Traditional", "traditional.css"},
 };
 
@@ -214,46 +216,6 @@ static const std::map<ThemedColor, QColor> themedDefconDarkColors = {
     { ThemedColor::ICON_ALTERNATIVE_COLOR, QColor(72, 94, 121) },
 };
 
-static const std::map<ThemedColor, QColor> themedDefconGalaxyColors = {
-    { ThemedColor::DEFAULT, QColor(255, 244, 248) },
-    { ThemedColor::UNCONFIRMED, QColor(173, 143, 169) },
-    { ThemedColor::BLUE, QColor(240, 68, 167) },
-    { ThemedColor::ORANGE, QColor(245, 193, 91) },
-    { ThemedColor::RED, QColor(255, 122, 102) },
-    // Not the ORANGE value: received amounts and warnings were the same
-    // amber, so credit and caution were indistinguishable at a glance. Mint
-    // reads as green against the plum background without fighting the
-    // magenta accent.
-    { ThemedColor::GREEN, QColor(94, 214, 167) },
-    { ThemedColor::BAREADDRESS, QColor(173, 143, 169) },
-    { ThemedColor::TX_STATUS_OPENUNTILDATE, QColor(200, 167, 255) },
-    { ThemedColor::BACKGROUND_WIDGET, QColor(33, 17, 38) },
-    { ThemedColor::BORDER_WIDGET, QColor(101, 48, 82) },
-    { ThemedColor::BACKGROUND_NETSTATS, QColor(33, 17, 38, 235) },
-    { ThemedColor::BORDER_NETSTATS, QColor(101, 48, 82) },
-    { ThemedColor::QR_PIXEL, QColor(255, 244, 248) },
-    { ThemedColor::ICON_ALTERNATIVE_COLOR, QColor(122, 82, 111) },
-};
-
-static const std::map<ThemedColor, QColor> themedDefconLightColors = {
-    { ThemedColor::DEFAULT, QColor(11, 31, 68) },
-    // Kept in step with the stylesheet's secondary text (#5a6a84): #66758e on
-    // white sat at the AA boundary for small type.
-    { ThemedColor::UNCONFIRMED, QColor(90, 106, 132) },
-    { ThemedColor::BLUE, QColor(8, 124, 240) },
-    { ThemedColor::ORANGE, QColor(227, 154, 0) },
-    { ThemedColor::RED, QColor(211, 47, 47) },
-    { ThemedColor::GREEN, QColor(46, 170, 54) },
-    { ThemedColor::BAREADDRESS, QColor(102, 117, 142) },
-    { ThemedColor::TX_STATUS_OPENUNTILDATE, QColor(8, 124, 240) },
-    { ThemedColor::BACKGROUND_WIDGET, QColor(255, 255, 255) },
-    { ThemedColor::BORDER_WIDGET, QColor(215, 225, 237) },
-    { ThemedColor::BACKGROUND_NETSTATS, QColor(255, 255, 255, 235) },
-    { ThemedColor::BORDER_NETSTATS, QColor(215, 225, 237) },
-    { ThemedColor::QR_PIXEL, QColor(11, 31, 68) },
-    { ThemedColor::ICON_ALTERNATIVE_COLOR, QColor(185, 198, 216) },
-};
-
 static const std::map<ThemedStyle, QString> themedStyles = {
     { ThemedStyle::TS_INVALID, "background:#a84832;" },
     { ThemedStyle::TS_ERROR, "color:#a84832;" },
@@ -284,37 +246,11 @@ static const std::map<ThemedStyle, QString> themedDefconDarkStyles = {
     { ThemedStyle::TS_SECONDARY, "color:#7e91a8;" },
 };
 
-static const std::map<ThemedStyle, QString> themedDefconGalaxyStyles = {
-    { ThemedStyle::TS_INVALID, "background:#ff7a66;" },
-    { ThemedStyle::TS_ERROR, "color:#ff7a66;" },
-    { ThemedStyle::TS_WARNING, "color:#f5c15b;" },
-    { ThemedStyle::TS_SUCCESS, "color:#f5c15b;" },
-    { ThemedStyle::TS_COMMAND, "color:#f044a7;" },
-    { ThemedStyle::TS_PRIMARY, "color:#fff4f8;" },
-    { ThemedStyle::TS_SECONDARY, "color:#ad8fa9;" },
-};
-
-static const std::map<ThemedStyle, QString> themedDefconLightStyles = {
-    { ThemedStyle::TS_INVALID, "background:#d32f2f;" },
-    { ThemedStyle::TS_ERROR, "color:#d32f2f;" },
-    { ThemedStyle::TS_WARNING, "color:#e39a00;" },
-    { ThemedStyle::TS_SUCCESS, "color:#2eaa36;" },
-    { ThemedStyle::TS_COMMAND, "color:#087cf0;" },
-    { ThemedStyle::TS_PRIMARY, "color:#0b1f44;" },
-    { ThemedStyle::TS_SECONDARY, "color:#66758e;" },
-};
-
 QColor getThemedQColor(ThemedColor color)
 {
     const QString theme = getActiveTheme();
     if (theme == defconDarkTheme) {
         return themedDefconDarkColors.at(color);
-    }
-    if (theme == defconGalaxyTheme) {
-        return themedDefconGalaxyColors.at(color);
-    }
-    if (theme == defconLightTheme) {
-        return themedDefconLightColors.at(color);
     }
     return theme == darkTheme ? themedDarkColors.at(color) : themedColors.at(color);
 }
@@ -324,12 +260,6 @@ QString getThemedStyleQString(ThemedStyle style)
     const QString theme = getActiveTheme();
     if (theme == defconDarkTheme) {
         return themedDefconDarkStyles.at(style);
-    }
-    if (theme == defconGalaxyTheme) {
-        return themedDefconGalaxyStyles.at(style);
-    }
-    if (theme == defconLightTheme) {
-        return themedDefconLightStyles.at(style);
     }
     return theme == darkTheme ? themedDarkStyles.at(style) : themedStyles.at(style);
 }
@@ -1043,19 +973,11 @@ bool isDefconDarkTheme()
     return getActiveTheme() == defconDarkTheme;
 }
 
-bool isDefconGalaxyTheme()
-{
-    return getActiveTheme() == defconGalaxyTheme;
-}
-
-bool isDefconLightTheme()
-{
-    return getActiveTheme() == defconLightTheme;
-}
-
 bool isModernTheme()
 {
-    return isDefconDarkTheme() || isDefconGalaxyTheme() || isDefconLightTheme();
+    // Abyss is the only modern theme. The name stays because the question the
+    // callers ask is "is a modern override layer active", not "is it Abyss".
+    return isDefconDarkTheme();
 }
 
 void loadStyleSheet(bool fForceUpdate)
@@ -1146,10 +1068,8 @@ void loadStyleSheet(bool fForceUpdate)
             vecFiles.push_back(pathToFile(generalTheme));
         }
         // Modern themes are override layers on top of the corresponding proven theme.
-        if (isDefconDarkTheme() || isDefconGalaxyTheme()) {
+        if (isDefconDarkTheme()) {
             vecFiles.push_back(pathToFile(darkTheme));
-        } else if (isDefconLightTheme()) {
-            vecFiles.push_back(pathToFile(lightTheme));
         }
         vecFiles.push_back(pathToFile(getActiveTheme()));
 

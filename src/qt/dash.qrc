@@ -36,9 +36,7 @@
         <file alias="general">res/css/general.css</file>
         <file alias="Dark">res/css/dark.css</file>
         <file alias="Abyss">res/css/defcon-dark.css</file>
-        <file alias="Nebula">res/css/defcon-galaxy.css</file>
         <file alias="Light">res/css/light.css</file>
-        <file alias="Arctic">res/css/defcon-light.css</file>
         <file alias="Traditional">res/css/traditional.css</file>
     </qresource>
     <qresource prefix="/fonts">
