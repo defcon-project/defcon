@@ -85,7 +85,7 @@ namespace BCLog {
 
         POS         = ((uint64_t)1 << 46),
 
-        DASH        = CHAINLOCKS | GOBJECT | INSTANTSEND | LLMQ | LLMQ_DKG
+        DEFCON      = CHAINLOCKS | GOBJECT | INSTANTSEND | LLMQ | LLMQ_DKG
                     | LLMQ_SIGS | MNPAYMENTS | MNSYNC | COINJOIN | SPORK | NETCONN
                     | EHF | CREDITPOOL | POS,
 

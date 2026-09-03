@@ -198,7 +198,7 @@ const CLogCategoryDesc LogCategories[] =
     {BCLog::CREDITPOOL, "creditpool"},
     {BCLog::POS, "pos"},
     {BCLog::EHF, "ehf"},
-    {BCLog::DASH, "dash"},
+    {BCLog::DEFCON, "defcon"},
     //End Dash
 };
 
@@ -206,6 +206,15 @@ bool GetLogCategory(BCLog::LogFlags& flag, const std::string& str)
 {
     if (str.empty()) {
         flag = BCLog::ALL;
+        return true;
+    }
+    // The umbrella category was named after the project this one forked from.
+    // Still understood, so an existing conf or -debug= argument does not
+    // quietly stop enabling anything: a name this function rejects is not an
+    // error anywhere, it just leaves the categories off. Deliberately absent
+    // from LogCategories, so the old name is accepted without being offered.
+    if (str == "dash") {
+        flag = BCLog::DEFCON;
         return true;
     }
     for (const CLogCategoryDesc& category_desc : LogCategories) {
@@ -325,8 +334,8 @@ std::string LogCategoryToStr(BCLog::LogFlags category)
         return "creditpool";
     case BCLog::LogFlags::EHF:
         return "ehf";
-    case BCLog::LogFlags::DASH:
-        return "dash";
+    case BCLog::LogFlags::DEFCON:
+        return "defcon";
     case BCLog::LogFlags::NET_NETCONN:
         return "net|netconn";
     /* End Dash */
@@ -366,7 +375,7 @@ std::vector<LogCategory> BCLog::Logger::LogCategoriesList(bool enabled_only) con
 
     std::vector<LogCategory> ret;
     for (const CLogCategoryDesc& category_desc : categories) {
-        if (category_desc.flag == BCLog::NONE || category_desc.flag == BCLog::ALL || category_desc.flag == BCLog::DASH) continue;
+        if (category_desc.flag == BCLog::NONE || category_desc.flag == BCLog::ALL || category_desc.flag == BCLog::DEFCON) continue;
         LogCategory catActive;
         catActive.category = category_desc.category;
         catActive.active = WillLogCategory(category_desc.flag);
