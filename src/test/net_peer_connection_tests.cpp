@@ -92,7 +92,13 @@ BOOST_AUTO_TEST_CASE(test_addnode_getaddednodeinfo_and_connection_detection)
 
     // Connect a localhost peer.
     {
-        ASSERT_DEBUG_LOG("Added connection to 127.0.0.1:9999 peer=1");
+        // The port comes from the chain params, as it does two lines up in
+        // AddPeer: this chain listens on 8192 where the one it forked from
+        // used 9999, so the literal never matched what the node logged. It
+        // did not fail the case either -- ASSERT_DEBUG_LOG throws from a
+        // destructor, so the miss terminated the test binary, and every
+        // suite after this one went unexecuted.
+        ASSERT_DEBUG_LOG(strprintf("Added connection to 127.0.0.1:%d peer=1", Params().GetDefaultPort()));
         AddPeer(id, nodes, *peerman, *connman, ConnectionType::MANUAL, /*onion_peer=*/false, /*address=*/"127.0.0.1");
         BOOST_REQUIRE(nodes.back() != nullptr);
     }
@@ -101,7 +107,7 @@ BOOST_AUTO_TEST_CASE(test_addnode_getaddednodeinfo_and_connection_detection)
     // address that resolves to multiple IPs, including that of the connected peer.
     // The connection attempt should consistently fail due to the check in ConnectNode().
     for (int i = 0; i < 10; ++i) {
-        ASSERT_DEBUG_LOG("Not opening a connection to localhost, already connected to 127.0.0.1:9999");
+        ASSERT_DEBUG_LOG(strprintf("Not opening a connection to localhost, already connected to 127.0.0.1:%d", Params().GetDefaultPort()));
         BOOST_CHECK(!connman->ConnectNodePublic(*peerman, "localhost", ConnectionType::MANUAL));
     }
 
