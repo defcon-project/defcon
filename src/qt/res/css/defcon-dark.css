@@ -270,10 +270,18 @@ QToolBar#navigationToolBar[modern="true"] {
     margin: 0;
     padding: 12px 8px;
     spacing: 4px;
-    /* A minimum, not a fixed width. The sidebar is 238px in every language
-       that fits in 238px, and grows rather than truncating in one that does
-       not. Nothing inside it elides on its own. */
+    /* Width: a minimum, not a fixed size. The sidebar is 238px in every
+       language that fits in 238px, and grows rather than truncating in one
+       that does not, because nothing inside it elides on its own.
+
+       Height: these two are not constraints, they are the removal of one.
+       general.css caps every QToolBar at 50px because in the classic themes
+       the bar is horizontal; this one is vertical and must be as tall as the
+       window. Deleting these lines as "fixed dimensions" collapsed the sidebar
+       to the height of its logo and took every navigation button with it. */
     min-width: 238px;
+    min-height: 0;
+    max-height: 16777215px;
 }
 
 QToolBar#navigationToolBar[modern="true"] > QToolButton {
@@ -284,6 +292,7 @@ QToolBar#navigationToolBar[modern="true"] > QToolButton {
     margin: 2px 4px;
     min-width: 206px;
     min-height: 44px;
+    max-height: 44px;
     padding: 0 10px;
     text-align: left;
 }

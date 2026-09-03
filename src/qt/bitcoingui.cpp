@@ -1810,7 +1810,13 @@ void BitcoinGUI::updateWidth()
     }
     if (GUIUtil::isModernTheme()) {
         constexpr int modernMinimumWidth{1200};
-        setMinimumWidth(modernMinimumWidth);
+        // Deliberately no explicit minimum. setMinimumWidth() replaces the
+        // minimum the layout derives from its content rather than raising it,
+        // so the window could be dragged down to 1200 while its own labels
+        // needed more -- and the balances lost their last characters, "DFCN"
+        // first. Qt's own minimum already refuses to shrink past the content;
+        // this only opens the window at a comfortable width.
+        setMinimumWidth(0);
         resize(std::max(width(), modernMinimumWidth), height());
         return;
     }
