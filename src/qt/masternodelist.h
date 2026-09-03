@@ -84,6 +84,9 @@ private:
     //! Hide or show the columns the "Essential info only" toggle governs.
     void applyColumnVisibility();
 
+    //! Ask for the list to be rebuilt on the next tick, skipping the cooldown.
+    void refreshFilterNow();
+
 Q_SIGNALS:
     void doubleClicked(const QModelIndex&);
 
@@ -99,5 +102,8 @@ private Q_SLOTS:
 
     void handleMasternodeListChanged();
     void updateDIP3ListScheduled();
+
+    //! Column widths, order and the sort choice, written whenever they change.
+    void saveHeaderState();
 };
 #endif // BITCOIN_QT_MASTERNODELIST_H
