@@ -81,6 +81,9 @@ private:
 
     void updateDIP3List();
 
+    //! Hide or show the columns the "Essential info only" toggle governs.
+    void applyColumnVisibility();
+
 Q_SIGNALS:
     void doubleClicked(const QModelIndex&);
 
@@ -88,6 +91,7 @@ private Q_SLOTS:
     void showContextMenuDIP3(const QPoint&);
     void on_filterLineEditDIP3_textChanged(const QString& strFilterIn);
     void on_checkBoxMyMasternodesOnly_stateChanged(int state);
+    void on_checkBoxEssentialInfoOnly_stateChanged(int state);
 
     void extraInfoDIP3_clicked();
     void copyProTxHash_clicked();

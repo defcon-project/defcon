@@ -16,6 +16,8 @@
 #include <univalue.h>
 
 #include <QMessageBox>
+#include <QSettings>
+#include <QSignalBlocker>
 #include <QTableWidgetItem>
 #include <QtGui/QClipboard>
 
@@ -80,6 +82,17 @@ MasternodeList::MasternodeList(QWidget* parent) :
     ui->tableWidgetMasternodesDIP3->verticalHeader()->setVisible(false);
 
     ui->checkBoxMyMasternodesOnly->setEnabled(false);
+
+    // Restore the column choice without letting the restore look like a click:
+    // the slot is auto-connected by name and would write back the value it just
+    // read and ask for a filter refresh before the list exists.
+    {
+        QSettings settings;
+        const bool essentialOnly = settings.value("fMasternodeEssentialInfoOnly", false).toBool();
+        const QSignalBlocker blocker(ui->checkBoxEssentialInfoOnly);
+        ui->checkBoxEssentialInfoOnly->setChecked(essentialOnly);
+    }
+    applyColumnVisibility();
 
     contextMenuDIP3 = new QMenu(this);
     contextMenuDIP3->addAction(tr("Copy ProTx Hash"), this, &MasternodeList::copyProTxHash_clicked);
@@ -321,6 +334,34 @@ void MasternodeList::on_filterLineEditDIP3_textChanged(const QString& strFilterI
     nTimeFilterUpdatedDIP3 = GetTime();
     fFilterUpdatedDIP3 = true;
     ui->countLabelDIP3->setText(tr("Please wait…") + " " + QString::number(MASTERNODELIST_FILTER_COOLDOWN_SECONDS));
+}
+
+void MasternodeList::applyColumnVisibility()
+{
+    const bool essentialOnly = ui->checkBoxEssentialInfoOnly->isChecked();
+    // Everything the "essential" view leaves out. COLUMN_PROTX_HASH is absent
+    // on purpose: it is not a column anybody reads, it carries the hash the
+    // context menu copies, and it stays hidden in both modes -- putting it in
+    // this list would make the full view show it.
+    static const std::vector<int> optional{
+        COLUMN_TYPE,
+        COLUMN_REGISTERED,
+        COLUMN_PAYOUT_ADDRESS,
+        COLUMN_OPERATOR_REWARD,
+        COLUMN_COLLATERAL_ADDRESS,
+        COLUMN_OWNER_ADDRESS,
+        COLUMN_VOTING_ADDRESS,
+    };
+    for (const int column : optional) {
+        ui->tableWidgetMasternodesDIP3->setColumnHidden(column, essentialOnly);
+    }
+}
+
+void MasternodeList::on_checkBoxEssentialInfoOnly_stateChanged(int state)
+{
+    QSettings settings;
+    settings.setValue("fMasternodeEssentialInfoOnly", ui->checkBoxEssentialInfoOnly->isChecked());
+    applyColumnVisibility();
 }
 
 void MasternodeList::on_checkBoxMyMasternodesOnly_stateChanged(int state)
