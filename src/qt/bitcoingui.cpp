@@ -67,6 +67,8 @@
 #include <QStatusBar>
 #include <QStyle>
 #include <QSystemTrayIcon>
+#include <QGraphicsOpacityEffect>
+#include <QPropertyAnimation>
 #include <QTimer>
 #include <QPainter>
 #include <QToolBar>
@@ -776,7 +778,17 @@ void BitcoinGUI::createMenuBar()
     consoleButton->setEnabled(openRPCConsoleAction->isEnabled());
     connect(consoleButton, &QToolButton::clicked, openRPCConsoleAction, &QAction::trigger);
     connect(openRPCConsoleAction, &QAction::changed, consoleButton, [this] {
-        consoleButton->setEnabled(openRPCConsoleAction->isEnabled());
+        const bool usable = openRPCConsoleAction->isEnabled();
+        consoleButton->setEnabled(usable);
+        // Point it out the first time it can actually be pressed. Startup is
+        // the wrong moment -- the button is disabled then, and blinking a
+        // control nobody can use is noise. This fires when the node finishes
+        // starting, which is both when the console becomes useful and when the
+        // window has been on screen long enough for the eye to be elsewhere.
+        if (usable && !consoleHintShown) {
+            consoleHintShown = true;
+            flashConsoleButton();
+        }
     });
     appMenuBar->setCornerWidget(consoleButton, Qt::TopRightCorner);
 #endif // Q_OS_MAC
@@ -992,6 +1004,34 @@ QIcon makeDiagonalArrowIcon(bool up_right)
     return QIcon(pm);
 }
 } // namespace
+
+void BitcoinGUI::flashConsoleButton()
+{
+    if (consoleButton == nullptr) {
+        return;
+    }
+    // Two slow blinks, not a flash: enough to catch the eye at the edge of
+    // vision, not enough to read as an error. The button stays fully opaque at
+    // both ends, so an interrupted animation cannot leave it faded.
+    auto* effect = new QGraphicsOpacityEffect(consoleButton);
+    consoleButton->setGraphicsEffect(effect);
+
+    auto* animation = new QPropertyAnimation(effect, "opacity", consoleButton);
+    animation->setDuration(460);
+    animation->setKeyValueAt(0.0, 1.0);
+    animation->setKeyValueAt(0.5, 0.15);
+    animation->setKeyValueAt(1.0, 1.0);
+    animation->setEasingCurve(QEasingCurve::InOutSine);
+    animation->setLoopCount(2);
+
+    // Take the effect away afterwards. An opacity effect renders its widget
+    // through an offscreen buffer for as long as it is installed, and there is
+    // no reason to pay that for the rest of the session.
+    connect(animation, &QAbstractAnimation::finished, consoleButton, [this] {
+        consoleButton->setGraphicsEffect(nullptr);
+    });
+    animation->start(QAbstractAnimation::DeleteWhenStopped);
+}
 
 void BitcoinGUI::applyThemeLayout()
 {
