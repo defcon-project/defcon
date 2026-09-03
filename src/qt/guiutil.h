@@ -304,6 +304,17 @@ namespace GUIUtil
     /** Check if any modern DeFCon theme is active. */
     bool isModernTheme();
 
+    /** Is the active theme a dark one?
+     *
+     * Deliberately a question about the wallet own theme and not about the
+     * system one. A window frame that follows the desktop can contradict the
+     * window it frames -- a white bar on Abyss -- which looks worse than a
+     * frame that never changes at all. Pure, and separate from the platform
+     * call that acts on it, so the rule stays testable where that call is not
+     * even compiled.
+     */
+    bool themeIsDark();
+
     /** Sets the stylesheet of the whole app and updates it if the
     related css files has been changed and -debug-ui mode is active. */
     void loadStyleSheet(bool fForceUpdate = false);

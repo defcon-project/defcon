@@ -22,6 +22,7 @@
 #include <qt/clientmodel.h>
 #include <qt/guiconstants.h>
 #include <qt/guiutil.h>
+#include <qt/winframetheme.h>
 #include <qt/initexecutor.h>
 #include <qt/intro.h>
 #include <qt/networkstyle.h>
@@ -619,6 +620,9 @@ int GuiMain(int argc, char* argv[])
     /// 9. Main GUI initialization
     // Install global event filter that makes sure that out-of-focus labels do not contain text cursor.
     app.installEventFilter(new GUIUtil::LabelOutOfFocusEventFilter(&app));
+    // Frame every window in the theme the wallet is using, dialogs opened later
+    // included. A no-op everywhere except Windows.
+    GUIUtil::installWindowFrameThemeFilter();
 #if defined(Q_OS_WIN)
     // Install global event filter for processing Windows session related Windows messages (WM_QUERYENDSESSION and WM_ENDSESSION)
     qApp->installNativeEventFilter(new WinShutdownMonitor());
