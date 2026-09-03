@@ -79,6 +79,16 @@
           </widget>
          </item>
          <item>
+          <widget class="QCheckBox" name="checkBoxEssentialInfoOnly">
+           <property name="toolTip">
+            <string>Show only the columns needed to watch a masternode: service, status, PoSe score and the payment times.</string>
+           </property>
+           <property name="text">
+            <string>Essential info only</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <spacer name="horizontalSpacer_4">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
