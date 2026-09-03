@@ -301,12 +301,6 @@ namespace GUIUtil
     /** Check if the modern Abyss (dark) theme is active. */
     bool isDefconDarkTheme();
 
-    /** Check if the Nebula (galaxy) theme is active. */
-    bool isDefconGalaxyTheme();
-
-    /** Check if the modern Arctic (light) theme is active. */
-    bool isDefconLightTheme();
-
     /** Check if any modern DeFCon theme is active. */
     bool isModernTheme();
 
