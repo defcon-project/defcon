@@ -170,22 +170,36 @@ jobs:
           ./ci/dash/build_src.sh
         shell: bash
 
-      # The suites measured green, which is now most of them.
+      # Every unit suite runs; the exceptions are named, with the reason.
       #
-      # This gate used to name eleven, because the test binary died a third of
-      # the way through every run: descriptor_tests dereferenced a descriptor
-      # this chain's base58 prefixes cannot parse, and key_tests called
-      # GetPubKey() on a key those prefixes could not decode, which asserts.
-      # 115 of 148 suites had therefore never been executed and nobody could
-      # say which were green. With those two fixed the run reaches 83 suites,
-      # 70 of them clean, and the gate carries all of them.
+      # This was an allowlist of eleven, because the test binary died partway
+      # through every run and 115 of 148 suites had never been executed. Four
+      # inherited tests were killing it, all of them expecting a value this
+      # fork changed: descriptor_tests dereferenced a descriptor whose xprv
+      # prefix no longer decodes, key_tests called GetPubKey() on a key its
+      # WIF prefix could not decode, net_peer_connection_tests waited for a log
+      # line naming port 9999 where this chain uses 8192, and pow_tests handed
+      # a heightless chain to a difficulty rule that walks by height. With
+      # those fixed the run completes: 148 suites, 722 cases, 692 of them
+      # green.
       #
-      # The list is positive rather than an exclusion list on purpose: the run
-      # still stops at net_peer_eviction_tests/peer_eviction_test, so the
-      # suites after it are unmeasured, and an exclusion list would put them in
-      # the gate untested. Inverting it is the next step, once that hang and
-      # the twelve other failing suites are triaged.
-      - name: Measured green unit suites
+      # So the gate is inverted. A suite added tomorrow is gated the day it
+      # lands, and dropping one takes a line here that says why. The seventeen
+      # below still fail, each for a reason visible for the first time now that
+      # they run at all:
+      #
+      #   base58 identity, like the four above:  descriptor_tests, key_io_tests
+      #   serialization this fork changed:       blockencodings_tests
+      #   long mining loops that no longer mine: dynamic_activation_thresholds_tests,
+      #                                          evo_dip3_activation_tests, miner_tests
+      #   still to triage:                       bip324_tests, bip39_tests,
+      #                                          denialofservice_tests, evo_utils_tests,
+      #                                          governance_validators_tests, rpc_tests,
+      #                                          transaction_tests, util_tests,
+      #                                          validation_chainstate_tests,
+      #                                          validation_chainstatemanager_tests,
+      #                                          wallet_tests
+      - name: Unit suites (all but the named exceptions)
         run: |
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
@@ -194,8 +208,7 @@ jobs:
           cd "build-ci/DeFCoN-${{ matrix.build_target }}"
           make -j"$(nproc)" -C src test/test_defcon
           ./src/test/test_defcon \
-            --run_test=addrman_tests,allocator_tests,amount_tests,arith_uint256_tests,banman_tests,base32_tests,base58_tests,base64_tests,bech32_tests,bip32_tests,block_reward_reallocation_tests,blockchain_tests,blockfilter_index_tests,blockfilter_tests,blockmanager_tests,bloom_tests,bls_tests,bswap_tests,cachemap_tests,cachemultimap_tests,checkdatasig_tests,checkqueue_tests,coins_tests,coinstatsindex_tests,collateral_tests,compilerbug_tests,compress_tests,compute_descriptor_tests,crypto_tests,cuckoocache_tests,dbwrapper_tests,dip0020opcodes_tests,dmn_types_tests,dsl_aggregation_tests,dsl_apply_tests,dsl_manager_tests,dsl_probe_tests,dsl_report_store_tests,evo_assetlocks_tests,evo_cbtx_tests,evo_migration_marker_tests,evo_mnauth_tests,evo_mnhf_tests,evo_simplifiedmns_tests,evo_trivialvalidation,flatfile_tests,fs_tests,getarg_tests,governance_vote_sync_tests,hash_tests,header_pow_gate_tests,i2p_tests,interfaces_tests,key_tests,limitedmap_tests,llmq_blockprocessor_tests,llmq_chainlocks_tests,llmq_dkg_tests,llmq_qgetdata_tests,llmq_signing_shares_tests,llmq_snapshot_tests,logging_tests,mempool_tests,merkle_tests,merkleblock_tests,minisketch_tests,mn_dsl_state_tests,multisig_tests,pos_kernel_tests,pos_multiwallet_tests,pos_stake_rules_tests,pose_service_sentinels_tests,pose_service_tests,subsidy_tests,validation_tests \n            --catch_system_errors=no -l test_suite
-        shell: bash
+            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_dip3_activation_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests:!rpc_tests:!transaction_tests:!util_tests:!validation_chainstate_tests:!validation_chainstatemanager_tests:!wallet_tests' \n        shell: bash
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
