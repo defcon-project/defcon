@@ -499,10 +499,23 @@ BOOST_AUTO_TEST_CASE(updatecoins_simulation_test)
     g_mock_deterministic_tests = false;
 }
 
+/**
+ * The bytes of one UTXO record, as this chain writes them.
+ *
+ * A Coin here is not Dash's Coin: the fork added fCoinStake, and serialises it
+ * as a VARINT flag after the compressed output. Every record is therefore one
+ * byte longer than upstream's, and the vectors below carry that byte -- without
+ * it they run out of data mid-read, which is exactly how this suite failed on
+ * every build of this tree.
+ *
+ * The vectors are kept as upstream's plus that byte, so what the extra field
+ * costs on disk is visible in the diff, and a change to the record layout
+ * fails here rather than in a resync months later.
+ */
 BOOST_AUTO_TEST_CASE(ccoins_serialization)
 {
     // Good example
-    CDataStream ss1(ParseHex("97f23c835800816115944e077fe7c803cfa57f29b36bf87c1d35"), SER_DISK, CLIENT_VERSION);
+    CDataStream ss1(ParseHex("97f23c835800816115944e077fe7c803cfa57f29b36bf87c1d3500"), SER_DISK, CLIENT_VERSION);
     Coin cc1;
     ss1 >> cc1;
     BOOST_CHECK_EQUAL(cc1.fCoinBase, false);
@@ -511,7 +524,7 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
     BOOST_CHECK_EQUAL(HexStr(cc1.out.scriptPubKey), HexStr(GetScriptForDestination(PKHash(uint160(ParseHex("816115944e077fe7c803cfa57f29b36bf87c1d35"))))));
 
     // Good example
-    CDataStream ss2(ParseHex("8ddf77bbd123008c988f1a4a4de2161e0f50aac7f17e7f9555caa4"), SER_DISK, CLIENT_VERSION);
+    CDataStream ss2(ParseHex("8ddf77bbd123008c988f1a4a4de2161e0f50aac7f17e7f9555caa400"), SER_DISK, CLIENT_VERSION);
     Coin cc2;
     ss2 >> cc2;
     BOOST_CHECK_EQUAL(cc2.fCoinBase, true);
@@ -520,7 +533,7 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
     BOOST_CHECK_EQUAL(HexStr(cc2.out.scriptPubKey), HexStr(GetScriptForDestination(PKHash(uint160(ParseHex("8c988f1a4a4de2161e0f50aac7f17e7f9555caa4"))))));
 
     // Smallest possible example
-    CDataStream ss3(ParseHex("000006"), SER_DISK, CLIENT_VERSION);
+    CDataStream ss3(ParseHex("00000600"), SER_DISK, CLIENT_VERSION);
     Coin cc3;
     ss3 >> cc3;
     BOOST_CHECK_EQUAL(cc3.fCoinBase, false);
@@ -549,6 +562,34 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
         BOOST_CHECK_MESSAGE(false, "We should have thrown");
     } catch (const std::ios_base::failure&) {
     }
+
+    // The flag this fork added: same record, last byte 1, and it round-trips.
+    // Nothing tested it before, so a coinstake could have been written and read
+    // back as an ordinary coin with the suite still green.
+    CDataStream ss6(ParseHex("00000601"), SER_DISK, CLIENT_VERSION);
+    Coin cc6;
+    ss6 >> cc6;
+    BOOST_CHECK_EQUAL(cc6.fCoinBase, false);
+    BOOST_CHECK_EQUAL(cc6.IsCoinStake(), true);
+
+    // A record with the flag missing is short, whatever else it contains.
+    CDataStream ss7(ParseHex("000006"), SER_DISK, CLIENT_VERSION);
+    try {
+        Coin cc7;
+        ss7 >> cc7;
+        BOOST_CHECK_MESSAGE(false, "We should have thrown");
+    } catch (const std::ios_base::failure&) {
+    }
+
+    // And a coinstake written by this code reads back as one.
+    Coin staked(CTxOut(CAmount{1000}, CScript()), /*nHeightIn=*/7, /*fCoinBaseIn=*/false, /*fCoinStakeIn=*/true);
+    CDataStream ss8(SER_DISK, CLIENT_VERSION);
+    ss8 << staked;
+    Coin round_tripped;
+    ss8 >> round_tripped;
+    BOOST_CHECK_EQUAL(round_tripped.IsCoinStake(), true);
+    BOOST_CHECK_EQUAL(round_tripped.nHeight, 7U);
+    BOOST_CHECK_EQUAL(round_tripped.out.nValue, CAmount{1000});
 }
 
 const static COutPoint OUTPOINT;

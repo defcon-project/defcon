@@ -108,8 +108,12 @@ BOOST_AUTO_TEST_CASE(ToStringTest)
 {
     CFeeRate feeRate;
     feeRate = CFeeRate(1);
-    BOOST_CHECK_EQUAL(feeRate.ToString(), "0.00000001 DASH/kB");
-    BOOST_CHECK_EQUAL(feeRate.ToString(FeeEstimateMode::DASH_KB), "0.00000001 DASH/kB");
+    // The unit is this chain's, not the one it forked from: CURRENCY_UNIT is
+    // DFCN. Pinned once here and read from the constant below, so a rename
+    // fails in one place instead of leaving a suite red for months.
+    BOOST_CHECK_EQUAL(CURRENCY_UNIT, "DFCN");
+    BOOST_CHECK_EQUAL(feeRate.ToString(), "0.00000001 " + CURRENCY_UNIT + "/kB");
+    BOOST_CHECK_EQUAL(feeRate.ToString(FeeEstimateMode::DASH_KB), "0.00000001 " + CURRENCY_UNIT + "/kB");
     BOOST_CHECK_EQUAL(feeRate.ToString(FeeEstimateMode::DUFF_B), "0.001 duff/B");
 }
 

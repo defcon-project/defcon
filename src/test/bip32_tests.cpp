@@ -4,6 +4,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <base58.h>
+#include <chainparams.h>
 #include <clientversion.h>
 #include <key.h>
 #include <key_io.h>
@@ -119,6 +121,34 @@ const std::vector<std::string> TEST5 = {
     "xpub661MyMwAqRbcEYS8w7XLSVeEsBXy79zSzH1J8vCdxAZningWLdN3zgtU6Q5JXayek4PRsn35jii4veMimro1xefsM58PgBMrvdYre8QyULY",
     "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHL"
 };
+namespace {
+/**
+ * The same key, written with this chain's version bytes.
+ *
+ * The vectors below are BIP32's own and carry Bitcoin's four version bytes, so
+ * they spell xprv/xpub. This chain sets its own EXT_SECRET_KEY and
+ * EXT_PUBLIC_KEY prefixes, and EncodeExtKey reads them from the chain params --
+ * so comparing against the literal vector string was asserting Bitcoin's base58
+ * identity, not BIP32's derivation, and the suite failed on every build of this
+ * tree from the day the prefixes changed.
+ *
+ * Swapping the four version bytes leaves the 74 bytes the vectors are actually
+ * about untouched: depth, fingerprint, child number, chain code and key. The
+ * vectors then test what they were written to test, and they stay verbatim
+ * upstream text, so a merge does not conflict with them.
+ */
+std::string OnThisChain(const std::string& bip32_str, CChainParams::Base58Type type)
+{
+    std::vector<unsigned char> data;
+    BOOST_REQUIRE(DecodeBase58Check(bip32_str, data, 78));
+    BOOST_REQUIRE_EQUAL(data.size(), 78U);
+    const std::vector<unsigned char>& prefix = Params().Base58Prefix(type);
+    BOOST_REQUIRE_EQUAL(prefix.size(), 4U);
+    std::copy(prefix.begin(), prefix.end(), data.begin());
+    return EncodeBase58Check(data);
+}
+} // namespace
+
 
 void RunTest(const TestVector& test)
 {
@@ -133,12 +163,14 @@ void RunTest(const TestVector& test)
         pubkey.Encode(data);
 
         // Test private key
-        BOOST_CHECK(EncodeExtKey(key) == derive.prv);
-        BOOST_CHECK(DecodeExtKey(derive.prv) == key); //ensure a base58 decoded key also matches
+        const std::string prv = OnThisChain(derive.prv, CChainParams::EXT_SECRET_KEY);
+        BOOST_CHECK(EncodeExtKey(key) == prv);
+        BOOST_CHECK(DecodeExtKey(prv) == key); //ensure a base58 decoded key also matches
 
         // Test public key
-        BOOST_CHECK(EncodeExtPubKey(pubkey) == derive.pub);
-        BOOST_CHECK(DecodeExtPubKey(derive.pub) == pubkey); //ensure a base58 decoded pubkey also matches
+        const std::string pub = OnThisChain(derive.pub, CChainParams::EXT_PUBLIC_KEY);
+        BOOST_CHECK(EncodeExtPubKey(pubkey) == pub);
+        BOOST_CHECK(DecodeExtPubKey(pub) == pubkey); //ensure a base58 decoded pubkey also matches
 
         // Derive new keys
         CExtKey keyNew;
@@ -158,6 +190,7 @@ void RunTest(const TestVector& test)
 }  // namespace
 
 BOOST_FIXTURE_TEST_SUITE(bip32_tests, BasicTestingSetup)
+
 
 BOOST_AUTO_TEST_CASE(bip32_test1) {
     RunTest(test1);

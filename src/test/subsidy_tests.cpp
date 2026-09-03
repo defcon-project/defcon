@@ -1,4 +1,5 @@
 // Copyright (c) 2014-2023 The Dash Core developers
+// Copyright (c) 2026 The Defcon Developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,92 +10,144 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <string>
+#include <vector>
+
+/**
+ * What this chain pays, and what it deliberately does not.
+ *
+ * The suite this replaces asserted Dash's schedule: a subsidy that falls with
+ * difficulty, halves every 210240 blocks, and is reallocated once v20 is
+ * active. This fork removed all three. GetBlockSubsidyHelper reads one thing --
+ * whether the block is past lastPowBlock -- and pays a flat 11,000,000 DFCN
+ * before it and a flat 500 after, whatever the difficulty, the height or the
+ * deployment says. So the old expectations were not merely stale: they
+ * described economics this chain does not have, and the suite failed on every
+ * build of this tree from the day the fork changed the rule.
+ *
+ * Written the other way round, the cases below pin what the fork does, and
+ * would fail if Dash's schedule ever came back through a merge.
+ */
 BOOST_FIXTURE_TEST_SUITE(subsidy_tests, TestingSetup)
 
-BOOST_AUTO_TEST_CASE(block_subsidy_test)
+namespace {
+//! Difficulty bits from real Dash blocks: the parameter the old schedule read,
+//! and the one this fork ignores. Kept varied on purpose.
+constexpr int LOW_DIFF_BITS = 0x1c4a47c4;
+constexpr int HIGH_DIFF_BITS = 0x1b10cf42;
+
+CAmount SubsidyFor(int nPrevBits, int nPrevHeight, const Consensus::Params& params, bool fV20Active = false)
+{
+    return GetBlockSubsidyInner(nPrevBits, nPrevHeight, params, fV20Active);
+}
+} // namespace
+
+BOOST_AUTO_TEST_CASE(proof_of_work_pays_the_flat_premine_subsidy)
 {
     const auto chainParams = CreateChainParams(*m_node.args, CBaseChainParams::MAIN);
+    const auto& params = chainParams->GetConsensus();
+    const CAmount pow = 11000000 * COIN;
 
-    uint32_t nPrevBits;
-    int32_t nPrevHeight;
-    CAmount nSubsidy;
+    // The whole proof-of-work era, first block to last, at any difficulty.
+    BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, 0, params), pow);
+    BOOST_CHECK_EQUAL(SubsidyFor(HIGH_DIFF_BITS, 1, params), pow);
+    BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, 500, params), pow);
+    // nPrevHeight is the height *before* the block being paid, so the last
+    // proof-of-work block is paid at nPrevHeight = lastPowBlock - 1.
+    BOOST_CHECK_EQUAL(SubsidyFor(HIGH_DIFF_BITS, params.lastPowBlock - 1, params), pow);
+}
 
-    // details for block 4249 (subsidy returned will be for block 4250)
-    nPrevBits = 0x1c4a47c4;
-    nPrevHeight = 4249;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ false);
-    BOOST_CHECK_EQUAL(nSubsidy, 50000000000ULL);
+BOOST_AUTO_TEST_CASE(proof_of_stake_pays_a_flat_five_hundred_forever)
+{
+    const auto chainParams = CreateChainParams(*m_node.args, CBaseChainParams::MAIN);
+    const auto& params = chainParams->GetConsensus();
+    const CAmount pos = 500 * COIN;
 
-    // details for block 4249 (subsidy returned will be for block 4250)
-    // v20 should make difference for blocks with low diff, regardless of their height
-    nPrevBits = 0x1c4a47c4;
-    nPrevHeight = 4249;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ true);
-    BOOST_CHECK_EQUAL(nSubsidy, 500000000ULL);
+    BOOST_CHECK_EQUAL(GetProofOfStakeReward(), pos);
 
-    // details for block 4501 (subsidy returned will be for block 4502)
-    nPrevBits = 0x1c4a47c4;
-    nPrevHeight = 4501;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ false);
-    BOOST_CHECK_EQUAL(nSubsidy, 5600000000ULL);
+    // The first proof-of-stake block, and every height after it. Dash's first
+    // halving (210240) and its second are included on purpose: this chain pays
+    // the same at both.
+    BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, params.lastPowBlock, params), pos);
+    BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, params.lastPowBlock + 1, params), pos);
+    BOOST_CHECK_EQUAL(SubsidyFor(HIGH_DIFF_BITS, 99999, params), pos);
+    BOOST_CHECK_EQUAL(SubsidyFor(HIGH_DIFF_BITS, params.nSubsidyHalvingInterval, params), pos);
+    BOOST_CHECK_EQUAL(SubsidyFor(HIGH_DIFF_BITS, 2 * params.nSubsidyHalvingInterval, params), pos);
+    BOOST_CHECK_EQUAL(SubsidyFor(HIGH_DIFF_BITS, 100 * params.nSubsidyHalvingInterval, params), pos);
+}
 
-    // details for block 5464 (subsidy returned will be for block 5465)
-    nPrevBits = 0x1c29ec00;
-    nPrevHeight = 5464;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ false);
-    BOOST_CHECK_EQUAL(nSubsidy, 2100000000ULL);
+BOOST_AUTO_TEST_CASE(the_boundary_is_the_only_thing_that_moves_the_subsidy)
+{
+    const auto chainParams = CreateChainParams(*m_node.args, CBaseChainParams::MAIN);
+    const auto& params = chainParams->GetConsensus();
 
-    // details for block 5465 (subsidy returned will be for block 5466)
-    nPrevBits = 0x1c29ec00;
-    nPrevHeight = 5465;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ false);
-    BOOST_CHECK_EQUAL(nSubsidy, 12200000000ULL);
+    // One block apart, across lastPowBlock: the only step this schedule has.
+    const CAmount last_pow = SubsidyFor(LOW_DIFF_BITS, params.lastPowBlock - 1, params);
+    const CAmount first_pos = SubsidyFor(LOW_DIFF_BITS, params.lastPowBlock, params);
+    BOOST_CHECK_EQUAL(last_pow, 11000000 * COIN);
+    BOOST_CHECK_EQUAL(first_pos, 500 * COIN);
+    BOOST_CHECK(last_pow != first_pos);
 
-    // details for block 17588 (subsidy returned will be for block 17589)
-    nPrevBits = 0x1c08ba34;
-    nPrevHeight = 17588;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ false);
-    BOOST_CHECK_EQUAL(nSubsidy, 6100000000ULL);
+    // Difficulty is read by Dash's schedule and by nothing here: same height,
+    // wildly different bits, same amount, on both sides of the boundary.
+    BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, 500, params), SubsidyFor(HIGH_DIFF_BITS, 500, params));
+    BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, 500000, params), SubsidyFor(HIGH_DIFF_BITS, 500000, params));
 
-    // details for block 99999 (subsidy returned will be for block 100000)
-    nPrevBits = 0x1b10cf42;
-    nPrevHeight = 99999;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ false);
-    BOOST_CHECK_EQUAL(nSubsidy, 500000000ULL);
+    // v20 reallocation likewise: the flag exists in the signature and changes
+    // nothing, before or after the boundary.
+    BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, 500, params, /*fV20Active=*/false),
+                      SubsidyFor(LOW_DIFF_BITS, 500, params, /*fV20Active=*/true));
+    BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, 500000, params, /*fV20Active=*/false),
+                      SubsidyFor(LOW_DIFF_BITS, 500000, params, /*fV20Active=*/true));
 
-    // details for block 210239 (subsidy returned will be for block 210240)
-    nPrevBits = 0x1b11548e;
-    nPrevHeight = 210239;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ false);
-    BOOST_CHECK_EQUAL(nSubsidy, 500000000ULL);
+    // And nothing is ever carved out for a superblock.
+    BOOST_CHECK_EQUAL(GetSuperblockSubsidyInner(LOW_DIFF_BITS, 500, params, /*fV20Active=*/false), 0);
+    BOOST_CHECK_EQUAL(GetSuperblockSubsidyInner(HIGH_DIFF_BITS, 500000, params, /*fV20Active=*/true), 0);
+}
 
-    // 1st subsidy reduction happens here
+BOOST_AUTO_TEST_CASE(the_masternode_payment_is_flat)
+{
+    // 10,000 DFCN per paid block, at every height and whatever the block is
+    // worth. Dash scales this with the subsidy; this fork does not, which is
+    // why a proof-of-stake block mints 10,500 and not 500.
+    const CAmount payment = 10000 * COIN;
+    BOOST_CHECK_EQUAL(GetMasternodePayment(1), payment);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(1000), payment);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(1000000), payment);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(1000, 11000000 * COIN, /*fV20Active=*/false), payment);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(1000, 500 * COIN, /*fV20Active=*/true), payment);
+}
 
-    // details for block 210240 (subsidy returned will be for block 210241)
-    nPrevBits = 0x1b10d50b;
-    nPrevHeight = 210240;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ false);
-    BOOST_CHECK_EQUAL(nSubsidy, 464285715ULL);
+BOOST_AUTO_TEST_CASE(every_network_pays_by_its_own_boundary)
+{
+    // The rule is one comparison against lastPowBlock, so the schedule is the
+    // same everywhere and only the height of the step differs. Pinned here
+    // because a network whose boundary moved without its genesis moving would
+    // pay 11,000,000 for blocks the chain had already paid 500 for.
+    struct Net {
+        std::string name;
+        int lastPowBlock;
+    };
+    const std::vector<Net> nets{
+        {CBaseChainParams::MAIN, 999},
+        {CBaseChainParams::TESTNET, 999},
+        {CBaseChainParams::REGTEST, 5000},
+    };
+    for (const auto& net : nets) {
+        const auto chainParams = CreateChainParams(*m_node.args, net.name);
+        const auto& params = chainParams->GetConsensus();
+        BOOST_CHECK_EQUAL(params.lastPowBlock, net.lastPowBlock);
+        BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, params.lastPowBlock - 1, params), 11000000 * COIN);
+        BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, params.lastPowBlock, params), 500 * COIN);
+    }
 
-    // details for block 210240 (subsidy returned will be for block 210241)
-    // v20 makes no difference for blocks with high enough diff while budgets aren't active yet
-    nPrevBits = 0x1b10d50b;
-    nPrevHeight = 210240;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ true);
-    BOOST_CHECK_EQUAL(nSubsidy, 464285715ULL);
-
-    // details for block 420480 (subsidy returned will be for block 210241)
-    nPrevBits = 0x1b10d50b;
-    nPrevHeight = 420480;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ false);
-    BOOST_CHECK_EQUAL(nSubsidy, 388010205ULL); // 431122450 * 0.9
-
-    // details for block 420480 (subsidy returned will be for block 210241)
-    // budgets are active, reallocation matters now
-    nPrevBits = 0x1b10d50b;
-    nPrevHeight = 420480;
-    nSubsidy = GetBlockSubsidyInner(nPrevBits, nPrevHeight, chainParams->GetConsensus(), /*fV20Active=*/ true);
-    BOOST_CHECK_EQUAL(nSubsidy, 344897960ULL); // 431122450 * 0.8
+    gArgs.SoftSetBoolArg("-devnet", true);
+    const auto devnet = CreateChainParams(*m_node.args, CBaseChainParams::DEVNET);
+    const auto& dparams = devnet->GetConsensus();
+    BOOST_CHECK_EQUAL(dparams.lastPowBlock, 999);
+    BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, dparams.lastPowBlock - 1, dparams), 11000000 * COIN);
+    BOOST_CHECK_EQUAL(SubsidyFor(LOW_DIFF_BITS, dparams.lastPowBlock, dparams), 500 * COIN);
+    gArgs.ForceRemoveArg("devnet");
 }
 
 BOOST_AUTO_TEST_SUITE_END()
