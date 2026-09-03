@@ -72,6 +72,13 @@ private:
         // and every key a wrong length was rejected into, reporting itself
         // valid over an uninitialised or stale buffer.
         vchlen = 0;
+        // The header byte is set as well because operator==, operator< and
+        // operator> all read vch[0] before they consult size(). Left at
+        // whatever the buffer happened to hold, two invalid keys compared
+        // unequal or ordered by stale bytes, and a default-constructed key
+        // compared on memory that was never written. 0xFF is not a valid
+        // header byte, so this cannot collide with a real key.
+        vch[0] = 0xFF;
     }
 
 public:

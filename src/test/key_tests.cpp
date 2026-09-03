@@ -4,6 +4,8 @@
 
 #include <key.h>
 
+#include <base58.h>
+#include <chainparams.h>
 #include <key_io.h>
 #include <streams.h>
 #include <test/util/setup_common.h>
@@ -31,15 +33,46 @@ static const std::string strAddressBad = "Xta1praZQjyELweyMByXyiREw1ZRsjXzVP";
 
 BOOST_FIXTURE_TEST_SUITE(key_tests, BasicTestingSetup)
 
+namespace {
+/**
+ * The same secret or address, written with this chain's version byte.
+ *
+ * The constants above are Dash's: secret keys with version 204, addresses with
+ * 76. This chain uses 158 and 30, so DecodeSecret returned an invalid key --
+ * and the next line called GetPubKey() on it, which asserts fValid and killed
+ * the test binary. That abort stopped the whole run at key_tests, so every
+ * suite after it went unexecuted, which is the other half of why this fork's
+ * unit suite could not be measured.
+ *
+ * Re-encoding keeps the vectors' meaning: the same 32 bytes of key, the same
+ * signatures, the same derived addresses, and upstream's strings stay verbatim
+ * so a merge does not conflict with them.
+ */
+std::string OnThisChain(const std::string& base58, CChainParams::Base58Type type)
+{
+    std::vector<unsigned char> data;
+    BOOST_REQUIRE(DecodeBase58Check(base58, data, 100));
+    BOOST_REQUIRE(!data.empty());
+    const std::vector<unsigned char>& prefix = Params().Base58Prefix(type);
+    BOOST_REQUIRE_EQUAL(prefix.size(), 1U);
+    data[0] = prefix[0];
+    return EncodeBase58Check(data);
+}
+
+std::string Secret(const std::string& dash_wif) { return OnThisChain(dash_wif, CChainParams::SECRET_KEY); }
+std::string Address(const std::string& dash_addr) { return OnThisChain(dash_addr, CChainParams::PUBKEY_ADDRESS); }
+} // namespace
+
+
 BOOST_AUTO_TEST_CASE(key_test1)
 {
-    CKey key1  = DecodeSecret(strSecret1);
+    CKey key1  = DecodeSecret(Secret(strSecret1));
     BOOST_CHECK(key1.IsValid() && !key1.IsCompressed());
-    CKey key2  = DecodeSecret(strSecret2);
+    CKey key2  = DecodeSecret(Secret(strSecret2));
     BOOST_CHECK(key2.IsValid() && !key2.IsCompressed());
-    CKey key1C = DecodeSecret(strSecret1C);
+    CKey key1C = DecodeSecret(Secret(strSecret1C));
     BOOST_CHECK(key1C.IsValid() && key1C.IsCompressed());
-    CKey key2C = DecodeSecret(strSecret2C);
+    CKey key2C = DecodeSecret(Secret(strSecret2C));
     BOOST_CHECK(key2C.IsValid() && key2C.IsCompressed());
     CKey bad_key = DecodeSecret(strAddressBad);
     BOOST_CHECK(!bad_key.IsValid());
@@ -69,10 +102,10 @@ BOOST_AUTO_TEST_CASE(key_test1)
     BOOST_CHECK(!key2C.VerifyPubKey(pubkey2));
     BOOST_CHECK(key2C.VerifyPubKey(pubkey2C));
 
-    BOOST_CHECK(DecodeDestination(addr1)  == CTxDestination(PKHash(pubkey1)));
-    BOOST_CHECK(DecodeDestination(addr2)  == CTxDestination(PKHash(pubkey2)));
-    BOOST_CHECK(DecodeDestination(addr1C) == CTxDestination(PKHash(pubkey1C)));
-    BOOST_CHECK(DecodeDestination(addr2C) == CTxDestination(PKHash(pubkey2C)));
+    BOOST_CHECK(DecodeDestination(Address(addr1))  == CTxDestination(PKHash(pubkey1)));
+    BOOST_CHECK(DecodeDestination(Address(addr2))  == CTxDestination(PKHash(pubkey2)));
+    BOOST_CHECK(DecodeDestination(Address(addr1C)) == CTxDestination(PKHash(pubkey1C)));
+    BOOST_CHECK(DecodeDestination(Address(addr2C)) == CTxDestination(PKHash(pubkey2C)));
 
     for (int n=0; n<16; n++)
     {
@@ -156,7 +189,7 @@ BOOST_AUTO_TEST_CASE(key_test1)
 BOOST_AUTO_TEST_CASE(key_signature_tests)
 {
     // When entropy is specified, we should see at least one high R signature within 20 signatures
-    CKey key = DecodeSecret(strSecret1);
+    CKey key = DecodeSecret(Secret(strSecret1));
     std::string msg = "A message to be signed";
     uint256 msg_hash = Hash(msg);
     std::vector<unsigned char> sig;
@@ -208,7 +241,7 @@ BOOST_AUTO_TEST_CASE(key_key_negation)
     uint256 hash{Hash(str, rnd)};
 
     // import the static test key
-    CKey key = DecodeSecret(strSecret1C);
+    CKey key = DecodeSecret(Secret(strSecret1C));
 
     // create a signature
     std::vector<unsigned char> vch_sig;
@@ -276,7 +309,7 @@ BOOST_AUTO_TEST_CASE(pubkey_unserialize)
 BOOST_AUTO_TEST_CASE(key_ellswift)
 {
     for (const auto& secret : {strSecret1, strSecret2, strSecret1C, strSecret2C}) {
-        CKey key = DecodeSecret(secret);
+        CKey key = DecodeSecret(Secret(secret));
         BOOST_CHECK(key.IsValid());
 
         uint256 ent32 = InsecureRand256();
@@ -375,6 +408,71 @@ BOOST_AUTO_TEST_CASE(pubkey_invalid_is_never_valid)
  * byte belongs to a different length used to classify as a pubkey. A BLS key,
  * which has no header-byte convention, is judged by length alone.
  */
+/**
+ * Two invalid keys are equal, whatever they held before.
+ *
+ * operator==, operator< and operator> all read vch[0] before they look at
+ * size(), so an invalidated key has to have a defined header byte. It did not:
+ * Invalidate() set the length and left the byte, so two keys invalidated after
+ * holding pubkeys of different parity compared unequal, and a key that had
+ * never held anything was compared on bytes nobody had written.
+ *
+ * The two keys below are chosen for their header bytes -- 0x02 and 0x03, the
+ * two compressed forms -- so the comparison is decided by the byte the fix
+ * defines, and not by whatever the stack happened to contain. Without the fix
+ * this case fails every time rather than only when the memory disagrees.
+ */
+BOOST_AUTO_TEST_CASE(invalid_pubkeys_compare_as_equal)
+{
+    const std::vector<unsigned char> not_a_key(20, 0x02);
+
+    // A pubkey of each parity, then invalidated. Neither loop can spin long:
+    // a compressed key is 0x02 or 0x03 with even odds.
+    CPubKey even, odd;
+    for (int i = 0; i < 100 && !(even.IsValid() && even[0] == 0x02); ++i) {
+        CKey k;
+        k.MakeNewKey(true);
+        even = k.GetPubKey();
+    }
+    for (int i = 0; i < 100 && !(odd.IsValid() && odd[0] == 0x03); ++i) {
+        CKey k;
+        k.MakeNewKey(true);
+        odd = k.GetPubKey();
+    }
+    BOOST_REQUIRE(even.IsValid() && even[0] == 0x02);
+    BOOST_REQUIRE(odd.IsValid() && odd[0] == 0x03);
+    BOOST_CHECK(even != odd);
+
+    even.Set(not_a_key.begin(), not_a_key.end());
+    odd.Set(not_a_key.begin(), not_a_key.end());
+    BOOST_CHECK(!even.IsValid());
+    BOOST_CHECK(!odd.IsValid());
+
+    // The point: two invalid keys are one value, not two.
+    BOOST_CHECK(even == odd);
+    BOOST_CHECK(!(even < odd));
+    BOOST_CHECK(!(odd < even));
+
+    // And a key that never held anything is the same value again.
+    const CPubKey fresh;
+    BOOST_CHECK(!fresh.IsValid());
+    BOOST_CHECK(fresh == even);
+    BOOST_CHECK(fresh == CPubKey());
+
+    // An invalid key is never equal to a valid one.
+    CKey key;
+    key.MakeNewKey(true);
+    BOOST_CHECK(fresh != key.GetPubKey());
+
+    // A key that went out over the wire and came back invalid compares the same.
+    CDataStream ss(SER_NETWORK, INIT_PROTO_VERSION);
+    ss << not_a_key;
+    CPubKey wire;
+    ss >> wire;
+    BOOST_CHECK(!wire.IsValid());
+    BOOST_CHECK(wire == CPubKey());
+}
+
 BOOST_AUTO_TEST_CASE(validsize_checks_the_header_byte)
 {
     // Compressed: 33 bytes led by 0x02 or 0x03.
