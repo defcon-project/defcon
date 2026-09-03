@@ -17,7 +17,7 @@ const std::string CBaseChainParams::REGTEST = "regtest";
 
 void SetupChainParamsBaseOptions(ArgsManager& argsman)
 {
-    argsman.AddArg("-chain=<chain>", "Use the chain <chain> (default: main). Allowed values: main, test, regtest", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-chain=<chain>", "Use the chain <chain> (default: main). Allowed values: main, test, regtest. A devnet is selected with -devnet=<name> instead", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-devnet=<name>", "Use devnet chain with provided name", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-regtest", "Enter regression test mode, which uses a special chain in which blocks can be solved instantly. "
                    "This is intended for regression testing tools and app development. Equivalent to -chain=regtest", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
@@ -33,13 +33,15 @@ const CBaseChainParams& BaseParams()
 }
 
 /**
- * Port numbers for incoming Tor connections (9996, 19996, 19796, 19896) have
- * been chosen arbitrarily to keep ranges of used ports tight.
+ * Port numbers for incoming Tor connections sit three below each network's
+ * P2P port (8189, 19996, 19796, 19896). Mainnet used to carry 9996, the
+ * number the chain this forked from keeps beside its own 9999; it belongs to
+ * that chain's port range, not to this one's 8192.
  */
 std::unique_ptr<CBaseChainParams> CreateBaseChainParams(const std::string& chain)
 {
     if (chain == CBaseChainParams::MAIN)
-        return std::make_unique<CBaseChainParams>("", 8193, 9996);
+        return std::make_unique<CBaseChainParams>("", 8193, 8189);
     else if (chain == CBaseChainParams::TESTNET)
         return std::make_unique<CBaseChainParams>("testnet3", 19998, 19996);
     else if (chain == CBaseChainParams::DEVNET)
