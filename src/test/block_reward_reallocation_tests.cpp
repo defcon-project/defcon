@@ -6,6 +6,8 @@
 
 #include <bls/bls.h>
 #include <chainparams.h>
+
+#include <limits>
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
 #include <messagesigner.h>
@@ -225,98 +227,72 @@ BOOST_FIXTURE_TEST_CASE(block_reward_reallocation, TestChainBRRBeforeActivationS
         const CAmount block_subsidy = GetBlockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, isV20Active);
         const CAmount masternode_payment = GetMasternodePayment(tip->nHeight, block_subsidy, isV20Active);
         const auto pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), m_node, *m_node.mempool, Params()).CreateNewBlock(coinbasePubKey);
-        BOOST_CHECK_EQUAL(pblocktemplate->block.vtx[0]->GetValueOut(), 28847249686);
+        // The amounts here were Dash's, from a subsidy that falls with
+        // difficulty and a masternode share that follows it. This chain pays a
+        // flat subsidy and a flat 10,000 to the masternode, so the numbers are
+        // read from the rule rather than typed.
+        BOOST_CHECK_EQUAL(masternode_payment, 10000 * COIN);
         BOOST_CHECK_EQUAL(pblocktemplate->voutMasternodePayments[0].nValue, masternode_payment);
-        BOOST_CHECK_EQUAL(pblocktemplate->voutMasternodePayments[0].nValue, 14423624841); // 0.4999999999
+        BOOST_CHECK_EQUAL(pblocktemplate->block.vtx[0]->GetValueOut(), block_subsidy);
     }
 
-    // Reallocation should kick-in with the superblock after 19 adjustments, 3 superblocks long each
-    for ([[maybe_unused]] auto i : irange::range(19)) {
-        for ([[maybe_unused]] auto j : irange::range(3)) {
-            for ([[maybe_unused]] auto k : irange::range(consensus_params.nSuperblockCycle)) {
-                CreateAndProcessBlock({}, coinbaseKey);
-            }
-            LOCK(cs_main);
-            const CBlockIndex* const tip{m_node.chainman->ActiveChain().Tip()};
-            const bool isV20Active{DeploymentActiveAfter(tip, consensus_params, Consensus::DEPLOYMENT_V20)};
-            const CAmount block_subsidy = GetBlockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, isV20Active);
-            const CAmount masternode_payment = GetMasternodePayment(tip->nHeight, block_subsidy, isV20Active);
-            const auto pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), m_node, *m_node.mempool, Params()).CreateNewBlock(coinbasePubKey);
-            BOOST_CHECK_EQUAL(pblocktemplate->voutMasternodePayments[0].nValue, masternode_payment);
-        }
+    // There is no reallocation on this chain, and that is the thing worth
+    // pinning. Dash moves the masternode share from 50% to 75% over 19
+    // adjustments of three superblocks each, then again to platform once
+    // MN_RR activates, and the suite this replaces mined more than 1500 blocks
+    // to walk that schedule -- asserting amounts from a subsidy formula this
+    // fork deleted, and eventually failing to mine at all with time-too-new.
+    //
+    // Here GetBlockSubsidyHelper returns a flat amount and GetMasternodePayment
+    // a flat 10,000, so the share cannot move. One more superblock cycle is
+    // enough to say so.
+    for ([[maybe_unused]] auto _ : irange::range(consensus_params.nSuperblockCycle)) {
+        CreateAndProcessBlock({}, coinbaseKey);
+        LOCK(cs_main);
+        dmnman.UpdatedBlockTip(m_node.chainman->ActiveChain().Tip());
     }
-    BOOST_CHECK(DeploymentActiveAfter(m_node.chainman->ActiveChain().Tip(), consensus_params, Consensus::DEPLOYMENT_V20));
-    // Allocation of block subsidy is 60% MN, 20% miners and 20% treasury
+
     {
-        // Reward split should reach ~75/25 after reallocation is done
         LOCK(cs_main);
         const CBlockIndex* const tip{m_node.chainman->ActiveChain().Tip()};
+        BOOST_CHECK(tip->nHeight > consensus_params.BRRHeight);
         const bool isV20Active{DeploymentActiveAfter(tip, consensus_params, Consensus::DEPLOYMENT_V20)};
         const CAmount block_subsidy = GetBlockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, isV20Active);
         const CAmount block_subsidy_sb = GetSuperblockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, isV20Active);
-        CAmount block_subsidy_potential = block_subsidy + block_subsidy_sb;
-        BOOST_CHECK_EQUAL(block_subsidy_potential, 177167660);
-        CAmount expected_block_reward = block_subsidy_potential - block_subsidy_potential / 5;
-
         const CAmount masternode_payment = GetMasternodePayment(tip->nHeight, block_subsidy, isV20Active);
         const auto pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), m_node, *m_node.mempool, Params()).CreateNewBlock(coinbasePubKey);
-        BOOST_CHECK_EQUAL(pblocktemplate->block.vtx[0]->GetValueOut(), expected_block_reward);
-        BOOST_CHECK_EQUAL(pblocktemplate->block.vtx[0]->GetValueOut(), 141734128);
+
+        // Past the height that would start the reallocation, and nothing moved.
+        BOOST_CHECK_EQUAL(masternode_payment, 10000 * COIN);
         BOOST_CHECK_EQUAL(pblocktemplate->voutMasternodePayments[0].nValue, masternode_payment);
-        BOOST_CHECK_EQUAL(pblocktemplate->voutMasternodePayments[0].nValue, 106300596); // 0.75
+        BOOST_CHECK_EQUAL(pblocktemplate->block.vtx[0]->GetValueOut(), block_subsidy);
+        // Nothing is carved out for a treasury either, on either side of v20.
+        BOOST_CHECK_EQUAL(block_subsidy_sb, 0);
+        BOOST_CHECK_EQUAL(GetSuperblockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, !isV20Active), 0);
+        // And the deployment flag does not change what a block pays.
+        BOOST_CHECK_EQUAL(GetBlockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, !isV20Active), block_subsidy);
+        BOOST_CHECK_EQUAL(GetMasternodePayment(tip->nHeight, block_subsidy, !isV20Active), masternode_payment);
     }
-    BOOST_CHECK(!DeploymentActiveAfter(m_node.chainman->ActiveChain().Tip(), consensus_params, Consensus::DEPLOYMENT_MN_RR));
+}
 
-    // Reward split should stay ~75/25 after reallocation is done,
-    // check 10 next superblocks
-    for ([[maybe_unused]] auto i : irange::range(10)) {
-        for ([[maybe_unused]] auto k : irange::range(consensus_params.nSuperblockCycle)) {
-            CreateAndProcessBlock({}, coinbaseKey);
-        }
-        LOCK(cs_main);
-        const CBlockIndex* const tip{m_node.chainman->ActiveChain().Tip()};
-        const bool isV20Active{DeploymentActiveAfter(tip, consensus_params, Consensus::DEPLOYMENT_V20)};
-        const bool isMNRewardReallocated{DeploymentActiveAfter(tip, consensus_params, Consensus::DEPLOYMENT_MN_RR)};
-        const CAmount block_subsidy = GetBlockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, isV20Active);
-        CAmount masternode_payment = GetMasternodePayment(tip->nHeight, block_subsidy, isV20Active);
-        const auto pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), m_node, *m_node.mempool, Params()).CreateNewBlock(coinbasePubKey);
-
-        if (isMNRewardReallocated) {
-            const CAmount platform_payment = PlatformShare(masternode_payment);
-            masternode_payment -= platform_payment;
-        }
-        size_t payment_index = isMNRewardReallocated ? 1 : 0;
-
-        BOOST_CHECK_EQUAL(pblocktemplate->voutMasternodePayments[payment_index].nValue, masternode_payment);
+/**
+ * No real network can reach the reallocation height at all.
+ *
+ * Regtest sets BRRHeight to 1 so the case above can cross it; main, testnet and
+ * devnet leave it at the largest int, which is the fork's way of saying the
+ * feature is off. Pinned because a height set here by accident would change
+ * what every block pays.
+ */
+BOOST_FIXTURE_TEST_CASE(reallocation_is_unreachable_on_every_real_network, BasicTestingSetup)
+{
+    for (const std::string& net : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
+        const auto params = CreateChainParams(*m_node.args, net);
+        BOOST_CHECK_EQUAL(params->GetConsensus().BRRHeight, std::numeric_limits<int>::max());
     }
-
-    BOOST_CHECK(DeploymentActiveAfter(m_node.chainman->ActiveChain().Tip(), consensus_params, Consensus::DEPLOYMENT_MN_RR));
-    { // At this moment Masternode reward should be reallocated to platform
-        // Allocation of block subsidy is 60% MN, 20% miners and 20% treasury
-        LOCK(cs_main);
-        const CBlockIndex* const tip{m_node.chainman->ActiveChain().Tip()};
-        const bool isV20Active{DeploymentActiveAfter(tip, consensus_params, Consensus::DEPLOYMENT_V20)};
-        const CAmount block_subsidy = GetBlockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, isV20Active);
-        const CAmount block_subsidy_sb = GetSuperblockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, isV20Active);
-        CAmount masternode_payment = GetMasternodePayment(tip->nHeight, block_subsidy, isV20Active);
-        const CAmount platform_payment = PlatformShare(masternode_payment);
-        masternode_payment -= platform_payment;
-        const auto pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), m_node, *m_node.mempool, Params()).CreateNewBlock(coinbasePubKey);
-
-        CAmount block_subsidy_potential = block_subsidy + block_subsidy_sb;
-        BOOST_CHECK_EQUAL(tip->nHeight, 2358);
-        BOOST_CHECK_EQUAL(block_subsidy_potential, 164512828);
-        // Treasury is 20% since MNRewardReallocation
-        CAmount expected_block_reward = block_subsidy_potential - block_subsidy_potential / 5;
-        // Since MNRewardReallocation, MN reward share is 75% of the block reward
-        CAmount expected_masternode_reward = expected_block_reward * 3 / 4;
-        CAmount expected_mn_platform_payment = PlatformShare(expected_masternode_reward);
-        CAmount expected_mn_core_payment = expected_masternode_reward - expected_mn_platform_payment;
-
-        BOOST_CHECK_EQUAL(pblocktemplate->block.vtx[0]->GetValueOut(), expected_block_reward);
-        BOOST_CHECK_EQUAL(pblocktemplate->voutMasternodePayments[1].nValue, masternode_payment);
-        BOOST_CHECK_EQUAL(pblocktemplate->voutMasternodePayments[1].nValue, expected_mn_core_payment);
-    }
+    gArgs.SoftSetBoolArg("-devnet", true);
+    BOOST_CHECK_EQUAL(CreateChainParams(*m_node.args, CBaseChainParams::DEVNET)->GetConsensus().BRRHeight,
+                      std::numeric_limits<int>::max());
+    gArgs.ForceRemoveArg("devnet");
 }
 
 BOOST_AUTO_TEST_SUITE_END()
