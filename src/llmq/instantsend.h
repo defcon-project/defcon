@@ -277,6 +277,11 @@ public:
     void InterruptWorkerThread() { workInterrupt(); };
 
 private:
+    /** The profile InstantSend signs and verifies with at the current tip
+     *  (llmq::GetInstantSendLLMQType). LLMQ_NONE means InstantSend is not
+     *  configured on this network. */
+    Consensus::LLMQType GetLLMQType() const;
+
     void ProcessTx(const CTransaction& tx, bool fRetroactive, const Consensus::Params& params)
         EXCLUSIVE_LOCKS_REQUIRED(!cs_creating, !cs_inputReqests);
     bool CheckCanLock(const CTransaction& tx, bool printDebug, const Consensus::Params& params) const;
@@ -288,8 +293,8 @@ private:
     void HandleNewInstantSendLockRecoveredSig(const CRecoveredSig& recoveredSig)
         EXCLUSIVE_LOCKS_REQUIRED(!cs_creating, !cs_pendingLocks);
 
-    bool TrySignInputLocks(const CTransaction& tx, bool allowResigning, Consensus::LLMQType llmqType,
-                           const Consensus::Params& params) EXCLUSIVE_LOCKS_REQUIRED(!cs_inputReqests);
+    bool TrySignInputLocks(const CTransaction& tx, bool allowResigning, Consensus::LLMQType llmqType)
+        EXCLUSIVE_LOCKS_REQUIRED(!cs_inputReqests);
     void TrySignInstantSendLock(const CTransaction& tx) EXCLUSIVE_LOCKS_REQUIRED(!cs_creating);
 
     PeerMsgRet ProcessMessageInstantSendLock(const CNode& pfrom, PeerManager& peerman, const CInstantSendLockPtr& islock);

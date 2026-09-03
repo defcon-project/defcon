@@ -43,8 +43,12 @@ class CChainLocksHandler : public CRecoveredSigsListener
     static constexpr int64_t CLEANUP_INTERVAL = 1000 * 30;
     static constexpr int64_t CLEANUP_SEEN_TIMEOUT = 24 * 60 * 60 * 1000;
 
-    // how long to wait for islocks until we consider a block with non-islocked TXs to be safe to sign
-    static constexpr int64_t WAIT_FOR_ISLOCK_TIMEOUT = 10 * 60;
+    // How long to wait for islocks until a block with non-islocked TXs is
+    // considered safe to sign and to mine (IsTxSafeForMining reads it too).
+    // Two minutes, down from the ten this chain inherited: an ISLOCK crosses the
+    // network in about a second, so ten minutes bought nothing while InstantSend
+    // worked and stalled every block for ten minutes while it did not.
+    static constexpr int64_t WAIT_FOR_ISLOCK_TIMEOUT = 2 * 60;
 
 private:
     CChainState& m_chainstate;

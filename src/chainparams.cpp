@@ -690,6 +690,16 @@ public:
         // thresholds with no synchronised moment at all. 6336 went stale
         // exactly that way while the rollout waited on host access.
         consensus.nDkgBadVotesV2ActivationHeight = 7416;
+        // InstantSend moves onto the same Q60 quorum as ChainLocks. Below this
+        // height locks are signed by llmq_60_75 as today; at and above it by
+        // llmq_defcon, which has been forming since 3120 so the resolver finds
+        // four active quorums the moment it flips. Not a block-validity rule --
+        // an ISLOCK is never mined -- but the fleet must resolve the same
+        // profile at the same block or it rejects each other's locks, so it is
+        // keyed on height like the ChainLock switchover. Re-check against the
+        // tip before shipping the binary that carries it (see above).
+        consensus.llmqTypeDIP0024InstantSendV2 = Consensus::LLMQType::LLMQ_DEFCON;
+        consensus.nInstantSendV2ActivationHeight = 7200;
 
         UpdateDevnetLLMQChainLocksFromArgs(args);
         UpdateDevnetLLMQInstantSendDIP0024FromArgs(args);
@@ -1372,11 +1382,11 @@ void CDevNetParams::UpdateDevnetLLMQInstantSendDIP0024FromArgs(const ArgsManager
     std::string strLLMQType = gArgs.GetArg("-llmqinstantsenddip0024", std::string(llmq_params_opt->name));
 
     Consensus::LLMQType llmqType = Consensus::LLMQType::LLMQ_NONE;
+    // Any registered profile will do: deterministic locks work on rotating and
+    // non-rotating quorums alike, and this chain's InstantSend profiles do not
+    // rotate (DIP0024 never activated here).
     for (const auto& params : consensus.llmqs) {
         if (params.name == strLLMQType) {
-            if (!params.useRotation) {
-                throw std::runtime_error("LLMQ type specified for -llmqinstantsenddip0024 must use rotation");
-            }
             llmqType = params.type;
         }
     }

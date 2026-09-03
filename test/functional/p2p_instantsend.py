@@ -57,7 +57,7 @@ class InstantSendTest(DashTestFramework):
         # send doublespend transaction to isolated node
         dblspnd_txid = isolated.sendrawtransaction(dblspnd_tx['hex'])
         # generate block on isolated node with doublespend transaction
-        self.bump_mocktime(599)
+        self.bump_mocktime(119)
         wrong_early_block = self.generate(isolated, 1, sync_fun=self.no_op)[0]
         assert not "confirmation" in isolated.getrawtransaction(dblspnd_txid, 1)
         isolated.invalidateblock(wrong_early_block)

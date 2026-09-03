@@ -332,6 +332,15 @@ struct Params {
      *  has today until one is set deliberately. */
     int nDkgBadVotesV2ActivationHeight{std::numeric_limits<int>::max()};
     LLMQType llmqTypeDIP0024InstantSend{LLMQType::LLMQ_NONE};
+    /** The InstantSend profile that takes over at and above
+     *  nInstantSendV2ActivationHeight, resolved from the chain tip by both the
+     *  signer and the verifier (GetInstantSendLLMQType). An ISLOCK is never
+     *  mined, so on its own this is a network-wide policy switch and not a
+     *  block-validity rule; it is height-keyed anyway so a fleet flips at one
+     *  block instead of rejecting each other's locks across a rollout. Same
+     *  defaults and the same fail-closed reading as the ChainLock pair above. */
+    LLMQType llmqTypeDIP0024InstantSendV2{LLMQType::LLMQ_NONE};
+    int nInstantSendV2ActivationHeight{std::numeric_limits<int>::max()};
     LLMQType llmqTypePlatform{LLMQType::LLMQ_NONE};
     LLMQType llmqTypeMnhf{LLMQType::LLMQ_NONE};
 

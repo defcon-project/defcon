@@ -10,6 +10,7 @@
 
 #include <llmq/blockprocessor.h>
 #include <llmq/commitment.h>
+#include <llmq/options.h>
 
 #include <base58.h>
 #include <chainparams.h>
@@ -146,7 +147,7 @@ bool BuildQuorumRotationInfo(CDeterministicMNManager& dmnman, CQuorumSnapshotMan
     }
 
     //Quorum rotation is enabled only for InstantSend atm.
-    Consensus::LLMQType llmqType = Params().GetConsensus().llmqTypeDIP0024InstantSend;
+    Consensus::LLMQType llmqType = llmq::GetInstantSendLLMQType(Params().GetConsensus(), tipBlockIndex->nHeight);
 
     // Since the returned quorums are in reversed order, the most recent one is at index 0
     const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
