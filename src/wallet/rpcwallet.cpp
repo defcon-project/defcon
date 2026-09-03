@@ -237,14 +237,14 @@ static void SetFeeEstimateMode(const CWallet& wallet, CCoinControl& cc, const Un
 RPCHelpMan getnewaddress()
 {
     return RPCHelpMan{"getnewaddress",
-        "\nReturns a new Dash address for receiving payments.\n"
+        "\nReturns a new DeFCoN address for receiving payments.\n"
         "If 'label' is specified, it is added to the address book \n"
         "so payments received with the address will be associated with 'label'.\n",
         {
             {"label", RPCArg::Type::STR, RPCArg::Default{""}, "The label name for the address to be linked to. It can also be set to the empty string \"\" to represent the default label. The label does not need to exist, it will be created if there is no label by the given name."},
         },
         RPCResult{
-    RPCResult::Type::STR, "address", "The new Dash address"
+    RPCResult::Type::STR, "address", "The new DeFCoN address"
         },
         RPCExamples{
             HelpExampleCli("getnewaddress", "")
@@ -279,7 +279,7 @@ RPCHelpMan getnewaddress()
 RPCHelpMan getrawchangeaddress()
 {
     return RPCHelpMan{"getrawchangeaddress",
-        "\nReturns a new Dash address, for receiving change.\n"
+        "\nReturns a new DeFCoN address, for receiving change.\n"
         "This is for use with raw transactions, NOT normal use.\n",
         {},
         RPCResult{
@@ -316,7 +316,7 @@ static RPCHelpMan setlabel()
     return RPCHelpMan{"setlabel",
         "\nSets the label associated with the given address.\n",
         {
-            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The Dash address to be associated with a label."},
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The DeFCoN address to be associated with a label."},
             {"label", RPCArg::Type::STR, RPCArg::Optional::NO, "The label to assign to the address."},
         },
         RPCResult{RPCResult::Type::NONE, "", ""},
@@ -333,7 +333,7 @@ static RPCHelpMan setlabel()
 
     CTxDestination dest = DecodeDestination(request.params[0].get_str());
     if (!IsValidDestination(dest)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Dash address");
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid DeFCoN address");
     }
 
     std::string label = LabelFromValue(request.params[1]);
@@ -355,7 +355,7 @@ void ParseRecipients(const UniValue& address_amounts, const UniValue& subtract_f
     for (const std::string& address: address_amounts.getKeys()) {
         CTxDestination dest = DecodeDestination(address);
         if (!IsValidDestination(dest)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid Dash address: ") + address);
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid DeFCoN address: ") + address);
         }
 
         if (destinations.count(dest)) {
@@ -419,7 +419,7 @@ static RPCHelpMan sendtoaddress()
         "\nSend an amount to a given address." +
                 HELP_REQUIRING_PASSPHRASE,
         {
-            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The Dash address to send to."},
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The DeFCoN address to send to."},
             {"amount", RPCArg::Type::AMOUNT, RPCArg::Optional::NO, "The amount in " + CURRENCY_UNIT + " to send. eg 0.1"},
             {"comment", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "A comment used to store what the transaction is for.\n"
                 "This is not part of the transaction, just kept in your wallet."},
@@ -427,7 +427,7 @@ static RPCHelpMan sendtoaddress()
                 "to which you're sending the transaction. This is not part of the \n"
                 "transaction, just kept in your wallet."},
             {"subtractfeefromamount", RPCArg::Type::BOOL, RPCArg::Default{false}, "The fee will be deducted from the amount being sent.\n"
-                "The recipient will receive less amount of Dash than you enter in the amount field."},
+                "The recipient will receive less amount of DFCN than you enter in the amount field."},
             {"use_is", RPCArg::Type::BOOL, RPCArg::Default{false}, "Deprecated and ignored"},
             {"use_cj", RPCArg::Type::BOOL, RPCArg::Default{false}, "Use CoinJoin funds only"},
             {"conf_target", RPCArg::Type::NUM, RPCArg::DefaultHint{"wallet -txconfirmtarget"}, "Confirmation target in blocks"},
@@ -451,15 +451,15 @@ static RPCHelpMan sendtoaddress()
                     },
                 },
                 RPCExamples{
-                    "\nSend 0.1 Dash\n"
+                    "\nSend 0.1 DFCN\n"
                     + HelpExampleCli("sendtoaddress", "\"" + EXAMPLE_ADDRESS[0] + "\" 0.1") +
-                    "\nSend 0.1 Dash with a confirmation target of 6 blocks in economical fee estimate mode using positional arguments\n"
+                    "\nSend 0.1 DFCN with a confirmation target of 6 blocks in economical fee estimate mode using positional arguments\n"
                     + HelpExampleCli("sendtoaddress", "\"" + EXAMPLE_ADDRESS[0] + "\" 0.1 \"donation\" \"sean's outpost\" false false false 6 economical") +
-                    "\nSend 0.1 Dash with a fee rate of 1.1 " + CURRENCY_ATOM + "/B, subtract fee from amount, use CoinJoin funds only, using positional arguments\n"
+                    "\nSend 0.1 DFCN with a fee rate of 1.1 " + CURRENCY_ATOM + "/B, subtract fee from amount, use CoinJoin funds only, using positional arguments\n"
                     + HelpExampleCli("sendtoaddress", "\"" + EXAMPLE_ADDRESS[0] + "\" 0.1 \"drinks\" \"room77\" true false true 0 \"\" 1.1") +
-                    "\nSend 0.2 Dash with a confirmation target of 6 blocks in economical fee estimate mode using named arguments\n"
+                    "\nSend 0.2 DFCN with a confirmation target of 6 blocks in economical fee estimate mode using named arguments\n"
                     + HelpExampleCli("-named sendtoaddress", "address=\"" + EXAMPLE_ADDRESS[0] + "\" amount=0.2 conf_target=6 estimate_mode=\"economical\"") +
-                    "\nSend 0.5 Dash with a fee rate of 25 " + CURRENCY_ATOM + "/B using named arguments\n"
+                    "\nSend 0.5 DFCN with a fee rate of 25 " + CURRENCY_ATOM + "/B using named arguments\n"
                     + HelpExampleCli("-named sendtoaddress", "address=\"" + EXAMPLE_ADDRESS[0] + "\" amount=0.5 fee_rate=25")
                     + HelpExampleCli("-named sendtoaddress", "address=\"" + EXAMPLE_ADDRESS[0] + "\" amount=0.5 fee_rate=25 subtractfeefromamount=false avoid_reuse=true comment=\"2 pizzas\" comment_to=\"jeremy\" verbose=true")
                 },
@@ -549,7 +549,7 @@ static RPCHelpMan listaddressgroupings()
                 {
                     {RPCResult::Type::ARR_FIXED, "", "",
                     {
-                        {RPCResult::Type::STR, "address", "The Dash address"},
+                        {RPCResult::Type::STR, "address", "The DeFCoN address"},
                         {RPCResult::Type::STR_AMOUNT, "amount", "The amount in " + CURRENCY_UNIT},
                         {RPCResult::Type::STR, "label", /* optional */ true, "The label"},
                     }},
@@ -604,7 +604,7 @@ static RPCHelpMan listaddressbalances()
         RPCResult{
             RPCResult::Type::ARR, "", "",
             {
-                {RPCResult::Type::STR_AMOUNT, "amount", "The Dash address and the amount in " + CURRENCY_UNIT},
+                {RPCResult::Type::STR_AMOUNT, "amount", "The DeFCoN address and the amount in " + CURRENCY_UNIT},
             }
         },
         RPCExamples{
@@ -644,7 +644,7 @@ static RPCHelpMan signmessage()
         "\nSign a message with the private key of an address" +
                 HELP_REQUIRING_PASSPHRASE,
         {
-            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The Dash address to use for the private key."},
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The DeFCoN address to use for the private key."},
             {"message", RPCArg::Type::STR, RPCArg::Optional::NO, "The message to create a signature of."},
         },
         RPCResult{
@@ -707,7 +707,7 @@ static CAmount GetReceived(const CWallet& wallet, const UniValue& params, bool b
         // Get the address
         CTxDestination dest = DecodeDestination(params[0].get_str());
         if (!IsValidDestination(dest)) {
-            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Dash address");
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid DeFCoN address");
         }
         CScript script_pub_key = GetScriptForDestination(dest);
         if (!wallet.IsMine(script_pub_key)) {
@@ -748,7 +748,7 @@ static RPCHelpMan getreceivedbyaddress()
     return RPCHelpMan{"getreceivedbyaddress",
         "\nReturns the total amount received by the given address in transactions with at least minconf confirmations.\n",
         {
-            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The Dash address for transactions."},
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The DeFCoN address for transactions."},
             {"minconf", RPCArg::Type::NUM, RPCArg::Default{1}, "Only include transactions confirmed at least this many times."},
             {"addlocked", RPCArg::Type::BOOL, RPCArg::Default{false}, "Whether to include transactions locked via InstantSend."},
         },
@@ -915,7 +915,7 @@ static RPCHelpMan sendmany()
                     {"dummy", RPCArg::Type::STR, RPCArg::Optional::NO, "Must be set to \"\" for backwards compatibility.", "\"\""},
                     {"amounts", RPCArg::Type::OBJ_USER_KEYS, RPCArg::Optional::NO, "The addresses and amounts",
                         {
-                            {"address", RPCArg::Type::AMOUNT, RPCArg::Optional::NO, "The Dash address is the key, the numeric amount (can be string) in " + CURRENCY_UNIT + " is the value"},
+                            {"address", RPCArg::Type::AMOUNT, RPCArg::Optional::NO, "The DeFCoN address is the key, the numeric amount (can be string) in " + CURRENCY_UNIT + " is the value"},
                         },
                     },
                     {"minconf", RPCArg::Type::NUM, RPCArg::Optional::OMITTED_NAMED_ARG, "Ignored dummy value"},
@@ -923,7 +923,7 @@ static RPCHelpMan sendmany()
                     {"comment", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "A comment"},
                     {"subtractfeefrom", RPCArg::Type::ARR, RPCArg::Optional::OMITTED_NAMED_ARG, "The addresses.\n"
                         "The fee will be equally deducted from the amount of each selected address.\n"
-                        "Those recipients will receive less Dash than you enter in their corresponding amount field.\n"
+                        "Those recipients will receive less DFCN than you enter in their corresponding amount field.\n"
                         "If no addresses are specified here, the sender pays the fee.",
                         {
                             {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Subtract fee from this address"},
@@ -1005,15 +1005,15 @@ RPCHelpMan addmultisigaddress()
 {
     return RPCHelpMan{"addmultisigaddress",
         "\nAdd an nrequired-to-sign multisignature address to the wallet. Requires a new wallet backup.\n"
-        "Each key is a Dash address or hex-encoded public key.\n"
+        "Each key is a DeFCoN address or hex-encoded public key.\n"
         "This functionality is only intended for use with non-watchonly addresses.\n"
         "See `importaddress` for watchonly p2sh address support.\n"
         "If 'label' is specified, assign address to that label.\n",
         {
             {"nrequired", RPCArg::Type::NUM, RPCArg::Optional::NO, "The number of required signatures out of the n keys or addresses."},
-            {"keys", RPCArg::Type::ARR, RPCArg::Optional::NO, "The Dash addresses or hex-encoded public keys",
+            {"keys", RPCArg::Type::ARR, RPCArg::Optional::NO, "The DeFCoN addresses or hex-encoded public keys",
                 {
-                    {"key", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Dash address or hex-encoded public key"},
+                    {"key", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "DeFCoN address or hex-encoded public key"},
                 },
                 },
             {"label", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "A label to assign the addresses to."},
@@ -1476,7 +1476,7 @@ static RPCHelpMan listtransactions()
                 {RPCResult::Type::OBJ, "", "", Cat(Cat<std::vector<RPCResult>>(
                     {
                         {RPCResult::Type::BOOL, "involvesWatchonly", "Only returns true if imported addresses were involved in transaction"},
-                        {RPCResult::Type::STR, "address", "The Dash address of the transaction. Not present for\n"
+                        {RPCResult::Type::STR, "address", "The DeFCoN address of the transaction. Not present for\n"
                               "move transactions (category = move)."},
                         {RPCResult::Type::STR, "category", "The transaction category.\n"
                             "\"send\"                  Transactions sent.\n"
@@ -1593,7 +1593,7 @@ static RPCHelpMan listsinceblock()
                     {RPCResult::Type::OBJ, "", "", Cat(Cat<std::vector<RPCResult>>(
                     {
                         {RPCResult::Type::BOOL, "involvesWatchonly", "Only returns true if imported addresses were involved in transaction"},
-                        {RPCResult::Type::STR, "address", "The Dash address of the transaction."},
+                        {RPCResult::Type::STR, "address", "The DeFCoN address of the transaction."},
                         {RPCResult::Type::STR, "category", "The transaction category.\n"
                             "\"send\"                  Transactions sent.\n"
                             "\"coinjoin\"              Transactions sent using CoinJoin funds.\n"
@@ -1735,7 +1735,7 @@ static RPCHelpMan gettransaction()
                             {RPCResult::Type::OBJ, "", "",
                                 {
                                     {RPCResult::Type::BOOL, "involvesWatchonly", "Only returns true if imported addresses were involved in transaction"},
-                                    {RPCResult::Type::STR, "address", "The Dash address involved in the transaction."},
+                                    {RPCResult::Type::STR, "address", "The DeFCoN address involved in the transaction."},
                                     {RPCResult::Type::STR, "category", "The transaction category.\n"
                                         "\"send\"                  Transactions sent.\n"
                                         "\"coinjoin\"              Transactions sent using CoinJoin funds.\n"
@@ -1947,7 +1947,7 @@ static RPCHelpMan walletpassphrase()
 {
     return RPCHelpMan{"walletpassphrase",
         "\nStores the wallet decryption key in memory for 'timeout' seconds.\n"
-        "This is needed prior to performing transactions related to private keys such as sending Dash\n"
+        "This is needed prior to performing transactions related to private keys such as sending DFCN\n"
         "\nNote:\n"
         "Issuing the walletpassphrase command while the wallet is already unlocked will set a new unlock\n"
         "time that overrides the old one.\n",
@@ -2153,7 +2153,7 @@ static RPCHelpMan encryptwallet()
         RPCExamples{
     "\nEncrypt your wallet\n"
     + HelpExampleCli("encryptwallet", "\"my pass phrase\"") +
-    "\nNow set the passphrase to use the wallet, such as for signing or sending Dash\n"
+    "\nNow set the passphrase to use the wallet, such as for signing or sending DFCN\n"
     + HelpExampleCli("walletpassphrase", "\"my pass phrase\"") +
     "\nNow we can do something like sign\n"
     + HelpExampleCli("signmessage", "\"address\" \"test message\"") +
@@ -2202,7 +2202,7 @@ static RPCHelpMan lockunspent()
         "\nUpdates list of temporarily unspendable outputs.\n"
         "Temporarily lock (unlock=false) or unlock (unlock=true) specified transaction outputs.\n"
         "If no transaction outputs are specified when unlocking then all current locked transaction outputs are unlocked.\n"
-        "A locked transaction output will not be chosen by automatic coin selection, when spending Dash.\n"
+        "A locked transaction output will not be chosen by automatic coin selection, when spending DFCN.\n"
         "Manually selected coins are automatically unlocked.\n"
         "Locks are stored in memory only, unless persistent=true, in which case they will be written to the\n"
         "wallet database and loaded on node start. Unwritten (persistent=false) locks are always cleared\n"
@@ -3042,7 +3042,7 @@ static RPCHelpMan createwallet()
         throw JSONRPCError(RPC_WALLET_ERROR, "Compiled without sqlite support (required for descriptor wallets)");
 #endif
         if (request.params[6].isNull()) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "The createwallet RPC requires specifying the 'load_on_startup' flag when creating descriptor wallets. Dash Core v21 introduced this requirement due to breaking changes in the createwallet RPC.");
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "The createwallet RPC requires specifying the 'load_on_startup' flag when creating descriptor wallets. This requirement comes from a breaking change in the createwallet RPC.");
         }
         flags |= WALLET_FLAG_DESCRIPTORS;
         warnings.emplace_back(Untranslated("Wallet is an experimental descriptor wallet"));
@@ -3187,9 +3187,9 @@ static RPCHelpMan listunspent()
         {
             {"minconf", RPCArg::Type::NUM, RPCArg::Default{1}, "The minimum confirmations to filter"},
             {"maxconf", RPCArg::Type::NUM, RPCArg::Default{9999999}, "The maximum confirmations to filter"},
-            {"addresses", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "The Dash addresses to filter",
+            {"addresses", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "The DeFCoN addresses to filter",
                 {
-                    {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Dash address"},
+                    {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "DeFCoN address"},
                 },
             },
             {"include_unsafe", RPCArg::Type::BOOL, RPCArg::Default{true}, "Include outputs that are not safe to spend\n"
@@ -3213,7 +3213,7 @@ static RPCHelpMan listunspent()
                 {
                     {RPCResult::Type::STR_HEX, "txid", "the transaction id"},
                     {RPCResult::Type::NUM, "vout", "the vout value"},
-                    {RPCResult::Type::STR, "address", "the Dash address"},
+                    {RPCResult::Type::STR, "address", "the DeFCoN address"},
                     {RPCResult::Type::STR, "label", "The associated label, or \"\" for the default label"},
                     {RPCResult::Type::STR, "scriptPubKey", "the script key"},
                     {RPCResult::Type::STR_AMOUNT, "amount", "the transaction output amount in " + CURRENCY_UNIT},
@@ -3261,7 +3261,7 @@ static RPCHelpMan listunspent()
             const UniValue& input = inputs[idx];
             CTxDestination dest = DecodeDestination(input.get_str());
             if (!IsValidDestination(dest)) {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid Dash address: ") + input.get_str());
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, std::string("Invalid DeFCoN address: ") + input.get_str());
             }
             if (!destinations.insert(dest).second) {
                 throw JSONRPCError(RPC_INVALID_PARAMETER, std::string("Invalid parameter, duplicated address: ") + input.get_str());
@@ -3451,7 +3451,7 @@ void FundTransaction(CWallet& wallet, CMutableTransaction& tx, CAmount& fee_out,
             CTxDestination dest = DecodeDestination(change_address_str);
 
             if (!IsValidDestination(dest)) {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Change address must be a valid Dash address");
+                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Change address must be a valid DeFCoN address");
             }
 
             coinControl.destChange = dest;
@@ -3542,7 +3542,7 @@ static RPCHelpMan fundrawtransaction()
                             {"include_unsafe", RPCArg::Type::BOOL, RPCArg::Default{false}, "Include inputs that are not safe to spend (unconfirmed transactions from outside keys and unconfirmed replacement transactions).\n"
                                                           "Warning: the resulting transaction may become invalid if one of the unsafe inputs disappears.\n"
                                                           "If that happens, you will need to fund the transaction with different inputs and republish it."},
-                            {"changeAddress", RPCArg::Type::STR, RPCArg::DefaultHint{"pool address"}, "The Dash address to receive the change"},
+                            {"changeAddress", RPCArg::Type::STR, RPCArg::DefaultHint{"pool address"}, "The DeFCoN address to receive the change"},
                             {"changePosition", RPCArg::Type::NUM, RPCArg::DefaultHint{"random"}, "The index of the change output"},
                             {"includeWatching", RPCArg::Type::BOOL, RPCArg::DefaultHint{"true for watch-only wallets, otherwise false"}, "Also select inputs which are watch only.\n"
                                                           "Only solvable inputs can be used. Watch-only destinations are solvable if the public key and/or output script was imported,\n"
@@ -3552,7 +3552,7 @@ static RPCHelpMan fundrawtransaction()
                             {"feeRate", RPCArg::Type::AMOUNT, RPCArg::DefaultHint{"not set, fall back to wallet fee estimation"}, "Specify a fee rate in " + CURRENCY_UNIT + "/kB."},
                             {"subtractFeeFromOutputs", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "The integers.\n"
                                 "The fee will be equally deducted from the amount of each specified output.\n"
-                                "Those recipients will receive less Dash than you enter in their corresponding amount field.\n"
+                                "Those recipients will receive less DFCN than you enter in their corresponding amount field.\n"
                                 "If no outputs are specified here, the sender pays the fee.",
                                 {
                                     {"vout_index", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "The zero-based output index, before a change output is added."},
@@ -3940,15 +3940,15 @@ static UniValue AddressBookDataToJSON(const CAddressBookData& data, const bool v
 RPCHelpMan getaddressinfo()
 {
     return RPCHelpMan{"getaddressinfo",
-        "\nReturn information about the given Dash address.\n"
+        "\nReturn information about the given DeFCoN address.\n"
         "Some of the information will only be present if the address is in the active wallet.\n",
         {
-            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The Dash address for which to get information."},
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "The DeFCoN address for which to get information."},
         },
         RPCResult{
             RPCResult::Type::OBJ, "", "",
             {
-                {RPCResult::Type::STR, "address", "The Dash address validated."},
+                {RPCResult::Type::STR, "address", "The DeFCoN address validated."},
                 {RPCResult::Type::STR_HEX, "scriptPubKey", "The hex-encoded scriptPubKey generated by the address."},
                 {RPCResult::Type::BOOL, "ismine", "If the address is yours."},
                 {RPCResult::Type::BOOL, "iswatchonly", "If the address is watchonly."},
@@ -4203,7 +4203,7 @@ static RPCHelpMan send()
                 {
                     {"", RPCArg::Type::OBJ_USER_KEYS, RPCArg::Optional::OMITTED, "",
                         {
-                            {"address", RPCArg::Type::AMOUNT, RPCArg::Optional::NO, "A key-value pair. The key (string) is the Dash address, the value (float or string) is the amount in " + CURRENCY_UNIT + ""},
+                            {"address", RPCArg::Type::AMOUNT, RPCArg::Optional::NO, "A key-value pair. The key (string) is the DeFCoN address, the value (float or string) is the amount in " + CURRENCY_UNIT + ""},
                         },
                         },
                     {"", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "",
@@ -4224,7 +4224,7 @@ static RPCHelpMan send()
                                                           "Warning: the resulting transaction may become invalid if one of the unsafe inputs disappears.\n"
                                                           "If that happens, you will need to fund the transaction with different inputs and republish it."},
                     {"add_to_wallet", RPCArg::Type::BOOL, RPCArg::Default{true}, "When false, returns a serialized transaction which will not be added to the wallet or broadcast"},
-                    {"change_address", RPCArg::Type::STR_HEX, RPCArg::DefaultHint{"pool address"}, "The Dash address to receive the change"},
+                    {"change_address", RPCArg::Type::STR_HEX, RPCArg::DefaultHint{"pool address"}, "The DeFCoN address to receive the change"},
                     {"change_position", RPCArg::Type::NUM, RPCArg::DefaultHint{"random"}, "The index of the change output"},
                     {"conf_target", RPCArg::Type::NUM, RPCArg::DefaultHint{"wallet -txconfirmtarget"}, "Confirmation target in blocks"},
                     {"estimate_mode", RPCArg::Type::STR, RPCArg::Default{"unset"}, std::string() + "The fee estimate mode, must be one of (case insensitive):\n"
@@ -4264,13 +4264,13 @@ static RPCHelpMan send()
                 }
         },
         RPCExamples{""
-        "\nSend 0.1 Dash with a confirmation target of 6 blocks in economical fee estimate mode\n"
+        "\nSend 0.1 DFCN with a confirmation target of 6 blocks in economical fee estimate mode\n"
         + HelpExampleCli("send", "'{\"" + EXAMPLE_ADDRESS[0] + "\": 0.1}' 6 economical\n") +
-        "Send 0.2 Dash with a fee rate of 1.1 " + CURRENCY_ATOM + "/B using positional arguments\n"
+        "Send 0.2 DFCN with a fee rate of 1.1 " + CURRENCY_ATOM + "/B using positional arguments\n"
         + HelpExampleCli("send", "'{\"" + EXAMPLE_ADDRESS[0] + "\": 0.2}' null \"unset\" 1.1\n") +
-        "Send 0.2 Dash with a fee rate of 1 " + CURRENCY_ATOM + "/B using the options argument\n"
+        "Send 0.2 DFCN with a fee rate of 1 " + CURRENCY_ATOM + "/B using the options argument\n"
         + HelpExampleCli("send", "'{\"" + EXAMPLE_ADDRESS[0] + "\": 0.2}' null \"unset\" null '{\"fee_rate\": 1}'\n") +
-        "Send 0.3 Dash with a fee rate of 25 " + CURRENCY_ATOM + "/B using named arguments\n"
+        "Send 0.3 DFCN with a fee rate of 25 " + CURRENCY_ATOM + "/B using named arguments\n"
         + HelpExampleCli("-named send", "outputs='{\"" + EXAMPLE_ADDRESS[0] + "\": 0.3}' fee_rate=25\n") +
         "Create a transaction that should confirm the next block, with a specific input, and return result without adding to wallet or broadcasting to the network\n"
         + HelpExampleCli("send", "'{\"" + EXAMPLE_ADDRESS[0] + "\": 0.1}' 1 economical '{\"add_to_wallet\": false, \"inputs\": [{\"txid\":\"a08e6907dbbd3d809776dbfc5d82e371b764ed838b5655e72f463568df1aadf0\", \"vout\":1}]}'")
@@ -4564,7 +4564,7 @@ static RPCHelpMan walletcreatefundedpsbt()
                 {
                     {"", RPCArg::Type::OBJ_USER_KEYS, RPCArg::Optional::OMITTED, "",
                         {
-                            {"address", RPCArg::Type::AMOUNT, RPCArg::Optional::NO, "A key-value pair. The key (string) is the Dash address, the value (float or string) is the amount in " + CURRENCY_UNIT + ""},
+                            {"address", RPCArg::Type::AMOUNT, RPCArg::Optional::NO, "A key-value pair. The key (string) is the DeFCoN address, the value (float or string) is the amount in " + CURRENCY_UNIT + ""},
                         },
                         },
                     {"", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "",
@@ -4581,7 +4581,7 @@ static RPCHelpMan walletcreatefundedpsbt()
                     {"include_unsafe", RPCArg::Type::BOOL, RPCArg::Default{false}, "Include inputs that are not safe to spend (unconfirmed transactions from outside keys and unconfirmed replacement transactions).\n"
                                                     "Warning: the resulting transaction may become invalid if one of the unsafe inputs disappears.\n"
                                                     "If that happens, you will need to fund the transaction with different inputs and republish it."},
-                    {"changeAddress", RPCArg::Type::STR_HEX, RPCArg::DefaultHint{"pool address"}, "The Dash address to receive the change"},
+                    {"changeAddress", RPCArg::Type::STR_HEX, RPCArg::DefaultHint{"pool address"}, "The DeFCoN address to receive the change"},
                     {"changePosition", RPCArg::Type::NUM, RPCArg::DefaultHint{"random"}, "The index of the change output"},
                     {"includeWatching", RPCArg::Type::BOOL, RPCArg::DefaultHint{"true for watch-only wallets, otherwise false"}, "Also select inputs which are watch only"},
                     {"lockUnspents", RPCArg::Type::BOOL, RPCArg::Default{false}, "Lock selected unspent outputs"},
@@ -4589,7 +4589,7 @@ static RPCHelpMan walletcreatefundedpsbt()
                     {"feeRate", RPCArg::Type::AMOUNT, RPCArg::DefaultHint{"not set: makes wallet determine the fee"}, "Set a specific fee rate in " + CURRENCY_UNIT + "/kB"},
                     {"subtractFeeFromOutputs", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "The outputs to subtract the fee from.\n"
                         "The fee will be equally deducted from the amount of each specified output.\n"
-                        "Those recipients will receive less Dash than you enter in their corresponding amount field.\n"
+                        "Those recipients will receive less DFCN than you enter in their corresponding amount field.\n"
                         "If no outputs are specified here, the sender pays the fee.",
                         {
                             {"vout_index", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "The zero-based output index, before a change output is added."},
