@@ -1191,7 +1191,7 @@ static RPCHelpMan verifyislock()
 
     const LLMQContext& llmq_ctx = EnsureLLMQContext(node);
 
-    auto llmqType = Params().GetConsensus().llmqTypeDIP0024InstantSend;
+    const auto llmqType = llmq::GetInstantSendLLMQType(Params().GetConsensus(), pBlockIndex->nHeight);
     const auto llmq_params_opt = Params().GetLLMQ(llmqType);
     CHECK_NONFATAL(llmq_params_opt.has_value());
     return VerifyRecoveredSigLatestQuorums(*llmq_params_opt, chainman.ActiveChain(), *CHECK_NONFATAL(llmq_ctx.qman),

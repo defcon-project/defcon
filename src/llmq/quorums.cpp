@@ -385,7 +385,7 @@ void CQuorumManager::CheckQuorumConnections(CConnman& connman, const Consensus::
 
     const uint256 myProTxHash = m_mn_activeman != nullptr ? m_mn_activeman->GetProTxHash() : uint256();
 
-    bool isISType = llmqParams.type == Params().GetConsensus().llmqTypeDIP0024InstantSend;
+    bool isISType = llmqParams.type == GetInstantSendLLMQType(Params().GetConsensus(), pindexNew->nHeight);
 
     bool watchOtherISQuorums = isISType && !myProTxHash.IsNull() &&
                     ranges::any_of(lastQuorums, [&myProTxHash](const auto& old_quorum){

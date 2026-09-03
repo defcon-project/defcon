@@ -129,6 +129,15 @@ Consensus::LLMQType GetChainLocksLLMQType(const ::Consensus::Params& params, int
     return params.llmqTypeChainLocks;
 }
 
+Consensus::LLMQType GetInstantSendLLMQType(const ::Consensus::Params& params, int nHeight)
+{
+    if (params.llmqTypeDIP0024InstantSendV2 != Consensus::LLMQType::LLMQ_NONE &&
+        nHeight >= params.nInstantSendV2ActivationHeight) {
+        return params.llmqTypeDIP0024InstantSendV2;
+    }
+    return params.llmqTypeDIP0024InstantSend;
+}
+
 int GetDkgBadVotesThreshold(const ::Consensus::Params& params, const Consensus::LLMQParams& llmqParams,
                             int nHeight)
 {
@@ -176,7 +185,8 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
         }
         case Consensus::LLMQType::LLMQ_TEST_INSTANTSEND:
             return !fDIP0024IsActive || !fHaveDIP0024Quorums ||
-                    consensusParams.llmqTypeDIP0024InstantSend == Consensus::LLMQType::LLMQ_TEST_INSTANTSEND;
+                    consensusParams.llmqTypeDIP0024InstantSend == Consensus::LLMQType::LLMQ_TEST_INSTANTSEND ||
+                    consensusParams.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_TEST_INSTANTSEND;
         case Consensus::LLMQType::LLMQ_TEST:
         case Consensus::LLMQType::LLMQ_TEST_PLATFORM:
         case Consensus::LLMQType::LLMQ_400_60:

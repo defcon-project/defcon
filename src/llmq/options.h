@@ -52,6 +52,13 @@ bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBloc
  *  counts, sporks or local configuration. */
 [[nodiscard]] Consensus::LLMQType GetChainLocksLLMQType(const ::Consensus::Params& params, int nSignedHeight);
 
+/** Resolve which LLMQ profile signs and verifies InstantSend locks at a given
+ *  chain height -- the tip, for both the signer and the verifier, since an
+ *  ISLOCK carries no height of its own and is never mined. One-way and
+ *  height-only like the ChainLock resolver, so a fleet switches profile at
+ *  one block instead of rejecting each other's locks across a rollout. */
+[[nodiscard]] Consensus::LLMQType GetInstantSendLLMQType(const ::Consensus::Params& params, int nHeight);
+
 /** The bad-votes threshold a DKG session applies, resolved from its own quorum
  *  height. One-way and height-only for the same reason as the ChainLock
  *  resolver: every member of a session must reach the same answer without

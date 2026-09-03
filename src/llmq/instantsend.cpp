@@ -6,6 +6,7 @@
 
 #include <llmq/chainlocks.h>
 #include <llmq/commitment.h>
+#include <llmq/options.h>
 #include <llmq/quorums.h>
 #include <llmq/signing_shares.h>
 
@@ -460,7 +461,8 @@ void CInstantSendManager::ProcessTx(const CTransaction& tx, bool fRetroactive, c
         return;
     }
 
-    if (params.llmqTypeDIP0024InstantSend == Consensus::LLMQType::LLMQ_NONE) {
+    const auto llmqType = GetLLMQType();
+    if (llmqType == Consensus::LLMQType::LLMQ_NONE) {
         return;
     }
 
@@ -484,7 +486,7 @@ void CInstantSendManager::ProcessTx(const CTransaction& tx, bool fRetroactive, c
     // block after we retroactively locked all transactions.
     if (!IsInstantSendMempoolSigningEnabled() && !fRetroactive) return;
 
-    if (!TrySignInputLocks(tx, fRetroactive, params.llmqTypeDIP0024InstantSend, params)) {
+    if (!TrySignInputLocks(tx, fRetroactive, llmqType)) {
         return;
     }
 
@@ -493,7 +495,7 @@ void CInstantSendManager::ProcessTx(const CTransaction& tx, bool fRetroactive, c
     TrySignInstantSendLock(tx);
 }
 
-bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroactive, Consensus::LLMQType llmqType, const Consensus::Params& params)
+bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroactive, Consensus::LLMQType llmqType)
 {
     std::vector<uint256> ids;
     ids.reserve(tx.vin.size());
@@ -504,7 +506,7 @@ bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroa
         ids.emplace_back(id);
 
         uint256 otherTxHash;
-        if (sigman.GetVoteForId(params.llmqTypeDIP0024InstantSend, id, otherTxHash)) {
+        if (sigman.GetVoteForId(llmqType, id, otherTxHash)) {
             if (otherTxHash != tx.GetHash()) {
                 LogPrintf("CInstantSendManager::%s -- txid=%s: input %s is conflicting with previous vote for tx %s\n", __func__,
                           tx.GetHash().ToString(), in.prevout.ToStringShort(), otherTxHash.ToString());
@@ -514,7 +516,7 @@ bool CInstantSendManager::TrySignInputLocks(const CTransaction& tx, bool fRetroa
         }
 
         // don't even try the actual signing if any input is conflicting
-        if (sigman.IsConflicting(params.llmqTypeDIP0024InstantSend, id, tx.GetHash())) {
+        if (sigman.IsConflicting(llmqType, id, tx.GetHash())) {
             LogPrintf("CInstantSendManager::%s -- txid=%s: sigman.IsConflicting returned true. id=%s\n", __func__,
                       tx.GetHash().ToString(), id.ToString());
             return false;
@@ -609,7 +611,7 @@ MessageProcessingResult CInstantSendManager::HandleNewRecoveredSig(const CRecove
         return {};
     }
 
-    if (Params().GetConsensus().llmqTypeDIP0024InstantSend == Consensus::LLMQType::LLMQ_NONE) {
+    if (GetLLMQType() == Consensus::LLMQType::LLMQ_NONE) {
         return {};
     }
 
@@ -653,7 +655,7 @@ void CInstantSendManager::HandleNewInputLockRecoveredSig(const CRecoveredSig& re
 
 void CInstantSendManager::TrySignInstantSendLock(const CTransaction& tx)
 {
-    const auto llmqType = Params().GetConsensus().llmqTypeDIP0024InstantSend;
+    const auto llmqType = GetLLMQType();
 
     for (const auto& in : tx.vin) {
         auto id = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in.prevout));
@@ -763,10 +765,13 @@ PeerMsgRet CInstantSendManager::ProcessMessageInstantSendLock(const CNode& pfrom
         return tl::unexpected{1};
     }
 
-    // Deterministic islocks MUST use rotation based llmq
-    auto llmqType = Params().GetConsensus().llmqTypeDIP0024InstantSend;
-    const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
-    assert(llmq_params_opt);
+    // A deterministic islock's cycleHash is the start of the signing quorum's
+    // DKG cycle, whichever profile the resolver names at this tip.
+    const auto& llmq_params_opt = Params().GetLLMQ(GetLLMQType());
+    if (!llmq_params_opt) {
+        // InstantSend is not configured here; nothing to verify against.
+        return {};
+    }
     if (blockIndex->nHeight % llmq_params_opt->dkgInterval != 0) {
         return tl::unexpected{100};
     }
@@ -842,10 +847,14 @@ bool CInstantSendManager::ProcessPendingInstantSendLocks(PeerManager& peerman)
         return false;
     }
 
-    //TODO Investigate if leaving this is ok
-    auto llmqType = Params().GetConsensus().llmqTypeDIP0024InstantSend;
-    const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
-    assert(llmq_params_opt);
+    // The whole batch verifies against the profile resolved at this tip. A lock
+    // signed a block earlier under the other profile, right at the switchover,
+    // fails verification and is dropped -- the same brink the quorum selection
+    // already accepts, and it costs one lock, never a block.
+    const auto& llmq_params_opt = Params().GetLLMQ(GetLLMQType());
+    if (!llmq_params_opt) {
+        return false;
+    }
     const auto& llmq_params = llmq_params_opt.value();
     auto dkgInterval = llmq_params.dkgInterval;
 
@@ -1229,10 +1238,11 @@ void CInstantSendManager::RemoveConflictedTx(const CTransaction& tx)
 
 void CInstantSendManager::TruncateRecoveredSigsForInputs(const llmq::CInstantSendLock& islock)
 {
+    const auto llmqType = GetLLMQType();
     for (const auto& in : islock.inputs) {
         auto inputRequestId = ::SerializeHash(std::make_pair(INPUTLOCK_REQUESTID_PREFIX, in));
         WITH_LOCK(cs_inputReqests, inputRequestIds.erase(inputRequestId));
-        sigman.TruncateRecoveredSig(Params().GetConsensus().llmqTypeDIP0024InstantSend, inputRequestId);
+        sigman.TruncateRecoveredSig(llmqType, inputRequestId);
     }
 }
 
@@ -1276,7 +1286,7 @@ void CInstantSendManager::HandleFullyConfirmedBlock(const CBlockIndex* pindex)
 
         // And we don't need the recovered sig for the ISLOCK anymore, as the block in which it got mined is considered
         // fully confirmed now
-        sigman.TruncateRecoveredSig(Params().GetConsensus().llmqTypeDIP0024InstantSend, islock->GetRequestId());
+        sigman.TruncateRecoveredSig(GetLLMQType(), islock->GetRequestId());
     }
 
     db.RemoveArchivedInstantSendLocks(pindex->nHeight - 100);
@@ -1602,6 +1612,12 @@ void CInstantSendManager::WorkThreadMain(PeerManager& peerman)
             return;
         }
     }
+}
+
+Consensus::LLMQType CInstantSendManager::GetLLMQType() const
+{
+    const int height = WITH_LOCK(::cs_main, return m_chainstate.m_chain.Height());
+    return GetInstantSendLLMQType(Params().GetConsensus(), height);
 }
 
 bool CInstantSendManager::IsInstantSendEnabled() const
