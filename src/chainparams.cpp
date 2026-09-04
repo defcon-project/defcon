@@ -595,11 +595,6 @@ public:
         // Placed after the bad-votes gate at 7416 rather than at tip+100, so
         // that gate's effect is readable before this one lands: two consensus
         // activations inside one measurement window would make both unreadable.
-        // Every devnet PoS block to date has nonce 0, so the rule is
-        // history-compatible; gated anyway, because it is consensus.
-        consensus.nPosNonceActivationHeight = 7560;
-        // Same height, same reasoning: the proof-of-stake consensus fixes
-        // activate together, after the bad-votes gate has been read.
         consensus.nPosCoinbaseBoundActivationHeight = 7560;
         consensus.nPosStakeModifierV2ActivationHeight = 7560;
         consensus.nPosBlockTimeBoundActivationHeight = 7560;
@@ -920,7 +915,6 @@ public:
         consensus.stakeValueRange = { 0 * COIN, MAX_MONEY };
         consensus.stakeAgeRange = { 10 * 60, 60 * 60 * 24 * 30 };
         consensus.nPosKernelV2ActivationHeight = 0;
-        consensus.nPosNonceActivationHeight = 0;
         consensus.nPosCoinbaseBoundActivationHeight = 0;
         consensus.nPosStakeModifierV2ActivationHeight = 0;
         consensus.nPosBlockTimeBoundActivationHeight = 0;
@@ -1150,8 +1144,6 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
             consensus.MN_RRHeight = int{height};
         } else if (name == "posv2") {
             consensus.nPosKernelV2ActivationHeight = int{height};
-        } else if (name == "posnonce") {
-            consensus.nPosNonceActivationHeight = int{height};
         } else if (name == "poscoinbase") {
             consensus.nPosCoinbaseBoundActivationHeight = int{height};
         } else if (name == "posmodifier") {
@@ -1627,7 +1619,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-powtargetspacing=<n>", "Override the default PowTargetSpacing value in seconds (default: 2.5 minutes, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-computeactivationheight=<n>", "Height from which the Compute masternode type may register (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslactivationheight=<n>", "Height from which the DSL service-commitment protocol runs (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, posnonce, poscoinbase, posmodifier, postime, posfeeburn, compute, dsl). (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, dsl). (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-vbparams=<deployment>:<start>:<end>(:min_activation_height(:<window>:<threshold/thresholdstart>(:<thresholdmin>:<falloffcoeff>:<mnactivation>)))",
                  "Use given start/end times and min_activation_height for specified version bits deployment (regtest-only). "
                  "Specifying window, threshold/thresholdstart, thresholdmin, falloffcoeff and mnactivation is optional.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);

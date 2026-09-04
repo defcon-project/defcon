@@ -210,18 +210,6 @@ struct Params {
      *  rules, which is what every network keeps until it is set. */
     int nPosKernelV2ActivationHeight{std::numeric_limits<int>::max()};
 
-    /** Height from which a header at a proof-of-stake height must carry
-     *  nNonce == 0. Two definitions of "is this proof of stake" coexist: the
-     *  block's, which reads the coinstake, and the index's, which reads the
-     *  nonce -- and the index is what LoadBlockIndexGuts consults on every
-     *  restart. A coinstake block with a non-zero nonce is accepted as PoS,
-     *  reloaded as PoW, and then fails CheckProofOfWork on every node at once;
-     *  ChainLocked, that is permanent until a code change. Pinning the nonce at
-     *  PoS heights makes the two definitions agree for every accepted block.
-     *  One-way and height-only. The default -- an unreachable height -- means
-     *  the original rule, which every network keeps until it is set. */
-    int nPosNonceActivationHeight{std::numeric_limits<int>::max()};
-
     /** Height from which the coinbase of a proof-of-stake block may carry no
      *  more value than the payouts the rules expect of it. Below it, only the
      *  coinstake is bounded on a proof-of-stake block: the coinbase's value was
