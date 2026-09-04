@@ -120,6 +120,53 @@ BOOST_AUTO_TEST_CASE(rejects_unassigned_and_wrong_key)
     BOOST_CHECK_EQUAL(store.Size(), 0u);
 }
 
+// A report names its target by hash, and the sentinel assignment is derived
+// from that hash -- so every 256-bit value has a sentinel set, including values
+// that name no masternode. An operator can grind hashes until its own node is
+// assigned to one and sign a valid report about a target that does not exist.
+// Each accepted report is held until its epoch ages out and flooded to every
+// peer, and the store has no bound of its own, so the store is what must refuse
+// it.
+BOOST_AUTO_TEST_CASE(a_target_that_is_not_a_masternode_is_refused)
+{
+    auto fx = MakeFixture(30);
+    Consensus::Params params;
+    const uint256 attacker = TaggedHash(11, 0, "protx");
+
+    dsl::CServiceReportStore store;
+    store.SetCurrentEpoch(500);
+
+    // Grind target hashes the way an attacker would, until one assigns the
+    // masternode we control. It does not take many: seven sentinels of thirty.
+    uint256 ghost;
+    bool found = false;
+    for (uint64_t i = 0; i < 500 && !found; ++i) {
+        const uint256 candidate = TaggedHash(i, 77, "ghost");
+        BOOST_REQUIRE(fx.list.GetMN(candidate) == nullptr); // names no masternode
+        const auto sentinels = dsl::CalcSentinelsForMN(fx.list, candidate, fx.epoch, 7);
+        if (std::find(sentinels.begin(), sentinels.end(), attacker) != sentinels.end()) {
+            ghost = candidate;
+            found = true;
+        }
+    }
+    BOOST_REQUIRE(found);
+
+    // Correctly signed, by a real masternode this epoch really did assign to
+    // that hash -- and still refused, because the hash is nobody.
+    auto minted = SignedReport(500, ghost, attacker, dsl::ServiceStatus::MISSED, fx.opKeys[attacker]);
+    BOOST_CHECK(!store.AddReport(minted, fx.list, fx.epoch, params));
+    BOOST_CHECK_EQUAL(store.Size(), 0u);
+
+    // The same sentinel reporting on a real target it is assigned to still
+    // works: the check bounds the store without closing the protocol.
+    const uint256 real = TaggedHash(3, 0, "protx");
+    const auto real_sentinels = dsl::CalcSentinelsForMN(fx.list, real, fx.epoch, 7);
+    auto honest = SignedReport(500, real, real_sentinels[0], dsl::ServiceStatus::MISSED,
+                               fx.opKeys[real_sentinels[0]]);
+    BOOST_CHECK(store.AddReport(honest, fx.list, fx.epoch, params));
+    BOOST_CHECK_EQUAL(store.Size(), 1u);
+}
+
 BOOST_AUTO_TEST_CASE(rejects_out_of_window_and_prunes)
 {
     auto fx = MakeFixture(30);
