@@ -198,12 +198,18 @@ bool static IsDefinedHashtypeSignature(const valtype &vchSig) {
 }
 
 static bool IsBLSSig(uint32_t flags, const valtype &vchSig) {
-    // With the flag, only the exact BLS size is treated as BLS. Below the
-    // activation the flag is unset and any signature of BLS size or larger
-    // qualifies -- which is what let an oversized ECDSA signature skip the
-    // encoding checks below and reach ECDSA verify unchecked.
+    // vchSig is the wire form a script carries: the signature with the hash
+    // type appended, which CheckSig strips again before VerifySignature reads
+    // the remainder. A BLS signature therefore reaches this check one byte
+    // longer than it is, and the strict size has to say so -- comparing
+    // against the bare size rejects every genuine BLS signature, which would
+    // leave every output paying to a BLS key unspendable.
+    //
+    // Below the activation the flag is unset and any signature of BLS size or
+    // larger qualifies -- which is what let an oversized ECDSA signature skip
+    // the encoding checks below and reach ECDSA verify unchecked.
     if (flags & SCRIPT_VERIFY_STRICT_BLS_SIG_SIZE) {
-        return (vchSig.size() == CPubKey::BLS_SIGNATURE_SIZE);
+        return (vchSig.size() == CPubKey::BLS_SIGNATURE_SIZE + 1);
     }
     return (vchSig.size() >= CPubKey::BLS_SIGNATURE_SIZE);
 }
