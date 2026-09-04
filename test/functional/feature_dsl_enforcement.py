@@ -73,7 +73,12 @@ class DSLEnforcementTest(DashTestFramework):
         time.sleep(3)
         self.generate(node, 2, sync_fun=lambda: self.sync_blocks(alive))
         block = node.getblock(node.getbestblockhash(), 2)
-        return [tx for tx in block["tx"] if tx.get("type") == 10]
+        commitments = [tx for tx in block["tx"] if tx.get("type") == 10]
+        # A block carries at most one, and since a commitment may only sit at
+        # the boundary that closes its own epoch, that is one per epoch. Two
+        # would each be applied in turn.
+        assert len(commitments) <= 1, "a block carried more than one service commitment"
+        return commitments
 
     def service_state(self, protx_hash):
         return self.nodes[0].protx("info", protx_hash)["state"]
@@ -84,10 +89,18 @@ class DSLEnforcementTest(DashTestFramework):
         for n in self.nodes:
             force_finish_mnsync(n)
 
-        self.log.info("Forming the quorum that attests the commitments")
+        self.log.info("Forming the quorums that attest the commitments")
         node.sporkupdate("SPORK_17_QUORUM_DKG_ENABLED", 0)
         self.wait_for_sporks_same()
+        # Two of them, and llmq_test keeps two active for signing, so an epoch's
+        # attesting quorum is a real choice between them rather than the only
+        # one there is. The block rule re-derives that choice and refuses a
+        # commitment from the other quorum, so with a single quorum in the set
+        # the binding would be satisfied by anything and this test would not be
+        # measuring it.
         self.mine_quorum()
+        self.mine_quorum()
+        assert_equal(len(node.quorum("list")["llmq_test"]), 2)
 
         target = self.mninfo[0]
         target_protx = target.proTxHash
@@ -98,7 +111,9 @@ class DSLEnforcementTest(DashTestFramework):
 
         suspended_at = None
         banned_at = None
+        epochs_walked = 0
         for _ in range(14):
+            epochs_walked += 1
             self.phase_epoch(expect_responded=len(self.mninfo) - 1, stopped_idx=target.nodeIdx)
             state = self.service_state(target_protx)
             if suspended_at is None and state["rewardSuspended"]:
@@ -108,9 +123,16 @@ class DSLEnforcementTest(DashTestFramework):
                 break
 
         assert banned_at is not None, "the service ban never landed"
-        self.log.info(f"Suspended after {suspended_at} missed epochs, banned after {banned_at}")
+        self.log.info(f"Suspended after {suspended_at} missed epochs, banned after {banned_at}"
+                      f" ({epochs_walked} epochs walked)")
         assert_equal(suspended_at, SUSPEND_EPOCHS)
         assert_equal(banned_at, BAN_EPOCHS)
+        # The counter only advances on an epoch that actually committed, so the
+        # budget is what says the commitments are landing every time. A signer
+        # that picked its quorum by a different rule than the block re-derives
+        # would have half its commitments refused and need roughly twice as
+        # many epochs to get here.
+        assert epochs_walked <= BAN_EPOCHS + 1, f"the ban took {epochs_walked} epochs, expected {BAN_EPOCHS}"
         assert self.service_state(target_protx)["dslBanHeight"] > 0
 
         self.log.info("The other six are untouched -- no counter, no suspension, no ban")

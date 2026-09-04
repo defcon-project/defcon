@@ -80,6 +80,27 @@ BOOST_AUTO_TEST_CASE(request_id_is_per_epoch)
     BOOST_CHECK(a.GetRequestId() == c.GetRequestId());
 }
 
+// The value that picks an epoch's attesting quorum. The signer selects with it
+// and the block rule re-derives the selection to check the commitment came from
+// that quorum and no other, so the two must be the same expression: a drift
+// would show up only as a commitment the network signs and then refuses.
+BOOST_AUTO_TEST_CASE(quorum_selection_hash_is_per_epoch_only)
+{
+    BOOST_CHECK(ServiceCommitmentQuorumSelectionHash(7) == ServiceCommitmentQuorumSelectionHash(7));
+    BOOST_CHECK(ServiceCommitmentQuorumSelectionHash(7) != ServiceCommitmentQuorumSelectionHash(8));
+
+    // It names the epoch and nothing else -- deliberately not the epoch base,
+    // which joins the request id instead. A reorg that rebases an epoch
+    // therefore opens a fresh signing session against the same quorum, rather
+    // than moving the epoch to a different one.
+    CPoSeServiceCommitment a = MakeCommitment();
+    CPoSeServiceCommitment b = MakeCommitment();
+    b.epochBlockHash = uint256::TWO;
+    BOOST_CHECK(a.GetRequestId() != b.GetRequestId());
+    BOOST_CHECK(ServiceCommitmentQuorumSelectionHash(a.nEpoch) ==
+                ServiceCommitmentQuorumSelectionHash(b.nEpoch));
+}
+
 // DSL ships dormant: its activation and enforcement heights must be the
 // unreachable maximum on every network until a coordinated release sets them,
 // and the epoch length must be the Q60 DKG interval.

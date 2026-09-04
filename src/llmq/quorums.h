@@ -346,6 +346,14 @@ static constexpr int SIGN_HEIGHT_OFFSET{8};
 CQuorumCPtr SelectQuorumForSigning(const Consensus::LLMQParams& llmq_params, const CChain& active_chain, const CQuorumManager& qman,
                                    const uint256& selectionHash, int signHeight = -1 /*chain tip*/, int signOffset = SIGN_HEIGHT_OFFSET);
 
+// The same selection, keyed on a block index instead of a height in the active
+// chain. A consensus rule that re-derives which quorum should have signed
+// something must not ask the node's own tip: during a reorg two nodes validating
+// the same block would resolve different start blocks, and so different
+// quorums. Given the index it is a pure function of that branch.
+CQuorumCPtr SelectQuorumForSigningAt(const Consensus::LLMQParams& llmq_params, const CQuorumManager& qman,
+                                     const CBlockIndex* pindexStart, const uint256& selectionHash);
+
 // Verifies a recovered sig that was signed while the chain tip was at signedAtTip
 VerifyRecSigStatus VerifyRecoveredSig(Consensus::LLMQType llmqType, const CChain& active_chain, const CQuorumManager& qman,
                                       int signedAtHeight, const uint256& id, const uint256& msgHash, const CBLSSignature& sig,

@@ -18,6 +18,11 @@
 #include <sync.h>
 #include <validation.h>
 
+uint256 ServiceCommitmentQuorumSelectionHash(uint32_t nEpoch)
+{
+    return ::SerializeHash(std::make_pair(std::string{"dslcommitment"}, nEpoch));
+}
+
 uint256 CPoSeServiceCommitment::GetRequestId() const
 {
     // The epoch base joins the id so a reorg that gives the epoch a new base
@@ -100,9 +105,29 @@ bool CheckPoSeServiceCommitmentTx(const ChainstateManager& chainman, const llmq:
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-dsl-quorum-type");
     }
 
-    const CBlockIndex* pindexQuorum = WITH_LOCK(::cs_main,
-        return chainman.m_blockman.LookupBlockIndex(c.quorumHash));
-    if (!pindexQuorum || pindexQuorum != pindexPrev->GetAncestor(pindexQuorum->nHeight)) {
+    // And not merely one quorum of that type: the one this epoch selects.
+    // Checking the type alone accepts a threshold signature from any quorum of
+    // the type that ever existed on this branch, which widens the trust from the
+    // single quorum an epoch picks to the union of every historical one -- and
+    // an old quorum is one whose members have had unlimited time to collect a
+    // threshold of the shares among themselves.
+    //
+    // Re-derived from the epoch base, never from the node's own tip: two nodes
+    // validating the same block during a reorg must not resolve different start
+    // blocks, and so different quorums. Given the index this is a pure function
+    // of the branch.
+    const auto& llmq_params_opt = Params().GetLLMQ(c.llmqType);
+    if (!llmq_params_opt.has_value()) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-dsl-quorum-type");
+    }
+    const CBlockIndex* pindexSelect =
+        pindexEpochBase->GetAncestor(pindexEpochBase->nHeight - llmq::SIGN_HEIGHT_OFFSET);
+    const auto selected = llmq::SelectQuorumForSigningAt(*llmq_params_opt, qman, pindexSelect,
+                                                         ServiceCommitmentQuorumSelectionHash(c.nEpoch));
+    if (selected == nullptr) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-dsl-no-quorum");
+    }
+    if (selected->qc->quorumHash != c.quorumHash) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-dsl-quorum-hash");
     }
 
