@@ -115,6 +115,44 @@ BOOST_AUTO_TEST_CASE(report_signature_roundtrips)
     BOOST_CHECK(!rep.VerifySig(pk, TaggedHash(8, 0, "epoch")));
 }
 
+// A masternode announces its own liveness, so it has to know its own identity.
+// The active manager withholds that identity while the node is PoSe-banned --
+// precisely when the service layer still needs to hear from it, because a
+// banned masternode keeps its bit in the commitment. If it cannot speak it is
+// recorded MISSED forever and the DKG ban silently drives the service counter.
+// Resolving from the operator key keeps the two ban domains independent.
+BOOST_AUTO_TEST_CASE(own_identity_resolves_while_pose_banned)
+{
+    auto list = MakeList(6, /*unconfirmed_idx=*/999);
+
+    // Give one member a real operator key and ban it the way the chain does.
+    const uint256 mine = TaggedHash(2, 0, "protx");
+    CBLSSecretKey sk;
+    sk.MakeNewKey();
+    const CBLSPublicKey pk = sk.GetPublicKey();
+    {
+        auto dmn = list.GetMN(mine);
+        BOOST_REQUIRE(dmn != nullptr);
+        auto st = std::make_shared<CDeterministicMNState>(*dmn->pdmnState);
+        st->pubKeyOperator.Set(pk, /*specificLegacyScheme=*/false);
+        st->BanIfNotBanned(100);
+        list.UpdateMN(mine, st);
+    }
+    BOOST_CHECK(list.IsMNPoSeBanned(mine));
+
+    // Banned: nothing is cached, and the operator key still answers.
+    BOOST_CHECK(dsl::ResolveOwnProTxHash(list, uint256(), pk) == mine);
+
+    // Not banned: the cached answer is taken as-is, the list is not consulted.
+    BOOST_CHECK(dsl::ResolveOwnProTxHash(list, uint256::ONE, pk) == uint256::ONE);
+
+    // A key no masternode carries resolves to nothing, and so does no key.
+    CBLSSecretKey stranger;
+    stranger.MakeNewKey();
+    BOOST_CHECK(dsl::ResolveOwnProTxHash(list, uint256(), stranger.GetPublicKey()).IsNull());
+    BOOST_CHECK(dsl::ResolveOwnProTxHash(list, uint256(), CBLSPublicKey()).IsNull());
+}
+
 // The challenge nonce is bound to the epoch base and the target, so a response
 // cannot be replayed across epochs or targets.
 BOOST_AUTO_TEST_CASE(challenge_nonce_binds_epoch_and_target)

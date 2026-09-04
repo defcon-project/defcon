@@ -60,6 +60,29 @@ std::vector<uint256> GetProbeTargetsForSentinel(const CDeterministicMNList& list
 uint256 ServiceChallengeNonce(const uint256& epochBlockHash, const uint256& targetProTxHash);
 
 /**
+ * This node's own masternode identity, for announcing its liveness.
+ *
+ * Normally the active masternode manager already knows it, and `cachedProTxHash`
+ * is that answer. It is empty in one case that matters here: while the
+ * masternode is PoSe-banned, the manager stops before publishing the identity,
+ * because a banned node takes no part in DKG, governance or mixing.
+ *
+ * The service layer is the exception. A PoSe-banned masternode is still a
+ * target -- it keeps its place in the epoch's canonical list and its bit in the
+ * commitment -- so it must still be able to answer for itself, or the two ban
+ * domains stop being independent: a DKG-PoSe ban would drive the service
+ * counter on a node that is up and serving, and once enforcement is on, a
+ * service ban could never clear, its only exit being a later online
+ * observation. Resolving the identity from the operator key instead keeps the
+ * question the service layer asks -- "is this node serving?" -- separate from
+ * the question DKG-PoSe already answered.
+ *
+ * Returns the null hash when this node is not a registered masternode at all.
+ */
+uint256 ResolveOwnProTxHash(const CDeterministicMNList& list, const uint256& cachedProTxHash,
+                            const CBLSPublicKey& operatorPubKey);
+
+/**
  * A target proves it is alive this epoch by signing its own challenge nonce
  * with its operator BLS key -- the same key it signs quorum shares with. The
  * nonce binds the proof to the epoch base and the target, so a captured

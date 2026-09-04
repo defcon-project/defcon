@@ -45,6 +45,20 @@ uint256 ServiceChallengeNonce(const uint256& epochBlockHash, const uint256& targ
     return w.GetHash();
 }
 
+uint256 ResolveOwnProTxHash(const CDeterministicMNList& list, const uint256& cachedProTxHash,
+                            const CBLSPublicKey& operatorPubKey)
+{
+    // The manager's own answer whenever it has one: an O(1) hit on the path
+    // every masternode takes every block.
+    if (!cachedProTxHash.IsNull()) return cachedProTxHash;
+    if (!operatorPubKey.IsValid()) return {};
+    // Only reached while the manager is withholding the identity, which is the
+    // PoSe-banned case. GetMNByOperatorKey walks the whole map and includes
+    // banned masternodes -- exactly what is wanted here.
+    const auto dmn = list.GetMNByOperatorKey(operatorPubKey);
+    return dmn == nullptr ? uint256() : dmn->proTxHash;
+}
+
 std::vector<uint256> GetProbeTargetsForSentinel(const CDeterministicMNList& list,
                                                 const uint256& sentinelProTxHash,
                                                 const uint256& epochBlockHash, size_t count)
