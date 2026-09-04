@@ -159,22 +159,29 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
         case Consensus::LLMQType::LLMQ_DEVNET:
             return true;
         case Consensus::LLMQType::LLMQ_DEFCON: {
-            // Q60 -- devnet-only until it graduates. Quorums start forming a
-            // few intervals before the ChainLock switchover so the resolver
-            // finds an active quorum at the activation height -- and no
-            // earlier: a commitment of a type old binaries do not know forks
-            // them off, so the quiet window before formation is the fleet's
-            // rollout window.
-            if (Params().NetworkIDString() != CBaseChainParams::DEVNET) {
+            // Quorums start forming a few intervals before the ChainLock
+            // switchover so the resolver finds an active quorum at the
+            // activation height -- and no earlier: a commitment of a type old
+            // binaries do not know forks them off, so the quiet window before
+            // formation is the fleet's rollout window.
+            //
+            // A network that has not scheduled the switchover leaves the height
+            // unreachable, and this reads that as "never" -- which is the only
+            // thing that keeps the profile dormant. It used to be keyed on the
+            // network name instead, which meant no height a network could set
+            // would ever open formation anywhere but devnet: the switchover
+            // would flip the resolver onto a profile that had never formed a
+            // quorum and ChainLocks would simply stop, with nothing in the
+            // configuration to say why.
+            if (consensusParams.nChainLocksV2ActivationHeight == std::numeric_limits<int>::max()) {
                 return false;
             }
+            // Guaranteed by CheckLLMQConfiguration at startup: a network that
+            // names the switchover registers the profile it switches to.
             const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
             assert(llmq_params_opt.has_value());
             const int formation_lead =
                 (llmq_params_opt->signingActiveQuorumCount + 1) * llmq_params_opt->dkgInterval;
-            if (consensusParams.nChainLocksV2ActivationHeight == std::numeric_limits<int>::max()) {
-                return false;
-            }
             return pindexPrev->nHeight + 1 >= consensusParams.nChainLocksV2ActivationHeight - formation_lead;
         }
         case Consensus::LLMQType::LLMQ_25_67:

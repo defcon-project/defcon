@@ -200,6 +200,22 @@ protected:
 std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, const std::string& chain);
 
 /**
+ * Refuse a network whose LLMQ roles do not match the profiles it registers.
+ *
+ * A role naming a type absent from consensus.llmqs does not degrade: GetLLMQ
+ * returns nullopt and its consumers assert on it, so the first ChainLock at the
+ * switchover height aborts every node at once -- and because ProcessNewChainLock
+ * verifies a CLSIG before it looks the block up, any peer can reach that assert
+ * remotely. The switchover type and its height are likewise two halves of one
+ * decision: a type with no height never activates, a height with no type keeps
+ * the legacy profile while every operator believes otherwise. Both are cheap to
+ * catch here and expensive to discover in production.
+ *
+ * Throws std::runtime_error describing the first incoherence found.
+ */
+void CheckLLMQConfiguration(const CChainParams& params);
+
+/**
  * Return the currently selected parameters. This won't change after app
  * startup, except for unit tests.
  */

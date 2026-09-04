@@ -1523,18 +1523,73 @@ const CChainParams &Params() {
     return *globalChainParams;
 }
 
+void CheckLLMQConfiguration(const CChainParams& params)
+{
+    const Consensus::Params& consensus = params.GetConsensus();
+    const std::string& network = params.NetworkIDString();
+
+    const auto require_registered = [&](Consensus::LLMQType type, const std::string& role) {
+        if (type == Consensus::LLMQType::LLMQ_NONE) return;
+        if (!params.GetLLMQ(type).has_value()) {
+            throw std::runtime_error(strprintf(
+                "%s: %s names LLMQ type %d, which %s does not register", __func__, role,
+                static_cast<int>(type), network));
+        }
+    };
+
+    require_registered(consensus.llmqTypeChainLocks, "llmqTypeChainLocks");
+    require_registered(consensus.llmqTypeDIP0024InstantSend, "llmqTypeDIP0024InstantSend");
+    require_registered(consensus.llmqTypePlatform, "llmqTypePlatform");
+    require_registered(consensus.llmqTypeMnhf, "llmqTypeMnhf");
+    require_registered(consensus.llmqTypeChainLocksV2, "llmqTypeChainLocksV2");
+    require_registered(consensus.llmqTypeDIP0024InstantSendV2, "llmqTypeDIP0024InstantSendV2");
+
+    static constexpr int UNSET = std::numeric_limits<int>::max();
+    const auto require_paired = [&](Consensus::LLMQType type, int height, const std::string& type_name,
+                                    const std::string& height_name) {
+        if ((type == Consensus::LLMQType::LLMQ_NONE) != (height == UNSET)) {
+            throw std::runtime_error(strprintf(
+                "%s: %s and %s must be set together on %s; a switchover needs both a profile and "
+                "a height to switch at", __func__, type_name, height_name, network));
+        }
+    };
+
+    require_paired(consensus.llmqTypeChainLocksV2, consensus.nChainLocksV2ActivationHeight,
+                   "llmqTypeChainLocksV2", "nChainLocksV2ActivationHeight");
+    require_paired(consensus.llmqTypeDIP0024InstantSendV2, consensus.nInstantSendV2ActivationHeight,
+                   "llmqTypeDIP0024InstantSendV2", "nInstantSendV2ActivationHeight");
+
+    // InstantSend rides the quorums the ChainLock switchover forms, and those
+    // start forming a fixed lead before its height and not a block earlier. An
+    // InstantSend switchover below it would resolve to a profile with no quorum
+    // to sign on, so locks would stop instead of moving.
+    if (consensus.nInstantSendV2ActivationHeight != UNSET &&
+        consensus.nInstantSendV2ActivationHeight < consensus.nChainLocksV2ActivationHeight) {
+        throw std::runtime_error(strprintf(
+            "%s: nInstantSendV2ActivationHeight (%d) is below nChainLocksV2ActivationHeight (%d) on %s",
+            __func__, consensus.nInstantSendV2ActivationHeight, consensus.nChainLocksV2ActivationHeight,
+            network));
+    }
+}
+
 std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, const std::string& chain)
 {
-    if (chain == CBaseChainParams::MAIN) {
-        return std::unique_ptr<CChainParams>(new CMainParams());
-    } else if (chain == CBaseChainParams::TESTNET) {
-        return std::unique_ptr<CChainParams>(new CTestNetParams());
-    } else if (chain == CBaseChainParams::DEVNET) {
-        return std::unique_ptr<CChainParams>(new CDevNetParams(args));
-    } else if (chain == CBaseChainParams::REGTEST) {
-        return std::unique_ptr<CChainParams>(new CRegTestParams(args));
-    }
-    throw std::runtime_error(strprintf("%s: Unknown chain %s.", __func__, chain));
+    std::unique_ptr<const CChainParams> params = [&]() -> std::unique_ptr<const CChainParams> {
+        if (chain == CBaseChainParams::MAIN) {
+            return std::unique_ptr<CChainParams>(new CMainParams());
+        } else if (chain == CBaseChainParams::TESTNET) {
+            return std::unique_ptr<CChainParams>(new CTestNetParams());
+        } else if (chain == CBaseChainParams::DEVNET) {
+            return std::unique_ptr<CChainParams>(new CDevNetParams(args));
+        } else if (chain == CBaseChainParams::REGTEST) {
+            return std::unique_ptr<CChainParams>(new CRegTestParams(args));
+        }
+        throw std::runtime_error(strprintf("%s: Unknown chain %s.", __func__, chain));
+    }();
+    // After the devnet argument overrides have had their say, so a -llmq*
+    // override cannot name a profile the network does not carry either.
+    CheckLLMQConfiguration(*params);
+    return params;
 }
 
 void SelectParams(const std::string& network)
