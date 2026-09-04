@@ -145,6 +145,29 @@ private:
 };
 
 bool AreChainLocksEnabled(const CSporkManager& sporkman);
+
+/**
+ * Whether a ChainLock may replace the one currently held as best.
+ *
+ * Judged on heights alone, so the whole decision is a pure function of
+ * (candidate height, current best, the block the candidate names) and can be
+ * tested exhaustively -- the enforcing caller needs a chain, a quorum manager
+ * and a scheduler, and no unit fixture builds those.
+ *
+ * Two reasons to refuse, and both must be answered before anything is written
+ * down. A candidate no higher than the current best is simply old news. A
+ * candidate whose named block sits at a different height than it claims is
+ * something the signing quorum should never have produced -- and recording it
+ * before noticing would leave the node holding, as its best ChainLock, a
+ * signature it had just refused. That is not only untidy: the best ChainLock's
+ * height decides whether ConnectBlock still checks superblock payments, so a
+ * refused signature would go on to relax a validation rule.
+ *
+ * pindex may be null, meaning the block is not known yet; there is nothing to
+ * disagree with then, and the caller records the lock and relays it onward.
+ */
+bool ChainLockSupersedesBest(int candidate_height, const CChainLockSig& current_best,
+                             const CBlockIndex* pindex);
 } // namespace llmq
 
 #endif // BITCOIN_LLMQ_CHAINLOCKS_H
