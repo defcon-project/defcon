@@ -5587,8 +5587,13 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
     dsl::CPoSeServiceChallenge challenge;
     vRecv >> challenge;
     if (m_mn_activeman == nullptr) return;
-    const uint256 myProTxHash = m_mn_activeman->GetProTxHash();
-    if (myProTxHash.IsNull() || challenge.nEpoch != m_dslman->CurrentEpoch()) return;
+    // The epoch first: resolving our identity may walk the masternode list, and
+    // a challenge naming the wrong epoch must not pay for that walk.
+    if (challenge.nEpoch != m_dslman->CurrentEpoch()) return;
+    const uint256 myProTxHash = dsl::ResolveOwnProTxHash(m_dmnman->GetListAtChainTip(),
+                                                         m_mn_activeman->GetProTxHash(),
+                                                         m_mn_activeman->GetPubKey());
+    if (myProTxHash.IsNull()) return;
     const auto ann = m_dslman->AnnounceLiveness(myProTxHash, [this](const uint256& hash) {
         return m_mn_activeman->Sign(hash, /*is_legacy=*/false);
     });
@@ -5643,12 +5648,14 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
 
     // only a listed masternode announces and reports
     if (m_mn_activeman == nullptr) return;
-    const uint256 myProTxHash = m_mn_activeman->GetProTxHash();
+    const auto mn_list = m_dmnman->GetListAtChainTip();
+    const uint256 myProTxHash = dsl::ResolveOwnProTxHash(mn_list, m_mn_activeman->GetProTxHash(),
+                                                         m_mn_activeman->GetPubKey());
     if (myProTxHash.IsNull()) {
-        LogPrint(BCLog::NET, "DSL -- tick at height %d skipped, active masternode not ready\n", pindexNew->nHeight);
+        LogPrint(BCLog::NET, "DSL -- tick at height %d skipped, this node is not a registered masternode\n",
+                 pindexNew->nHeight);
         return;
     }
-    const auto mn_list = m_dmnman->GetListAtChainTip();
     if (!mn_list.HasMN(myProTxHash)) return;
     const auto signer = [this](const uint256& hash) {
         return m_mn_activeman->Sign(hash, /*is_legacy=*/false);
