@@ -276,8 +276,13 @@ struct Params {
      *  window is the gap between the two, where a commitment is mined and
      *  verified but applies no penalty. Both default to an unreachable
      *  height, so DSL is dormant on every network until a coordinated
-     *  activation sets them. nDSLEpochInterval: blocks per epoch, matching
-     *  the attesting (Q60) quorum's DKG interval. */
+     *  activation sets them; mainnet and testnet leave both untouched, and
+     *  devnet (-dslactivationheight, -dslenforcementheight) and regtest
+     *  (-testactivationheight=dsl@N, dslenforcement@N) can bring either into
+     *  reach, which is the only way the punishing branch is ever exercised.
+     *  Enforcement below activation is refused where those are parsed.
+     *  nDSLEpochInterval: blocks per epoch, matching the attesting (Q60)
+     *  quorum's DKG interval. */
     int nDSLActivationHeight{std::numeric_limits<int>::max()};
     int nDSLEnforcementHeight{std::numeric_limits<int>::max()};
     int nDSLEpochInterval{24};
