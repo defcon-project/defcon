@@ -96,6 +96,21 @@ CChainLockSig CChainLocksHandler::GetBestChainLock() const
     return bestChainLock;
 }
 
+bool ChainLockSupersedesBest(int candidate_height, const CChainLockSig& current_best,
+                             const CBlockIndex* pindex)
+{
+    if (!current_best.IsNull() && candidate_height <= current_best.getHeight()) {
+        // no need to process older/same CLSIGs
+        return false;
+    }
+    if (pindex != nullptr && pindex->nHeight != candidate_height) {
+        // Should not happen: the signature binds the height and the block hash
+        // together, so a quorum would have had to sign the two disagreeing.
+        return false;
+    }
+    return true;
+}
+
 MessageProcessingResult CChainLocksHandler::ProcessNewChainLock(const NodeId from, const llmq::CChainLockSig& clsig,
                                                                 const uint256& hash)
 {
@@ -116,6 +131,20 @@ MessageProcessingResult CChainLocksHandler::ProcessNewChainLock(const NodeId fro
 
     if (const auto ret = VerifyChainLock(clsig); ret != VerifyRecSigStatus::Valid) {
         LogPrint(BCLog::CHAINLOCKS, "CChainLocksHandler::%s -- invalid CLSIG (%s), status=%d peer=%d\n", __func__, clsig.ToString(), ToUnderlying(ret), from);
+        if (ret == VerifyRecSigStatus::NoQuorum) {
+            // We could not check it, which is a gap in what we hold and not
+            // something the sender did: the quorum that signed it is not one we
+            // have. Scoring a peer for that punishes it for helping us while we
+            // are still catching up, and ten such messages reach the
+            // discouragement threshold. Forget having seen it as well, so the
+            // same lock can be offered again once the quorum is known --
+            // otherwise it is dropped until the seen-cache ages it out, and the
+            // chain goes unlocked at that height for no reason. Cheap to allow:
+            // this status is reached before any signature is verified, when the
+            // quorum lookup itself comes back empty.
+            WITH_LOCK(cs, seenChainLocks.erase(hash));
+            return {};
+        }
         if (from != -1) {
             return MisbehavingError{10};
         }
@@ -126,24 +155,26 @@ MessageProcessingResult CChainLocksHandler::ProcessNewChainLock(const NodeId fro
 
     {
         LOCK(cs);
-        // A newer chainlock might have been processed by another thread while cs was released.
-        if (!bestChainLock.IsNull() && clsig.getHeight() <= bestChainLock.getHeight()) {
-            // no need to process older/same CLSIGs
+        // Both refusals are settled before anything is written: cs was released
+        // for the verification above, so a newer lock may have arrived on
+        // another thread meanwhile, and a lock naming a block at a different
+        // height than it claims must leave no trace at all. Recording one and
+        // then returning used to leave it standing as the best ChainLock --
+        // which suppresses every later lock at that height, the correct one
+        // included, and relaxes the superblock check in ConnectBlock.
+        if (!ChainLockSupersedesBest(clsig.getHeight(), bestChainLock, pindex)) {
+            if (pindex != nullptr && pindex->nHeight != clsig.getHeight()) {
+                LogPrintf("CChainLocksHandler::%s -- height of CLSIG (%s) does not match the specified block's height (%d)\n",
+                        __func__, clsig.ToString(), pindex->nHeight);
+            }
+            // Note: not relaying clsig here
             return {};
         }
+
         bestChainLockHash = hash;
         bestChainLock = clsig;
 
         if (pindex != nullptr) {
-
-            if (pindex->nHeight != clsig.getHeight()) {
-                // Should not happen, same as the conflict check from above.
-                LogPrintf("CChainLocksHandler::%s -- height of CLSIG (%s) does not match the specified block's height (%d)\n",
-                        __func__, clsig.ToString(), pindex->nHeight);
-                // Note: not relaying clsig here
-                return {};
-            }
-
             bestChainLockWithKnownBlock = bestChainLock;
             bestChainLockBlockIndex = pindex;
         }

@@ -2,9 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <chain.h>
 #include <chainparams.h>
 #include <chainparamsbase.h>
 #include <consensus/params.h>
+#include <llmq/chainlocks.h>
 #include <llmq/options.h>
 #include <llmq/params.h>
 #include <test/util/setup_common.h>
@@ -337,6 +339,55 @@ BOOST_FIXTURE_TEST_CASE(formation_follows_the_height_not_the_network, RegTesting
     // And an unscheduled network never forms it, however it is registered.
     consensus.nChainLocksV2ActivationHeight = std::numeric_limits<int>::max();
     BOOST_CHECK(!IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_DEFCON, tip, false, false));
+}
+
+// Which ChainLock may replace the one held as best. The rule has to answer
+// before anything is recorded, because a refusal that has already written
+// itself down is worse than no rule at all: the refused signature then stands
+// as the node's best ChainLock, every later lock at that height is dropped as
+// old news -- the correct one included -- and ConnectBlock stops checking
+// superblock payments up to that height because it believes the chain is
+// locked that far.
+BOOST_AUTO_TEST_CASE(chainlock_supersedes_best)
+{
+    const auto sig = [](int height) {
+        return llmq::CChainLockSig(height, uint256::ONE, CBLSSignature{});
+    };
+    const llmq::CChainLockSig none{};
+    BOOST_REQUIRE(none.IsNull());
+
+    // Nothing held yet: anything with a known-consistent block is an improvement.
+    BOOST_CHECK(llmq::ChainLockSupersedesBest(1, none, nullptr));
+    BOOST_CHECK(llmq::ChainLockSupersedesBest(1000000, none, nullptr));
+
+    // Held at 5000: only strictly higher wins. Equal heights lose, which is
+    // what keeps the first lock seen at a height from being displaced by a
+    // second one naming a different block.
+    const llmq::CChainLockSig best = sig(5000);
+    BOOST_CHECK(!llmq::ChainLockSupersedesBest(4999, best, nullptr));
+    BOOST_CHECK(!llmq::ChainLockSupersedesBest(5000, best, nullptr));
+    BOOST_CHECK(llmq::ChainLockSupersedesBest(5001, best, nullptr));
+
+    // A block we do know about must sit exactly where the lock says it does.
+    CBlockIndex index;
+    index.nHeight = 5001;
+    BOOST_CHECK(llmq::ChainLockSupersedesBest(5001, best, &index));
+    BOOST_CHECK(!llmq::ChainLockSupersedesBest(5002, best, &index));
+    BOOST_CHECK(!llmq::ChainLockSupersedesBest(6000, best, &index));
+
+    // The mismatch is refused even when there is no best lock to compare
+    // against, so a node starting cold cannot be seeded with one.
+    BOOST_CHECK(!llmq::ChainLockSupersedesBest(4000, none, &index));
+    BOOST_CHECK(llmq::ChainLockSupersedesBest(5001, none, &index));
+
+    // An unknown block is not a disagreement: the lock is kept and relayed, and
+    // the header arriving later is what ties it to a height.
+    BOOST_CHECK(llmq::ChainLockSupersedesBest(9999, best, nullptr));
+
+    // Both refusals at once still refuse.
+    CBlockIndex low;
+    low.nHeight = 10;
+    BOOST_CHECK(!llmq::ChainLockSupersedesBest(4000, best, &low));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
