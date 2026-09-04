@@ -29,6 +29,9 @@
 
 static const std::string DB_LIST_SNAPSHOT = "dmn_S5";
 static const std::string DB_LIST_DIFF = "dmn_D5";
+
+const std::string& CDeterministicMNManager::ListSnapshotDbKey() { return DB_LIST_SNAPSHOT; }
+const std::string& CDeterministicMNManager::ListDiffDbKey() { return DB_LIST_DIFF; }
 static const std::string DB_LIST_REPAIRED = "dmn_R1";
 
 uint64_t CDeterministicMN::GetInternalId() const

@@ -199,6 +199,22 @@ static CMutableTransaction MalleateProTxPayout(const CMutableTransaction& tx)
     return tx2;
 }
 
+// A masternode collateral cannot be spent for minStaticCollateral blocks after
+// registration (8,064 -- about two weeks). Fixtures that exist to exercise what
+// happens *after* a collateral is spent would have to mine that many blocks to
+// reach it, so they suspend the maturity for the one block that does the spend
+// and restore it immediately. The rule itself is covered by collateral_tests.
+struct ScopedCollateralMaturityOverride {
+    explicit ScopedCollateralMaturityOverride(Consensus::Params& params) :
+        m_params(params), m_saved(params.minStaticCollateral)
+    {
+        m_params.minStaticCollateral = 0;
+    }
+    ~ScopedCollateralMaturityOverride() { m_params.minStaticCollateral = m_saved; }
+    Consensus::Params& m_params;
+    const int m_saved;
+};
+
 static CScript GenerateRandomAddress()
 {
     CKey key;
@@ -342,16 +358,8 @@ void FuncV19Activation(TestChainSetup& setup)
         // by spending collateral. The current 8,064-block collateral maturity
         // rule is covered separately and would otherwise make this historical
         // fixture intractably slow.
-        struct ScopedCollateralMaturityOverride {
-            explicit ScopedCollateralMaturityOverride(Consensus::Params& params)
-                : m_params(params), m_saved(params.minStaticCollateral)
-            {
-                m_params.minStaticCollateral = 0;
-            }
-            ~ScopedCollateralMaturityOverride() { m_params.minStaticCollateral = m_saved; }
-            Consensus::Params& m_params;
-            const int m_saved;
-        } collateral_maturity_override{const_cast<Consensus::Params&>(Params().GetConsensus())};
+        ScopedCollateralMaturityOverride collateral_maturity_override{
+            const_cast<Consensus::Params&>(Params().GetConsensus())};
 
         block = std::make_shared<CBlock>(setup.CreateBlock({tx_spend}, setup.coinbaseKey, chainman.ActiveChainstate()));
         BOOST_REQUIRE(chainman.ProcessNewBlock(Params(), block, true, nullptr));
@@ -951,6 +959,19 @@ void FuncVerifyDB(TestChainSetup& setup)
     collateral_utxos.emplace(payload.collateralOutpoint, std::make_pair(1, 1000));
     auto proUpRevTx = CreateProUpRevTx(chainman.ActiveChain(), *(setup.m_node.mempool), collateral_utxos, tx_reg_hash, operatorKey, collateralKey);
 
+    // This fixture is about the list diff a collateral spend produces, not
+    // about the maturity rule; mining 8,064 blocks to reach it would make the
+    // test intractably slow. collateral_tests covers the rule itself.
+    //
+    // The suspension has to hold across the verification too, not just the
+    // mining: VerifyDB at level 4 disconnects and reconnects the block, and
+    // reconnecting runs the maturity check again. That it does is the point of
+    // deriving the rule from the deterministic list -- a node reaches the same
+    // verdict on a block whether it is connecting it for the first time or
+    // replaying it -- so the fixture has to keep the exemption for both.
+    ScopedCollateralMaturityOverride collateral_maturity_override{
+        const_cast<Consensus::Params&>(Params().GetConsensus())};
+
     block = std::make_shared<CBlock>(setup.CreateBlock({proUpRevTx}, setup.coinbaseKey, chainman.ActiveChainstate()));
     BOOST_REQUIRE(chainman.ProcessNewBlock(Params(), block, true, nullptr));
     dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
@@ -1019,15 +1040,21 @@ void FuncEvoDbDiffRoundTrip(TestChainSetup& setup)
     BOOST_CHECK_EQUAL(result.snapshots_verified, 1);
 
     // The pass above must not be vacuous: emptying one stored diff has to
-    // break it. The key literal matches DB_LIST_DIFF in deterministicmns.cpp.
+    // break it. The key comes from the manager rather than a literal, because
+    // a literal goes stale at the next format migration and then plants the
+    // damage where nothing reads it -- which looks exactly like the verifier
+    // missing real corruption.
     //
     // The corruption goes into the raw database, the layer repair writes to
     // and startup reads from -- a value planted in the uncommitted transaction
     // overlay would shadow the repair's writes and fail the test for reasons
     // production never sees. Drain the overlay first so raw is what Read hits.
     BOOST_REQUIRE(setup.m_node.evodb->CommitRootTransaction());
-    BOOST_REQUIRE(setup.m_node.evodb->GetRawDB().Write(std::make_pair(std::string("dmn_D3"), update_block_hash),
-                                                       CDeterministicMNListDiff{}));
+    const auto diff_key = std::make_pair(CDeterministicMNManager::ListDiffDbKey(), update_block_hash);
+    // If this record is not there, the corruption below lands on nothing and
+    // every check after it would pass for the wrong reason.
+    BOOST_REQUIRE(setup.m_node.evodb->GetRawDB().Exists(diff_key));
+    BOOST_REQUIRE(setup.m_node.evodb->GetRawDB().Write(diff_key, CDeterministicMNListDiff{}));
     result = dmnman.RecalculateAndRepairDiffs(chainman.ActiveChain().Genesis(), chainman.ActiveChain().Tip(),
                                               chainman, no_rebuild, /*repair=*/false);
     BOOST_CHECK(!result.verification_errors.empty());
@@ -1063,7 +1090,9 @@ void FuncEvoDbDiffRoundTrip(TestChainSetup& setup)
     CDeterministicMNListDiff poison;
     poison.updatedMNs.emplace(uint64_t{999999}, CDeterministicMNStateDiff{});
     const uint256 tip_hash = chainman.ActiveChain().Tip()->GetBlockHash();
-    BOOST_REQUIRE(setup.m_node.evodb->GetRawDB().Write(std::make_pair(std::string("dmn_D3"), tip_hash), poison));
+    const auto tip_key = std::make_pair(CDeterministicMNManager::ListDiffDbKey(), tip_hash);
+    BOOST_REQUIRE(setup.m_node.evodb->GetRawDB().Exists(tip_key));
+    BOOST_REQUIRE(setup.m_node.evodb->GetRawDB().Write(tip_key, poison));
     result = dmnman.RecalculateAndRepairDiffs(chainman.ActiveChain().Genesis(), chainman.ActiveChain().Tip(),
                                               chainman, no_rebuild, /*repair=*/false);
     BOOST_CHECK(!result.verification_errors.empty());

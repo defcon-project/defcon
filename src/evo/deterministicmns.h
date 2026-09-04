@@ -708,6 +708,16 @@ private:
     const CBlockIndex* m_initial_snapshot_index GUARDED_BY(cs) {nullptr};
 
 public:
+    //! The evodb key prefixes the current list format is stored under. A test
+    //! that plants corruption has to plant it under the key the code actually
+    //! reads: every format migration renames these, and a test pinning the
+    //! previous literal writes a record nothing loads. That corrupts nothing,
+    //! so the verifier rightly reports the database clean -- and the test then
+    //! reads as the verifier having missed the damage, indicting the one
+    //! component that was working.
+    static const std::string& ListSnapshotDbKey();
+    static const std::string& ListDiffDbKey();
+
     explicit CDeterministicMNManager(CChainState& chainstate, CEvoDB& evoDb) :
         m_chainstate(chainstate),
         m_evoDb(evoDb)

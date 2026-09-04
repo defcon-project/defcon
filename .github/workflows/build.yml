@@ -191,7 +191,15 @@ jobs:
       #   base58 identity, like the four above:  descriptor_tests, key_io_tests
       #   serialization this fork changed:       blockencodings_tests
       #   long mining loops that no longer mine: dynamic_activation_thresholds_tests,
-      #                                          evo_dip3_activation_tests, miner_tests
+      #                                          miner_tests
+      #
+      # evo_dip3_activation_tests came off this list once its two failures were
+      # read rather than assumed. It was filed under the long mining loops and
+      # runs in eight seconds; one fixture spent a masternode collateral a block
+      # after registering it, which the maturity rule correctly refuses, and the
+      # other planted its corruption under a database key a format migration had
+      # renamed, so it corrupted nothing and then reported the verifier for
+      # missing it. Neither was a defect in the code they accused.
       #   still to triage:                       bip324_tests, bip39_tests,
       #                                          denialofservice_tests, evo_utils_tests,
       #                                          governance_validators_tests, rpc_tests,
@@ -208,7 +216,7 @@ jobs:
           cd "build-ci/DeFCoN-${{ matrix.build_target }}"
           make -j"$(nproc)" -C src test/test_defcon
           ./src/test/test_defcon \
-            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_dip3_activation_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests:!rpc_tests:!transaction_tests:!util_tests:!validation_chainstate_tests:!validation_chainstatemanager_tests:!wallet_tests' \
+            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests:!rpc_tests:!transaction_tests:!util_tests:!validation_chainstate_tests:!validation_chainstatemanager_tests:!wallet_tests' \
             --catch_system_errors=no -l test_suite
         shell: bash
 
