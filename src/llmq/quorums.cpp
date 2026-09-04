@@ -1321,8 +1321,6 @@ void CQuorumManager::MigrateOldQuorumDB(CEvoDB& evoDb) const
 CQuorumCPtr SelectQuorumForSigning(const Consensus::LLMQParams& llmq_params, const CChain& active_chain, const CQuorumManager& qman,
                                    const uint256& selectionHash, int signHeight, int signOffset)
 {
-    size_t poolSize = llmq_params.signingActiveQuorumCount;
-
     CBlockIndex* pindexStart;
     {
         LOCK(cs_main);
@@ -1335,6 +1333,16 @@ CQuorumCPtr SelectQuorumForSigning(const Consensus::LLMQParams& llmq_params, con
         }
         pindexStart = active_chain[startBlockHeight];
     }
+    return SelectQuorumForSigningAt(llmq_params, qman, pindexStart, selectionHash);
+}
+
+CQuorumCPtr SelectQuorumForSigningAt(const Consensus::LLMQParams& llmq_params, const CQuorumManager& qman,
+                                     const CBlockIndex* pindexStart, const uint256& selectionHash)
+{
+    if (pindexStart == nullptr) {
+        return nullptr;
+    }
+    size_t poolSize = llmq_params.signingActiveQuorumCount;
 
     if (IsQuorumRotationEnabled(llmq_params, pindexStart)) {
         auto quorums = qman.ScanQuorums(llmq_params.type, pindexStart, poolSize);

@@ -5700,9 +5700,12 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
         const auto llmqType = llmq::GetChainLocksLLMQType(consensus, boundaryHeight);
         const auto llmq_params_opt = Params().GetLLMQ(llmqType);
         if (llmq_params_opt.has_value()) {
+            // The same selection the block rule re-derives; sharing the hash is
+            // what keeps the two from drifting into a commitment the network
+            // signs and then refuses.
             const auto quorum = llmq::SelectQuorumForSigning(
                 *llmq_params_opt, m_chainman.ActiveChain(), *m_llmq_ctx->qman,
-                ::SerializeHash(std::make_pair(std::string{"dslcommitment"}, epoch)),
+                ServiceCommitmentQuorumSelectionHash(epoch),
                 /*signHeight=*/pindexBase->nHeight);
             if (quorum != nullptr) {
                 // Only a member of the selected quorum signs it. For a 60-of-N

@@ -116,14 +116,30 @@ public:
 };
 
 /**
+ * The value that picks an epoch's attesting quorum out of the active set.
+ *
+ * Shared deliberately: the signer selects the quorum with it and the block rule
+ * re-derives the same selection to check the commitment came from that quorum
+ * and no other. Two copies of this expression would be free to drift, and the
+ * one thing a drift would silently produce is a commitment the network signs
+ * and then refuses.
+ *
+ * It names only the epoch. The epoch base joins the *request id* instead
+ * (GetRequestId), so a reorg that gives the epoch a new base opens a fresh
+ * signing session against the same quorum rather than a different quorum.
+ */
+[[nodiscard]] uint256 ServiceCommitmentQuorumSelectionHash(uint32_t nEpoch);
+
+/**
  * Consensus check for a service-commitment special transaction: it is rejected
  * below the activation height (the type ships dormant), it may appear only at an
  * epoch-boundary height, it closes the observation epoch that ended at that
  * boundary -- nEpoch is that epoch's number and epochBlockHash the hash of its
  * first block, the one the sentinel selection and challenge nonces were keyed
- * on -- its attesting quorum type must be the ChainLock quorum resolved at that
- * height, and its quorum threshold signature must verify. The bitfield is NOT
- * applied to masternode state here -- that is a later step.
+ * on -- its attesting quorum must be the one the epoch selects from the
+ * ChainLock quorum type resolved at that height, and that quorum's threshold
+ * signature must verify. The bitfield is NOT applied to masternode state here
+ * -- that is a later step.
  */
 [[nodiscard]] bool CheckPoSeServiceCommitmentTx(const ChainstateManager& chainman,
                                                 const llmq::CQuorumManager& qman,

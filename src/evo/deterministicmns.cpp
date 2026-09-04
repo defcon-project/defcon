@@ -814,6 +814,8 @@ bool CDeterministicMNManager::RebuildListFromBlock(const CBlock& block, gsl::not
 
     const bool isMNRewardReallocation{DeploymentActiveAfter(pindexPrev, Params().GetConsensus(), Consensus::DEPLOYMENT_MN_RR)};
 
+    int dslCommitments{0};
+
     // we skip the coinbase
     for (int i = 1; i < (int)block.vtx.size(); i++) {
         const CTransaction& tx = *block.vtx[i];
@@ -1023,6 +1025,14 @@ bool CDeterministicMNManager::RebuildListFromBlock(const CBlock& block, gsl::not
                 HandleQuorumCommitment(opt_qc->commitment, pQuorumBaseBlockIndex, newList, qsnapman, debugLogs);
             }
         } else if (tx.nType == TRANSACTION_POSE_SERVICE_COMMITMENT) {
+            // One per block, and because a commitment may only sit at the epoch
+            // boundary that closes its own epoch, one per epoch. Nothing else
+            // enforced this: each such transaction was applied in turn, so two
+            // commitments for one epoch would advance every counter twice, or
+            // the second would overwrite the first's verdict with its own.
+            if (++dslCommitments > 1) {
+                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-dsl-multiple");
+            }
             const auto opt_dsl = GetTxPayload<CPoSeServiceCommitmentTxPayload>(tx);
             if (!opt_dsl) {
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-dsl-payload");
