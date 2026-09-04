@@ -277,36 +277,71 @@ BOOST_AUTO_TEST_CASE(pos_block_nonce_rule)
     Consensus::Params p;
     p.lastPowBlock = 999;
 
-    // Gate unset: the original rule, every nonce accepted at every height.
-    p.nPosNonceActivationHeight = std::numeric_limits<int>::max();
+    // Proof-of-work heights: any nonce, including zero, at every height up to
+    // and including the boundary.
+    BOOST_CHECK(CheckPosBlockNonce(1, 0, p));
     BOOST_CHECK(CheckPosBlockNonce(500, 0, p));
     BOOST_CHECK(CheckPosBlockNonce(500, 12345, p));
-    BOOST_CHECK(CheckPosBlockNonce(1000, 0, p));
-    BOOST_CHECK(CheckPosBlockNonce(1000, 12345, p));
-    BOOST_CHECK(CheckPosBlockNonce(7560, 12345, p));
-
-    // Gate active from 7560.
-    p.nPosNonceActivationHeight = 7560;
-    // Proof-of-work heights are untouched whatever the gate says.
-    BOOST_CHECK(CheckPosBlockNonce(500, 12345, p));
+    BOOST_CHECK(CheckPosBlockNonce(999, 1, p));
     BOOST_CHECK(CheckPosBlockNonce(999, 12345, p));
-    // Proof-of-stake heights below the gate keep the original rule.
-    BOOST_CHECK(CheckPosBlockNonce(1000, 12345, p));
-    BOOST_CHECK(CheckPosBlockNonce(7559, 12345, p));
-    // At and above the gate a proof-of-stake header must carry nonce 0.
-    BOOST_CHECK(CheckPosBlockNonce(7560, 0, p));
-    BOOST_CHECK(!CheckPosBlockNonce(7560, 1, p));
-    BOOST_CHECK(!CheckPosBlockNonce(7560, 12345, p));
+
+    // The first proof-of-stake height and every height after it: nonce zero
+    // only. There is no height below which this is waived -- see the header for
+    // why leaving it optional is the dangerous choice.
+    BOOST_CHECK(CheckPosBlockNonce(1000, 0, p));
+    BOOST_CHECK(!CheckPosBlockNonce(1000, 1, p));
+    BOOST_CHECK(!CheckPosBlockNonce(1000, 12345, p));
+    BOOST_CHECK(CheckPosBlockNonce(7559, 0, p));
+    BOOST_CHECK(!CheckPosBlockNonce(7559, 12345, p));
     BOOST_CHECK(CheckPosBlockNonce(100000, 0, p));
     BOOST_CHECK(!CheckPosBlockNonce(100000, 1, p));
-    // The boundary itself is a proof-of-work height and stays free.
-    BOOST_CHECK(CheckPosBlockNonce(999, 1, p));
 
-    // Gate at 0: the rule holds from the first proof-of-stake height.
-    p.nPosNonceActivationHeight = 0;
-    BOOST_CHECK(CheckPosBlockNonce(999, 7, p));
-    BOOST_CHECK(CheckPosBlockNonce(1000, 0, p));
-    BOOST_CHECK(!CheckPosBlockNonce(1000, 7, p));
+    // The rule follows lastPowBlock, so a network with a different boundary
+    // gets the same shape at its own boundary.
+    Consensus::Params q;
+    q.lastPowBlock = 5000;
+    BOOST_CHECK(CheckPosBlockNonce(5000, 42, q));
+    BOOST_CHECK(!CheckPosBlockNonce(5001, 42, q));
+    BOOST_CHECK(CheckPosBlockNonce(5001, 0, q));
+}
+
+// The shape of the hazard this rule exists for, pinned as arithmetic so the two
+// readings of a nonce cannot drift apart again.
+//
+// A block says it is proof of stake by carrying a coinstake; an index entry says
+// it by carrying nonce zero. Header acceptance requires proof of work by height,
+// so nothing stops a header at a proof-of-stake height carrying a non-zero nonce
+// -- and once stored, the index calls it proof of work and LoadBlockIndexGuts
+// re-checks proof of work on it at every startup. That is a node that will not
+// start, from one unsolicited header. The nonce rule is the only thing that
+// keeps the two readings agreeing, which is why it cannot be optional.
+BOOST_AUTO_TEST_CASE(pos_nonce_rule_matches_the_index_reading)
+{
+    Consensus::Params p;
+    p.lastPowBlock = 999;
+
+    // How CBlockIndex reads a nonce, and how a block reads its own coinstake.
+    const auto index_says_pow = [](uint32_t nonce) { return nonce != 0; };
+
+    for (const int height : {1000, 1001, 7559, 7560, 100000}) {
+        for (const uint32_t nonce : {uint32_t{0}, uint32_t{1}, uint32_t{12345}}) {
+            // Every header this rule admits at a proof-of-stake height is one
+            // the index will also call proof of stake. That is the whole
+            // invariant: admitted implies agreeing.
+            if (CheckPosBlockNonce(height, nonce, p)) {
+                BOOST_CHECK_MESSAGE(!index_says_pow(nonce),
+                                    strprintf("height %d nonce %u is admitted but the index would "
+                                              "call it proof of work", height, nonce));
+            }
+        }
+    }
+
+    // And below the boundary the disagreement is harmless, because the index
+    // calling it proof of work is correct there.
+    for (const int height : {1, 500, 999}) {
+        BOOST_CHECK(CheckPosBlockNonce(height, 12345, p));
+        BOOST_CHECK(index_says_pow(12345));
+    }
 }
 
 // Same shape as the nonce rule, for the same reason: the enforcing function
@@ -469,21 +504,6 @@ BOOST_AUTO_TEST_CASE(expected_stake_time_does_not_wrap)
     // The far end saturates instead of wrapping.
     BOOST_CHECK_EQUAL(ExpectedStakeTime(std::numeric_limits<int64_t>::max(), std::numeric_limits<uint64_t>::max(), 1),
                       std::numeric_limits<int64_t>::max());
-}
-
-BOOST_AUTO_TEST_CASE(pos_nonce_activation_heights_are_pinned)
-{
-    const auto& args = *m_node.args;
-    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nPosNonceActivationHeight,
-                      std::numeric_limits<int>::max());
-    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nPosNonceActivationHeight,
-                      std::numeric_limits<int>::max());
-    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosNonceActivationHeight,
-                      0);
-    gArgs.SoftSetBoolArg("-devnet", true);
-    BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::DEVNET)->GetConsensus().nPosNonceActivationHeight,
-                      7560);
-    gArgs.ForceRemoveArg("devnet");
 }
 
 BOOST_AUTO_TEST_CASE(kernel_v2_activation_heights_are_pinned)

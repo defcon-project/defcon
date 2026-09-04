@@ -355,9 +355,20 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
  * A pure function of (height, nonce, params) so the rule can be tested
  * exhaustively: the caller that enforces it, ContextualCheckBlockHeader, is
  * static and needs a live chain, and no unit fixture reaches a proof-of-stake
- * height on regtest. Below the activation height every nonce is accepted, as
- * before. From it on, a header at a proof-of-stake height must carry
- * nNonce == 0 -- see nPosNonceActivationHeight for why.
+ * height on regtest. A header at a proof-of-work height may carry any nonce; at
+ * a proof-of-stake height it must carry nNonce == 0.
+ *
+ * Not behind an activation height, because leaving it optional is what is
+ * dangerous. Two definitions of "is this proof of stake" coexist -- the block's,
+ * which reads the coinstake, and the index's, which reads the nonce -- and
+ * LoadBlockIndexGuts re-checks proof of work on every index entry the second one
+ * calls proof of work. A header at a proof-of-stake height carrying a non-zero
+ * nonce is stored as proof of work, and the next restart fails to load the index
+ * at all. Requiring proof of work by height (rather than by the sender's nonce)
+ * is what stops such a header being rejected on arrival, so this has to hold
+ * from the same moment. No block on any network of this chain violates it: the
+ * miner pins the nonce to zero at proof-of-stake heights, and a chain carrying a
+ * counter-example would already fail to start on every node that restarted.
  */
 bool CheckPosBlockNonce(int nHeight, uint32_t nNonce, const Consensus::Params& params);
 

@@ -4006,7 +4006,6 @@ bool CheckPosBlockTime(int nHeight, int64_t nTime, int64_t nPrevTime, const Cons
 
 bool CheckPosBlockNonce(int nHeight, uint32_t nNonce, const Consensus::Params& params)
 {
-    if (nHeight < params.nPosNonceActivationHeight) return true;
     if (nHeight <= params.lastPowBlock) return true;
     return nNonce == 0;
 }
