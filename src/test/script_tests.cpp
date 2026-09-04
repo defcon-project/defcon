@@ -11,6 +11,7 @@
 #include <script/script_error.h>
 #include <script/sign.h>
 #include <script/signingprovider.h>
+#include <script/standard.h>
 #include <streams.h>
 #include <test/util/setup_common.h>
 #include <test/util/transaction_utils.h>
@@ -1585,12 +1586,93 @@ BOOST_AUTO_TEST_CASE(strict_bls_sig_size_gate)
         SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_STRICT_BLS_SIG_SIZE, &err));
     BOOST_CHECK_EQUAL(err, SCRIPT_ERR_SIG_DER);
 
-    // A signature of exactly the BLS size is still BLS with the flag set, so a
-    // real BLS signature is untouched.
-    const std::vector<unsigned char> bls_sized(CPubKey::BLS_SIGNATURE_SIZE, 0x11);
+    // A BLS signature in the form a script actually carries -- the signature
+    // plus the hash type byte -- is still BLS with the flag set, so a real
+    // spend is untouched. This is the half the rule has to get right: an
+    // encoding check that only proves it rejects what it should reject can
+    // still reject everything else with it.
+    CKey bls_key;
+    bls_key.MakeNewBLSKey();
+    std::vector<unsigned char> bls_sig;
+    BOOST_REQUIRE(bls_key.SignBLS(hash, bls_sig));
+    BOOST_REQUIRE_EQUAL(bls_sig.size(), size_t{CPubKey::BLS_SIGNATURE_SIZE});
+    bls_sig.push_back(static_cast<unsigned char>(SIGHASH_ALL));
+    BOOST_REQUIRE_EQUAL(bls_sig.size(), size_t{CPubKey::BLS_SIGNATURE_SIZE} + 1);
+
     err = SCRIPT_ERR_OK;
-    BOOST_CHECK(CheckSignatureEncoding(bls_sized,
+    BOOST_CHECK(CheckSignatureEncoding(bls_sig,
         SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_STRICT_BLS_SIG_SIZE, &err));
+    BOOST_CHECK_EQUAL(err, SCRIPT_ERR_OK);
+
+    // And it is BLS below the activation too, so the rule only ever narrows.
+    err = SCRIPT_ERR_OK;
+    BOOST_CHECK(CheckSignatureEncoding(bls_sig, SCRIPT_VERIFY_DERSIG, &err));
+}
+
+/*
+ * The same rule from the outside: sign a real output that pays to a BLS key
+ * and verify the spend through the whole script path, on both sides of the
+ * activation. CheckSignatureEncoding sees the signature with its hash type
+ * still attached and CheckSig strips it again before VerifySignature, so a
+ * strict size measured against the bare signature parts the two -- and the
+ * only place that shows is a spend, which is what this exercises.
+ */
+BOOST_AUTO_TEST_CASE(strict_bls_sig_size_accepts_a_real_bls_spend)
+{
+    CKey key;
+    key.MakeNewBLSKey();
+    const CPubKey pubkey = key.GetPubKeyForBLS();
+    BOOST_REQUIRE(pubkey.IsValid());
+    BOOST_REQUIRE_EQUAL(pubkey.size(), size_t{CPubKey::BLS_PUBLIC_KEY_SIZE});
+
+    // The premine of every network on this chain pays to exactly this script.
+    const CScript scriptPubKey = CScript() << ToByteVector(pubkey) << OP_CHECKSIG;
+    std::vector<std::vector<unsigned char>> solutions;
+    BOOST_REQUIRE(Solver(scriptPubKey, solutions) == TxoutType::BLSPUBKEY);
+
+    const CTransaction txCredit{BuildCreditingTransaction(scriptPubKey)};
+    CMutableTransaction txSpend = BuildSpendingTransaction(CScript(), txCredit);
+
+    const uint256 sighash = SignatureHash(scriptPubKey, txSpend, 0, SIGHASH_ALL,
+                                          txCredit.vout[0].nValue, SigVersion::BASE);
+    std::vector<unsigned char> vchSig;
+    BOOST_REQUIRE(key.SignBLS(sighash, vchSig));
+    vchSig.push_back(static_cast<unsigned char>(SIGHASH_ALL));
+    txSpend.vin[0].scriptSig = CScript() << vchSig;
+
+    const MutableTransactionSignatureChecker checker(&txSpend, 0, txCredit.vout[0].nValue,
+                                                    MissingDataBehavior::ASSERT_FAIL);
+
+    // Below the activation.
+    ScriptError err = SCRIPT_ERR_OK;
+    BOOST_CHECK(VerifyScript(txSpend.vin[0].scriptSig, scriptPubKey,
+                             SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_STRICTENC,
+                             checker, &err));
+    BOOST_CHECK_EQUAL(err, SCRIPT_ERR_OK);
+
+    // At and above it. Before the wire form was accounted for, this failed
+    // with SCRIPT_ERR_SIG_DER and the output was unspendable from the gate on.
+    err = SCRIPT_ERR_OK;
+    BOOST_CHECK(VerifyScript(txSpend.vin[0].scriptSig, scriptPubKey,
+                             SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_STRICTENC |
+                                 SCRIPT_VERIFY_STRICT_BLS_SIG_SIZE,
+                             checker, &err));
+    BOOST_CHECK_EQUAL(err, SCRIPT_ERR_OK);
+
+    // The gate still bites: one byte of padding is no longer a BLS signature,
+    // and is judged as the malformed ECDSA signature it is.
+    std::vector<unsigned char> padded_sig = vchSig;
+    padded_sig.insert(padded_sig.begin(), 0x00);
+    CMutableTransaction txPadded = txSpend;
+    txPadded.vin[0].scriptSig = CScript() << padded_sig;
+    const MutableTransactionSignatureChecker padded_checker(&txPadded, 0, txCredit.vout[0].nValue,
+                                                           MissingDataBehavior::ASSERT_FAIL);
+    err = SCRIPT_ERR_OK;
+    BOOST_CHECK(!VerifyScript(txPadded.vin[0].scriptSig, scriptPubKey,
+                              SCRIPT_VERIFY_P2SH | SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_STRICTENC |
+                                  SCRIPT_VERIFY_STRICT_BLS_SIG_SIZE,
+                              padded_checker, &err));
+    BOOST_CHECK_EQUAL(err, SCRIPT_ERR_SIG_DER);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
