@@ -68,8 +68,6 @@
 #include <QStatusBar>
 #include <QStyle>
 #include <QSystemTrayIcon>
-#include <QGraphicsOpacityEffect>
-#include <QPropertyAnimation>
 #include <QTimer>
 #include <QPainter>
 #include <QToolBar>
@@ -622,11 +620,15 @@ namespace {
  *  ratio, rather than on a large pixmap left for Qt to scale down. The first
  *  version did the latter and was nearly invisible: a stroke a quarter of its
  *  source width survives resampling as a grey smear, whatever colour it
- *  started as. The colour is the theme's own text colour, so the glyph reads
- *  on a dark bar and a light one without either being a special case. */
+ *  started as. The colour is the theme's blue, the tint every other icon in
+ *  the window carries, so the console reads as one of them rather than as a
+ *  stray piece of text. */
 QIcon makeConsoleIcon()
 {
-    constexpr int kSize = 16;
+    // The glyph is laid out on a 16-unit grid and scaled to the size the
+    // button shows, so a size change here never touches the geometry below.
+    constexpr int kSize = 22;
+    constexpr qreal kScale = kSize / 16.0;
     const qreal dpr = qApp->devicePixelRatio();
 
     QPixmap pm(qRound(kSize * dpr), qRound(kSize * dpr));
@@ -635,7 +637,8 @@ QIcon makeConsoleIcon()
 
     QPainter painter(&pm);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    const QColor color = GUIUtil::getThemedQColor(GUIUtil::ThemedColor::DEFAULT);
+    painter.scale(kScale, kScale);
+    const QColor color = GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BLUE);
 
     // The prompt: >
     QPen pen(color);
@@ -775,36 +778,13 @@ void BitcoinGUI::createMenuBar()
     consoleButton->setAutoRaise(true);
     consoleButton->setFocusPolicy(Qt::NoFocus);
     consoleButton->setCursor(Qt::PointingHandCursor);
-    consoleButton->setIconSize(QSize(16, 16));
+    consoleButton->setIconSize(QSize(22, 22));
     consoleButton->setToolTip(openRPCConsoleAction->statusTip());
     consoleButton->setIcon(makeConsoleIcon());
     consoleButton->setEnabled(openRPCConsoleAction->isEnabled());
     connect(consoleButton, &QToolButton::clicked, openRPCConsoleAction, &QAction::trigger);
-    // The button is easy to miss: small, wordless, and in the one corner
-    // nothing else uses. A slow pulse every couple of minutes points at it
-    // without demanding anything, and gives up after a few tries.
-    //
-    // Deliberately not a one-shot at startup, which is what this was first.
-    // The console action is enabled from BitcoinGUI::showEvent, so a hint tied
-    // to it ran while the window was still being painted, and nobody ever saw
-    // it -- the feature looked broken because its premise was wrong.
-    consoleHintTimer = new QTimer(this);
-    consoleHintTimer->setInterval(120000);
-    connect(consoleHintTimer, &QTimer::timeout, this, &BitcoinGUI::pulseConsoleButton);
-    connect(openRPCConsoleAction, &QAction::triggered, this, [this] {
-        // Opened once, so the hint has done its work.
-        consoleHintsLeft = 0;
-        consoleHintTimer->stop();
-    });
-
     connect(openRPCConsoleAction, &QAction::changed, consoleButton, [this] {
-        const bool usable = openRPCConsoleAction->isEnabled();
-        consoleButton->setEnabled(usable);
-        if (usable && consoleHintsLeft > 0) {
-            if (!consoleHintTimer->isActive()) consoleHintTimer->start();
-        } else {
-            consoleHintTimer->stop();
-        }
+        consoleButton->setEnabled(openRPCConsoleAction->isEnabled());
     });
     appMenuBar->setCornerWidget(consoleButton, Qt::TopRightCorner);
 #endif // Q_OS_MAC
@@ -1050,40 +1030,6 @@ QIcon makeDiagonalArrowIcon(bool up_right)
     return QIcon(pm);
 }
 } // namespace
-
-void BitcoinGUI::pulseConsoleButton()
-{
-    if (consoleButton == nullptr || !consoleButton->isEnabled()) {
-        return;
-    }
-    // No point spending a hint on a window nobody is looking at, and no point
-    // stacking a second animation on top of one already running.
-    if (!isVisible() || isMinimized() || consoleButton->graphicsEffect() != nullptr) {
-        return;
-    }
-    if (--consoleHintsLeft <= 0) {
-        consoleHintTimer->stop();
-    }
-
-    auto* effect = new QGraphicsOpacityEffect(consoleButton);
-    consoleButton->setGraphicsEffect(effect);
-
-    auto* animation = new QPropertyAnimation(effect, "opacity", consoleButton);
-    animation->setDuration(900);
-    animation->setKeyValueAt(0.0, 1.0);
-    animation->setKeyValueAt(0.5, 0.30);
-    animation->setKeyValueAt(1.0, 1.0);
-    animation->setEasingCurve(QEasingCurve::InOutSine);
-
-    // Take the effect away afterwards: while it is installed the widget is
-    // rendered through an offscreen buffer, and there is no reason to pay that
-    // between pulses. It is also what lets the check above tell "a pulse is
-    // running" from "none is".
-    connect(animation, &QAbstractAnimation::finished, consoleButton, [this] {
-        consoleButton->setGraphicsEffect(nullptr);
-    });
-    animation->start(QAbstractAnimation::DeleteWhenStopped);
-}
 
 void BitcoinGUI::applyThemeLayout()
 {

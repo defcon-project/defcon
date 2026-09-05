@@ -149,9 +149,6 @@ private:
     //! The last value handed to setEncryptionStatus, kept so a theme change can
     //! redraw the padlock in the new colours without asking the wallet again.
     int m_encryption_status{-1};
-    //! Pulses the console button now and then, so it is noticed at all.
-    QTimer* consoleHintTimer = nullptr;
-    int consoleHintsLeft = 8;
     QToolButton* overviewButton = nullptr;
     QToolButton* sendCoinsButton = nullptr;
     QToolButton* coinJoinCoinsButton = nullptr;
@@ -261,7 +258,6 @@ private:
     /** Apply the selected theme's navigation orientation and sizing. */
     void applyThemeLayout();
     /** One slow pulse of the console button, if anyone is there to see it. */
-    void pulseConsoleButton();
     /** Create system tray icon and notification */
     void createTrayIcon();
     /** Create system tray menu (or setup the dock menu) */
