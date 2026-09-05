@@ -64,6 +64,7 @@
 #include <QPluginLoader>
 #include <QPointer>
 #include <QProgressDialog>
+#include <QRegularExpression>
 #include <QScreen>
 #include <QSettings>
 #include <QShortcut>
@@ -584,11 +585,11 @@ QString getSaveFileName(QWidget *parent, const QString &caption, const QString &
     QString result = QDir::toNativeSeparators(QFileDialog::getSaveFileName(parent, caption, myDir, filter, &selectedFilter));
 
     /* Extract first suffix from filter pattern "Description (*.foo)" or "Description (*.foo *.bar ...) */
-    QRegExp filter_re(".* \\(\\*\\.(.*)[ \\)]");
+    const QRegularExpression filter_re(QRegularExpression::anchoredPattern(QStringLiteral(".* \\(\\*\\.(.*)[ \\)]")));
     QString selectedSuffix;
-    if(filter_re.exactMatch(selectedFilter))
-    {
-        selectedSuffix = filter_re.cap(1);
+    const QRegularExpressionMatch filter_match = filter_re.match(selectedFilter);
+    if (filter_match.hasMatch()) {
+        selectedSuffix = filter_match.captured(1);
     }
 
     /* Add suffix if needed */
@@ -632,11 +633,11 @@ QString getOpenFileName(QWidget *parent, const QString &caption, const QString &
     if(selectedSuffixOut)
     {
         /* Extract first suffix from filter pattern "Description (*.foo)" or "Description (*.foo *.bar ...) */
-        QRegExp filter_re(".* \\(\\*\\.(.*)[ \\)]");
+        const QRegularExpression filter_re(QRegularExpression::anchoredPattern(QStringLiteral(".* \\(\\*\\.(.*)[ \\)]")));
         QString selectedSuffix;
-        if(filter_re.exactMatch(selectedFilter))
-        {
-            selectedSuffix = filter_re.cap(1);
+        const QRegularExpressionMatch filter_match = filter_re.match(selectedFilter);
+        if (filter_match.hasMatch()) {
+            selectedSuffix = filter_match.captured(1);
         }
         *selectedSuffixOut = selectedSuffix;
     }
@@ -2031,20 +2032,12 @@ void PopupMenu(QMenu* menu, const QPoint& point, QAction* at_action)
 
 QDateTime StartOfDay(const QDate& date)
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
     return date.startOfDay();
-#else
-    return QDateTime(date);
-#endif
 }
 
 bool HasPixmap(const QLabel* label)
 {
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
     return !label->pixmap(Qt::ReturnByValue).isNull();
-#else
-    return label->pixmap() != nullptr;
-#endif
 }
 
 QImage GetImage(const QLabel* label)
@@ -2053,11 +2046,7 @@ QImage GetImage(const QLabel* label)
         return QImage();
     }
 
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
     return label->pixmap(Qt::ReturnByValue).toImage();
-#else
-    return label->pixmap()->toImage();
-#endif
 }
 
 QString MakeHtmlLink(const QString& source, const QString& link)

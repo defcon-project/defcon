@@ -23,7 +23,7 @@
 #include <QCloseEvent>
 #include <QLabel>
 #include <QMainWindow>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QTextCursor>
 #include <QTextTable>
 #include <QVBoxLayout>
@@ -48,8 +48,7 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, HelpMode helpMode) :
         QString licenseInfoHTML = QString::fromStdString(licenseInfo);
 
         // Make URLs clickable
-        QRegExp uri("<(.*)>", Qt::CaseSensitive, QRegExp::RegExp2);
-        uri.setMinimal(true); // use non-greedy matching
+        const QRegularExpression uri(QStringLiteral("<(.*?)>")); // non-greedy: one link per angle-bracket pair
         licenseInfoHTML.replace(uri, QString("<a style=\"%1\"href=\"\\1\">\\1</a>").arg(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_COMMAND)));
         // Replace newlines with HTML breaks
         licenseInfoHTML.replace("\n", "<br>");

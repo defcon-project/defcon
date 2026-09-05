@@ -1,9 +1,9 @@
 package=qt
-$(package)_version=5.15.14
-$(package)_download_path=https://download.qt.io/official_releases/qt/5.15/$($(package)_version)/submodules
+$(package)_version=5.15.19
+$(package)_download_path=https://download.qt.io/archive/qt/5.15/$($(package)_version)/submodules
 $(package)_suffix=everywhere-opensource-src-$($(package)_version).tar.xz
 $(package)_file_name=qtbase-$($(package)_suffix)
-$(package)_sha256_hash=500d3b390048e9538c28b5f523dfea6936f9c2e10d24ab46580ff57d430b98be
+$(package)_sha256_hash=51e91c73abacab81e64efd01bf95794e79c0e605ad80947a024769f0dd620a32
 $(package)_linux_dependencies=freetype fontconfig libxcb libxkbcommon libxcb_util libxcb_util_render libxcb_util_keysyms libxcb_util_image libxcb_util_wm
 $(package)_qt_libs=corelib network widgets gui plugins testlib
 $(package)_linguist_tools = lrelease lupdate lconvert
@@ -20,17 +20,14 @@ $(package)_patches += rcc_hardcode_timestamp.patch
 $(package)_patches += duplicate_lcqpafonts.patch
 $(package)_patches += guix_cross_lib_path.patch
 $(package)_patches += fast_fixed_dtoa_no_optimize.patch
-$(package)_patches += fix-macos-linker.patch
-$(package)_patches += memory_resource.patch
-$(package)_patches += clang_18_libpng.patch
 $(package)_patches += utc_from_string_no_optimize.patch
 $(package)_patches += windows_lto.patch
 
 $(package)_qttranslations_file_name=qttranslations-$($(package)_suffix)
-$(package)_qttranslations_sha256_hash=5b94d1a11b566908622fcca2f8b799744d2f8a68da20be4caa5953ed63b10489
+$(package)_qttranslations_sha256_hash=967e0d259af13f47e853f183cffc9671cc054380188fee28402f6425132a2c7b
 
 $(package)_qttools_file_name=qttools-$($(package)_suffix)
-$(package)_qttools_sha256_hash=12061a85baf5f4de8fbc795e1d3872b706f340211b9e70962caeffc6f5e89563
+$(package)_qttools_sha256_hash=2694af886130d63b8a42bcd138f4035fd8108273ebd16781f87300da352f1aa6
 
 $(package)_extra_sources  = $($(package)_qttranslations_file_name)
 $(package)_extra_sources += $($(package)_qttools_file_name)
@@ -242,15 +239,12 @@ endef
 define $(package)_preprocess_cmds
   cp $($(package)_patch_dir)/qt.pro qt.pro && \
   cp $($(package)_patch_dir)/qttools_src.pro qttools/src/src.pro && \
-  patch -p1 -i $($(package)_patch_dir)/fix-macos-linker.patch && \
   patch -p1 -i $($(package)_patch_dir)/dont_hardcode_pwd.patch && \
   patch -p1 -i $($(package)_patch_dir)/fix_qt_pkgconfig.patch && \
   patch -p1 -i $($(package)_patch_dir)/fix_android_jni_static.patch && \
   patch -p1 -i $($(package)_patch_dir)/no-xlib.patch && \
   patch -p1 -i $($(package)_patch_dir)/qtbase-moc-ignore-gcc-macro.patch && \
-  patch -p1 -i $($(package)_patch_dir)/memory_resource.patch && \
   patch -p1 -i $($(package)_patch_dir)/no_warnings_for_symbols.patch && \
-  patch -p1 -i $($(package)_patch_dir)/clang_18_libpng.patch && \
   patch -p1 -i $($(package)_patch_dir)/rcc_hardcode_timestamp.patch && \
   patch -p1 -i $($(package)_patch_dir)/duplicate_lcqpafonts.patch && \
   patch -p1 -i $($(package)_patch_dir)/utc_from_string_no_optimize.patch && \
