@@ -197,7 +197,7 @@ BitcoinAmountField::BitcoinAmountField(QWidget *parent) :
 
     QHBoxLayout *layout = new QHBoxLayout(this);
     layout->setSpacing(0);
-    layout->setMargin(0);
+    layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(amount);
 
     setLayout(layout);
