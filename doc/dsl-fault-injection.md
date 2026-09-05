@@ -93,6 +93,39 @@ kind: dropping relayed traffic partitions the pool in a way that depends on
 topology, and the network-degradation faults already cover that from outside
 the process.
 
+## Convergence telemetry
+
+`dslstatus` carries what an observer needs to compare hosts *before* the
+boundary, which is where the shadow phase's open question -- does every quorum
+member sign the same bitfield -- is decided:
+
+| Field | Meaning |
+|---|---|
+| `poolhash` | order-independent digest of the reports pooled for the current epoch; equal on two nodes iff their pools hold the same reports |
+| `candidate.missedcount`, `candidate.missedprotxhashes` | the verdict this node would aggregate from its own pool right now, resolved in the canonical order `ApplyServiceCommitment` uses |
+| `faults[]` | the injected faults active on this node, each with `scenarioId` and `hits`; empty wherever injection is not enabled |
+
+A pool hash can differ while the candidate does not (a late report that
+changes no bit), and the candidate can differ from what the quorum signed (a
+late report that does): the miner then rebuilds a hash the recovered
+signature does not match, attaches nothing, and the epoch closes without a
+commitment -- fail-open, no counter moves.
+
+## Scenarios (`feature_dsl_scenarios.py`)
+
+Seven regtest masternodes with an attesting quorum; every fault carries the
+scenario id below, and every assertion reads the chain, the masternode state or
+the telemetry -- never the fault list alone. Timing rule: a masternode announces
+at the tick of the boundary block that opens an epoch, so a fault meant for an
+epoch is armed before that boundary is mined.
+
+| Scenario | Faults | What the chain shows |
+|---|---|---|
+| `missed-1-2-3` | `response-drop` on one running masternode for three epochs | three commitments naming exactly that node; `missedServiceEpochs` 1, 2, 3 from three views (miner live, miner at tip, a peer at tip); every node holds the same pool hash and candidate; one clean epoch resets to 0; no suspension, no ban |
+| `diverged-pool` | the same, plus `report-delay 4` on two of its sentinels | the quorum signs four MISSED reports (under `nDSLSentinelAgree`), the miner's pool has six by the boundary and its candidate says MISSED, the boundary carries no commitment, the counter stays 0, the next epoch commits again |
+| `quorum-member-skip` | `commitment-skip` on one, then two, of the three signing members | one silent member: commitment mined; two: none, counter unchanged; cleared by id: commitment again |
+| `miner-skip` | `commitment-skip` on the block producer, expiring at the boundary | the boundary block carries no commitment; the fault has expired by height; the next epoch commits again |
+
 ## How it is proven
 
 - Unit: the gate on main, test, devnet and regtest; the inert disabled

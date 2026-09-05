@@ -13,6 +13,8 @@
 #include <evo/dmn_types.h>
 #include <evo/pose_service_manager.h>
 #include <evo/pose_service_faults.h>
+#include <hash.h>
+#include <evo/pose_service_sentinels.h>
 #include <evo/providertx.h>
 #include <evo/simplifiedmns.h>
 #include <evo/specialtx.h>
@@ -1993,6 +1995,26 @@ static RPCHelpMan dslstatus()
                 {RPCResult::Type::NUM, "onlinereports", "Of those, reports that observed the target online"},
                 {RPCResult::Type::NUM, "missedreports", "Of those, reports that observed the target missing"},
                 {RPCResult::Type::NUM, "storesize", "Reports held across the whole retained epoch window"},
+                {RPCResult::Type::STR_HEX, "poolhash", "Order-independent digest of the reports pooled for the current epoch; equal on two nodes iff their pools hold the same reports"},
+                {RPCResult::Type::OBJ, "candidate", "The verdict this node would aggregate from its own pool right now, before any quorum signs anything",
+                {
+                    {RPCResult::Type::NUM, "missedcount", "Masternodes the local pool would mark MISSED"},
+                    {RPCResult::Type::ARR, "missedprotxhashes", "Which ones, resolved against the epoch-base list in canonical order",
+                    {
+                        {RPCResult::Type::STR_HEX, "", "proTxHash"},
+                    }},
+                }},
+                {RPCResult::Type::ARR, "faults", "Injected faults active on this node (test networks only; empty elsewhere)",
+                {
+                    {RPCResult::Type::OBJ, "", "",
+                    {
+                        {RPCResult::Type::NUM, "id", "The fault id"},
+                        {RPCResult::Type::STR, "kind", "The fault kind"},
+                        {RPCResult::Type::STR, "scenarioId", "The scenario that asked for it"},
+                        {RPCResult::Type::NUM, "expiryHeight", "First height at which it no longer applies"},
+                        {RPCResult::Type::NUM, "hits", "How many times it held an action back"},
+                    }},
+                }},
             }},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
@@ -2040,6 +2062,72 @@ static RPCHelpMan dslstatus()
     ret.pushKV("onlinereports", online);
     ret.pushKV("missedreports", missed);
     ret.pushKV("storesize", static_cast<int64_t>(mgr.Store().Size()));
+
+    // Convergence telemetry. The shadow phase has one open question -- does
+    // every quorum member hold the same pool and so sign the same bitfield --
+    // and until now the only witness was the miner's "pool diverged" log line
+    // after the fact. These two fields let an observer compare hosts before
+    // the boundary: the pool digest says whether the reports are the same,
+    // and the candidate says whether the verdict is, which can differ (a
+    // report that arrives after the signing offset changes the first and may
+    // or may not change the second).
+    {
+        std::vector<uint256> hashes;
+        hashes.reserve(reports.size());
+        for (const auto& report : reports) hashes.push_back(::SerializeHash(report));
+        std::sort(hashes.begin(), hashes.end());
+        CHashWriter hw(SER_GETHASH, 0);
+        for (const auto& h : hashes) hw << h;
+        ret.pushKV("poolhash", hw.GetHash().ToString());
+    }
+    {
+        UniValue candidate(UniValue::VOBJ);
+        UniValue missedHashes(UniValue::VARR);
+        int64_t missedCount = 0;
+        CDeterministicMNManager* dmnman = node.dmnman.get();
+        const CBlockIndex* base = nullptr;
+        if (dmnman != nullptr && consensus.nDSLEpochInterval > 0) {
+            const int64_t baseHeight = static_cast<int64_t>(epoch) * consensus.nDSLEpochInterval;
+            LOCK(cs_main);
+            if (baseHeight >= 0 && baseHeight <= chainman.ActiveChain().Height()) {
+                base = chainman.ActiveChain()[static_cast<int>(baseHeight)];
+            }
+        }
+        if (base != nullptr) {
+            const auto list = dmnman->GetListForBlock(base);
+            const auto built = dsl::BuildServiceCommitment(epoch, base->GetBlockHash(), Consensus::LLMQType::LLMQ_NONE,
+                                                            uint256(), reports, list, consensus);
+            // the same canonical order ApplyServiceCommitment resolves bits by
+            std::vector<uint256> order;
+            order.reserve(list.GetAllMNsCount());
+            list.ForEachMN(false, [&](const auto& dmn) { order.push_back(dmn.proTxHash); });
+            std::sort(order.begin(), order.end());
+            for (size_t i = 0; i < order.size() && i < built.missed.size(); ++i) {
+                if (built.missed[i]) {
+                    ++missedCount;
+                    missedHashes.push_back(order[i].ToString());
+                }
+            }
+        }
+        candidate.pushKV("missedcount", missedCount);
+        candidate.pushKV("missedprotxhashes", missedHashes);
+        ret.pushKV("candidate", candidate);
+    }
+    {
+        UniValue faults(UniValue::VARR);
+        if (node.faultinjector != nullptr && node.faultinjector->Enabled()) {
+            for (const auto& fault : node.faultinjector->List(tip_height)) {
+                UniValue obj(UniValue::VOBJ);
+                obj.pushKV("id", fault.id);
+                obj.pushKV("kind", std::string{dsl::FaultKindName(fault.kind)});
+                obj.pushKV("scenarioId", fault.scenarioId);
+                obj.pushKV("expiryHeight", fault.expiryHeight);
+                obj.pushKV("hits", fault.hits);
+                faults.push_back(obj);
+            }
+        }
+        ret.pushKV("faults", faults);
+    }
     return ret;
 },
     };
