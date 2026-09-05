@@ -88,6 +88,9 @@ void OptionsModel::Init(bool resetSettings)
     if (!settings.contains("theme"))
         settings.setValue("theme", GUIUtil::getDefaultTheme());
 
+    if (!settings.contains("fAnimateNightSky"))
+        settings.setValue("fAnimateNightSky", true);
+
     if (!settings.contains("fontFamily"))
         settings.setValue("fontFamily", GUIUtil::fontFamilyToString(GUIUtil::getFontFamilyDefault()));
     if (gArgs.SoftSetArg("-font-family", settings.value("fontFamily").toString().toStdString())) {
@@ -509,6 +512,8 @@ QVariant OptionsModel::data(const QModelIndex & index, int role) const
 #endif // ENABLE_WALLET
         case Theme:
             return settings.value("theme");
+        case AnimateNightSky:
+            return settings.value("fAnimateNightSky", true);
         case FontFamily:
             return settings.value("fontFamily");
         case FontScale:
@@ -750,6 +755,10 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
         case Theme:
             // Set in AppearanceWidget::updateTheme slot now
             // to allow instant theme changes.
+            break;
+        case AnimateNightSky:
+            // Written the moment the box is ticked, for the same reason: the
+            // change is meant to be visible while the dialog is still open.
             break;
         case FontFamily:
             if (settings.value("fontFamily") != value) {

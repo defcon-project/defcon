@@ -41,6 +41,7 @@
     </qresource>
     <qresource prefix="/fonts">
         <file alias="monospace">res/fonts/RobotoMono-Bold.ttf</file>
+        <file alias="Michroma">res/fonts/Michroma/Michroma-Regular.ttf</file>
         <file alias="Montserrat-Black">res/fonts/Montserrat/Montserrat-Black.otf</file>
         <file alias="Montserrat-BlackItalic">res/fonts/Montserrat/Montserrat-BlackItalic.otf</file>
         <file alias="Montserrat-Bold">res/fonts/Montserrat/Montserrat-Bold.otf</file>

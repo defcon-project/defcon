@@ -141,6 +141,14 @@ private:
     //! console is the one window a developer opens over and over on a devnet,
     //! and it was four clicks deep under Tools.
     QToolButton* consoleButton = nullptr;
+
+    //! The padlock beside the wallet selector: it shows the lock state and
+    //! flips it. The eye is already there when it asks which wallet it is
+    //! looking at, and locking used to live three levels deep in a menu.
+    QToolButton* walletLockButton = nullptr;
+    //! The last value handed to setEncryptionStatus, kept so a theme change can
+    //! redraw the padlock in the new colours without asking the wallet again.
+    int m_encryption_status{-1};
     //! Pulses the console button now and then, so it is noticed at all.
     QTimer* consoleHintTimer = nullptr;
     int consoleHintsLeft = 8;
@@ -323,6 +331,13 @@ private:
        @see WalletModel::EncryptionStatus
     */
     void setEncryptionStatus(int status);
+
+    /** Draw the padlock for an encryption status: the icon says what the wallet
+        is now, and the tooltip says what a click will do to it. */
+    void updateWalletLockButton(int status);
+
+    /** Flip the lock state, or offer encryption when there is no lock to flip. */
+    void toggleWalletLock();
 
     /** Set the hd-enabled status as shown in the UI.
      @param[in] hdEnabled         current hd enabled status

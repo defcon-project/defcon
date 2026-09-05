@@ -18,16 +18,42 @@ Palette and typography
 
 QDialog,
 QMainWindow,
-QMessageBox,
-WalletFrame,
-QWidget#walletContainer {
+QMessageBox {
     background-color: #07111f;
+}
+
+/******************************************************
+Night sky
+******************************************************/
+
+/* The backdrop is drawn, not shipped as an image: StarfieldWidget paints the
+   stars and this rule decides the colour behind them, so the palette stays in
+   the theme file where the rest of it lives. The two layers stacked on top of
+   the central widget -- the wallet frame and the overview page -- are
+   transparent so the sky reaches the eye, while everything carrying a number
+   keeps an opaque background of its own. A balance must never be read against
+   a starfield. */
+QWidget#walletContainer {
+    background-color: #04070d;
+}
+
+WalletFrame {
+    background-color: transparent;
+}
+
+/* Send and Receive are QDialog subclasses used as pages, so the flat QDialog
+   rule above would have left the sky showing on four pages out of six.
+   Scoping this to the wallet frame reaches exactly the pages and leaves every
+   free-standing dialog opaque, which is where a sky behind a form would
+   actually be in the way. */
+WalletFrame QDialog {
+    background-color: transparent;
 }
 
 QWidget {
     selection-color: #f7fbff;
     selection-background-color: #0b6cc6;
-    font-family: "Montserrat";
+    font-family: "Michroma";
 }
 
 QCheckBox,
@@ -331,9 +357,22 @@ QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector {
     min-width: 202px;
 }
 
+/* The combo gives up the width the padlock beside it needs. The container's
+   own min-width is unchanged, so the selector keeps the size it had. */
 QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox {
     border: none;
-    min-width: 176px;
+    min-width: 150px;
+}
+
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QToolButton#walletLockButton {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 3px;
+}
+
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QToolButton#walletLockButton:hover {
+    background-color: #16283c;
 }
 
 /******************************************************
@@ -341,7 +380,7 @@ Overview dashboard
 ******************************************************/
 
 QWidget#OverviewPage {
-    background-color: #07111f;
+    background-color: transparent;
 }
 
 QWidget#OverviewPage QWidget#modernOverviewHeader {

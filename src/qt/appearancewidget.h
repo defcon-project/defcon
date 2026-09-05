@@ -54,6 +54,7 @@ private:
     GUIUtil::FontFamily prevFontFamily{GUIUtil::getFontFamily()};
     QFont::Weight prevWeightNormal{GUIUtil::getFontWeightNormal()};
     QFont::Weight prevWeightBold{GUIUtil::getFontWeightBold()};
+    bool prevAnimateNightSky{true};
 
     void updateWeightSlider(bool fForce = false);
 };

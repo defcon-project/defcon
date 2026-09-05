@@ -64,6 +64,7 @@ public:
         FontScale,            // int
         FontWeightNormal,     // int
         FontWeightBold,       // int
+        AnimateNightSky,      // bool
         Language,             // QString
         CoinControlFeatures,  // bool
         SubFeeFromAmount,     // bool

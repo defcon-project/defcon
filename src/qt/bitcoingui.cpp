@@ -17,6 +17,7 @@
 #include <qt/optionsdialog.h>
 #include <qt/optionsmodel.h>
 #include <qt/rpcconsole.h>
+#include <qt/starfieldwidget.h>
 #include <qt/utilitydialog.h>
 
 #ifdef ENABLE_WALLET
@@ -74,6 +75,7 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrlQuery>
+#include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QWindow>
 
@@ -949,9 +951,28 @@ void BitcoinGUI::createToolBars()
         m_wallet_selector->setSizeAdjustPolicy(QComboBox::AdjustToContents);
         connect(m_wallet_selector, qOverload<int>(&QComboBox::currentIndexChanged), this, &BitcoinGUI::setCurrentWalletBySelectorIndex);
 
-        QVBoxLayout* walletSelectorLayout = new QVBoxLayout();
-        walletSelectorLayout->addWidget(m_wallet_selector);
-        walletSelectorLayout->setSpacing(0);
+        // The padlock delegates to the very actions the Settings menu carries
+        // rather than calling the wallet itself. That is the lesson the console
+        // button next to it already records: a second button that reimplements
+        // an action's logic drifts away from it, and the drift shows up as a
+        // control that looks enabled and does nothing.
+        walletLockButton = new QToolButton(this);
+        walletLockButton->setObjectName("walletLockButton");
+        walletLockButton->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        walletLockButton->setAutoRaise(true);
+        walletLockButton->setFocusPolicy(Qt::NoFocus);
+        walletLockButton->setCursor(Qt::PointingHandCursor);
+        walletLockButton->setIconSize(QSize(16, 16));
+        // Hidden until a wallet reports its encryption status. Showing it
+        // earlier would put a clickable control with no icon in the toolbar,
+        // which is exactly the fault recorded beside the console button.
+        walletLockButton->setVisible(false);
+        connect(walletLockButton, &QToolButton::clicked, this, &BitcoinGUI::toggleWalletLock);
+
+        QHBoxLayout* walletSelectorLayout = new QHBoxLayout();
+        walletSelectorLayout->addWidget(m_wallet_selector, 1);
+        walletSelectorLayout->addWidget(walletLockButton, 0);
+        walletSelectorLayout->setSpacing(4);
         walletSelectorLayout->setContentsMargins(5, 0, 5, 0);
         QWidget* walletSelector = new QWidget(this);
         walletSelector->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
@@ -975,7 +996,7 @@ void BitcoinGUI::createToolBars()
         walletLayout->addWidget(walletFrame);
         walletLayout->setSpacing(0);
         walletLayout->setContentsMargins(QMargins());
-        QWidget *containerWidget = new QWidget();
+        StarfieldWidget* containerWidget = new StarfieldWidget();
         containerWidget->setObjectName("walletContainer");
         containerWidget->setLayout(walletLayout);
         setCentralWidget(containerWidget);
@@ -1066,6 +1087,15 @@ void BitcoinGUI::applyThemeLayout()
 
     const bool modern = GUIUtil::isModernTheme();
     const bool vertical = modern;
+
+    // Abyss is the only theme that asks for a sky behind the wallet.
+    if (auto* sky = qobject_cast<StarfieldWidget*>(centralWidget())) {
+        sky->setSkyVisible(modern);
+        sky->setAnimated(QSettings().value("fAnimateNightSky", true).toBool());
+    }
+
+    // The padlock is tinted by the theme, so it is redrawn with it.
+    updateWalletLockButton(m_encryption_status);
 
     // A wallet on a test chain must say so where the eye rests. The window
     // title already carries the network suffix, but nobody reads the title
@@ -2333,8 +2363,65 @@ void BitcoinGUI::setStakingStatus()
     }
 }
 
+void BitcoinGUI::updateWalletLockButton(int status)
+{
+    if (walletLockButton == nullptr) return;
+
+    // The icon is the state, and the tooltip is the consequence of a click.
+    // The colours are the ones the status bar icon already uses, so the two
+    // never disagree about what the wallet is doing.
+    switch (status) {
+    case WalletModel::Unencrypted:
+        walletLockButton->setIcon(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::RED));
+        walletLockButton->setToolTip(tr("Wallet is <b>unencrypted</b>. Click to encrypt it."));
+        break;
+    case WalletModel::Unlocked:
+        walletLockButton->setIcon(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::RED));
+        walletLockButton->setToolTip(tr("Wallet is <b>unlocked</b>. Click to lock it."));
+        break;
+    case WalletModel::UnlockedForMixingOnly:
+        walletLockButton->setIcon(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::ORANGE));
+        walletLockButton->setToolTip(tr("Wallet is <b>unlocked for mixing only</b>. Click to lock it."));
+        break;
+    case WalletModel::Locked:
+        walletLockButton->setIcon(GUIUtil::getIcon("lock_closed", GUIUtil::ThemedColor::GREEN));
+        walletLockButton->setToolTip(tr("Wallet is <b>locked</b>. Click to unlock it."));
+        break;
+    default:
+        // No wallet has reported yet, so there is no lock state to show.
+        walletLockButton->setVisible(false);
+        return;
+    }
+
+    walletLockButton->setVisible(true);
+}
+
+void BitcoinGUI::toggleWalletLock()
+{
+    // An open padlock closes, a closed one opens, and a wallet with no
+    // passphrase at all is offered one -- there is nothing else a lock can
+    // mean there. Unlocked-for-mixing counts as open: the menu still carries
+    // the full unlock for anyone who wants it.
+    switch (m_encryption_status) {
+    case WalletModel::Unencrypted:
+        encryptWalletAction->trigger();
+        break;
+    case WalletModel::Unlocked:
+    case WalletModel::UnlockedForMixingOnly:
+        lockWalletAction->trigger();
+        break;
+    case WalletModel::Locked:
+        unlockWalletAction->trigger();
+        break;
+    default:
+        break;
+    }
+}
+
 void BitcoinGUI::setEncryptionStatus(int status)
 {
+    m_encryption_status = status;
+
     switch(status)
     {
     case WalletModel::Unencrypted:
@@ -2374,6 +2461,8 @@ void BitcoinGUI::setEncryptionStatus(int status)
         encryptWalletAction->setEnabled(false);
         break;
     }
+
+    updateWalletLockButton(status);
 }
 
 void BitcoinGUI::updateWalletStatus()
