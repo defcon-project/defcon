@@ -234,9 +234,30 @@ public:
         // precisely because it is not time yet. UNTIL THEN THE PoS KERNEL RUNS
         // THE PRE-#109 RULES ON MAINNET: the weighted-target multiply that
         // truncates at 256 bits, and the stakeAgeRange upper bound just above.
-        // At release, nPosKernelV2ActivationHeight must flip at the SAME block as
-        // nStrictBLSSigSizeActivationHeight (M-02) and the K-03 chainwork fix --
-        // one release decision, not three. Do not set any of them in isolation.
+        //
+        // At the v23 release the following flip at the SAME height, in one
+        // commit: nChainLocksV2ActivationHeight (Q60) with its InstantSend
+        // counterpart, nPosKernelV2ActivationHeight,
+        // nPosCoinbaseBoundActivationHeight, nPosStakeModifierV2ActivationHeight,
+        // nPosBlockTimeBoundActivationHeight, nPosFeeBurnActivationHeight and
+        // nDkgBadVotesV2ActivationHeight. Do not set any of them in isolation.
+        //
+        // Two candidates were deliberately DROPPED from that set and get no
+        // height here or anywhere else. M-02 (nStrictBLSSigSizeActivationHeight,
+        // 2026-09-05): it can render a currently-valid unspent output
+        // unspendable, and whether any such output exists on this chain was
+        // never measured -- scantxoutset cannot filter by type. The K-03
+        // chainwork reweighting (2026-09-04): never implemented at all, because
+        // LoadBlockIndex recomputes nChainWork from GetBlockProof at every
+        // startup, so changing the formula demands re-deriving nMinimumChainWork
+        // in the same commit, and getting that wrong freezes every restarted
+        // node in permanent IBD.
+        //
+        // The filter both failed, and it is the one to apply to any future
+        // candidate: a rule that can TAKE something away does not ride a bundle
+        // whose other members only constrain what a block producer may do from
+        // the height onward. Those were measured history-compatible before being
+        // scheduled; these two could not be.
         // (Testnet is in the same state and gets its heights in the same pass.)
         consensus.posLimit = uint256S("0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
@@ -599,11 +620,14 @@ public:
         consensus.nPosStakeModifierV2ActivationHeight = 7560;
         consensus.nPosBlockTimeBoundActivationHeight = 7560;
         consensus.nPosFeeBurnActivationHeight = 7920;
-        // Brought forward from 6000 for the coordinated fleet roll that also
-        // ships the DSL reorg/signing hardening: every daemon must run this
-        // binary before the height, which the roll ensures with margin over the
-        // tip. mainnet/testnet stay unset (see the release note above).
-        consensus.nStrictBLSSigSizeActivationHeight = 5250;
+        // M-02 is dropped from the v23 release (2026-09-05), so it now has a
+        // height on no network at all -- devnet included, deliberately, so that
+        // what this network tests is what ships. It was 5250 here and active
+        // from that height; unsetting it is a RELAXATION, so every block already
+        // on the chain stays valid under the looser rule and no reindex is
+        // needed. The rule, its gate and its tests are kept -- regtest holds it
+        // at 0 -- so a later release can schedule it without rebuilding the
+        // analysis.
         consensus.posLimit = uint256S("0000000fffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
         consensus.regularMnCollateral = 1000000 * COIN;
         consensus.regularVoteWeight = 1;
