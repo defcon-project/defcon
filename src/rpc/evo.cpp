@@ -12,6 +12,7 @@
 #include <evo/deterministicmns.h>
 #include <evo/dmn_types.h>
 #include <evo/pose_service_manager.h>
+#include <evo/pose_service_faults.h>
 #include <evo/providertx.h>
 #include <evo/simplifiedmns.h>
 #include <evo/specialtx.h>
@@ -2044,6 +2045,212 @@ static RPCHelpMan dslstatus()
     };
 }
 
+
+// ---------------------------------------------------------------------------
+// DSL fault injection: `faultinject set|list|clear`. Test networks only.
+//
+// Two gates, both fail-closed and both independent of the caller's intent. The
+// injector exists only when the node was started with -enablefaultinjection=1,
+// which startup refuses outside devnet and regtest; and the RPC answers only a
+// caller authenticated with the datadir cookie -- an operator on the machine,
+// never an rpcuser/rpcauth credential that a remote orchestrator might hold.
+// The explorer's simulator therefore talks to this through its node-local
+// wrapper, exactly as it does for service and network faults.
+// ---------------------------------------------------------------------------
+
+static const std::string FAULT_RPC_COOKIE_USER = "__cookie__";
+
+static dsl::CFaultInjector& EnsureFaultInjector(const JSONRPCRequest& request, const NodeContext& node)
+{
+    if (request.authUser != FAULT_RPC_COOKIE_USER) {
+        throw JSONRPCError(RPC_INVALID_REQUEST,
+                           "faultinject is only available to a caller authenticated with the datadir cookie");
+    }
+    if (node.faultinjector == nullptr || !node.faultinjector->Enabled()) {
+        throw JSONRPCError(RPC_MISC_ERROR,
+                           strprintf("fault injection is disabled: start with %s=1, which only devnet and regtest accept",
+                                     dsl::FAULT_INJECTION_ARG));
+    }
+    return *node.faultinjector;
+}
+
+static UniValue FaultToJson(const dsl::Fault& fault)
+{
+    UniValue obj(UniValue::VOBJ);
+    obj.pushKV("id", fault.id);
+    obj.pushKV("kind", std::string{dsl::FaultKindName(fault.kind)});
+    obj.pushKV("setAtHeight", fault.setAtHeight);
+    obj.pushKV("expiryHeight", fault.expiryHeight);
+    obj.pushKV("param", static_cast<int64_t>(fault.param));
+    obj.pushKV("scenarioId", fault.scenarioId);
+    return obj;
+}
+
+static std::string FaultKindHelp()
+{
+    std::string s;
+    for (const auto kind : dsl::AllFaultKinds()) {
+        if (!s.empty()) s += ", ";
+        s += dsl::FaultKindName(kind);
+    }
+    return s;
+}
+
+static RPCHelpMan faultinject_help()
+{
+    return RPCHelpMan{
+        "faultinject",
+        "DSL fault injection on devnet and regtest (requires -enablefaultinjection=1 and cookie authentication).\n"
+        "To get help on individual commands, use \"help faultinject command\".\n"
+        "\nAvailable commands:\n"
+        "  set    - Arm a fault until an expiry height\n"
+        "  list   - List the faults still active\n"
+        "  clear  - Drop one fault by id, or all of them\n",
+        {
+            {"command", RPCArg::Type::STR, RPCArg::Optional::NO, "The command to execute"},
+        },
+        RPCResults{},
+        RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    throw JSONRPCError(RPC_INVALID_PARAMETER, "Must be a valid command");
+},
+    };
+}
+
+static RPCHelpMan faultinject_set()
+{
+    return RPCHelpMan{"faultinject set",
+        "Arm a DSL fault on this node until the given height. The fault is process-local: it is never written\n"
+        "to disk and does not survive a restart. The expiry block itself is already clean.\n",
+        {
+            {"kind", RPCArg::Type::STR, RPCArg::Optional::NO, "One of: " + FaultKindHelp()},
+            {"expiryHeight", RPCArg::Type::NUM, RPCArg::Optional::NO, "First height at which the fault no longer applies; must be above the current height"},
+            {"scenarioId", RPCArg::Type::STR, RPCArg::Optional::NO, "The experiment this fault belongs to, recorded on the fault for telemetry and audit"},
+            {"param", RPCArg::Type::NUM, RPCArg::Default{0}, "Delay in blocks for the *-delay kinds; unused otherwise"},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::NUM, "id", "The fault id, unique for this process"},
+                {RPCResult::Type::STR, "kind", "The fault kind"},
+                {RPCResult::Type::NUM, "setAtHeight", "The chain height when the fault was armed"},
+                {RPCResult::Type::NUM, "expiryHeight", "First height at which it no longer applies"},
+                {RPCResult::Type::NUM, "param", "The kind-specific parameter"},
+                {RPCResult::Type::STR, "scenarioId", "The scenario that asked for it"},
+            }},
+        RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    dsl::CFaultInjector& injector = EnsureFaultInjector(request, node);
+    const ChainstateManager& chainman = EnsureChainman(node);
+
+    const std::string kindName = request.params[0].get_str();
+    const auto kind = dsl::FaultKindFromName(kindName);
+    if (!kind.has_value()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("unknown fault kind '%s'; expected one of: %s", kindName, FaultKindHelp()));
+    }
+    const int expiryHeight = ParseInt32V(request.params[1], "expiryHeight");
+    const std::string scenarioId = request.params[2].get_str();
+    if (scenarioId.empty()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "scenarioId must not be empty");
+    }
+    const int64_t param = request.params[3].isNull() ? 0 : request.params[3].get_int64();
+    if (param < 0 || param > std::numeric_limits<uint32_t>::max()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "param is out of range");
+    }
+    const int currentHeight = WITH_LOCK(cs_main, return chainman.ActiveChain().Height());
+    if (expiryHeight <= currentHeight) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER,
+                           strprintf("expiryHeight %d must be above the current height %d", expiryHeight, currentHeight));
+    }
+    const auto fault = injector.Set(*kind, currentHeight, expiryHeight, static_cast<uint32_t>(param), scenarioId);
+    if (!fault.has_value()) {
+        // every reason is checked above except the kind-specific ones
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "the fault was refused: a delay kind needs a non-zero param");
+    }
+    LogPrintf("FAULTINJECT armed id=%d kind=%s expiry=%d scenario=%s\n", fault->id,
+              dsl::FaultKindName(fault->kind), fault->expiryHeight, fault->scenarioId);
+    return FaultToJson(*fault);
+},
+    };
+}
+
+static RPCHelpMan faultinject_list()
+{
+    return RPCHelpMan{"faultinject list",
+        "List the DSL faults still active on this node at the current height.\n",
+        {},
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::BOOL, "enabled", "Whether the node was started with fault injection enabled"},
+                {RPCResult::Type::NUM, "height", "The chain height the list was evaluated at"},
+                {RPCResult::Type::ARR, "faults", "The active faults, oldest first",
+                {
+                    {RPCResult::Type::OBJ, "", "",
+                    {
+                        {RPCResult::Type::NUM, "id", "The fault id"},
+                        {RPCResult::Type::STR, "kind", "The fault kind"},
+                        {RPCResult::Type::NUM, "setAtHeight", "The chain height when the fault was armed"},
+                        {RPCResult::Type::NUM, "expiryHeight", "First height at which it no longer applies"},
+                        {RPCResult::Type::NUM, "param", "The kind-specific parameter"},
+                        {RPCResult::Type::STR, "scenarioId", "The scenario that asked for it"},
+                    }},
+                }},
+            }},
+        RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    dsl::CFaultInjector& injector = EnsureFaultInjector(request, node);
+    const ChainstateManager& chainman = EnsureChainman(node);
+    const int currentHeight = WITH_LOCK(cs_main, return chainman.ActiveChain().Height());
+    UniValue faults(UniValue::VARR);
+    for (const auto& fault : injector.List(currentHeight)) faults.push_back(FaultToJson(fault));
+    UniValue ret(UniValue::VOBJ);
+    ret.pushKV("enabled", injector.Enabled());
+    ret.pushKV("height", currentHeight);
+    ret.pushKV("faults", faults);
+    return ret;
+},
+    };
+}
+
+static RPCHelpMan faultinject_clear()
+{
+    return RPCHelpMan{"faultinject clear",
+        "Drop one DSL fault by id, or every fault when no id is given.\n",
+        {
+            {"id", RPCArg::Type::NUM, RPCArg::DefaultHint{"all faults"}, "The fault id to drop"},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::NUM, "cleared", "How many faults were dropped"},
+            }},
+        RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    dsl::CFaultInjector& injector = EnsureFaultInjector(request, node);
+    size_t cleared = 0;
+    if (request.params[0].isNull()) {
+        cleared = injector.Clear();
+    } else {
+        const int64_t id = request.params[0].get_int64();
+        if (id < 1) throw JSONRPCError(RPC_INVALID_PARAMETER, "id must be positive");
+        cleared = injector.Clear(static_cast<uint64_t>(id)) ? 1 : 0;
+    }
+    LogPrintf("FAULTINJECT cleared %d fault(s)\n", cleared);
+    UniValue ret(UniValue::VOBJ);
+    ret.pushKV("cleared", static_cast<int64_t>(cleared));
+    return ret;
+},
+    };
+}
+
 void RegisterEvoRPCCommands(CRPCTable &tableRPC)
 {
 // clang-format off
@@ -2072,6 +2279,10 @@ static const CRPCCommand commands[] =
     { "evo",                &protx_revoke,                     },
 #endif
     { "evo",                &dslstatus,                        },
+    { "evo",                &faultinject_help,                 },
+    { "evo",                &faultinject_set,                  },
+    { "evo",                &faultinject_list,                 },
+    { "evo",                &faultinject_clear,                },
     { "evo",                &protx_list,                       },
     { "evo",                &protx_info,                       },
     { "evo",                &protx_diff,                       },
