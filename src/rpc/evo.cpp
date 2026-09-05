@@ -2083,6 +2083,7 @@ static UniValue FaultToJson(const dsl::Fault& fault)
     obj.pushKV("expiryHeight", fault.expiryHeight);
     obj.pushKV("param", static_cast<int64_t>(fault.param));
     obj.pushKV("scenarioId", fault.scenarioId);
+    obj.pushKV("hits", fault.hits);
     return obj;
 }
 
@@ -2138,6 +2139,7 @@ static RPCHelpMan faultinject_set()
                 {RPCResult::Type::NUM, "expiryHeight", "First height at which it no longer applies"},
                 {RPCResult::Type::NUM, "param", "The kind-specific parameter"},
                 {RPCResult::Type::STR, "scenarioId", "The scenario that asked for it"},
+                {RPCResult::Type::NUM, "hits", "How many times the fault held an action back"},
             }},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
@@ -2197,6 +2199,7 @@ static RPCHelpMan faultinject_list()
                         {RPCResult::Type::NUM, "expiryHeight", "First height at which it no longer applies"},
                         {RPCResult::Type::NUM, "param", "The kind-specific parameter"},
                         {RPCResult::Type::STR, "scenarioId", "The scenario that asked for it"},
+                        {RPCResult::Type::NUM, "hits", "How many times the fault held an action back"},
                     }},
                 }},
             }},

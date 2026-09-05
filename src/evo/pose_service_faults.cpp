@@ -103,6 +103,19 @@ std::optional<Fault> CFaultInjector::Active(FaultKind kind, int currentHeight) c
     return std::nullopt;
 }
 
+std::optional<Fault> CFaultInjector::Apply(FaultKind kind, int currentHeight)
+{
+    if (!m_enabled) return std::nullopt;
+    LOCK(m_mutex);
+    for (auto& fault : m_faults) {
+        if (fault.kind == kind && fault.IsActiveAt(currentHeight)) {
+            ++fault.hits;
+            return fault;
+        }
+    }
+    return std::nullopt;
+}
+
 bool CFaultInjector::Clear(uint64_t id)
 {
     LOCK(m_mutex);

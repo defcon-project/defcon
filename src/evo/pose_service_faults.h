@@ -20,11 +20,10 @@ namespace dsl {
 /**
  * Fault injection for the Sentinel Layer (DSL), test networks only.
  *
- * This is the state model and the gate. It decides nothing about liveness by
- * itself: a fault is a request that the network layer, when it is wired to ask
- * (a later change), drops or delays a DSL message or skips a commitment for a
- * bounded number of blocks. What it must guarantee on its own, and what the
- * tests beside it pin:
+ * This is the state model and the gate. A fault is a request that the network
+ * layer drops or delays one of this node's own DSL actions, or that the node
+ * withholds its part of a commitment, for a bounded number of blocks. What
+ * the model guarantees on its own, and what the tests beside it pin:
  *
  *  - It is inert unless the node was started with -enablefaultinjection=1,
  *    and that argument is refused at startup on any chain that is not devnet
@@ -41,6 +40,9 @@ namespace dsl {
  *    consensus data, the evodb or the chainstate.
  *  - Every fault names the scenario that asked for it, so telemetry and audit
  *    can attribute an observation to an experiment rather than to the network.
+ *  - Every time a fault actually holds an action back it is counted on the
+ *    fault (`hits`), so "the fault was armed" and "the fault did something"
+ *    are two different facts in the record.
  *
  * The existing `quorum dkgsimerror` is the precedent this avoids repeating: it
  * is a process-global rate with no chain gate, no expiry and no owner, which a
@@ -50,11 +52,11 @@ namespace dsl {
  */
 
 enum class FaultKind : uint8_t {
-    RESPONSE_DROP,   //!< do not send / relay this node's liveness announcement
-    REPORT_DROP,     //!< do not send / relay this node's sentinel reports
-    RESPONSE_DELAY,  //!< hold the announcement for `param` blocks
-    REPORT_DELAY,    //!< hold the reports for `param` blocks
-    COMMITMENT_SKIP, //!< as a signing-quorum member, do not sign / mine the commitment
+    RESPONSE_DROP,   //!< do not send this node's liveness announcement
+    REPORT_DROP,     //!< do not send this node's sentinel reports
+    RESPONSE_DELAY,  //!< hold the announcement for `param` blocks into the epoch
+    REPORT_DELAY,    //!< hold the reports for `param` blocks past the cutoff
+    COMMITMENT_SKIP, //!< as a signing-quorum member, do not sign; as a miner, mine no commitment
     _COUNT,
 };
 
@@ -73,6 +75,8 @@ struct Fault {
     uint32_t param{0};
     /** Who asked. Required, never empty. */
     std::string scenarioId;
+    /** How many times this fault held an action back. Telemetry, not identity. */
+    uint64_t hits{0};
 
     bool IsActiveAt(int height) const { return height < expiryHeight; }
 };
@@ -96,8 +100,15 @@ public:
     /** The faults still active at `currentHeight`, oldest first. */
     std::vector<Fault> List(int currentHeight) const;
 
-    /** The oldest active fault of this kind, if any. What the network layer will ask. */
+    /** The oldest active fault of this kind, if any. A pure lookup; nothing is counted. */
     std::optional<Fault> Active(FaultKind kind, int currentHeight) const;
+
+    /**
+     * The oldest active fault of this kind, counted as having acted: the hook
+     * that is about to hold an action back calls this, so `hits` reflects
+     * what the fault did and not how often it was looked at.
+     */
+    std::optional<Fault> Apply(FaultKind kind, int currentHeight);
 
     /** Drop one fault by id; false if there was none. */
     bool Clear(uint64_t id);

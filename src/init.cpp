@@ -2036,7 +2036,8 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     node.peerman = PeerManager::make(chainparams, *node.connman, *node.addrman, node.banman.get(),
                                      chainman, *node.mempool, *node.mn_metaman, *node.mn_sync,
                                      *node.govman, *node.sporkman, node.mn_activeman.get(), node.dmnman,
-                                     node.cj_ctx, node.llmq_ctx, node.dslman, ignores_incoming_txs);
+                                     node.cj_ctx, node.llmq_ctx, node.dslman, ignores_incoming_txs,
+                                     node.faultinjector.get());
     RegisterValidationInterface(node.peerman.get());
 
     g_ds_notification_interface = std::make_unique<CDSNotificationInterface>(
