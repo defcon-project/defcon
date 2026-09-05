@@ -1982,6 +1982,9 @@ static RPCHelpMan dslstatus()
             RPCResult::Type::OBJ, "", "",
             {
                 {RPCResult::Type::BOOL, "active", "Whether the chain has reached the DSL activation height"},
+                {RPCResult::Type::NUM, "activationheight", "The height from which the protocol runs"},
+                {RPCResult::Type::NUM, "enforcementheight", "The height from which a verdict suspends rewards and bans, rather than only being recorded. 2147483647 means unreachable, i.e. never"},
+                {RPCResult::Type::BOOL, "enforcing", "Whether the chain has reached that height"},
                 {RPCResult::Type::NUM, "epoch", "The epoch currently being probed"},
                 {RPCResult::Type::STR_HEX, "epochblockhash", "The epoch's base block hash"},
                 {RPCResult::Type::NUM, "respondedcount", "Masternodes whose liveness announcement this node has seen this epoch"},
@@ -2006,8 +2009,29 @@ static RPCHelpMan dslstatus()
         if (report.status == static_cast<uint8_t>(dsl::ServiceStatus::MISSED)) ++missed;
     }
 
+    // Both heights are reported, not just whether they have been reached.
+    //
+    // They are consensus parameters that arrive from the configuration file,
+    // and until now nothing could be asked which values a running daemon
+    // actually holds -- the conf on disk was the only evidence, and a conf is
+    // not proof that the daemon read it. That distinction is not academic
+    // here: a node started without -dslactivationheight rejects the first
+    // service-commitment transaction as bad-txns-type and strands, and that
+    // took an hour to diagnose precisely because no RPC would say what the
+    // node believed.
+    //
+    // It also decides whether a fleet-wide roll of the enforcement height can
+    // be verified at all. Below the height, and above it while nobody is
+    // delinquent, a daemon that received the setting and one that did not
+    // behave identically -- so no observation of the chain can separate them.
+    // Asking each daemon is the only way, which makes this the difference
+    // between checking the input and checking the state.
+    const auto& consensus = Params().GetConsensus();
     UniValue ret(UniValue::VOBJ);
-    ret.pushKV("active", tip_height >= Params().GetConsensus().nDSLActivationHeight);
+    ret.pushKV("active", tip_height >= consensus.nDSLActivationHeight);
+    ret.pushKV("activationheight", consensus.nDSLActivationHeight);
+    ret.pushKV("enforcementheight", consensus.nDSLEnforcementHeight);
+    ret.pushKV("enforcing", tip_height >= consensus.nDSLEnforcementHeight);
     ret.pushKV("epoch", static_cast<int64_t>(epoch));
     ret.pushKV("epochblockhash", mgr.CurrentEpochHash().ToString());
     ret.pushKV("respondedcount", static_cast<int64_t>(mgr.RespondedCount()));

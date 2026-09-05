@@ -31,6 +31,8 @@ EPOCH_INTERVAL = 24
 CUTOFF = EPOCH_INTERVAL - EPOCH_INTERVAL // 4  # reports are emitted from this offset
 SUSPEND_EPOCHS = 4  # consensus.nDSLSuspendEpochs
 BAN_EPOCHS = 5      # consensus.nDSLBanEpochs
+DSL_ACTIVATE_AT = 1
+DSL_ENFORCE_AT = 1
 
 
 class DSLEnforcementTest(DashTestFramework):
@@ -40,8 +42,8 @@ class DSLEnforcementTest(DashTestFramework):
         # instead of the guard freezing every epoch. Six survivors also leave
         # enough sentinels for the aggregation threshold (five must agree).
         self.extra_args = [[
-            "-testactivationheight=dsl@1",
-            "-testactivationheight=dslenforcement@1",
+            f"-testactivationheight=dsl@{DSL_ACTIVATE_AT}",
+            f"-testactivationheight=dslenforcement@{DSL_ENFORCE_AT}",
         ]] * 8
         self.set_dash_test_params(8, 7, extra_args=self.extra_args)
 
@@ -88,6 +90,23 @@ class DSLEnforcementTest(DashTestFramework):
         self.wait_for_sporks_same()
         for n in self.nodes:
             force_finish_mnsync(n)
+
+        # The heights this test was started with, read back from the daemon
+        # rather than from the arguments it was given. An argument is not proof
+        # that the node took it, and for the enforcement height nothing
+        # observable on the chain distinguishes a node that took it from one
+        # that did not until somebody is actually delinquent -- by which time
+        # the split has already happened.
+        #
+        # The negative control is built in: unset, both heights read
+        # 2147483647, so a daemon that ignored either argument fails here
+        # rather than in some later assertion about behaviour.
+        self.log.info("Every node reports the heights it was actually started with")
+        for n in self.nodes:
+            st = n.dslstatus()
+            assert_equal(st["activationheight"], DSL_ACTIVATE_AT)
+            assert_equal(st["enforcementheight"], DSL_ENFORCE_AT)
+            assert_equal(st["enforcing"], n.getblockcount() >= DSL_ENFORCE_AT)
 
         self.log.info("Forming the quorums that attest the commitments")
         node.sporkupdate("SPORK_17_QUORUM_DKG_ENABLED", 0)
