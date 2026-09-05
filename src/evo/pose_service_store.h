@@ -81,8 +81,31 @@ private:
     uint32_t m_currentEpoch GUARDED_BY(m_mutex){0};
     const uint32_t m_keepEpochs;
 
+    // The epoch's sentinel assignment, memoised per target.
+    //
+    // Deriving one target's set scores the whole masternode list, and AddReport
+    // runs on every report the network floods: seven per target at the healthy
+    // rate, and up to one per target from any single masternode that chooses to
+    // spam, since it can sign reports naming itself. Recomputing per report made
+    // receiving an epoch quadratic in the network size -- measured at 33.7s for
+    // 5000 masternodes, all of it holding this mutex. Memoised, an epoch costs at
+    // most one derivation per target however many reports arrive.
+    //
+    // Keyed by the base hash it was derived against, so a reorg that moves the
+    // epoch base discards it instead of answering from the chain that is gone.
+    // std::map, not unordered_map: SentinelsFor hands out a reference, and only
+    // std::map keeps that valid across later insertions.
+    uint256 m_assignBase GUARDED_BY(m_mutex);
+    std::map<uint256, std::vector<uint256>> m_assignCache GUARDED_BY(m_mutex);
+
     // Lowest epoch still inside the retained window for m_currentEpoch.
     uint32_t OldestKeptEpoch() const EXCLUSIVE_LOCKS_REQUIRED(m_mutex);
+
+    // This epoch's sentinels for one target, deriving them at most once.
+    const std::vector<uint256>& SentinelsFor(const CDeterministicMNList& epochList,
+                                             const uint256& targetProTxHash,
+                                             const uint256& epochBlockHash,
+                                             size_t count) EXCLUSIVE_LOCKS_REQUIRED(m_mutex);
 };
 
 } // namespace dsl

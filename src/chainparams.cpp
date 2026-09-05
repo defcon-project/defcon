@@ -1192,6 +1192,8 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
             consensus.nPosFeeBurnActivationHeight = int{height};
         } else if (name == "compute") {
             consensus.nComputeNodeActivationHeight = int{height};
+        } else if (name == "chainlocksv2") {
+            consensus.nChainLocksV2ActivationHeight = int{height};
         } else if (name == "dsl") {
             consensus.nDSLActivationHeight = int{height};
         } else if (name == "dslenforcement") {
@@ -1205,6 +1207,18 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
 void CRegTestParams::UpdateActivationParametersFromArgs(const ArgsManager& args)
 {
     MaybeUpdateHeights(args, consensus);
+
+    // The Q60 ChainLock profile is registered on regtest ONLY when a
+    // switchover height is given. Two reasons it is not unconditional:
+    // CheckLLMQConfiguration requires llmqTypeChainLocksV2 and its height to be
+    // set together, and registering a 60-member profile would start a DKG
+    // handler for it in every regtest test, where the list is a handful of
+    // masternodes and the session could only ever fail. With no argument,
+    // regtest is byte-identical to what it was.
+    if (consensus.nChainLocksV2ActivationHeight != std::numeric_limits<int>::max()) {
+        AddLLMQ(Consensus::LLMQType::LLMQ_DEFCON);
+        consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
+    }
 
     // Checked after the whole list is parsed, so the two DSL heights may be
     // given in either order. Same reasoning as on devnet: enforcement below
@@ -1691,7 +1705,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-computeactivationheight=<n>", "Height from which the Compute masternode type may register (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslactivationheight=<n>", "Height from which the DSL service-commitment protocol runs, recording missed epochs without acting on them (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslenforcementheight=<n>", "Height from which a DSL verdict suspends rewards and bans, instead of only being recorded. Must not be below -dslactivationheight; the gap between them is the shadow window (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, dsl, dslenforcement). (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, chainlocksv2, dsl, dslenforcement). (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-vbparams=<deployment>:<start>:<end>(:min_activation_height(:<window>:<threshold/thresholdstart>(:<thresholdmin>:<falloffcoeff>:<mnactivation>)))",
                  "Use given start/end times and min_activation_height for specified version bits deployment (regtest-only). "
                  "Specifying window, threshold/thresholdstart, thresholdmin, falloffcoeff and mnactivation is optional.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);

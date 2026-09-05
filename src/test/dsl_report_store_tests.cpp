@@ -60,16 +60,24 @@ Fixture MakeFixture(size_t n)
     return fx;
 }
 
-dsl::CPoSeServiceReport SignedReport(uint32_t epoch, const uint256& target, const uint256& sentinel,
-                                     dsl::ServiceStatus status, const CBLSSecretKey& key)
+dsl::CPoSeServiceReport SignedReportOn(const uint256& base, uint32_t epoch, const uint256& target,
+                                       const uint256& sentinel, dsl::ServiceStatus status,
+                                       const CBLSSecretKey& key)
 {
     dsl::CPoSeServiceReport r;
     r.nEpoch = epoch;
     r.targetProTxHash = target;
     r.sentinelProTxHash = sentinel;
     r.status = static_cast<uint8_t>(status);
-    r.Sign(key, TaggedHash(500, 0, "epoch")); // the fixture's epoch base
+    r.Sign(key, base);
     return r;
+}
+
+dsl::CPoSeServiceReport SignedReport(uint32_t epoch, const uint256& target, const uint256& sentinel,
+                                     dsl::ServiceStatus status, const CBLSSecretKey& key)
+{
+    // the fixture's epoch base
+    return SignedReportOn(TaggedHash(500, 0, "epoch"), epoch, target, sentinel, status, key);
 }
 } // namespace
 
@@ -165,6 +173,64 @@ BOOST_AUTO_TEST_CASE(a_target_that_is_not_a_masternode_is_refused)
                                fx.opKeys[real_sentinels[0]]);
     BOOST_CHECK(store.AddReport(honest, fx.list, fx.epoch, params));
     BOOST_CHECK_EQUAL(store.Size(), 1u);
+}
+
+// The store memoises each target's sentinel set for the epoch base it was
+// derived against, because deriving it scores the whole masternode list and
+// AddReport runs on every report the network floods. A memo that outlived its
+// base would be worse than the cost it saves: it would answer questions about
+// the current epoch with the previous one's assignment, silently refusing the
+// sentinels this epoch actually appointed and admitting the ones it did not.
+// Both directions are checked, because a stale memo gets each of them wrong.
+BOOST_AUTO_TEST_CASE(assignment_memo_does_not_outlive_its_epoch_base)
+{
+    auto fx = MakeFixture(30);
+    Consensus::Params params;
+    const uint256 target = TaggedHash(11, 0, "protx");
+
+    const uint256 baseA = fx.epoch;
+    const uint256 baseB = TaggedHash(501, 0, "epoch");
+    const auto assignedA = dsl::CalcSentinelsForMN(fx.list, target, baseA, 7);
+    const auto assignedB = dsl::CalcSentinelsForMN(fx.list, target, baseB, 7);
+
+    const auto only_in = [](const std::vector<uint256>& a, const std::vector<uint256>& b) {
+        std::vector<uint256> out;
+        for (const auto& h : a) {
+            if (std::find(b.begin(), b.end(), h) == b.end()) out.push_back(h);
+        }
+        return out;
+    };
+    const auto onlyA = only_in(assignedA, assignedB);
+    const auto onlyB = only_in(assignedB, assignedA);
+    // If a base change moved nobody, this test proves nothing -- say so rather
+    // than passing.
+    BOOST_REQUIRE(!onlyA.empty());
+    BOOST_REQUIRE(!onlyB.empty());
+
+    dsl::CServiceReportStore store;
+    store.SetCurrentEpoch(500);
+
+    // epoch 500 on base A: accepted, and the memo for this target is now filled
+    auto seed = SignedReportOn(baseA, 500, target, assignedA[0], dsl::ServiceStatus::ONLINE,
+                               fx.opKeys[assignedA[0]]);
+    BOOST_CHECK(store.AddReport(seed, fx.list, baseA, params));
+
+    // epoch 501 on base B, same target: the memo must have been discarded
+    store.SetCurrentEpoch(501);
+
+    // a sentinel base A appointed and base B did not is refused -- a stale memo
+    // would have accepted it
+    auto stale = SignedReportOn(baseB, 501, target, onlyA[0], dsl::ServiceStatus::MISSED,
+                                fx.opKeys[onlyA[0]]);
+    BOOST_CHECK(!store.AddReport(stale, fx.list, baseB, params));
+
+    // and a sentinel base B appointed is accepted -- a stale memo would have
+    // refused it, which is the quieter half of the same bug
+    auto fresh = SignedReportOn(baseB, 501, target, onlyB[0], dsl::ServiceStatus::MISSED,
+                                fx.opKeys[onlyB[0]]);
+    BOOST_CHECK(store.AddReport(fresh, fx.list, baseB, params));
+
+    BOOST_CHECK_EQUAL(store.GetReportsForEpoch(501).size(), 1u);
 }
 
 BOOST_AUTO_TEST_CASE(rejects_out_of_window_and_prunes)

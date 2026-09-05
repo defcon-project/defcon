@@ -308,7 +308,13 @@ def random_bytes(n):
 ############################################
 
 # The maximum number of nodes a single test can spawn
-MAX_NODES = 20
+# The port space below reserves MAX_NODES consecutive ports per run, so this is
+# a ceiling on nodes per test. It defaults to the historical 20, which keeps
+# every existing test on exactly the ports it had; a test that needs a real
+# quorum-sized network (llmq_defcon is 60 members, so >60 daemons) raises it for
+# its own run only. With PORT_RANGE 5000 the p2p and rpc windows stay disjoint
+# for any value up to a few hundred.
+MAX_NODES = int(os.getenv('TEST_RUNNER_MAX_NODES', default=20))
 # Don't assign rpc or p2p ports lower than this
 PORT_MIN = int(os.getenv('TEST_RUNNER_PORT_MIN', default=11000))
 # The number of ports to "reserve" for p2p and rpc, each

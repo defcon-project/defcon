@@ -116,6 +116,7 @@ BITCOIN_TESTS =\
   test/pose_service_sentinels_tests.cpp \
   test/dsl_aggregation_tests.cpp \
   test/dsl_report_store_tests.cpp \
+  test/dsl_perf_tests.cpp \
   test/dsl_probe_tests.cpp \
   test/dsl_manager_tests.cpp \
   test/dsl_apply_tests.cpp \
@@ -143,6 +144,10 @@ BITCOIN_TESTS =\
   test/limitedmap_tests.cpp \
   test/llmq_blockprocessor_tests.cpp \
   test/llmq_dkg_tests.cpp \
+  test/llmq_scale_simulator_tests.cpp \
+  test/chainlock_profile_resolver_tests.cpp \
+  test/chainlock_finality_conflict_model_tests.cpp \
+  test/dsl_service_pose_tests.cpp \
   test/llmq_qgetdata_tests.cpp \
   test/llmq_signing_shares_tests.cpp \
   test/llmq_snapshot_tests.cpp \

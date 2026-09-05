@@ -25,14 +25,31 @@ std::vector<uint256> CalcSentinelsForMN(const CDeterministicMNList& list,
     const uint256 modifier = w.GetHash();
 
     auto scores = list.CalculateScores(modifier);
-    std::sort(scores.begin(), scores.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    // Only the lowest `count` are wanted, and the target itself may be one of
+    // them, so `count + 1` is always enough to fill the set. Fully sorting the
+    // list to read its head was the most expensive thing this layer did, and it
+    // runs once per report received and once per target when a commitment is
+    // built.
+    //
+    // The comparator is a total order -- score first, proTxHash to break a tie --
+    // because partial_sort, like sort, is not stable. Two equal 256-bit scores
+    // are not something this network will see, but "never in practice" is the
+    // wrong guarantee for a set every node must derive identically: a
+    // disagreement here silently rejects an honest node's reports rather than
+    // failing loudly.
+    const auto by_score = [](const auto& a, const auto& b) {
+        if (a.first != b.first) return a.first < b.first;
+        return a.second->proTxHash < b.second->proTxHash;
+    };
+    const size_t head = std::min(count + 1, scores.size());
+    std::partial_sort(scores.begin(), scores.begin() + head, scores.end(), by_score);
 
     std::vector<uint256> out;
     out.reserve(count);
-    for (const auto& s : scores) {
-        if (s.second->proTxHash == targetProTxHash) continue;
-        out.push_back(s.second->proTxHash);
+    for (size_t i = 0; i < head; ++i) {
+        if (scores[i].second->proTxHash == targetProTxHash) continue;
+        out.push_back(scores[i].second->proTxHash);
         if (out.size() == count) break;
     }
     return out;
