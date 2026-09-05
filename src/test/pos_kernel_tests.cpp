@@ -542,9 +542,12 @@ BOOST_AUTO_TEST_CASE(strict_bls_sig_size_activation_heights_are_pinned)
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nStrictBLSSigSizeActivationHeight,
                       0);
 
+    // Devnet unset since 2026-09-05: M-02 is out of the v23 release, and the
+    // devnet is kept identical to what ships. Regtest keeps it at 0 so the rule
+    // itself stays exercised by script_tests.
     gArgs.SoftSetBoolArg("-devnet", true);
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::DEVNET)->GetConsensus().nStrictBLSSigSizeActivationHeight,
-                      5250);
+                      std::numeric_limits<int>::max());
     gArgs.ForceRemoveArg("devnet");
 }
 
