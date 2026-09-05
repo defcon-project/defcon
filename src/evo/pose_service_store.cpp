@@ -47,23 +47,47 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
     const auto sdmn = epochList.GetMN(report.sentinelProTxHash);
     if (!sdmn) return false;
 
-    // The signature ahead of the assignment: verifying costs the same whatever
-    // the network size, while deriving the assignment scores and sorts the
-    // whole masternode list. At the sizes this layer is built for the sort
-    // dominates, so the cheaper check goes first -- and it is the one nobody
-    // passes without the sentinel's own operator key.
-    if (!report.VerifySig(sdmn->pdmnState->pubKeyOperator.Get(), epochBlockHash)) return false;
-
     // The sentinel must be one this epoch assigned to the target -- a node that
     // was never asked to probe this target cannot contribute an observation.
-    const auto sentinels = CalcSentinelsForMN(epochList, report.targetProTxHash, epochBlockHash,
-                                              static_cast<size_t>(params.nDSLSentinelCount));
+    //
+    // This check used to come second, on the reasoning that verifying a signature
+    // costs the same at any network size while deriving the assignment sorts the
+    // whole list, so the cheap test should go first. That holds only against an
+    // attacker who cannot sign. A registered masternode signs with its own
+    // operator key, so it passes the signature check on every report it cares to
+    // invent, naming itself sentinel for every target in the list; each one then
+    // paid a full derivation while holding m_mutex. Memoised, assignment is a
+    // lookup after the first report for a target -- so it is now both the cheaper
+    // test and the only one that stops the case the other cannot.
+    const auto& sentinels = SentinelsFor(epochList, report.targetProTxHash, epochBlockHash,
+                                         static_cast<size_t>(params.nDSLSentinelCount));
     if (std::find(sentinels.begin(), sentinels.end(), report.sentinelProTxHash) == sentinels.end()) {
         return false;
     }
 
+    if (!report.VerifySig(sdmn->pdmnState->pubKeyOperator.Get(), epochBlockHash)) return false;
+
     m_reports.emplace(key, report);
     return true;
+}
+
+const std::vector<uint256>& CServiceReportStore::SentinelsFor(const CDeterministicMNList& epochList,
+                                                              const uint256& targetProTxHash,
+                                                              const uint256& epochBlockHash,
+                                                              size_t count)
+{
+    AssertLockHeld(m_mutex);
+    if (m_assignBase != epochBlockHash) {
+        m_assignBase = epochBlockHash;
+        m_assignCache.clear();
+    }
+    if (const auto it = m_assignCache.find(targetProTxHash); it != m_assignCache.end()) {
+        return it->second;
+    }
+    return m_assignCache
+        .emplace(targetProTxHash,
+                 CalcSentinelsForMN(epochList, targetProTxHash, epochBlockHash, count))
+        .first->second;
 }
 
 std::vector<CPoSeServiceReport> CServiceReportStore::GetReportsForEpoch(uint32_t nEpoch) const

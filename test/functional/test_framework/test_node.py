@@ -27,7 +27,6 @@ from .descriptors import descsum_create
 from .messages import NODE_P2P_V2
 from .p2p import P2P_SERVICES, P2P_SUBVERSION
 from .util import (
-    MAX_NODES,
     assert_equal,
     append_config,
     delete_cookie_file,
@@ -186,7 +185,10 @@ class TestNode():
 
     def get_deterministic_priv_key(self):
         """Return a deterministic priv key in base58, that only depends on the node's index"""
-        assert len(self.PRIV_KEYS) == MAX_NODES
+        assert self.index < len(self.PRIV_KEYS), (
+            "node %d has no deterministic key: PRIV_KEYS holds %d. Only nodes that "
+            "import a coinbase key need one -- in a masternode test that is the "
+            "controller node alone." % (self.index, len(self.PRIV_KEYS)))
         return self.PRIV_KEYS[self.index]
 
     def _node_msg(self, msg: str) -> str:
