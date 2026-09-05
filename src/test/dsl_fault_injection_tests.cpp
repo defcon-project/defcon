@@ -136,6 +136,28 @@ BOOST_AUTO_TEST_CASE(ids_are_unique_and_clear_targets_one_or_all)
     BOOST_CHECK(d->id > c->id);
 }
 
+BOOST_AUTO_TEST_CASE(apply_counts_what_a_fault_did_and_active_does_not)
+{
+    dsl::CFaultInjector on(/*enabled=*/true);
+    const auto fault = on.Set(dsl::FaultKind::RESPONSE_DROP, 10, 20, 0, "s");
+    BOOST_REQUIRE(fault.has_value());
+    BOOST_CHECK_EQUAL(fault->hits, 0U);
+    // looking is free
+    BOOST_CHECK(on.Active(dsl::FaultKind::RESPONSE_DROP, 10).has_value());
+    BOOST_CHECK_EQUAL(on.List(10).front().hits, 0U);
+    // acting is counted, on the stored fault, and reported by Apply itself
+    BOOST_CHECK_EQUAL(on.Apply(dsl::FaultKind::RESPONSE_DROP, 10)->hits, 1U);
+    BOOST_CHECK_EQUAL(on.Apply(dsl::FaultKind::RESPONSE_DROP, 19)->hits, 2U);
+    BOOST_CHECK_EQUAL(on.List(19).front().hits, 2U);
+    // past expiry nothing acts, and nothing is counted
+    BOOST_CHECK(!on.Apply(dsl::FaultKind::RESPONSE_DROP, 20).has_value());
+    // a different kind never matched
+    BOOST_CHECK(!on.Apply(dsl::FaultKind::REPORT_DROP, 10).has_value());
+    BOOST_CHECK_EQUAL(on.List(10).front().hits, 2U);
+    dsl::CFaultInjector off(/*enabled=*/false);
+    BOOST_CHECK(!off.Apply(dsl::FaultKind::RESPONSE_DROP, 10).has_value());
+}
+
 BOOST_AUTO_TEST_CASE(kind_names_round_trip_and_unknown_names_are_refused)
 {
     for (const auto kind : dsl::AllFaultKinds()) {

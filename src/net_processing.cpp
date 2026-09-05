@@ -65,6 +65,7 @@
 #include <evo/deterministicmns.h>
 #include <evo/mnauth.h>
 #include <evo/pose_service_manager.h>
+#include <evo/pose_service_faults.h>
 #include <evo/simplifiedmns.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/chainlocks.h>
@@ -646,7 +647,8 @@ public:
                     const std::unique_ptr<CJContext>& cj_ctx,
                     const std::unique_ptr<LLMQContext>& llmq_ctx,
                     const std::unique_ptr<dsl::CPoSeServiceManager>& dslman,
-                    bool ignore_incoming_txs);
+                    bool ignore_incoming_txs,
+                    dsl::CFaultInjector* faultinjector);
 
     /** Overridden from CValidationInterface. */
     void BlockConnected(const std::shared_ptr<const CBlock>& pblock, const CBlockIndex* pindexConnected) override
@@ -704,6 +706,14 @@ private:
     /** Per-block DSL epoch tick: roll the epoch, announce our own liveness, and
      *  at the cutoff turn silence into signed reports. */
     void ProcessDSLTick(const CBlockIndex* pindexNew);
+    /**
+     * Whether an injected fault holds one of this node's own DSL actions back
+     * at this height: a drop of the kind, or a delay whose `param` blocks past
+     * `normalOffset` have not elapsed in the epoch. Counts the hit and logs it.
+     * With no injector, or a disabled one, this is a null check and false.
+     */
+    bool DslFaultHolds(dsl::FaultKind drop, dsl::FaultKind delay, uint32_t pos, uint32_t normalOffset,
+                       int height, const char* what);
     /** Flood a DSL probe message to every full-relay peer except `skip_id`. */
     template <typename T>
     void RelayDSLMessage(const std::string& msg_type, const T& obj, NodeId skip_id);
@@ -837,6 +847,8 @@ private:
     CSporkManager& m_sporkman;
     const CActiveMasternodeManager* const m_mn_activeman;
     const std::unique_ptr<dsl::CPoSeServiceManager>& m_dslman;
+    /** DSL fault injection; null or disabled on every network but devnet/regtest, and then never consulted. */
+    dsl::CFaultInjector* const m_faultinjector;
 
     /** The last epoch this node announced its own liveness in, the last it
      *  emitted its sentinel reports for, and the last it asked the attesting
@@ -2095,9 +2107,10 @@ std::unique_ptr<PeerManager> PeerManager::make(const CChainParams& chainparams, 
                                                const std::unique_ptr<CJContext>& cj_ctx,
                                                const std::unique_ptr<LLMQContext>& llmq_ctx,
                                                const std::unique_ptr<dsl::CPoSeServiceManager>& dslman,
-                                               bool ignore_incoming_txs)
+                                               bool ignore_incoming_txs,
+                                               dsl::CFaultInjector* faultinjector)
 {
-    return std::make_unique<PeerManagerImpl>(chainparams, connman, addrman, banman, chainman, pool, mn_metaman, mn_sync, govman, sporkman, mn_activeman, dmnman, cj_ctx, llmq_ctx, dslman, ignore_incoming_txs);
+    return std::make_unique<PeerManagerImpl>(chainparams, connman, addrman, banman, chainman, pool, mn_metaman, mn_sync, govman, sporkman, mn_activeman, dmnman, cj_ctx, llmq_ctx, dslman, ignore_incoming_txs, faultinjector);
 }
 
 PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& connman, AddrMan& addrman, BanMan* banman,
@@ -2109,7 +2122,8 @@ PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& conn
                                  const std::unique_ptr<CJContext>& cj_ctx,
                                  const std::unique_ptr<LLMQContext>& llmq_ctx,
                                  const std::unique_ptr<dsl::CPoSeServiceManager>& dslman,
-                                 bool ignore_incoming_txs)
+                                 bool ignore_incoming_txs,
+                                 dsl::CFaultInjector* faultinjector)
     : m_chainparams(chainparams),
       m_connman(connman),
       m_addrman(addrman),
@@ -2125,6 +2139,7 @@ PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& conn
       m_sporkman(sporkman),
       m_mn_activeman(mn_activeman),
       m_dslman(dslman),
+      m_faultinjector(faultinjector),
       m_ignore_incoming_txs(ignore_incoming_txs)
 {
     // While Erlay support is incomplete, it must be enabled explicitly via -txreconciliation.
@@ -5594,11 +5609,42 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
                                                          m_mn_activeman->GetProTxHash(),
                                                          m_mn_activeman->GetPubKey());
     if (myProTxHash.IsNull()) return;
+    {
+        // a node holding its announcement back must not leak it through a
+        // targeted re-request either
+        const int tipHeight = WITH_LOCK(cs_main, return m_chainman.ActiveChain().Height());
+        const uint32_t tipPos = consensus.nDSLEpochInterval > 0
+            ? static_cast<uint32_t>(tipHeight) % static_cast<uint32_t>(consensus.nDSLEpochInterval)
+            : 0;
+        if (DslFaultHolds(dsl::FaultKind::RESPONSE_DROP, dsl::FaultKind::RESPONSE_DELAY, tipPos, /*normalOffset=*/0,
+                          tipHeight, "challenge re-announcement")) {
+            return;
+        }
+    }
     const auto ann = m_dslman->AnnounceLiveness(myProTxHash, [this](const uint256& hash) {
         return m_mn_activeman->Sign(hash, /*is_legacy=*/false);
     });
     const CNetMsgMaker msgMaker(pfrom.GetCommonVersion());
     m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::POSERESPONSE, ann));
+}
+
+bool PeerManagerImpl::DslFaultHolds(dsl::FaultKind drop, dsl::FaultKind delay, uint32_t pos, uint32_t normalOffset,
+                                    int height, const char* what)
+{
+    if (m_faultinjector == nullptr || !m_faultinjector->Enabled()) return false;
+    if (const auto fault = m_faultinjector->Apply(drop, height)) {
+        LogPrintf("FAULTINJECT %s withheld at height %d: fault %d (%s), expires at %d\n", what, height, fault->id,
+                  fault->scenarioId, fault->expiryHeight);
+        return true;
+    }
+    if (const auto held = m_faultinjector->Active(delay, height); held && pos < normalOffset + held->param) {
+        // counted as acting only while it actually holds the action back
+        m_faultinjector->Apply(delay, height);
+        LogPrintf("FAULTINJECT %s delayed at height %d (epoch position %d, releases at %d): fault %d (%s)\n", what,
+                  height, pos, normalOffset + held->param, held->id, held->scenarioId);
+        return true;
+    }
+    return false;
 }
 
 void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
@@ -5661,8 +5707,14 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
         return m_mn_activeman->Sign(hash, /*is_legacy=*/false);
     };
 
-    // announce our own liveness once per epoch, and flood it
-    if (m_dsl_last_announced_epoch.exchange(epoch) != static_cast<int64_t>(epoch)) {
+    // announce our own liveness once per epoch, and flood it. An injected
+    // response fault is consulted before the epoch is marked announced, so a
+    // fault that expires or is cleared mid-epoch lets the next tick announce:
+    // recovery is the next block, not the next epoch.
+    if (m_dsl_last_announced_epoch.load() != static_cast<int64_t>(epoch) &&
+        !DslFaultHolds(dsl::FaultKind::RESPONSE_DROP, dsl::FaultKind::RESPONSE_DELAY, pos, /*normalOffset=*/0,
+                       pindexNew->nHeight, "liveness announcement") &&
+        m_dsl_last_announced_epoch.exchange(epoch) != static_cast<int64_t>(epoch)) {
         const auto ann = m_dslman->AnnounceLiveness(myProTxHash, signer);
         LogPrint(BCLog::NET, "DSL -- announcing liveness for epoch %d\n", epoch);
         if (m_dslman->ProcessResponse(ann, mn_list, pindexBase->GetBlockHash())) {
@@ -5674,6 +5726,9 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
     // unless this epoch is a warm-up we cannot fairly judge
     if (pos >= interval - interval / 4 &&
         static_cast<int64_t>(epoch) != m_dsl_warmup_epoch.load() &&
+        m_dsl_last_emitted_epoch.load() != static_cast<int64_t>(epoch) &&
+        !DslFaultHolds(dsl::FaultKind::REPORT_DROP, dsl::FaultKind::REPORT_DELAY, pos,
+                       /*normalOffset=*/interval - interval / 4, pindexNew->nHeight, "sentinel reports") &&
         m_dsl_last_emitted_epoch.exchange(epoch) != static_cast<int64_t>(epoch)) {
         const auto reports = m_dslman->EmitReports(mn_list, myProTxHash, signer, consensus);
         LogPrint(BCLog::NET, "DSL -- emitting %d sentinel reports for epoch %d\n", reports.size(), epoch);
@@ -5695,7 +5750,9 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
     // retried on the next block instead of losing the epoch's commitment.
     if (pos >= interval - interval / 8 &&
         static_cast<int64_t>(epoch) != m_dsl_warmup_epoch.load() &&
-        m_dsl_last_signed_epoch.load() != static_cast<int64_t>(epoch)) {
+        m_dsl_last_signed_epoch.load() != static_cast<int64_t>(epoch) &&
+        !DslFaultHolds(dsl::FaultKind::COMMITMENT_SKIP, dsl::FaultKind::_COUNT, pos,
+                       /*normalOffset=*/0, pindexNew->nHeight, "commitment signing")) {
         const int boundaryHeight = static_cast<int>((epoch + 1) * interval);
         const auto llmqType = llmq::GetChainLocksLLMQType(consensus, boundaryHeight);
         const auto llmq_params_opt = Params().GetLLMQ(llmqType);
