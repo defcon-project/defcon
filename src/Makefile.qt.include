@@ -388,6 +388,18 @@ RES_FONTS = \
   qt/res/fonts/Montserrat/Montserrat-SemiBoldItalic.otf \
   qt/res/fonts/Montserrat/Montserrat-Thin.otf \
   qt/res/fonts/Montserrat/Montserrat-ThinItalic.otf \
+  qt/res/fonts/Roboto/Roboto-Thin.ttf \
+  qt/res/fonts/Roboto/Roboto-ThinItalic.ttf \
+  qt/res/fonts/Roboto/Roboto-Light.ttf \
+  qt/res/fonts/Roboto/Roboto-LightItalic.ttf \
+  qt/res/fonts/Roboto/Roboto-Regular.ttf \
+  qt/res/fonts/Roboto/Roboto-Italic.ttf \
+  qt/res/fonts/Roboto/Roboto-Medium.ttf \
+  qt/res/fonts/Roboto/Roboto-MediumItalic.ttf \
+  qt/res/fonts/Roboto/Roboto-Bold.ttf \
+  qt/res/fonts/Roboto/Roboto-BoldItalic.ttf \
+  qt/res/fonts/Roboto/Roboto-Black.ttf \
+  qt/res/fonts/Roboto/Roboto-BlackItalic.ttf \
   qt/res/fonts/RobotoMono-Bold.ttf
 
 RES_ANIMATION = $(wildcard $(srcdir)/qt/res/animation/spinner-*.png)

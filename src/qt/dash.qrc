@@ -41,7 +41,6 @@
     </qresource>
     <qresource prefix="/fonts">
         <file alias="monospace">res/fonts/RobotoMono-Bold.ttf</file>
-        <file alias="Michroma">res/fonts/Michroma/Michroma-Regular.ttf</file>
         <file alias="Montserrat-Black">res/fonts/Montserrat/Montserrat-Black.otf</file>
         <file alias="Montserrat-BlackItalic">res/fonts/Montserrat/Montserrat-BlackItalic.otf</file>
         <file alias="Montserrat-Bold">res/fonts/Montserrat/Montserrat-Bold.otf</file>
@@ -60,6 +59,18 @@
         <file alias="Montserrat-SemiBoldItalic">res/fonts/Montserrat/Montserrat-SemiBoldItalic.otf</file>
         <file alias="Montserrat-Thin">res/fonts/Montserrat/Montserrat-Thin.otf</file>
         <file alias="Montserrat-ThinItalic">res/fonts/Montserrat/Montserrat-ThinItalic.otf</file>
+        <file alias="Roboto-Thin">res/fonts/Roboto/Roboto-Thin.ttf</file>
+        <file alias="Roboto-ThinItalic">res/fonts/Roboto/Roboto-ThinItalic.ttf</file>
+        <file alias="Roboto-Light">res/fonts/Roboto/Roboto-Light.ttf</file>
+        <file alias="Roboto-LightItalic">res/fonts/Roboto/Roboto-LightItalic.ttf</file>
+        <file alias="Roboto-Regular">res/fonts/Roboto/Roboto-Regular.ttf</file>
+        <file alias="Roboto-Italic">res/fonts/Roboto/Roboto-Italic.ttf</file>
+        <file alias="Roboto-Medium">res/fonts/Roboto/Roboto-Medium.ttf</file>
+        <file alias="Roboto-MediumItalic">res/fonts/Roboto/Roboto-MediumItalic.ttf</file>
+        <file alias="Roboto-Bold">res/fonts/Roboto/Roboto-Bold.ttf</file>
+        <file alias="Roboto-BoldItalic">res/fonts/Roboto/Roboto-BoldItalic.ttf</file>
+        <file alias="Roboto-Black">res/fonts/Roboto/Roboto-Black.ttf</file>
+        <file alias="Roboto-BlackItalic">res/fonts/Roboto/Roboto-BlackItalic.ttf</file>
     </qresource>
     <qresource prefix="/images">
         <file alias="arrow_down_dark">res/images/arrow_down_dark.png</file>

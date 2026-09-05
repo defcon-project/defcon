@@ -31,9 +31,11 @@ AppearanceWidget::AppearanceWidget(QWidget* parent) :
 
     GUIUtil::FontFamily fontSystem = GUIUtil::FontFamily::SystemDefault;
     GUIUtil::FontFamily fontMontserrat = GUIUtil::FontFamily::Montserrat;
+    GUIUtil::FontFamily fontRoboto = GUIUtil::FontFamily::Roboto;
 
     ui->fontFamily->addItem(GUIUtil::fontFamilyToString(fontSystem), QVariant(static_cast<int>(fontSystem)));
     ui->fontFamily->addItem(GUIUtil::fontFamilyToString(fontMontserrat), QVariant(static_cast<int>(fontMontserrat)));
+    ui->fontFamily->addItem(GUIUtil::fontFamilyToString(fontRoboto), QVariant(static_cast<int>(fontRoboto)));
 
     updateWeightSlider();
 

@@ -322,6 +322,7 @@ namespace GUIUtil
     enum class FontFamily {
         SystemDefault,
         Montserrat,
+        Roboto,
     };
 
     FontFamily fontFamilyFromString(const QString& strFamily);

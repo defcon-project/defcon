@@ -53,7 +53,7 @@ WalletFrame QDialog {
 QWidget {
     selection-color: #f7fbff;
     selection-background-color: #0b6cc6;
-    font-family: "Michroma";
+    font-family: "Roboto";
 }
 
 QCheckBox,
@@ -198,7 +198,7 @@ QPushButton:pressed {
 QPushButton:disabled {
     background-color: #122338;
     border-color: #263d57;
-    color: #5f748d;
+    color: #7e91a8;
 }
 
 QToolTip {
@@ -339,16 +339,6 @@ QToolBar#navigationToolBar[modern="true"] > QToolButton:disabled {
     color: #4f647d;
 }
 
-QToolBar#navigationToolBar[modern="true"] QLabel#lblToolbarLogo {
-    image: url(':/images/dash_logo_toolbar');
-    margin: 4px 10px 16px 10px;
-    padding: 0;
-    min-width: 194px;
-    max-width: 194px;
-    min-height: 58px;
-    max-height: 58px;
-}
-
 QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector {
     background-color: #0b1727;
     border: 1px solid #29435f;
@@ -411,7 +401,6 @@ QWidget#OverviewPage QLabel#modernOverviewTitle {
 
 QWidget#OverviewPage QLabel#modernOverviewSubtitle {
     color: #91a5bc;
-    font-size: 12px;
 }
 
 /* No min-width on these cards. A stylesheet min-width replaces the minimum a
@@ -666,7 +655,6 @@ QWidget#OverviewPage QFrame#networkCard {
 
 QWidget#OverviewPage QLabel#labelNetworkStatus {
     color: #91a5bc;
-    font-size: 12px;
 }
 
 
@@ -681,6 +669,5 @@ QLabel#devnetBadge {
     border-radius: 6px;
     padding: 3px 10px;
     margin: 6px 10px;
-    font-size: 10px;
     font-weight: bold;
 }
