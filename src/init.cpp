@@ -87,6 +87,7 @@
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
 #include <evo/pose_service_manager.h>
+#include <evo/pose_service_faults.h>
 #include <flat-database.h>
 #include <governance/governance.h>
 #include <llmq/context.h>
@@ -506,6 +507,7 @@ void SetupServerArgs(ArgsManager& argsman)
     argsman.AddArg("-assumevalid=<hex>", strprintf("If this block is in the chain assume that it and its ancestors are valid and potentially skip their script verification (0 to verify all, default: %s, testnet: %s)", defaultChainParams->GetConsensus().defaultAssumeValid.GetHex(), testnetChainParams->GetConsensus().defaultAssumeValid.GetHex()), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blocksdir=<dir>", "Specify directory to hold blocks subdirectory for *.dat files (default: <datadir>)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-fastprune", "Use smaller block files and lower minimum prune height for testing purposes", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-enablefaultinjection", "Enable DSL fault injection (devnet and regtest only; startup is refused elsewhere). Faults are armed with the faultinject RPC over cookie authentication, expire by height and are never persisted (default: 0)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
 #if HAVE_SYSTEM
     argsman.AddArg("-blocknotify=<cmd>", "Execute command when the best block changes (%s in cmd is replaced by block hash)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 #endif
@@ -1300,6 +1302,11 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     if (!chainparams.IsTestChain() && !fRequireStandard) {
         return InitError(strprintf(Untranslated("acceptnonstdtxn is not currently supported for %s chain"), chainparams.NetworkIDString()));
     }
+    // DSL fault injection is a test-network facility: the request is refused
+    // outright on any other chain, before anything is initialised with it.
+    if (const auto refusal = dsl::FaultInjectionRefusal(chainparams, args.GetBoolArg(dsl::FAULT_INJECTION_ARG, false))) {
+        return InitError(Untranslated(*refusal));
+    }
     nBytesPerSigOp = args.GetArg("-bytespersigop", nBytesPerSigOp);
 
     if (!g_wallet_init_interface.ParameterInteraction()) return false;
@@ -1997,6 +2004,18 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     assert(!node.dslman);
     node.dslman = std::make_unique<dsl::CPoSeServiceManager>();
+    assert(!node.faultinjector);
+    {
+        // Only ever enabled on devnet/regtest: AppInitParameterInteraction refused
+        // the flag everywhere else. Disabled, the injector is inert and the DSL
+        // path does not change.
+        const bool faults_enabled = args.GetBoolArg(dsl::FAULT_INJECTION_ARG, false);
+        node.faultinjector = std::make_unique<dsl::CFaultInjector>(faults_enabled);
+        if (faults_enabled) {
+            LogPrintf("WARNING: DSL fault injection is ENABLED on the %s chain; this node will misbehave on request\n",
+                      chainparams.NetworkIDString());
+        }
+    }
     // Bootstrap the service-probe epoch from the loaded tip. The per-block tick
     // that normally advances it fires only on a *new* block, so a node that
     // starts already synced would sit at epoch 0 and reject every DSL message

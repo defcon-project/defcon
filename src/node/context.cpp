@@ -13,6 +13,7 @@
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
 #include <evo/pose_service_manager.h>
+#include <evo/pose_service_faults.h>
 #include <governance/governance.h>
 #include <interfaces/chain.h>
 #include <interfaces/coinjoin.h>
