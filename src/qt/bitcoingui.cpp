@@ -1047,13 +1047,6 @@ void BitcoinGUI::applyThemeLayout()
     const bool modern = GUIUtil::isModernTheme();
     const bool vertical = modern;
 
-    // The wordmark at the top of the navigation is the classic themes' own.
-    // Abyss starts with the wallet selector; the window title already says
-    // what this is.
-    if (appToolBarLogoAction) {
-        appToolBarLogoAction->setVisible(!modern);
-    }
-
     // Abyss is the only theme that asks for a sky behind the wallet.
     if (auto* sky = qobject_cast<StarfieldWidget*>(centralWidget())) {
         sky->setSkyVisible(modern);

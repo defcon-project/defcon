@@ -339,6 +339,16 @@ QToolBar#navigationToolBar[modern="true"] > QToolButton:disabled {
     color: #4f647d;
 }
 
+QToolBar#navigationToolBar[modern="true"] QLabel#lblToolbarLogo {
+    image: url(':/images/dash_logo_toolbar');
+    margin: 4px 10px 16px 10px;
+    padding: 0;
+    min-width: 194px;
+    max-width: 194px;
+    min-height: 58px;
+    max-height: 58px;
+}
+
 QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector {
     background-color: #0b1727;
     border: 1px solid #29435f;
