@@ -357,18 +357,33 @@ QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector {
     min-width: 202px;
 }
 
-/* The combo gives up the width the padlock beside it needs. The container's
-   own min-width is unchanged, so the selector keeps the size it had. */
-QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox {
+/* One box, two parts. The selector frame is the only thing that draws a
+   background or a border; the combo and the padlock inside it draw nothing of
+   their own in any state, so the eye reads a single control instead of three
+   nested ones. A hairline between them says where the dropdown ends and the
+   lock begins. The combo's min-width is only what keeps it from collapsing:
+   it stretches to fill whatever the padlock leaves. */
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox,
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox:hover,
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox:focus {
+    background-color: transparent;
     border: none;
-    min-width: 150px;
+    border-radius: 0;
+    min-width: 132px;
+    padding-left: 10px;
+}
+
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QFrame#walletLockDivider {
+    background-color: #29435f;
 }
 
 QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QToolButton#walletLockButton {
     background: transparent;
     border: none;
     border-radius: 6px;
-    padding: 3px;
+    padding: 0 6px 0 6px;
+    min-width: 34px;
+    min-height: 26px;
 }
 
 QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QToolButton#walletLockButton:hover {

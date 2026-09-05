@@ -75,6 +75,7 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrlQuery>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QWindow>
@@ -962,18 +963,30 @@ void BitcoinGUI::createToolBars()
         walletLockButton->setAutoRaise(true);
         walletLockButton->setFocusPolicy(Qt::NoFocus);
         walletLockButton->setCursor(Qt::PointingHandCursor);
-        walletLockButton->setIconSize(QSize(16, 16));
+        walletLockButton->setIconSize(QSize(20, 20));
         // Hidden until a wallet reports its encryption status. Showing it
         // earlier would put a clickable control with no icon in the toolbar,
         // which is exactly the fault recorded beside the console button.
         walletLockButton->setVisible(false);
         connect(walletLockButton, &QToolButton::clicked, this, &BitcoinGUI::toggleWalletLock);
 
+        // A short hairline between the dropdown and the padlock. It is its
+        // own widget with a fixed height rather than a border on the button,
+        // because a border runs the button's full height and pokes past the
+        // frame's rounded top and bottom.
+        QFrame* walletLockDivider = new QFrame(this);
+        walletLockDivider->setObjectName("walletLockDivider");
+        walletLockDivider->setFrameShape(QFrame::NoFrame);
+        walletLockDivider->setFixedSize(1, 18);
+
         QHBoxLayout* walletSelectorLayout = new QHBoxLayout();
         walletSelectorLayout->addWidget(m_wallet_selector, 1);
+        walletSelectorLayout->addWidget(walletLockDivider, 0, Qt::AlignVCenter);
         walletSelectorLayout->addWidget(walletLockButton, 0);
-        walletSelectorLayout->setSpacing(4);
-        walletSelectorLayout->setContentsMargins(5, 0, 5, 0);
+        walletSelectorLayout->setSpacing(0);
+        // Inset top, bottom and right, so the padlock's hover fill stays inside
+        // the frame instead of meeting its border.
+        walletSelectorLayout->setContentsMargins(0, 3, 3, 3);
         QWidget* walletSelector = new QWidget(this);
         walletSelector->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
         walletSelector->setObjectName("walletSelector");
