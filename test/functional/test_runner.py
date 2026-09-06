@@ -117,6 +117,8 @@ BASE_SCRIPTS = [
     'wallet_labels.py --descriptors',
     'p2p_timeouts.py --v1transport',
     'p2p_timeouts.py --v2transport',
+    'p2p_llmq_signing_vectors.py --v1transport',
+    'p2p_llmq_signing_vectors.py --v2transport',
     'feature_bip68_sequence.py',
     'mempool_updatefromblock.py',
     'p2p_tx_download.py',
