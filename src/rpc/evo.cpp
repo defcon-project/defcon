@@ -2246,7 +2246,12 @@ static RPCHelpMan faultinject_set()
     if (scenarioId.empty()) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "scenarioId must not be empty");
     }
-    const int64_t param = request.params[3].isNull() ? 0 : request.params[3].get_int64();
+    // ParseInt64V, not get_int64(): defcon-cli has no conversion entry for a
+    // subcommand whose argument types differ by subcommand (`set` takes a kind
+    // string where `clear` takes an id), so a cli caller sends every argument
+    // as a string. The lab wrapper is exactly that caller, and it was refused
+    // with "JSON value is not an integer" until this accepted numeric strings.
+    const int64_t param = request.params[3].isNull() ? 0 : ParseInt64V(request.params[3], "param");
     if (param < 0 || param > std::numeric_limits<uint32_t>::max()) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "param is out of range");
     }
@@ -2330,7 +2335,7 @@ static RPCHelpMan faultinject_clear()
     if (request.params[0].isNull()) {
         cleared = injector.Clear();
     } else {
-        const int64_t id = request.params[0].get_int64();
+        const int64_t id = ParseInt64V(request.params[0], "id");
         if (id < 1) throw JSONRPCError(RPC_INVALID_PARAMETER, "id must be positive");
         cleared = injector.Clear(static_cast<uint64_t>(id)) ? 1 : 0;
     }
