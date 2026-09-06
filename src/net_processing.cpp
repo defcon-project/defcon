@@ -5543,7 +5543,20 @@ void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj,
     m_connman.ForEachNode([&](CNode* pnode) {
         if (pnode->GetId() == skip_id) return;
         if (!pnode->fSuccessfullyConnected || pnode->fDisconnect) return;
-        if (pnode->IsBlockOnlyConn() || !pnode->CanRelay()) return;
+        // Block-only peers carry no such traffic, but masternode connections
+        // must: CanRelay() is the inventory gate, and excluding them here left
+        // the flood unable to cross the very links the quorum layer runs on.
+        //
+        // The node that suffers is the block producer. It is usually not a
+        // masternode, it opens quorum connections like everyone else, and once
+        // those fill its peer slots nothing relays announcements or reports to
+        // it. The miner rebuilds the commitment from its own pool and compares
+        // it with what the quorum signed (node/miner.cpp), so an empty pool
+        // means "DSL report pool diverged from the quorum, no commitment" and
+        // the epoch is absent network-wide -- nobody punished, nobody credited,
+        // and the layer silently stops recording. Seen on an eight-node lab,
+        // where every one of the miner's seven peers was a quorum connection.
+        if (pnode->IsBlockOnlyConn()) return;
         const CNetMsgMaker msgMaker(pnode->GetCommonVersion());
         m_connman.PushMessage(pnode, msgMaker.Make(msg_type, obj));
     });
