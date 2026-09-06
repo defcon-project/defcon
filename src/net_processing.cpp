@@ -861,6 +861,14 @@ private:
      *  a warm-up, never emitted, since this node did not watch it from the
      *  start and would report announcements it simply never saw as MISSED. */
     std::atomic<int64_t> m_dsl_warmup_epoch{-1};
+    /** Announcements that arrived one block early: their epoch's base block is
+     *  the tip's successor, which the announcer had connected and this node
+     *  had not. The flood forwards each copy once, so rejecting them would
+     *  lose them for the epoch and report an honest node MISSED; they are
+     *  held until the block connects and processed on that tick. Written by
+     *  the message thread, drained by the validation-interface thread. */
+    Mutex m_dsl_early_mutex;
+    std::map<uint32_t, std::vector<dsl::CPoSeServiceResponse>> m_dsl_early_responses GUARDED_BY(m_dsl_early_mutex);
     bool m_dsl_first_tick{true};
 
     /** The height of the best chain */
@@ -5541,6 +5549,10 @@ void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj,
     });
 }
 
+/** Early announcements held per epoch; well above any list this tree runs, and
+ *  a bound rather than a budget -- one copy per masternode is what arrives. */
+static constexpr size_t DSL_EARLY_RESPONSES_MAX{4096};
+
 void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_type, CDataStream& vRecv)
 {
     if (msg_type != NetMsgType::POSECHALLENGE && msg_type != NetMsgType::POSERESPONSE &&
@@ -5573,6 +5585,30 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
         dsl::CPoSeServiceResponse resp;
         vRecv >> resp;
         const CBlockIndex* base = epoch_base(resp.nEpoch);
+        if (base == nullptr && consensus.nDSLEpochInterval > 0) {
+            // One block early. A masternode announces on the tick of the block
+            // that opens the epoch, and its announcement can outrun that block
+            // to a peer: on a lab with sub-second relay one node in seven lost
+            // its announcement this way in three epochs out of four, and the
+            // commitment named it. Held, not rejected -- the flood forwards a
+            // copy once, so a rejection here is final for the epoch.
+            const int64_t base_height = static_cast<int64_t>(resp.nEpoch) * consensus.nDSLEpochInterval;
+            const int tip = WITH_LOCK(cs_main, return m_chainman.ActiveChain().Height());
+            if (base_height == static_cast<int64_t>(tip) + 1) {
+                bool held = false;
+                {
+                    LOCK(m_dsl_early_mutex);
+                    auto& early = m_dsl_early_responses[resp.nEpoch];
+                    if (early.size() < DSL_EARLY_RESPONSES_MAX) {
+                        early.push_back(resp);
+                        held = true;
+                    }
+                }
+                LogPrint(BCLog::NET, "DSL -- poseresp epoch=%d proTx=%s arrived before its base block, %s, peer=%d\n",
+                         resp.nEpoch, resp.proTxHash.ToString(), held ? "held" : "dropped (hold full)", pfrom.GetId());
+                return;
+            }
+        }
         // the duplicate check inside ProcessResponse is what terminates the flood
         const bool accepted = base != nullptr &&
             m_dslman->ProcessResponse(resp, m_dmnman->GetListForBlock(base), base->GetBlockHash());
@@ -5692,6 +5728,39 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
         }
     }
 
+    // Announcements held back because they arrived before this epoch's base
+    // block did (ProcessDSLMessage): the base is connected now, so they are
+    // processed and, if accepted, relayed -- what the flood would have done
+    // had they come one block later. Holds for earlier epochs go with them;
+    // every node drains, the miner included, since the pool lives there too.
+    {
+        std::vector<dsl::CPoSeServiceResponse> early;
+        {
+            LOCK(m_dsl_early_mutex);
+            for (auto it = m_dsl_early_responses.begin(); it != m_dsl_early_responses.end();) {
+                if (it->first < epoch) {
+                    it = m_dsl_early_responses.erase(it);
+                } else if (it->first == epoch) {
+                    early = std::move(it->second);
+                    it = m_dsl_early_responses.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+        if (!early.empty()) {
+            const auto list_at_base = m_dmnman->GetListForBlock(pindexBase);
+            size_t accepted_count{0};
+            for (const auto& resp : early) {
+                if (m_dslman->ProcessResponse(resp, list_at_base, pindexBase->GetBlockHash())) {
+                    ++accepted_count;
+                    RelayDSLMessage(NetMsgType::POSERESPONSE, resp, /*skip_id=*/-1);
+                }
+            }
+            LogPrint(BCLog::NET, "DSL -- %d of %d held announcement(s) for epoch %d accepted once its base block connected\n",
+                     accepted_count, early.size(), epoch);
+        }
+    }
     // only a listed masternode announces and reports
     if (m_mn_activeman == nullptr) return;
     const auto mn_list = m_dmnman->GetListAtChainTip();
