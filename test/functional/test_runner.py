@@ -123,6 +123,8 @@ BASE_SCRIPTS = [
     'wallet_dump.py --legacy-wallet',
     'feature_multikeysporks.py',
     'feature_dip3_v19.py',
+    'feature_dip3_v19_legacy.py --legacy-wallet',
+    'feature_dip3_v19_legacy.py --descriptors',
     'feature_dsl_service.py',
     'feature_dsl_enforcement.py',
     'feature_dsl_fault_injection.py',
