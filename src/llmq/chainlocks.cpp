@@ -73,8 +73,15 @@ void CChainLocksHandler::Stop()
 
 bool CChainLocksHandler::AlreadyHave(const CInv& inv) const
 {
-    LOCK(cs);
-    return seenChainLocks.count(inv.hash) != 0;
+    {
+        LOCK(cs);
+        if (seenChainLocks.count(inv.hash) != 0) {
+            return true;
+        }
+    }
+
+    CChainLockSig clsig;
+    return GetChainLockByHash(inv.hash, clsig);
 }
 
 bool CChainLocksHandler::GetChainLockByHash(const uint256& hash, llmq::CChainLockSig& ret) const
