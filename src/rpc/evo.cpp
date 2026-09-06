@@ -984,7 +984,11 @@ static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& reques
     if (dmn->nType != mnType) {
         throw std::runtime_error(strprintf("masternode with proTxHash %s is not a %s", ptx.proTxHash.ToString(), GetMnType(mnType).description));
     }
-    ptx.nVersion = dmn->pdmnState->nVersion;
+    // Validation uses the deployment's BLS scheme, even for legacy MN state.
+    // Only the payload version changes; this does not migrate the MN state.
+    const bool isV19active = DeploymentActiveAfter(WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip()),
+                                                  Params().GetConsensus(), Consensus::DEPLOYMENT_V19);
+    ptx.nVersion = CProUpServTx::GetVersion(isV19active);
 
     if (keyOperator.GetPublicKey() != dmn->pdmnState->pubKeyOperator.Get()) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("the operator key does not belong to the registered public key"));
@@ -1028,10 +1032,6 @@ static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& reques
 
     FundSpecialTx(*wallet, tx, ptx, feeSource);
 
-    // The signing scheme must follow the payload version, not the deployment:
-    // ptx.nVersion comes from the masternode state above, and a legacy
-    // masternode past V19 would otherwise get a legacy payload carrying a
-    // basic-scheme signature, which consensus rejects. (dash#7096, adapted)
     SignSpecialTxPayloadByHash(tx, ptx, keyOperator, ptx.nVersion == CProUpServTx::LEGACY_BLS_VERSION);
     SetTxPayload(tx, ptx);
 
@@ -1207,11 +1207,10 @@ static RPCHelpMan protx_revoke()
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("the operator key does not belong to the registered public key"));
     }
 
-    // Follow the masternode state version instead of forcing the deployment
-    // maximum: a legacy masternode past V19 got a basic-version payload whose
-    // signing scheme no longer matched its registered key encoding.
-    // (dash#7096, adapted)
-    ptx.nVersion = dmn->pdmnState->nVersion;
+    // Match the deployment's verification scheme without changing MN state.
+    const bool isV19active = DeploymentActiveAfter(WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip()),
+                                                  Params().GetConsensus(), Consensus::DEPLOYMENT_V19);
+    ptx.nVersion = CProUpRevTx::GetVersion(isV19active);
 
     CMutableTransaction tx;
     tx.nVersion = 3;
