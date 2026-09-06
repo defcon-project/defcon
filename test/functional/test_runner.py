@@ -128,6 +128,7 @@ BASE_SCRIPTS = [
     'feature_dsl_fault_injection.py',
     'feature_dsl_faults.py',
     'feature_dsl_scenarios.py',
+    'rpc_masternode_payments_genesis.py',
     'feature_compute_mn.py',
     'feature_asset_locks.py', # NOTE: needs dash_hash to pass
     'feature_llmq_connections.py', # NOTE: needs dash_hash to pass
