@@ -50,6 +50,8 @@ class CChainLocksHandler : public CRecoveredSigsListener
     // worked and stalled every block for ten minutes while it did not.
     static constexpr int64_t WAIT_FOR_ISLOCK_TIMEOUT = 2 * 60;
 
+    friend struct ChainLocksTestAccess;
+
 private:
     CChainState& m_chainstate;
     CQuorumManager& qman;

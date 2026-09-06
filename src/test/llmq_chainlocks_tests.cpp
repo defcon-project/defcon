@@ -6,9 +6,14 @@
 #include <chainparams.h>
 #include <chainparamsbase.h>
 #include <consensus/params.h>
+#include <crypto/common.h>
+#include <hash.h>
 #include <llmq/chainlocks.h>
+#include <llmq/context.h>
 #include <llmq/options.h>
 #include <llmq/params.h>
+#include <protocol.h>
+#include <sync.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
 #include <util/system.h>
@@ -18,6 +23,52 @@
 #include <string>
 
 #include <boost/test/unit_test.hpp>
+
+namespace llmq {
+// The handler has no public mutation API for its validated best ChainLock.
+// Keep the production interface closed: this test-only friend seeds and reads
+// state so the handler's public duplicate-admission path can be exercised.
+struct ChainLocksTestAccess {
+    static void SetBest(CChainLocksHandler& handler, const CChainLockSig& clsig, const uint256& hash)
+    {
+        LOCK(handler.cs);
+        handler.bestChainLockHash = hash;
+        handler.bestChainLock = clsig;
+    }
+
+    static size_t SeenCacheSize(const CChainLocksHandler& handler)
+    {
+        LOCK(handler.cs);
+        return handler.seenChainLocks.size();
+    }
+
+    static size_t SeenCacheMaxSize(const CChainLocksHandler& handler)
+    {
+        LOCK(handler.cs);
+        return handler.seenChainLocks.max_size();
+    }
+
+    static void ForgetSeen(CChainLocksHandler& handler, const uint256& hash)
+    {
+        LOCK(handler.cs);
+        handler.seenChainLocks.erase(hash);
+    }
+};
+} // namespace llmq
+
+namespace {
+uint256 TestChainLockHash(uint32_t n)
+{
+    uint256 hash;
+    WriteLE32(hash.begin(), n);
+    return hash;
+}
+
+llmq::CChainLockSig TestChainLock(int height, uint32_t block_hash_number)
+{
+    return {height, TestChainLockHash(block_hash_number), CBLSSignature{}};
+}
+} // namespace
 
 BOOST_FIXTURE_TEST_SUITE(llmq_chainlocks_tests, BasicTestingSetup)
 
@@ -388,6 +439,69 @@ BOOST_AUTO_TEST_CASE(chainlock_supersedes_best)
     CBlockIndex low;
     low.nHeight = 10;
     BOOST_CHECK(!llmq::ChainLockSupersedesBest(4000, best, &low));
+}
+
+// A stale CLSIG is intentionally remembered even though its signature need
+// not be verified: a best lock already makes it unable to supersede anything,
+// and retaining the announcement suppresses repeated requests for it.
+BOOST_FIXTURE_TEST_CASE(stale_chainlocks_are_remembered_for_duplicate_suppression, TestingSetup)
+{
+    auto& handler = *Assert(m_node.llmq_ctx)->clhandler;
+    handler.CheckActiveState();
+    const auto best = TestChainLock(100, 1);
+    llmq::ChainLocksTestAccess::SetBest(handler, best, ::SerializeHash(best));
+
+    BOOST_CHECK_EQUAL(llmq::ChainLocksTestAccess::SeenCacheSize(handler), 0U);
+
+    for (uint32_t i = 0; i < 10; ++i) {
+        const auto stale = TestChainLock(100, 1000 + i);
+        const auto hash = ::SerializeHash(stale);
+
+        [[maybe_unused]] const auto result = handler.ProcessNewChainLock(/*from=*/-1, stale, hash);
+
+        BOOST_CHECK(handler.AlreadyHave(CInv{MSG_CLSIG, hash}));
+        BOOST_CHECK_EQUAL(llmq::ChainLocksTestAccess::SeenCacheSize(handler), static_cast<size_t>(i) + 1U);
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(seen_chainlock_cache_is_bounded, TestingSetup)
+{
+    auto& handler = *Assert(m_node.llmq_ctx)->clhandler;
+    handler.CheckActiveState();
+    const auto best = TestChainLock(std::numeric_limits<int>::max(), 2);
+    llmq::ChainLocksTestAccess::SetBest(handler, best, ::SerializeHash(best));
+    const size_t max_seen_chainlocks = llmq::ChainLocksTestAccess::SeenCacheMaxSize(handler);
+    BOOST_REQUIRE_EQUAL(max_seen_chainlocks, 2048U);
+
+    for (size_t i = 0; i <= max_seen_chainlocks; ++i) {
+        const auto stale = TestChainLock(std::numeric_limits<int>::max(), static_cast<uint32_t>(2000 + i));
+        [[maybe_unused]] const auto result = handler.ProcessNewChainLock(/*from=*/-1, stale, ::SerializeHash(stale));
+        BOOST_CHECK_LE(llmq::ChainLocksTestAccess::SeenCacheSize(handler), max_seen_chainlocks);
+    }
+
+    BOOST_CHECK_EQUAL(llmq::ChainLocksTestAccess::SeenCacheSize(handler), 1024U);
+}
+
+// Once bounded-cache pruning or 24-hour ageing has dropped an announcement,
+// the best ChainLock still belongs to the handler and must remain an
+// AlreadyHave match. ForgetSeen models that cache miss; the two tests above
+// exercise the insertion and bound independently.
+BOOST_FIXTURE_TEST_CASE(best_chainlock_is_already_have_after_seen_cache_miss, TestingSetup)
+{
+    auto& handler = *Assert(m_node.llmq_ctx)->clhandler;
+    handler.CheckActiveState();
+    const auto best = TestChainLock(100, 3);
+    const auto hash = ::SerializeHash(best);
+    llmq::ChainLocksTestAccess::SetBest(handler, best, hash);
+
+    // The normal stale path records the best announcement in the seen cache.
+    [[maybe_unused]] const auto result = handler.ProcessNewChainLock(/*from=*/-1, best, hash);
+    BOOST_CHECK_EQUAL(llmq::ChainLocksTestAccess::SeenCacheSize(handler), 1U);
+    BOOST_CHECK(handler.AlreadyHave(CInv{MSG_CLSIG, hash}));
+
+    llmq::ChainLocksTestAccess::ForgetSeen(handler, hash);
+    BOOST_CHECK_EQUAL(llmq::ChainLocksTestAccess::SeenCacheSize(handler), 0U);
+    BOOST_CHECK(handler.AlreadyHave(CInv{MSG_CLSIG, hash}));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
