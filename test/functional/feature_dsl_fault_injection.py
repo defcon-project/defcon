@@ -74,6 +74,15 @@ class DSLFaultInjectionTest(BitcoinTestFramework):
         assert_equal(armed.faultinject("clear")["cleared"], 2)
         assert_equal(armed.faultinject("list")["faults"], [])
 
+        self.log.info("The cli path, every argument a string, is accepted too -- the lab wrapper arms faults this way")
+        cli_height = armed.getblockcount()
+        via_cli = armed.cli("faultinject", "set", "report-delay", str(cli_height + 5), "cli-path", "2").send_cli()
+        assert_equal(via_cli["kind"], "report-delay")
+        assert_equal(via_cli["expiryHeight"], cli_height + 5)
+        assert_equal(via_cli["param"], 2)
+        assert_equal(armed.cli("faultinject", "clear", str(via_cli["id"])).send_cli()["cleared"], 1)
+        assert_equal(armed.faultinject("list")["faults"], [])
+
         self.log.info("A restart forgets every fault: nothing is persisted")
         armed.faultinject("set", "report-drop", armed.getblockcount() + 100, "survives?")
         assert_equal(len(armed.faultinject("list")["faults"]), 1)
