@@ -34,6 +34,19 @@ class DIP3Test(BitcoinTestFramework):
         self.extra_args += ["-budgetparams=10:10:10"]
         self.extra_args += ["-sporkkey=cP4EKFyJsHT39LDqgdcB43Y3YXjNyjb5Fuas1GQSeAtjnZWmZEQK"]
         self.extra_args += ["-dip3params=135:150"]
+        # A registered collateral may not be spent for minStaticCollateral
+        # blocks -- 8064 on every network, this fork's own rule with no Dash
+        # counterpart. This test spends collaterals deliberately, to prove a
+        # masternode leaves the list when its collateral goes, and it cannot
+        # reach that depth: 8064 blocks past registration is beyond
+        # lastPowBlock (5000 on regtest), and past that a block must be staked,
+        # which no test generator produces. So the scenario is unreachable
+        # rather than slow.
+        #
+        # Two blocks rather than zero, so the rule stays switched on and the
+        # fixture still has to respect it. The rule's own boundary is covered by
+        # collateral_tests; what this file is about is the MN list.
+        self.extra_args += ["-minstaticcollateral=2"]
 
 
     def skip_test_if_missing_module(self):
@@ -326,6 +339,36 @@ class DIP3Test(BitcoinTestFramework):
 
         return mn
 
+    def lock_collateral(self, node, mn):
+        """Keep automatic coin selection away from a masternode collateral.
+
+        On this fork a proof-of-work coinbase pays 11,000,000 DFCN, so a
+        1000-DFCN collateral parked in the controller wallet is by a wide margin
+        its smallest spendable output. Knapsack's lowest-larger rule then picks
+        exactly that output to fund a 0.001 fee payment, the collateral ends up
+        spent in the mempool, and the following `protx register` is rejected as
+        `protx-dup` by existsProviderTxConflict's
+        `mapNextTx.count(proTx.collateralOutpoint)` branch -- "another tx spends
+        the collateral". On Dash regtest the 500-DASH coinbases and their change
+        are smaller than the collateral, so the fixture never hit this.
+
+        Locking is the right lever because it changes only this wallet's
+        selection, not the selection algorithm, and it leaves explicit inputs
+        alone: spend_mn_collateral names its outpoint in createrawtransaction
+        and still works while the lock is held.
+
+        Idempotent, because the two ways a collateral comes into being do not
+        agree about this: `protx register_fund` locks the output it creates,
+        while a plain `sendtoaddress` of 1000 does not. That asymmetry is the
+        whole of the bug -- the externally funded collateral was the unprotected
+        one -- and asking twice must not be an error.
+        """
+        assert mn.collateral_vout is not None
+        outpoint = {'txid': mn.collateral_txid, 'vout': mn.collateral_vout}
+        if outpoint not in node.listlockunspent():
+            node.lockunspent(False, [outpoint])
+        assert outpoint in node.listlockunspent()
+
     def create_mn_collateral(self, node, mn):
         mn.collateral_address = node.getnewaddress()
         mn.collateral_txid = node.sendtoaddress(mn.collateral_address, 1000)
@@ -338,6 +381,7 @@ class DIP3Test(BitcoinTestFramework):
                 mn.collateral_vout = txout['n']
                 break
         assert mn.collateral_vout is not None
+        self.lock_collateral(node, mn)
 
     # register a protx MN and also fund it (using collateral inside ProRegTx)
     def register_fund_mn(self, node, mn):
@@ -355,6 +399,9 @@ class DIP3Test(BitcoinTestFramework):
                 mn.collateral_vout = txout['n']
                 break
         assert mn.collateral_vout is not None
+        # The ProRegTx's own collateral output is in this wallet too, and is
+        # just as attractive to coin selection as an external one.
+        self.lock_collateral(node, mn)
 
     # create a protx MN which refers to an existing collateral
     def register_mn(self, node, mn):

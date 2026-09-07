@@ -990,6 +990,7 @@ public:
         UpdateActivationParametersFromArgs(args);
         UpdateDIP3ParametersFromArgs(args);
         UpdateBudgetParametersFromArgs(args);
+        UpdateMinStaticCollateralFromArgs(args);
 
         const char* pszRegtestTimestamp = "Wired 09/Jan/2014 The Grand Experiment Goes Live: Overstock.com Is Now Accepting Bitcoins";
         const CScript regtestGenesisOutputScript = CScript() << ParseHex("040184710fa689ad5023690c80f3a49c8f13f8d45b8c857fbcbc8bc4a8e4d3eb4b10f4d4604fa08dce601aaf0f470216fe1b51850b4acf21b179c45070ac7b03a9") << OP_CHECKSIG;
@@ -1117,6 +1118,23 @@ public:
         consensus.nSuperblockStartBlock = nSuperblockStartBlock;
     }
     void UpdateBudgetParametersFromArgs(const ArgsManager& args);
+
+    /**
+     * Allows modifying how long a registered collateral must age before it may
+     * be spent.
+     *
+     * Ships at 8064 on every network. That is a consensus rule and it stays
+     * one; this override exists because 8064 blocks are out of reach for a
+     * functional test on this fork. Reaching that depth would need the chain
+     * past `lastPowBlock` (5000 on regtest), and beyond it a block must be
+     * staked -- which no test generator can produce, so the wall is absolute
+     * rather than merely slow. Without the argument regtest is byte-identical.
+     */
+    void UpdateMinStaticCollateral(int nBlocks)
+    {
+        consensus.minStaticCollateral = nBlocks;
+    }
+    void UpdateMinStaticCollateralFromArgs(const ArgsManager& args);
 
     /**
      * Allows modifying parameters of the test LLMQ
@@ -1327,6 +1345,21 @@ void CRegTestParams::UpdateBudgetParametersFromArgs(const ArgsManager& args)
     }
     LogPrintf("Setting budget parameters to masternode=%ld, budget=%ld, superblock=%ld\n", nMasternodePaymentsStartBlock, nBudgetPaymentsStartBlock, nSuperblockStartBlock);
     UpdateBudgetParameters(nMasternodePaymentsStartBlock, nBudgetPaymentsStartBlock, nSuperblockStartBlock);
+}
+
+void CRegTestParams::UpdateMinStaticCollateralFromArgs(const ArgsManager& args)
+{
+    if (!args.IsArgSet("-minstaticcollateral")) return;
+
+    const std::string strBlocks{args.GetArg("-minstaticcollateral", "")};
+    int nBlocks;
+    if (!ParseInt32(strBlocks, &nBlocks) || nBlocks < 0) {
+        throw std::runtime_error(strprintf(
+            "Invalid collateral maturity (%s) for -minstaticcollateral=<blocks>; expecting a whole number of blocks, 0 or more",
+            strBlocks));
+    }
+    LogPrintf("Setting minimum collateral maturity to %d block(s)\n", nBlocks);
+    UpdateMinStaticCollateral(nBlocks);
 }
 
 void CRegTestParams::UpdateLLMQTestParametersFromArgs(const ArgsManager& args, const Consensus::LLMQType llmqType)
@@ -1681,6 +1714,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
 
     argsman.AddArg("-budgetparams=<masternode>:<budget>:<superblock>", "Override masternode, budget and superblock start heights (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dip3params=<activation>:<enforcement>", "Override DIP3 activation and enforcement heights (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-minstaticcollateral=<blocks>", "Override how long a registered masternode collateral must age before it may be spent, in blocks (default: 8064; regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-highsubsidyblocks=<n>", "The number of blocks with a higher than normal subsidy to mine at the start of a chain. Block after that height will have fixed subsidy base. (default: 0, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-highsubsidyfactor=<n>", "The factor to multiply the normal block subsidy by while in the highsubsidyblocks window of a chain (default: 1, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqchainlocks=<quorum name>", "Override the LLMQ type that signs ChainLocks below the Q60 switchover height; at and above it llmq_defcon signs regardless. Allows ChainLocks with smaller LLMQs. (default: llmq_400_60, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
