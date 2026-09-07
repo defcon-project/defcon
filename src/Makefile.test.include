@@ -99,6 +99,7 @@ BITCOIN_TESTS =\
   test/cachemap_tests.cpp \
   test/cachemultimap_tests.cpp \
   test/coins_tests.cpp \
+  test/undo_tests.cpp \
   test/coinstatsindex_tests.cpp \
   test/compilerbug_tests.cpp \
   test/compress_tests.cpp \
@@ -171,6 +172,7 @@ BITCOIN_TESTS =\
   test/pmt_tests.cpp \
   test/policyestimator_tests.cpp \
   test/pool_tests.cpp \
+  test/pos_coinbase_bound_tests.cpp \
   test/pos_kernel_tests.cpp \
   test/pos_coinstake_fee_tests.cpp \
   test/pow_tests.cpp \
