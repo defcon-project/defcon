@@ -172,6 +172,7 @@ BITCOIN_TESTS =\
   test/pmt_tests.cpp \
   test/policyestimator_tests.cpp \
   test/pool_tests.cpp \
+  test/pos_coinbase_bound_tests.cpp \
   test/pos_kernel_tests.cpp \
   test/pos_coinstake_fee_tests.cpp \
   test/pow_tests.cpp \
