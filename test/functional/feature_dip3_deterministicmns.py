@@ -34,6 +34,19 @@ class DIP3Test(BitcoinTestFramework):
         self.extra_args += ["-budgetparams=10:10:10"]
         self.extra_args += ["-sporkkey=cP4EKFyJsHT39LDqgdcB43Y3YXjNyjb5Fuas1GQSeAtjnZWmZEQK"]
         self.extra_args += ["-dip3params=135:150"]
+        # A registered collateral may not be spent for minStaticCollateral
+        # blocks -- 8064 on every network, this fork's own rule with no Dash
+        # counterpart. This test spends collaterals deliberately, to prove a
+        # masternode leaves the list when its collateral goes, and it cannot
+        # reach that depth: 8064 blocks past registration is beyond
+        # lastPowBlock (5000 on regtest), and past that a block must be staked,
+        # which no test generator produces. So the scenario is unreachable
+        # rather than slow.
+        #
+        # Two blocks rather than zero, so the rule stays switched on and the
+        # fixture still has to respect it. The rule's own boundary is covered by
+        # collateral_tests; what this file is about is the MN list.
+        self.extra_args += ["-minstaticcollateral=2"]
 
 
     def skip_test_if_missing_module(self):
