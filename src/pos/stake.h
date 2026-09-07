@@ -169,8 +169,8 @@ class CStakeWallet
         Consensus::Params params;
 
     public:
-        static const int SHORTDELAY = 2500;
-        static const int LARGEDELAY = 10000;
+        static constexpr int SHORTDELAY = 2500;
+        static constexpr int LARGEDELAY = 10000;
 
         CStakeWallet(const std::shared_ptr<CWallet>& walletIn, Consensus::Params& paramsIn) {
             staking = false;
