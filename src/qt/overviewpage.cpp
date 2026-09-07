@@ -78,7 +78,15 @@ public:
 
         // Draw first line (with slightly bigger font than the second line will get)
         // Content: Date/Time, Optional IS indicator, Amount
-        painter->setFont(GUIUtil::getFont(GUIUtil::FontWeight::Normal, false, GUIUtil::getScaledFontSize(initialFontSize * 1.17)));
+        //
+        // The two casts here and below are deliberate and preserve existing
+        // behaviour. initialFontSize is a qreal, and while getScaledFontSize
+        // took an int these arguments were truncated on the way in; widening
+        // that parameter to double would silently change what this row renders.
+        // Whether these call sites should pass their exact value is the same
+        // question F-2026-030 answers for the font caches, but it is a separate,
+        // unclassified UI change and is deliberately not made here.
+        painter->setFont(GUIUtil::getFont(GUIUtil::FontWeight::Normal, false, GUIUtil::getScaledFontSize(static_cast<int>(initialFontSize * 1.17))));
         // Date/Time
         colorForeground = qvariant_cast<QColor>(indexDate.data(Qt::ForegroundRole));
         QString strDate = indexDate.data(Qt::DisplayRole).toString();
@@ -99,7 +107,7 @@ public:
 
         // Draw second line (with the initial font)
         // Content: Address/label, Optional Watchonly indicator
-        painter->setFont(GUIUtil::getFont(GUIUtil::FontWeight::Normal, false, GUIUtil::getScaledFontSize(initialFontSize)));
+        painter->setFont(GUIUtil::getFont(GUIUtil::FontWeight::Normal, false, GUIUtil::getScaledFontSize(static_cast<int>(initialFontSize))));
         // Address/Label
         colorForeground = qvariant_cast<QColor>(indexAddress.data(Qt::ForegroundRole));
         QString address = indexAddress.data(Qt::DisplayRole).toString();

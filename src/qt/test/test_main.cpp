@@ -11,6 +11,7 @@
 #include <qt/bitcoin.h>
 #include <qt/initexecutor.h>
 #include <qt/test/apptests.h>
+#include <qt/test/guiutiltests.h>
 #include <qt/test/rpcnestedtests.h>
 #include <qt/test/uritests.h>
 #include <qt/test/trafficgraphdatatests.h>
@@ -86,6 +87,12 @@ int main(int argc, char* argv[])
     app.node().context()->args = &gArgs;     // Make gArgs available in the NodeContext
     AppTests app_tests(app);
     if (QTest::qExec(&app_tests) != 0) {
+        fInvalid = true;
+    }
+    // Pure arithmetic, so it runs on every platform plugin including `minimal`
+    // and is placed ahead of the suites that are known to die on this fork.
+    GUIUtilTests guiutil_tests;
+    if (QTest::qExec(&guiutil_tests) != 0) {
         fInvalid = true;
     }
 #ifdef ENABLE_WALLET

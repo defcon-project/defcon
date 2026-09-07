@@ -1237,8 +1237,17 @@ void setFontScale(int nScale)
     updateFonts();
 }
 
-double getScaledFontSize(int nSize)
+double getScaledFontSize(double nSize)
 {
+    // Takes a double so a pixel-derived size reaches the scaler exactly as it
+    // was converted. The quarter-point rounding of the RESULT is unchanged --
+    // that is the fork's scaling rule, and it stays. What used to happen and
+    // no longer does is rounding the INPUT to whole points first: 17 px at
+    // 96 DPI is 12.75 pt, and scaling 13 pt instead is a systematic size error
+    // on every pixel-sized stylesheet font (dash#7465).
+    //
+    // Existing int callers convert implicitly and are unaffected: for a whole
+    // number this returns exactly what it always did.
     return std::round(nSize * (1 + (fontScale * fontScaleSteps)) * 4) / 4.0;
 }
 
@@ -1430,7 +1439,13 @@ void setFont(const std::vector<QWidget*>& vecWidgets, FontWeight weight, int nPo
 //! stores exactly one of the two units. Returns nullopt when no usable size
 //! can be derived -- a font can carry no valid size at all, and a widget's
 //! logicalDpiY() is not guaranteed positive. Mirrors dash#7465.
-static std::optional<double> EffectivePointSize(const QFont& font, int dpi_y)
+//!
+//! Declared in the header under GUIUtil::internal so a Qt test can pin the
+//! arithmetic directly. Upstream's widget-level regression QSKIPs on the
+//! `minimal` platform plugin, which is the only one built here, so the
+//! arithmetic case is the one that has to be carried.
+namespace internal {
+std::optional<double> EffectivePointSize(const QFont& font, int dpi_y)
 {
     // Compare against 0 rather than the -1 sentinel: a box-engine fallback
     // can report values such as -0.72.
@@ -1443,6 +1458,9 @@ static std::optional<double> EffectivePointSize(const QFont& font, int dpi_y)
     }
     return std::nullopt;
 }
+} // namespace internal
+
+using internal::EffectivePointSize;
 
 void updateFonts()
 {
@@ -1451,7 +1469,10 @@ void updateFonts()
         return;
     }
 
-    static std::map<QPointer<QWidget>, int> mapWidgetDefaultFontSizes;
+    // double, not int: this holds the widget's converted base size, and
+    // rounding it here is what made a 12.75 pt font render as 13 pt. Dash's
+    // map is <..., double> for the same reason (dash#7465).
+    static std::map<QPointer<QWidget>, double> mapWidgetDefaultFontSizes;
 
     // QPointer becomes nullptr for objects that were deleted.
     // Remove them from mapDefaultFontSize and mapFontUpdates
@@ -1511,14 +1532,19 @@ void updateFonts()
         font.setStyleName(qApp->font().styleName());
         font.setStyle(qApp->font().style());
 
-        // Insert/Get the default font size of the widget
-        auto itDefault = mapWidgetDefaultFontSizes.emplace(w, std::max(1, qRound(*base_size)));
+        // Insert/Get the default font size of the widget. Stored exactly as
+        // converted; EffectivePointSize only ever returns a value above zero,
+        // so the old std::max(1, ...) clamp guarded nothing the scaler needs.
+        auto itDefault = mapWidgetDefaultFontSizes.emplace(w, *base_size);
 
         auto it = mapFontUpdates.find(w);
         if (it != mapFontUpdates.end()) {
             int nSize = std::get<2>(it->second);
             if (nSize == -1) {
-                nSize = itDefault.first->second;
+                // An explicit mapFontUpdates override is a whole-point size and
+                // stays one, so the stored default is rounded on the way into
+                // getFont(). Only the unscaled path below gets the exact value.
+                nSize = std::max(1, qRound(itDefault.first->second));
             }
             font = getFont(std::get<0>(it->second), std::get<1>(it->second), nSize);
         } else {
@@ -1541,9 +1567,14 @@ void updateFonts()
         it.first->setFont(it.second);
     }
 
-    // Scale the global font size for the classes in the map below
-    static std::map<std::string, int> mapClassFontUpdates{
-        {"QTipLabel", -1}, {"QMenu", -1}, {"QMessageBox", -1}
+    // Scale the global font size for the classes in the map below.
+    //
+    // std::optional<double> rather than an int with a -1 sentinel: the size is
+    // now stored exactly as converted, and "not captured yet" must stay
+    // distinguishable from any real value without comparing a double against a
+    // magic number.
+    static std::map<std::string, std::optional<double>> mapClassFontUpdates{
+        {"QTipLabel", std::nullopt}, {"QMenu", std::nullopt}, {"QMessageBox", std::nullopt}
     };
     // These fonts belong to no widget, so the primary screen supplies the DPI
     // for any pixel-to-point conversion.
@@ -1551,15 +1582,15 @@ void updateFonts()
     const int screen_dpi_y{primary_screen ? qRound(primary_screen->logicalDotsPerInchY()) : 0};
     for (auto& it : mapClassFontUpdates) {
         QFont fontClass = qApp->font(it.first.c_str());
-        if (it.second == -1) {
+        if (!it.second) {
             const std::optional<double> class_size{EffectivePointSize(fontClass, screen_dpi_y)};
             if (!class_size) {
                 // Leave the entry uncaptured and retry on the next pass.
                 continue;
             }
-            it.second = std::max(1, qRound(*class_size));
+            it.second = *class_size;
         }
-        double dSize = getScaledFontSize(it.second);
+        double dSize = getScaledFontSize(*it.second);
         if (fontClass.pointSizeF() != dSize) {
             fontClass.setPointSizeF(dSize);
             qApp->setFont(fontClass, it.first.c_str());

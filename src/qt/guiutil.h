@@ -26,6 +26,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <optional>
 #include <utility>
 
 class QValidatedLineEdit;
@@ -360,7 +361,27 @@ namespace GUIUtil
     void setFontScale(int nScale);
 
     /** get font size with GUIUtil::fontScale applied */
-    double getScaledFontSize(int nSize);
+    double getScaledFontSize(double nSize);
+
+    //! Internals exposed for testing only. Nothing outside the Qt tests should
+    //! call these; they are here because the conversion below is the exact
+    //! arithmetic a regression has to pin, and testing it through a widget
+    //! needs a font engine the `minimal` platform plugin does not provide.
+    namespace internal {
+    /**
+     * The point size a font effectively carries, in points.
+     *
+     * A QFont stores exactly one of point size or pixel size, so a stylesheet
+     * rule such as `font-size: 17px` leaves pointSizeF() unusable. Returns
+     * nullopt when no size can be derived: a font can carry no valid size at
+     * all, and a widget's logicalDpiY() is not guaranteed positive.
+     *
+     * The result is deliberately NOT rounded. 17 px at 96 DPI is 12.75 pt, and
+     * rounding it to 13 pt before scaling is the defect this seam exists to
+     * keep fixed (dash#7465).
+     */
+    std::optional<double> EffectivePointSize(const QFont& font, int dpi_y);
+    } // namespace internal
 
     /** Load dash specific appliciation fonts */
     bool loadFonts();
