@@ -176,6 +176,7 @@ BITCOIN_TESTS =\
   test/pos_kernel_tests.cpp \
   test/pos_reorg_maturity_tests.cpp \
   test/pos_coinstake_fee_tests.cpp \
+  test/pos_dirty_index_tests.cpp \
   test/pow_tests.cpp \
   test/prevector_tests.cpp \
   test/raii_event_tests.cpp \
