@@ -159,6 +159,7 @@ BASE_SCRIPTS = [
     # vv Tests less than 60s vv
     'p2p_sendheaders.py', # NOTE: needs dash_hash to pass
     'p2p_sendheaders_compressed.py', # NOTE: needs dash_hash to pass
+    'p2p_headers_uncompressed.py', # NOTE: needs dash_hash to pass
     'wallet_importmulti.py --legacy-wallet',
     'mempool_limit.py',
     'rpc_txoutproof.py',
