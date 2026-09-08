@@ -36,6 +36,7 @@ struct LLMQContext;
 
 namespace dsl {
 class CPoSeServiceManager;
+class CFaultInjector;
 } // namespace dsl
 
 namespace interfaces {
@@ -94,6 +95,8 @@ struct NodeContext {
     std::unique_ptr<CSporkManager> sporkman;
     std::unique_ptr<LLMQContext> llmq_ctx;
     std::unique_ptr<dsl::CPoSeServiceManager> dslman;
+    //! DSL fault injection: process-local, test networks only, never persisted.
+    std::unique_ptr<dsl::CFaultInjector> faultinjector;
 
     //! Declare default constructor and destructor that are not inline, so code
     //! instantiating the NodeContext struct doesn't need to #include class

@@ -12,10 +12,15 @@ from decimal import Decimal
 from test_framework.blocktools import create_block_with_mnpayments
 from test_framework.messages import tx_from_hex
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal, force_finish_mnsync, p2p_port, softfork_active
+from test_framework.util import assert_equal, assert_raises_rpc_error, force_finish_mnsync, p2p_port, softfork_active
 
 class Masternode(object):
     pass
+
+# The singular form of the pre-activation message, with the trailing space that
+# proves the sentence continues. Written out once so no assertion can quietly
+# match nothing.
+SINGULAR_PHRASE = "Mine 1 more block or restart "
 
 class DIP3Test(BitcoinTestFramework):
     def set_test_params(self):
@@ -29,6 +34,19 @@ class DIP3Test(BitcoinTestFramework):
         self.extra_args += ["-budgetparams=10:10:10"]
         self.extra_args += ["-sporkkey=cP4EKFyJsHT39LDqgdcB43Y3YXjNyjb5Fuas1GQSeAtjnZWmZEQK"]
         self.extra_args += ["-dip3params=135:150"]
+        # A registered collateral may not be spent for minStaticCollateral
+        # blocks -- 8064 on every network, this fork's own rule with no Dash
+        # counterpart. This test spends collaterals deliberately, to prove a
+        # masternode leaves the list when its collateral goes, and it cannot
+        # reach that depth: 8064 blocks past registration is beyond
+        # lastPowBlock (5000 on regtest), and past that a block must be staked,
+        # which no test generator produces. So the scenario is unreachable
+        # rather than slow.
+        #
+        # Two blocks rather than zero, so the rule stays switched on and the
+        # fixture still has to respect it. The rule's own boundary is covered by
+        # collateral_tests; what this file is about is the MN list.
+        self.extra_args += ["-minstaticcollateral=2"]
 
 
     def skip_test_if_missing_module(self):
@@ -63,6 +81,14 @@ class DIP3Test(BitcoinTestFramework):
         before_dip3_mn = self.prepare_mn(self.nodes[0], 1, 'mn-before-dip3')
         self.create_mn_collateral(self.nodes[0], before_dip3_mn)
         mns.append(before_dip3_mn)
+
+        # The log line above claimed to test rejection but only asserted the
+        # height. Actually submit both ProTx forms and hold the RPC to its
+        # contract: code -25 and a message that names the activation height and
+        # counts the blocks left. Before dash#7342 the answer here was a bare
+        # "bad-tx-type", which reads like a malformed transaction when the only
+        # problem is that the chain is too young.
+        self.test_protx_rejected_before_activation(before_dip3_mn)
 
         # block 150 starts enforcing DIP3 MN payments
         self.generate(self.nodes[0], 150 - self.nodes[0].getblockcount(), sync_fun=self.no_op)
@@ -219,6 +245,84 @@ class DIP3Test(BitcoinTestFramework):
         # make sure payoutAddress is the same as before
         assert old_dmnState["payoutAddress"] == new_dmnState["payoutAddress"]
 
+    def dip3_inactive_message(self, node):
+        """The exact message src/rpc/evo.cpp builds for a pre-activation ProTx.
+
+        Recomputed from the node's own height rather than hardcoded, so the
+        singular and plural forms are both derived the same way the source
+        derives them and the test cannot drift from a changed activation
+        height.
+        """
+        current_height = node.getblockcount()
+        next_block_height = current_height + 1
+        activation_height = 135
+        blocks_to_mine = max(activation_height - next_block_height, 0)
+        return (
+            "DIP0003 is not active yet; ProTx transactions are valid starting at block height %d "
+            "(current chain height %d, next block height %d). Mine %d more block%s or restart "
+            "this regtest/devnet chain with DIP3 activation parameters that are already active."
+            % (activation_height, current_height, next_block_height, blocks_to_mine,
+               "" if blocks_to_mine == 1 else "s")
+        )
+
+    def assert_protx_rejected(self, node, mn):
+        """Both ProTx construction forms must be refused, with the same message.
+
+        register_fund creates its own collateral inside the ProRegTx;
+        register refers to an external one. They reach the gate by different
+        paths, so one passing says nothing about the other.
+        """
+        expected = self.dip3_inactive_message(node)
+        register_fund = 'register_fund' if softfork_active(node, 'v19') else 'register_fund_legacy'
+        register = 'register' if softfork_active(node, 'v19') else 'register_legacy'
+
+        assert_raises_rpc_error(
+            -25, expected, node.protx, register_fund,
+            node.getnewaddress(), '127.0.0.1:%d' % mn.p2p_port, mn.ownerAddr,
+            mn.operatorAddr, mn.votingAddr, mn.operator_reward,
+            node.getnewaddress(), mn.fundsAddr)
+
+        assert_raises_rpc_error(
+            -25, expected, node.protx, register,
+            mn.collateral_txid, mn.collateral_vout, '127.0.0.1:%d' % mn.p2p_port,
+            mn.ownerAddr, mn.operatorAddr, mn.votingAddr, mn.operator_reward,
+            node.getnewaddress(), mn.fundsAddr)
+
+    def test_protx_rejected_before_activation(self, mn):
+        node = self.nodes[0]
+        node.sendtoaddress(mn.fundsAddr, 1000.001)
+        self.generate(node, 1, sync_fun=self.no_op)
+
+        # Plural form, well below the activation height.
+        assert node.getblockcount() < 133
+        # The sentence continues after the count, so the phrase carries a
+        # trailing space and no full stop: "Mine 12 more blocks or restart...".
+        # Asserting "Mine 1 more block." here would pass for the wrong reason at
+        # every height, which is how the first version of this test was wrong.
+        assert SINGULAR_PHRASE not in self.dip3_inactive_message(node)
+        assert " more blocks or restart " in self.dip3_inactive_message(node)
+        self.log.info("ProTx is refused %d blocks before dip3 activation" %
+                      (135 - node.getblockcount() - 1))
+        self.assert_protx_rejected(node, mn)
+
+        # Singular form, one block short. blocks_to_mine is
+        # activation - (tip + 1), so tip 133 is the only height that produces
+        # "Mine 1 more block"; at tip 134 the next block is 135 and the gate
+        # already lets the call through.
+        self.generate(node, 133 - node.getblockcount(), sync_fun=self.no_op)
+        assert_equal(node.getblockcount(), 133)
+        assert SINGULAR_PHRASE in self.dip3_inactive_message(node)
+        self.log.info("ProTx is refused with the singular message at the last blocked height")
+        self.assert_protx_rejected(node, mn)
+
+        # One block later the gate opens. Nothing is submitted here: the rest
+        # of this test registers both forms after activation and would fail if
+        # they did not work, and registering an extra masternode at the
+        # boundary would falsify the counts those later stages assert.
+        self.generate(node, 1, sync_fun=self.no_op)
+        assert_equal(node.getblockcount(), 134)
+        assert "Mine 0 more blocks or restart " in self.dip3_inactive_message(node)
+
     def prepare_mn(self, node, idx, alias):
         mn = Masternode()
         mn.idx = idx
@@ -235,6 +339,36 @@ class DIP3Test(BitcoinTestFramework):
 
         return mn
 
+    def lock_collateral(self, node, mn):
+        """Keep automatic coin selection away from a masternode collateral.
+
+        On this fork a proof-of-work coinbase pays 11,000,000 DFCN, so a
+        1000-DFCN collateral parked in the controller wallet is by a wide margin
+        its smallest spendable output. Knapsack's lowest-larger rule then picks
+        exactly that output to fund a 0.001 fee payment, the collateral ends up
+        spent in the mempool, and the following `protx register` is rejected as
+        `protx-dup` by existsProviderTxConflict's
+        `mapNextTx.count(proTx.collateralOutpoint)` branch -- "another tx spends
+        the collateral". On Dash regtest the 500-DASH coinbases and their change
+        are smaller than the collateral, so the fixture never hit this.
+
+        Locking is the right lever because it changes only this wallet's
+        selection, not the selection algorithm, and it leaves explicit inputs
+        alone: spend_mn_collateral names its outpoint in createrawtransaction
+        and still works while the lock is held.
+
+        Idempotent, because the two ways a collateral comes into being do not
+        agree about this: `protx register_fund` locks the output it creates,
+        while a plain `sendtoaddress` of 1000 does not. That asymmetry is the
+        whole of the bug -- the externally funded collateral was the unprotected
+        one -- and asking twice must not be an error.
+        """
+        assert mn.collateral_vout is not None
+        outpoint = {'txid': mn.collateral_txid, 'vout': mn.collateral_vout}
+        if outpoint not in node.listlockunspent():
+            node.lockunspent(False, [outpoint])
+        assert outpoint in node.listlockunspent()
+
     def create_mn_collateral(self, node, mn):
         mn.collateral_address = node.getnewaddress()
         mn.collateral_txid = node.sendtoaddress(mn.collateral_address, 1000)
@@ -247,6 +381,7 @@ class DIP3Test(BitcoinTestFramework):
                 mn.collateral_vout = txout['n']
                 break
         assert mn.collateral_vout is not None
+        self.lock_collateral(node, mn)
 
     # register a protx MN and also fund it (using collateral inside ProRegTx)
     def register_fund_mn(self, node, mn):
@@ -264,6 +399,9 @@ class DIP3Test(BitcoinTestFramework):
                 mn.collateral_vout = txout['n']
                 break
         assert mn.collateral_vout is not None
+        # The ProRegTx's own collateral output is in this wallet too, and is
+        # just as attractive to coin selection as an external one.
+        self.lock_collateral(node, mn)
 
     # create a protx MN which refers to an existing collateral
     def register_mn(self, node, mn):

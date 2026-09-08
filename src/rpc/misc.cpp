@@ -908,11 +908,28 @@ static RPCHelpMan getaddressbalance()
     CAmount balance_immature = 0;
     CAmount received = 0;
 
+    const Consensus::Params& consensus = Params().GetConsensus();
     for (const auto& [indexKey, indexDelta] : addressIndex) {
         if (indexDelta > 0) {
             received += indexDelta;
         }
-        if (indexKey.m_block_tx_pos == 0 && nHeight - indexKey.m_block_height < COINBASE_MATURITY) {
+        // Consensus holds back both kinds of generated output under
+        // COINBASE_MATURITY (consensus/tx_verify.cpp), and this chain has two:
+        // the coinbase, and the coinstake of a proof-of-stake block. The
+        // coinstake is vtx[1], and above lastPowBlock every block is
+        // proof-of-stake -- ConnectBlock refuses anything else there
+        // (pos-early/pow-late) -- so position 1 above that height is exactly
+        // the coinstake. Asking only about position 0 reported a freshly
+        // staked coinstake as spendable while the node still refused to spend
+        // it with bad-txns-premature-spend-of-coinbase.
+        //
+        // A spend is not a generated output, and unlike a coinbase a coinstake
+        // has inputs of its own, so its spend entries belong in the spendable
+        // column exactly as before.
+        const bool generated_output = !indexKey.m_tx_spent &&
+            (indexKey.m_block_tx_pos == 0 ||
+             (indexKey.m_block_tx_pos == 1 && indexKey.m_block_height > consensus.lastPowBlock));
+        if (generated_output && nHeight - indexKey.m_block_height < COINBASE_MATURITY) {
             balance_immature += indexDelta;
         } else {
             balance_spendable += indexDelta;

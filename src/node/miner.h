@@ -35,6 +35,7 @@ struct NodeContext;
 namespace Consensus { struct Params; };
 namespace dsl {
 class CPoSeServiceManager;
+class CFaultInjector;
 } // namespace dsl
 namespace llmq {
 class CChainLocksHandler;
@@ -186,6 +187,7 @@ private:
     const llmq::CQuorumManager& m_qman;
     // DSL service commitments: nullable, absent in tests that build without them
     dsl::CPoSeServiceManager* m_dslman{nullptr};
+    dsl::CFaultInjector* m_faultinjector{nullptr};
     const llmq::CSigningManager* m_sigman{nullptr};
 
 public:

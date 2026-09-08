@@ -215,6 +215,12 @@ PeerMsgRet CGovernanceManager::ProcessMessage(CNode& peer, CConnman& connman, Pe
             return tl::unexpected{100};
         }
 
+        // Vote sync calls contains() for every cached vote under the governance
+        // lock. Bound nHashFuncs as well as vData before handling any request.
+        if (!filter.IsWithinSizeConstraints()) {
+            return tl::unexpected{100};
+        }
+
         LogPrint(BCLog::GOBJECT, "MNGOVERNANCESYNC -- syncing governance objects to our peer %s\n", peer.GetLogString());
         const bool full_sync{nProp == uint256()};
         const bool object_fetch{!full_sync && IsEmptyBloomFilter(filter)};

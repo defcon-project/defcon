@@ -514,4 +514,38 @@ BOOST_AUTO_TEST_CASE(streams_hashed)
     BOOST_CHECK_EQUAL(hash_writer.GetHash(), hash_verifier.GetHash());
 }
 
+BOOST_AUTO_TEST_CASE(streams_autofile_empty_span)
+{
+    // A zero-length read or write must not reach fread/fwrite carrying the null
+    // data pointer an empty Span has: those declare that argument non-null, so
+    // passing it is undefined behaviour, and a sanitizer build reports it.
+    //
+    // Every assertion here passes with or without the guard in CAutoFile. What
+    // this case is for is to give the smallest suite a direct, named site: the
+    // only thing that triggered it before was a captured VERACK deep inside
+    // net_tests, which is where it was actually found and is a poor place to
+    // rediscover it.
+    const fs::path path{m_args.GetDataDirBase() / "streams_empty_span"};
+
+    {
+        CAutoFile file{fsbridge::fopen(path, "wb"), 222, 333};
+        BOOST_CHECK(!file.IsNull());
+        file.write(Span<const std::byte>{});
+        file << uint8_t{0x42};
+        file.write(Span<const std::byte>{});
+    }
+
+    {
+        CAutoFile file{fsbridge::fopen(path, "rb"), 222, 333};
+        BOOST_CHECK(!file.IsNull());
+        file.read(Span<std::byte>{});
+        uint8_t marker{0};
+        file >> marker;
+        // The empty transfers moved the file position nowhere, so the byte
+        // written between them is still the next thing to read.
+        BOOST_CHECK_EQUAL(marker, 0x42);
+        file.read(Span<std::byte>{});
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

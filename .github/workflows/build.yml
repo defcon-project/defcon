@@ -190,8 +190,19 @@ jobs:
       #
       #   base58 identity, like the four above:  descriptor_tests, key_io_tests
       #   serialization this fork changed:       blockencodings_tests
-      #   long mining loops that no longer mine: dynamic_activation_thresholds_tests,
-      #                                          miner_tests
+      #   long mining loops that no longer mine: dynamic_activation_thresholds_tests
+      #
+      # miner_tests is excluded by CASE, not by suite. It holds two: the
+      # inherited CreateNewBlock_validity, a long mining loop that no longer
+      # mines, and this fork's own
+      # check_block_signature_survives_an_unsolvable_coinstake, which passes and
+      # guards a remotely reachable abort -- CheckBlock runs the block signature
+      # ahead of the merkle root, and a proof-of-stake block is never asked for
+      # proof of work, so an unsolvable coinstake script reaches the empty
+      # Solver result from any peer. Excluding the suite dropped that guard from
+      # CI along with the failure it was named for. Measured on the whole gate:
+      # 627 cases before, 628 after, the gained one being exactly that case, and
+      # the run still green.
       #
       # evo_dip3_activation_tests came off this list once its two failures were
       # read rather than assumed. It was filed under the long mining loops and
@@ -216,7 +227,7 @@ jobs:
           cd "build-ci/DeFCoN-${{ matrix.build_target }}"
           make -j"$(nproc)" -C src test/test_defcon
           ./src/test/test_defcon \
-            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests:!rpc_tests:!transaction_tests:!util_tests:!validation_chainstate_tests:!validation_chainstatemanager_tests:!wallet_tests' \
+            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:!rpc_tests:!transaction_tests:!util_tests:!validation_chainstate_tests:!validation_chainstatemanager_tests:!wallet_tests' \
             --catch_system_errors=no -l test_suite
         shell: bash
 

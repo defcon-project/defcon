@@ -33,6 +33,7 @@
 #include <evo/mnhftx.h>
 #include <evo/pose_service.h>
 #include <evo/pose_service_manager.h>
+#include <evo/pose_service_faults.h>
 #include <evo/simplifiedmns.h>
 #include <governance/governance.h>
 #include <llmq/blockprocessor.h>
@@ -87,6 +88,7 @@ BlockAssembler::BlockAssembler(CChainState& chainstate, const NodeContext& node,
       m_quorum_block_processor(*Assert(Assert(node.llmq_ctx)->quorum_block_processor)),
       m_qman(*Assert(Assert(node.llmq_ctx)->qman)),
       m_dslman(node.dslman.get()),
+      m_faultinjector(node.faultinjector.get()),
       m_sigman(node.llmq_ctx->sigman.get())
 {
     blockMinFeeRate = options.blockMinFeeRate;
@@ -196,6 +198,17 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
             nHeight % consensus.nDSLEpochInterval == 0) {
             const uint32_t closedEpoch = static_cast<uint32_t>(nHeight / consensus.nDSLEpochInterval) - 1;
             const CBlockIndex* pindexEpochBase = pindexPrev->GetAncestor(nHeight - consensus.nDSLEpochInterval);
+            // An injected commitment-skip fault (test networks only) makes this
+            // producer leave the epoch's commitment out of its block. The template
+            // is otherwise unchanged, and the next producer without the fault
+            // attaches it -- a commitment is per (type, epoch), not per height.
+            const std::optional<dsl::Fault> skip = m_faultinjector != nullptr
+                ? m_faultinjector->Apply(dsl::FaultKind::COMMITMENT_SKIP, pindexPrev->nHeight)
+                : std::nullopt;
+            if (skip.has_value()) {
+                LogPrintf("FAULTINJECT commitment for epoch %d withheld from the block template at height %d: fault %d (%s)\n",
+                          closedEpoch, nHeight, skip->id, skip->scenarioId);
+            }
             const auto llmqType = llmq::GetChainLocksLLMQType(consensus, nHeight);
             llmq::CRecoveredSig recSig;
             CPoSeServiceCommitment requestProbe;
@@ -203,7 +216,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
             // The request id is bound to the epoch base, so the probe must carry
             // it too or it would look for a session that was never opened.
             if (pindexEpochBase != nullptr) requestProbe.epochBlockHash = pindexEpochBase->GetBlockHash();
-            if (pindexEpochBase != nullptr &&
+            if (!skip.has_value() && pindexEpochBase != nullptr &&
                 m_sigman->GetRecoveredSigForId(llmqType, requestProbe.GetRequestId(), recSig)) {
                 auto candidate = dsl::BuildServiceCommitmentTx(
                     closedEpoch, pindexEpochBase->GetBlockHash(), llmqType, recSig.getQuorumHash(),

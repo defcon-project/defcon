@@ -117,14 +117,24 @@ BASE_SCRIPTS = [
     'wallet_labels.py --descriptors',
     'p2p_timeouts.py --v1transport',
     'p2p_timeouts.py --v2transport',
+    'p2p_llmq_signing_vectors.py --v1transport',
+    'p2p_llmq_signing_vectors.py --v2transport',
     'feature_bip68_sequence.py',
     'mempool_updatefromblock.py',
     'p2p_tx_download.py',
     'wallet_dump.py --legacy-wallet',
     'feature_multikeysporks.py',
     'feature_dip3_v19.py',
+    'feature_dip3_v19_legacy.py --legacy-wallet',
+    'feature_dip3_v19_legacy.py --descriptors',
     'feature_dsl_service.py',
     'feature_dsl_enforcement.py',
+    'feature_dsl_fault_injection.py',
+    'feature_dsl_faults.py',
+    'feature_dsl_scenarios.py',
+    'feature_pos_staking.py --descriptors',
+    'feature_pos_staking.py --legacy-wallet',
+    'rpc_masternode_payments_genesis.py',
     'feature_compute_mn.py',
     'feature_asset_locks.py', # NOTE: needs dash_hash to pass
     'feature_llmq_connections.py', # NOTE: needs dash_hash to pass
@@ -149,6 +159,7 @@ BASE_SCRIPTS = [
     # vv Tests less than 60s vv
     'p2p_sendheaders.py', # NOTE: needs dash_hash to pass
     'p2p_sendheaders_compressed.py', # NOTE: needs dash_hash to pass
+    'p2p_headers_uncompressed.py', # NOTE: needs dash_hash to pass
     'wallet_importmulti.py --legacy-wallet',
     'mempool_limit.py',
     'rpc_txoutproof.py',
@@ -217,6 +228,7 @@ BASE_SCRIPTS = [
     'p2p_disconnect_ban.py --v1transport',
     'p2p_disconnect_ban.py --v2transport',
     'feature_addressindex.py',
+    'feature_addressindex_coinstake.py',
     'rpc_addressindex_bls.py',
     'wallet_dumpwallet_bls.py',
     'wallet_importmulti_bls.py',

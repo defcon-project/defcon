@@ -30,6 +30,7 @@ struct LLMQContext;
 
 namespace dsl {
 class CPoSeServiceManager;
+class CFaultInjector;
 } // namespace dsl
 
 /** Default for -maxorphantxsize, maximum size in megabytes the orphan map can grow before entries are removed */
@@ -85,7 +86,8 @@ public:
                                              const std::unique_ptr<CJContext>& cj_ctx,
                                              const std::unique_ptr<LLMQContext>& llmq_ctx,
                                              const std::unique_ptr<dsl::CPoSeServiceManager>& dslman,
-                                             bool ignore_incoming_txs);
+                                             bool ignore_incoming_txs,
+                                             dsl::CFaultInjector* faultinjector = nullptr);
     virtual ~PeerManager() { }
 
     /**

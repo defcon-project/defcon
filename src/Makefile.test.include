@@ -99,6 +99,7 @@ BITCOIN_TESTS =\
   test/cachemap_tests.cpp \
   test/cachemultimap_tests.cpp \
   test/coins_tests.cpp \
+  test/undo_tests.cpp \
   test/coinstatsindex_tests.cpp \
   test/compilerbug_tests.cpp \
   test/compress_tests.cpp \
@@ -120,6 +121,7 @@ BITCOIN_TESTS =\
   test/dsl_probe_tests.cpp \
   test/dsl_manager_tests.cpp \
   test/dsl_apply_tests.cpp \
+  test/dsl_fault_injection_tests.cpp \
   test/pose_service_tests.cpp \
   test/mn_dsl_state_tests.cpp \
   test/compute_descriptor_tests.cpp \
@@ -170,8 +172,11 @@ BITCOIN_TESTS =\
   test/pmt_tests.cpp \
   test/policyestimator_tests.cpp \
   test/pool_tests.cpp \
+  test/pos_coinbase_bound_tests.cpp \
   test/pos_kernel_tests.cpp \
+  test/pos_reorg_maturity_tests.cpp \
   test/pos_coinstake_fee_tests.cpp \
+  test/pos_dirty_index_tests.cpp \
   test/pow_tests.cpp \
   test/prevector_tests.cpp \
   test/raii_event_tests.cpp \

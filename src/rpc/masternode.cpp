@@ -391,6 +391,12 @@ static RPCHelpMan masternode_payments()
     CHECK_NONFATAL(node.chain_helper);
     CHECK_NONFATAL(node.dmnman);
     while (vecPayments.size() < uint64_t(std::abs(nCount)) && pindex != nullptr) {
+        // Genesis pays no masternode and has no predecessor to fill a payment
+        // template from: FillBlockPayments takes pindex->pprev as not-null and
+        // terminates the daemon on it. An indexer walking a fresh chain from
+        // height 0 asked exactly this and took the node down with it, so the
+        // walk stops here -- there is nothing before genesis to report.
+        if (pindex->pprev == nullptr) break;
         CBlock block;
         if (!ReadBlockFromDisk(block, pindex, Params().GetConsensus())) {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Can't read block from disk");

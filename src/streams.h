@@ -574,6 +574,17 @@ public:
     {
         if (!file)
             throw std::ios_base::failure("CAutoFile::read: file handle is nullptr");
+        // fread and fwrite declare their buffer argument non-null whatever the
+        // count, and an empty Span carries a null data pointer -- so a
+        // zero-length transfer is undefined behaviour even though every
+        // implementation copies nothing and returns 0. The guard changes no
+        // behaviour: fread/fwrite of 0 bytes returns 0, which already compares
+        // equal and throws nothing.
+        //
+        // An empty payload is ordinary rather than exotic. UBSan found this at
+        // the write below, capturing a VERACK -- a message whose body is empty
+        // by definition -- under -capturemessages.
+        if (dst.empty()) return;
         if (fread(dst.data(), 1, dst.size(), file) != dst.size()) {
             throw std::ios_base::failure(feof(file) ? "CAutoFile::read: end of file" : "CAutoFile::read: fread failed");
         }
@@ -596,6 +607,9 @@ public:
     {
         if (!file)
             throw std::ios_base::failure("CAutoFile::write: file handle is nullptr");
+        // See read(): an empty Span's data pointer is null, and fwrite declares
+        // that argument non-null.
+        if (src.empty()) return;
         if (fwrite(src.data(), 1, src.size(), file) != src.size()) {
             throw std::ios_base::failure("CAutoFile::write: write failed");
         }

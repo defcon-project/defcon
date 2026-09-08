@@ -12,6 +12,9 @@
 #include <evo/deterministicmns.h>
 #include <evo/dmn_types.h>
 #include <evo/pose_service_manager.h>
+#include <evo/pose_service_faults.h>
+#include <hash.h>
+#include <evo/pose_service_sentinels.h>
 #include <evo/providertx.h>
 #include <evo/simplifiedmns.h>
 #include <evo/specialtx.h>
@@ -981,7 +984,11 @@ static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& reques
     if (dmn->nType != mnType) {
         throw std::runtime_error(strprintf("masternode with proTxHash %s is not a %s", ptx.proTxHash.ToString(), GetMnType(mnType).description));
     }
-    ptx.nVersion = dmn->pdmnState->nVersion;
+    // Validation uses the deployment's BLS scheme, even for legacy MN state.
+    // Only the payload version changes; this does not migrate the MN state.
+    const bool isV19active = DeploymentActiveAfter(WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip()),
+                                                  Params().GetConsensus(), Consensus::DEPLOYMENT_V19);
+    ptx.nVersion = CProUpServTx::GetVersion(isV19active);
 
     if (keyOperator.GetPublicKey() != dmn->pdmnState->pubKeyOperator.Get()) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("the operator key does not belong to the registered public key"));
@@ -1025,10 +1032,6 @@ static UniValue protx_update_service_common_wrapper(const JSONRPCRequest& reques
 
     FundSpecialTx(*wallet, tx, ptx, feeSource);
 
-    // The signing scheme must follow the payload version, not the deployment:
-    // ptx.nVersion comes from the masternode state above, and a legacy
-    // masternode past V19 would otherwise get a legacy payload carrying a
-    // basic-scheme signature, which consensus rejects. (dash#7096, adapted)
     SignSpecialTxPayloadByHash(tx, ptx, keyOperator, ptx.nVersion == CProUpServTx::LEGACY_BLS_VERSION);
     SetTxPayload(tx, ptx);
 
@@ -1204,11 +1207,10 @@ static RPCHelpMan protx_revoke()
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("the operator key does not belong to the registered public key"));
     }
 
-    // Follow the masternode state version instead of forcing the deployment
-    // maximum: a legacy masternode past V19 got a basic-version payload whose
-    // signing scheme no longer matched its registered key encoding.
-    // (dash#7096, adapted)
-    ptx.nVersion = dmn->pdmnState->nVersion;
+    // Match the deployment's verification scheme without changing MN state.
+    const bool isV19active = DeploymentActiveAfter(WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip()),
+                                                  Params().GetConsensus(), Consensus::DEPLOYMENT_V19);
+    ptx.nVersion = CProUpRevTx::GetVersion(isV19active);
 
     CMutableTransaction tx;
     tx.nVersion = 3;
@@ -1992,6 +1994,26 @@ static RPCHelpMan dslstatus()
                 {RPCResult::Type::NUM, "onlinereports", "Of those, reports that observed the target online"},
                 {RPCResult::Type::NUM, "missedreports", "Of those, reports that observed the target missing"},
                 {RPCResult::Type::NUM, "storesize", "Reports held across the whole retained epoch window"},
+                {RPCResult::Type::STR_HEX, "poolhash", "Order-independent digest of the reports pooled for the current epoch; equal on two nodes iff their pools hold the same reports"},
+                {RPCResult::Type::OBJ, "candidate", "The verdict this node would aggregate from its own pool right now, before any quorum signs anything",
+                {
+                    {RPCResult::Type::NUM, "missedcount", "Masternodes the local pool would mark MISSED"},
+                    {RPCResult::Type::ARR, "missedprotxhashes", "Which ones, resolved against the epoch-base list in canonical order",
+                    {
+                        {RPCResult::Type::STR_HEX, "", "proTxHash"},
+                    }},
+                }},
+                {RPCResult::Type::ARR, "faults", "Injected faults active on this node (test networks only; empty elsewhere)",
+                {
+                    {RPCResult::Type::OBJ, "", "",
+                    {
+                        {RPCResult::Type::NUM, "id", "The fault id"},
+                        {RPCResult::Type::STR, "kind", "The fault kind"},
+                        {RPCResult::Type::STR, "scenarioId", "The scenario that asked for it"},
+                        {RPCResult::Type::NUM, "expiryHeight", "First height at which it no longer applies"},
+                        {RPCResult::Type::NUM, "hits", "How many times it held an action back"},
+                    }},
+                }},
             }},
         RPCExamples{""},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
@@ -2039,6 +2061,286 @@ static RPCHelpMan dslstatus()
     ret.pushKV("onlinereports", online);
     ret.pushKV("missedreports", missed);
     ret.pushKV("storesize", static_cast<int64_t>(mgr.Store().Size()));
+
+    // Convergence telemetry. The shadow phase has one open question -- does
+    // every quorum member hold the same pool and so sign the same bitfield --
+    // and until now the only witness was the miner's "pool diverged" log line
+    // after the fact. These two fields let an observer compare hosts before
+    // the boundary: the pool digest says whether the reports are the same,
+    // and the candidate says whether the verdict is, which can differ (a
+    // report that arrives after the signing offset changes the first and may
+    // or may not change the second).
+    {
+        std::vector<uint256> hashes;
+        hashes.reserve(reports.size());
+        for (const auto& report : reports) hashes.push_back(::SerializeHash(report));
+        std::sort(hashes.begin(), hashes.end());
+        CHashWriter hw(SER_GETHASH, 0);
+        for (const auto& h : hashes) hw << h;
+        ret.pushKV("poolhash", hw.GetHash().ToString());
+    }
+    {
+        UniValue candidate(UniValue::VOBJ);
+        UniValue missedHashes(UniValue::VARR);
+        int64_t missedCount = 0;
+        CDeterministicMNManager* dmnman = node.dmnman.get();
+        const CBlockIndex* base = nullptr;
+        if (dmnman != nullptr && consensus.nDSLEpochInterval > 0) {
+            const int64_t baseHeight = static_cast<int64_t>(epoch) * consensus.nDSLEpochInterval;
+            LOCK(cs_main);
+            if (baseHeight >= 0 && baseHeight <= chainman.ActiveChain().Height()) {
+                base = chainman.ActiveChain()[static_cast<int>(baseHeight)];
+            }
+        }
+        if (base != nullptr) {
+            const auto list = dmnman->GetListForBlock(base);
+            const auto built = dsl::BuildServiceCommitment(epoch, base->GetBlockHash(), Consensus::LLMQType::LLMQ_NONE,
+                                                            uint256(), reports, list, consensus);
+            // the same canonical order ApplyServiceCommitment resolves bits by
+            std::vector<uint256> order;
+            order.reserve(list.GetAllMNsCount());
+            list.ForEachMN(false, [&](const auto& dmn) { order.push_back(dmn.proTxHash); });
+            std::sort(order.begin(), order.end());
+            for (size_t i = 0; i < order.size() && i < built.missed.size(); ++i) {
+                if (built.missed[i]) {
+                    ++missedCount;
+                    missedHashes.push_back(order[i].ToString());
+                }
+            }
+        }
+        candidate.pushKV("missedcount", missedCount);
+        candidate.pushKV("missedprotxhashes", missedHashes);
+        ret.pushKV("candidate", candidate);
+    }
+    {
+        UniValue faults(UniValue::VARR);
+        if (node.faultinjector != nullptr && node.faultinjector->Enabled()) {
+            for (const auto& fault : node.faultinjector->List(tip_height)) {
+                UniValue obj(UniValue::VOBJ);
+                obj.pushKV("id", fault.id);
+                obj.pushKV("kind", std::string{dsl::FaultKindName(fault.kind)});
+                obj.pushKV("scenarioId", fault.scenarioId);
+                obj.pushKV("expiryHeight", fault.expiryHeight);
+                obj.pushKV("hits", fault.hits);
+                faults.push_back(obj);
+            }
+        }
+        ret.pushKV("faults", faults);
+    }
+    return ret;
+},
+    };
+}
+
+
+// ---------------------------------------------------------------------------
+// DSL fault injection: `faultinject set|list|clear`. Test networks only.
+//
+// Two gates, both fail-closed and both independent of the caller's intent. The
+// injector exists only when the node was started with -enablefaultinjection=1,
+// which startup refuses outside devnet and regtest; and the RPC answers only a
+// caller authenticated with the datadir cookie -- an operator on the machine,
+// never an rpcuser/rpcauth credential that a remote orchestrator might hold.
+// The explorer's simulator therefore talks to this through its node-local
+// wrapper, exactly as it does for service and network faults.
+// ---------------------------------------------------------------------------
+
+static const std::string FAULT_RPC_COOKIE_USER = "__cookie__";
+
+static dsl::CFaultInjector& EnsureFaultInjector(const JSONRPCRequest& request, const NodeContext& node)
+{
+    if (request.authUser != FAULT_RPC_COOKIE_USER) {
+        throw JSONRPCError(RPC_INVALID_REQUEST,
+                           "faultinject is only available to a caller authenticated with the datadir cookie");
+    }
+    if (node.faultinjector == nullptr || !node.faultinjector->Enabled()) {
+        throw JSONRPCError(RPC_MISC_ERROR,
+                           strprintf("fault injection is disabled: start with %s=1, which only devnet and regtest accept",
+                                     dsl::FAULT_INJECTION_ARG));
+    }
+    return *node.faultinjector;
+}
+
+static UniValue FaultToJson(const dsl::Fault& fault)
+{
+    UniValue obj(UniValue::VOBJ);
+    obj.pushKV("id", fault.id);
+    obj.pushKV("kind", std::string{dsl::FaultKindName(fault.kind)});
+    obj.pushKV("setAtHeight", fault.setAtHeight);
+    obj.pushKV("expiryHeight", fault.expiryHeight);
+    obj.pushKV("param", static_cast<int64_t>(fault.param));
+    obj.pushKV("scenarioId", fault.scenarioId);
+    obj.pushKV("hits", fault.hits);
+    return obj;
+}
+
+static std::string FaultKindHelp()
+{
+    std::string s;
+    for (const auto kind : dsl::AllFaultKinds()) {
+        if (!s.empty()) s += ", ";
+        s += dsl::FaultKindName(kind);
+    }
+    return s;
+}
+
+static RPCHelpMan faultinject_help()
+{
+    return RPCHelpMan{
+        "faultinject",
+        "DSL fault injection on devnet and regtest (requires -enablefaultinjection=1 and cookie authentication).\n"
+        "To get help on individual commands, use \"help faultinject command\".\n"
+        "\nAvailable commands:\n"
+        "  set    - Arm a fault until an expiry height\n"
+        "  list   - List the faults still active\n"
+        "  clear  - Drop one fault by id, or all of them\n",
+        {
+            {"command", RPCArg::Type::STR, RPCArg::Optional::NO, "The command to execute"},
+        },
+        RPCResults{},
+        RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    throw JSONRPCError(RPC_INVALID_PARAMETER, "Must be a valid command");
+},
+    };
+}
+
+static RPCHelpMan faultinject_set()
+{
+    return RPCHelpMan{"faultinject set",
+        "Arm a DSL fault on this node until the given height. The fault is process-local: it is never written\n"
+        "to disk and does not survive a restart. The expiry block itself is already clean.\n",
+        {
+            {"kind", RPCArg::Type::STR, RPCArg::Optional::NO, "One of: " + FaultKindHelp()},
+            {"expiryHeight", RPCArg::Type::NUM, RPCArg::Optional::NO, "First height at which the fault no longer applies; must be above the current height"},
+            {"scenarioId", RPCArg::Type::STR, RPCArg::Optional::NO, "The experiment this fault belongs to, recorded on the fault for telemetry and audit"},
+            {"param", RPCArg::Type::NUM, RPCArg::Default{0}, "Delay in blocks for the *-delay kinds; unused otherwise"},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::NUM, "id", "The fault id, unique for this process"},
+                {RPCResult::Type::STR, "kind", "The fault kind"},
+                {RPCResult::Type::NUM, "setAtHeight", "The chain height when the fault was armed"},
+                {RPCResult::Type::NUM, "expiryHeight", "First height at which it no longer applies"},
+                {RPCResult::Type::NUM, "param", "The kind-specific parameter"},
+                {RPCResult::Type::STR, "scenarioId", "The scenario that asked for it"},
+                {RPCResult::Type::NUM, "hits", "How many times the fault held an action back"},
+            }},
+        RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    dsl::CFaultInjector& injector = EnsureFaultInjector(request, node);
+    const ChainstateManager& chainman = EnsureChainman(node);
+
+    const std::string kindName = request.params[0].get_str();
+    const auto kind = dsl::FaultKindFromName(kindName);
+    if (!kind.has_value()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("unknown fault kind '%s'; expected one of: %s", kindName, FaultKindHelp()));
+    }
+    const int expiryHeight = ParseInt32V(request.params[1], "expiryHeight");
+    const std::string scenarioId = request.params[2].get_str();
+    if (scenarioId.empty()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "scenarioId must not be empty");
+    }
+    // ParseInt64V, not get_int64(): defcon-cli has no conversion entry for a
+    // subcommand whose argument types differ by subcommand (`set` takes a kind
+    // string where `clear` takes an id), so a cli caller sends every argument
+    // as a string. The lab wrapper is exactly that caller, and it was refused
+    // with "JSON value is not an integer" until this accepted numeric strings.
+    const int64_t param = request.params[3].isNull() ? 0 : ParseInt64V(request.params[3], "param");
+    if (param < 0 || param > std::numeric_limits<uint32_t>::max()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "param is out of range");
+    }
+    const int currentHeight = WITH_LOCK(cs_main, return chainman.ActiveChain().Height());
+    if (expiryHeight <= currentHeight) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER,
+                           strprintf("expiryHeight %d must be above the current height %d", expiryHeight, currentHeight));
+    }
+    const auto fault = injector.Set(*kind, currentHeight, expiryHeight, static_cast<uint32_t>(param), scenarioId);
+    if (!fault.has_value()) {
+        // every reason is checked above except the kind-specific ones
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "the fault was refused: a delay kind needs a non-zero param");
+    }
+    LogPrintf("FAULTINJECT armed id=%d kind=%s expiry=%d scenario=%s\n", fault->id,
+              dsl::FaultKindName(fault->kind), fault->expiryHeight, fault->scenarioId);
+    return FaultToJson(*fault);
+},
+    };
+}
+
+static RPCHelpMan faultinject_list()
+{
+    return RPCHelpMan{"faultinject list",
+        "List the DSL faults still active on this node at the current height.\n",
+        {},
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::BOOL, "enabled", "Whether the node was started with fault injection enabled"},
+                {RPCResult::Type::NUM, "height", "The chain height the list was evaluated at"},
+                {RPCResult::Type::ARR, "faults", "The active faults, oldest first",
+                {
+                    {RPCResult::Type::OBJ, "", "",
+                    {
+                        {RPCResult::Type::NUM, "id", "The fault id"},
+                        {RPCResult::Type::STR, "kind", "The fault kind"},
+                        {RPCResult::Type::NUM, "setAtHeight", "The chain height when the fault was armed"},
+                        {RPCResult::Type::NUM, "expiryHeight", "First height at which it no longer applies"},
+                        {RPCResult::Type::NUM, "param", "The kind-specific parameter"},
+                        {RPCResult::Type::STR, "scenarioId", "The scenario that asked for it"},
+                        {RPCResult::Type::NUM, "hits", "How many times the fault held an action back"},
+                    }},
+                }},
+            }},
+        RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    dsl::CFaultInjector& injector = EnsureFaultInjector(request, node);
+    const ChainstateManager& chainman = EnsureChainman(node);
+    const int currentHeight = WITH_LOCK(cs_main, return chainman.ActiveChain().Height());
+    UniValue faults(UniValue::VARR);
+    for (const auto& fault : injector.List(currentHeight)) faults.push_back(FaultToJson(fault));
+    UniValue ret(UniValue::VOBJ);
+    ret.pushKV("enabled", injector.Enabled());
+    ret.pushKV("height", currentHeight);
+    ret.pushKV("faults", faults);
+    return ret;
+},
+    };
+}
+
+static RPCHelpMan faultinject_clear()
+{
+    return RPCHelpMan{"faultinject clear",
+        "Drop one DSL fault by id, or every fault when no id is given.\n",
+        {
+            {"id", RPCArg::Type::NUM, RPCArg::DefaultHint{"all faults"}, "The fault id to drop"},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::NUM, "cleared", "How many faults were dropped"},
+            }},
+        RPCExamples{""},
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    const NodeContext& node = EnsureAnyNodeContext(request.context);
+    dsl::CFaultInjector& injector = EnsureFaultInjector(request, node);
+    size_t cleared = 0;
+    if (request.params[0].isNull()) {
+        cleared = injector.Clear();
+    } else {
+        const int64_t id = ParseInt64V(request.params[0], "id");
+        if (id < 1) throw JSONRPCError(RPC_INVALID_PARAMETER, "id must be positive");
+        cleared = injector.Clear(static_cast<uint64_t>(id)) ? 1 : 0;
+    }
+    LogPrintf("FAULTINJECT cleared %d fault(s)\n", cleared);
+    UniValue ret(UniValue::VOBJ);
+    ret.pushKV("cleared", static_cast<int64_t>(cleared));
     return ret;
 },
     };
@@ -2072,6 +2374,10 @@ static const CRPCCommand commands[] =
     { "evo",                &protx_revoke,                     },
 #endif
     { "evo",                &dslstatus,                        },
+    { "evo",                &faultinject_help,                 },
+    { "evo",                &faultinject_set,                  },
+    { "evo",                &faultinject_list,                 },
+    { "evo",                &faultinject_clear,                },
     { "evo",                &protx_list,                       },
     { "evo",                &protx_info,                       },
     { "evo",                &protx_diff,                       },

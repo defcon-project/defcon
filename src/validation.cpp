@@ -437,7 +437,11 @@ void CChainState::MaybeUpdateMempoolForReorg(
                 const Coin& coin{CoinsTip().AccessCoin(txin.prevout)};
                 assert(!coin.IsSpent());
                 const auto mempool_spend_height{m_chain.Tip()->nHeight + 1};
-                if (coin.IsCoinBase() && mempool_spend_height - coin.nHeight < COINBASE_MATURITY) {
+                // Both kinds of generated output are held back by the maturity rule
+                // (consensus/tx_verify.cpp), and the entry flag that brings us here is
+                // set for either -- so both have to be re-checked after a rollback.
+                if ((coin.IsCoinBase() || coin.IsCoinStake()) &&
+                    mempool_spend_height - coin.nHeight < COINBASE_MATURITY) {
                     return true;
                 }
             }
@@ -2166,7 +2170,16 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
 
     if (fProofOfStake) {
         uint256 hashProof, targetProofOfStake;
-        m_blockman.m_dirty_blockindex.insert(pindex);
+        // Only a block that is actually being connected may be marked dirty.
+        // With fJustCheck the caller owns pindex: TestBlockValidity passes the
+        // address of a CBlockIndex living in its own stack frame, and that frame
+        // is gone by the time FlushStateToDisk copies the set into WriteBatchSync
+        // and serialises what the pointer refers to. The writes just below are
+        // still made either way, because CheckProofOfStake and the modifier need
+        // them, and on a dummy they die with the frame that owns it.
+        if (!fJustCheck) {
+            m_blockman.m_dirty_blockindex.insert(pindex);
+        }
         pindex->prevoutStake = pindex->pprev->IsProofOfWork() ? COutPoint() : block.vtx[1]->vin[0].prevout;
         // The modifier was written at header time from prevoutStake, which is
         // only set here -- so every modifier so far is Hash(null || previous),
