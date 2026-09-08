@@ -437,7 +437,11 @@ void CChainState::MaybeUpdateMempoolForReorg(
                 const Coin& coin{CoinsTip().AccessCoin(txin.prevout)};
                 assert(!coin.IsSpent());
                 const auto mempool_spend_height{m_chain.Tip()->nHeight + 1};
-                if (coin.IsCoinBase() && mempool_spend_height - coin.nHeight < COINBASE_MATURITY) {
+                // Both kinds of generated output are held back by the maturity rule
+                // (consensus/tx_verify.cpp), and the entry flag that brings us here is
+                // set for either -- so both have to be re-checked after a rollback.
+                if ((coin.IsCoinBase() || coin.IsCoinStake()) &&
+                    mempool_spend_height - coin.nHeight < COINBASE_MATURITY) {
                     return true;
                 }
             }
