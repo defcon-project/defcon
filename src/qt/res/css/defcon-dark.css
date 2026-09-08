@@ -339,14 +339,18 @@ QToolBar#navigationToolBar[modern="true"] > QToolButton:disabled {
     color: #4f647d;
 }
 
+/* The box is the wordmark's own proportion, 616:140, so nothing is letterboxed
+   or stretched: 194 px wide makes it 44 px tall. It used to be 194x58, which is
+   3.34:1 against artwork that is 4.4:1 -- a shape inherited from a different
+   wordmark and never reconciled with this one. */
 QToolBar#navigationToolBar[modern="true"] QLabel#lblToolbarLogo {
-    image: url(':/images/dash_logo_toolbar');
+    image: url(':/images/defcon_wordmark');
     margin: 4px 10px 16px 10px;
     padding: 0;
     min-width: 194px;
     max-width: 194px;
-    min-height: 58px;
-    max-height: 58px;
+    min-height: 44px;
+    max-height: 44px;
 }
 
 QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector {
