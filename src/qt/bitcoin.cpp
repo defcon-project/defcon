@@ -70,6 +70,14 @@ Q_IMPORT_PLUGIN(QWindowsVistaStylePlugin);
 Q_IMPORT_PLUGIN(QCocoaIntegrationPlugin);
 Q_IMPORT_PLUGIN(QMacStylePlugin);
 #endif
+#if defined(QT_STATIC_SVG)
+// The wallet's logo is vector artwork. A static build resolves image format
+// and icon engine plugins at link time, so without these two the SVG simply
+// fails to load and the logo is absent -- silently, since a QPixmap that
+// cannot be decoded is merely null.
+Q_IMPORT_PLUGIN(QSvgPlugin);
+Q_IMPORT_PLUGIN(QSvgIconPlugin);
+#endif
 #endif
 
 // Declare meta types used for QMetaObject::invokeMethod

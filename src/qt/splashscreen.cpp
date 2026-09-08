@@ -64,16 +64,13 @@ SplashScreen::SplashScreen(const NetworkStyle *networkStyle) :
     QPixmap pixmapLogo = networkStyle->getSplashImage();
     pixmapLogo.setDevicePixelRatio(scale);
 
-    // Adjust logo color based on the current theme
-    QImage imgLogo = pixmapLogo.toImage().convertToFormat(QImage::Format_ARGB32);
-    QColor logoColor = GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BLUE);
-    for (int x = 0; x < imgLogo.width(); ++x) {
-        for (int y = 0; y < imgLogo.height(); ++y) {
-            const QRgb rgb = imgLogo.pixel(x, y);
-            imgLogo.setPixel(x, y, qRgba(logoColor.red(), logoColor.green(), logoColor.blue(), qAlpha(rgb)));
-        }
-    }
-    pixmapLogo.convertFromImage(imgLogo);
+    // The logo used to be repainted in the theme's blue, keeping only its
+    // alpha. That is all a single-colour raster silhouette could be. The
+    // artwork is vector now and carries its own gradients, which that loop
+    // would have flattened straight back to one flat colour, so it is gone and
+    // the mark is drawn as it was designed. A test network still gets rotated
+    // colours -- in NetworkStyle, where the whole icon set is recoloured
+    // together and stays consistent with the tray and window icons.
 
     pixmap = QPixmap(width * scale, height * scale);
     pixmap.setDevicePixelRatio(scale);

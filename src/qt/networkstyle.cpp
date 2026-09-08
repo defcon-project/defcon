@@ -69,23 +69,34 @@ NetworkStyle::NetworkStyle(const QString &_appName, const int iconColorHueShift,
 {
     // Allow for separate UI settings for testnets
     QApplication::setApplicationName(appName);
-    // load pixmap
-    QPixmap appIconPixmap(":/icons/dash");
 
-    if(iconColorHueShift != 0 && iconColorSaturationReduction != 0)
-    {
-        // generate QImage from QPixmap
+    // The logo is vector artwork, so nothing here is tied to one pixel size:
+    // QIcon renders the SVG at whatever size is asked of it rather than
+    // resampling a raster made for some other size. It is loaded through the
+    // resource system, not the QtSvg API, so this compiles the same whether Qt
+    // is the static one from depends or a shared system Qt -- only the plugins
+    // differ, and those are imported in bitcoin.cpp.
+    const QString logoResource(":/images/defcon_logo");
+
+    if (iconColorHueShift != 0 && iconColorSaturationReduction != 0) {
+        // A test network's icon is the same artwork with its colours rotated,
+        // and rotating colours needs pixels. Render once, large enough that
+        // every size the window and tray ask for is a reduction.
+        QPixmap appIconPixmap = QIcon(logoResource).pixmap(QSize(1024, 1024));
         QImage appIconImg = appIconPixmap.toImage();
         rotateColors(appIconImg, iconColorHueShift, iconColorSaturationReduction);
-        //convert back to QPixmap
         appIconPixmap.convertFromImage(appIconImg);
         // tweak badge color
         rotateColor(badgeColor, iconColorHueShift, iconColorSaturationReduction);
+
+        appIcon           = QIcon(appIconPixmap);
+        trayAndWindowIcon = QIcon(appIconPixmap.scaled(QSize(256, 256), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    } else {
+        appIcon           = QIcon(logoResource);
+        trayAndWindowIcon = QIcon(logoResource);
     }
 
-    appIcon             = QIcon(appIconPixmap);
-    trayAndWindowIcon   = QIcon(appIconPixmap.scaled(QSize(256,256)));
-    splashImage         = QPixmap(":/images/splash");
+    splashImage = QPixmap(logoResource);
 }
 
 const NetworkStyle* NetworkStyle::instantiate(const std::string& networkId)

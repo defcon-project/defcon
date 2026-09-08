@@ -135,6 +135,12 @@ AC_DEFUN([BITCOIN_QT_CONFIGURE],[
       if test -d "$qt_plugin_path/platforms/android"; then
         QT_LIBS="$QT_LIBS -L$qt_plugin_path/platforms/android -lqtfreetype -lEGL"
       fi
+      if test -d "$qt_plugin_path/imageformats"; then
+        QT_LIBS="$QT_LIBS -L$qt_plugin_path/imageformats"
+      fi
+      if test -d "$qt_plugin_path/iconengines"; then
+        QT_LIBS="$QT_LIBS -L$qt_plugin_path/iconengines"
+      fi
     fi
 
     if test "x$TARGET_OS" != xandroid; then
@@ -163,6 +169,15 @@ AC_DEFUN([BITCOIN_QT_CONFIGURE],[
       QT_LIBS="-Wl,--export-dynamic,--undefined=JNI_OnLoad -lplugins_platforms_qtforandroid${qt_lib_suffix} -ljnigraphics -landroid -lqtfreetype${qt_lib_suffix} $QT_LIBS"
       AC_DEFINE(QT_QPA_PLATFORM_ANDROID, 1, [Define this symbol if the qt platform is android])
     fi
+
+    dnl Vector artwork. Every platform gets these: the wallet's logo is an SVG,
+    dnl and a static Qt that cannot decode one draws nothing at all rather than
+    dnl drawing it badly, so failing here is the point. They are checked after
+    dnl the platform plugins because each check prepends to QT_LIBS, and a
+    dnl static plugin has to be listed ahead of the module that resolves it.
+    _BITCOIN_QT_CHECK_STATIC_PLUGIN([QSvgPlugin], [-lqsvg])
+    _BITCOIN_QT_CHECK_STATIC_PLUGIN([QSvgIconPlugin], [-lqsvgicon])
+    AC_DEFINE(QT_STATIC_SVG, 1, [Define this symbol if the qt svg plugins are linked statically])
   fi
   CPPFLAGS=$TEMP_CPPFLAGS
   CXXFLAGS=$TEMP_CXXFLAGS
@@ -360,6 +375,10 @@ AC_DEFUN([_BITCOIN_QT_CHECK_STATIC_LIBS], [
   PKG_CHECK_MODULES([QT_FB], [${qt_lib_prefix}FbSupport${qt_lib_suffix}], [QT_LIBS="$QT_FB_LIBS $QT_LIBS"])
   PKG_CHECK_MODULES([QT_FONTDATABASE], [${qt_lib_prefix}FontDatabaseSupport${qt_lib_suffix}], [QT_LIBS="$QT_FONTDATABASE_LIBS $QT_LIBS"])
   PKG_CHECK_MODULES([QT_THEME], [${qt_lib_prefix}ThemeSupport${qt_lib_suffix}], [QT_LIBS="$QT_THEME_LIBS $QT_LIBS"])
+  dnl The module behind the SVG image format and icon engine plugins. Without
+  dnl it the wallet can read no vector artwork, so every logo has to be a
+  dnl raster fixed at one size.
+  PKG_CHECK_MODULES([QT_SVG], [${qt_lib_prefix}Svg${qt_lib_suffix}], [QT_LIBS="$QT_SVG_LIBS $QT_LIBS"])
   if test "x$TARGET_OS" = xlinux; then
     PKG_CHECK_MODULES([QT_INPUT], [${qt_lib_prefix}InputSupport], [QT_LIBS="$QT_INPUT_LIBS $QT_LIBS"])
     PKG_CHECK_MODULES([QT_SERVICE], [${qt_lib_prefix}ServiceSupport], [QT_LIBS="$QT_SERVICE_LIBS $QT_LIBS"])
