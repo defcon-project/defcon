@@ -178,6 +178,17 @@ AC_DEFUN([BITCOIN_QT_CONFIGURE],[
     _BITCOIN_QT_CHECK_STATIC_PLUGIN([QSvgPlugin], [-lqsvg])
     _BITCOIN_QT_CHECK_STATIC_PLUGIN([QSvgIconPlugin], [-lqsvgicon])
     AC_DEFINE(QT_STATIC_SVG, 1, [Define this symbol if the qt svg plugins are linked statically])
+  else
+    dnl A shared Qt loads those same plugins at run time from the Svg module,
+    dnl which is packaged separately by every distribution -- libqt5svg5 on
+    dnl Debian, qt5-svg on Fedora and Homebrew. Without it the wallet still
+    dnl builds and still runs, and simply has no logo anywhere: an image Qt
+    dnl cannot decode is a null QPixmap, with no warning at any point. So the
+    dnl module is required here too, and the failure is moved to configure
+    dnl where somebody will read it.
+    PKG_CHECK_MODULES([QT_SVG_SHARED], [${qt_lib_prefix}Svg${qt_lib_suffix}],
+      [QT_LIBS="$QT_SVG_SHARED_LIBS $QT_LIBS"],
+      [BITCOIN_QT_FAIL([Qt Svg module not found. The wallet's artwork is vector; install the Qt SVG development package (libqt5svg5-dev, qt5-qtsvg-devel, or qt@5 with svg support).])])
   fi
   CPPFLAGS=$TEMP_CPPFLAGS
   CXXFLAGS=$TEMP_CXXFLAGS
