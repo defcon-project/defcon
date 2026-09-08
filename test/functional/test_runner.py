@@ -228,6 +228,7 @@ BASE_SCRIPTS = [
     'p2p_disconnect_ban.py --v1transport',
     'p2p_disconnect_ban.py --v2transport',
     'feature_addressindex.py',
+    'feature_addressindex_coinstake.py',
     'rpc_addressindex_bls.py',
     'wallet_dumpwallet_bls.py',
     'wallet_importmulti_bls.py',
