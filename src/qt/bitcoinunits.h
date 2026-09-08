@@ -81,6 +81,13 @@ public:
     static QString formatWithPrivacy(int unit, const CAmount& amount, SeparatorStyle separators, bool privacy);
     //! Format as string (with unit) but floor value up to "digits" settings
     static QString floorWithUnit(int unit, const CAmount& amount, bool plussign=false, SeparatorStyle separators=SeparatorStyle::STANDARD);
+    //! Plain-text counterpart of floorHtmlWithPrivacy, keeping the real U+2009
+    //! THIN SPACE between the groups of digits. The HTML form substitutes a
+    //! space fixed at 6 pt for it, which reads beside an ordinary label and
+    //! disappears beside a large one; it also leaves the label measuring rich
+    //! text rather than a plain string. Prefer this wherever the amount is
+    //! drawn large enough for either to matter.
+    static QString floorWithPrivacy(int unit, const CAmount& amount, SeparatorStyle separators, bool privacy);
     static QString floorHtmlWithPrivacy(int unit, const CAmount& amount, SeparatorStyle separators, bool privacy);
     //! Parse string to coin amount
     static bool parse(int unit, const QString &value, CAmount *val_out);

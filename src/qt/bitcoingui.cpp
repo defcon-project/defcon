@@ -1817,14 +1817,27 @@ void BitcoinGUI::updateWidth()
     }
     if (GUIUtil::isModernTheme()) {
         constexpr int modernMinimumWidth{1200};
-        // Deliberately no explicit minimum. setMinimumWidth() replaces the
-        // minimum the layout derives from its content rather than raising it,
-        // so the window could be dragged down to 1200 while its own labels
-        // needed more -- and the balances lost their last characters, "DFCN"
-        // first. Qt's own minimum already refuses to shrink past the content;
-        // this only opens the window at a comfortable width.
-        setMinimumWidth(0);
-        resize(std::max(width(), modernMinimumWidth), height());
+        // The window may not be dragged smaller than the wallet it is showing.
+        //
+        // setMinimumWidth() replaces the minimum the layout derives from its
+        // content rather than raising it, so the value handed to it has to BE
+        // that content minimum. An earlier version passed 0 and left the
+        // enforcing to Qt, which does enforce it -- but the figure it enforced
+        // was made of inherited caps written for another wallet's amounts at
+        // another wallet's font (see OverviewPage::applyBalanceWidths), and at
+        // that width the balances were already cut off. The pages now publish
+        // what they actually need, so asking the layout is finally worth
+        // doing, and the answer is taken in both directions.
+        //
+        // Held under the screen either way: a window that cannot be resized to
+        // fit the display is a worse fault than a page that has to scroll.
+        const QSize content = layout() != nullptr ? layout()->minimumSize() : minimumSizeHint();
+        QSize limit(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+        if (const QScreen* display = screen()) {
+            limit = display->availableGeometry().size();
+        }
+        setMinimumSize(std::min(content.width(), limit.width()), std::min(content.height(), limit.height()));
+        resize(std::max({width(), minimumWidth(), modernMinimumWidth}), std::max(height(), minimumHeight()));
         return;
     }
     int nWidthWidestButton{0};

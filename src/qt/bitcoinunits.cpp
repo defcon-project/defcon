@@ -203,13 +203,17 @@ QString BitcoinUnits::floorWithUnit(int unit, const CAmount& amount, bool plussi
     return result + QString(" ") + name(unit);
 }
 
-QString BitcoinUnits::floorHtmlWithPrivacy(int unit, const CAmount& amount, SeparatorStyle separators, bool privacy)
+QString BitcoinUnits::floorWithPrivacy(int unit, const CAmount& amount, SeparatorStyle separators, bool privacy)
 {
     assert(amount >= 0);
-    QString str = privacy
+    return privacy
         ? floorWithUnit(unit, 0, false, separators).replace('0', '#')
         : floorWithUnit(unit, amount, false, separators);
+}
 
+QString BitcoinUnits::floorHtmlWithPrivacy(int unit, const CAmount& amount, SeparatorStyle separators, bool privacy)
+{
+    QString str = floorWithPrivacy(unit, amount, separators, privacy);
     str.replace(QChar(THIN_SP_CP), QString(THIN_SP_HTML));
     return QString("<span style='white-space: nowrap;'>%1</span>").arg(str);
 }
