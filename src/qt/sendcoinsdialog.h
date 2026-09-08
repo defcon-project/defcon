@@ -60,6 +60,11 @@ public Q_SLOTS:
 Q_SIGNALS:
     void coinsSent(const uint256& txid);
 
+protected:
+    //! Only to catch the theme change: the scroll area's minimum belongs to
+    //! the modern theme and has to be handed back when another one takes over.
+    void changeEvent(QEvent* event) override;
+
 private:
     Ui::SendCoinsDialog *ui;
     ClientModel *clientModel;
@@ -80,6 +85,10 @@ private:
     bool PrepareSendText(QString& question_string, QString& informative_text, QString& detailed_text);
     void updateFeeMinimizedLabel();
     void updateCoinControlState();
+    //! Let the form decide how small this page may become.
+    void applyScrollAreaMinimum();
+    //! The scroll area's minimum as the form set it, kept for the other themes.
+    QSize m_inherited_scroll_minimum{-1, -1};
 
 private Q_SLOTS:
     void sendButtonClicked(bool checked);

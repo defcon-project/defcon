@@ -1807,6 +1807,52 @@ void BitcoinGUI::updateCoinJoinVisibility()
     updateWidth();
 }
 
+//! The window may not be dragged smaller than the wallet it is showing.
+//!
+//! setMinimumSize() replaces the minimum the layout derives from its content
+//! rather than raising it, so the value handed to it has to BE that content
+//! minimum. An earlier version passed 0 and left the enforcing to Qt, which
+//! does enforce it -- but the figure it enforced was made of inherited caps
+//! written for another wallet's amounts at another wallet's font (see
+//! OverviewPage::applyBalanceWidths), and at that width the balances were
+//! already cut off. The pages now publish what they actually need, so asking
+//! the layout is finally worth doing, and the answer is taken in both
+//! directions: the Send form was being squeezed until its fields scrolled out
+//! of sight.
+//!
+//! Held under the screen either way. A window that cannot be resized onto the
+//! display is a worse fault than a page that has to scroll, and a page inside
+//! a scroll area degrades gracefully -- it goes back to scrolling.
+//!
+//! Because it replaces rather than raises, the figure also goes stale: a
+//! second recipient on the Send page, or Coin Control switched on, changes what
+//! the wallet needs. That is why this is called on every layout request and
+//! not only when the theme changes. Setting the same value again is skipped, so
+//! the layout request it would itself provoke stops there.
+void BitcoinGUI::applyModernWindowMinimum()
+{
+    if (!GUIUtil::isModernTheme() || walletFrame == nullptr) {
+        return;
+    }
+    const QSize content = layout() != nullptr ? layout()->minimumSize() : minimumSizeHint();
+    QSize limit(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+    if (const QScreen* display = screen()) {
+        limit = display->availableGeometry().size();
+    }
+    const QSize wanted(std::min(content.width(), limit.width()), std::min(content.height(), limit.height()));
+    if (minimumSize() != wanted) {
+        setMinimumSize(wanted);
+    }
+}
+
+bool BitcoinGUI::event(QEvent* e)
+{
+    if (e->type() == QEvent::LayoutRequest) {
+        applyModernWindowMinimum();
+    }
+    return QMainWindow::event(e);
+}
+
 void BitcoinGUI::updateWidth()
 {
     if (walletFrame == nullptr) {
@@ -1817,26 +1863,7 @@ void BitcoinGUI::updateWidth()
     }
     if (GUIUtil::isModernTheme()) {
         constexpr int modernMinimumWidth{1200};
-        // The window may not be dragged smaller than the wallet it is showing.
-        //
-        // setMinimumWidth() replaces the minimum the layout derives from its
-        // content rather than raising it, so the value handed to it has to BE
-        // that content minimum. An earlier version passed 0 and left the
-        // enforcing to Qt, which does enforce it -- but the figure it enforced
-        // was made of inherited caps written for another wallet's amounts at
-        // another wallet's font (see OverviewPage::applyBalanceWidths), and at
-        // that width the balances were already cut off. The pages now publish
-        // what they actually need, so asking the layout is finally worth
-        // doing, and the answer is taken in both directions.
-        //
-        // Held under the screen either way: a window that cannot be resized to
-        // fit the display is a worse fault than a page that has to scroll.
-        const QSize content = layout() != nullptr ? layout()->minimumSize() : minimumSizeHint();
-        QSize limit(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
-        if (const QScreen* display = screen()) {
-            limit = display->availableGeometry().size();
-        }
-        setMinimumSize(std::min(content.width(), limit.width()), std::min(content.height(), limit.height()));
+        applyModernWindowMinimum();
         resize(std::max({width(), minimumWidth(), modernMinimumWidth}), std::max(height(), minimumHeight()));
         return;
     }

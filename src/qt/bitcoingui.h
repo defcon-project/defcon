@@ -108,6 +108,9 @@ public:
     bool isPrivacyModeActivated() const;
 
 protected:
+    //! Watches for QEvent::LayoutRequest, which is what says the wallet on
+    //! display has changed shape and the window's minimum has to follow.
+    bool event(QEvent* e) override;
     void changeEvent(QEvent *e) override;
     void closeEvent(QCloseEvent *event) override;
     void showEvent(QShowEvent *event) override;
@@ -434,6 +437,8 @@ public Q_SLOTS:
     void updateCoinJoinVisibility();
 
     void updateWidth();
+    //! Take the window's minimum from what the wallet on display needs.
+    void applyModernWindowMinimum();
 };
 
 class UnitDisplayStatusBarControl : public QLabel
