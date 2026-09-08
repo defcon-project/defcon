@@ -116,20 +116,37 @@ if mode == "ico":
     detail = ", ".join(f"{size}px {kind}" for size, _, kind in blobs)
 
 elif mode == "icns":
-    ostype_for = {32: b"ic11", 64: b"ic12", 128: b"ic07",
-                  256: b"ic08", 512: b"ic09", 1024: b"ic10"}
-    body = b""
-    used = []
-    for w, _, _, path in items:
-        ostype = ostype_for.get(w)
-        if ostype is None:
-            print(f"  skipping {os.path.basename(path)}: .icns has no slot for {w}px")
+    # An .icns slot is named for the size macOS asks for, not for the pixels it
+    # holds, so the retina slots carry an image twice their nominal size and the
+    # same pixels appear twice under different names. That is what iconutil
+    # produces from an .iconset, and leaving ic13/ic14 out makes macOS
+    # downsample a larger entry for the two most common retina sizes.
+    #
+    #   ic11 = 16@2x -> 32px      ic07 = 128 -> 128px     ic13 = 128@2x -> 256px
+    #   ic12 = 32@2x -> 64px      ic08 = 256 -> 256px     ic14 = 256@2x -> 512px
+    #   ic09 = 512 -> 512px       ic10 = 512@2x -> 1024px
+    slots = [(32, b"ic11"), (64, b"ic12"), (128, b"ic07"), (256, b"ic08"),
+             (256, b"ic13"), (512, b"ic09"), (512, b"ic14"), (1024, b"ic10")]
+    by_size = {w: png_bytes(path) for w, _, _, path in items}
+
+    elements = []
+    for size, ostype in slots:
+        blob = by_size.get(size)
+        if blob is None:
+            print(f"  no {size}px image supplied, leaving {ostype.decode()} out")
             continue
-        blob = png_bytes(path)
+        elements.append((ostype, blob))
+
+    # The table of contents comes first and lists every element that follows,
+    # each as its type and its total length. Optional in the format, present in
+    # anything iconutil writes, and cheap to be correct about.
+    toc_body = b"".join(ostype + struct.pack(">I", len(blob) + 8) for ostype, blob in elements)
+    body = b"TOC " + struct.pack(">I", len(toc_body) + 8) + toc_body
+    for ostype, blob in elements:
         body += ostype + struct.pack(">I", len(blob) + 8) + blob
-        used.append(f"{w}px {ostype.decode()}")
+
     open(target, "wb").write(b"icns" + struct.pack(">I", len(body) + 8) + body)
-    detail = ", ".join(used)
+    detail = ", ".join(f"{ostype.decode()}" for ostype, _ in elements)
 
 else:
     raise SystemExit("mode must be ico or icns")
