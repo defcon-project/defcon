@@ -925,9 +925,12 @@ QToolBar > QToolButton:disabled {
     color: red;
 }
 
+/* The white wordmark, because this rule serves Light and Dark and both put the
+   navigation on a dark or saturated bar -- Light's is #008de4. Abyss and
+   Traditional override it with the blue drawing in their own files. */
 QToolBar QLabel#lblToolbarLogo {
     padding: 12px;
-    image: url(':/images/defcon_wordmark');
+    image: url(':/images/defcon_wordmark_white');
     height: 2.5em;
 }
 

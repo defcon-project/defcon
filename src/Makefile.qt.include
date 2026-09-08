@@ -348,6 +348,7 @@ RES_IMAGES = \
   qt/res/images/checkbox_partly_checked_disabled_light.png \
   qt/res/images/defcon_logo.svg \
   qt/res/images/defcon_wordmark.svg \
+  qt/res/images/defcon_wordmark_white.svg \
   qt/res/images/radio_normal_dark.png \
   qt/res/images/radio_normal_hover_dark.png \
   qt/res/images/radio_checked_dark.png \
