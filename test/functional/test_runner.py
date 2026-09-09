@@ -134,6 +134,8 @@ BASE_SCRIPTS = [
     'feature_dsl_scenarios.py',
     'feature_pos_staking.py --descriptors',
     'feature_pos_staking.py --legacy-wallet',
+    'feature_evodb_reconcile_below_dip3.py',
+    'feature_evodb_reconcile.py', # NOTE: needs dash_hash to pass
     'rpc_masternode_payments_genesis.py',
     'feature_compute_mn.py',
     'feature_asset_locks.py', # NOTE: needs dash_hash to pass
