@@ -1912,6 +1912,9 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             case ChainstateLoadingError::ERROR_COMMITING_EVO_DB:
                 strLoadError = _("Failed to commit Evo database");
                 break;
+            case ChainstateLoadingError::ERROR_RECONCILING_EVO_DB:
+                strLoadError = _("Failed to reconcile Evo database with the block chain");
+                break;
             case ChainstateLoadingError::ERROR_UPGRADING_EVO_DB:
                 strLoadError = _("Error upgrading Evo database");
                 break;

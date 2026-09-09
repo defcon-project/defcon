@@ -81,6 +81,8 @@ static const unsigned int MAX_DISCONNECTED_TX_POOL_SIZE = 20000;
 static constexpr std::chrono::hours DATABASE_WRITE_INTERVAL{1};
 /** Time to wait between flushing chainstate to disk. */
 static constexpr std::chrono::hours DATABASE_FLUSH_INTERVAL{24};
+// DATABASE_FLUSH_BLOCK_INTERVAL lives in validation.h: the evodb reconciliation in
+// node/chainstate.cpp bounds itself by the same number.
 /** Maximum age of our tip for us to be considered current for fee estimation */
 static constexpr std::chrono::hours MAX_FEE_ESTIMATION_TIP_AGE{3};
 const std::vector<std::string> CHECKLEVEL_DOC {
@@ -2104,6 +2106,8 @@ static int64_t nTimeIndexWrite = 0;
 static int64_t nTimeCallbacks = 0;
 static int64_t nTimeTotal = 0;
 static int64_t nBlocksTotal = 0;
+/** nBlocksTotal as of the last completed full flush. See DATABASE_FLUSH_BLOCK_INTERVAL. */
+static int64_t nBlocksAtLastFullFlush = 0;
 
 /** Apply the effects of this block (with given index) on the UTXO set represented by coins.
  *  Validity checks that depend on the UTXO set are also done; ConnectBlock()
@@ -2780,12 +2784,18 @@ bool CChainState::FlushStateToDisk(
         bool fCacheCritical = mode == FlushStateMode::IF_NEEDED && cache_state >= CoinsCacheSizeState::CRITICAL;
         // The evodb cache is too large
         bool fEvoDbCacheCritical = mode == FlushStateMode::IF_NEEDED && m_evoDb.GetMemoryUsage() >= (64 << 20);
+        // Enough blocks have been connected since the last full flush. This bounds
+        // how much work a crash can cost by block count rather than by cache size,
+        // because the evodb cache grows with the number of masternode changes a
+        // chain happens to contain and not with the number of blocks at risk.
+        bool fManyBlocksSinceFlush = mode == FlushStateMode::IF_NEEDED &&
+                                     (nBlocksTotal - nBlocksAtLastFullFlush) >= DATABASE_FLUSH_BLOCK_INTERVAL;
         // It's been a while since we wrote the block index to disk. Do this frequently, so we don't need to redownload after a crash.
         bool fPeriodicWrite = mode == FlushStateMode::PERIODIC && nNow > nLastWrite + DATABASE_WRITE_INTERVAL;
         // It's been very long since we flushed the cache. Do this infrequently, to optimize cache usage.
         bool fPeriodicFlush = mode == FlushStateMode::PERIODIC && nNow > nLastFlush + DATABASE_FLUSH_INTERVAL;
         // Combine all conditions that result in a full cache flush.
-        fDoFullFlush = (mode == FlushStateMode::ALWAYS) || fCacheLarge || fCacheCritical || fEvoDbCacheCritical || fPeriodicFlush || fFlushForPrune;
+        fDoFullFlush = (mode == FlushStateMode::ALWAYS) || fCacheLarge || fCacheCritical || fEvoDbCacheCritical || fManyBlocksSinceFlush || fPeriodicFlush || fFlushForPrune;
         // Write blocks and block index to disk.
         if (fDoFullFlush || fPeriodicWrite) {
             // Depend on nMinDiskSpace to ensure we can write block index
@@ -2841,6 +2851,7 @@ bool CChainState::FlushStateToDisk(
                 }
             }
             nLastFlush = nNow;
+            nBlocksAtLastFullFlush = nBlocksTotal;
             full_flush_completed = true;
             TRACE5(utxocache, flush,
                    (int64_t)(GetTimeMicros() - nNow.count()), // in microseconds (µs)

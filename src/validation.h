@@ -85,6 +85,23 @@ static const bool DEFAULT_SYNC_MEMPOOL = true;
 
 /** Default for -stopatheight */
 static const int DEFAULT_STOPATHEIGHT = 0;
+/** Blocks to connect between full flushes, independently of the time intervals.
+ *  The evodb reaches disk only in CEvoDB::CommitRootTransaction, which only a full
+ *  flush calls, and during a long import none of the other triggers can fire: the
+ *  periodic flush needs PERIODIC mode and 24 hours while an import flushes
+ *  IF_NEEDED, the periodic write carries the block index alone, and the 64 MiB
+ *  evodb cache threshold is not a function of the work at risk -- a 132,000 block
+ *  reindex was measured at 28.4 MiB. Without a block-count bound the whole run is
+ *  one operation that fails at a single point, at its very end.
+ *
+ *  Note that nBlocksTotal counts fJustCheck calls too, so this bounds connected
+ *  blocks plus validation-only ones; that only makes the flush earlier, never later.
+ *
+ *  It lives in the header because the evodb reconciliation in node/chainstate.cpp
+ *  bounds ITSELF by the same number: that replay runs outside FlushStateToDisk, so
+ *  this trigger cannot reach it, and an unbounded replay would rebuild exactly the
+ *  batch this constant exists to keep small. */
+static constexpr int64_t DATABASE_FLUSH_BLOCK_INTERVAL{10000};
 /** Block files containing a block-height within MIN_BLOCKS_TO_KEEP of ActiveChain().Tip() will not be pruned. */
 static const unsigned int MIN_BLOCKS_TO_KEEP = 288;
 static const signed int DEFAULT_CHECKBLOCKS = 6;

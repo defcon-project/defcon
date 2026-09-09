@@ -10,12 +10,254 @@
 #include <node/blockstorage.h>
 #include <validation.h>
 
+#include <bls/bls.h>
+#include <coins.h>
 #include <evo/chainhelper.h>
 #include <evo/creditpool.h>
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
+#include <llmq/blockprocessor.h>
 #include <llmq/context.h>
+#include <llmq/snapshot.h>
+
+//! Rebuild the evodb entries for every block between where the evodb stopped and
+//! the chain tip the coins database was loaded at.
+//!
+//! The evodb reaches disk only in CEvoDB::CommitRootTransaction, so a process that
+//! dies during a long import leaves the coins database at its tip and the evodb
+//! wherever its last commit left it -- at nothing at all, if -reindex wiped it and
+//! no commit followed. MigrateDBIfNeeded then reads the absent marker as an
+//! interrupted migration and refuses to start, which is why this runs before it.
+//!
+//! Only three of the five evodb writers need replaying. CQuorumSnapshotManager
+//! writes through GetRawDB(), so its entries never sat in the deferred batch, and
+//! CCreditPoolManager memoises a derivation it recomputes whenever the entry is
+//! absent.
+//!
+//! The per-transaction checks of CSpecialTxProcessor::ProcessSpecialTxsInBlock are
+//! deliberately skipped: these blocks were fully validated when they were first
+//! connected, and CheckProRegTx cannot run here under any view. It reads the coins
+//! view without the guard BuildNewListFromBlock has, so a dummy view rejects every
+//! external-collateral registration outright and the live tip view rejects every
+//! collateral spent since. CDeterministicMNManager::RecalculateAndRepairDiffs takes
+//! the same route past the same obstacle, and for the same reason.
+//!
+//! Rolling the coins back instead is not available: DisconnectBlock requires the
+//! evodb to sit exactly at the block it dismantles, so a lagging evodb aborts on the
+//! first step.
+static bool ReconcileEvoDBToTip(ChainstateManager& chainman,
+                                CEvoDB& evodb,
+                                CDeterministicMNManager& dmnman,
+                                CMNHFManager& mnhfman,
+                                LLMQContext& llmq_ctx,
+                                const Consensus::Params& consensus_params) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
+    AssertLockHeld(cs_main);
+
+    const CBlockIndex* tip = chainman.ActiveChain().Tip();
+    if (tip == nullptr) return true;
+
+    const CBlockIndex* evo_index{nullptr};
+    uint256 evo_best;
+    if (evodb.Read(EVODB_BEST_BLOCK, evo_best)) {
+        evo_index = chainman.m_blockman.LookupBlockIndex(evo_best);
+        if (evo_index == nullptr) {
+            LogPrintf("%s -- evodb best block %s is not in the block index\n", __func__, evo_best.ToString());
+            return false;
+        }
+        if (evo_index == tip) return true;
+        if (!chainman.ActiveChain().Contains(evo_index)) {
+            LogPrintf("%s -- evodb best block %s is not on the active chain\n", __func__, evo_best.ToString());
+            return false;
+        }
+    } else {
+        // No marker under the CURRENT best-block constant does NOT mean the database
+        // is empty. Every generation before this one wrote its best block under its
+        // own key, and normal operation rewrites only the newest, so a database that
+        // has not been migrated yet carries an older marker and a full set of entries.
+        // That is not a hypothetical: the b_b6 bump shipped in no released tag, so
+        // every mainnet masternode's evodb is still of the b_b4 generation.
+        //
+        // Replaying such a database is not merely unnecessary, it is fatal. The quorum
+        // commitment writer is NOT idempotent: CQuorumBlockProcessor::ProcessBlock
+        // rejects a commitment already stored for that height with bad-qc-not-allowed
+        // (blockprocessor.cpp:195-200, through GetNumCommitmentsRequired, which returns
+        // 0 once HasMinedCommitment is true). The replay therefore walks into its own
+        // earlier, correct entry, and the node refuses to start -- strictly worse than
+        // the state this function exists to mend, because the migration gates would
+        // have upgraded that same database in seconds.
+        //
+        // So only a genuinely empty evodb may be replayed from the DIP3 height.
+        // Anything else is left to the migration gates, exactly as it was before this
+        // function existed. The marker list matches
+        // CDeterministicMNManager::MigrationAlreadyDone (deterministicmns.cpp:1341).
+        for (const std::string& older_marker : {std::string{"b_b3"}, std::string{"b_b4"}, std::string{"b_b5"}}) {
+            if (evodb.GetRawDB().Exists(older_marker)) {
+                LogPrintf("%s -- evodb carries the older marker %s and no %s: this database is not migrated, "
+                          "not stranded; leaving it to the migration gates\n",
+                          __func__, older_marker, EVODB_BEST_BLOCK);
+                return true;
+            }
+        }
+        if (!evodb.IsEmpty()) {
+            LogPrintf("%s -- evodb has no %s marker but is not empty; not replaying, because the quorum "
+                      "commitment writer would reject entries that are already on disk\n",
+                      __func__, EVODB_BEST_BLOCK);
+            return true;
+        }
+    }
+
+    // With no marker at all the evodb holds nothing, so the replay starts where the
+    // deterministic masternode list itself starts. Blocks below that height return
+    // early from every processor called here.
+    const int start_height = evo_index != nullptr ? evo_index->nHeight + 1
+                                                  : std::max(1, consensus_params.DIP0003Height);
+    if (start_height > tip->nHeight) {
+        // Only a marker can put the evodb genuinely ahead of the coins tip. That is a
+        // state this replay cannot mend, because it only moves forward.
+        if (evo_index != nullptr) {
+            LogPrintf("%s -- evodb is ahead of the chain tip (evodb %d, tip %d); this is not a lag and cannot be replayed forward\n",
+                      __func__, start_height - 1, tip->nHeight);
+            return false;
+        }
+        // Empty evodb and a tip below DIP0003: there is no deterministic masternode
+        // list yet, so the evodb is not lagging -- it is current, and empty is the
+        // correct content. Record that, exactly as MigrateDBIfNeeded does when it
+        // reaches the same conclusion (deterministicmns.cpp:1392-1397).
+        //
+        // Returning without the marker is not enough, and this was measured: the
+        // node still refuses to start. On an empty database MigrationAlreadyDone is
+        // false, so the gate never reaches its own below-DIP3 branch; it falls
+        // through to "b_b2 is gone, therefore a previous migration was interrupted"
+        // (:1386) and returns false, which AppInit reports as "Error upgrading Evo
+        // database". Writing the marker here lets all four gates take their
+        // "already done" path, which is the truth for this database.
+        {
+            auto dbTx = evodb.BeginTransaction();
+            evodb.WriteBestBlock(tip->GetBlockHash());
+            dbTx->Commit();
+        }
+        if (!evodb.CommitRootTransaction()) {
+            LogPrintf("%s -- failed to commit the below-DIP0003 marker\n", __func__);
+            return false;
+        }
+        LogPrintf("%s -- evodb is empty and the tip (%d) is below DIP0003 (%d); marked it current, nothing to replay\n",
+                  __func__, tip->nHeight, consensus_params.DIP0003Height);
+        return true;
+    }
+
+    LogPrintf("%s -- evodb stopped at height %d, chain tip is %d; replaying %d block(s)\n",
+              __func__, start_height - 1, tip->nHeight, tip->nHeight - start_height + 1);
+
+    // A failure below is not atomic on the evodb. Whatever this replay committed into
+    // the root transaction before the failure is written out by the shutdown flush,
+    // without a marker. It is harmless today -- the migration gates overwrite the same
+    // heights, measured -- but it is stated here because the premise one layer up is
+    // "no marker means nothing on disk", and this path can falsify it.
+    //
+    // Match the repair path exactly: a dummy view, so no historical collateral is
+    // looked up in a UTXO set that has moved past it.
+    CCoinsView view_dummy;
+    CCoinsViewCache view(&view_dummy);
+
+    // The BLS scheme is a global that the connect path maintains, and this replay
+    // bypasses that path: it calls the three writers directly rather than going
+    // through CSpecialTxProcessor. CMNHFManager::ProcessBlock verifies EHF signal
+    // signatures against bls::bls_legacy_scheme, so a chain carrying an EHF signal
+    // is rejected here as bad-mnhf-invalid unless the flag holds what the original
+    // connection left. VerifyLoadedChainstate sets it from the tip, but that runs
+    // after LoadChainstate -- too late for this. Seed it from the block before the
+    // replay starts, then maintain it in the loop exactly as the connect path does.
+    const CBlockIndex* before_start = chainman.ActiveChain()[start_height - 1];
+    const bool v19_before_start{before_start != nullptr &&
+                                DeploymentActiveAfter(before_start, consensus_params,
+                                                      Consensus::DEPLOYMENT_V19)};
+    bls::bls_legacy_scheme.store(!v19_before_start);
+    LogPrintf("%s -- bls_legacy_scheme=%d at the start of the replay\n", __func__,
+              bls::bls_legacy_scheme.load());
+
+    // Bound the replay by the same block count a full flush is bounded by. This
+    // runs outside FlushStateToDisk, so that trigger cannot reach it, and an
+    // unbounded replay would accumulate in one root transaction and write it in a
+    // single commit -- rebuilding exactly the batch whose write hung for 45 minutes
+    // in the field. Committing the marker with it also makes the replay resumable:
+    // a process that dies mid-replay restarts from the intermediate marker rather
+    // than from the DIP3 height.
+    int64_t blocks_since_commit{0};
+
+    for (int height = start_height; height <= tip->nHeight; ++height) {
+        const CBlockIndex* pindex = chainman.ActiveChain()[height];
+        assert(pindex != nullptr);
+
+        CBlock block;
+        if (!ReadBlockFromDisk(block, pindex, consensus_params)) {
+            LogPrintf("%s -- failed to read the block at height %d\n", __func__, height);
+            return false;
+        }
+
+        // One transaction per block, as ConnectTip does; the writes below land in the
+        // cur transaction and CommitRootTransaction asserts that it is clean.
+        auto dbTx = evodb.BeginTransaction();
+
+        BlockValidationState state;
+        // The order the special transaction processor uses.
+        if (!llmq_ctx.quorum_block_processor->ProcessBlock(block, pindex, state, /*fJustCheck=*/false,
+                                                           /*fBLSChecks=*/false)) {
+            LogPrintf("%s -- quorum commitments failed at height %d: %s\n", __func__, height, state.ToString());
+            return false;
+        }
+        std::optional<MNListUpdates> updates{std::nullopt};
+        if (!dmnman.ProcessBlock(block, pindex, state, view, *llmq_ctx.qsnapman, /*fJustCheck=*/false, updates)) {
+            LogPrintf("%s -- masternode list failed at height %d: %s\n", __func__, height, state.ToString());
+            return false;
+        }
+        if (!mnhfman.ProcessBlock(block, pindex, /*fJustCheck=*/false, state)) {
+            LogPrintf("%s -- EHF signals failed at height %d: %s\n", __func__, height, state.ToString());
+            return false;
+        }
+
+        // The same switch CSpecialTxProcessor::ProcessSpecialTxsInBlock makes at
+        // the end of every block, and in the same position.
+        if (DeploymentActiveAfter(pindex, consensus_params, Consensus::DEPLOYMENT_V19) &&
+            bls::bls_legacy_scheme.load()) {
+            bls::bls_legacy_scheme.store(false);
+            LogPrintf("%s -- bls_legacy_scheme=%d at height %d\n", __func__,
+                      bls::bls_legacy_scheme.load(), height);
+        }
+
+        dbTx->Commit();
+
+        // Land the work so far, marker included, so the batch stays bounded and a
+        // death here costs the last interval rather than the whole replay.
+        if (++blocks_since_commit >= DATABASE_FLUSH_BLOCK_INTERVAL && height < tip->nHeight) {
+            {
+                auto markerTx = evodb.BeginTransaction();
+                evodb.WriteBestBlock(pindex->GetBlockHash());
+                markerTx->Commit();
+            }
+            if (!evodb.CommitRootTransaction()) {
+                LogPrintf("%s -- failed to commit the replay at height %d\n", __func__, height);
+                return false;
+            }
+            LogPrintf("%s -- committed the replay up to height %d\n", __func__, height);
+            blocks_since_commit = 0;
+        }
+    }
+
+    {
+        auto dbTx = evodb.BeginTransaction();
+        evodb.WriteBestBlock(tip->GetBlockHash());
+        dbTx->Commit();
+    }
+    if (!evodb.CommitRootTransaction()) {
+        LogPrintf("%s -- failed to commit the rebuilt evodb\n", __func__);
+        return false;
+    }
+
+    LogPrintf("%s -- evodb reconciled to height %d\n", __func__, tip->nHeight);
+    return true;
+}
 
 std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
                                                      ChainstateManager& chainman,
@@ -185,6 +427,13 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
             }
             assert(chainstate->m_chain.Tip() != nullptr);
         }
+    }
+
+    // Close any gap between the evodb and the coins tip BEFORE the migration gate
+    // reads the marker, because an interrupted import leaves exactly such a gap and
+    // the gate cannot tell it apart from an interrupted migration.
+    if (!ReconcileEvoDBToTip(chainman, *evodb, *dmnman, *mnhf_manager, *llmq_ctx, consensus_params)) {
+        return ChainstateLoadingError::ERROR_RECONCILING_EVO_DB;
     }
 
     if (!dmnman->MigrateDBIfNeeded() || !dmnman->MigrateDBIfNeeded2() || !dmnman->MigrateDBIfNeeded3() || !dmnman->MigrateDBIfNeeded4()) {
