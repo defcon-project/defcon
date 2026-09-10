@@ -277,13 +277,28 @@ BOOST_AUTO_TEST_CASE(llmq_configuration_coherence)
     // A switchover onto a profile the network does not register. GetLLMQ then
     // answers nullopt and its consumers assert on it, so the first CLSIG at or
     // above the height aborts the process -- and a peer supplies that CLSIG.
+    // Regtest is the network that registers llmq_defcon only when asked to;
+    // mainnet and testnet have carried it dormant since the v23 bundle.
     {
-        auto params = CreateChainParams(args, CBaseChainParams::MAIN);
+        auto params = CreateChainParams(args, CBaseChainParams::REGTEST);
         auto& consensus = const_cast<Consensus::Params&>(params->GetConsensus());
         BOOST_REQUIRE(!params->GetLLMQ(Consensus::LLMQType::LLMQ_DEFCON).has_value());
         consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
         consensus.nChainLocksV2ActivationHeight = 1000;
         BOOST_CHECK_THROW(CheckLLMQConfiguration(*params), std::runtime_error);
+    }
+
+    // On mainnet the same edit passes this check, because the profile is
+    // registered -- and is refused one layer up, by CheckV23ActivationBundle,
+    // as a partial schedule: one gate of eight, on a release network.
+    {
+        auto params = CreateChainParams(args, CBaseChainParams::MAIN);
+        auto& consensus = const_cast<Consensus::Params&>(params->GetConsensus());
+        BOOST_REQUIRE(params->GetLLMQ(Consensus::LLMQType::LLMQ_DEFCON).has_value());
+        consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
+        consensus.nChainLocksV2ActivationHeight = 1008; // on the DKG grid, so only the pairing is at fault
+        BOOST_CHECK_NO_THROW(CheckLLMQConfiguration(*params));
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(consensus, CBaseChainParams::MAIN), std::runtime_error);
     }
 
     const auto devnet = [&]() { return CreateChainParams(args, CBaseChainParams::DEVNET); };

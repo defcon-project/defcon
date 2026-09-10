@@ -66,6 +66,18 @@ class LLMQSwitchoverConfigTest(BitcoinTestFramework):
         assert "llmq_defcon" not in node.quorum("list")
         assert_equal(node.getblockcount(), 0)
 
+        self.log.info("v23@N schedules the whole bundle at once, and refuses a height off the DKG grid")
+        self.stop_node(0)
+        node.assert_start_raises_init_error(
+            ["-testactivationheight=v23@%d" % (CL + 1)],
+            "is not a multiple of the Q60 DKG interval",
+            match=ErrorMatch.PARTIAL_REGEX)
+        self.start_node(0, extra_args=["-testactivationheight=v23@%d" % CL])
+        # Started, so the eight-way pairing the release relies on passed the
+        # startup guards; the unit suite pins each field the alias wrote.
+        assert "llmq_defcon" not in node.quorum("list")
+        assert_equal(node.getblockcount(), 0)
+
 
 if __name__ == "__main__":
     LLMQSwitchoverConfigTest().main()
