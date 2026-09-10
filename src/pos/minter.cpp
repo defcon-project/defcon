@@ -148,7 +148,7 @@ bool CheckStake(ChainstateManager& chainman, CBlock *pblock)
         }
 
         BlockValidationState state;
-        if (!CheckProofOfStake(chainman.ActiveChainstate(), state, &mi->second, *pblock->vtx[1], pblock->nTime, pblock->nBits, proofHash, hashTarget)) {
+        if (!CheckProofOfStake(chainman.ActiveChainstate(), chainman.ActiveChainstate().CoinsTip(), state, &mi->second, *pblock->vtx[1], pblock->nTime, pblock->nBits, proofHash, hashTarget)) {
             LogPrint(BCLog::POS, "%s: proof-of-stake checking failed.", __func__);
             return false;
         }

@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(rejections_set_the_validation_state)
         plain.vin.emplace_back(COutPoint(m_coinbase_txns[0]->GetHash(), 0));
         plain.vout.emplace_back(1 * COIN, CScript() << OP_TRUE);
         BlockValidationState state;
-        BOOST_CHECK(!CheckProofOfStake(chainstate, state, tip, CTransaction(plain), tip->nTime, nBits,
+        BOOST_CHECK(!CheckProofOfStake(chainstate, chainstate.CoinsTip(), state, tip, CTransaction(plain), tip->nTime, nBits,
                                        hashProof, target));
         BOOST_CHECK(state.IsInvalid());
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "malformed-txn");
@@ -70,7 +70,7 @@ BOOST_AUTO_TEST_CASE(rejections_set_the_validation_state)
     {
         const auto tx = MakeCoinstakeSpending(COutPoint(uint256::ONE, 0));
         BlockValidationState state;
-        BOOST_CHECK(!CheckProofOfStake(chainstate, state, tip, CTransaction(tx), tip->nTime, nBits,
+        BOOST_CHECK(!CheckProofOfStake(chainstate, chainstate.CoinsTip(), state, tip, CTransaction(tx), tip->nTime, nBits,
                                        hashProof, target));
         BOOST_CHECK(state.IsInvalid());
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "prevout-not-found");
@@ -81,7 +81,7 @@ BOOST_AUTO_TEST_CASE(rejections_set_the_validation_state)
     {
         const auto tx = MakeCoinstakeSpending(COutPoint(m_coinbase_txns.back()->GetHash(), 0));
         BlockValidationState state;
-        BOOST_CHECK(!CheckProofOfStake(chainstate, state, tip, CTransaction(tx), tip->nTime, nBits,
+        BOOST_CHECK(!CheckProofOfStake(chainstate, chainstate.CoinsTip(), state, tip, CTransaction(tx), tip->nTime, nBits,
                                        hashProof, target));
         BOOST_CHECK_MESSAGE(state.IsInvalid(),
                             "an immature stake must mark the block invalid, or ConnectTip retries it forever");
@@ -95,7 +95,7 @@ BOOST_AUTO_TEST_CASE(rejections_set_the_validation_state)
         BOOST_REQUIRE(funding != nullptr);
         const auto tx = MakeCoinstakeSpending(COutPoint(m_coinbase_txns[0]->GetHash(), 0));
         BlockValidationState state;
-        BOOST_CHECK(!CheckProofOfStake(chainstate, state, tip, CTransaction(tx), funding->GetBlockTime(),
+        BOOST_CHECK(!CheckProofOfStake(chainstate, chainstate.CoinsTip(), state, tip, CTransaction(tx), funding->GetBlockTime(),
                                        nBits, hashProof, target));
         BOOST_CHECK_MESSAGE(state.IsInvalid(), "an out-of-range stake age must mark the block invalid");
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-stake-age");
@@ -212,7 +212,7 @@ BOOST_AUTO_TEST_CASE(an_old_coin_may_still_stake)
     const auto tx = MakeCoinstakeSpending(COutPoint(m_coinbase_txns[0]->GetHash(), 0));
     BlockValidationState state;
     uint256 hashProof, target;
-    BOOST_CHECK(!CheckProofOfStake(chainstate, state, tip, CTransaction(tx), past_the_cap,
+    BOOST_CHECK(!CheckProofOfStake(chainstate, chainstate.CoinsTip(), state, tip, CTransaction(tx), past_the_cap,
                                    tip->nBits, hashProof, target));
     BOOST_CHECK(state.IsInvalid());
     BOOST_CHECK_MESSAGE(state.GetRejectReason() != "bad-stake-age",
@@ -252,7 +252,7 @@ BOOST_FIXTURE_TEST_CASE(an_old_coin_is_retired_under_the_original_rules, PosKern
     const auto tx = MakeCoinstakeSpending(COutPoint(m_coinbase_txns[0]->GetHash(), 0));
     BlockValidationState state;
     uint256 hashProof, target;
-    BOOST_CHECK(!CheckProofOfStake(chainstate, state, tip, CTransaction(tx), past_the_cap,
+    BOOST_CHECK(!CheckProofOfStake(chainstate, chainstate.CoinsTip(), state, tip, CTransaction(tx), past_the_cap,
                                    tip->nBits, hashProof, target));
     BOOST_CHECK(state.IsInvalid());
     BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-stake-age");

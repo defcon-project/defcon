@@ -75,8 +75,17 @@ bool GetKernelInfo(const CBlockIndex *blockindex, const CTransaction &tx, uint25
 /**
  * Check kernel hash target and coinstake signature
  * Sets hashProofOfStake on success return
+ *
+ * The kernel input is read from @p view -- the coins the caller is validating
+ * the block against -- and not from the chain tip. In ConnectTip and
+ * TestBlockValidity the two hold the same set; in VerifyDB at level 4 they do
+ * not: the tip has already spent this block's kernel with this block's own
+ * coinstake, so reading the tip made every proof-of-stake block unconnectable
+ * there, and a node that init holds to level 4 (any additional index) could
+ * not restart without a reindex. chain_state is still needed for the block
+ * index the kernel's height resolves to.
  */
-bool CheckProofOfStake(CChainState& chain_state, BlockValidationState& state, const CBlockIndex *pindexPrev, const CTransaction &tx, int64_t nTime, unsigned int nBits, uint256 &hashProofOfStake, uint256 &targetProofOfStake) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+bool CheckProofOfStake(CChainState& chain_state, const CCoinsViewCache& view, BlockValidationState& state, const CBlockIndex *pindexPrev, const CTransaction &tx, int64_t nTime, unsigned int nBits, uint256 &hashProofOfStake, uint256 &targetProofOfStake) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
 /**
  * Wrapper around CheckStakeKernelHash()

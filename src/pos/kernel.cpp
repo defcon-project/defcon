@@ -195,7 +195,7 @@ bool CheckStakeKernelHash(const CBlockIndex* pindexPrev, const Consensus::Params
     return true;
 }
 
-bool CheckProofOfStake(CChainState& chain_state, BlockValidationState& state, const CBlockIndex* pindexPrev, const CTransaction& tx, int64_t nTime, unsigned int nBits, uint256& hashProofOfStake, uint256& targetProofOfStake)
+bool CheckProofOfStake(CChainState& chain_state, const CCoinsViewCache& view, BlockValidationState& state, const CBlockIndex* pindexPrev, const CTransaction& tx, int64_t nTime, unsigned int nBits, uint256& hashProofOfStake, uint256& targetProofOfStake)
 {
     if (!tx.IsCoinStake() || tx.vin.size() < 1) {
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "malformed-txn");
@@ -204,10 +204,14 @@ bool CheckProofOfStake(CChainState& chain_state, BlockValidationState& state, co
     // Kernel (input 0) must match the stake hash target per coin age (nBits)
     const CTxIn& txin = tx.vin[0];
 
+    // From the caller's view, not the tip: VerifyDB reconnects against a view
+    // it rolled back itself, and at the tip this very block's coinstake has
+    // already spent the kernel. On the connect and test paths the view sits
+    // directly on the tip with nothing spent yet, so the answer is the same.
     Coin coin;
     {
         LOCK(cs_main);
-        if (!chain_state.CoinsTip().GetCoin(txin.prevout, coin) || coin.IsSpent()) {
+        if (!view.GetCoin(txin.prevout, coin) || coin.IsSpent()) {
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "prevout-not-found");
         }
     }
