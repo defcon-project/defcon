@@ -66,7 +66,15 @@ static bool ReconcileEvoDBToTip(ChainstateManager& chainman,
             LogPrintf("%s -- evodb best block %s is not in the block index\n", __func__, evo_best.ToString());
             return false;
         }
-        if (evo_index == tip) return true;
+        if (evo_index == tip) {
+            // The healthy case, and the only path through this function that
+            // said nothing at all. Silence here is indistinguishable in the
+            // journal from a binary that predates the reconciliation, which is
+            // the one question an operator reading a startup log has to answer.
+            LogPrintf("%s -- evodb is at the chain tip (height %d); nothing to reconcile\n", __func__,
+                      tip->nHeight);
+            return true;
+        }
         if (!chainman.ActiveChain().Contains(evo_index)) {
             LogPrintf("%s -- evodb best block %s is not on the active chain\n", __func__, evo_best.ToString());
             return false;
