@@ -129,6 +129,10 @@ class EvoDBReconcileTest(DashTestFramework):
         self.sync_blocks()
         log = self.log_since(node, offset)
         assert "replaying" not in log, "the reconciliation ran a second time; the marker was not written"
+        # A healthy start must say so. Before this line existed, a clean start
+        # and a binary without the reconciliation at all left the same journal.
+        assert "nothing to reconcile" in log, \
+            "the healthy decision left no trace; a start on this binary is indistinguishable from one without it"
         assert_equal(node.getblockcount(), tip_height)
 
 
