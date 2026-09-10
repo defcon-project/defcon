@@ -1880,7 +1880,11 @@ void BitcoinGUI::updateWidth()
     // Add 30 per button as padding and use minimum 980 which is the minimum required to show all tab's contents
     // Use nButtonsVisible + 1 <- for the dash logo
     int nWidth = std::max<int>(980, (nWidthWidestButton + 30) * (nButtonsVisible + 1));
-    setMinimumWidth(nWidth);
+    // Both dimensions, not the width alone: the modern theme sets a minimum
+    // height too (applyModernWindowMinimum), and these themes never had one.
+    // Setting only the width would leave the Abyss height in force after a
+    // switch, and the window could not be made shorter until a restart.
+    setMinimumSize(nWidth, 0);
 
     // Resize to new minimum width but don't shrink window
     resize(std::max(width(), nWidth), height());
