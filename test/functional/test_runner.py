@@ -96,6 +96,7 @@ BASE_SCRIPTS = [
     # Longest test should go first, to favor running tests in parallel
     'feature_llmq_data_recovery.py',
     'feature_llmq_q60_regtest.py',
+    'feature_llmq_switchover_config.py',
     'wallet_hd.py --legacy-wallet',
     'wallet_hd.py --descriptors',
     'wallet_backup.py --legacy-wallet',

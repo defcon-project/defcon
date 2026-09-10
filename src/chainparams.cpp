@@ -1212,6 +1212,8 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
             consensus.nComputeNodeActivationHeight = int{height};
         } else if (name == "chainlocksv2") {
             consensus.nChainLocksV2ActivationHeight = int{height};
+        } else if (name == "instantsendv2") {
+            consensus.nInstantSendV2ActivationHeight = int{height};
         } else if (name == "dsl") {
             consensus.nDSLActivationHeight = int{height};
         } else if (name == "dslenforcement") {
@@ -1236,6 +1238,19 @@ void CRegTestParams::UpdateActivationParametersFromArgs(const ArgsManager& args)
     if (consensus.nChainLocksV2ActivationHeight != std::numeric_limits<int>::max()) {
         AddLLMQ(Consensus::LLMQType::LLMQ_DEFCON);
         consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
+    }
+
+    // The InstantSend half of the switchover, same shape and the same profile:
+    // a height alone is not a switchover, so the type is paired with it here
+    // exactly as the ChainLock half is. Deliberately NOT registering the
+    // profile in this branch -- that is the ChainLock half's job, and letting
+    // instantsendv2 register it on its own would turn the two guards that
+    // catch a half-configured switchover into no-ops: CheckLLMQConfiguration
+    // would find the type registered, and the IS >= CL rule would compare
+    // against an unset ChainLock height. Given alone, instantsendv2 therefore
+    // refuses to start, which is the intended answer.
+    if (consensus.nInstantSendV2ActivationHeight != std::numeric_limits<int>::max()) {
+        consensus.llmqTypeDIP0024InstantSendV2 = Consensus::LLMQType::LLMQ_DEFCON;
     }
 
     // Checked after the whole list is parsed, so the two DSL heights may be
