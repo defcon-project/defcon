@@ -198,6 +198,7 @@ const CLogCategoryDesc LogCategories[] =
     {BCLog::CREDITPOOL, "creditpool"},
     {BCLog::POS, "pos"},
     {BCLog::EHF, "ehf"},
+    {BCLog::DSL, "dsl"},
     {BCLog::DEFCON, "defcon"},
     //End Dash
 };
@@ -341,9 +342,14 @@ std::string LogCategoryToStr(BCLog::LogFlags category)
     /* End Dash */
     case BCLog::LogFlags::POS:
         return "pos";
+    case BCLog::LogFlags::DSL:
+        return "dsl";
     case BCLog::LogFlags::ALL:
         return "all";
     }
+    // A category that reaches here has an enum value and a name in the table
+    // but no case above, and the FIRST line logged under it aborts the node --
+    // in the field, at the first place the new category is used.
     assert(false);
 }
 

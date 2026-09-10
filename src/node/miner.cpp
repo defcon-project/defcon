@@ -239,6 +239,20 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
                     LogPrintf("%s: DSL report pool diverged from the quorum for epoch %d, no commitment\n",
                               __func__, closedEpoch);
                 }
+            } else if (!skip.has_value()) {
+                // The branch the field met and could not explain (F-2026-140):
+                // the boundary block goes out without the epoch's commitment,
+                // and until now without a word. Same verbosity as its two
+                // siblings above, because it is the same decision.
+                if (pindexEpochBase == nullptr) {
+                    LogPrintf("%s: DSL epoch %d closes at height %d but its base block is not on this branch; block built without the commitment\n",
+                              __func__, closedEpoch, nHeight);
+                } else {
+                    LogPrintf("%s: DSL epoch %d closes at height %d with no threshold signature from %s (request %s); block built without the commitment\n",
+                              __func__, closedEpoch, nHeight,
+                              chainparams.GetLLMQ(llmqType).has_value() ? std::string(chainparams.GetLLMQ(llmqType)->name) : "an unregistered profile",
+                              requestProbe.GetRequestId().ToString());
+                }
             }
         }
     }

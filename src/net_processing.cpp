@@ -5875,8 +5875,16 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
                         LogPrint(BCLog::NET, "DSL -- sign start failed for epoch %d, retrying next block\n", epoch);
                     }
                 }
+            } else {
+                // quorum still loading: flag left unset, retried next block. Was
+                // silent; a whole window of these is how an epoch loses its
+                // commitment without a trace.
+                LogPrint(BCLog::DSL, "DSL -- no signing quorum selectable yet for epoch %d at height %d, retrying next block\n",
+                         epoch, pindexNew->nHeight);
             }
-            // quorum still loading: flag left unset, retried next block
+        } else {
+            LogPrint(BCLog::DSL, "DSL -- the ChainLock profile at the boundary of epoch %d is not registered here; nothing can sign it\n",
+                     epoch);
         }
     }
 }
