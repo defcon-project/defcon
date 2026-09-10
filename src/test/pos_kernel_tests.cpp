@@ -559,9 +559,15 @@ BOOST_AUTO_TEST_CASE(strict_bls_sig_size_activation_heights_are_pinned)
  * reads back, the genesis included, and a node whose genesis fails that check
  * cannot start at all. The chainparams constructors assert the genesis hash
  * on most networks, which pins the constant but says nothing about whether
- * the header was ever mined; the testnet genesis shipped with a nonce that had
- * not been, with no hash assert to notice, and no testnet node ever started.
- * The devnet's stale genesis (#53/#54) was the same class of defect.
+ * the header satisfies the target under the current inputs. The testnet
+ * genesis was mined once (c9f4f024fe, 2025) and asserted; a later change to
+ * the coinbase text shared by every network (1c50d3d604, 2026-01-11) moved
+ * its merkle root, left the old nonce above the target, and dropped the
+ * assert -- so from that commit on no testnet node could start, and nothing
+ * in the tree said so. This case is the check that was missing: it asks the
+ * question the assert cannot, on every network, so a shared-input change
+ * fails here rather than at the first node start. The devnet's stale genesis
+ * (#53/#54) was the same class of defect.
  */
 BOOST_AUTO_TEST_CASE(every_genesis_satisfies_its_own_pow)
 {
