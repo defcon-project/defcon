@@ -22,6 +22,18 @@ static const int MIN_PEER_PROTO_VERSION = 70216;
 //! mandatory protocol after the mainnet fork-recovery activation height
 static const int FORK_RECOVERY_PROTO_VERSION = 70239;
 
+//! mandatory protocol from the Q60 formation lead on, on any network that
+//! schedules the switchover (nChainLocksV2ActivationHeight minus the lead):
+//! the first version whose binaries carry the switchover. The first
+//! llmq_defcon commitment is mined inside the lead and forks off every binary
+//! that does not know the profile, so a peer below this is on the old chain
+//! by construction. A release that bumps PROTOCOL_VERSION may raise it too.
+static const int Q60_SWITCHOVER_PROTO_VERSION = 70241;
+static_assert(Q60_SWITCHOVER_PROTO_VERSION > FORK_RECOVERY_PROTO_VERSION,
+              "the Q60 floor succeeds the fork-recovery floor and must sit above it");
+static_assert(Q60_SWITCHOVER_PROTO_VERSION <= PROTOCOL_VERSION,
+              "a floor above what this binary speaks would disconnect every peer, ourselves included");
+
 //! minimum proto version of masternode to accept in DKGs
 static const int MIN_MASTERNODE_PROTO_VERSION = 70235;
 

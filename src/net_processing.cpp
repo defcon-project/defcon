@@ -207,6 +207,17 @@ static constexpr uint64_t CMPCTBLOCKS_VERSION{1};
 
 static int GetRequiredPeerProtocolVersion(int active_height, const Consensus::Params& consensus_params)
 {
+    // From the Q60 formation lead on. The first llmq_defcon commitment is mined
+    // inside the lead and forks off every binary that does not know the
+    // profile, so a peer below this version is on the old chain by construction
+    // and everything it relays is old-chain data. Dropping it is cheaper than
+    // filtering it, and it closes the one route the ChainLock pause
+    // (llmq::IsChainLockPaused) does not: a legacy lock arriving through a peer
+    // we would otherwise keep. The lead is the same number formation opens on.
+    const int lead = llmq::ChainLocksV2FormationLead(consensus_params);
+    if (lead > 0 && active_height >= consensus_params.nChainLocksV2ActivationHeight - lead) {
+        return Q60_SWITCHOVER_PROTO_VERSION;
+    }
     if (consensus_params.nForkRecoveryActivationHeight >= 0 &&
         active_height >= consensus_params.nForkRecoveryActivationHeight) {
         return FORK_RECOVERY_PROTO_VERSION;
@@ -6382,7 +6393,7 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
         LOCK(cs_main);
         const int required_protocol_version = GetRequiredPeerProtocolVersion(m_chainman.ActiveHeight(), consensusParams);
         if (pto->nVersion < required_protocol_version) {
-            LogPrint(BCLog::NET, "peer=%d using obsolete version %i after fork-recovery activation (required %i); disconnecting\n",
+            LogPrint(BCLog::NET, "peer=%d using obsolete version %i after the protocol floor moved (required %i); disconnecting\n",
                      pto->GetId(), pto->nVersion, required_protocol_version);
             pto->fDisconnect = true;
             return true;
