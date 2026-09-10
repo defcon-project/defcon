@@ -226,7 +226,7 @@ class LLMQChainLocksTest(DashTestFramework):
             self.wait_for_sporks_same()
 
             self.log.info("Add a new node and let it sync")
-            self.dynamically_add_masternode(evo=False)
+            self.dynamically_add_masternode()
             added_idx = len(self.nodes) - 1
             assert_raises_rpc_error(-32603, "Unable to find any ChainLock", self.nodes[added_idx].getbestchainlock)
 
