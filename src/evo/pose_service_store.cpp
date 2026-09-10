@@ -6,6 +6,7 @@
 
 #include <consensus/params.h>
 #include <evo/deterministicmns.h>
+#include <logging.h>
 
 #include <algorithm>
 
@@ -23,10 +24,19 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
 {
     LOCK(m_mutex);
 
+    // Every refusal below names its reason under the dsl category, except the
+    // duplicate: on a gossip mesh each report arrives many times over, and a
+    // line per copy would drown the rest.
+    const auto refuse = [&](const char* why) {
+        LogPrint(BCLog::DSL, "DSL -- report by %s on %s for epoch %u refused: %s\n",
+                 report.sentinelProTxHash.ToString(), report.targetProTxHash.ToString(), report.nEpoch, why);
+        return false;
+    };
+
     // Inside the retained epoch window: never a future epoch, never one that has
     // already aged out.
-    if (report.nEpoch > m_currentEpoch) return false;
-    if (report.nEpoch < OldestKeptEpoch()) return false;
+    if (report.nEpoch > m_currentEpoch) return refuse("future epoch");
+    if (report.nEpoch < OldestKeptEpoch()) return refuse("epoch aged out");
 
     const Key key{report.nEpoch, report.targetProTxHash, report.sentinelProTxHash};
     if (m_reports.count(key)) return false; // one report per sentinel per target per epoch
@@ -43,9 +53,9 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
     // aggregation walks the canonical list, so a report about a target that
     // does not exist reaches no bit -- the memory and the bandwidth were.
     const auto tdmn = epochList.GetMN(report.targetProTxHash);
-    if (!tdmn) return false;
+    if (!tdmn) return refuse("target is not a masternode of the epoch's list");
     const auto sdmn = epochList.GetMN(report.sentinelProTxHash);
-    if (!sdmn) return false;
+    if (!sdmn) return refuse("sentinel is not a masternode of the epoch's list");
 
     // The sentinel must be one this epoch assigned to the target -- a node that
     // was never asked to probe this target cannot contribute an observation.
@@ -62,12 +72,15 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
     const auto& sentinels = SentinelsFor(epochList, report.targetProTxHash, epochBlockHash,
                                          static_cast<size_t>(params.nDSLSentinelCount));
     if (std::find(sentinels.begin(), sentinels.end(), report.sentinelProTxHash) == sentinels.end()) {
-        return false;
+        return refuse("sentinel was not assigned to this target");
     }
 
-    if (!report.VerifySig(sdmn->pdmnState->pubKeyOperator.Get(), epochBlockHash)) return false;
+    if (!report.VerifySig(sdmn->pdmnState->pubKeyOperator.Get(), epochBlockHash)) return refuse("bad signature");
 
     m_reports.emplace(key, report);
+    LogPrint(BCLog::DSL, "DSL -- report by %s on %s for epoch %u kept: %s (%d reports held)\n",
+             report.sentinelProTxHash.ToString(), report.targetProTxHash.ToString(), report.nEpoch,
+             report.status == static_cast<uint8_t>(ServiceStatus::MISSED) ? "missed" : "online", m_reports.size());
     return true;
 }
 
@@ -123,13 +136,16 @@ void CServiceReportStore::SetCurrentEpoch(uint32_t nEpoch)
 void CServiceReportStore::DropEpoch(uint32_t nEpoch)
 {
     LOCK(m_mutex);
+    size_t dropped{0};
     for (auto it = m_reports.begin(); it != m_reports.end();) {
         if (std::get<0>(it->first) == nEpoch) {
             it = m_reports.erase(it);
+            ++dropped;
         } else {
             ++it;
         }
     }
+    LogPrint(BCLog::DSL, "DSL -- epoch %u dropped from the report store: %d report(s) discarded\n", nEpoch, dropped);
 }
 
 size_t CServiceReportStore::Size() const

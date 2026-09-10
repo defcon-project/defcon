@@ -7,6 +7,7 @@
 #include <bls/bls.h>
 #include <consensus/params.h>
 #include <evo/deterministicmns.h>
+#include <logging.h>
 
 #include <algorithm>
 
@@ -63,6 +64,12 @@ CPoSeServiceManager::EpochChange CPoSeServiceManager::BeginEpoch(uint32_t nEpoch
     }
     for (const uint32_t e : stale) m_store.DropEpoch(e);
     m_store.SetCurrentEpoch(nEpoch);
+    LogPrint(BCLog::DSL, "DSL -- epoch %u %s, base %s%s\n", nEpoch,
+             result == EpochChange::Rewound ? "rewound (reorg across a boundary)"
+             : result == EpochChange::Rebased ? "rebased (base block replaced)"
+                                              : "entered",
+             epochBlockHash.ToString(),
+             stale.empty() ? "" : strprintf(", %d stale epoch(s) dropped", stale.size()));
     return result;
 }
 
@@ -134,18 +141,40 @@ bool CPoSeServiceManager::ProcessResponse(const CPoSeServiceResponse& resp, cons
         LOCK(m_mutex);
         // inside the retained window, in both directions -- the caller verified
         // the epoch's base block exists on its chain, this only bounds memory
-        if (resp.nEpoch + m_keepEpochs <= m_epoch) return false;
-        if (resp.nEpoch > m_epoch + m_keepEpochs) return false;
+        if (resp.nEpoch + m_keepEpochs <= m_epoch) {
+            LogPrint(BCLog::DSL, "DSL -- announcement by %s for epoch %u refused: aged out (current epoch %u)\n",
+                     resp.proTxHash.ToString(), resp.nEpoch, m_epoch);
+            return false;
+        }
+        if (resp.nEpoch > m_epoch + m_keepEpochs) {
+            LogPrint(BCLog::DSL, "DSL -- announcement by %s for epoch %u refused: beyond the window (current epoch %u)\n",
+                     resp.proTxHash.ToString(), resp.nEpoch, m_epoch);
+            return false;
+        }
         const auto it = m_responded.find(resp.nEpoch);
-        if (it != m_responded.end() && it->second.count(resp.proTxHash)) return false; // seen -- do not re-relay
+        // seen -- do not re-relay. Not logged: on a gossip mesh every announcement
+        // arrives many times over, and a line per copy would drown the rest.
+        if (it != m_responded.end() && it->second.count(resp.proTxHash)) return false;
     }
     const auto dmn = list.GetMN(resp.proTxHash);
-    if (!dmn) return false;
+    if (!dmn) {
+        LogPrint(BCLog::DSL, "DSL -- announcement by %s for epoch %u refused: not a masternode of the epoch's list\n",
+                 resp.proTxHash.ToString(), resp.nEpoch);
+        return false;
+    }
     if (!VerifyChallengeResponse(resp.sig, dmn->pdmnState->pubKeyOperator.Get(), epochBaseHash, resp.proTxHash)) {
+        LogPrint(BCLog::DSL, "DSL -- announcement by %s for epoch %u refused: bad signature\n",
+                 resp.proTxHash.ToString(), resp.nEpoch);
         return false;
     }
     LOCK(m_mutex);
-    return m_responded[resp.nEpoch].insert(resp.proTxHash).second;
+    auto& responded = m_responded[resp.nEpoch];
+    const bool fresh = responded.insert(resp.proTxHash).second;
+    if (fresh) {
+        LogPrint(BCLog::DSL, "DSL -- announcement by %s for epoch %u accepted (%d responded so far)\n",
+                 resp.proTxHash.ToString(), resp.nEpoch, responded.size());
+    }
+    return fresh;
 }
 
 bool CPoSeServiceManager::ProcessReport(const CPoSeServiceReport& report, const CDeterministicMNList& list,
@@ -190,6 +219,11 @@ std::vector<CPoSeServiceReport> CPoSeServiceManager::EmitReports(const CDetermin
         r.sig = signer(r.GetSignHash(epochHash));
         out.push_back(std::move(r));
     }
+    const auto missed = std::count_if(out.begin(), out.end(), [](const CPoSeServiceReport& r) {
+        return r.status == static_cast<uint8_t>(ServiceStatus::MISSED);
+    });
+    LogPrint(BCLog::DSL, "DSL -- epoch %u: %d sentinel report(s) emitted as %s, %d marked missed\n", epoch, out.size(),
+             myProTxHash.ToString(), missed);
     return out;
 }
 

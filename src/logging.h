@@ -84,10 +84,13 @@ namespace BCLog {
         CREDITPOOL  = ((uint64_t)1 << 45),
 
         POS         = ((uint64_t)1 << 46),
+        //! The Sentinel layer (DSL / service PoSe): epoch changes, what it
+        //! accepts and refuses and why, and the commit decision.
+        DSL         = ((uint64_t)1 << 47),
 
         DEFCON      = CHAINLOCKS | GOBJECT | INSTANTSEND | LLMQ | LLMQ_DKG
                     | LLMQ_SIGS | MNPAYMENTS | MNSYNC | COINJOIN | SPORK | NETCONN
-                    | EHF | CREDITPOOL | POS,
+                    | EHF | CREDITPOOL | POS | DSL,
 
         NET_NETCONN = NET | NETCONN, // use this to have something logged in NET and NETCONN as well
         //End Dash
