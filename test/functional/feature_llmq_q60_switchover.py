@@ -18,9 +18,14 @@ the height.
 Both flips are asserted as a CHANGE OF PROFILE, observed on both sides of the
 height, not as an absence:
 
-  ChainLock   below: getbestchainlock().llmqType == llmq_test  (regtest's
-              llmqTypeChainLocks, src/chainparams.cpp:1065)
-              at/above:                          == llmq_defcon
+  ChainLock   below the formation lead: getbestchainlock().llmqType ==
+              llmq_test (regtest's llmqTypeChainLocks, src/chainparams.cpp:1065)
+              inside the lead, [activation - 120, activation): NO lock forms,
+              although the legacy quorums exist and would sign -- the pause
+              (llmq::IsChainLockPaused) holds both signing and acceptance,
+              because over a split fleet the legacy profile locks both chains
+              at once and an upgraded node must not be marched onto the old one
+              at/above: == llmq_defcon, immediately
 
   InstantSend below: no recovered signature exists under llmq_defcon for the
               transaction's InstantSend request id
@@ -99,12 +104,13 @@ class LLMQQ60SwitchoverTest(DashTestFramework):
             self.generate(node, step)
         assert_equal(node.getblockcount(), target)
 
-    def wait_for_chainlock(self, node, block_hash, timeout=90):
+    def wait_for_chainlock(self, node, block_hash, expected=True, timeout=90):
         """Wait on the block's own chainlock flag, bumping mocktime as we poll.
 
         The handler retries signing from a 5s scheduler task
         (src/llmq/chainlocks.cpp:60-65), and under mocktime that clock only
-        moves when the test moves it.
+        moves when the test moves it. With expected=False the wait must time
+        out, and the result says whether a lock appeared anyway.
         """
         def locked():
             self.bump_mocktime(1)
@@ -113,7 +119,7 @@ class LLMQQ60SwitchoverTest(DashTestFramework):
                 return block["confirmations"] > 0 and block["chainlock"]
             except Exception:
                 return False
-        self.wait_until(locked, timeout=timeout, sleep=1)
+        return self.wait_until(locked, timeout=timeout, sleep=1, do_assert=expected)
 
     def islock_request_id(self, node, txid):
         """The InstantSend request id, built exactly as the node builds it.
@@ -184,6 +190,25 @@ class LLMQQ60SwitchoverTest(DashTestFramework):
             "setup left the chain at %d, at or past the formation lead %d -- raise CL_ACTIVATION"
             % (height, FIRST_ENABLED_TIP))
 
+        # ---- ChainLock, below the formation lead ------------------------
+
+        self.log.info("Form a legacy (llmq_test) quorum below the formation lead")
+        self.mine_quorum(llmq_type_name="llmq_test", llmq_type=100,
+                         expected_members=3, expected_connections=2,
+                         expected_contributions=3, expected_commitments=3)
+        assert node.getblockcount() < CL_ACTIVATION - FORMATION_LEAD, (
+            "the legacy quorum landed inside the formation lead; raise CL_ACTIVATION")
+
+        self.log.info("BELOW the lead (%d): a ChainLock forms, on llmq_test", CL_ACTIVATION - FORMATION_LEAD)
+        below = self.generate(node, 1, sync_fun=self.sync_blocks)[0]
+        self.wait_for_chainlock(node, below)
+        best_below = node.getbestchainlock()
+        self.log.info("  height=%d llmqType=%s", best_below["height"], best_below["llmqType"])
+        assert best_below["height"] < CL_ACTIVATION - FORMATION_LEAD
+        assert_equal(best_below["llmqType"], "llmq_test")
+
+        # ---- the formation lead -----------------------------------------
+
         self.log.info("Mine to the formation lead (%d) and form %d Q60 quorums",
                       FIRST_ENABLED_TIP, QUORUM_ROUNDS)
         self.mine_to(node, FIRST_ENABLED_TIP)
@@ -201,16 +226,30 @@ class LLMQQ60SwitchoverTest(DashTestFramework):
         newest = list(entries[0].items())[0][1]
         assert_greater_than_or_equal(newest["numValidMembers"], Q60_MIN_SIZE)
 
-        # ---- ChainLock flip --------------------------------------------
+        # ---- ChainLock, inside the lead: paused ---------------------------
 
-        assert node.getblockcount() < CL_ACTIVATION
-        self.log.info("BELOW %d: a ChainLock forms, and it is NOT on Q60", CL_ACTIVATION)
-        below = self.generate(node, 1, sync_fun=self.sync_blocks)[0]
-        self.wait_for_chainlock(node, below)
-        best_below = node.getbestchainlock()
-        self.log.info("  height=%d llmqType=%s", best_below["height"], best_below["llmqType"])
-        assert best_below["height"] < CL_ACTIVATION
-        assert_equal(best_below["llmqType"], "llmq_test")
+        # The control for the absence below is the run itself: the same
+        # llmq_test profile locked a block before the lead, has fresh quorums
+        # (they form in the same DKG windows as the Q60 ones), and locks again
+        # the moment the pause lifts. Before IsChainLockPaused existed this
+        # exact block was ChainLocked on llmq_test within seconds.
+        height = node.getblockcount()
+        assert CL_ACTIVATION - FORMATION_LEAD <= height < CL_ACTIVATION
+        self.log.info("INSIDE the lead [%d, %d): no ChainLock may form at height %d",
+                      CL_ACTIVATION - FORMATION_LEAD, CL_ACTIVATION, height + 1)
+        inside = self.generate(node, 1, sync_fun=self.sync_blocks)[0]
+        assert not self.wait_for_chainlock(node, inside, expected=False, timeout=30), \
+            "a block inside the formation lead was ChainLocked; the pause is not in effect"
+        # The legacy quorum went on locking every tip up to the lead after the
+        # observation above, so the best lock has moved -- but never INTO the
+        # window: the last lock stands below it, and on the legacy profile.
+        best_inside = node.getbestchainlock()
+        self.log.info("  best lock now: height=%d llmqType=%s", best_inside["height"], best_inside["llmqType"])
+        assert best_inside["height"] < CL_ACTIVATION - FORMATION_LEAD, \
+            "the best ChainLock entered the formation lead"
+        assert_equal(best_inside["llmqType"], "llmq_test")
+
+        # ---- ChainLock, at the switchover -------------------------------
 
         self.log.info("AT/ABOVE %d: the ChainLock must move onto Q60", CL_ACTIVATION)
         self.mine_to(node, CL_ACTIVATION)

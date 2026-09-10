@@ -101,6 +101,50 @@ BOOST_AUTO_TEST_CASE(chainlock_type_resolver)
     BOOST_CHECK(llmq::GetChainLocksLLMQType(params, 1000000) == Consensus::LLMQType::LLMQ_400_60);
 }
 
+// The pause over the formation lead. In [activation - lead, activation) the
+// fleet is split and both halves still sign with the legacy profile, so an
+// upgraded node must neither sign nor accept a lock signed at those heights.
+// Height-only and one-way like the resolver; inert until both halves of the V2
+// configuration are present; and the lead it pauses over is the same number
+// formation opens on, read from the same place.
+BOOST_AUTO_TEST_CASE(chainlock_pause_covers_exactly_the_formation_lead)
+{
+    Consensus::Params params;
+    params.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_400_60;
+
+    // Nothing scheduled: no lead, never paused.
+    BOOST_CHECK_EQUAL(llmq::ChainLocksV2FormationLead(params), 0);
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 0));
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 1000000));
+
+    // Half a configuration is still nothing.
+    params.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
+    BOOST_CHECK_EQUAL(llmq::ChainLocksV2FormationLead(params), 0);
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 1000000));
+
+    // Scheduled: the lead is (signingActiveQuorumCount + 1) * dkgInterval of
+    // llmq_defcon, 5 * 24, and the window is closed at the bottom, open at the
+    // top -- the activation height itself is V2 territory, not paused.
+    params.nChainLocksV2ActivationHeight = 3240;
+    BOOST_CHECK_EQUAL(llmq::ChainLocksV2FormationLead(params), 120);
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 3119));
+    BOOST_CHECK(llmq::IsChainLockPaused(params, 3120));
+    BOOST_CHECK(llmq::IsChainLockPaused(params, 3200));
+    BOOST_CHECK(llmq::IsChainLockPaused(params, 3239));
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 3240));
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 1000000));
+
+    // The resolver still names the legacy profile throughout the window: a
+    // lock signed there IS verifiable, which is exactly why the pause exists.
+    BOOST_CHECK(llmq::GetChainLocksLLMQType(params, 3120) == Consensus::LLMQType::LLMQ_400_60);
+    BOOST_CHECK(llmq::GetChainLocksLLMQType(params, 3239) == Consensus::LLMQType::LLMQ_400_60);
+
+    // A height with no profile: fail closed, no pause and no lead.
+    params.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_NONE;
+    BOOST_CHECK_EQUAL(llmq::ChainLocksV2FormationLead(params), 0);
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 3200));
+}
+
 // The Q60 profile's defining properties, pinned so a later edit cannot
 // silently lose what the profile was selected for.
 BOOST_AUTO_TEST_CASE(q60_profile_shape)

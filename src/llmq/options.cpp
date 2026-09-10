@@ -129,6 +129,29 @@ Consensus::LLMQType GetChainLocksLLMQType(const ::Consensus::Params& params, int
     return params.llmqTypeChainLocks;
 }
 
+int ChainLocksV2FormationLead(const ::Consensus::Params& params)
+{
+    if (params.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_NONE ||
+        params.nChainLocksV2ActivationHeight == std::numeric_limits<int>::max()) {
+        return 0;
+    }
+    // From the static profile table, not Params(): the lead is a property of
+    // the profile type, and reading it this way keeps the predicate below
+    // usable on a bare Consensus::Params in a unit test.
+    const auto profile = ranges::find_if(Consensus::available_llmqs,
+                                         [&](const auto& p) { return p.type == params.llmqTypeChainLocksV2; });
+    assert(profile != Consensus::available_llmqs.end());
+    return (profile->signingActiveQuorumCount + 1) * profile->dkgInterval;
+}
+
+bool IsChainLockPaused(const ::Consensus::Params& params, int nSignedHeight)
+{
+    const int lead = ChainLocksV2FormationLead(params);
+    if (lead == 0) return false;
+    return nSignedHeight >= params.nChainLocksV2ActivationHeight - lead &&
+           nSignedHeight < params.nChainLocksV2ActivationHeight;
+}
+
 Consensus::LLMQType GetInstantSendLLMQType(const ::Consensus::Params& params, int nHeight)
 {
     if (params.llmqTypeDIP0024InstantSendV2 != Consensus::LLMQType::LLMQ_NONE &&
@@ -177,11 +200,11 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
                 return false;
             }
             // Guaranteed by CheckLLMQConfiguration at startup: a network that
-            // names the switchover registers the profile it switches to.
-            const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
-            assert(llmq_params_opt.has_value());
-            const int formation_lead =
-                (llmq_params_opt->signingActiveQuorumCount + 1) * llmq_params_opt->dkgInterval;
+            // names the switchover registers the profile it switches to. The
+            // lead is the same number IsChainLockPaused pauses over, read from
+            // the same place, so the two cannot drift apart.
+            assert(Params().GetLLMQ(llmqType).has_value());
+            const int formation_lead = ChainLocksV2FormationLead(consensusParams);
             return pindexPrev->nHeight + 1 >= consensusParams.nChainLocksV2ActivationHeight - formation_lead;
         }
         case Consensus::LLMQType::LLMQ_25_67:

@@ -52,6 +52,28 @@ bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBloc
  *  counts, sporks or local configuration. */
 [[nodiscard]] Consensus::LLMQType GetChainLocksLLMQType(const ::Consensus::Params& params, int nSignedHeight);
 
+/** How many blocks before the ChainLock switchover the V2 profile starts
+ *  forming quorums: (signingActiveQuorumCount + 1) * dkgInterval of that
+ *  profile, so that the resolver finds a full signing set at the height. 0
+ *  when no switchover is scheduled. */
+[[nodiscard]] int ChainLocksV2FormationLead(const ::Consensus::Params& params);
+
+/** Whether ChainLocks are paused for a signed height: true exactly inside the
+ *  formation lead, [activation - lead, activation). In that window the fleet
+ *  is split -- the first V2 commitment forks off every binary that does not
+ *  know the profile -- and BOTH sides still sign with the legacy profile,
+ *  whose threshold is small enough that each side locks its own chain. A node
+ *  on the new chain that accepts the old chain's lock gets marched onto it by
+ *  EnforceBestChainLock. So inside the window a node neither signs nor
+ *  accepts a legacy-profile lock; at the activation height the V2 profile
+ *  takes over and the old chain's locks no longer verify.
+ *
+ *  Policy, not consensus: VerifyChainLock is untouched, so historical locks
+ *  inside a past window (the devnet's 3120-3239) stay verifiable for the
+ *  coinbase best-CL check and the RPCs. Height-only and one-way, like the
+ *  resolver it sits beside. */
+[[nodiscard]] bool IsChainLockPaused(const ::Consensus::Params& params, int nSignedHeight);
+
 /** Resolve which LLMQ profile signs and verifies InstantSend locks at a given
  *  chain height -- the tip, for both the signer and the verifier, since an
  *  ISLOCK carries no height of its own and is never mined. One-way and
