@@ -16,9 +16,15 @@ old chain by construction, and everything it relays -- headers, blocks, the
 legacy ChainLocks the pause in llmq::IsChainLockPaused refuses one layer down
 -- is old-chain data. Dropping the connection is cheaper than filtering it.
 
-The test presents an old version with -pushversion, which the node honours on
-every network but mainnet, and keeps a current-version peer beside it as the
-control: the floor must remove exactly one of the two.
+The old peer advertises 70241 -- not a made-up number one below the floor,
+but the version every v22.1.x binary really speaks (MN_DSL_PROTO_VERSION,
+7bf3c5ad19). The first version of this floor sat at 70241 too, so the
+predecessor was admitted and the synthetic 70240 control never noticed; the
+independent review did, with an unmodified predecessor build. -pushversion,
+which the node honours on every network but mainnet, presents that version
+here; a current-version peer stands beside it as the control: the floor must
+remove exactly one of the two, and the node under test must itself advertise
+the floor, or the assertion in version.h that keeps the two apart is moot.
 """
 
 from test_framework.test_framework import BitcoinTestFramework
@@ -27,8 +33,9 @@ from test_framework.util import assert_equal, p2p_port
 ACTIVATION = 240
 LEAD = 120                 # (signingActiveQuorumCount + 1) * dkgInterval of llmq_defcon
 FLOOR_HEIGHT = ACTIVATION - LEAD
-FLOOR = 70241              # Q60_SWITCHOVER_PROTO_VERSION, src/version.h
-OLD = FLOOR - 1
+FLOOR = 70242              # Q60_SWITCHOVER_PROTO_VERSION, src/version.h
+OLD = 70241                # LAST_PRE_SWITCHOVER_PROTO_VERSION: what every v22.1.x binary advertises
+assert OLD < FLOOR
 
 
 class LLMQQ60ProtoFloorTest(BitcoinTestFramework):
@@ -52,6 +59,12 @@ class LLMQQ60ProtoFloorTest(BitcoinTestFramework):
 
     def run_test(self):
         node, old, new = self.nodes
+
+        self.log.info("The node under test advertises the floor itself, above every v22.1.x binary")
+        assert_equal(node.getnetworkinfo()["protocolversion"], FLOOR)
+        # (the old node's getnetworkinfo would answer FLOOR too: the RPC reports
+        # the compiled PROTOCOL_VERSION, and -pushversion only changes what is
+        # sent on the wire -- which is what the peer list below observes)
 
         self.log.info("Below the lead both peers are accepted, the old one included")
         assert_equal(self.peer_versions(node), sorted([OLD, FLOOR]))
