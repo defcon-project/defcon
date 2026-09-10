@@ -8,10 +8,11 @@
 # window and a different one on the executable.
 #
 # The rasterising step needs a renderer that writes 8-bit RGBA PNGs at an exact
-# size and honours Qt's reading of the file. Pass one as the first argument;
-# make-os-icons.py documents what it has to accept.
+# size and honours Qt's reading of the file. svgrender.cpp beside this script is
+# that renderer -- its header says how to build it -- and its path is the one
+# argument here; make-os-icons.py documents what the PNGs have to be.
 #
-#   contrib/devtools/build-os-icons.sh [path/to/renderer]
+#   contrib/devtools/build-os-icons.sh [path/to/svgrender]
 set -eu
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
