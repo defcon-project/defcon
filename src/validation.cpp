@@ -2196,7 +2196,7 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         if (StakeModifierFromKernel(pindex->nHeight, m_params.GetConsensus())) {
             pindex->nStakeModifier = ComputeStakeModifier(pindex->pprev, pindex->prevoutStake.hash);
         }
-        if (!CheckProofOfStake(*this, state, pindex->pprev, *block.vtx[1], block.nTime, block.nBits, hashProof, targetProofOfStake)) {
+        if (!CheckProofOfStake(*this, view, state, pindex->pprev, *block.vtx[1], block.nTime, block.nBits, hashProof, targetProofOfStake)) {
             return error("%s: Check proof of stake failed.", __func__);
         }
         pindex->hashProof = hashProof;
