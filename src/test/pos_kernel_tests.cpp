@@ -7,6 +7,7 @@
 #include <chainparamsbase.h>
 #include <consensus/validation.h>
 #include <pos/kernel.h>
+#include <pow.h>
 #include <primitives/transaction.h>
 #include <util/system.h>
 #include <validation.h>
@@ -548,6 +549,40 @@ BOOST_AUTO_TEST_CASE(strict_bls_sig_size_activation_heights_are_pinned)
     gArgs.SoftSetBoolArg("-devnet", true);
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::DEVNET)->GetConsensus().nStrictBLSSigSizeActivationHeight,
                       std::numeric_limits<int>::max());
+    gArgs.ForceRemoveArg("devnet");
+}
+
+/**
+ * Every network's genesis block satisfies its own nBits.
+ *
+ * ReadBlockFromDisk re-checks proof of work on every proof-of-work block it
+ * reads back, the genesis included, and a node whose genesis fails that check
+ * cannot start at all. The chainparams constructors assert the genesis hash
+ * on most networks, which pins the constant but says nothing about whether
+ * the header was ever mined; the testnet genesis shipped with a nonce that had
+ * not been, with no hash assert to notice, and no testnet node ever started.
+ * The devnet's stale genesis (#53/#54) was the same class of defect.
+ */
+BOOST_AUTO_TEST_CASE(every_genesis_satisfies_its_own_pow)
+{
+    const auto& args = *m_node.args;
+    for (const std::string& chain : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET, CBaseChainParams::REGTEST}) {
+        const auto params = CreateChainParams(args, chain);
+        const CBlock& genesis = params->GenesisBlock();
+        BOOST_CHECK_MESSAGE(CheckProofOfWork(genesis.GetHash(), genesis.nBits, params->GetConsensus()),
+                            chain + ": the genesis block does not satisfy its own nBits (nonce " +
+                                std::to_string(genesis.nNonce) + ", hash " + genesis.GetHash().ToString() + ")");
+    }
+
+    gArgs.SoftSetBoolArg("-devnet", true);
+    {
+        const auto params = CreateChainParams(args, CBaseChainParams::DEVNET);
+        for (const CBlock* genesis : {&params->GenesisBlock(), &params->DevNetGenesisBlock()}) {
+            BOOST_CHECK_MESSAGE(CheckProofOfWork(genesis->GetHash(), genesis->nBits, params->GetConsensus()),
+                                "devnet: a genesis block does not satisfy its own nBits (nonce " +
+                                    std::to_string(genesis->nNonce) + ", hash " + genesis->GetHash().ToString() + ")");
+        }
+    }
     gArgs.ForceRemoveArg("devnet");
 }
 

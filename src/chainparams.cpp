@@ -470,8 +470,15 @@ public:
         m_assumed_blockchain_size = 5;
         m_assumed_chain_state_size = 1;
 
-        genesis = CreateGenesisBlock(1758849000, 1, 0x207ffff0, 1, 50 * COIN);
+        // Nonce 0 is the first that satisfies nBits; the 1 this shipped with
+        // produced a hash above the target, and because -- unlike every other
+        // network here -- the block hash was never asserted below, nothing
+        // said so until the first testnet node read its own genesis back from
+        // disk and refused it (ReadBlockFromDisk re-checks proof of work).
+        // Same defect class as the devnet's stale genesis (#53/#54).
+        genesis = CreateGenesisBlock(1758849000, 0, 0x207ffff0, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
+        assert(consensus.hashGenesisBlock == uint256S("0x3be31465acfb0e9a46563864a8e33f8867a3ae01fae21aba34d17ee748b4ec4d"));
         assert(genesis.hashMerkleRoot == uint256S("0xd33bdead03ad4b3a51a25c984ae0ea4cb278a5cb7a9f5a56f9f94ad4109bcdda"));
 
         vFixedSeeds.clear();
