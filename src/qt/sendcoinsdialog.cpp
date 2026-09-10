@@ -607,10 +607,55 @@ SendCoinsEntry *SendCoinsDialog::addEntry()
     return entry;
 }
 
+//! Let the form decide how small this page may become.
+//!
+//! The recipients live in a QScrollArea, whose whole purpose is to report
+//! almost no minimum of its own: scroll rather than grow. That is the right
+//! default, and it is why the Send page could be squeezed until the address
+//! and amount fields were out of sight while the window happily got smaller.
+//! In the modern theme the window is meant to be resized to the wallet rather
+//! than the wallet scrolled inside a window too small for it, so the area is
+//! asked to stand for what it holds.
+//!
+//! It has to be recomputed, not set once: a second recipient makes the form
+//! taller, and so does switching Coin Control Features on. Nothing is clamped
+//! here -- BitcoinGUI holds the window under the screen, and a scroll area
+//! given less than it asked for degrades gracefully by doing its own job again.
+void SendCoinsDialog::applyScrollAreaMinimum()
+{
+    if (ui->scrollArea == nullptr || ui->scrollAreaWidgetContents == nullptr) {
+        return;
+    }
+    if (!m_inherited_scroll_minimum.isValid()) {
+        m_inherited_scroll_minimum = ui->scrollArea->minimumSize();
+    }
+    if (!GUIUtil::isModernTheme()) {
+        ui->scrollArea->setMinimumSize(m_inherited_scroll_minimum);
+        return;
+    }
+    if (QLayout* held = ui->scrollAreaWidgetContents->layout()) {
+        held->invalidate();
+    }
+    const QSize wanted = ui->scrollAreaWidgetContents->minimumSizeHint().expandedTo(m_inherited_scroll_minimum);
+    if (ui->scrollArea->minimumSize() != wanted) {
+        ui->scrollArea->setMinimumSize(wanted);
+    }
+}
+
+void SendCoinsDialog::changeEvent(QEvent* event)
+{
+    QDialog::changeEvent(event);
+    if (event->type() == QEvent::StyleChange) {
+        applyScrollAreaMinimum();
+    }
+}
+
 void SendCoinsDialog::updateTabsAndLabels()
 {
     setupTabChain(nullptr);
     coinControlUpdateLabels();
+    // A recipient was added or removed: the form is a different height now.
+    applyScrollAreaMinimum();
 }
 
 void SendCoinsDialog::removeEntry(SendCoinsEntry* entry)

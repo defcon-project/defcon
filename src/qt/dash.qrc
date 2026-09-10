@@ -59,6 +59,18 @@
         <file alias="Montserrat-SemiBoldItalic">res/fonts/Montserrat/Montserrat-SemiBoldItalic.otf</file>
         <file alias="Montserrat-Thin">res/fonts/Montserrat/Montserrat-Thin.otf</file>
         <file alias="Montserrat-ThinItalic">res/fonts/Montserrat/Montserrat-ThinItalic.otf</file>
+        <file alias="Roboto-Thin">res/fonts/Roboto/Roboto-Thin.ttf</file>
+        <file alias="Roboto-ThinItalic">res/fonts/Roboto/Roboto-ThinItalic.ttf</file>
+        <file alias="Roboto-Light">res/fonts/Roboto/Roboto-Light.ttf</file>
+        <file alias="Roboto-LightItalic">res/fonts/Roboto/Roboto-LightItalic.ttf</file>
+        <file alias="Roboto-Regular">res/fonts/Roboto/Roboto-Regular.ttf</file>
+        <file alias="Roboto-Italic">res/fonts/Roboto/Roboto-Italic.ttf</file>
+        <file alias="Roboto-Medium">res/fonts/Roboto/Roboto-Medium.ttf</file>
+        <file alias="Roboto-MediumItalic">res/fonts/Roboto/Roboto-MediumItalic.ttf</file>
+        <file alias="Roboto-Bold">res/fonts/Roboto/Roboto-Bold.ttf</file>
+        <file alias="Roboto-BoldItalic">res/fonts/Roboto/Roboto-BoldItalic.ttf</file>
+        <file alias="Roboto-Black">res/fonts/Roboto/Roboto-Black.ttf</file>
+        <file alias="Roboto-BlackItalic">res/fonts/Roboto/Roboto-BlackItalic.ttf</file>
     </qresource>
     <qresource prefix="/images">
         <file alias="arrow_down_dark">res/images/arrow_down_dark.png</file>
@@ -101,8 +113,9 @@
         <file alias="checkbox_partly_checked_light">res/images/checkbox_partly_checked_light.png</file>
         <file alias="checkbox_partly_checked_hover_light">res/images/checkbox_partly_checked_hover_light.png</file>
         <file alias="checkbox_partly_checked_disabled_light">res/images/checkbox_partly_checked_disabled_dark.png</file>
-        <file alias="dash_logo_toolbar">res/images/dash_logo_toolbar.png</file>
-        <file alias="dash_logo_toolbar_blue">res/images/dash_logo_toolbar_blue.png</file>
+        <file alias="defcon_logo">res/images/defcon_logo.svg</file>
+        <file alias="defcon_wordmark">res/images/defcon_wordmark.svg</file>
+        <file alias="defcon_wordmark_white">res/images/defcon_wordmark_white.svg</file>
         <file alias="radio_normal_dark">res/images/radio_normal_dark.png</file>
         <file alias="radio_normal_hover_dark">res/images/radio_normal_hover_dark.png</file>
         <file alias="radio_checked_dark">res/images/radio_checked_dark.png</file>

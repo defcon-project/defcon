@@ -108,6 +108,9 @@ public:
     bool isPrivacyModeActivated() const;
 
 protected:
+    //! Watches for QEvent::LayoutRequest, which is what says the wallet on
+    //! display has changed shape and the window's minimum has to follow.
+    bool event(QEvent* e) override;
     void changeEvent(QEvent *e) override;
     void closeEvent(QCloseEvent *event) override;
     void showEvent(QShowEvent *event) override;
@@ -141,9 +144,14 @@ private:
     //! console is the one window a developer opens over and over on a devnet,
     //! and it was four clicks deep under Tools.
     QToolButton* consoleButton = nullptr;
-    //! Pulses the console button now and then, so it is noticed at all.
-    QTimer* consoleHintTimer = nullptr;
-    int consoleHintsLeft = 8;
+
+    //! The padlock beside the wallet selector: it shows the lock state and
+    //! flips it. The eye is already there when it asks which wallet it is
+    //! looking at, and locking used to live three levels deep in a menu.
+    QToolButton* walletLockButton = nullptr;
+    //! The last value handed to setEncryptionStatus, kept so a theme change can
+    //! redraw the padlock in the new colours without asking the wallet again.
+    int m_encryption_status{-1};
     QToolButton* overviewButton = nullptr;
     QToolButton* sendCoinsButton = nullptr;
     QToolButton* coinJoinCoinsButton = nullptr;
@@ -253,7 +261,6 @@ private:
     /** Apply the selected theme's navigation orientation and sizing. */
     void applyThemeLayout();
     /** One slow pulse of the console button, if anyone is there to see it. */
-    void pulseConsoleButton();
     /** Create system tray icon and notification */
     void createTrayIcon();
     /** Create system tray menu (or setup the dock menu) */
@@ -323,6 +330,13 @@ private:
        @see WalletModel::EncryptionStatus
     */
     void setEncryptionStatus(int status);
+
+    /** Draw the padlock for an encryption status: the icon says what the wallet
+        is now, and the tooltip says what a click will do to it. */
+    void updateWalletLockButton(int status);
+
+    /** Flip the lock state, or offer encryption when there is no lock to flip. */
+    void toggleWalletLock();
 
     /** Set the hd-enabled status as shown in the UI.
      @param[in] hdEnabled         current hd enabled status
@@ -423,6 +437,8 @@ public Q_SLOTS:
     void updateCoinJoinVisibility();
 
     void updateWidth();
+    //! Take the window's minimum from what the wallet on display needs.
+    void applyModernWindowMinimum();
 };
 
 class UnitDisplayStatusBarControl : public QLabel

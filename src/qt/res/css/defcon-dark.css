@@ -18,16 +18,42 @@ Palette and typography
 
 QDialog,
 QMainWindow,
-QMessageBox,
-WalletFrame,
-QWidget#walletContainer {
+QMessageBox {
     background-color: #07111f;
+}
+
+/******************************************************
+Night sky
+******************************************************/
+
+/* The backdrop is drawn, not shipped as an image: StarfieldWidget paints the
+   stars and this rule decides the colour behind them, so the palette stays in
+   the theme file where the rest of it lives. The two layers stacked on top of
+   the central widget -- the wallet frame and the overview page -- are
+   transparent so the sky reaches the eye, while everything carrying a number
+   keeps an opaque background of its own. A balance must never be read against
+   a starfield. */
+QWidget#walletContainer {
+    background-color: #04070d;
+}
+
+WalletFrame {
+    background-color: transparent;
+}
+
+/* Send and Receive are QDialog subclasses used as pages, so the flat QDialog
+   rule above would have left the sky showing on four pages out of six.
+   Scoping this to the wallet frame reaches exactly the pages and leaves every
+   free-standing dialog opaque, which is where a sky behind a form would
+   actually be in the way. */
+WalletFrame QDialog {
+    background-color: transparent;
 }
 
 QWidget {
     selection-color: #f7fbff;
     selection-background-color: #0b6cc6;
-    font-family: "Montserrat";
+    font-family: "Roboto";
 }
 
 QCheckBox,
@@ -172,7 +198,7 @@ QPushButton:pressed {
 QPushButton:disabled {
     background-color: #122338;
     border-color: #263d57;
-    color: #5f748d;
+    color: #7e91a8;
 }
 
 QToolTip {
@@ -313,14 +339,18 @@ QToolBar#navigationToolBar[modern="true"] > QToolButton:disabled {
     color: #4f647d;
 }
 
+/* The box is the wordmark's own proportion, 616:140, so nothing is letterboxed
+   or stretched: 194 px wide makes it 44 px tall. It used to be 194x58, which is
+   3.34:1 against artwork that is 4.4:1 -- a shape inherited from a different
+   wordmark and never reconciled with this one. */
 QToolBar#navigationToolBar[modern="true"] QLabel#lblToolbarLogo {
-    image: url(':/images/dash_logo_toolbar');
+    image: url(':/images/defcon_wordmark');
     margin: 4px 10px 16px 10px;
     padding: 0;
     min-width: 194px;
     max-width: 194px;
-    min-height: 58px;
-    max-height: 58px;
+    min-height: 44px;
+    max-height: 44px;
 }
 
 QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector {
@@ -331,9 +361,37 @@ QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector {
     min-width: 202px;
 }
 
-QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox {
+/* One box, two parts. The selector frame is the only thing that draws a
+   background or a border; the combo and the padlock inside it draw nothing of
+   their own in any state, so the eye reads a single control instead of three
+   nested ones. A hairline between them says where the dropdown ends and the
+   lock begins. The combo's min-width is only what keeps it from collapsing:
+   it stretches to fill whatever the padlock leaves. */
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox,
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox:hover,
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QComboBox:focus {
+    background-color: transparent;
     border: none;
-    min-width: 176px;
+    border-radius: 0;
+    min-width: 132px;
+    padding-left: 10px;
+}
+
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QFrame#walletLockDivider {
+    background-color: #29435f;
+}
+
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QToolButton#walletLockButton {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 0 6px 0 6px;
+    min-width: 34px;
+    min-height: 26px;
+}
+
+QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QToolButton#walletLockButton:hover {
+    background-color: #16283c;
 }
 
 /******************************************************
@@ -341,7 +399,7 @@ Overview dashboard
 ******************************************************/
 
 QWidget#OverviewPage {
-    background-color: #07111f;
+    background-color: transparent;
 }
 
 QWidget#OverviewPage QWidget#modernOverviewHeader {
@@ -357,7 +415,6 @@ QWidget#OverviewPage QLabel#modernOverviewTitle {
 
 QWidget#OverviewPage QLabel#modernOverviewSubtitle {
     color: #91a5bc;
-    font-size: 12px;
 }
 
 /* No min-width on these cards. A stylesheet min-width replaces the minimum a
@@ -612,7 +669,6 @@ QWidget#OverviewPage QFrame#networkCard {
 
 QWidget#OverviewPage QLabel#labelNetworkStatus {
     color: #91a5bc;
-    font-size: 12px;
 }
 
 
@@ -627,6 +683,5 @@ QLabel#devnetBadge {
     border-radius: 6px;
     padding: 3px 10px;
     margin: 6px 10px;
-    font-size: 10px;
     font-weight: bold;
 }

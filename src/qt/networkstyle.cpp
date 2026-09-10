@@ -61,6 +61,37 @@ void NetworkStyle::rotateColors(QImage& img, const int iconColorHueShift, const 
     }
 }
 
+namespace {
+//! The sizes a window manager, a task bar and a tray are likely to ask for.
+//! Above the largest, Qt scales the largest down, which is what it does for any
+//! icon.
+const QList<int> usualIconSizes{16, 24, 32, 48, 64, 128, 256};
+
+//! Build an icon that renders from vector art but still declares its sizes.
+//!
+//! An icon constructed straight from an SVG draws correctly at any size and
+//! reports **no available sizes at all** -- being scalable, it has none to
+//! report. X11 builds a window's _NET_WM_ICON property out of exactly that
+//! list, so a scalable icon leaves a Linux window with no icon in its corner
+//! and none in the task bar, while the same binary shows one on Windows, which
+//! takes its icon from the executable instead. Measured: availableSizes() is
+//! empty for the SVG and holds one entry for the PNG that preceded it.
+//!
+//! Rendering the usual sizes from the SVG gives the list something to contain
+//! and costs nothing in quality: each pixmap comes from the vector, not from
+//! resampling a neighbour.
+template <typename Source>
+QIcon iconAtUsualSizes(const Source& source)
+{
+    const QIcon scalable(source);
+    QIcon icon;
+    for (int size : usualIconSizes) {
+        icon.addPixmap(scalable.pixmap(QSize(size, size)));
+    }
+    return icon;
+}
+} // namespace
+
 // titleAddText needs to be const char* for tr()
 NetworkStyle::NetworkStyle(const QString &_appName, const int iconColorHueShift, const int iconColorSaturationReduction, const char *_titleAddText):
     appName(_appName),
@@ -69,23 +100,34 @@ NetworkStyle::NetworkStyle(const QString &_appName, const int iconColorHueShift,
 {
     // Allow for separate UI settings for testnets
     QApplication::setApplicationName(appName);
-    // load pixmap
-    QPixmap appIconPixmap(":/icons/dash");
 
-    if(iconColorHueShift != 0 && iconColorSaturationReduction != 0)
-    {
-        // generate QImage from QPixmap
+    // The logo is vector artwork, so nothing here is tied to one pixel size:
+    // every pixmap below is rendered from the SVG rather than resampled from a
+    // raster made for some other size. It is loaded through the resource
+    // system, not the QtSvg API, so this compiles the same whether Qt is the
+    // static one from depends or a shared system Qt -- only the plugins
+    // differ, and those are imported in bitcoin.cpp.
+    const QString logoResource(":/images/defcon_logo");
+
+    if (iconColorHueShift != 0 && iconColorSaturationReduction != 0) {
+        // A test network's icon is the same artwork with its colours rotated,
+        // and rotating colours needs pixels. Render once, large enough that
+        // every size the window and tray ask for is a reduction.
+        QPixmap appIconPixmap = QIcon(logoResource).pixmap(QSize(1024, 1024));
         QImage appIconImg = appIconPixmap.toImage();
         rotateColors(appIconImg, iconColorHueShift, iconColorSaturationReduction);
-        //convert back to QPixmap
         appIconPixmap.convertFromImage(appIconImg);
         // tweak badge color
         rotateColor(badgeColor, iconColorHueShift, iconColorSaturationReduction);
+
+        appIcon           = iconAtUsualSizes(appIconPixmap);
+        trayAndWindowIcon = appIcon;
+    } else {
+        appIcon           = iconAtUsualSizes(logoResource);
+        trayAndWindowIcon = appIcon;
     }
 
-    appIcon             = QIcon(appIconPixmap);
-    trayAndWindowIcon   = QIcon(appIconPixmap.scaled(QSize(256,256)));
-    splashImage         = QPixmap(":/images/splash");
+    splashImage = QPixmap(logoResource);
 }
 
 const NetworkStyle* NetworkStyle::instantiate(const std::string& networkId)

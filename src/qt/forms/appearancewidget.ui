@@ -477,6 +477,42 @@
        </property>
       </spacer>
      </item>
+     <item row="5" column="0">
+      <widget class="QLabel" name="lblNightSky">
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>Night Sky:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="5" column="1">
+      <spacer name="horizontalSpacer_6">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>2</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item row="5" column="2">
+      <widget class="QCheckBox" name="animateNightSky">
+       <property name="toolTip">
+        <string>Let a few of the faintest stars in the Abyss background breathe. Turning this off keeps the sky and stops the movement.</string>
+       </property>
+       <property name="text">
+        <string>Animate</string>
+       </property>
+      </widget>
+     </item>
     </layout>
    </item>
   </layout>

@@ -70,7 +70,16 @@ $(1)_build_log:=$(BASEDIR)/$(1)-$($(1)_version)-$($(1)_build_id).log
 $(1)_all_sources=$($(1)_file_name) $($(1)_extra_sources)
 
 #stamps
-$(1)_fetched=$(SOURCES_PATH)/download-stamps/.stamp_fetched-$(1)-$($(1)_file_name).hash
+# Named after every source the package needs, not the first alone. A stamp
+# keyed on the primary tarball survives an extra source being added beside it
+# at the same version -- qtsvg next to qtbase -- so a sources directory that
+# already holds the stamp skips the fetch that would bring the new file, and
+# the extract step then fails on a tarball nobody downloaded. A restored CI
+# cache is exactly such a directory. The list goes in as a short hash so the
+# name stays a filename; a renamed stamp costs one re-run of the fetch, which
+# skips every file already present.
+$(1)_sources_id:=$(shell echo -n "$($(1)_file_name) $($(1)_extra_sources)" | $(build_SHA256SUM) | cut -c-$(HASH_LENGTH))
+$(1)_fetched=$(SOURCES_PATH)/download-stamps/.stamp_fetched-$(1)-$($(1)_file_name)-$$($(1)_sources_id).hash
 $(1)_extracted=$$($(1)_extract_dir)/.stamp_extracted
 $(1)_preprocessed=$$($(1)_extract_dir)/.stamp_preprocessed
 $(1)_cleaned=$$($(1)_extract_dir)/.stamp_cleaned

@@ -17,6 +17,7 @@
 #include <qt/optionsdialog.h>
 #include <qt/optionsmodel.h>
 #include <qt/rpcconsole.h>
+#include <qt/starfieldwidget.h>
 #include <qt/utilitydialog.h>
 
 #ifdef ENABLE_WALLET
@@ -67,13 +68,13 @@
 #include <QStatusBar>
 #include <QStyle>
 #include <QSystemTrayIcon>
-#include <QGraphicsOpacityEffect>
-#include <QPropertyAnimation>
 #include <QTimer>
 #include <QPainter>
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrlQuery>
+#include <QFrame>
+#include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QWindow>
 
@@ -619,11 +620,15 @@ namespace {
  *  ratio, rather than on a large pixmap left for Qt to scale down. The first
  *  version did the latter and was nearly invisible: a stroke a quarter of its
  *  source width survives resampling as a grey smear, whatever colour it
- *  started as. The colour is the theme's own text colour, so the glyph reads
- *  on a dark bar and a light one without either being a special case. */
+ *  started as. The colour is the theme's blue, the tint every other icon in
+ *  the window carries, so the console reads as one of them rather than as a
+ *  stray piece of text. */
 QIcon makeConsoleIcon()
 {
-    constexpr int kSize = 16;
+    // The glyph is laid out on a 16-unit grid and scaled to the size the
+    // button shows, so a size change here never touches the geometry below.
+    constexpr int kSize = 22;
+    constexpr qreal kScale = kSize / 16.0;
     const qreal dpr = qApp->devicePixelRatio();
 
     QPixmap pm(qRound(kSize * dpr), qRound(kSize * dpr));
@@ -632,7 +637,8 @@ QIcon makeConsoleIcon()
 
     QPainter painter(&pm);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    const QColor color = GUIUtil::getThemedQColor(GUIUtil::ThemedColor::DEFAULT);
+    painter.scale(kScale, kScale);
+    const QColor color = GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BLUE);
 
     // The prompt: >
     QPen pen(color);
@@ -772,36 +778,13 @@ void BitcoinGUI::createMenuBar()
     consoleButton->setAutoRaise(true);
     consoleButton->setFocusPolicy(Qt::NoFocus);
     consoleButton->setCursor(Qt::PointingHandCursor);
-    consoleButton->setIconSize(QSize(16, 16));
+    consoleButton->setIconSize(QSize(22, 22));
     consoleButton->setToolTip(openRPCConsoleAction->statusTip());
     consoleButton->setIcon(makeConsoleIcon());
     consoleButton->setEnabled(openRPCConsoleAction->isEnabled());
     connect(consoleButton, &QToolButton::clicked, openRPCConsoleAction, &QAction::trigger);
-    // The button is easy to miss: small, wordless, and in the one corner
-    // nothing else uses. A slow pulse every couple of minutes points at it
-    // without demanding anything, and gives up after a few tries.
-    //
-    // Deliberately not a one-shot at startup, which is what this was first.
-    // The console action is enabled from BitcoinGUI::showEvent, so a hint tied
-    // to it ran while the window was still being painted, and nobody ever saw
-    // it -- the feature looked broken because its premise was wrong.
-    consoleHintTimer = new QTimer(this);
-    consoleHintTimer->setInterval(120000);
-    connect(consoleHintTimer, &QTimer::timeout, this, &BitcoinGUI::pulseConsoleButton);
-    connect(openRPCConsoleAction, &QAction::triggered, this, [this] {
-        // Opened once, so the hint has done its work.
-        consoleHintsLeft = 0;
-        consoleHintTimer->stop();
-    });
-
     connect(openRPCConsoleAction, &QAction::changed, consoleButton, [this] {
-        const bool usable = openRPCConsoleAction->isEnabled();
-        consoleButton->setEnabled(usable);
-        if (usable && consoleHintsLeft > 0) {
-            if (!consoleHintTimer->isActive()) consoleHintTimer->start();
-        } else {
-            consoleHintTimer->stop();
-        }
+        consoleButton->setEnabled(openRPCConsoleAction->isEnabled());
     });
     appMenuBar->setCornerWidget(consoleButton, Qt::TopRightCorner);
 #endif // Q_OS_MAC
@@ -949,10 +932,41 @@ void BitcoinGUI::createToolBars()
         m_wallet_selector->setSizeAdjustPolicy(QComboBox::AdjustToContents);
         connect(m_wallet_selector, qOverload<int>(&QComboBox::currentIndexChanged), this, &BitcoinGUI::setCurrentWalletBySelectorIndex);
 
-        QVBoxLayout* walletSelectorLayout = new QVBoxLayout();
-        walletSelectorLayout->addWidget(m_wallet_selector);
+        // The padlock delegates to the very actions the Settings menu carries
+        // rather than calling the wallet itself. That is the lesson the console
+        // button next to it already records: a second button that reimplements
+        // an action's logic drifts away from it, and the drift shows up as a
+        // control that looks enabled and does nothing.
+        walletLockButton = new QToolButton(this);
+        walletLockButton->setObjectName("walletLockButton");
+        walletLockButton->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        walletLockButton->setAutoRaise(true);
+        walletLockButton->setFocusPolicy(Qt::NoFocus);
+        walletLockButton->setCursor(Qt::PointingHandCursor);
+        walletLockButton->setIconSize(QSize(20, 20));
+        // Hidden until a wallet reports its encryption status. Showing it
+        // earlier would put a clickable control with no icon in the toolbar,
+        // which is exactly the fault recorded beside the console button.
+        walletLockButton->setVisible(false);
+        connect(walletLockButton, &QToolButton::clicked, this, &BitcoinGUI::toggleWalletLock);
+
+        // A short hairline between the dropdown and the padlock. It is its
+        // own widget with a fixed height rather than a border on the button,
+        // because a border runs the button's full height and pokes past the
+        // frame's rounded top and bottom.
+        QFrame* walletLockDivider = new QFrame(this);
+        walletLockDivider->setObjectName("walletLockDivider");
+        walletLockDivider->setFrameShape(QFrame::NoFrame);
+        walletLockDivider->setFixedSize(1, 18);
+
+        QHBoxLayout* walletSelectorLayout = new QHBoxLayout();
+        walletSelectorLayout->addWidget(m_wallet_selector, 1);
+        walletSelectorLayout->addWidget(walletLockDivider, 0, Qt::AlignVCenter);
+        walletSelectorLayout->addWidget(walletLockButton, 0);
         walletSelectorLayout->setSpacing(0);
-        walletSelectorLayout->setContentsMargins(5, 0, 5, 0);
+        // Inset top, bottom and right, so the padlock's hover fill stays inside
+        // the frame instead of meeting its border.
+        walletSelectorLayout->setContentsMargins(0, 3, 3, 3);
         QWidget* walletSelector = new QWidget(this);
         walletSelector->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
         walletSelector->setObjectName("walletSelector");
@@ -975,7 +989,7 @@ void BitcoinGUI::createToolBars()
         walletLayout->addWidget(walletFrame);
         walletLayout->setSpacing(0);
         walletLayout->setContentsMargins(QMargins());
-        QWidget *containerWidget = new QWidget();
+        StarfieldWidget* containerWidget = new StarfieldWidget();
         containerWidget->setObjectName("walletContainer");
         containerWidget->setLayout(walletLayout);
         setCentralWidget(containerWidget);
@@ -1017,40 +1031,6 @@ QIcon makeDiagonalArrowIcon(bool up_right)
 }
 } // namespace
 
-void BitcoinGUI::pulseConsoleButton()
-{
-    if (consoleButton == nullptr || !consoleButton->isEnabled()) {
-        return;
-    }
-    // No point spending a hint on a window nobody is looking at, and no point
-    // stacking a second animation on top of one already running.
-    if (!isVisible() || isMinimized() || consoleButton->graphicsEffect() != nullptr) {
-        return;
-    }
-    if (--consoleHintsLeft <= 0) {
-        consoleHintTimer->stop();
-    }
-
-    auto* effect = new QGraphicsOpacityEffect(consoleButton);
-    consoleButton->setGraphicsEffect(effect);
-
-    auto* animation = new QPropertyAnimation(effect, "opacity", consoleButton);
-    animation->setDuration(900);
-    animation->setKeyValueAt(0.0, 1.0);
-    animation->setKeyValueAt(0.5, 0.30);
-    animation->setKeyValueAt(1.0, 1.0);
-    animation->setEasingCurve(QEasingCurve::InOutSine);
-
-    // Take the effect away afterwards: while it is installed the widget is
-    // rendered through an offscreen buffer, and there is no reason to pay that
-    // between pulses. It is also what lets the check above tell "a pulse is
-    // running" from "none is".
-    connect(animation, &QAbstractAnimation::finished, consoleButton, [this] {
-        consoleButton->setGraphicsEffect(nullptr);
-    });
-    animation->start(QAbstractAnimation::DeleteWhenStopped);
-}
-
 void BitcoinGUI::applyThemeLayout()
 {
     // Before the wallet-only work below, and outside its early return: the
@@ -1066,6 +1046,15 @@ void BitcoinGUI::applyThemeLayout()
 
     const bool modern = GUIUtil::isModernTheme();
     const bool vertical = modern;
+
+    // Abyss is the only theme that asks for a sky behind the wallet.
+    if (auto* sky = qobject_cast<StarfieldWidget*>(centralWidget())) {
+        sky->setSkyVisible(modern);
+        sky->setAnimated(QSettings().value("fAnimateNightSky", true).toBool());
+    }
+
+    // The padlock is tinted by the theme, so it is redrawn with it.
+    updateWalletLockButton(m_encryption_status);
 
     // A wallet on a test chain must say so where the eye rests. The window
     // title already carries the network suffix, but nobody reads the title
@@ -1818,6 +1807,52 @@ void BitcoinGUI::updateCoinJoinVisibility()
     updateWidth();
 }
 
+//! The window may not be dragged smaller than the wallet it is showing.
+//!
+//! setMinimumSize() replaces the minimum the layout derives from its content
+//! rather than raising it, so the value handed to it has to BE that content
+//! minimum. An earlier version passed 0 and left the enforcing to Qt, which
+//! does enforce it -- but the figure it enforced was made of inherited caps
+//! written for another wallet's amounts at another wallet's font (see
+//! OverviewPage::applyBalanceWidths), and at that width the balances were
+//! already cut off. The pages now publish what they actually need, so asking
+//! the layout is finally worth doing, and the answer is taken in both
+//! directions: the Send form was being squeezed until its fields scrolled out
+//! of sight.
+//!
+//! Held under the screen either way. A window that cannot be resized onto the
+//! display is a worse fault than a page that has to scroll, and a page inside
+//! a scroll area degrades gracefully -- it goes back to scrolling.
+//!
+//! Because it replaces rather than raises, the figure also goes stale: a
+//! second recipient on the Send page, or Coin Control switched on, changes what
+//! the wallet needs. That is why this is called on every layout request and
+//! not only when the theme changes. Setting the same value again is skipped, so
+//! the layout request it would itself provoke stops there.
+void BitcoinGUI::applyModernWindowMinimum()
+{
+    if (!GUIUtil::isModernTheme() || walletFrame == nullptr) {
+        return;
+    }
+    const QSize content = layout() != nullptr ? layout()->minimumSize() : minimumSizeHint();
+    QSize limit(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+    if (const QScreen* display = screen()) {
+        limit = display->availableGeometry().size();
+    }
+    const QSize wanted(std::min(content.width(), limit.width()), std::min(content.height(), limit.height()));
+    if (minimumSize() != wanted) {
+        setMinimumSize(wanted);
+    }
+}
+
+bool BitcoinGUI::event(QEvent* e)
+{
+    if (e->type() == QEvent::LayoutRequest) {
+        applyModernWindowMinimum();
+    }
+    return QMainWindow::event(e);
+}
+
 void BitcoinGUI::updateWidth()
 {
     if (walletFrame == nullptr) {
@@ -1828,14 +1863,8 @@ void BitcoinGUI::updateWidth()
     }
     if (GUIUtil::isModernTheme()) {
         constexpr int modernMinimumWidth{1200};
-        // Deliberately no explicit minimum. setMinimumWidth() replaces the
-        // minimum the layout derives from its content rather than raising it,
-        // so the window could be dragged down to 1200 while its own labels
-        // needed more -- and the balances lost their last characters, "DFCN"
-        // first. Qt's own minimum already refuses to shrink past the content;
-        // this only opens the window at a comfortable width.
-        setMinimumWidth(0);
-        resize(std::max(width(), modernMinimumWidth), height());
+        applyModernWindowMinimum();
+        resize(std::max({width(), minimumWidth(), modernMinimumWidth}), std::max(height(), minimumHeight()));
         return;
     }
     int nWidthWidestButton{0};
@@ -1851,7 +1880,11 @@ void BitcoinGUI::updateWidth()
     // Add 30 per button as padding and use minimum 980 which is the minimum required to show all tab's contents
     // Use nButtonsVisible + 1 <- for the dash logo
     int nWidth = std::max<int>(980, (nWidthWidestButton + 30) * (nButtonsVisible + 1));
-    setMinimumWidth(nWidth);
+    // Both dimensions, not the width alone: the modern theme sets a minimum
+    // height too (applyModernWindowMinimum), and these themes never had one.
+    // Setting only the width would leave the Abyss height in force after a
+    // switch, and the window could not be made shorter until a restart.
+    setMinimumSize(nWidth, 0);
 
     // Resize to new minimum width but don't shrink window
     resize(std::max(width(), nWidth), height());
@@ -2333,8 +2366,65 @@ void BitcoinGUI::setStakingStatus()
     }
 }
 
+void BitcoinGUI::updateWalletLockButton(int status)
+{
+    if (walletLockButton == nullptr) return;
+
+    // The icon is the state, and the tooltip is the consequence of a click.
+    // The colours are the ones the status bar icon already uses, so the two
+    // never disagree about what the wallet is doing.
+    switch (status) {
+    case WalletModel::Unencrypted:
+        walletLockButton->setIcon(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::RED));
+        walletLockButton->setToolTip(tr("Wallet is <b>unencrypted</b>. Click to encrypt it."));
+        break;
+    case WalletModel::Unlocked:
+        walletLockButton->setIcon(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::RED));
+        walletLockButton->setToolTip(tr("Wallet is <b>unlocked</b>. Click to lock it."));
+        break;
+    case WalletModel::UnlockedForMixingOnly:
+        walletLockButton->setIcon(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::ORANGE));
+        walletLockButton->setToolTip(tr("Wallet is <b>unlocked for mixing only</b>. Click to lock it."));
+        break;
+    case WalletModel::Locked:
+        walletLockButton->setIcon(GUIUtil::getIcon("lock_closed", GUIUtil::ThemedColor::GREEN));
+        walletLockButton->setToolTip(tr("Wallet is <b>locked</b>. Click to unlock it."));
+        break;
+    default:
+        // No wallet has reported yet, so there is no lock state to show.
+        walletLockButton->setVisible(false);
+        return;
+    }
+
+    walletLockButton->setVisible(true);
+}
+
+void BitcoinGUI::toggleWalletLock()
+{
+    // An open padlock closes, a closed one opens, and a wallet with no
+    // passphrase at all is offered one -- there is nothing else a lock can
+    // mean there. Unlocked-for-mixing counts as open: the menu still carries
+    // the full unlock for anyone who wants it.
+    switch (m_encryption_status) {
+    case WalletModel::Unencrypted:
+        encryptWalletAction->trigger();
+        break;
+    case WalletModel::Unlocked:
+    case WalletModel::UnlockedForMixingOnly:
+        lockWalletAction->trigger();
+        break;
+    case WalletModel::Locked:
+        unlockWalletAction->trigger();
+        break;
+    default:
+        break;
+    }
+}
+
 void BitcoinGUI::setEncryptionStatus(int status)
 {
+    m_encryption_status = status;
+
     switch(status)
     {
     case WalletModel::Unencrypted:
@@ -2374,6 +2464,8 @@ void BitcoinGUI::setEncryptionStatus(int status)
         encryptWalletAction->setEnabled(false);
         break;
     }
+
+    updateWalletLockButton(status);
 }
 
 void BitcoinGUI::updateWalletStatus()

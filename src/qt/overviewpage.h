@@ -8,7 +8,9 @@
 #include <interfaces/wallet.h>
 
 #include <QWidget>
+#include <map>
 #include <memory>
+#include <vector>
 
 class ClientModel;
 class TransactionFilterProxy;
@@ -68,11 +70,23 @@ private:
     QWidget* modernHeader{nullptr};
     QFrame* networkCard{nullptr};
     QLabel* labelNetworkStatus{nullptr};
+    //! Minimum widths as the form and the shared stylesheet set them, kept so
+    //! the themes that were laid out for those numbers get them back.
+    std::map<QWidget*, int> m_inherited_minimum_widths;
+    //! The form's own stretch weights on the row of cards, kept for the same
+    //! reason: only the modern theme redistributes them.
+    std::map<int, int> m_inherited_stretch;
 
     void SetupTransactionList(int nNumItems);
     void DisableCoinJoinCompletely();
     void updateThemePresentation();
     void updateNetworkState();
+    //! The amount as the active theme wants it drawn.
+    QString formatBalance(int unit, const CAmount& amount) const;
+    //! Every label on the balances card that carries an amount.
+    std::vector<QLabel*> balanceLabels() const;
+    //! Let the amounts decide how narrow the balances card may become.
+    void applyBalanceWidths();
 
 private Q_SLOTS:
     void toggleCoinJoin();

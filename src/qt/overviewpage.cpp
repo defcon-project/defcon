@@ -21,6 +21,7 @@
 
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QScreen>
 
 #include <algorithm>
 #include <map>
@@ -328,6 +329,38 @@ void OverviewPage::updateThemePresentation()
     ui->topLayout->setContentsMargins(11, 11, 11, 11);
     ui->topLayout->setSpacing(6);
     ui->horizontalLayout->setSpacing(6);
+
+    // Who gets the room when the window grows.
+    //
+    // The form gives the stretch to the three spacers and none to the two
+    // columns of cards, so every pixel a wider window brings goes into empty
+    // space between them. Measured: the balances card is 526 px wide in a
+    // 1300 px window and 526 px wide in a 3000 px one -- half the page, then a
+    // fifth of it. Two small tiles adrift in an empty page, and the wider the
+    // screen the worse it looks.
+    //
+    // Weighting the columns far above the spacers hands them most of the
+    // growth while the gaps still widen a little, so the page keeps its margins
+    // instead of running edge to edge. The inherited weights are put back for
+    // the other themes, which were drawn for them.
+    for (int item = 0; item < ui->horizontalLayout->count(); ++item) {
+        const int inherited = m_inherited_stretch.emplace(item, ui->horizontalLayout->stretch(item)).first->second;
+        const bool spacer = ui->horizontalLayout->itemAt(item)->spacerItem() != nullptr;
+        ui->horizontalLayout->setStretch(item, modern ? (spacer ? 1 : 6) : inherited);
+    }
+
+    // The amounts are formatted per theme (see formatBalance), so a theme
+    // change has to rewrite them -- otherwise the page keeps the previous
+    // theme's markup until the balance next moves, which on a quiet wallet is
+    // a long time. setBalance() re-derives the widths from the new text.
+    //
+    // Deliberately not called from the constructor, which reaches here before
+    // the stylesheet has been polished onto the labels: the inherited minimum
+    // recorded then would be 0 rather than general.css's 60, and the themes
+    // this restores for would be handed that 0 later.
+    if (walletModel != nullptr && m_balances.balance != -1) {
+        setBalance(m_balances);
+    }
     update();
 }
 
@@ -344,33 +377,126 @@ OverviewPage::~OverviewPage()
     delete ui;
 }
 
+std::vector<QLabel*> OverviewPage::balanceLabels() const
+{
+    return {ui->labelBalance, ui->labelUnconfirmed, ui->labelImmature, ui->labelTotal,
+            ui->labelWatchAvailable, ui->labelWatchPending, ui->labelWatchImmature, ui->labelWatchTotal};
+}
+
+//! Everywhere else these labels are given HTML, in which the thousands
+//! separator is a space fixed at 6 pt (HTML_HACK_SP). Beside an ordinary
+//! amount that reads; beside the total Abyss draws at 26 pt it measures 4 px
+//! against digits 20 px wide, so "50 820 975.99" arrives as "50820975.99"
+//! while every smaller amount on the same card is grouped correctly -- which
+//! is exactly what the page looked like. Plain text keeps the real U+2009
+//! THIN SPACE: it belongs to the text run, so it scales with the font.
+//!
+//! It buys a second thing the layout needs. A rich-text label's width is an
+//! estimate taken from a QTextDocument; a plain one's comes from the font's own
+//! metrics, and that is the number the caps below are raised to.
+QString OverviewPage::formatBalance(int unit, const CAmount& amount) const
+{
+    if (GUIUtil::isModernTheme()) {
+        return BitcoinUnits::floorWithPrivacy(unit, amount, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy);
+    }
+    return BitcoinUnits::floorHtmlWithPrivacy(unit, amount, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy);
+}
+
+//! Let the amounts decide how narrow this page may become.
+//!
+//! Qt treats an explicit minimum width as a REPLACEMENT for the one the content
+//! asks for, not as a floor under it (qSmartMinSize, qlayoutengine.cpp). Three
+//! of them sit between the amount and the window, all inherited and all chosen
+//! for amounts of Dash's size at Dash's font: `min-width: 60px` on every label
+//! of the card and `min-width: 490px` on the card itself, both from general.css,
+//! and `minimumSize: 960` on this page, from overviewpage.ui. So the balances
+//! row is handed a width settled before anyone knew how long the number would
+//! be, the window's own minimum is computed from that, and at that minimum the
+//! total is cut off -- "DFCN" first. Measured on this fork: the total wants
+//! 322 px and the layout was told 60 would do.
+//!
+//! Raising each cap to what its own contents ask for puts the number back in
+//! charge, bottom up: the labels to their own width, then the card and the page
+//! to what their layouts need once the labels are honest. Nothing is ever
+//! lowered, so nothing that fits today stops fitting, and the page's minimum is
+//! held under the screen it is on -- an amount too long for the display has to
+//! be clipped somewhere, and a window that cannot be resized onto the screen is
+//! worse than a clipped digit.
+//!
+//! Only the modern theme asks for this. The others are laid out for the
+//! inherited numbers and get them back, which is why the originals are kept.
+void OverviewPage::applyBalanceWidths()
+{
+    const bool modern = GUIUtil::isModernTheme();
+    auto inherited = [&](QWidget* widget) {
+        return m_inherited_minimum_widths.emplace(widget, widget->minimumWidth()).first->second;
+    };
+
+    for (QLabel* label : balanceLabels()) {
+        label->setTextFormat(modern ? Qt::PlainText : Qt::AutoText);
+    }
+
+    // Every label on the card, not only the amounts: the same `min-width: 60px`
+    // covers the row headings, and "Immature:" arrives as "mmature:" when the
+    // column is narrower than the word. A hidden one contributes nothing, so
+    // the watch-only column costs nothing until a wallet has one.
+    for (QLabel* label : ui->frame->findChildren<QLabel*>()) {
+        const int original = inherited(label);
+        label->setMinimumWidth(modern ? std::max(original, label->sizeHint().width()) : original);
+    }
+
+    // The card, then the page: each reads the level below it, so the order is
+    // the point. A layout answers minimumSize() from a cache and only rebuilds
+    // it when told the contents moved, so every layout underneath is
+    // invalidated first -- without that the card is asked how wide it must be
+    // and repeats the number it worked out before the labels grew, which is
+    // how this fix silently did nothing the first time it was measured.
+    for (QWidget* widget : {static_cast<QWidget*>(ui->frame), static_cast<QWidget*>(this)}) {
+        const int original = inherited(widget);
+        int wanted = original;
+        if (modern && widget->layout() != nullptr) {
+            for (QLayout* nested : widget->findChildren<QLayout*>()) {
+                nested->invalidate();
+            }
+            widget->layout()->invalidate();
+            wanted = std::max(original, widget->layout()->minimumSize().width());
+        }
+        if (widget == this) {
+            if (const QScreen* display = screen()) {
+                wanted = std::min(wanted, display->availableGeometry().width());
+            }
+        }
+        widget->setMinimumWidth(wanted);
+    }
+}
+
 void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
 {
     int unit = walletModel->getOptionsModel()->getDisplayUnit();
     m_balances = balances;
     if (walletModel->wallet().isLegacy()) {
         if (walletModel->wallet().privateKeysDisabled()) {
-            ui->labelBalance->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelUnconfirmed->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.unconfirmed_watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelImmature->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.immature_watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelTotal->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.watch_only_balance + balances.unconfirmed_watch_only_balance + balances.immature_watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
+            ui->labelBalance->setText(formatBalance(unit, balances.watch_only_balance));
+            ui->labelUnconfirmed->setText(formatBalance(unit, balances.unconfirmed_watch_only_balance));
+            ui->labelImmature->setText(formatBalance(unit, balances.immature_watch_only_balance));
+            ui->labelTotal->setText(formatBalance(unit, balances.watch_only_balance + balances.unconfirmed_watch_only_balance + balances.immature_watch_only_balance));
         } else {
-            ui->labelBalance->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelUnconfirmed->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.unconfirmed_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelImmature->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.immature_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelAnonymized->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.anonymized_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelTotal->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelWatchAvailable->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelWatchPending->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.unconfirmed_watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelWatchImmature->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.immature_watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelWatchTotal->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.watch_only_balance + balances.unconfirmed_watch_only_balance + balances.immature_watch_only_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
+            ui->labelBalance->setText(formatBalance(unit, balances.balance));
+            ui->labelUnconfirmed->setText(formatBalance(unit, balances.unconfirmed_balance));
+            ui->labelImmature->setText(formatBalance(unit, balances.immature_balance));
+            ui->labelAnonymized->setText(formatBalance(unit, balances.anonymized_balance));
+            ui->labelTotal->setText(formatBalance(unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance));
+            ui->labelWatchAvailable->setText(formatBalance(unit, balances.watch_only_balance));
+            ui->labelWatchPending->setText(formatBalance(unit, balances.unconfirmed_watch_only_balance));
+            ui->labelWatchImmature->setText(formatBalance(unit, balances.immature_watch_only_balance));
+            ui->labelWatchTotal->setText(formatBalance(unit, balances.watch_only_balance + balances.unconfirmed_watch_only_balance + balances.immature_watch_only_balance));
         }
     } else {
-            ui->labelBalance->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelUnconfirmed->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.unconfirmed_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelImmature->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.immature_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelAnonymized->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.anonymized_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
-            ui->labelTotal->setText(BitcoinUnits::floorHtmlWithPrivacy(unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy));
+            ui->labelBalance->setText(formatBalance(unit, balances.balance));
+            ui->labelUnconfirmed->setText(formatBalance(unit, balances.unconfirmed_balance));
+            ui->labelImmature->setText(formatBalance(unit, balances.immature_balance));
+            ui->labelAnonymized->setText(formatBalance(unit, balances.anonymized_balance));
+            ui->labelTotal->setText(formatBalance(unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance));
     }
     // only show immature (newly mined) balance if it's non-zero, so as not to complicate things
     // for the non-mining users
@@ -384,6 +510,10 @@ void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
     ui->labelWatchImmature->setVisible(!walletModel->wallet().privateKeysDisabled() && showWatchOnlyImmature); // show watch-only immature balance
 
     updateCoinJoinProgress();
+
+    // The amounts have just changed length, and in the modern theme their
+    // length is what the card and the page are allowed to shrink to.
+    applyBalanceWidths();
 
     int numISLocks = walletModel->getNumISLocks();
     if(cachedNumISLocks != numISLocks) {

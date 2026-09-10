@@ -1102,6 +1102,9 @@ FontFamily fontFamilyFromString(const QString& strFamily)
     if (strFamily == "Montserrat") {
         return FontFamily::Montserrat;
     }
+    if (strFamily == "Roboto") {
+        return FontFamily::Roboto;
+    }
     throw std::invalid_argument(strprintf("Invalid font-family: %s", strFamily.toStdString()));
 }
 
@@ -1112,6 +1115,8 @@ QString fontFamilyToString(FontFamily family)
         return "SystemDefault";
     case FontFamily::Montserrat:
         return "Montserrat";
+    case FontFamily::Roboto:
+        return "Roboto";
     default:
         assert(false);
     }
@@ -1256,32 +1261,35 @@ bool loadFonts()
     // Before any font changes store the applications default font to use it as SystemDefault.
     osDefaultFont = std::make_unique<QFont>(QApplication::font());
 
-    QString family = fontFamilyToString(FontFamily::Montserrat);
-    QString italic = "Italic";
+    const QString italic = "Italic";
 
-    std::map<QString, bool> mapStyles{
-        {"Thin", true},
-        {"ExtraLight", true},
-        {"Light", true},
-        {"Italic", false},
-        {"Regular", false},
-        {"Medium", true},
-        {"SemiBold", true},
-        {"Bold", true},
-        {"ExtraBold", true},
-        {"Black", true},
+    // Every bundled family, the styles it ships, and whether each style has an
+    // italic companion. The resource alias is "<Family>-<Style>", so a family
+    // is added here and in dash.qrc and nowhere else.
+    const std::map<FontFamily, std::map<QString, bool>> mapFamilies{
+        {FontFamily::Montserrat, {
+            {"Thin", true}, {"ExtraLight", true}, {"Light", true}, {"Italic", false}, {"Regular", false},
+            {"Medium", true}, {"SemiBold", true}, {"Bold", true}, {"ExtraBold", true}, {"Black", true},
+        }},
+        {FontFamily::Roboto, {
+            {"Thin", true}, {"Light", true}, {"Italic", false}, {"Regular", false},
+            {"Medium", true}, {"Bold", true}, {"Black", true},
+        }},
     };
 
     QFontDatabase database;
     std::vector<int> vecFontIds;
 
-    for (const auto& it : mapStyles) {
-        QString font = ":fonts/" + family + "-" + it.first;
-        vecFontIds.push_back(QFontDatabase::addApplicationFont(font));
-        qDebug() << __func__ << ": " << font << " loaded with id " << vecFontIds.back();
-        if (it.second) {
-            vecFontIds.push_back(QFontDatabase::addApplicationFont(font + italic));
-            qDebug() << __func__ << ": " << font + italic << " loaded with id " << vecFontIds.back();
+    for (const auto& [bundled, mapStyles] : mapFamilies) {
+        const QString family = fontFamilyToString(bundled);
+        for (const auto& it : mapStyles) {
+            QString font = ":fonts/" + family + "-" + it.first;
+            vecFontIds.push_back(QFontDatabase::addApplicationFont(font));
+            qDebug() << __func__ << ": " << font << " loaded with id " << vecFontIds.back();
+            if (it.second) {
+                vecFontIds.push_back(QFontDatabase::addApplicationFont(font + italic));
+                qDebug() << __func__ << ": " << font + italic << " loaded with id " << vecFontIds.back();
+            }
         }
     }
 
@@ -1305,7 +1313,7 @@ bool loadFonts()
     // Print debug logs for added fonts fetched by the family name
     const QStringList fontFamilies = database.families();
     for (const QString& f : fontFamilies) {
-        if (f.contains(family)) {
+        if (f.contains(fontFamilyToString(FontFamily::Montserrat)) || f.contains(fontFamilyToString(FontFamily::Roboto))) {
             const QStringList fontStyles = database.styles(f);
             for (const QString& style : fontStyles) {
                 qDebug() << __func__ << ": Family: " << f << ", Style: " << style;
@@ -1344,6 +1352,7 @@ bool loadFonts()
 
     mapSupportedWeights.insert(std::make_pair(FontFamily::SystemDefault, supportedWeights(FontFamily::SystemDefault)));
     mapSupportedWeights.insert(std::make_pair(FontFamily::Montserrat, supportedWeights(FontFamily::Montserrat)));
+    mapSupportedWeights.insert(std::make_pair(FontFamily::Roboto, supportedWeights(FontFamily::Roboto)));
 
     auto getBestMatch = [&](FontFamily fontFamily, QFont::Weight targetWeight) {
         auto& vecSupported = mapSupportedWeights[fontFamily];
@@ -1376,6 +1385,7 @@ bool loadFonts()
 
     addBestDefaults(FontFamily::SystemDefault);
     addBestDefaults(FontFamily::Montserrat);
+    addBestDefaults(FontFamily::Roboto);
 
     // Load supported defaults. May become overwritten later.
     mapWeights = mapDefaultWeights;
@@ -1396,8 +1406,8 @@ void setApplicationFont()
 
     std::unique_ptr<QFont> font;
 
-    if (fontFamily == FontFamily::Montserrat) {
-        QString family = fontFamilyToString(FontFamily::Montserrat);
+    if (fontFamily != FontFamily::SystemDefault) {
+        QString family = fontFamilyToString(fontFamily);
 #ifdef Q_OS_MAC
         if (getFontWeightNormal() != getFontWeightNormalDefault()) {
             font = std::make_unique<QFont>(getFontNormal());
@@ -1605,29 +1615,51 @@ QFont getFont(FontFamily family, QFont::Weight qWeight, bool fItalic, int nPoint
         return font;
     }
 
-    if (family == FontFamily::Montserrat) {
-        static std::map<QFont::Weight, QString> mapMontserratMapping{
-            {QFont::Thin, "Thin"},
-            {QFont::ExtraLight, "ExtraLight"},
-            {QFont::Light, "Light"},
-            {QFont::Medium, "Medium"},
-            {QFont::DemiBold, "SemiBold"},
-            {QFont::ExtraBold, "ExtraBold"},
-            {QFont::Black, "Black"},
+    if (family != FontFamily::SystemDefault) {
+        // The style file each weight resolves to. A weight the family does not
+        // ship maps to its nearest neighbour; loadFonts() then finds that the
+        // two render at the same width and offers only one of them.
+        static const std::map<FontFamily, std::map<QFont::Weight, QString>> mapStyleNames{
+            {FontFamily::Montserrat, {
+                {QFont::Thin, "Thin"},
+                {QFont::ExtraLight, "ExtraLight"},
+                {QFont::Light, "Light"},
+                {QFont::Medium, "Medium"},
+                {QFont::DemiBold, "SemiBold"},
+                {QFont::ExtraBold, "ExtraBold"},
+                {QFont::Black, "Black"},
 #ifdef Q_OS_MAC
-            {QFont::Normal, "Regular"},
-            {QFont::Bold, "Bold"},
+                {QFont::Normal, "Regular"},
+                {QFont::Bold, "Bold"},
 #else
-            {QFont::Normal, ""},
-            {QFont::Bold, ""},
+                {QFont::Normal, ""},
+                {QFont::Bold, ""},
 #endif
+            }},
+            {FontFamily::Roboto, {
+                {QFont::Thin, "Thin"},
+                {QFont::ExtraLight, "Thin"},
+                {QFont::Light, "Light"},
+                {QFont::Medium, "Medium"},
+                {QFont::DemiBold, "Medium"},
+                {QFont::ExtraBold, "Bold"},
+                {QFont::Black, "Black"},
+#ifdef Q_OS_MAC
+                {QFont::Normal, "Regular"},
+                {QFont::Bold, "Bold"},
+#else
+                {QFont::Normal, ""},
+                {QFont::Bold, ""},
+#endif
+            }},
         };
+        const auto& mapMontserratMapping = mapStyleNames.at(family);
 
         assert(mapMontserratMapping.count(qWeight));
 
 #ifdef Q_OS_MAC
 
-        QString styleName = mapMontserratMapping[qWeight];
+        QString styleName = mapMontserratMapping.at(qWeight);
 
         if (fItalic) {
             if (styleName == "Regular") {
@@ -1637,10 +1669,10 @@ QFont getFont(FontFamily family, QFont::Weight qWeight, bool fItalic, int nPoint
             }
         }
 
-        font.setFamily(fontFamilyToString(FontFamily::Montserrat));
+        font.setFamily(fontFamilyToString(family));
         font.setStyleName(styleName);
 #else
-        font.setFamily(fontFamilyToString(FontFamily::Montserrat) + " " + mapMontserratMapping[qWeight]);
+        font.setFamily(fontFamilyToString(family) + " " + mapMontserratMapping.at(qWeight));
         font.setWeight(qWeight);
         font.setStyle(fItalic ? QFont::StyleItalic : QFont::StyleNormal);
 #endif

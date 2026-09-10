@@ -13,6 +13,7 @@
 
 #include <util/system.h>
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDataWidgetMapper>
 #include <QSettings>
@@ -30,11 +31,19 @@ AppearanceWidget::AppearanceWidget(QWidget* parent) :
 
     GUIUtil::FontFamily fontSystem = GUIUtil::FontFamily::SystemDefault;
     GUIUtil::FontFamily fontMontserrat = GUIUtil::FontFamily::Montserrat;
+    GUIUtil::FontFamily fontRoboto = GUIUtil::FontFamily::Roboto;
 
     ui->fontFamily->addItem(GUIUtil::fontFamilyToString(fontSystem), QVariant(static_cast<int>(fontSystem)));
     ui->fontFamily->addItem(GUIUtil::fontFamilyToString(fontMontserrat), QVariant(static_cast<int>(fontMontserrat)));
+    ui->fontFamily->addItem(GUIUtil::fontFamilyToString(fontRoboto), QVariant(static_cast<int>(fontRoboto)));
 
     updateWeightSlider();
+
+    // Written straight to the settings rather than left to the mapper, so the
+    // sky reacts while the dialog is still open. Cancelling puts it back, the
+    // same way the theme and the fonts are put back.
+    prevAnimateNightSky = QSettings().value("fAnimateNightSky", true).toBool();
+    ui->animateNightSky->setChecked(prevAnimateNightSky);
 
     mapper = new QDataWidgetMapper(this);
     mapper->setSubmitPolicy(QDataWidgetMapper::ManualSubmit);
@@ -45,6 +54,11 @@ AppearanceWidget::AppearanceWidget(QWidget* parent) :
     connect(ui->fontScaleSlider, &QSlider::valueChanged, this, &AppearanceWidget::updateFontScale);
     connect(ui->fontWeightNormalSlider, &QSlider::valueChanged, [this](auto nValue) { updateFontWeightNormal(nValue); });
     connect(ui->fontWeightBoldSlider, &QSlider::valueChanged, [this](auto nValue) { updateFontWeightBold(nValue); });
+
+    connect(ui->animateNightSky, &QCheckBox::toggled, [=](bool checked) {
+        QSettings().setValue("fAnimateNightSky", checked);
+        Q_EMIT appearanceChanged();
+    });
 
     connect(ui->theme, &QComboBox::currentTextChanged, [=]() { Q_EMIT appearanceChanged(); });
     connect(ui->fontFamily, &QComboBox::currentTextChanged, [=]() { Q_EMIT appearanceChanged(); });
@@ -73,6 +87,9 @@ AppearanceWidget::~AppearanceWidget()
         if (prevWeightBold != GUIUtil::getFontWeightBold()) {
             GUIUtil::setFontWeightBold(prevWeightBold);
         }
+        if (prevAnimateNightSky != QSettings().value("fAnimateNightSky", true).toBool()) {
+            QSettings().setValue("fAnimateNightSky", prevAnimateNightSky);
+        }
     }
     delete ui;
 }
@@ -88,6 +105,7 @@ void AppearanceWidget::setModel(OptionsModel* _model)
         mapper->addMapping(ui->fontScaleSlider, OptionsModel::FontScale);
         mapper->addMapping(ui->fontWeightNormalSlider, OptionsModel::FontWeightNormal);
         mapper->addMapping(ui->fontWeightBoldSlider, OptionsModel::FontWeightBold);
+        mapper->addMapping(ui->animateNightSky, OptionsModel::AnimateNightSky);
         mapper->toFirst();
     }
 }
