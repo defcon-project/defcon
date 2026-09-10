@@ -330,6 +330,25 @@ void OverviewPage::updateThemePresentation()
     ui->topLayout->setSpacing(6);
     ui->horizontalLayout->setSpacing(6);
 
+    // Who gets the room when the window grows.
+    //
+    // The form gives the stretch to the three spacers and none to the two
+    // columns of cards, so every pixel a wider window brings goes into empty
+    // space between them. Measured: the balances card is 526 px wide in a
+    // 1300 px window and 526 px wide in a 3000 px one -- half the page, then a
+    // fifth of it. Two small tiles adrift in an empty page, and the wider the
+    // screen the worse it looks.
+    //
+    // Weighting the columns far above the spacers hands them most of the
+    // growth while the gaps still widen a little, so the page keeps its margins
+    // instead of running edge to edge. The inherited weights are put back for
+    // the other themes, which were drawn for them.
+    for (int item = 0; item < ui->horizontalLayout->count(); ++item) {
+        const int inherited = m_inherited_stretch.emplace(item, ui->horizontalLayout->stretch(item)).first->second;
+        const bool spacer = ui->horizontalLayout->itemAt(item)->spacerItem() != nullptr;
+        ui->horizontalLayout->setStretch(item, modern ? (spacer ? 1 : 6) : inherited);
+    }
+
     // The amounts are formatted per theme (see formatBalance), so a theme
     // change has to rewrite them -- otherwise the page keeps the previous
     // theme's markup until the balance next moves, which on a quiet wallet is

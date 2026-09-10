@@ -73,6 +73,9 @@ private:
     //! Minimum widths as the form and the shared stylesheet set them, kept so
     //! the themes that were laid out for those numbers get them back.
     std::map<QWidget*, int> m_inherited_minimum_widths;
+    //! The form's own stretch weights on the row of cards, kept for the same
+    //! reason: only the modern theme redistributes them.
+    std::map<int, int> m_inherited_stretch;
 
     void SetupTransactionList(int nNumItems);
     void DisableCoinJoinCompletely();
