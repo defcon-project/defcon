@@ -136,6 +136,7 @@ BASE_SCRIPTS = [
     'feature_dsl_scenarios.py',
     'feature_dsl_commit_decision_log.py',
     'feature_dsl_commitment_v2.py',
+    'feature_dsl_early_announcement_hold.py',
     'feature_pos_staking.py --descriptors',
     'feature_pos_staking.py --legacy-wallet',
     'feature_pos_verifychain.py --descriptors',

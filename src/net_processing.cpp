@@ -5609,15 +5609,22 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
         vRecv >> resp;
         const CBlockIndex* base = epoch_base(resp.nEpoch);
         if (base == nullptr && consensus.nDSLEpochInterval > 0) {
-            // One block early. A masternode announces on the tick of the block
-            // that opens the epoch, and its announcement can outrun that block
-            // to a peer: on a lab with sub-second relay one node in seven lost
-            // its announcement this way in three epochs out of four, and the
-            // commitment named it. Held, not rejected -- the flood forwards a
-            // copy once, so a rejection here is final for the epoch.
+            // Early. A masternode announces on the tick of the block that opens
+            // the epoch, and its announcement can outrun that block to a peer --
+            // by one block on a lab with sub-second relay, and by several when
+            // the peer is still connecting a burst: on 2026-09-11 the first node
+            // to reach a base announced while five of its six peers were 5-10
+            // blocks behind, and every one of them lost that announcement, since
+            // the hold covered exactly one block and the flood forwards a copy
+            // once, so a rejection here is final for the epoch. Held, not
+            // rejected, for anything up to one epoch ahead: the drain in
+            // ProcessDSLTick processes it once the base connects. The bound is
+            // a bound on memory (DSL_EARLY_RESPONSES_MAX per epoch), not on
+            // trust -- nothing is verified until the base block exists.
             const int64_t base_height = static_cast<int64_t>(resp.nEpoch) * consensus.nDSLEpochInterval;
             const int tip = WITH_LOCK(cs_main, return m_chainman.ActiveChain().Height());
-            if (base_height == static_cast<int64_t>(tip) + 1) {
+            const int64_t blocks_early = base_height - static_cast<int64_t>(tip);
+            if (blocks_early >= 1 && blocks_early <= static_cast<int64_t>(consensus.nDSLEpochInterval)) {
                 bool held = false;
                 {
                     LOCK(m_dsl_early_mutex);
@@ -5627,8 +5634,8 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
                         held = true;
                     }
                 }
-                LogPrint(BCLog::NET, "DSL -- poseresp epoch=%d proTx=%s arrived before its base block, %s, peer=%d\n",
-                         resp.nEpoch, resp.proTxHash.ToString(), held ? "held" : "dropped (hold full)", pfrom.GetId());
+                LogPrint(BCLog::NET, "DSL -- poseresp epoch=%d proTx=%s arrived %d block(s) before its base block, %s, peer=%d\n",
+                         resp.nEpoch, resp.proTxHash.ToString(), blocks_early, held ? "held" : "dropped (hold full)", pfrom.GetId());
                 return;
             }
         }
