@@ -179,6 +179,7 @@ BASE_SCRIPTS = [
     'feature_abortnode.py',
     # vv Tests less than 30s vv
     'rpc_quorum.py',
+    'rpc_gobject_list_diff.py',
     'wallet_keypool_topup.py --legacy-wallet',
     'wallet_keypool_topup.py --descriptors',
     'feature_fee_estimation.py',

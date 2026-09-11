@@ -692,7 +692,9 @@ static RPCHelpMan gobject_list_helper(const bool make_a_diff)
         },
         RPCResults{},
         RPCExamples{""},
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+        // make_a_diff is this helper's parameter and the handler runs long after
+        // the helper has returned: capture it by value (F-2026-110).
+        [make_a_diff](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
     std::string strCachedSignal = "valid";
     if (!request.params[0].isNull()) {
