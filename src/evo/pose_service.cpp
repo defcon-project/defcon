@@ -32,6 +32,26 @@ uint256 CPoSeServiceCommitment::GetRequestId() const
     return w.GetHash();
 }
 
+uint16_t RequiredServiceCommitmentVersion(const Consensus::Params& consensus, int height)
+{
+    return height >= consensus.nDSLCommitmentV2Height ? CPoSeServiceCommitment::OBSERVED_VERSION
+                                                       : CPoSeServiceCommitment::LEGACY_VERSION;
+}
+
+bool CheckServiceCommitmentBitfields(const CPoSeServiceCommitment& c, TxValidationState& state)
+{
+    if (c.nVersion < CPoSeServiceCommitment::OBSERVED_VERSION) return true;
+    if (c.observed.size() != c.missed.size()) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-dsl-bitfield-size");
+    }
+    for (size_t i = 0; i < c.missed.size(); ++i) {
+        if (c.missed[i] && !c.observed[i]) {
+            return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-dsl-missed-unobserved");
+        }
+    }
+    return true;
+}
+
 bool CPoSeServiceCommitment::Verify(const llmq::CQuorumManager& qman, const uint256& msgHash,
                                     TxValidationState& state) const
 {
@@ -69,12 +89,18 @@ bool CheckPoSeServiceCommitmentTx(const ChainstateManager& chainman, const llmq:
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-dsl-version");
     }
     const auto& c = payload.commitment;
-    if (c.nVersion == 0 || c.nVersion > CPoSeServiceCommitment::CURRENT_VERSION) {
-        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-dsl-commitment-version");
-    }
 
     const auto& consensus = Params().GetConsensus();
     const int height = pindexPrev->nHeight + 1;
+
+    // Exactly the format this height requires: version 1 below the flip
+    // height, version 2 from it. Neither "at most the current version" nor
+    // "either": a height with two valid formats would let a signer choose
+    // the one that heals, which is the defect version 2 exists to remove.
+    if (c.nVersion != RequiredServiceCommitmentVersion(consensus, height)) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-dsl-commitment-version");
+    }
+    if (!CheckServiceCommitmentBitfields(c, state)) return false;
 
     // The type ships dormant, and the first commitment needs one whole epoch
     // observed after activation before it can close.

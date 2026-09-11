@@ -5880,8 +5880,9 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
                                                               candidate.commitment.GetRequestId(),
                                                               candidate.msgHash, quorum->qc->quorumHash)) {
                         m_dsl_last_signed_epoch = epoch;
-                        LogPrint(BCLog::NET, "DSL -- asked quorum %s to sign epoch %d, missed=%d\n",
-                                 quorum->qc->quorumHash.ToString(), epoch, candidate.commitment.CountMissed());
+                        LogPrint(BCLog::NET, "DSL -- asked quorum %s to sign epoch %d (format v%d), missed=%d, unobserved=%d\n",
+                                 quorum->qc->quorumHash.ToString(), epoch, candidate.commitment.nVersion,
+                                 candidate.commitment.CountMissed(), candidate.commitment.CountUnobserved());
                     } else {
                         LogPrint(BCLog::NET, "DSL -- sign start failed for epoch %d, retrying next block\n", epoch);
                     }

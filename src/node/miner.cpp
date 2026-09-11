@@ -233,8 +233,9 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
                     pblocktemplate->vTxSigOps.emplace_back(0);
                     nBlockSize += dslTx->GetTotalSize();
                     ++nBlockTx;
-                    LogPrintf("%s: attached DSL service commitment for epoch %d, missed=%d\n",
-                              __func__, closedEpoch, candidate.commitment.CountMissed());
+                    LogPrintf("%s: attached DSL service commitment for epoch %d (format v%d), missed=%d, unobserved=%d\n",
+                              __func__, closedEpoch, candidate.commitment.nVersion,
+                              candidate.commitment.CountMissed(), candidate.commitment.CountUnobserved());
                 } else {
                     LogPrintf("%s: DSL report pool diverged from the quorum for epoch %d, no commitment\n",
                               __func__, closedEpoch);

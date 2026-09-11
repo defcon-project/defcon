@@ -10,6 +10,7 @@
 #include <hash.h>
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <set>
 #include <utility>
@@ -143,11 +144,22 @@ CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& ep
     }
 
     CPoSeServiceCommitment c;
+    // The format the boundary block will require, derived here rather than
+    // passed in, so the signer, the miner, the RPC and the tests cannot
+    // disagree about it. A version-1 commitment built here is byte-for-byte
+    // what this function produced before version 2 existed.
+    const int boundaryHeight = params.nDSLEpochInterval > 0
+        ? static_cast<int>(std::min<int64_t>((static_cast<int64_t>(nEpoch) + 1) * params.nDSLEpochInterval,
+                                             std::numeric_limits<int>::max()))
+        : std::numeric_limits<int>::max();
+    c.nVersion = RequiredServiceCommitmentVersion(params, boundaryHeight);
+    const bool withObserved = c.nVersion >= CPoSeServiceCommitment::OBSERVED_VERSION;
     c.nEpoch = nEpoch;
     c.epochBlockHash = epochBlockHash;
     c.llmqType = llmqType;
     c.quorumHash = quorumHash;
     c.missed.assign(order.size(), false);
+    if (withObserved) c.observed.assign(order.size(), false);
 
     for (size_t i = 0; i < order.size(); ++i) {
         const auto sentinels = CalcSentinelsForMN(epochBaseList, order[i], epochBlockHash,
@@ -155,6 +167,7 @@ CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& ep
         const std::set<uint256> assigned(sentinels.begin(), sentinels.end());
         std::set<uint256> counted;
         size_t missedCount = 0;
+        size_t onlineCount = 0;
         auto it = byTarget.find(order[i]);
         if (it != byTarget.end()) {
             for (const auto* r : it->second) {
@@ -163,12 +176,22 @@ CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& ep
                 const auto sdmn = epochBaseList.GetMN(r->sentinelProTxHash);
                 if (!sdmn) continue;
                 if (!r->VerifySig(sdmn->pdmnState->pubKeyOperator.Get(), epochBlockHash)) continue;
-                if (r->status == static_cast<uint8_t>(ServiceStatus::MISSED)) ++missedCount;
+                if (r->status == static_cast<uint8_t>(ServiceStatus::MISSED)) {
+                    ++missedCount;
+                } else if (r->status == static_cast<uint8_t>(ServiceStatus::ONLINE)) {
+                    ++onlineCount;
+                }
             }
         }
-        if (static_cast<int>(missedCount) >= params.nDSLSentinelAgree) {
-            c.missed[i] = true;
-        }
+        // MISSED needs the agreement threshold, exactly as it always did.
+        // ONLINE needs the same threshold the other way: a verdict is a
+        // verdict whichever way it goes, and fewer reports than that, or a
+        // split that reaches neither, is no verdict. Version 1 has no way to
+        // say so and reads it as online; version 2 leaves the bit unobserved.
+        const bool verdictMissed = static_cast<int>(missedCount) >= params.nDSLSentinelAgree;
+        const bool verdictOnline = !verdictMissed && static_cast<int>(onlineCount) >= params.nDSLSentinelAgree;
+        if (verdictMissed) c.missed[i] = true;
+        if (withObserved && (verdictMissed || verdictOnline)) c.observed[i] = true;
     }
     return c;
 }

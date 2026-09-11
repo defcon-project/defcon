@@ -54,12 +54,16 @@ Consensus::Params DslParams(int enforcement_height)
     return p;
 }
 
-// A commitment marking the single canonical index `missed_idx` (or none if -1).
+// A commitment marking the single canonical index `missed_idx` (or none if -1),
+// with every index observed: the epoch reached a verdict on everyone, which
+// is what these cases are about. dsl_commitment_v2_tests covers the
+// unobserved bit.
 CPoSeServiceCommitment MissOne(uint32_t epoch, size_t n, int missed_idx)
 {
     CPoSeServiceCommitment c;
     c.nEpoch = epoch;
     c.missed.assign(n, false);
+    c.observed.assign(n, true);
     if (missed_idx >= 0) c.missed[static_cast<size_t>(missed_idx)] = true;
     return c;
 }
@@ -113,6 +117,7 @@ BOOST_AUTO_TEST_CASE(mass_outage_guard_freezes)
     CPoSeServiceCommitment c;
     c.nEpoch = 1;
     c.missed.assign(10, false);
+    c.observed.assign(10, true);
     c.missed[0] = c.missed[1] = c.missed[2] = true;
     list.ApplyServiceCommitment(c, list, 101, params, false);
     for (size_t i = 0; i < 3; ++i) {

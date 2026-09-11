@@ -819,6 +819,7 @@ public:
         UpdateDevnetComputeActivationHeightFromArgs(args);
         UpdateDevnetDSLActivationHeightFromArgs(args);
         UpdateDevnetDSLEnforcementHeightFromArgs(args);
+        UpdateDevnetDSLCommitmentV2HeightFromArgs(args);
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
@@ -900,6 +901,20 @@ public:
         consensus.nDSLEnforcementHeight = nEnforcementHeight;
     }
     void UpdateDevnetDSLEnforcementHeightFromArgs(const ArgsManager& args);
+
+    /**
+     * The height from which this devnet's commitments carry the observed
+     * bitfield (format version 2). The defcon-q60 devnet has version-1
+     * commitments on chain from its activation, and they must stay valid, so
+     * the flip is a height its whole fleet is upgraded before -- exactly like
+     * every other gated rule here. Left at the default 0, a devnet requires
+     * version 2 from its first commitment, which refuses that history.
+     */
+    void UpdateDevnetDSLCommitmentV2Height(int nHeight)
+    {
+        consensus.nDSLCommitmentV2Height = nHeight;
+    }
+    void UpdateDevnetDSLCommitmentV2HeightFromArgs(const ArgsManager& args);
 
     /**
      * Allows modifying the LLMQ type for ChainLocks.
@@ -1312,6 +1327,8 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
             consensus.nDSLActivationHeight = int{height};
         } else if (name == "dslenforcement") {
             consensus.nDSLEnforcementHeight = int{height};
+        } else if (name == "dslcommitmentv2") {
+            consensus.nDSLCommitmentV2Height = int{height};
         } else {
             throw std::runtime_error(strprintf("Invalid name (%s) for -testactivationheight=name@height.", arg));
         }
@@ -1707,6 +1724,19 @@ void CDevNetParams::UpdateDevnetDSLEnforcementHeightFromArgs(const ArgsManager& 
     UpdateDevnetDSLEnforcementHeight(int(nHeight));
 }
 
+void CDevNetParams::UpdateDevnetDSLCommitmentV2HeightFromArgs(const ArgsManager& args)
+{
+    if (!args.IsArgSet("-dslcommitmentv2height")) return;
+
+    int64_t nHeight = args.GetArg("-dslcommitmentv2height", 0);
+    if (nHeight < 1 || nHeight > std::numeric_limits<int>::max()) {
+        throw std::runtime_error(strprintf("Invalid value of dslcommitmentv2height (%d)", nHeight));
+    }
+
+    LogPrintf("Setting dslcommitmentv2height to %ld\n", nHeight);
+    UpdateDevnetDSLCommitmentV2Height(int(nHeight));
+}
+
 void CDevNetParams::UpdateLLMQDevnetParametersFromArgs(const ArgsManager& args)
 {
     if (!args.IsArgSet("-llmqdevnetparams")) return;
@@ -1895,7 +1925,8 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-computeactivationheight=<n>", "Height from which the Compute masternode type may register (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslactivationheight=<n>", "Height from which the DSL service-commitment protocol runs, recording missed epochs without acting on them (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslenforcementheight=<n>", "Height from which a DSL verdict suspends rewards and bans, instead of only being recorded. Must not be below -dslactivationheight; the gap between them is the shadow window (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, chainlocksv2, instantsendv2, v23, dsl, dslenforcement). v23 schedules the whole mainnet bundle at one height, exactly as the release does. (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-dslcommitmentv2height=<n>", "Height from which DSL service commitments must carry the observed bitfield (format version 2); below it version 1 stays required, so a devnet that already carries version-1 commitments keeps its history valid. Every node must run a binary that knows the format before this height (default: 0, i.e. version 2 from the first commitment; devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, chainlocksv2, instantsendv2, v23, dsl, dslenforcement, dslcommitmentv2). v23 schedules the whole mainnet bundle at one height, exactly as the release does. (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-vbparams=<deployment>:<start>:<end>(:min_activation_height(:<window>:<threshold/thresholdstart>(:<thresholdmin>:<falloffcoeff>:<mnactivation>)))",
                  "Use given start/end times and min_activation_height for specified version bits deployment (regtest-only). "
                  "Specifying window, threshold/thresholdstart, thresholdmin, falloffcoeff and mnactivation is optional.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);

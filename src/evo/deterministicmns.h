@@ -414,7 +414,9 @@ public:
      *  enforcement height, suspend rewards, service-ban, or service-revive.
      *  The bitfield indexes epochBaseList in proTxHash order. Below the
      *  enforcement height it only records the counters (shadow mode).
-     *  A mass-outage epoch records the epoch but applies no change. */
+     *  A mass-outage epoch records the epoch but applies no change, and so
+     *  does a bit the commitment marks unobserved (format version 2): no
+     *  verdict neither punishes nor heals. */
     void ApplyServiceCommitment(const CPoSeServiceCommitment& commitment,
                                 const CDeterministicMNList& epochBaseList, int nHeight,
                                 const Consensus::Params& params, bool debugLogs);

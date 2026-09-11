@@ -1997,8 +1997,14 @@ static RPCHelpMan dslstatus()
                 {RPCResult::Type::STR_HEX, "poolhash", "Order-independent digest of the reports pooled for the current epoch; equal on two nodes iff their pools hold the same reports"},
                 {RPCResult::Type::OBJ, "candidate", "The verdict this node would aggregate from its own pool right now, before any quorum signs anything",
                 {
+                    {RPCResult::Type::NUM, "version", "The commitment format the epoch's boundary block requires: 1 = missed bitfield only, 2 = missed and observed"},
                     {RPCResult::Type::NUM, "missedcount", "Masternodes the local pool would mark MISSED"},
                     {RPCResult::Type::ARR, "missedprotxhashes", "Which ones, resolved against the epoch-base list in canonical order",
+                    {
+                        {RPCResult::Type::STR_HEX, "", "proTxHash"},
+                    }},
+                    {RPCResult::Type::NUM, "unobservedcount", "Masternodes the local pool reaches no verdict on, either way (version 2; always 0 on version 1, which judges everyone)"},
+                    {RPCResult::Type::ARR, "unobservedprotxhashes", "Which ones, in canonical order",
                     {
                         {RPCResult::Type::STR_HEX, "", "proTxHash"},
                     }},
@@ -2082,7 +2088,10 @@ static RPCHelpMan dslstatus()
     {
         UniValue candidate(UniValue::VOBJ);
         UniValue missedHashes(UniValue::VARR);
+        UniValue unobservedHashes(UniValue::VARR);
         int64_t missedCount = 0;
+        int64_t unobservedCount = 0;
+        int64_t version = 0;
         CDeterministicMNManager* dmnman = node.dmnman.get();
         const CBlockIndex* base = nullptr;
         if (dmnman != nullptr && consensus.nDSLEpochInterval > 0) {
@@ -2101,15 +2110,23 @@ static RPCHelpMan dslstatus()
             order.reserve(list.GetAllMNsCount());
             list.ForEachMN(false, [&](const auto& dmn) { order.push_back(dmn.proTxHash); });
             std::sort(order.begin(), order.end());
+            version = built.nVersion;
             for (size_t i = 0; i < order.size() && i < built.missed.size(); ++i) {
                 if (built.missed[i]) {
                     ++missedCount;
                     missedHashes.push_back(order[i].ToString());
                 }
+                if (!built.IsObserved(i)) {
+                    ++unobservedCount;
+                    unobservedHashes.push_back(order[i].ToString());
+                }
             }
         }
+        candidate.pushKV("version", version);
         candidate.pushKV("missedcount", missedCount);
         candidate.pushKV("missedprotxhashes", missedHashes);
+        candidate.pushKV("unobservedcount", unobservedCount);
+        candidate.pushKV("unobservedprotxhashes", unobservedHashes);
         ret.pushKV("candidate", candidate);
     }
     {

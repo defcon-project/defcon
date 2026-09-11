@@ -25,6 +25,8 @@ CPoSeServiceCommitment MakeCommitment()
     c.llmqType = Consensus::LLMQType::LLMQ_50_60;
     c.quorumHash = uint256::TWO;
     c.missed = {true, false, false, true, false, true, false};
+    // a superset of missed, with two indices the epoch reached no verdict on
+    c.observed = {true, false, true, true, true, true, false};
     return c;
 }
 } // namespace
@@ -43,7 +45,29 @@ BOOST_AUTO_TEST_CASE(commitment_roundtrips)
     BOOST_CHECK(back.llmqType == c.llmqType);
     BOOST_CHECK(back.quorumHash == c.quorumHash);
     BOOST_CHECK(back.missed == c.missed);
+    BOOST_CHECK(back.observed == c.observed);
     BOOST_CHECK_EQUAL(back.CountMissed(), 3);
+    BOOST_CHECK_EQUAL(back.CountUnobserved(), 2);
+
+    // Version 1 carries no observed field at all: the bytes are exactly the
+    // pre-version-2 bytes whatever the in-memory vector holds, so the history
+    // on chain deserializes and hashes as it always did.
+    CPoSeServiceCommitment legacy = c;
+    legacy.nVersion = CPoSeServiceCommitment::LEGACY_VERSION;
+    CPoSeServiceCommitment legacy_without = legacy;
+    legacy_without.observed.clear();
+    CDataStream l1(SER_NETWORK, PROTOCOL_VERSION), l2(SER_NETWORK, PROTOCOL_VERSION);
+    l1 << legacy;
+    l2 << legacy_without;
+    BOOST_CHECK(std::vector<std::byte>(l1.begin(), l1.end()) == std::vector<std::byte>(l2.begin(), l2.end()));
+    CPoSeServiceCommitment legacy_back;
+    l1 >> legacy_back;
+    BOOST_CHECK_EQUAL(legacy_back.nVersion, CPoSeServiceCommitment::LEGACY_VERSION);
+    BOOST_CHECK(legacy_back.observed.empty());
+    BOOST_CHECK(legacy_back.missed == c.missed);
+    // and a version-1 commitment observes everyone, by definition
+    for (size_t i = 0; i < legacy_back.missed.size(); ++i) BOOST_CHECK(legacy_back.IsObserved(i));
+    BOOST_CHECK_EQUAL(legacy_back.CountUnobserved(), 0);
 
     // and through the payload wrapper
     CPoSeServiceCommitmentTxPayload p;
@@ -112,6 +136,10 @@ BOOST_AUTO_TEST_CASE(activation_is_pinned_dormant)
         BOOST_CHECK_EQUAL(c.nDSLActivationHeight, std::numeric_limits<int>::max());
         BOOST_CHECK_EQUAL(c.nDSLEnforcementHeight, std::numeric_limits<int>::max());
         BOOST_CHECK_EQUAL(c.nDSLEpochInterval, 24);
+        // None of these three carries a version-1 commitment, so version 2 is
+        // required from the first one: whenever the layer is activated, it
+        // starts on the format that can say "no verdict".
+        BOOST_CHECK_EQUAL(c.nDSLCommitmentV2Height, 0);
     }
 }
 

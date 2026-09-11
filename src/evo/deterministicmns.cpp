@@ -410,6 +410,8 @@ void CDeterministicMNList::ApplyServiceCommitment(const CPoSeServiceCommitment& 
     epochBaseList.ForEachMN(false, [&](const auto& dmn) { order.push_back(dmn.proTxHash); });
     std::sort(order.begin(), order.end());
     if (order.size() != commitment.missed.size()) return;
+    if (commitment.nVersion >= CPoSeServiceCommitment::OBSERVED_VERSION &&
+        commitment.observed.size() != order.size()) return;
 
     const size_t size = order.size();
     const size_t missedCount = static_cast<size_t>(commitment.CountMissed());
@@ -424,6 +426,14 @@ void CDeterministicMNList::ApplyServiceCommitment(const CPoSeServiceCommitment& 
         if (massOutage) {
             // network-wide trouble: record the epoch, apply no penalty and do
             // not advance the counter -- a correlated outage neither bans nor heals.
+            UpdateMN(order[i], newState);
+            continue;
+        }
+        if (!commitment.IsObserved(i)) {
+            // No verdict this epoch: too few sentinel reports either way, or
+            // a split that reached neither threshold. Record that the epoch
+            // passed and change nothing else -- not the counter, not the
+            // suspension, not a ban. Version 1 could not say this and healed.
             UpdateMN(order[i], newState);
             continue;
         }
@@ -1048,6 +1058,10 @@ bool CDeterministicMNManager::RebuildListFromBlock(const CBlock& block, gsl::not
             }
             const auto epochBaseList = GetListForBlock(pindexEpochBase);
             if (opt_dsl->commitment.missed.size() != epochBaseList.GetAllMNsCount()) {
+                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-dsl-bitfield-size");
+            }
+            if (opt_dsl->commitment.nVersion >= CPoSeServiceCommitment::OBSERVED_VERSION &&
+                opt_dsl->commitment.observed.size() != epochBaseList.GetAllMNsCount()) {
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-dsl-bitfield-size");
             }
             newList.ApplyServiceCommitment(opt_dsl->commitment, epochBaseList, nHeight, Params().GetConsensus(), debugLogs);
