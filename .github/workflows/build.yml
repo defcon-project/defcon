@@ -231,6 +231,68 @@ jobs:
             --catch_system_errors=no -l test_suite
         shell: bash
 
+      # Functional tests: a named gate, not the whole runner.
+      #
+      # Until this step existed the workflow ran zero functional tests. The
+      # inherited ci/dash/test_integrationtests.sh is never called from here
+      # (and it still cds into build-ci/dashcore-*, a directory this tree does
+      # not produce), so every regression that only test/functional covers --
+      # proof-of-stake, the evodb recovery, the Q60 switchover, the Sentinel
+      # layer, the peer protocol -- was guarded by hand. Two defects lived
+      # under a green CI because of it: feature_llmq_chainlocks.py failed
+      # with a TypeError on the tip for months (#226), and a new log category
+      # aborted the node at its first line (#228).
+      #
+      # The list is explicit and every entry says what it guards, so dropping
+      # one takes a line here that says why. Named and deliberately absent:
+      #   feature_llmq_q60_switchover.py, feature_llmq_q60_dkg.py and
+      #   feature_dsl_enforcement_scale.py run 66 daemons each, raise
+      #   TEST_RUNNER_MAX_NODES themselves and would collide with the port
+      #   stride of a parallel runner -- which is also why they are kept out
+      #   of test_runner.py's lists; feature_dsl_service.py and
+      #   feature_dsl_enforcement.py exercise a Sentinel layer that ships
+      #   dormant; rpc_getblockstats.py is an inherited failure, its fixture
+      #   assumes Dash's subsidy.
+      #
+      # --ci is not passed: it turns the runner's "script not in any list"
+      # warning into exit 1, and the three scale tests above are kept out of
+      # the lists on purpose. The runner exits non-zero when any listed test
+      # fails, so the job fails with it. A bare name runs every registered
+      # variant of it (feature_pos_staking.py is --descriptors and
+      # --legacy-wallet), --combinedlogslen prints a failing test's combined
+      # node log into this job's output, the only place it can be read from
+      # afterwards, and the timeout factor is the house value from
+      # ci/test/00_setup_env.sh. No retries and no --failfast: a flaky entry
+      # has to be seen, and one red run should name every failing test.
+      - name: Functional tests (named gate)
+        run: |
+          BASE_OUTDIR="/output"
+          BUILD_TARGET="${{ matrix.build_target }}"
+          source ./ci/dash/matrix.sh
+          export LD_LIBRARY_PATH="$DEPENDS_DIR/$HOST/lib"
+          cd "build-ci/DeFCoN-${BUILD_TARGET}"
+          nproc
+          python3 --version
+          GATE=(
+            feature_llmq_switchover_config.py      # the startup guards on the Q60 switchover heights, the v23@N alias
+            feature_llmq_q60_proto_floor.py        # the peer protocol floor from the formation lead, against the real predecessor version
+            feature_llmq_q60_regtest.py            # the Q60 ChainLock profile (llmq_defcon) on regtest
+            feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates
+            feature_evodb_reconcile.py             # an evodb that stopped short of the coins tip is rebuilt at startup, with its log line
+            feature_evodb_reconcile_below_dip3.py  # the same below DIP0003, where an empty evodb is current
+            feature_dsl_commit_decision_log.py     # the producer's Sentinel commit decision without a commitment (F-2026-140)
+            feature_llmq_chainlocks.py             # ChainLocks, with a masternode added dynamically
+            feature_pos_staking.py                 # real proof-of-stake blocks on regtest; descriptor and legacy wallet
+            p2p_headers_uncompressed.py            # the plain headers reader consumes what every writer writes (#220)
+            feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
+            feature_llmq_is_nonrotation.py         # an InstantSend lock on a quorum that does not rotate
+            p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
+            rpc_verifychainlock.py                 # the lock-verifying RPCs
+            rpc_verifyislock.py
+          )
+          python3 test/functional/test_runner.py --jobs=4 --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}" --combinedlogslen=4000 "${GATE[@]}"
+        shell: bash
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
