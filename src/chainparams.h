@@ -216,6 +216,26 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
 void CheckLLMQConfiguration(const CChainParams& params);
 
 /**
+ * Schedule the whole v23 consensus bundle at one height: the Q60 ChainLock and
+ * InstantSend switchovers (profile and height each), the four proof-of-stake
+ * rules, the fee burn and the bad-votes threshold change. An unset height
+ * (std::numeric_limits<int>::max()) is a no-op and leaves every rule on its
+ * pre-v23 branch. Throws std::runtime_error for a height that is not positive
+ * or not on the Q60 DKG-interval grid. The definition in chainparams.cpp says
+ * why the bundle is one number and not eight.
+ */
+void ApplyV23ActivationBundle(Consensus::Params& consensus, int height);
+
+/**
+ * Refuse a mainnet or testnet configuration that schedules part of the v23
+ * bundle: all eight heights equal, the two switchover profiles named exactly
+ * when they are, and M-02 -- dropped from v23 -- left unset. Other networks
+ * schedule their gates one by one and are not checked. Throws
+ * std::runtime_error describing the first field out of step.
+ */
+void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::string& network);
+
+/**
  * Return the currently selected parameters. This won't change after app
  * startup, except for unit tests.
  */

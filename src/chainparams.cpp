@@ -153,6 +153,67 @@ std::optional<Consensus::LLMQParams> CChainParams::GetLLMQ(Consensus::LLMQType l
 }
 
 /**
+ * The v23 activation bundle.
+ *
+ * Every consensus change gated on this chain since v22.1.4 activates on mainnet
+ * and on testnet at ONE height, in ONE commit, and the two constants below are
+ * that commit's whole surface. ApplyV23ActivationBundle is the only place the
+ * eight gated fields are written for those two networks, so the release sets a
+ * number and nothing else. Devnet keeps its own history -- the rules shipped
+ * there one at a time, each at the height it was measured at -- and regtest
+ * schedules them by name; neither goes through here.
+ *
+ * Unset (std::numeric_limits<int>::max(), "never") keeps every rule on its
+ * pre-v23 branch. The Q60 profile is registered on both networks regardless,
+ * so that the activating commit changes numbers and not code: a registered
+ * profile with no switchover height is dormant, because
+ * IsQuorumTypeEnabledInternal reads an unset height as "never"
+ * (llmq/options.cpp:176-178). That is not a new state for mainnet -- it has
+ * registered LLMQ_100_67 behind an unreachable DIP0020Height all along, on the
+ * same code paths.
+ *
+ * The height has to sit on a Q60 DKG-interval boundary. Formation opens
+ * (signingActiveQuorumCount + 1) intervals before it, and a height off the
+ * grid loses part of the first of those.
+ *
+ * CheckV23ActivationBundle, run at startup for mainnet and testnet, refuses a
+ * configuration that sets some of the eight and not the others, so a partial
+ * edit fails in the first unit-test run rather than at the first block after
+ * it.
+ */
+//! The one number the DAO sets for mainnet. Unset keeps the bundle dormant.
+static constexpr int V23_MAINNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
+//! Testnet's height, set in the same commit.
+static constexpr int V23_TESTNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
+
+void ApplyV23ActivationBundle(Consensus::Params& consensus, int height)
+{
+    static constexpr int UNSET = std::numeric_limits<int>::max();
+    if (height == UNSET) return;
+    if (height <= 0) {
+        throw std::runtime_error(strprintf("%s: the v23 activation height must be positive, got %d", __func__, height));
+    }
+    const auto q60 = ranges::find_if(Consensus::available_llmqs,
+                                     [](const auto& p) { return p.type == Consensus::LLMQType::LLMQ_DEFCON; });
+    assert(q60 != Consensus::available_llmqs.end());
+    if (height % q60->dkgInterval != 0) {
+        throw std::runtime_error(strprintf("%s: the v23 activation height %d is not a multiple of the Q60 DKG interval %d",
+                                           __func__, height, q60->dkgInterval));
+    }
+
+    consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
+    consensus.nChainLocksV2ActivationHeight = height;
+    consensus.llmqTypeDIP0024InstantSendV2 = Consensus::LLMQType::LLMQ_DEFCON;
+    consensus.nInstantSendV2ActivationHeight = height;
+    consensus.nPosKernelV2ActivationHeight = height;
+    consensus.nPosCoinbaseBoundActivationHeight = height;
+    consensus.nPosStakeModifierV2ActivationHeight = height;
+    consensus.nPosBlockTimeBoundActivationHeight = height;
+    consensus.nPosFeeBurnActivationHeight = height;
+    consensus.nDkgBadVotesV2ActivationHeight = height;
+}
+
+/**
  * Main network on which people trade goods and services.
  */
 class CMainParams : public CChainParams {
@@ -228,19 +289,20 @@ public:
         consensus.posTimestampMask = 5;
         consensus.stakeValueRange = { 10000 * COIN, 12500000 * COIN };
         consensus.stakeAgeRange = { 60 * 60, 60 * 60 * 24 * 60 };
-        // Gated consensus activations are deliberately left at their unreachable
-        // default (std::numeric_limits<int>::max()) here and set only at the
-        // coordinated mainnet release -- there is no explicit assignment above
-        // precisely because it is not time yet. UNTIL THEN THE PoS KERNEL RUNS
-        // THE PRE-#109 RULES ON MAINNET: the weighted-target multiply that
-        // truncates at 256 bits, and the stakeAgeRange upper bound just above.
+        // Gated consensus activations are not assigned here one by one. They
+        // flip together, at V23_MAINNET_ACTIVATION_HEIGHT, through
+        // ApplyV23ActivationBundle below the LLMQ registrations -- and while
+        // that constant is unset every one of them keeps its unreachable
+        // default. UNTIL THEN THE PoS KERNEL RUNS THE PRE-#109 RULES ON
+        // MAINNET: the weighted-target multiply that truncates at 256 bits,
+        // and the stakeAgeRange upper bound just above.
         //
-        // At the v23 release the following flip at the SAME height, in one
-        // commit: nChainLocksV2ActivationHeight (Q60) with its InstantSend
+        // The bundle: nChainLocksV2ActivationHeight (Q60) with its InstantSend
         // counterpart, nPosKernelV2ActivationHeight,
         // nPosCoinbaseBoundActivationHeight, nPosStakeModifierV2ActivationHeight,
         // nPosBlockTimeBoundActivationHeight, nPosFeeBurnActivationHeight and
-        // nDkgBadVotesV2ActivationHeight. Do not set any of them in isolation.
+        // nDkgBadVotesV2ActivationHeight. CheckV23ActivationBundle refuses to
+        // start a node that sets any of them in isolation.
         //
         // Two candidates were deliberately DROPPED from that set and get no
         // height here or anywhere else. M-02 (nStrictBLSSigSizeActivationHeight,
@@ -329,6 +391,9 @@ public:
         consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_60_75;
         consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_100_67;
         consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_400_85;
+        // Registered now, enabled only by the bundle; see ApplyV23ActivationBundle.
+        AddLLMQ(Consensus::LLMQType::LLMQ_DEFCON);
+        ApplyV23ActivationBundle(consensus, V23_MAINNET_ACTIVATION_HEIGHT);
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = true;
@@ -503,6 +568,9 @@ public:
         consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_60_75;
         consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_25_67;
         consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_50_60;
+        // Registered now, enabled only by the bundle; see ApplyV23ActivationBundle.
+        AddLLMQ(Consensus::LLMQType::LLMQ_DEFCON);
+        ApplyV23ActivationBundle(consensus, V23_TESTNET_ACTIVATION_HEIGHT);
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
@@ -1212,6 +1280,12 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
             consensus.nComputeNodeActivationHeight = int{height};
         } else if (name == "chainlocksv2") {
             consensus.nChainLocksV2ActivationHeight = int{height};
+        } else if (name == "instantsendv2") {
+            consensus.nInstantSendV2ActivationHeight = int{height};
+        } else if (name == "v23") {
+            // The whole mainnet bundle at one height, exactly as the release
+            // sets it -- including the profile pairing and the grid check.
+            ApplyV23ActivationBundle(consensus, int{height});
         } else if (name == "dsl") {
             consensus.nDSLActivationHeight = int{height};
         } else if (name == "dslenforcement") {
@@ -1236,6 +1310,19 @@ void CRegTestParams::UpdateActivationParametersFromArgs(const ArgsManager& args)
     if (consensus.nChainLocksV2ActivationHeight != std::numeric_limits<int>::max()) {
         AddLLMQ(Consensus::LLMQType::LLMQ_DEFCON);
         consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
+    }
+
+    // The InstantSend half of the switchover, same shape and the same profile:
+    // a height alone is not a switchover, so the type is paired with it here
+    // exactly as the ChainLock half is. Deliberately NOT registering the
+    // profile in this branch -- that is the ChainLock half's job, and letting
+    // instantsendv2 register it on its own would turn the two guards that
+    // catch a half-configured switchover into no-ops: CheckLLMQConfiguration
+    // would find the type registered, and the IS >= CL rule would compare
+    // against an unset ChainLock height. Given alone, instantsendv2 therefore
+    // refuses to start, which is the intended answer.
+    if (consensus.nInstantSendV2ActivationHeight != std::numeric_limits<int>::max()) {
+        consensus.llmqTypeDIP0024InstantSendV2 = Consensus::LLMQType::LLMQ_DEFCON;
     }
 
     // Checked after the whole list is parsed, so the two DSL heights may be
@@ -1682,6 +1769,52 @@ void CheckLLMQConfiguration(const CChainParams& params)
     }
 }
 
+void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::string& network)
+{
+    // Devnet and regtest schedule the gates one by one, each at the height a
+    // rule was measured at; the all-or-nothing rule belongs to the two networks
+    // that activate them in one release.
+    if (network != CBaseChainParams::MAIN && network != CBaseChainParams::TESTNET) return;
+
+    static constexpr int UNSET = std::numeric_limits<int>::max();
+    const auto describe = [](int h) { return h == UNSET ? std::string{"unset"} : strprintf("%d", h); };
+
+    const struct { const char* name; int height; } gates[] = {
+        {"nChainLocksV2ActivationHeight", consensus.nChainLocksV2ActivationHeight},
+        {"nInstantSendV2ActivationHeight", consensus.nInstantSendV2ActivationHeight},
+        {"nPosKernelV2ActivationHeight", consensus.nPosKernelV2ActivationHeight},
+        {"nPosCoinbaseBoundActivationHeight", consensus.nPosCoinbaseBoundActivationHeight},
+        {"nPosStakeModifierV2ActivationHeight", consensus.nPosStakeModifierV2ActivationHeight},
+        {"nPosBlockTimeBoundActivationHeight", consensus.nPosBlockTimeBoundActivationHeight},
+        {"nPosFeeBurnActivationHeight", consensus.nPosFeeBurnActivationHeight},
+        {"nDkgBadVotesV2ActivationHeight", consensus.nDkgBadVotesV2ActivationHeight},
+    };
+    const int first = gates[0].height;
+    for (const auto& gate : gates) {
+        if (gate.height != first) {
+            throw std::runtime_error(strprintf(
+                "%s: %s is %s on %s while %s is %s; the v23 bundle activates all of its heights together or not at all",
+                __func__, gate.name, describe(gate.height), network, gates[0].name, describe(first)));
+        }
+    }
+
+    // The two profile halves follow the heights: named exactly when scheduled.
+    const auto expected_type = first == UNSET ? Consensus::LLMQType::LLMQ_NONE : Consensus::LLMQType::LLMQ_DEFCON;
+    if (consensus.llmqTypeChainLocksV2 != expected_type || consensus.llmqTypeDIP0024InstantSendV2 != expected_type) {
+        throw std::runtime_error(strprintf(
+            "%s: the v23 bundle is %s on %s but the switchover profiles do not match it",
+            __func__, first == UNSET ? "unset" : "scheduled", network));
+    }
+
+    // M-02 was dropped from v23 (see CMainParams) and gets no height on these
+    // networks until a release decides otherwise, deliberately and here.
+    if (consensus.nStrictBLSSigSizeActivationHeight != UNSET) {
+        throw std::runtime_error(strprintf(
+            "%s: nStrictBLSSigSizeActivationHeight is set on %s; M-02 is not part of the v23 bundle",
+            __func__, network));
+    }
+}
+
 std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, const std::string& chain)
 {
     std::unique_ptr<const CChainParams> params = [&]() -> std::unique_ptr<const CChainParams> {
@@ -1699,6 +1832,7 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
     // After the devnet argument overrides have had their say, so a -llmq*
     // override cannot name a profile the network does not carry either.
     CheckLLMQConfiguration(*params);
+    CheckV23ActivationBundle(params->GetConsensus(), params->NetworkIDString());
     return params;
 }
 
@@ -1739,7 +1873,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-computeactivationheight=<n>", "Height from which the Compute masternode type may register (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslactivationheight=<n>", "Height from which the DSL service-commitment protocol runs, recording missed epochs without acting on them (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslenforcementheight=<n>", "Height from which a DSL verdict suspends rewards and bans, instead of only being recorded. Must not be below -dslactivationheight; the gap between them is the shadow window (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, chainlocksv2, dsl, dslenforcement). (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, chainlocksv2, instantsendv2, v23, dsl, dslenforcement). v23 schedules the whole mainnet bundle at one height, exactly as the release does. (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-vbparams=<deployment>:<start>:<end>(:min_activation_height(:<window>:<threshold/thresholdstart>(:<thresholdmin>:<falloffcoeff>:<mnactivation>)))",
                  "Use given start/end times and min_activation_height for specified version bits deployment (regtest-only). "
                  "Specifying window, threshold/thresholdstart, thresholdmin, falloffcoeff and mnactivation is optional.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);

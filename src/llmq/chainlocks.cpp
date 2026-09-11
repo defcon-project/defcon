@@ -136,6 +136,18 @@ MessageProcessingResult CChainLocksHandler::ProcessNewChainLock(const NodeId fro
         }
     }
 
+    // Inside the switchover's formation lead no legacy-profile lock is accepted
+    // from anyone, however valid its signature -- see IsChainLockPaused. It
+    // stays in the seen-cache, because nothing signed at these heights will be
+    // wanted later: the V2 locks from the activation height on supersede them.
+    // No penalty either: a peer still on the old chain relays it in good faith,
+    // and the proto floor is what removes that peer, not a score.
+    if (IsChainLockPaused(Params().GetConsensus(), clsig.getHeight())) {
+        LogPrint(BCLog::CHAINLOCKS, "CChainLocksHandler::%s -- CLSIG (%s) is inside the Q60 formation lead, not accepted, peer=%d\n",
+                 __func__, clsig.ToString(), from);
+        return {};
+    }
+
     if (const auto ret = VerifyChainLock(clsig); ret != VerifyRecSigStatus::Valid) {
         LogPrint(BCLog::CHAINLOCKS, "CChainLocksHandler::%s -- invalid CLSIG (%s), status=%d peer=%d\n", __func__, clsig.ToString(), ToUnderlying(ret), from);
         if (ret == VerifyRecSigStatus::NoQuorum) {
@@ -315,6 +327,15 @@ void CChainLocksHandler::TrySignChainTip(const llmq::CInstantSendManager& isman)
             // the correct chain.
             return;
         }
+    }
+
+    // The other half of IsChainLockPaused: inside the formation lead this node
+    // does not sign either, so a legacy-profile lock over the split fleet is
+    // never produced by an upgraded member, only ever refused by one.
+    if (IsChainLockPaused(Params().GetConsensus(), pindex->nHeight)) {
+        LogPrint(BCLog::CHAINLOCKS, "CChainLocksHandler::%s -- not signing %s, height=%d: inside the Q60 formation lead\n",
+                 __func__, pindex->GetBlockHash().ToString(), pindex->nHeight);
+        return;
     }
 
     LogPrint(BCLog::CHAINLOCKS, "CChainLocksHandler::%s -- trying to sign %s, height=%d\n", __func__, pindex->GetBlockHash().ToString(), pindex->nHeight);

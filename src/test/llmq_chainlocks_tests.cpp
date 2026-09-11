@@ -101,6 +101,50 @@ BOOST_AUTO_TEST_CASE(chainlock_type_resolver)
     BOOST_CHECK(llmq::GetChainLocksLLMQType(params, 1000000) == Consensus::LLMQType::LLMQ_400_60);
 }
 
+// The pause over the formation lead. In [activation - lead, activation) the
+// fleet is split and both halves still sign with the legacy profile, so an
+// upgraded node must neither sign nor accept a lock signed at those heights.
+// Height-only and one-way like the resolver; inert until both halves of the V2
+// configuration are present; and the lead it pauses over is the same number
+// formation opens on, read from the same place.
+BOOST_AUTO_TEST_CASE(chainlock_pause_covers_exactly_the_formation_lead)
+{
+    Consensus::Params params;
+    params.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_400_60;
+
+    // Nothing scheduled: no lead, never paused.
+    BOOST_CHECK_EQUAL(llmq::ChainLocksV2FormationLead(params), 0);
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 0));
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 1000000));
+
+    // Half a configuration is still nothing.
+    params.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
+    BOOST_CHECK_EQUAL(llmq::ChainLocksV2FormationLead(params), 0);
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 1000000));
+
+    // Scheduled: the lead is (signingActiveQuorumCount + 1) * dkgInterval of
+    // llmq_defcon, 5 * 24, and the window is closed at the bottom, open at the
+    // top -- the activation height itself is V2 territory, not paused.
+    params.nChainLocksV2ActivationHeight = 3240;
+    BOOST_CHECK_EQUAL(llmq::ChainLocksV2FormationLead(params), 120);
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 3119));
+    BOOST_CHECK(llmq::IsChainLockPaused(params, 3120));
+    BOOST_CHECK(llmq::IsChainLockPaused(params, 3200));
+    BOOST_CHECK(llmq::IsChainLockPaused(params, 3239));
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 3240));
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 1000000));
+
+    // The resolver still names the legacy profile throughout the window: a
+    // lock signed there IS verifiable, which is exactly why the pause exists.
+    BOOST_CHECK(llmq::GetChainLocksLLMQType(params, 3120) == Consensus::LLMQType::LLMQ_400_60);
+    BOOST_CHECK(llmq::GetChainLocksLLMQType(params, 3239) == Consensus::LLMQType::LLMQ_400_60);
+
+    // A height with no profile: fail closed, no pause and no lead.
+    params.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_NONE;
+    BOOST_CHECK_EQUAL(llmq::ChainLocksV2FormationLead(params), 0);
+    BOOST_CHECK(!llmq::IsChainLockPaused(params, 3200));
+}
+
 // The Q60 profile's defining properties, pinned so a later edit cannot
 // silently lose what the profile was selected for.
 BOOST_AUTO_TEST_CASE(q60_profile_shape)
@@ -277,13 +321,28 @@ BOOST_AUTO_TEST_CASE(llmq_configuration_coherence)
     // A switchover onto a profile the network does not register. GetLLMQ then
     // answers nullopt and its consumers assert on it, so the first CLSIG at or
     // above the height aborts the process -- and a peer supplies that CLSIG.
+    // Regtest is the network that registers llmq_defcon only when asked to;
+    // mainnet and testnet have carried it dormant since the v23 bundle.
     {
-        auto params = CreateChainParams(args, CBaseChainParams::MAIN);
+        auto params = CreateChainParams(args, CBaseChainParams::REGTEST);
         auto& consensus = const_cast<Consensus::Params&>(params->GetConsensus());
         BOOST_REQUIRE(!params->GetLLMQ(Consensus::LLMQType::LLMQ_DEFCON).has_value());
         consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
         consensus.nChainLocksV2ActivationHeight = 1000;
         BOOST_CHECK_THROW(CheckLLMQConfiguration(*params), std::runtime_error);
+    }
+
+    // On mainnet the same edit passes this check, because the profile is
+    // registered -- and is refused one layer up, by CheckV23ActivationBundle,
+    // as a partial schedule: one gate of eight, on a release network.
+    {
+        auto params = CreateChainParams(args, CBaseChainParams::MAIN);
+        auto& consensus = const_cast<Consensus::Params&>(params->GetConsensus());
+        BOOST_REQUIRE(params->GetLLMQ(Consensus::LLMQType::LLMQ_DEFCON).has_value());
+        consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
+        consensus.nChainLocksV2ActivationHeight = 1008; // on the DKG grid, so only the pairing is at fault
+        BOOST_CHECK_NO_THROW(CheckLLMQConfiguration(*params));
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(consensus, CBaseChainParams::MAIN), std::runtime_error);
     }
 
     const auto devnet = [&]() { return CreateChainParams(args, CBaseChainParams::DEVNET); };

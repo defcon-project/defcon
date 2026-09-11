@@ -11,7 +11,11 @@
  */
 
 
-static const int PROTOCOL_VERSION = 70241;
+//! 70242: the release that carries the Q60 switchover. Every v22.1.x binary
+//! advertises 70241 (MN_DSL_PROTO_VERSION, 7bf3c5ad19), and the switchover
+//! floor below has to tell this binary from those, so the bump is not
+//! cosmetic: without it the floor admits the predecessor.
+static const int PROTOCOL_VERSION = 70242;
 
 //! initial proto version, to be increased after version/verack negotiation
 static const int INIT_PROTO_VERSION = 209;
@@ -21,6 +25,30 @@ static const int MIN_PEER_PROTO_VERSION = 70216;
 
 //! mandatory protocol after the mainnet fork-recovery activation height
 static const int FORK_RECOVERY_PROTO_VERSION = 70239;
+
+//! the highest version a binary WITHOUT the Q60 switchover advertises. 70241
+//! came in with the DSL masternode-state fields (7bf3c5ad19) and every
+//! v22.1.x release since speaks it. The switchover floor must sit strictly
+//! above this, or it admits the very predecessor it exists to exclude --
+//! which a floor of 70241 did (independent review, 2026-09-10: an
+//! unmodified predecessor build stayed connected through the lead and
+//! reconnected after it). Never raise this; it is history.
+static const int LAST_PRE_SWITCHOVER_PROTO_VERSION = 70241;
+
+//! mandatory protocol from the Q60 formation lead on, on any network that
+//! schedules the switchover (nChainLocksV2ActivationHeight minus the lead):
+//! the first version whose binaries carry the switchover. The first
+//! llmq_defcon commitment is mined inside the lead and forks off every binary
+//! that does not know the profile, so a peer below this is on the old chain
+//! by construction. Later releases keep it as it is: it names the first
+//! version that carries the switchover, not the current one.
+static const int Q60_SWITCHOVER_PROTO_VERSION = 70242;
+static_assert(Q60_SWITCHOVER_PROTO_VERSION > LAST_PRE_SWITCHOVER_PROTO_VERSION,
+              "the Q60 floor must exclude every binary that predates the switchover; at 70241 or below it admits them");
+static_assert(Q60_SWITCHOVER_PROTO_VERSION > FORK_RECOVERY_PROTO_VERSION,
+              "the Q60 floor succeeds the fork-recovery floor and must sit above it");
+static_assert(Q60_SWITCHOVER_PROTO_VERSION <= PROTOCOL_VERSION,
+              "a floor above what this binary speaks would disconnect every peer, ourselves included");
 
 //! minimum proto version of masternode to accept in DKGs
 static const int MIN_MASTERNODE_PROTO_VERSION = 70235;
