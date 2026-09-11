@@ -492,11 +492,13 @@ public:
     //! at which height this transaction was included in the active block chain
     int nHeight;
 
-    // whether transaction is a coinstake
+    //! whether transaction is a coinstake. The pre-0.15 record has no such
+    //! field, so Unserialize leaves it alone and only the constructor sets it;
+    //! Upgrade() copies it into every migrated Coin (F-2026-113).
     bool fCoinStake;
 
     //! empty constructor
-    CCoins() : fCoinBase(false), vout(0), nHeight(0) { }
+    CCoins() : fCoinBase(false), vout(0), nHeight(0), fCoinStake(false) { }
 
     template<typename Stream>
     void Unserialize(Stream &s) {
