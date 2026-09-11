@@ -30,6 +30,16 @@ into ProcessResponse -- which refuses them, because the signature is empty and
 the proTxHash names no masternode, and says so in the log. Refusal at the
 drain is the proof: the message reached the pool's validation instead of dying
 on the wire.
+
+The last phase is the hold on a node that is not masternode-synced. Such a
+node connects blocks but its DSL tick returns before draining anything, so the
+tick cannot be what bounds the hold: left to the tick, every epoch boundary
+the tip crossed would key one more vector of up to 4096 entries. The bound is
+kept at the insert instead -- a key that is neither the tip's epoch nor the
+next is stale and discarded, and the log says how many went. The phase holds
+three announcements, crosses two boundaries with the tick skipped (by the
+node's own word), and reads the discard of exactly those three; then it lets
+the sync finish and checks the tip's own epoch still drains what it held.
 """
 
 import struct
@@ -130,6 +140,43 @@ class DSLEarlyAnnouncementHoldTest(BitcoinTestFramework):
                 "announcement by %064x for epoch %d refused" % (near, next_epoch)]):
             self.generate(node, 1)
             assert_equal(node.getblockcount(), next_base)
+
+        self.log.info("an unsynced node connects blocks and never ticks: stale holds are discarded at the next insert")
+        node.mnsync("reset")
+        assert_equal(node.mnsync("status")["IsBlockchainSynced"], False)
+        stale_epoch = next_epoch + 1
+        stale_base = stale_epoch * EPOCH_INTERVAL
+        with node.assert_debug_log(expected_msgs=[
+                "proTx=%064x arrived %d block(s) before its base block, held" % (fake_protx(0x66), EPOCH_INTERVAL)]):
+            for tag in (0x44, 0x55, 0x66):
+                self.send_announcement(peer, stale_epoch, tag)
+
+        self.log.info("the tip crosses that epoch's base with no tick draining, by the node's own word")
+        with node.assert_debug_log(expected_msgs=["tick at height %d skipped, masternode sync not finished" % stale_base],
+                                   unexpected_msgs=["held announcement(s) for epoch %d accepted" % stale_epoch]):
+            self.generate(node, EPOCH_INTERVAL)
+        assert_equal(node.getblockcount(), stale_base)
+
+        self.log.info("an insert with the tip in that epoch keeps its key: it is the tip's own, and a tick may still come")
+        with node.assert_debug_log(expected_msgs=[
+                "proTx=%064x arrived %d block(s) before its base block, held" % (fake_protx(0x77), EPOCH_INTERVAL)],
+                                   unexpected_msgs=["discarded, stale before any tick drained them"]):
+            self.send_announcement(peer, stale_epoch + 1, 0x77)
+
+        self.log.info("one epoch further, the next insert discards exactly the three that no tick ever drained")
+        with node.assert_debug_log(expected_msgs=["tick at height %d skipped, masternode sync not finished" % (stale_base + EPOCH_INTERVAL)]):
+            self.generate(node, EPOCH_INTERVAL)
+        with node.assert_debug_log(expected_msgs=[
+                "3 held announcement(s) for epoch %d discarded, stale before any tick drained them" % stale_epoch,
+                "proTx=%064x arrived %d block(s) before its base block, held" % (fake_protx(0x88), EPOCH_INTERVAL)]):
+            self.send_announcement(peer, stale_epoch + 2, 0x88)
+
+        self.log.info("the sync finishes: the tip's own epoch still drains what it held")
+        force_finish_mnsync(node)
+        with node.assert_debug_log(expected_msgs=[
+                "0 of 1 held announcement(s) for epoch %d accepted once its base block connected" % (stale_epoch + 1),
+                "announcement by %064x for epoch %d refused" % (fake_protx(0x77), stale_epoch + 1)]):
+            self.generate(node, 1)
 
         self.log.info("Tests successful")
 
