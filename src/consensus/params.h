@@ -287,6 +287,22 @@ struct Params {
     int nDSLEnforcementHeight{std::numeric_limits<int>::max()};
     int nDSLEpochInterval{24};
 
+    /** The service-commitment format required at a height. Version 1 carries
+     *  only the `missed` bitfield, so a masternode nobody could judge -- too
+     *  few sentinel reports either way -- reads as online and is healed by
+     *  it. Version 2 adds an `observed` bitfield, and an unobserved masternode
+     *  is left exactly as it was: no evidence is neutral, not a clean bill.
+     *  A commitment at height h must carry version 2 iff h >= this. The
+     *  default, 0, requires version 2 from the first commitment, which is
+     *  right for every chain with no version-1 history -- mainnet and testnet
+     *  activate the layer after this rule exists, regtest starts fresh. A
+     *  chain that already carries version-1 commitments (the defcon-q60
+     *  devnet, from its activation at 5472) sets the height at which its
+     *  fleet flips (-dslcommitmentv2height); below it version 1 stays
+     *  required, so its history validates unchanged. One-way and height-only:
+     *  a height has exactly one valid format, never a choice. */
+    int nDSLCommitmentV2Height{0};
+
     /** DSL rule constants (measured on the simulator): a masternode is
      *  reward-suspended after nDSLSuspendEpochs consecutive missed epochs and
      *  service-banned after nDSLBanEpochs; no penalty is applied in an epoch

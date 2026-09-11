@@ -162,16 +162,20 @@ public:
 
 /**
  * Aggregate a set of signed sentinel reports into an unsigned service
- * commitment for the epoch. For each masternode in canonical (proTxHash)
- * order the MISSED bit is set only when at least nDSLSentinelAgree of its
- * assigned sentinels returned a valid, signed MISSED observation; a target
- * with too few such reports, or a majority reporting online, is left unset
- * (no verdict is not a punishment). A report counts only once per sentinel,
- * only from an assigned sentinel, and only with a signature that verifies
- * against that sentinel's operator key. Deterministic in its inputs -- the
- * quorum members must feed it the same report set to sign the same bitfield,
- * which the shadow phase measures. The returned commitment carries no
- * signature; the quorum signs it.
+ * commitment for the epoch, in the format version the epoch's boundary
+ * height requires. For each masternode in canonical (proTxHash) order the
+ * MISSED bit is set only when at least nDSLSentinelAgree of its assigned
+ * sentinels returned a valid, signed MISSED observation. In version 2 the
+ * OBSERVED bit is set when a verdict was reached either way -- that many
+ * MISSED, or that many ONLINE -- and a target with fewer reports than that,
+ * or a split that reaches neither, is left unobserved: no verdict is not a
+ * punishment, and it is not a clean bill either. Version 1 cannot say the
+ * second half and leaves such a target simply unset. A report counts only
+ * once per sentinel, only from an assigned sentinel, and only with a
+ * signature that verifies against that sentinel's operator key.
+ * Deterministic in its inputs -- the quorum members must feed it the same
+ * report set to sign the same bitfields, which the shadow phase measures.
+ * The returned commitment carries no signature; the quorum signs it.
  */
 CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& epochBlockHash,
                                               Consensus::LLMQType llmqType, const uint256& quorumHash,
