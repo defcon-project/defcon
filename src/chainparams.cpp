@@ -535,8 +535,30 @@ public:
         m_assumed_blockchain_size = 5;
         m_assumed_chain_state_size = 1;
 
-        genesis = CreateGenesisBlock(1758849000, 1, 0x207ffff0, 1, 50 * COIN);
+        // This is a NEW testnet chain identity, not a repair of the previous one.
+        //
+        // The 2025 testnet genesis (c9f4f024fe, 2025-09-26) was nonce 1 with
+        // the Bitcoin coinbase text, hash 3fac4535..., and it was asserted
+        // here. The mainnet genesis change (1c50d3d604, 2026-01-11) rewrote
+        // the coinbase text shared by every network to "DeFCoN 2026", which
+        // changed this merkle root, left nonce 1 above the target, and dropped
+        // the assert that would have said so -- from that commit on no binary
+        // could start a testnet node: ReadBlockFromDisk re-checks proof of work
+        // on the genesis it has just written and refuses it. The network magic
+        // changed in the same era, so the 2025 chain has been unreachable ever
+        // since regardless of the genesis. Reviving it would take the old
+        // coinbase text and magic for testnet alone, for a network nothing has
+        // joined in eight months; the reset is chosen instead, and said here.
+        //
+        // Consequences: datadirs from the 2025 testnet are to be discarded,
+        // and chainparams_seed_test is a standup aid carried over, to be
+        // regenerated from live hosts before the DAO's testnet rehearsal.
+        // Nonce 0 is the first that satisfies nBits with the current text
+        // (exhaustive search from 0; the merkle root below is unchanged).
+        // Same defect class as the devnet's stale genesis (#53/#54).
+        genesis = CreateGenesisBlock(1758849000, 0, 0x207ffff0, 1, 50 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
+        assert(consensus.hashGenesisBlock == uint256S("0x3be31465acfb0e9a46563864a8e33f8867a3ae01fae21aba34d17ee748b4ec4d"));
         assert(genesis.hashMerkleRoot == uint256S("0xd33bdead03ad4b3a51a25c984ae0ea4cb278a5cb7a9f5a56f9f94ad4109bcdda"));
 
         vFixedSeeds.clear();
