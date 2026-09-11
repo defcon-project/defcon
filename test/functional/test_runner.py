@@ -97,6 +97,7 @@ BASE_SCRIPTS = [
     'feature_llmq_data_recovery.py',
     'feature_llmq_q60_regtest.py',
     'feature_llmq_switchover_config.py',
+    'feature_llmq_q60_proto_floor.py',
     'wallet_hd.py --legacy-wallet',
     'wallet_hd.py --descriptors',
     'wallet_backup.py --legacy-wallet',
