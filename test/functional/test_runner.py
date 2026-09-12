@@ -113,6 +113,7 @@ BASE_SCRIPTS = [
     # vv Tests less than 2m vv
     'p2p_instantsend.py',
     'feature_llmq_is_nonrotation.py',
+    'feature_llmq_is_nonrotated_verify.py',
     'wallet_basic.py --legacy-wallet',
     'wallet_basic.py --descriptors',
     'wallet_labels.py --legacy-wallet',
