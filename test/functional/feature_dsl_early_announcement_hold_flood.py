@@ -109,7 +109,15 @@ class Quiet(P2PInterface):
 class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
     def set_test_params(self):
         args = ["-testactivationheight=dsl@1"]
-        self.set_dash_test_params(3, 1, extra_args=[args, args, args])
+        # The receiver's peers are whitelisted, which exempts them from the
+        # per-peer budget at the DSL message entry
+        # (feature_dsl_message_budget.py). What this test measures is the
+        # hold's own rule at the hold's own bound, and the budget would stop a
+        # single connection thousands of messages short of filling it. They are
+        # layers, not alternatives: an attacker spread over enough connections,
+        # or patient enough across blocks, still reaches the hold, and this is
+        # what happens to the genuine announcement when it does.
+        self.set_dash_test_params(3, 1, extra_args=[args, args + ["-whitelist=noban@127.0.0.1"], args])
 
     def catch_up(self, receiver, source, height, expected=None):
         with receiver.assert_debug_log(expected_msgs=expected or [], timeout=15):
