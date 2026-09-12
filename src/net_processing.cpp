@@ -6032,8 +6032,10 @@ void PeerManagerImpl::ForgetDSLEarlyVoucher(NodeId id)
     for (auto& keyed : m_dsl_early_responses) {
         DSLEarlyEpoch& epoch = keyed.second;
         if (epoch.vouchers.erase(id) == 0) continue;
-        // the entries keep the dead id in their lists; `vouchers` is what says
-        // who is live, and an entry with no live voucher left is an orphan
+        // the id goes from the entries as well, so the per-entry lists and
+        // `vouchers` say the same thing about who is still live; `vouchers` is
+        // the per-peer tally the contest weighs, and an entry left with no
+        // voucher at all is an orphan, which is what gives way first
         for (DSLEarlyResponse& entry : epoch.held) {
             entry.vouchers.erase(std::remove(entry.vouchers.begin(), entry.vouchers.end(), id), entry.vouchers.end());
         }
