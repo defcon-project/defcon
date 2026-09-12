@@ -5608,10 +5608,6 @@ void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj,
  *  announcement is what honest traffic needs, since the flood carries the same
  *  copy through every peer and identical copies share one entry. */
 static constexpr size_t DSL_EARLY_RESPONSES_MAX{4096};
-/** Distinct payloads held per masternode per epoch. A masternode has one
- *  announcement, so anything beyond it is junk naming that masternode; the cap
- *  is what bounds the signature checks the drain runs for one identity. */
-static constexpr size_t DSL_EARLY_RESPONSES_PER_MASTERNODE{4};
 /** Vouchers remembered per entry; a further copy adds nothing. */
 static constexpr size_t DSL_EARLY_VOUCHERS_MAX{32};
 
@@ -5793,25 +5789,27 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
         return;
     }
 
-    // Who competes with the newcomer: the entries naming the same masternode
-    // once that identity is at its cap, else -- only when the whole hold is
-    // full -- all of them. Honest traffic never gets this far: one
-    // announcement per masternode is what the flood carries.
+    // Who competes with the newcomer: nobody until the hold is full, and then
+    // all of it. An earlier version of this function also made the entries
+    // naming one masternode contest among themselves once that identity had
+    // four distinct payloads. That bounded what the drain pays in signature
+    // checks for a single identity -- and it cost more than it bought:
+    // measured, four connections sending ONE message each could hold that
+    // small contest and keep the masternode's real announcement out for good,
+    // with no number of honest relayers able to help, and the same four
+    // connections could do it to several masternodes at once. The bound it was
+    // buying belongs at the message entry, per peer, where it also bounds the
+    // flood that fills the hold in the first place; until that exists the
+    // drain pays for whatever the hold holds, and the hold is bounded.
+    if (held.size() < DSL_EARLY_RESPONSES_MAX) {
+        held.push_back({resp, {}});
+        vouch(held.back());
+        log_outcome("held");
+        return;
+    }
     std::vector<size_t> candidates;
-    for (size_t i = 0; i < held.size(); ++i) {
-        if (held[i].resp.proTxHash == resp.proTxHash) candidates.push_back(i);
-    }
-    const bool identity_full = candidates.size() >= DSL_EARLY_RESPONSES_PER_MASTERNODE;
-    if (!identity_full) {
-        if (held.size() < DSL_EARLY_RESPONSES_MAX) {
-            held.push_back({resp, {}});
-            vouch(held.back());
-            log_outcome("held");
-            return;
-        }
-        candidates.clear();
-        for (size_t i = 0; i < held.size(); ++i) candidates.push_back(i);
-    }
+    candidates.reserve(held.size());
+    for (size_t i = 0; i < held.size(); ++i) candidates.push_back(i);
 
     // The weakest entry gives way, and an entry is worth what its live
     // vouchers pushed INTO THIS CONTEST: the one whose lightest voucher
@@ -5863,9 +5861,7 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
     // incumbent stays, so a flooder cannot churn the hold.
     const std::optional<size_t> newcomer{(in_set.count(from) != 0 ? in_set.at(from) : 0) + 1};
     if (!weaker(weakest_share, newcomer)) {
-        log_outcome(identity_full
-                        ? strprintf("dropped (%d already held for this masternode, none of them pushed here by fewer)", candidates.size())
-                        : std::string{"dropped (hold full, no entry pushed here by fewer)"});
+        log_outcome("dropped (hold full, no entry pushed here by fewer)");
         return;
     }
     const auto share_str = weakest_share.has_value() ? strprintf("%d of this contest", *weakest_share)
@@ -5876,8 +5872,7 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
     held.erase(held.begin() + static_cast<std::ptrdiff_t>(weakest));
     held.push_back({resp, {}});
     vouch(held.back());
-    log_outcome(strprintf("held in place of one whose lightest voucher pushed %s%s", share_str,
-                          identity_full ? ", for the same masternode" : ""));
+    log_outcome(strprintf("held in place of one whose lightest voucher pushed %s", share_str));
 }
 
 void PeerManagerImpl::ForgetDSLEarlyVoucher(NodeId id)

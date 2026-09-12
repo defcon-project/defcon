@@ -34,9 +34,10 @@ captured as it made them:
   1. one peer floods 4096 distinct junk announcements; the genuine one arrives
      from another peer and displaces one of the flooder's
   2. the masternode's own signatures from other epochs -- valid points over the
-     wrong message -- replayed under this epoch by TWO attacking connections up
-     to the per-masternode cap; the genuine one still gets in, and the drain
-     verifies four signatures and accepts one
+     wrong message -- replayed under this epoch by two attacking connections:
+     the hold takes them all, because nothing in it can tell them from the real
+     one, and the drain is where they are separated -- four refused for a bad
+     signature, the genuine one accepted
   3. the attacker delivers the genuine announcement first, fills the rest, an
      honest peer repeats it, then the attacker disconnects and returns on a
      fresh connection with a full hold's worth of junk: its own orphaned
@@ -53,7 +54,7 @@ from test_framework.util import assert_equal, force_finish_mnsync
 EPOCH_INTERVAL = 24
 BLS_SIG_SIZE = 96
 HOLD_MAX = 4096          # DSL_EARLY_RESPONSES_MAX
-PER_MASTERNODE = 4       # DSL_EARLY_RESPONSES_PER_MASTERNODE
+REPLAYS = 4              # replayed signatures used to crowd one masternode
 
 
 class msg_poseresp:
@@ -177,7 +178,7 @@ class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
         self.log.info("the genuine announcement from another peer displaces one of the flooder's")
         with receiver.assert_debug_log(expected_msgs=[
                 "proTx=%064x arrived %d block(s) before its base block, held in place of one whose lightest voucher pushed %d of this contest, peer="
-                % (proTx, distance, HOLD_MAX)]):
+                % (proTx, distance, HOLD_MAX)], timeout=15):
             relay.send_and_ping(genuine[epoch])
 
         self.log.info("the base connects: of the full hold, exactly the genuine announcement is accepted")
@@ -187,39 +188,37 @@ class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
         ])
         assert_equal(receiver.dslstatus()["respondedcount"], 1)
 
-        # ---- phase 2: the per-masternode cap, filled from two connections
+        # ---- phase 2: many payloads under one masternode; the drain separates them
         base, epoch = bases[1], bases[1] // EPOCH_INTERVAL
         self.catch_up(receiver, miner, base - 10)
         distance = 10
         attacker2 = receiver.add_p2p_connection(Quiet())
         others = [genuine[e] for e in sorted(genuine) if e != epoch]
-        self.log.info(f"phase 2, epoch {epoch}: {PER_MASTERNODE} replayed signatures fill the masternode's cap, each brought by two connections")
+        self.log.info(f"phase 2, epoch {epoch}: {REPLAYS} replayed signatures crowd the masternode, each brought by two connections")
         with receiver.assert_debug_log(expected_msgs=[
                 "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
-            for other in others[:PER_MASTERNODE]:
+            for other in others[:REPLAYS]:
                 attacker.send_message(msg_poseresp(epoch, proTx, other.sig))
             attacker.sync_with_ping()
         with receiver.assert_debug_log(expected_msgs=[
                 "proTx=%064x arrived %d block(s) before its base block, already held, vouched for by 2 peer(s), peer=" % (proTx, distance)]):
-            for other in others[:PER_MASTERNODE]:
+            for other in others[:REPLAYS]:
                 attacker2.send_message(msg_poseresp(epoch, proTx, other.sig))
             attacker2.sync_with_ping()
 
-        self.log.info("a fifth payload from either of them is dropped at the cap")
+        self.log.info("nothing here is a contest: the hold is not full, so a further payload is simply held too")
         with receiver.assert_debug_log(expected_msgs=[
-                "proTx=%064x arrived %d block(s) before its base block, dropped (%d already held for this masternode, none of them pushed here by fewer), peer="
-                % (proTx, distance, PER_MASTERNODE)]):
-            attacker.send_and_ping(msg_poseresp(epoch, proTx, others[PER_MASTERNODE].sig))
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
+            attacker.send_and_ping(msg_poseresp(epoch, proTx, others[REPLAYS].sig))
 
-        self.log.info("the genuine one from a third peer displaces one of them -- two connections buy nothing")
+        self.log.info("and so is the genuine one, brought by a third peer -- no eviction, no choice made without evidence")
         with receiver.assert_debug_log(expected_msgs=[
-                "proTx=%064x arrived %d block(s) before its base block, held in place of one whose lightest voucher pushed %d of this contest, for the same masternode, peer="
-                % (proTx, distance, PER_MASTERNODE)]):
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
             relay.send_and_ping(genuine[epoch])
 
-        self.log.info("the base connects: four signatures checked, one accepted, three bad")
-        with receiver.assert_debug_log(expected_msgs=["refused: bad signature"] * 3 + [
-                "1 of %d held announcement(s) for epoch %d accepted once its base block connected" % (PER_MASTERNODE, epoch),
+        self.log.info(f"the base connects: the drain checks all {REPLAYS + 2} signatures, refuses {REPLAYS + 1}, accepts the genuine one")
+        with receiver.assert_debug_log(expected_msgs=["refused: bad signature"] * (REPLAYS + 1) + [
+                "1 of %d held announcement(s) for epoch %d accepted once its base block connected" % (REPLAYS + 2, epoch),
                 "accepted (1 responded so far)"], timeout=15):
             self.catch_up(receiver, miner, base)
         assert_equal(receiver.dslstatus()["respondedcount"], 1)
