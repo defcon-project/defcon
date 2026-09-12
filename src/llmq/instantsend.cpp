@@ -915,13 +915,52 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
             continue;
         }
 
-        int nSignHeight{-1};
-        const auto dkgInterval = llmq_params.dkgInterval;
-        if (blockIndex->nHeight + dkgInterval < m_chainstate.m_chain.Height()) {
-            nSignHeight = blockIndex->nHeight + dkgInterval - 1;
+        // Which quorum signed this lock.
+        //
+        // With rotation, cycleHash names the CYCLE the signer selected in and
+        // the request id decides which of that cycle's quorums signed, so the
+        // selection is replayed at the cycle's signing height. Without rotation
+        // -- every InstantSend profile this chain runs -- cycleHash IS the
+        // signing quorum's own base block, and the signer is named outright.
+        //
+        // Replaying the selection in the non-rotated case is what this fork did
+        // until now, and it rejected locks the network had signed. The signer
+        // picks the lowest-scoring of the signingActiveQuorumCount quorums
+        // active at its own tip, which can be several cycles old; the replay ran
+        // it at cycleHash + dkgInterval - 1, where the candidate set is {that
+        // quorum and OLDER ones} instead of {that quorum and NEWER ones}.
+        // Whenever an older quorum outscored the real signer the lock failed as
+        // "invalid sig in islock" -- measured on the devnet at about 1/5, 1/3 and
+        // 3/7 of locks at two, three and four cycles of age, and only when the
+        // ISLOCK outran its recovered signature, which carries the quorum
+        // explicitly. Safety was never at stake (the masternodes hold the lock
+        // and the double spend is refused), but the node that dropped it then
+        // waited out the unlocked mining delay and scored its sender as bad.
+        //
+        // Naming is not trust: the quorum still has to be one this node holds and
+        // still counts as signing-active, and the signature is still checked
+        // against its public key below. When it is neither -- a node too far
+        // behind to know it, or a lock old enough to have aged out -- the old
+        // path is what runs, so this can add an acceptance and never remove one.
+        CQuorumCPtr quorum;
+        if (!IsQuorumRotationEnabled(llmq_params, blockIndex)) {
+            const auto signing_active = qman.ScanQuorums(llmq_params.type, llmq_params.signingActiveQuorumCount);
+            const auto named = qman.GetQuorum(llmq_params.type, islock->cycleHash);
+            if (named != nullptr &&
+                ranges::any_of(signing_active,
+                               [&named](const CQuorumCPtr& q) { return q->qc->quorumHash == named->qc->quorumHash; })) {
+                quorum = named;
+            }
         }
+        if (quorum == nullptr) {
+            int nSignHeight{-1};
+            const auto dkgInterval = llmq_params.dkgInterval;
+            if (blockIndex->nHeight + dkgInterval < m_chainstate.m_chain.Height()) {
+                nSignHeight = blockIndex->nHeight + dkgInterval - 1;
+            }
 
-        auto quorum = llmq::SelectQuorumForSigning(llmq_params, m_chainstate.m_chain, qman, id, nSignHeight, signOffset);
+            quorum = llmq::SelectQuorumForSigning(llmq_params, m_chainstate.m_chain, qman, id, nSignHeight, signOffset);
+        }
         if (!quorum) {
             // should not happen, but if one fails to select, all others will also fail to select
             return {};
