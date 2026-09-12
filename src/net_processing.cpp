@@ -718,9 +718,8 @@ private:
      *  at the cutoff turn silence into signed reports. */
     void ProcessDSLTick(const CBlockIndex* pindexNew);
     /** Hold an announcement that arrived blocks_early blocks before its base
-     *  block, delivered by `from` (connected since `connected`), with the tip
-     *  in epoch tip_epoch. */
-    void HoldDSLEarlyResponse(NodeId from, std::chrono::seconds connected, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early);
+     *  block, delivered by `from`, with the tip in epoch tip_epoch. */
+    void HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early);
     /** A disconnecting peer stops vouching for the early announcements it delivered. */
     void ForgetDSLEarlyVoucher(NodeId id);
     /**
@@ -895,13 +894,12 @@ private:
         dsl::CPoSeServiceResponse resp;
         std::vector<NodeId> vouchers; // live peers that delivered it, first deliverer first
     };
-    struct DSLEarlyVoucher {
-        size_t holdings{0};             // entries of this epoch the peer vouches for
-        std::chrono::seconds connected; // when the peer connected (CNode::m_connected)
-    };
     struct DSLEarlyEpoch {
-        std::vector<DSLEarlyResponse> held;         // oldest first
-        std::map<NodeId, DSLEarlyVoucher> vouchers; // every live peer vouching for something here
+        std::vector<DSLEarlyResponse> held;   // oldest first
+        /** Every peer still connected that vouches for something here, and how
+         *  many of this epoch's entries it vouches for. A peer disappears from
+         *  this map when it disconnects, so presence here is what "live" means. */
+        std::map<NodeId, size_t> vouchers;
     };
     /** Held announcements by epoch. Written by the message thread, drained by
      *  the validation-interface thread. At most two epochs are ever keyed --
@@ -5616,10 +5614,6 @@ static constexpr size_t DSL_EARLY_RESPONSES_MAX{4096};
 static constexpr size_t DSL_EARLY_RESPONSES_PER_MASTERNODE{4};
 /** Vouchers remembered per entry; a further copy adds nothing. */
 static constexpr size_t DSL_EARLY_VOUCHERS_MAX{32};
-/** A voucher's connection counts as seasoned after this long. A peer that
- *  reconnects starts over, so cycling connections to out-vouch honest peers
- *  costs one seasoned slot per honest voucher, held for this long. */
-static constexpr std::chrono::minutes DSL_EARLY_VOUCHER_SEASONING{10};
 
 void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_type, CDataStream& vRecv)
 {
@@ -5671,7 +5665,7 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
             const int64_t blocks_early = base_height - static_cast<int64_t>(tip);
             if (blocks_early >= 1 && blocks_early <= static_cast<int64_t>(consensus.nDSLEpochInterval)) {
                 const uint32_t tip_epoch = static_cast<uint32_t>(std::max(tip, 0)) / static_cast<uint32_t>(consensus.nDSLEpochInterval);
-                HoldDSLEarlyResponse(pfrom.GetId(), pfrom.m_connected, resp, tip_epoch, blocks_early);
+                HoldDSLEarlyResponse(pfrom.GetId(), resp, tip_epoch, blocks_early);
                 return;
             }
         }
@@ -5749,7 +5743,7 @@ bool PeerManagerImpl::DslFaultHolds(dsl::FaultKind drop, dsl::FaultKind delay, u
     return false;
 }
 
-void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, std::chrono::seconds connected, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early)
+void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early)
 {
     LOCK(m_dsl_early_mutex);
 
@@ -5783,8 +5777,7 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, std::chrono::seconds con
         if (std::find(entry.vouchers.begin(), entry.vouchers.end(), from) != entry.vouchers.end()) return;
         if (entry.vouchers.size() >= DSL_EARLY_VOUCHERS_MAX) return;
         entry.vouchers.push_back(from);
-        auto& voucher = vouchers[from];
-        if (voucher.holdings++ == 0) voucher.connected = connected;
+        ++vouchers[from];
     };
 
     // A copy of something already held. The flood forwards each announcement
@@ -5820,62 +5813,71 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, std::chrono::seconds con
         for (size_t i = 0; i < held.size(); ++i) candidates.push_back(i);
     }
 
-    // The weakest entry gives way, and strength is what an entry's vouchers
-    // are worth: more live vouchers first, since the flood brings a genuine
-    // announcement through every honest peer and junk only through whoever
-    // made it up; then whether any voucher's connection is seasoned, since a
-    // peer that reconnects starts over; then how much the lightest voucher
-    // holds, since a flooder carries all of its junk while a genuine entry has
-    // an honest peer behind it carrying no more than the network's
-    // announcements; on a full tie the older entry, and the newcomer is the
-    // newest of all. Nothing here authenticates anything -- it only makes a
-    // flooder pay in live, seasoned connections, one per honest voucher it
-    // has to outnumber, which is the cost every gossip protocol charges.
-    const auto now = GetTime<std::chrono::seconds>();
-    struct Strength { size_t count; bool seasoned; size_t lightest; };
-    const auto strength_of = [&](const std::vector<NodeId>& ids) {
-        Strength s{ids.size(), false, 0};
-        bool first{true};
-        for (NodeId id : ids) {
-            const auto voucher = vouchers.find(id);
-            if (voucher == vouchers.end()) continue;
-            if (now - voucher->second.connected >= DSL_EARLY_VOUCHER_SEASONING) s.seasoned = true;
-            if (first || voucher->second.holdings < s.lightest) s.lightest = voucher->second.holdings;
-            first = false;
+    // The weakest entry gives way, and an entry is worth what its live
+    // vouchers pushed INTO THIS CONTEST: the one whose lightest voucher
+    // delivered the most of the very entries being chosen among is the
+    // weakest, and an entry no live peer vouches for any more is weaker than
+    // all of them. That is the rule this branch started with -- the peer
+    // holding the most of what we are choosing among gives way, so a flooder
+    // can only ever displace itself -- with the two corrections the reviews
+    // measured: a peer that disconnected stops counting, so a reconnect buys
+    // nothing; and the count is taken inside the contested set, so what an
+    // honest peer relays elsewhere can never make its entry the greedy one.
+    // Deliberately not counted: how MANY peers vouch (two connections would
+    // beat any honest newcomer, which always starts at one) and how old a
+    // connection is (the attacker keeps its own connections up; an honest
+    // relayer's age is an accident). Nothing here authenticates anything --
+    // it charges a flooder for exactly what it pushed here.
+    std::map<NodeId, size_t> in_set;
+    for (size_t i : candidates) {
+        for (NodeId id : held[i].vouchers) {
+            if (vouchers.count(id) != 0) ++in_set[id];
         }
-        return s;
+    }
+    // no value = no live voucher = weakest of all; otherwise the lightest live
+    // voucher's share of this contest, where more is weaker
+    const auto share_of = [&in_set](const std::vector<NodeId>& ids) {
+        std::optional<size_t> lightest;
+        for (NodeId id : ids) {
+            const auto it = in_set.find(id);
+            if (it == in_set.end()) continue;
+            if (!lightest.has_value() || it->second < *lightest) lightest = it->second;
+        }
+        return lightest;
     };
-    const auto weaker = [](const Strength& a, const Strength& b) {
-        if (a.count != b.count) return a.count < b.count;
-        if (a.seasoned != b.seasoned) return !a.seasoned;
-        return a.lightest > b.lightest;
+    const auto weaker = [](const std::optional<size_t>& a, const std::optional<size_t>& b) {
+        if (!a.has_value() || !b.has_value()) return !a.has_value() && b.has_value();
+        return *a > *b;
     };
     size_t weakest{candidates.front()};
-    Strength weakest_strength{strength_of(held[weakest].vouchers)};
+    std::optional<size_t> weakest_share{share_of(held[weakest].vouchers)};
     for (size_t i : candidates) {
-        const Strength s{strength_of(held[i].vouchers)};
-        if (weaker(s, weakest_strength)) {
+        const std::optional<size_t> s{share_of(held[i].vouchers)};
+        if (weaker(s, weakest_share)) {
             weakest = i;
-            weakest_strength = s;
+            weakest_share = s;
         }
     }
-    // the newcomer as it would be held: one voucher, holding one more than now
-    Strength newcomer{1, now - connected >= DSL_EARLY_VOUCHER_SEASONING, 1};
-    if (const auto voucher = vouchers.find(from); voucher != vouchers.end()) newcomer.lightest = voucher->second.holdings + 1;
-    if (!weaker(weakest_strength, newcomer)) {
+    // the newcomer as it would be held: one voucher, whose share of this
+    // contest is what it already pushed here plus this one. On a tie the
+    // incumbent stays, so a flooder cannot churn the hold.
+    const std::optional<size_t> newcomer{(in_set.count(from) != 0 ? in_set.at(from) : 0) + 1};
+    if (!weaker(weakest_share, newcomer)) {
         log_outcome(identity_full
-                        ? strprintf("dropped (%d already held for this masternode, each vouched for at least as well)", candidates.size())
-                        : std::string{"dropped (hold full, every entry vouched for at least as well)"});
+                        ? strprintf("dropped (%d already held for this masternode, none of them pushed here by fewer)", candidates.size())
+                        : std::string{"dropped (hold full, no entry pushed here by fewer)"});
         return;
     }
+    const auto share_str = weakest_share.has_value() ? strprintf("%d of this contest", *weakest_share)
+                                                     : std::string{"nothing live"};
     for (NodeId id : held[weakest].vouchers) {
-        if (const auto voucher = vouchers.find(id); voucher != vouchers.end() && --voucher->second.holdings == 0) vouchers.erase(voucher);
+        if (const auto voucher = vouchers.find(id); voucher != vouchers.end() && --voucher->second == 0) vouchers.erase(voucher);
     }
     held.erase(held.begin() + static_cast<std::ptrdiff_t>(weakest));
     held.push_back({resp, {}});
     vouch(held.back());
-    log_outcome(strprintf("held in place of one vouched for by %d peer(s)%s", weakest_strength.count,
-                          identity_full ? " for the same masternode" : ""));
+    log_outcome(strprintf("held in place of one whose lightest voucher pushed %s%s", share_str,
+                          identity_full ? ", for the same masternode" : ""));
 }
 
 void PeerManagerImpl::ForgetDSLEarlyVoucher(NodeId id)
@@ -5884,6 +5886,8 @@ void PeerManagerImpl::ForgetDSLEarlyVoucher(NodeId id)
     for (auto& keyed : m_dsl_early_responses) {
         DSLEarlyEpoch& epoch = keyed.second;
         if (epoch.vouchers.erase(id) == 0) continue;
+        // the entries keep the dead id in their lists; `vouchers` is what says
+        // who is live, and an entry with no live voucher left is an orphan
         for (DSLEarlyResponse& entry : epoch.held) {
             entry.vouchers.erase(std::remove(entry.vouchers.begin(), entry.vouchers.end(), id), entry.vouchers.end());
         }
