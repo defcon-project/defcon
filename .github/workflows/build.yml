@@ -265,16 +265,23 @@ jobs:
       #   node refuses to start with outside regtest and devnet;
       #   rpc_getblockstats.py: an inherited failure, its fixture assumes
       #   Dash's subsidy;
-      #   feature_dsl_commitment_v2.py: 60-96 s alone and green three times
-      #   out of three alone, but in this gate's company (--jobs=4 beside
-      #   the chainlocks and staking runs) it failed three runs out of three,
-      #   each on a different assertion of its fault-clearing epoch; a gate
-      #   that is red on a timing race teaches people to ignore red. It
-      #   stays in test_runner.py's default list, and comes here when it
-      #   holds under load.
-      # From the same Sentinel layer the gate does carry feature_dsl_service.py
-      # (38 s; the test that caught #228) and feature_dsl_commit_decision_log.py:
-      # the probe and the producer's decision, both live on the devnet.
+      # From the same Sentinel layer the gate carries feature_dsl_service.py
+      # (38 s; the test that caught #228), feature_dsl_commit_decision_log.py
+      # and feature_dsl_commitment_v2.py: the probe, the producer's decision
+      # and the second bitfield, all live on the devnet.
+      #
+      # feature_dsl_commitment_v2.py was measured out of this gate once, and
+      # the measurement was right at the time: alone it passed three runs out
+      # of three, and in this company (--jobs=4 beside the chainlocks and
+      # staking runs) it failed three out of three. What it was failing on was
+      # not the runner but the node -- a receiver dropped an announcement that
+      # arrived more than one block ahead of the epoch base, which under load
+      # is where the announcements are -- and that is now fixed (#235). Two
+      # halves of one lesson: a red gate on a timing race teaches people to
+      # ignore red, and a test that only fails under load can be reporting a
+      # defect that only appears under load. Re-measured on the fix, same four
+      # CPUs and the same list: three runs out of three green, the test itself
+      # 88/80/81 s, the whole gate 344/328/327 s wall.
       #
       # --ci is not passed: it turns the runner's "script not in any list"
       # warning into exit 1, and the three scale tests above are kept out of
@@ -308,6 +315,7 @@ jobs:
             feature_llmq_chainlocks.py             # ChainLocks, with a masternode added dynamically
             feature_pos_staking.py                 # real proof-of-stake blocks on regtest; descriptor and legacy wallet
             feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates
+            feature_dsl_commitment_v2.py           # the Sentinel commitment's second bitfield: who the pool judged at all (#231)
             feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
             p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
             rpc_verifyislock.py                    # the lock-verifying RPCs
