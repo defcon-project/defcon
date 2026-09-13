@@ -31,7 +31,7 @@ it forwards for other masternodes cannot make its entry look greedy here.
 Three epochs, one phase each, against a real masternode's announcements
 captured as it made them:
 
-  1. one peer floods 4096 distinct junk announcements; the genuine one arrives
+  1. one peer fills the hold with distinct junk announcements; the genuine one arrives
      from another peer and displaces one of the flooder's
   2. the masternode's own signatures from other epochs -- valid points over the
      wrong message -- replayed under this epoch by two attacking connections:
@@ -53,7 +53,9 @@ from test_framework.util import assert_equal, force_finish_mnsync
 
 EPOCH_INTERVAL = 24
 BLS_SIG_SIZE = 96
-HOLD_MAX = 4096          # DSL_EARLY_RESPONSES_MAX
+# DSLEarlyResponsesMax(): DSL_EARLY_RESPONSES_PER_MN entries per masternode,
+# the list sized up to DSL_MSG_BUDGET_MIN_MNS -- and this network has one
+HOLD_MAX = 4 * 64
 REPLAYS = 4              # replayed signatures used to crowd one masternode
 
 
