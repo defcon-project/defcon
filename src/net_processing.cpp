@@ -428,6 +428,32 @@ struct Peer {
     /** Total number of addresses that were processed (excludes rate-limited ones). */
     std::atomic<uint64_t> m_addr_processed{0};
 
+    /** DSL gossip messages this peer may still have read from it. Earned per
+     *  block and granted up front only to a connection this node opened or a
+     *  verified masternode, both in
+     *  PeerManagerImpl::ChargeDSLMessageBudget; a new connection starts empty. */
+    double m_dsl_token_bucket GUARDED_BY(NetEventsInterface::g_msgproc_mutex){0.0};
+    /** The chain height at which m_dsl_token_bucket was last refilled. It starts
+     *  at the height the connection was made, so a peer earns from then on and
+     *  not from its first DSL message: a quiet, long-lived peer must not meet
+     *  its first burst with nothing earned. */
+    int m_dsl_token_height GUARDED_BY(NetEventsInterface::g_msgproc_mutex);
+    /** The height at which this peer last had a dropped DSL message logged, so
+     *  that a peer deciding how often it is dropped does not also decide how
+     *  much is written about it. */
+    int m_dsl_rate_limited_logged GUARDED_BY(NetEventsInterface::g_msgproc_mutex){-1};
+    /** Total DSL messages dropped unread from this peer by that budget. */
+    std::atomic<uint64_t> m_dsl_rate_limited{0};
+    /** Whether this connection has had its one chance at up-front DSL credit --
+     *  as a connection this node opened, or as a verified masternode identity --
+     *  granted or not. */
+    bool m_dsl_upfront_checked GUARDED_BY(NetEventsInterface::g_msgproc_mutex){false};
+    /** The chain height this connection was made at. When it disconnects, it
+     *  decides whether the early announcements it vouched for keep its own
+     *  identity or join the shared group of short-lived connections
+     *  (ForgetDSLEarlyVoucher). */
+    const int m_dsl_connected_height;
+
     /** Set of txids to reconsider once their parent transactions have been accepted **/
     std::set<uint256> m_orphan_work_set GUARDED_BY(g_cs_orphans);
 
@@ -442,9 +468,11 @@ struct Peer {
     /** Time of the last getheaders message to this peer */
     std::atomic<std::chrono::seconds> m_last_getheaders_timestamp GUARDED_BY(NetEventsInterface::g_msgproc_mutex){0s};
 
-    explicit Peer(NodeId id, ServiceFlags our_services)
+    explicit Peer(NodeId id, ServiceFlags our_services, int starting_height)
         : m_id(id)
         , m_our_services{our_services}
+        , m_dsl_token_height{starting_height}
+        , m_dsl_connected_height{starting_height}
     {}
 
 private:
@@ -713,15 +741,29 @@ public:
 private:
     /** The DSL service probe: ingest a probe message from a peer and relay it on
      *  first sight. No-ops below the DSL activation height. */
-    void ProcessDSLMessage(CNode& pfrom, const std::string& msg_type, CDataStream& vRecv);
+    void ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::string& msg_type, CDataStream& vRecv)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, g_msgproc_mutex);
+    /** Once an epoch: re-read the masternode count the DSL bounds are sized
+     *  from, and forget the identities granted up-front credit. */
+    void RefreshDSLBudgetEpoch() EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex);
+    /** Take one DSL message out of this peer's entry budget. False means the
+     *  budget is empty and the message is dropped unread. */
+    bool ChargeDSLMessageBudget(const CNode& pfrom, Peer& peer) EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex);
+    /** Read one DSL message off the wire, scoring the peer if it cannot be
+     *  read at all. */
+    template <typename T>
+    bool ReadDSLMessage(CDataStream& vRecv, NodeId nodeid, const std::string& msg_type, T& obj)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     /** Per-block DSL epoch tick: roll the epoch, announce our own liveness, and
      *  at the cutoff turn silence into signed reports. */
     void ProcessDSLTick(const CBlockIndex* pindexNew);
     /** Hold an announcement that arrived blocks_early blocks before its base
      *  block, delivered by `from`, with the tip in epoch tip_epoch. */
-    void HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early);
-    /** A disconnecting peer stops vouching for the early announcements it delivered. */
-    void ForgetDSLEarlyVoucher(NodeId id);
+    void HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early,
+                              size_t hold_max);
+    /** A disconnecting peer stops vouching for the early announcements it
+     *  delivered; connected_height is the chain height it connected at. */
+    void ForgetDSLEarlyVoucher(NodeId id, int connected_height);
     /**
      * Whether an injected fault holds one of this node's own DSL actions back
      * at this height: a drop of the kind, or a delay whose `param` blocks past
@@ -893,6 +935,15 @@ private:
     struct DSLEarlyResponse {
         dsl::CPoSeServiceResponse resp;
         std::vector<NodeId> vouchers; // live peers that delivered it, first deliverer first
+        /** Who delivered it and has since disconnected -- what the drain needs
+         *  to tell one departed deliverer from another, and what the contest,
+         *  which weighs live vouching only, never reads. A connection that
+         *  lived at least an epoch keeps its own id here; a shorter-lived one,
+         *  or one past DSL_EARLY_VOUCHERS_MAX, only sets departed_shared, so
+         *  that reconnecting cannot multiply the identities a drain has to
+         *  tell apart. */
+        std::vector<NodeId> departed;
+        bool departed_shared{false};
     };
     struct DSLEarlyEpoch {
         std::vector<DSLEarlyResponse> held;   // oldest first
@@ -905,11 +956,25 @@ private:
      *  the validation-interface thread. At most two epochs are ever keyed --
      *  the tip's own, whose tick an unsynced node never runs, and the next,
      *  the only one an early announcement can name -- so the map holds at
-     *  most 2 * DSL_EARLY_RESPONSES_MAX entries whether or not a tick ever
+     *  most twice DSLEarlyResponsesMax() entries whether or not a tick ever
      *  drains it; the insert path keeps that bound, not the tick. */
     Mutex m_dsl_early_mutex;
     std::map<uint32_t, DSLEarlyEpoch> m_dsl_early_responses GUARDED_BY(m_dsl_early_mutex);
     bool m_dsl_first_tick{true};
+    /** The masternode count the per-peer DSL budget is sized from, and the
+     *  epoch in which it was read: the list is walked once an epoch, not once
+     *  a message. A list that grows mid-epoch is accounted for at the next
+     *  one, which the budget's headroom covers several times over. */
+    int64_t m_dsl_budget_mn_count GUARDED_BY(g_msgproc_mutex){0};
+    int64_t m_dsl_budget_epoch GUARDED_BY(g_msgproc_mutex){-1};
+    /** Connections of each masternode identity handed up-front DSL credit in
+     *  the current epoch. Only MNAUTH-verified identities are ever keyed, and
+     *  the map is emptied at every epoch, so it holds at most the list. */
+    std::map<uint256, int> m_dsl_identity_grants GUARDED_BY(g_msgproc_mutex);
+    /** Connections this node opened to each address handed up-front DSL credit
+     *  in the current epoch, keyed by address without the port. Emptied at
+     *  every epoch. */
+    std::map<CNetAddr, int> m_dsl_outbound_grants GUARDED_BY(g_msgproc_mutex);
 
     /** The height of the best chain */
     std::atomic<int> m_best_height{-1};
@@ -1824,7 +1889,7 @@ void PeerManagerImpl::InitializeNode(CNode& node, ServiceFlags our_services) {
         LOCK(cs_main);
         m_node_states.emplace_hint(m_node_states.end(), std::piecewise_construct, std::forward_as_tuple(nodeid), std::forward_as_tuple(node.IsInboundConn()));
     }
-    PeerRef peer = std::make_shared<Peer>(nodeid, our_services);
+    PeerRef peer = std::make_shared<Peer>(nodeid, our_services, m_best_height.load());
     {
         LOCK(m_peer_mutex);
         m_peer_map.emplace_hint(m_peer_map.end(), nodeid, peer);
@@ -1858,6 +1923,7 @@ void PeerManagerImpl::ReattemptInitialBroadcast(CScheduler& scheduler)
 void PeerManagerImpl::FinalizeNode(const CNode& node) {
     NodeId nodeid = node.GetId();
     int misbehavior{0};
+    int dsl_connected_height{-1};
     LOCK(cs_main);
     {
     {
@@ -1869,6 +1935,7 @@ void PeerManagerImpl::FinalizeNode(const CNode& node) {
         PeerRef peer = RemovePeer(nodeid);
         assert(peer != nullptr);
         misbehavior = WITH_LOCK(peer->m_misbehavior_mutex, return peer->m_misbehavior_score);
+        dsl_connected_height = peer->m_dsl_connected_height;
     }
     CNodeState *state = State(nodeid);
     assert(state != nullptr);
@@ -1899,7 +1966,7 @@ void PeerManagerImpl::FinalizeNode(const CNode& node) {
     }
     } // cs_main
 
-    ForgetDSLEarlyVoucher(nodeid);
+    ForgetDSLEarlyVoucher(nodeid, dsl_connected_height);
 
     if (node.fSuccessfullyConnected && misbehavior == 0 && !node.IsBlockOnlyConn() && !node.IsInboundConn()) {
         // Only change visible addrman state for full outbound peers.  We don't
@@ -5529,7 +5596,7 @@ void PeerManagerImpl::ProcessMessage(
         m_mn_sync.ProcessMessage(pfrom, msg_type, vRecv);
         ProcessPeerMsgRet(m_govman.ProcessMessage(pfrom, m_connman, *this, msg_type, vRecv), pfrom);
         ProcessPeerMsgRet(CMNAuth::ProcessMessage(pfrom, peer->m_their_services, m_connman, m_mn_metaman, m_mn_activeman, m_mn_sync, m_dmnman->GetListAtChainTip(), msg_type, vRecv), pfrom);
-        ProcessDSLMessage(pfrom, msg_type, vRecv);
+        ProcessDSLMessage(pfrom, *peer, msg_type, vRecv);
         PostProcessMessage(m_llmq_ctx->quorum_block_processor->ProcessMessage(
                                pfrom, msg_type, vRecv,
                                [this, &pfrom](const CInv& inv) EXCLUSIVE_LOCKS_REQUIRED(!::cs_main) {
@@ -5603,15 +5670,230 @@ void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj,
     });
 }
 
-/** Early announcements held per epoch; well above any masternode list this
- *  tree runs, and a bound rather than a budget: one slot per distinct
- *  announcement is what honest traffic needs, since the flood carries the same
- *  copy through every peer and identical copies share one entry. */
-static constexpr size_t DSL_EARLY_RESPONSES_MAX{4096};
+/** The masternode count the DSL bounds below are sized for when the real list
+ *  is smaller. A list this small cannot generate enough honest traffic for them
+ *  to bind, and sizing strictly by it would throttle the lab networks the layer
+ *  is tested on. */
+static constexpr int64_t DSL_MSG_BUDGET_MIN_MNS{64};
+
+/** Early announcements held per epoch, per masternode the list could name.
+ *  Honest traffic needs one distinct entry per masternode -- the flood carries
+ *  the same copy through every peer, and identical copies share an entry -- and
+ *  two where a reorg had a masternode sign against a second base.
+ *
+ *  What the size decides is how many connections it takes to crowd honest
+ *  entries out. On a node that fell behind, every honest peer delivers the
+ *  same N announcements, so each holds a share of N in the contest of
+ *  HoldDSLEarlyResponse, and k attacking connections splitting the rest of a
+ *  hold of S entries start to win once k > S/N - 1. At four entries per
+ *  masternode that was four connections on any network size; at 28 it takes
+ *  28, about the number of peers each honest message arrived through on the
+ *  devnet (29). A reorg epoch doubles the honest share and halves that.
+ *
+ *  What the size no longer decides is the drain. Every held entry naming a real
+ *  masternode used to cost a signature check once the base connected, which is
+ *  why the previous round tied the hold to four per masternode and made
+ *  crowding cheap; the drain now stops checking entries vouched for only by
+ *  peers that already delivered a bad signature (ProcessDSLTick), so what it
+ *  pays follows the number of connections, not the size of the hold. */
+static constexpr size_t DSL_EARLY_RESPONSES_PER_MN{28};
+/** The hold never shrinks below this, whatever the list: a small network gets
+ *  the bound a fixed hold always had. */
+static constexpr size_t DSL_EARLY_RESPONSES_MIN{4096};
+/** Nor grows past this. Once the hold is full, every further entry is weighed
+ *  against all of it, which is linear in its size -- about a millisecond on the
+ *  message thread here. Above 585 masternodes this caps it, and the number of
+ *  connections that crowds honest entries out falls below 28 (16 at 1000). */
+static constexpr size_t DSL_EARLY_RESPONSES_MAX{16384};
 /** Vouchers remembered per entry; a further copy adds nothing. */
 static constexpr size_t DSL_EARLY_VOUCHERS_MAX{32};
 
-void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_type, CDataStream& vRecv)
+static size_t DSLEarlyResponsesMax(int64_t mn_count)
+{
+    const size_t sized{static_cast<size_t>(std::max(mn_count, DSL_MSG_BUDGET_MIN_MNS)) * DSL_EARLY_RESPONSES_PER_MN};
+    return std::clamp(sized, DSL_EARLY_RESPONSES_MIN, DSL_EARLY_RESPONSES_MAX);
+}
+
+/** Epochs of honest DSL traffic one connection may hold in hand at once: the
+ *  burst allowed when messages or blocks arrive bunched. */
+static constexpr int64_t DSL_MSG_BUDGET_CAP_EPOCHS{4};
+/** How many honest epochs' worth a connection earns over an epoch of blocks.
+ *  Honest traffic averages exactly one, so this is a 100 % margin on the
+ *  average; the cap absorbs the bursts around it. */
+static constexpr int64_t DSL_MSG_BUDGET_REFILL_EPOCHS{2};
+/** Connections of one masternode identity handed an epoch's worth up front, per
+ *  epoch: the most it can honestly hold open to us at once, which is
+ *  MAX_VERIFIED_INBOUND_PER_PROTX inbound and one outbound. Every connection of
+ *  an identity carries the whole flood, so the buckets stay per connection --
+ *  one bucket shared by the identity would throttle exactly that honest case --
+ *  and what is bound to the identity is the credit handed out before it is
+ *  earned. */
+static constexpr int DSL_MSG_BUDGET_GRANTS_PER_IDENTITY{static_cast<int>(MAX_VERIFIED_INBOUND_PER_PROTX) + 1};
+/** Connections this node opened to one address handed an epoch's worth up front,
+ *  per epoch. A manual connection comes back on its own when the other side
+ *  drops it -- -connect retries within about five seconds -- so credit per
+ *  connection would be credit per reconnect, paid for by the remote end. Two
+ *  covers one restart of a relay in an epoch, and hands out no more than a
+ *  single connection held open earns over an epoch anyway
+ *  (DSL_MSG_BUDGET_REFILL_EPOCHS). */
+static constexpr int DSL_MSG_BUDGET_GRANTS_PER_OUTBOUND_ADDR{2};
+/** Score for a DSL message that cannot be read. None of the three formats
+ *  carries a version field, so an unreadable one has no benign reading; a
+ *  format change therefore has to add that field before it ships, or a
+ *  mixed-version network will score itself. A signature that fails to VERIFY
+ *  is a different matter and is never scored: after a reorg the epoch's base
+ *  block changes (BeginEpoch reports Rebased) and honest announcements already
+ *  in flight are signed against the old one, so they fail legitimately, and
+ *  scoring them would turn the network on itself exactly when it is
+ *  recovering. */
+static constexpr int DSL_MSG_MISBEHAVING_UNREADABLE{10};
+
+/** What one peer may legitimately deliver over one DSL epoch: every masternode
+ *  announces once, EmitReports files a report for every target a sentinel is
+ *  assigned whether the target answered or not, and the flood forwards each
+ *  message once per peer. This is ordinary traffic, not a worst case --
+ *  measured on the devnet, one peer delivered 1215 of 1216 in a single epoch
+ *  while the commitments recorded nobody missing. Honest duplicates are free,
+ *  because the manager's dedup filter runs before the signature check. The
+ *  targeted re-request (POSECHALLENGE) has no sender anywhere in this tree;
+ *  whoever adds one has to be counted here. */
+static int64_t DSLHonestEpochCeiling(int64_t mn_count, const Consensus::Params& consensus)
+{
+    const int64_t mns{std::max(mn_count, DSL_MSG_BUDGET_MIN_MNS)};
+    return mns + mns * std::max<int64_t>(consensus.nDSLSentinelCount, 0);
+}
+
+void PeerManagerImpl::RefreshDSLBudgetEpoch()
+{
+    const Consensus::Params& consensus = m_chainparams.GetConsensus();
+    const int64_t interval{std::max<int64_t>(consensus.nDSLEpochInterval, 1)};
+    const int64_t epoch{static_cast<int64_t>(m_best_height.load()) / interval};
+    if (epoch == m_dsl_budget_epoch) return;
+    m_dsl_budget_epoch = epoch;
+    m_dsl_budget_mn_count = m_dmnman == nullptr
+        ? 0
+        : static_cast<int64_t>(m_dmnman->GetListAtChainTip().GetAllMNsCount());
+    // up-front credit is per epoch, so an identity or address granted in the
+    // last one starts this one afresh; the identity map never outgrows the list,
+    // the address map never outgrows the connections this node opened in an epoch
+    m_dsl_identity_grants.clear();
+    m_dsl_outbound_grants.clear();
+}
+
+bool PeerManagerImpl::ChargeDSLMessageBudget(const CNode& pfrom, Peer& peer)
+{
+    // An operator that whitelists a peer has said it is trusted, and this is
+    // also the field escape hatch should a masternode list ever outgrow the
+    // sizing below.
+    if (pfrom.HasPermission(NetPermissionFlags::NoBan)) return true;
+
+    const Consensus::Params& consensus = m_chainparams.GetConsensus();
+    const int64_t interval{std::max<int64_t>(consensus.nDSLEpochInterval, 1)};
+    const int height{m_best_height};
+    const double ceiling{static_cast<double>(DSLHonestEpochCeiling(m_dsl_budget_mn_count, consensus))};
+    const double budget{ceiling * static_cast<double>(DSL_MSG_BUDGET_CAP_EPOCHS)};
+    const double per_block{ceiling * static_cast<double>(DSL_MSG_BUDGET_REFILL_EPOCHS) / static_cast<double>(interval)};
+
+    // The budget is earned per connected block, not per second, because what
+    // it pays for is generated by the chain: a masternode announces on the tick
+    // of its epoch's base block, and reports at a fixed offset from it. A clock
+    // would be wrong in both directions -- on regtest a whole epoch passes in a
+    // second of wall clock, and on a chain running faster than target (this
+    // devnet's median block interval is 101 s against a 150 s target) honest
+    // traffic would outrun a clock-based refill and be throttled. That failure
+    // presents exactly as the lost epoch this layer has been chasing since
+    // #207, which is why it is the risk this fix is shaped around.
+    if (peer.m_dsl_token_bucket < budget) {
+        const int64_t blocks{std::max<int64_t>(height - peer.m_dsl_token_height, 0)};
+        peer.m_dsl_token_bucket = std::min(peer.m_dsl_token_bucket + static_cast<double>(blocks) * per_block, budget);
+    }
+    peer.m_dsl_token_height = height;
+
+    // A connection starts with nothing it has not earned, unless this node
+    // opened it or it is a verified masternode. Credit handed to a bare inbound
+    // connection up front is
+    // handed out again on every reconnect, and a connect-disconnect loop turns
+    // that into as many signature checks as the message thread can run; DSL
+    // ingest is on that single thread, so the loop would bring back exactly the
+    // harm this budget exists to stop. A bare connection therefore earns its
+    // budget block by block. The flood reaches a node through many peers --
+    // each message arrived about 29 times over on this devnet -- so a peer that
+    // has not earned enough yet costs the node nothing it will not receive
+    // from the others.
+    //
+    // Two kinds of connection are handed an epoch's worth up front, once.
+    //
+    // A connection this node opened itself -- a full outbound or a manual one.
+    // It matters for a block producer: it attaches the epoch's commitment only
+    // from its own pool of reports, so one restarted behind a single relay
+    // (-connect), or whose outbound links all came up before MNAUTH could be
+    // heard, would otherwise meet the report burst with a few blocks earned and
+    // could lose the epoch's commitment. That credit belongs to the address, not
+    // the connection: a manual connection is re-opened automatically whenever
+    // the other side drops it, so the remote end, not this node, sets how often
+    // it comes back, and at most DSL_MSG_BUDGET_GRANTS_PER_OUTBOUND_ADDR
+    // connections to one address are granted in an epoch. This covers the node's
+    // own links, not every topology: a node with no outbound connection at all,
+    // served only by unverified inbound peers, still earns block by block.
+    // Feelers and address fetches get nothing, and a block-relay-only link never
+    // gets here: DSL on it is a protocol violation and disconnects it.
+    //
+    // A verified masternode, on its first message after MNAUTH: quorum
+    // connections reopen every DKG cycle, and a block producer whose peers are
+    // all quorum links (#208) must not drop the burst that follows. That credit
+    // belongs to the identity. MNAUTH needs the operator key of a registered
+    // masternode (PoSe-banned ones included; the collateral stays locked), and
+    // at most DSL_MSG_BUDGET_GRANTS_PER_IDENTITY of its connections are
+    // granted in an epoch, so reconnecting buys nothing past the honest number
+    // of links. An outbound connection's credit does not count against it.
+    if (!peer.m_dsl_upfront_checked) {
+        if (pfrom.IsFullOutboundConn() || pfrom.IsManualConn()) {
+            peer.m_dsl_upfront_checked = true;
+            int& grants{m_dsl_outbound_grants[static_cast<CNetAddr>(pfrom.addr)]};
+            if (grants < DSL_MSG_BUDGET_GRANTS_PER_OUTBOUND_ADDR) {
+                ++grants;
+                peer.m_dsl_token_bucket = std::min(peer.m_dsl_token_bucket + ceiling, budget);
+            }
+        } else if (const uint256 identity{pfrom.GetVerifiedProRegTxHash()}; !identity.IsNull()) {
+            peer.m_dsl_upfront_checked = true;
+            int& grants{m_dsl_identity_grants[identity]};
+            if (grants < DSL_MSG_BUDGET_GRANTS_PER_IDENTITY) {
+                ++grants;
+                peer.m_dsl_token_bucket = std::min(peer.m_dsl_token_bucket + ceiling, budget);
+            }
+        }
+    }
+
+    if (peer.m_dsl_token_bucket < 1.0) {
+        const uint64_t dropped{++peer.m_dsl_rate_limited};
+        if (peer.m_dsl_rate_limited_logged != height) {
+            peer.m_dsl_rate_limited_logged = height;
+            LogPrint(BCLog::NET, "DSL -- message from peer=%d dropped unread, per-peer budget exhausted "
+                                 "(%d dropped in all; cap %d, %f returned per block)\n",
+                     pfrom.GetId(), dropped, static_cast<int64_t>(budget), per_block);
+        }
+        return false;
+    }
+    peer.m_dsl_token_bucket -= 1.0;
+    return true;
+}
+
+template <typename T>
+bool PeerManagerImpl::ReadDSLMessage(CDataStream& vRecv, NodeId nodeid, const std::string& msg_type, T& obj)
+{
+    try {
+        vRecv >> obj;
+        return true;
+    } catch (const std::exception& e) {
+        // Caught here rather than left to the dispatcher's own handler, which
+        // only logs -- and which the rest of this message's handlers never
+        // reach, because the exception unwinds past them.
+        Misbehaving(nodeid, DSL_MSG_MISBEHAVING_UNREADABLE, strprintf("unreadable %s: %s", msg_type, e.what()));
+        return false;
+    }
+}
+
+void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::string& msg_type, CDataStream& vRecv)
 {
     if (msg_type != NetMsgType::POSECHALLENGE && msg_type != NetMsgType::POSERESPONSE &&
         msg_type != NetMsgType::POSEREPORT) {
@@ -5620,6 +5902,17 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
     if (m_dslman == nullptr || m_dmnman == nullptr) return;
     const Consensus::Params& consensus = m_chainparams.GetConsensus();
     if (m_best_height < consensus.nDSLActivationHeight) return;
+
+    // The per-peer budget, before any deserialization, so that it covers all
+    // three message types and precedes the BLS verification each of them can
+    // cost -- 2.49 ms on this tree, and a failed verification is not
+    // remembered, so one real proTxHash with a wrong signature re-verifies for
+    // as long as the sender keeps sending it. Per peer and not globally,
+    // because a global quota is exhaustible and then the attacker's junk
+    // crowds out the honest announcements. The epoch refresh runs first and for
+    // every peer, whitelisted ones included: the early hold is sized from it.
+    RefreshDSLBudgetEpoch();
+    if (!ChargeDSLMessageBudget(pfrom, peer)) return;
 
     // The epoch base block for a wire-supplied epoch, off this node's active
     // chain (not the manager's tick, which runs on the validation-interface
@@ -5641,7 +5934,7 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
 
     if (msg_type == NetMsgType::POSERESPONSE) {
         dsl::CPoSeServiceResponse resp;
-        vRecv >> resp;
+        if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, resp)) return;
         const CBlockIndex* base = epoch_base(resp.nEpoch);
         if (base == nullptr && consensus.nDSLEpochInterval > 0) {
             // Early. A masternode announces on the tick of the block that opens
@@ -5661,7 +5954,8 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
             const int64_t blocks_early = base_height - static_cast<int64_t>(tip);
             if (blocks_early >= 1 && blocks_early <= static_cast<int64_t>(consensus.nDSLEpochInterval)) {
                 const uint32_t tip_epoch = static_cast<uint32_t>(std::max(tip, 0)) / static_cast<uint32_t>(consensus.nDSLEpochInterval);
-                HoldDSLEarlyResponse(pfrom.GetId(), resp, tip_epoch, blocks_early);
+                HoldDSLEarlyResponse(pfrom.GetId(), resp, tip_epoch, blocks_early,
+                                     DSLEarlyResponsesMax(m_dsl_budget_mn_count));
                 return;
             }
         }
@@ -5677,7 +5971,7 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
     }
     if (msg_type == NetMsgType::POSEREPORT) {
         dsl::CPoSeServiceReport report;
-        vRecv >> report;
+        if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, report)) return;
         const CBlockIndex* base = epoch_base(report.nEpoch);
         const bool accepted = base != nullptr &&
             m_dslman->ProcessReport(report, m_dmnman->GetListForBlock(base), base->GetBlockHash(), consensus);
@@ -5692,7 +5986,7 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, const std::string& msg_typ
     // POSECHALLENGE: a targeted re-request. If we are a masternode and the
     // challenge names our current epoch, re-announce directly to the asker.
     dsl::CPoSeServiceChallenge challenge;
-    vRecv >> challenge;
+    if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, challenge)) return;
     if (m_mn_activeman == nullptr) return;
     // The epoch first: resolving our identity may walk the masternode list, and
     // a challenge naming the wrong epoch must not pay for that walk.
@@ -5739,7 +6033,8 @@ bool PeerManagerImpl::DslFaultHolds(dsl::FaultKind drop, dsl::FaultKind delay, u
     return false;
 }
 
-void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early)
+void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early,
+                                           size_t hold_max)
 {
     LOCK(m_dsl_early_mutex);
 
@@ -5798,10 +6093,12 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
     // small contest and keep the masternode's real announcement out for good,
     // with no number of honest relayers able to help, and the same four
     // connections could do it to several masternodes at once. The bound it was
-    // buying belongs at the message entry, per peer, where it also bounds the
-    // flood that fills the hold in the first place; until that exists the
-    // drain pays for whatever the hold holds, and the hold is bounded.
-    if (held.size() < DSL_EARLY_RESPONSES_MAX) {
+    // buying belongs at the message entry, per connection, where it also bounds
+    // the flood that fills the hold in the first place (ChargeDSLMessageBudget);
+    // what the drain pays is bounded by the peers that vouch (ProcessDSLTick),
+    // and how many connections it takes to crowd honest entries out by the
+    // size of the hold (DSLEarlyResponsesMax).
+    if (held.size() < hold_max) {
         held.push_back({resp, {}});
         vouch(held.back());
         log_outcome("held");
@@ -5875,16 +6172,36 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
     log_outcome(strprintf("held in place of one whose lightest voucher pushed %s", share_str));
 }
 
-void PeerManagerImpl::ForgetDSLEarlyVoucher(NodeId id)
+void PeerManagerImpl::ForgetDSLEarlyVoucher(NodeId id, int connected_height)
 {
+    const int64_t interval{std::max<int64_t>(m_chainparams.GetConsensus().nDSLEpochInterval, 1)};
+    const bool lived_an_epoch{connected_height >= 0 &&
+                              static_cast<int64_t>(m_best_height.load()) - connected_height >= interval};
     LOCK(m_dsl_early_mutex);
     for (auto& keyed : m_dsl_early_responses) {
         DSLEarlyEpoch& epoch = keyed.second;
         if (epoch.vouchers.erase(id) == 0) continue;
-        // the entries keep the dead id in their lists; `vouchers` is what says
-        // who is live, and an entry with no live voucher left is an orphan
+        // the id goes from the entries' live vouchers as well, so the per-entry
+        // lists and `vouchers` say the same thing about who is still live;
+        // `vouchers` is the per-peer tally the contest weighs, and an entry left
+        // with no live voucher is an orphan, which is what gives way first
         for (DSLEarlyResponse& entry : epoch.held) {
-            entry.vouchers.erase(std::remove(entry.vouchers.begin(), entry.vouchers.end(), id), entry.vouchers.end());
+            const auto it = std::remove(entry.vouchers.begin(), entry.vouchers.end(), id);
+            if (it == entry.vouchers.end()) continue;
+            entry.vouchers.erase(it, entry.vouchers.end());
+            // The drain still has to know who it was. One flag for every departed
+            // deliverer let a single bad signature from a peer that had left
+            // skip every other orphan unchecked -- a genuine announcement from an
+            // honest relayer that had also left went with it. Keeping every id
+            // instead would let a connection loop mint identities, each worth a
+            // signature check. So a connection keeps its own id only if it
+            // lived an epoch: an inbound slot holds at most one of those per
+            // epoch's hold, while anything faster shares one group.
+            if (lived_an_epoch && entry.departed.size() < DSL_EARLY_VOUCHERS_MAX) {
+                entry.departed.push_back(id);
+            } else {
+                entry.departed_shared = true;
+            }
         }
     }
 }
@@ -5956,15 +6273,79 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
         }
         if (!early.empty()) {
             const auto list_at_base = m_dmnman->GetListForBlock(pindexBase);
+            // What bounds the drain is the peers, not the hold. An entry naming a
+            // masternode on the list costs a signature check; one naming anything
+            // else is refused before any -- cheaply, though not for free, which a
+            // full hold of such entries still pays once per entry. So the entries
+            // are checked most-vouched first -- a genuine announcement comes
+            // through many peers -- and a bad signature makes everyone who
+            // delivered it untrusted for the rest of this drain: a listed entry
+            // delivered only by untrusted peers is not checked at all. "Everyone"
+            // is the live vouchers, the departed ones that lived an epoch, each by
+            // its own id, and the shared group of shorter-lived departures
+            // (ForgetDSLEarlyVoucher). Each check either accepts (at most once
+            // per masternode) or taints at least one id not tainted before, or
+            // the shared group once, so the checks number at most the list plus
+            // the connections that delivered here (live, or departed after an
+            // epoch -- one per slot per hold) plus one, however full the hold --
+            // and at most once more per masternode whose genuine copy the message
+            // thread accepts while this runs, since a later entry for it is a
+            // duplicate and refused before any check.
+            //
+            // Honest peers never deliver a bad signature early -- they relay only
+            // what they verified -- except across a reorg that moved the base
+            // (Rebased), where honest announcements in flight were signed against
+            // the old one. What that costs is entries delivered by nobody else,
+            // skipped for this epoch on this node; nobody is scored for it. The
+            // attacks it leaves: to be every one of the DSL_EARLY_VOUCHERS_MAX
+            // first deliverers of a genuine announcement and to have delivered a
+            // bad signature as well; or to share the short-lived group with an
+            // honest relayer that delivered a genuine announcement alone and
+            // disconnected within an epoch of connecting.
+            std::stable_sort(early.begin(), early.end(), [](const DSLEarlyResponse& a, const DSLEarlyResponse& b) {
+                return a.vouchers.size() + a.departed.size() > b.vouchers.size() + b.departed.size();
+            });
+            std::set<NodeId> untrusted;
+            bool shared_untrusted{false};
+            const auto in_shared_group = [](const DSLEarlyResponse& entry) {
+                // an entry always had a first deliverer; one with no id left in
+                // either list is treated as the shared group, whatever the reason
+                return entry.departed_shared || (entry.vouchers.empty() && entry.departed.empty());
+            };
             size_t accepted_count{0};
+            size_t refused_count{0};
+            size_t skipped_count{0};
             for (const auto& held : early) {
+                const bool listed{list_at_base.HasMN(held.resp.proTxHash)};
+                if (listed) {
+                    const auto is_untrusted = [&untrusted](NodeId id) { return untrusted.count(id) != 0; };
+                    const bool untrusted_only{
+                        std::all_of(held.vouchers.begin(), held.vouchers.end(), is_untrusted) &&
+                        std::all_of(held.departed.begin(), held.departed.end(), is_untrusted) &&
+                        (!in_shared_group(held) || shared_untrusted)};
+                    if (untrusted_only) {
+                        ++skipped_count;
+                        continue;
+                    }
+                }
                 if (m_dslman->ProcessResponse(held.resp, list_at_base, pindexBase->GetBlockHash())) {
                     ++accepted_count;
                     RelayDSLMessage(NetMsgType::POSERESPONSE, held.resp, /*skip_id=*/-1);
+                } else if (listed && !m_dslman->HasResponded(held.resp.proTxHash)) {
+                    // A listed masternode, not a duplicate: the signature did not
+                    // verify. Asked after the refusal and not before it, because
+                    // the message thread can accept the genuine copy of this
+                    // masternode meanwhile, and that refusal says nothing about
+                    // the peers here.
+                    ++refused_count;
+                    if (in_shared_group(held)) shared_untrusted = true;
+                    untrusted.insert(held.vouchers.begin(), held.vouchers.end());
+                    untrusted.insert(held.departed.begin(), held.departed.end());
                 }
             }
-            LogPrint(BCLog::NET, "DSL -- %d of %d held announcement(s) for epoch %d accepted once its base block connected\n",
-                     accepted_count, early.size(), epoch);
+            LogPrint(BCLog::NET, "DSL -- %d of %d held announcement(s) for epoch %d accepted once its base block connected "
+                                 "(%d refused for a bad signature, %d skipped: vouched for only by peers that delivered one)\n",
+                     accepted_count, early.size(), epoch, refused_count, skipped_count);
         }
     }
     // only a listed masternode announces and reports

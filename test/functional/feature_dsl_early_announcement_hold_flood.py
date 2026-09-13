@@ -31,17 +31,29 @@ it forwards for other masternodes cannot make its entry look greedy here.
 Three epochs, one phase each, against a real masternode's announcements
 captured as it made them:
 
-  1. one peer floods 4096 distinct junk announcements; the genuine one arrives
+  1. one peer fills the hold with distinct junk announcements; the genuine one arrives
      from another peer and displaces one of the flooder's
   2. the masternode's own signatures from other epochs -- valid points over the
      wrong message -- replayed under this epoch by two attacking connections:
      the hold takes them all, because nothing in it can tell them from the real
-     one, and the drain is where they are separated -- four refused for a bad
-     signature, the genuine one accepted
+     one, and the drain is where they are separated. It checks the most-vouched
+     entry first, and the one bad signature it finds makes both attacking
+     connections untrusted: the other four replays, vouched for only by them,
+     are skipped unchecked, and the genuine one, vouched for by an honest peer,
+     is accepted. One signature check for five bad entries
   3. the attacker delivers the genuine announcement first, fills the rest, an
      honest peer repeats it, then the attacker disconnects and returns on a
      fresh connection with a full hold's worth of junk: its own orphaned
      entries are what it displaces, and the genuine one is accepted at the base
+  4. a replayed signature and the genuine announcement, each from its own
+     connection, and both connections disconnect before the base. They had
+     lived an epoch, so each departed deliverer keeps its own identity for the
+     drain: the bad signature taints only its sender, and the genuine one is
+     accepted
+  5. the same from two connections that leave within an epoch of connecting.
+     Short-lived departures share one group -- otherwise a reconnect loop would
+     mint an identity, and a signature check, per connection -- so here the bad
+     signature skips the genuine one as well. Pinned, because it is the bound
 """
 
 import struct
@@ -53,7 +65,13 @@ from test_framework.util import assert_equal, force_finish_mnsync
 
 EPOCH_INTERVAL = 24
 BLS_SIG_SIZE = 96
-HOLD_MAX = 4096          # DSL_EARLY_RESPONSES_MAX
+# DSLEarlyResponsesMax(): DSL_EARLY_RESPONSES_PER_MN (28) entries per
+# masternode, the list sized up to DSL_MSG_BUDGET_MIN_MNS (64), and never below
+# DSL_EARLY_RESPONSES_MIN -- which is what binds on this network of one
+HOLD_MAX = 4096
+# arguments: accepted, held, epoch, refused for a bad signature, skipped
+DRAIN_SUMMARY = ("%d of %d held announcement(s) for epoch %d accepted once its base block connected "
+                 "(%d refused for a bad signature, %d skipped: vouched for only by peers that delivered one)")
 REPLAYS = 4              # replayed signatures used to crowd one masternode
 
 
@@ -109,7 +127,15 @@ class Quiet(P2PInterface):
 class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
     def set_test_params(self):
         args = ["-testactivationheight=dsl@1"]
-        self.set_dash_test_params(3, 1, extra_args=[args, args, args])
+        # The receiver's peers are whitelisted, which exempts them from the
+        # per-peer budget at the DSL message entry
+        # (feature_dsl_message_budget.py). What this test measures is the
+        # hold's own rule at the hold's own bound, and the budget would stop a
+        # single connection thousands of messages short of filling it. They are
+        # layers, not alternatives: an attacker spread over enough connections,
+        # or patient enough across blocks, still reaches the hold, and this is
+        # what happens to the genuine announcement when it does.
+        self.set_dash_test_params(3, 1, extra_args=[args, args + ["-whitelist=noban@127.0.0.1"], args])
 
     def catch_up(self, receiver, source, height, expected=None):
         with receiver.assert_debug_log(expected_msgs=expected or [], timeout=15):
@@ -161,7 +187,7 @@ class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
         assert 8 <= distance <= EPOCH_INTERVAL, distance
         self.log.info(f"phase 1, epoch {epoch}, {distance} blocks early: a flood of {HOLD_MAX} distinct junk announcements is held")
         with receiver.assert_debug_log(expected_msgs=[
-                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (junk_protx(HOLD_MAX - 1), distance)], timeout=30):
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (junk_protx(HOLD_MAX - 1), distance)], timeout=120):
             self.flood(attacker, epoch, 0, HOLD_MAX)
 
         self.log.info("the flooder's next one is dropped: nothing here was pushed by fewer than it")
@@ -181,9 +207,9 @@ class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
                 % (proTx, distance, HOLD_MAX)], timeout=15):
             relay.send_and_ping(genuine[epoch])
 
-        self.log.info("the base connects: of the full hold, exactly the genuine announcement is accepted")
+        self.log.info("the base connects: of the full hold, exactly the genuine announcement is accepted, and the junk -- none of it a masternode -- costs no signature check and taints nobody")
         self.catch_up(receiver, miner, base, [
-            "1 of %d held announcement(s) for epoch %d accepted once its base block connected" % (HOLD_MAX, epoch),
+            DRAIN_SUMMARY % (1, HOLD_MAX, epoch, 0, 0),
             "accepted (1 responded so far)",
         ])
         assert_equal(receiver.dslstatus()["respondedcount"], 1)
@@ -216,11 +242,16 @@ class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
                 "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
             relay.send_and_ping(genuine[epoch])
 
-        self.log.info(f"the base connects: the drain checks all {REPLAYS + 2} signatures, refuses {REPLAYS + 1}, accepts the genuine one")
-        with receiver.assert_debug_log(expected_msgs=["refused: bad signature"] * (REPLAYS + 1) + [
-                "1 of %d held announcement(s) for epoch %d accepted once its base block connected" % (REPLAYS + 2, epoch),
+        self.log.info(f"the base connects: of {REPLAYS + 2} entries the drain checks two -- one bad signature, which makes both attacking connections untrusted, and the genuine one")
+        mark = receiver.debug_log_bytes()
+        with receiver.assert_debug_log(expected_msgs=[
+                DRAIN_SUMMARY % (1, REPLAYS + 2, epoch, 1, REPLAYS),
                 "accepted (1 responded so far)"], timeout=15):
             self.catch_up(receiver, miner, base)
+        with open(receiver.debug_log_path, encoding="utf-8") as fh:
+            fh.seek(mark)
+            drained = fh.read()
+        assert_equal(drained.count("refused: bad signature"), 1)
         assert_equal(receiver.dslstatus()["respondedcount"], 1)
 
         # ---- phase 3: the attacker owns the genuine entry first, then reconnects
@@ -232,7 +263,7 @@ class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
                 "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
             attacker.send_and_ping(genuine[epoch])
         with receiver.assert_debug_log(expected_msgs=[
-                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (junk_protx(HOLD_MAX - 2), distance)], timeout=30):
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (junk_protx(HOLD_MAX - 2), distance)], timeout=120):
             self.flood(attacker, epoch, 0, HOLD_MAX - 1)
 
         self.log.info("an honest peer repeats the genuine one: it now has a second voucher")
@@ -255,7 +286,7 @@ class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
         self.log.info(f"and the other {HOLD_MAX - 2} orphans go the same way; the genuine one, vouched for by a live honest peer, is never the weakest")
         with receiver.assert_debug_log(expected_msgs=[
                 "proTx=%064x arrived %d block(s) before its base block, held in place of one whose lightest voucher pushed nothing live, peer="
-                % (junk_protx(2 * HOLD_MAX - 2), distance)], timeout=30):
+                % (junk_protx(2 * HOLD_MAX - 2), distance)], timeout=300):
             self.flood(attacker3, epoch, HOLD_MAX + 1, HOLD_MAX - 2)
 
         self.log.info("with the orphans gone its next one is dropped, because only its own entries are left to displace")
@@ -266,10 +297,59 @@ class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
 
         self.log.info("the base connects: the genuine announcement is the one accepted")
         self.catch_up(receiver, miner, base, [
-            "1 of %d held announcement(s) for epoch %d accepted once its base block connected" % (HOLD_MAX, epoch),
+            DRAIN_SUMMARY % (1, HOLD_MAX, epoch, 0, 0),
             "accepted (1 responded so far)",
         ])
         assert_equal(receiver.dslstatus()["respondedcount"], 1)
+
+        # ---- phase 4: both deliverers leave before the base; they had lived an epoch
+        base, epoch = bases[3], bases[3] // EPOCH_INTERVAL
+        self.catch_up(receiver, miner, base - 10)
+        distance = 10
+        replay = genuine[bases[0] // EPOCH_INTERVAL].sig
+        self.log.info(f"phase 4, epoch {epoch}: a replayed signature and the genuine announcement, each from its own long-lived connection")
+        with receiver.assert_debug_log(expected_msgs=[
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
+            attacker2.send_and_ping(msg_poseresp(epoch, proTx, replay))
+        with receiver.assert_debug_log(expected_msgs=[
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
+            relay.send_and_ping(genuine[epoch])
+
+        self.log.info("both disconnect before the base: each departed deliverer keeps its own identity, having lived an epoch")
+        for peer in (attacker2, relay):
+            peer.peer_disconnect()
+            peer.wait_for_disconnect()
+        self.wait_until(lambda: receiver.getconnectioncount() == 1, timeout=30)
+
+        self.log.info("the base connects: the bad signature taints only the peer that sent it, and the genuine one is accepted")
+        self.catch_up(receiver, miner, base, [
+            DRAIN_SUMMARY % (1, 2, epoch, 1, 0),
+            "accepted (1 responded so far)",
+        ])
+        assert_equal(receiver.dslstatus()["respondedcount"], 1)
+
+        # ---- phase 5: the same, from connections that did not live an epoch
+        base, epoch = bases[4], bases[4] // EPOCH_INTERVAL
+        self.catch_up(receiver, miner, base - 10)
+        young_attacker = receiver.add_p2p_connection(Quiet())
+        young_relay = receiver.add_p2p_connection(Quiet())
+        self.log.info(f"phase 5, epoch {epoch}: the same two announcements from two fresh connections, which leave at once")
+        with receiver.assert_debug_log(expected_msgs=[
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
+            young_attacker.send_and_ping(msg_poseresp(epoch, proTx, replay))
+        with receiver.assert_debug_log(expected_msgs=[
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
+            young_relay.send_and_ping(genuine[epoch])
+        for peer in (young_attacker, young_relay):
+            peer.peer_disconnect()
+            peer.wait_for_disconnect()
+        self.wait_until(lambda: receiver.getconnectioncount() == 1, timeout=30)
+
+        self.log.info("the base connects: short-lived departures share one group, so the bad signature skips the genuine one too -- the price of a reconnect loop minting nothing")
+        self.catch_up(receiver, miner, base, [
+            DRAIN_SUMMARY % (0, 2, epoch, 1, 1),
+        ])
+        assert_equal(receiver.dslstatus()["respondedcount"], 0)
 
         self.log.info("Tests successful")
 

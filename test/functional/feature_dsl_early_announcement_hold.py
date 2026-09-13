@@ -88,7 +88,11 @@ def fake_protx(tag):
 class DSLEarlyAnnouncementHoldTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [["-testactivationheight=dsl@1"]]
+        # Whitelisted, which exempts this test's peer from the per-connection
+        # budget at the DSL message entry: a bare connection starts with nothing
+        # and earns per block, and what this test measures is the hold, not the
+        # budget (feature_dsl_message_budget.py).
+        self.extra_args = [["-testactivationheight=dsl@1", "-whitelist=noban@127.0.0.1"]]
 
     def send_announcement(self, peer, epoch, tag):
         proTx = fake_protx(tag)
