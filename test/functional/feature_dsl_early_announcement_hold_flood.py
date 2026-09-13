@@ -50,10 +50,13 @@ captured as it made them:
      lived an epoch, so each departed deliverer keeps its own identity for the
      drain: the bad signature taints only its sender, and the genuine one is
      accepted
-  5. the same from two connections that leave within an epoch of connecting.
+  5. the same from two connections that leave one block short of an epoch.
      Short-lived departures share one group -- otherwise a reconnect loop would
      mint an identity, and a signature check, per connection -- so here the bad
      signature skips the genuine one as well. Pinned, because it is the bound
+  6. the same from two connections that leave exactly an epoch after
+     connecting: that is enough, and the genuine one is accepted. Phases 5 and
+     6 together pin the boundary from both sides
 """
 
 import struct
@@ -328,28 +331,66 @@ class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
         ])
         assert_equal(receiver.dslstatus()["respondedcount"], 1)
 
-        # ---- phase 5: the same, from connections that did not live an epoch
-        base, epoch = bases[4], bases[4] // EPOCH_INTERVAL
-        self.catch_up(receiver, miner, base - 10)
-        young_attacker = receiver.add_p2p_connection(Quiet())
-        young_relay = receiver.add_p2p_connection(Quiet())
-        self.log.info(f"phase 5, epoch {epoch}: the same two announcements from two fresh connections, which leave at once")
-        with receiver.assert_debug_log(expected_msgs=[
-                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
-            young_attacker.send_and_ping(msg_poseresp(epoch, proTx, replay))
-        with receiver.assert_debug_log(expected_msgs=[
-                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
-            young_relay.send_and_ping(genuine[epoch])
-        for peer in (young_attacker, young_relay):
-            peer.peer_disconnect()
-            peer.wait_for_disconnect()
-        self.wait_until(lambda: receiver.getconnectioncount() == 1, timeout=30)
+        # ---- phases 5 and 6: the age boundary. A connection's age is the chain
+        # height it disconnects at minus the one it connected at, both as the
+        # node's own tip tracking sees them, so every connect and disconnect
+        # below waits for the validation queue first; otherwise the age could
+        # be read one block short and the boundary would be measured off by one.
+        def at_height(height):
+            self.catch_up(receiver, miner, height)
+            receiver.syncwithvalidationinterfacequeue()
 
-        self.log.info("the base connects: short-lived departures share one group, so the bad signature skips the genuine one too -- the price of a reconnect loop minting nothing")
+        def leave(peers, remaining):
+            for peer in peers:
+                peer.peer_disconnect()
+                peer.wait_for_disconnect()
+            self.wait_until(lambda: receiver.getconnectioncount() == remaining, timeout=30)
+
+        # phase 5: EPOCH_INTERVAL - 1 blocks old when they leave
+        base, epoch = bases[4], bases[4] // EPOCH_INTERVAL
+        at_height(bases[3])
+        short_attacker = receiver.add_p2p_connection(Quiet())
+        short_relay = receiver.add_p2p_connection(Quiet())
+        at_height(base - distance)
+        self.log.info(f"phase 5, epoch {epoch}: the same two announcements from two connections that leave {EPOCH_INTERVAL - 1} blocks after connecting")
+        with receiver.assert_debug_log(expected_msgs=[
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
+            short_attacker.send_and_ping(msg_poseresp(epoch, proTx, replay))
+        with receiver.assert_debug_log(expected_msgs=[
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
+            short_relay.send_and_ping(genuine[epoch])
+        at_height(base - 1)
+        # the two connections phase 6 needs: they will be exactly an epoch old
+        # at the same point of the next epoch
+        exact_attacker = receiver.add_p2p_connection(Quiet())
+        exact_relay = receiver.add_p2p_connection(Quiet())
+        leave((short_attacker, short_relay), remaining=3)
+
+        self.log.info("the base connects: one block short of an epoch, they share one group, so the bad signature skips the genuine one too -- the price of a reconnect loop minting nothing")
         self.catch_up(receiver, miner, base, [
             DRAIN_SUMMARY % (0, 2, epoch, 1, 1),
         ])
         assert_equal(receiver.dslstatus()["respondedcount"], 0)
+
+        # phase 6: exactly EPOCH_INTERVAL blocks old when they leave
+        base, epoch = bases[5], bases[5] // EPOCH_INTERVAL
+        at_height(base - distance)
+        self.log.info(f"phase 6, epoch {epoch}: the same from two connections that leave exactly {EPOCH_INTERVAL} blocks after connecting")
+        with receiver.assert_debug_log(expected_msgs=[
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
+            exact_attacker.send_and_ping(msg_poseresp(epoch, proTx, replay))
+        with receiver.assert_debug_log(expected_msgs=[
+                "proTx=%064x arrived %d block(s) before its base block, held, peer=" % (proTx, distance)]):
+            exact_relay.send_and_ping(genuine[epoch])
+        at_height(base - 1)
+        leave((exact_attacker, exact_relay), remaining=1)
+
+        self.log.info("the base connects: an epoch is enough, each keeps its own identity, and the genuine one is accepted")
+        self.catch_up(receiver, miner, base, [
+            DRAIN_SUMMARY % (1, 2, epoch, 1, 0),
+            "accepted (1 responded so far)",
+        ])
+        assert_equal(receiver.dslstatus()["respondedcount"], 1)
 
         self.log.info("Tests successful")
 

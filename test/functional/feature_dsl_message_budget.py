@@ -59,17 +59,24 @@ the Sentinel layer has been chasing since #207.
      the other side drops it, so per connection it would be credit per
      reconnect
 
+  9. a connection opened by name through a name proxy never learns the
+     target's address, so that credit is keyed by the name: three relays
+     reached by three different names are each credited, however many other
+     name-proxied relays there are
+
 Closes F-2026-131. The other half of R-08, the early hold, is pinned by
 feature_dsl_early_announcement_hold_flood.py and
 feature_dsl_early_announcement_hold_crowd.py.
 """
 
+import socket
 import struct
+import threading
 
 from test_framework.messages import ser_uint256
 from test_framework.p2p import MESSAGEMAP, P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal
+from test_framework.util import assert_equal, p2p_port
 
 EPOCH_INTERVAL = 24        # Consensus::Params::nDSLEpochInterval
 SENTINELS = 7              # Consensus::Params::nDSLSentinelCount
@@ -189,6 +196,87 @@ MESSAGEMAP[b"posereport"] = msg_posereport
 def junk_protx(i):
     # distinct per message, and none of them a masternode
     return (0xDEAD << 240) | i
+
+
+class ForwardingNameProxy:
+    """A SOCKS5 proxy that serves CONNECT by domain name and forwards the
+    stream to 127.0.0.1 on the requested port -- enough for the node to open a
+    real P2P connection by a name it never resolves. The test framework's own
+    Socks5Server records the request and closes, which cannot carry P2P."""
+
+    def __init__(self, port):
+        self.port = port
+        self.names = []
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server.bind(("127.0.0.1", port))
+        self.server.listen(8)
+        threading.Thread(target=self._accept, daemon=True).start()
+
+    @staticmethod
+    def _recv(conn, n):
+        data = b""
+        while len(data) < n:
+            chunk = conn.recv(n - len(data))
+            if not chunk:
+                raise IOError("proxy client closed")
+            data += chunk
+        return data
+
+    def _accept(self):
+        while True:
+            try:
+                conn, _ = self.server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
+
+    def _serve(self, conn):
+        try:
+            _, nmethods = self._recv(conn, 2)
+            methods = self._recv(conn, nmethods)
+            if 2 in methods:
+                # -proxyrandomize (the default) offers only username/password,
+                # with random credentials: accept whatever is sent
+                conn.sendall(b"\x05\x02")
+                _, ulen = self._recv(conn, 2)
+                self._recv(conn, ulen)
+                self._recv(conn, self._recv(conn, 1)[0])
+                conn.sendall(b"\x01\x00")
+            else:
+                conn.sendall(b"\x05\x00")
+            _, cmd, _, atyp = self._recv(conn, 4)
+            assert cmd == 1 and atyp == 3, (cmd, atyp)     # CONNECT by domain name
+            name = self._recv(conn, self._recv(conn, 1)[0]).decode()
+            port = struct.unpack(">H", self._recv(conn, 2))[0]
+            self.names.append(name)
+            upstream = socket.create_connection(("127.0.0.1", port))
+            conn.sendall(b"\x05\x00\x00\x01" + b"\x00" * 6)
+        except Exception:
+            conn.close()
+            return
+        for a, b in ((conn, upstream), (upstream, conn)):
+            threading.Thread(target=self._pump, args=(a, b), daemon=True).start()
+
+    @staticmethod
+    def _pump(src, dst):
+        try:
+            while True:
+                data = src.recv(65536)
+                if not data:
+                    break
+                dst.sendall(data)
+        except OSError:
+            pass
+        finally:
+            for s in (src, dst):
+                try:
+                    s.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+    def stop(self):
+        self.server.close()
 
 
 class Quiet(P2PInterface):
@@ -403,8 +491,37 @@ class DSLMessageBudgetTest(BitcoinTestFramework):
         self.log.info("   the next epoch grants the address again")
         self.disconnect(outbound, outbound_id)
         self.generate(node, EPOCH_INTERVAL)
-        outbound, _ = self.outbound()
+        outbound, outbound_id = self.outbound()
         assert_equal(self.send(outbound, 140000, CEILING + 20), (CEILING, True))
+        self.disconnect(outbound, outbound_id)
+
+        # Through a name proxy the node hands the proxy a name and never learns
+        # the address: CConnman::ConnectNode leaves it invalid, and every such
+        # connection would share one key if it were keyed by address. With the
+        # whole node behind -proxy, a manual connection by name takes exactly
+        # that path. Three names, and more than GRANTS_PER_OUTBOUND_ADDR of them.
+        self.log.info("9. Relays reached by name through a name proxy are credited per name, not as one unknown address")
+        proxy_port = p2p_port(1)
+        self.restart_node(0, extra_args=self.extra_args[0] + ["-proxy=127.0.0.1:%d" % proxy_port])
+        proxy = ForwardingNameProxy(proxy_port)
+        names = ["dsl-relay-%d.budget.invalid" % i for i in range(GRANTS_PER_OUTBOUND_ADDR + 1)]
+        for i, name in enumerate(names):
+            relay = Quiet()
+            relay.p2p_connected_to_node = False   # an outbound peer of the node, as TestNode sets it
+            relay.peer_accept_connection(
+                connect_cb=lambda _addr, port, name=name: node.addnode("%s:%d" % (name, port), "onetry"),
+                connect_id=10 + i, net=node.chain, timeout_factor=node.timeout_factor,
+                supports_v2_p2p=False, reconnect=False)()
+            relay.wait_for_connect()
+            node.p2ps.append(relay)
+            relay.wait_for_verack()
+            relay.sync_with_ping()
+            info = next(p for p in node.getpeerinfo() if p["addr"].startswith(name))
+            assert_equal(info["connection_type"], "manual")
+            self.log.info("   %s, connected as %s", name, info["addr"])
+            assert_equal(self.send(relay, 150000 + 1000 * i, CEILING + 20), (CEILING, True))
+        assert_equal(sorted({n for n in proxy.names}), sorted(names))
+        proxy.stop()
 
 
 if __name__ == "__main__":

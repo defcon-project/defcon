@@ -971,10 +971,11 @@ private:
      *  the current epoch. Only MNAUTH-verified identities are ever keyed, and
      *  the map is emptied at every epoch, so it holds at most the list. */
     std::map<uint256, int> m_dsl_identity_grants GUARDED_BY(g_msgproc_mutex);
-    /** Connections this node opened to each address handed up-front DSL credit
-     *  in the current epoch, keyed by address without the port. Emptied at
-     *  every epoch. */
-    std::map<CNetAddr, int> m_dsl_outbound_grants GUARDED_BY(g_msgproc_mutex);
+    /** Connections this node opened to each target handed up-front DSL credit
+     *  in the current epoch, keyed by address without the port, or by the name
+     *  a name-proxied connection was opened by. Emptied at every epoch; nothing
+     *  else bounds it but how many connections this node opens in one. */
+    std::map<std::string, int> m_dsl_outbound_grants GUARDED_BY(g_msgproc_mutex);
 
     /** The height of the best chain */
     std::atomic<int> m_best_height{-1};
@@ -5849,7 +5850,15 @@ bool PeerManagerImpl::ChargeDSLMessageBudget(const CNode& pfrom, Peer& peer)
     if (!peer.m_dsl_upfront_checked) {
         if (pfrom.IsFullOutboundConn() || pfrom.IsManualConn()) {
             peer.m_dsl_upfront_checked = true;
-            int& grants{m_dsl_outbound_grants[static_cast<CNetAddr>(pfrom.addr)]};
+            // The target's address without the port -- or, where a name proxy
+            // was asked to reach a name and this node never learned the address
+            // (CConnman::ConnectNode leaves it invalid then), the name the
+            // connection was opened by, which the operator chose. Keying those
+            // by their invalid address would put every name-proxied relay on
+            // one shared allowance. The prefixes keep the two from colliding.
+            const std::string target{pfrom.addr.IsValid() ? "addr " + pfrom.addr.ToStringAddr()
+                                                          : "name " + pfrom.m_addr_name};
+            int& grants{m_dsl_outbound_grants[target]};
             if (grants < DSL_MSG_BUDGET_GRANTS_PER_OUTBOUND_ADDR) {
                 ++grants;
                 peer.m_dsl_token_bucket = std::min(peer.m_dsl_token_bucket + ceiling, budget);
@@ -6286,8 +6295,10 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
             // (ForgetDSLEarlyVoucher). Each check either accepts (at most once
             // per masternode) or taints at least one id not tainted before, or
             // the shared group once, so the checks number at most the list plus
-            // the connections that delivered here (live, or departed after an
-            // epoch -- one per slot per hold) plus one, however full the hold --
+            // the ids kept here (live vouchers, and departed ones that lived an
+            // epoch -- on a chain that advances normally, about one per slot per
+            // hold, though nothing counts that separately) plus one, however
+            // full the hold --
             // and at most once more per masternode whose genuine copy the message
             // thread accepts while this runs, since a later entry for it is a
             // duplicate and refused before any check.
