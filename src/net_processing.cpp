@@ -444,10 +444,13 @@ struct Peer {
     int m_dsl_rate_limited_logged GUARDED_BY(NetEventsInterface::g_msgproc_mutex){-1};
     /** Total DSL messages dropped unread from this peer by that budget. */
     std::atomic<uint64_t> m_dsl_rate_limited{0};
-    /** Whether this connection has had its one chance at up-front DSL credit --
-     *  as a connection this node opened, or as a verified masternode identity --
-     *  granted or not. */
-    bool m_dsl_upfront_checked GUARDED_BY(NetEventsInterface::g_msgproc_mutex){false};
+    /** Up-front DSL credit, which a connection receives at most once. It has two
+     *  chances at it, each taken at most once: as a connection this node opened
+     *  (the target's allowance), and as a verified masternode identity (the
+     *  identity's allowance) -- the second only if the first granted nothing. */
+    bool m_dsl_upfront_granted GUARDED_BY(NetEventsInterface::g_msgproc_mutex){false};
+    bool m_dsl_outbound_checked GUARDED_BY(NetEventsInterface::g_msgproc_mutex){false};
+    bool m_dsl_identity_checked GUARDED_BY(NetEventsInterface::g_msgproc_mutex){false};
     /** The chain height this connection was made at. When it disconnects, it
      *  decides whether the early announcements it vouched for keep its own
      *  identity or join the shared group of short-lived connections
@@ -5847,28 +5850,44 @@ bool PeerManagerImpl::ChargeDSLMessageBudget(const CNode& pfrom, Peer& peer)
     // at most DSL_MSG_BUDGET_GRANTS_PER_IDENTITY of its connections are
     // granted in an epoch, so reconnecting buys nothing past the honest number
     // of links. An outbound connection's credit does not count against it.
-    if (!peer.m_dsl_upfront_checked) {
-        if (pfrom.IsFullOutboundConn() || pfrom.IsManualConn()) {
-            peer.m_dsl_upfront_checked = true;
-            // The target's address without the port -- or, where a name proxy
-            // was asked to reach a name and this node never learned the address
-            // (CConnman::ConnectNode leaves it invalid then), the name the
-            // connection was opened by, which the operator chose. Keying those
-            // by their invalid address would put every name-proxied relay on
-            // one shared allowance. The prefixes keep the two from colliding.
-            const std::string target{pfrom.addr.IsValid() ? "addr " + pfrom.addr.ToStringAddr()
-                                                          : "name " + pfrom.m_addr_name};
-            int& grants{m_dsl_outbound_grants[target]};
-            if (grants < DSL_MSG_BUDGET_GRANTS_PER_OUTBOUND_ADDR) {
-                ++grants;
-                peer.m_dsl_token_bucket = std::min(peer.m_dsl_token_bucket + ceiling, budget);
-            }
-        } else if (const uint256 identity{pfrom.GetVerifiedProRegTxHash()}; !identity.IsNull()) {
-            peer.m_dsl_upfront_checked = true;
+    //
+    // The two are tried in that order, and a connection receives at most one of
+    // them. The second is not skipped because the first was tried: an outbound
+    // link to a verified masternode that its target's allowance could not cover
+    // is still a verified masternode. That case is ordinary wherever several
+    // masternodes share an address on different ports -- on the devnet, ten to a
+    // host -- and skipping it left a restarted node's own outbound masternode
+    // links with nothing, the lost-burst case the outbound credit exists for.
+    // (Mainnet requires the default port, so there one masternode holds an
+    // address; unverified relays sharing an address still share its allowance.)
+    // A reconnect loop to one verified masternode is thereby bounded by both
+    // allowances together, and the second needs its operator key.
+    if (!peer.m_dsl_upfront_granted && !peer.m_dsl_outbound_checked &&
+        (pfrom.IsFullOutboundConn() || pfrom.IsManualConn())) {
+        peer.m_dsl_outbound_checked = true;
+        // The target's address without the port -- or, where a name proxy was
+        // asked to reach a name and this node never learned the address
+        // (CConnman::ConnectNode leaves it invalid then), the name the
+        // connection was opened by, which the operator chose. Keying those by
+        // their invalid address would put every name-proxied relay on one
+        // shared allowance. The prefixes keep the two from colliding.
+        const std::string target{pfrom.addr.IsValid() ? "addr " + pfrom.addr.ToStringAddr()
+                                                      : "name " + pfrom.m_addr_name};
+        int& grants{m_dsl_outbound_grants[target]};
+        if (grants < DSL_MSG_BUDGET_GRANTS_PER_OUTBOUND_ADDR) {
+            ++grants;
+            peer.m_dsl_token_bucket = std::min(peer.m_dsl_token_bucket + ceiling, budget);
+            peer.m_dsl_upfront_granted = true;
+        }
+    }
+    if (!peer.m_dsl_upfront_granted && !peer.m_dsl_identity_checked) {
+        if (const uint256 identity{pfrom.GetVerifiedProRegTxHash()}; !identity.IsNull()) {
+            peer.m_dsl_identity_checked = true;
             int& grants{m_dsl_identity_grants[identity]};
             if (grants < DSL_MSG_BUDGET_GRANTS_PER_IDENTITY) {
                 ++grants;
                 peer.m_dsl_token_bucket = std::min(peer.m_dsl_token_bucket + ceiling, budget);
+                peer.m_dsl_upfront_granted = true;
             }
         }
     }
