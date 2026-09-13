@@ -53,7 +53,11 @@ the Sentinel layer has been chasing since #207.
      front, once -- a block producer attaches the epoch's commitment only from
      its own pool, and must not meet the report burst on its own outbound
      links with nothing earned -- while a block-relay-only link never reaches
-     the budget at all: DSL on it is a protocol violation
+     the budget at all: DSL on it is a protocol violation. That credit belongs
+     to the address, at most DSL_MSG_BUDGET_GRANTS_PER_OUTBOUND_ADDR
+     connections an epoch: a manual connection comes back on its own whenever
+     the other side drops it, so per connection it would be credit per
+     reconnect
 
 Closes F-2026-131. The other half of R-08, the early hold, is pinned by
 feature_dsl_early_announcement_hold_flood.py and
@@ -72,7 +76,10 @@ SENTINELS = 7              # Consensus::Params::nDSLSentinelCount
 MIN_MNS = 64               # DSL_MSG_BUDGET_MIN_MNS
 CAP_EPOCHS = 4             # DSL_MSG_BUDGET_CAP_EPOCHS
 REFILL_EPOCHS = 2          # DSL_MSG_BUDGET_REFILL_EPOCHS
-GRANTS_PER_IDENTITY = 3 + 1  # DSL_MSG_BUDGET_GRANTS_PER_IDENTITY: MAX_VERIFIED_INBOUND_PER_PROTX + 1
+# DSL_MSG_BUDGET_GRANTS_PER_IDENTITY: MAX_VERIFIED_INBOUND_PER_PROTX (3) verified
+# inbound connections of one identity, plus the one outbound it can hold to us
+GRANTS_PER_IDENTITY = 3 + 1
+GRANTS_PER_OUTBOUND_ADDR = 2  # DSL_MSG_BUDGET_GRANTS_PER_OUTBOUND_ADDR
 # This network has no masternodes, so the floor is what sizes the budget.
 CEILING = MIN_MNS * (1 + SENTINELS)                           # honest messages per peer per epoch
 BUDGET = CAP_EPOCHS * CEILING                                 # what a connection may hold at once
@@ -232,6 +239,12 @@ class DSLMessageBudgetTest(BitcoinTestFramework):
         peer = self.nodes[0].add_p2p_connection(Quiet())
         return peer, max(info["id"] for info in self.nodes[0].getpeerinfo())
 
+    def outbound(self):
+        """A new full outbound connection from the node, and its id. One at a
+        time: the slot index is reused, so the previous one must be gone."""
+        peer = self.nodes[0].add_outbound_p2p_connection(Quiet(), p2p_idx=0, connection_type="outbound-full-relay")
+        return peer, max(info["id"] for info in self.nodes[0].getpeerinfo())
+
     def disconnect(self, peer, peer_id):
         peer.peer_disconnect()
         peer.wait_for_disconnect()
@@ -339,8 +352,10 @@ class DSLMessageBudgetTest(BitcoinTestFramework):
         # is early -- the path that ends in the hold, not in a signature check.
         # Every connection below is made at this tip and nothing is mined after
         # it, so none of them has earned anything.
-        self.generate(node, EPOCH_INTERVAL // 2 - node.getblockcount() % EPOCH_INTERVAL + EPOCH_INTERVAL)
-        assert_equal(node.getblockcount() % EPOCH_INTERVAL, EPOCH_INTERVAL // 2)
+        mid_epoch = EPOCH_INTERVAL // 2
+        to_mid_epoch = mid_epoch - node.getblockcount() % EPOCH_INTERVAL   # may be negative
+        self.generate(node, to_mid_epoch + EPOCH_INTERVAL)                   # so one whole epoch more
+        assert_equal(node.getblockcount() % EPOCH_INTERVAL, mid_epoch)
 
         self.log.info("8. A posechal from a connection with nothing earned is dropped unread")
         chal, chal_id = self.connect()
@@ -363,7 +378,7 @@ class DSLMessageBudgetTest(BitcoinTestFramework):
         assert "before its base block" not in log
 
         self.log.info("   a full outbound connection this node opened is handed an epoch's worth (%d) up front, once", CEILING)
-        outbound = node.add_outbound_p2p_connection(Quiet(), p2p_idx=0, connection_type="outbound-full-relay")
+        outbound, outbound_id = self.outbound()
         assert_equal(self.send(outbound, 100000, CEILING + 20), (CEILING, True))
         self.log.info("   a block-relay-only link never reaches the budget: DSL on it is a protocol violation, and it is disconnected")
         block_only = node.add_outbound_p2p_connection(Quiet(), p2p_idx=1, connection_type="block-relay-only")
@@ -371,6 +386,25 @@ class DSLMessageBudgetTest(BitcoinTestFramework):
                                    unexpected_msgs=["DSL -- poseresp epoch="]):
             block_only.send_message(msg_poseresp(self.epoch(), junk_protx(110000)))
             block_only.wait_for_disconnect()
+
+        # A manual connection is re-opened by this node whenever the other side
+        # drops it, so the other side sets how often it comes back: the credit
+        # has to belong to the address, not to the connection. Every outbound
+        # connection here goes to 127.0.0.1, which is one address.
+        self.log.info("   the credit belongs to the address: a second connection to it in the epoch is granted too (%d of %d)",
+                      2, GRANTS_PER_OUTBOUND_ADDR)
+        self.disconnect(outbound, outbound_id)
+        outbound, outbound_id = self.outbound()
+        assert_equal(self.send(outbound, 120000, CEILING + 20), (CEILING, True))
+        self.log.info("   and the next one in the same epoch is granted nothing, however it came back")
+        self.disconnect(outbound, outbound_id)
+        outbound, outbound_id = self.outbound()
+        assert_equal(self.send(outbound, 130000, 20), (0, True))
+        self.log.info("   the next epoch grants the address again")
+        self.disconnect(outbound, outbound_id)
+        self.generate(node, EPOCH_INTERVAL)
+        outbound, _ = self.outbound()
+        assert_equal(self.send(outbound, 140000, CEILING + 20), (CEILING, True))
 
 
 if __name__ == "__main__":

@@ -51,6 +51,7 @@ ATTACKERS = 4             # the number of connections that crowded the old 4 x N
 EXTRA = 64                # what each attacker pushes into the full hold afterwards
 DISTANCE = 10             # blocks the receiver is behind each base
 EXHAUSTED = "per-peer budget exhausted"
+# arguments: held, epoch (nothing here is accepted, refused or skipped)
 DRAIN_SUMMARY = ("0 of %d held announcement(s) for epoch %d accepted once its base block connected "
                  "(0 refused for a bad signature, 0 skipped: vouched for only by peers that delivered one)")
 
@@ -93,6 +94,9 @@ def junk_protx(attacker, i):
 class Quiet(P2PInterface):
     """Sends only."""
     def on_poseresp(self, message):
+        pass
+
+    def on_posereport(self, message):
         pass
 
 
