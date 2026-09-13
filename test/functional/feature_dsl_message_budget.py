@@ -57,7 +57,9 @@ the Sentinel layer has been chasing since #207.
      to the address, at most DSL_MSG_BUDGET_GRANTS_PER_OUTBOUND_ADDR
      connections an epoch: a manual connection comes back on its own whenever
      the other side drops it, so per connection it would be credit per
-     reconnect
+     reconnect. A link its target's allowance cannot cover still receives a
+     verified masternode's identity credit -- masternodes can share an address
+     on different ports -- but no link receives both
 
   9. a connection opened by name through a name proxy never learns the
      target's address, so that credit is keyed by the name: three relays
@@ -488,11 +490,25 @@ class DSLMessageBudgetTest(BitcoinTestFramework):
         self.disconnect(outbound, outbound_id)
         outbound, outbound_id = self.outbound()
         assert_equal(self.send(outbound, 130000, 20), (0, True))
+        # Several masternodes can share an address on different ports -- ten to a
+        # host on the devnet, where a restarted node's third outbound link to one
+        # host was left with nothing until this was fixed. A link its target's
+        # allowance cannot cover still has a verified masternode at the other end.
+        self.log.info("   but a link there to a verified masternode still receives its identity's credit (%d)", CEILING)
+        self.disconnect(outbound, outbound_id)
+        outbound, outbound_id = self.outbound()
+        assert node.mnauth(outbound_id, "ef" * 32, public_key)
+        assert_equal(self.send(outbound, 135000, CEILING + 20), (CEILING, True))
         self.log.info("   the next epoch grants the address again")
         self.disconnect(outbound, outbound_id)
         self.generate(node, EPOCH_INTERVAL)
         outbound, outbound_id = self.outbound()
         assert_equal(self.send(outbound, 140000, CEILING + 20), (CEILING, True))
+        self.log.info("   and a link credited as this node's own is not credited again once it is verified")
+        assert node.mnauth(outbound_id, "12" * 32, public_key)
+        # nothing read is the claim; the drop line itself is written once per peer
+        # per block, and this peer already wrote it for this block just above
+        assert_equal(self.send(outbound, 145000, 20)[0], 0)
         self.disconnect(outbound, outbound_id)
 
         # Through a name proxy the node hands the proxy a name and never learns
