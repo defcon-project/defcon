@@ -45,9 +45,19 @@ the Sentinel layer has been chasing since #207.
      discouragement. A message that reads but is rejected is not scored: after
      a reorg the epoch's base changes and honest announcements in flight are
      signed against the old one, so they fail legitimately
+  8. the budget covers everything that reaches the DSL entry, not only what
+     ends in a signature check: a posechal from a connection with nothing
+     earned is dropped unread, so ten unreadable ones cost it nothing and
+     score nothing, and an early announcement from it never reaches the hold.
+     And a connection this node opened itself is handed an epoch's worth up
+     front, once -- a block producer attaches the epoch's commitment only from
+     its own pool, and must not meet the report burst on its own outbound
+     links with nothing earned -- while a block-relay-only link never reaches
+     the budget at all: DSL on it is a protocol violation
 
-Closes F-2026-131. The other half of R-08, the early hold bounded per
-masternode, is pinned by feature_dsl_early_announcement_hold_flood.py.
+Closes F-2026-131. The other half of R-08, the early hold, is pinned by
+feature_dsl_early_announcement_hold_flood.py and
+feature_dsl_early_announcement_hold_crowd.py.
 """
 
 import struct
@@ -138,6 +148,31 @@ class msg_poseresp_truncated:
 
     def __repr__(self):
         return "msg_poseresp_truncated()"
+
+
+class msg_posechal:
+    """CPoSeServiceChallenge on the wire: nEpoch alone."""
+    msgtype = b"posechal"
+
+    def __init__(self, nEpoch=0):
+        self.nEpoch = nEpoch
+
+    def serialize(self):
+        return struct.pack("<I", self.nEpoch)
+
+    def __repr__(self):
+        return "msg_posechal(nEpoch=%d)" % self.nEpoch
+
+
+class msg_posechal_truncated:
+    """Two bytes of a four-byte epoch number: nothing can read this."""
+    msgtype = b"posechal"
+
+    def serialize(self):
+        return b"\x01\x02"
+
+    def __repr__(self):
+        return "msg_posechal_truncated()"
 
 
 MESSAGEMAP[b"poseresp"] = msg_poseresp
@@ -299,6 +334,43 @@ class DSLMessageBudgetTest(BitcoinTestFramework):
 
         self.log.info("   the peer that only sent rejected-but-readable messages is still connected, on banscore 0")
         assert_equal(self.banscore(peer_id), 0)
+
+        # A tip part-way into an epoch, so that an announcement for the next one
+        # is early -- the path that ends in the hold, not in a signature check.
+        # Every connection below is made at this tip and nothing is mined after
+        # it, so none of them has earned anything.
+        self.generate(node, EPOCH_INTERVAL // 2 - node.getblockcount() % EPOCH_INTERVAL + EPOCH_INTERVAL)
+        assert_equal(node.getblockcount() % EPOCH_INTERVAL, EPOCH_INTERVAL // 2)
+
+        self.log.info("8. A posechal from a connection with nothing earned is dropped unread")
+        chal, chal_id = self.connect()
+        mark = node.debug_log_bytes()
+        chal.send_and_ping(msg_posechal(self.epoch()))
+        assert EXHAUSTED in self.log_since(mark)
+        self.log.info("   so ten unreadable ones score nothing and the connection stays")
+        for _ in range(DISCOURAGEMENT // UNREADABLE_SCORE):
+            chal.send_message(msg_posechal_truncated())
+        chal.sync_with_ping()
+        assert_equal(self.banscore(chal_id), 0)
+
+        self.log.info("   an early announcement from a connection with nothing earned never reaches the hold")
+        early, _ = self.connect()
+        next_epoch = self.epoch() + 1
+        mark = node.debug_log_bytes()
+        early.send_and_ping(msg_poseresp(next_epoch, junk_protx(90000)))
+        log = self.log_since(mark)
+        assert EXHAUSTED in log
+        assert "before its base block" not in log
+
+        self.log.info("   a full outbound connection this node opened is handed an epoch's worth (%d) up front, once", CEILING)
+        outbound = node.add_outbound_p2p_connection(Quiet(), p2p_idx=0, connection_type="outbound-full-relay")
+        assert_equal(self.send(outbound, 100000, CEILING + 20), (CEILING, True))
+        self.log.info("   a block-relay-only link never reaches the budget: DSL on it is a protocol violation, and it is disconnected")
+        block_only = node.add_outbound_p2p_connection(Quiet(), p2p_idx=1, connection_type="block-relay-only")
+        with node.assert_debug_log(expected_msgs=["poseresp sent in violation of protocol"],
+                                   unexpected_msgs=["DSL -- poseresp epoch="]):
+            block_only.send_message(msg_poseresp(self.epoch(), junk_protx(110000)))
+            block_only.wait_for_disconnect()
 
 
 if __name__ == "__main__":
