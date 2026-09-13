@@ -583,13 +583,30 @@ public:
         nExtCoinType = 1;
 
         // long living quorum params
+        //
+        // Exactly mainnet's table, roles and order. Testnet is where the DAO
+        // rehearses the v23 switchover before mainnet takes it, and until this
+        // change it rehearsed a different network: ChainLocks and MNHF on
+        // llmq_50_60, Platform on llmq_25_67, no llmq_400_60 at all -- so the
+        // switchover it exercised started from a profile mainnet does not use,
+        // and the DKG rounds punishing after it were not mainnet's rounds. The
+        // table is taken whole rather than trimmed because a partial copy is how
+        // it drifted. It needs no height: this chain identity has never run.
+        //
+        // What that means on a small testnet, by design: llmq_50_60 and
+        // llmq_60_75 are registered and never form (llmq/options.cpp), so there
+        // is no InstantSend below the v23 height, and llmq_400_85 (minSize 350)
+        // and llmq_100_67 (behind DIP0020) do not form either -- mainnet's state,
+        // not a fault of the rehearsal.
         AddLLMQ(Consensus::LLMQType::LLMQ_50_60);
         AddLLMQ(Consensus::LLMQType::LLMQ_60_75);
-        AddLLMQ(Consensus::LLMQType::LLMQ_25_67);
-        consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_50_60;
+        AddLLMQ(Consensus::LLMQType::LLMQ_400_60);
+        AddLLMQ(Consensus::LLMQType::LLMQ_400_85);
+        AddLLMQ(Consensus::LLMQType::LLMQ_100_67);
+        consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_400_60;
         consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_60_75;
-        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_25_67;
-        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_50_60;
+        consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_100_67;
+        consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_400_85;
         // Registered now, enabled only by the bundle; see ApplyV23ActivationBundle.
         AddLLMQ(Consensus::LLMQType::LLMQ_DEFCON);
         ApplyV23ActivationBundle(consensus, V23_TESTNET_ACTIVATION_HEIGHT);

@@ -210,8 +210,12 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
         case Consensus::LLMQType::LLMQ_25_67:
         case Consensus::LLMQType::LLMQ_50_60:
         case Consensus::LLMQType::LLMQ_60_75: {
-            return Params().NetworkIDString() == CBaseChainParams::TESTNET ||
-                   Params().NetworkIDString() == CBaseChainParams::DEVNET;
+            // Mainnet registers llmq_50_60 and llmq_60_75 and never forms them;
+            // testnet now carries mainnet's table and must behave the same, or
+            // its rehearsal punishes on rounds mainnet never runs. Devnet keeps
+            // forming them (its own history; stopping them there is a separate,
+            // height-gated change).
+            return Params().NetworkIDString() == CBaseChainParams::DEVNET;
         }
         case Consensus::LLMQType::LLMQ_TEST_INSTANTSEND:
             return !fDIP0024IsActive || !fHaveDIP0024Quorums ||
