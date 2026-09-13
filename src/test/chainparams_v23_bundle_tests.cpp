@@ -11,9 +11,11 @@
 //! not, or a height with no profile -- is refused at startup on the two
 //! networks that release together, and only there.
 
+#include <chain.h>
 #include <chainparams.h>
 #include <chainparamsbase.h>
 #include <consensus/params.h>
+#include <llmq/options.h>
 #include <llmq/params.h>
 #include <util/system.h>
 
@@ -226,6 +228,79 @@ BOOST_AUTO_TEST_CASE(regtest_v23_alias_schedules_the_whole_bundle)
         BOOST_CHECK(c.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_DEFCON);
         BOOST_CHECK(c.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_NONE);
     }
+}
+
+// Testnet is where the DAO rehearses the switchover, so its quorum table has to
+// be mainnet's: the same registered profiles in the same order and the same
+// profile in every role, before and after H. A difference means the rehearsal
+// crosses from a profile mainnet does not use, or punishes on DKG rounds mainnet
+// never runs.
+BOOST_AUTO_TEST_CASE(testnet_quorum_table_is_mainnets)
+{
+    ArgsManager args;
+    const auto main = CreateChainParams(args, CBaseChainParams::MAIN);
+    const auto test = CreateChainParams(args, CBaseChainParams::TESTNET);
+    const auto& m = main->GetConsensus();
+    const auto& t = test->GetConsensus();
+
+    std::vector<Consensus::LLMQType> main_types, test_types;
+    for (const auto& p : m.llmqs) main_types.push_back(p.type);
+    for (const auto& p : t.llmqs) test_types.push_back(p.type);
+    BOOST_CHECK(main_types == test_types);
+    BOOST_CHECK_EQUAL(test_types.size(), 6U);
+    BOOST_CHECK(!test->GetLLMQ(Consensus::LLMQType::LLMQ_25_67).has_value());
+
+    BOOST_CHECK(t.llmqTypeChainLocks == m.llmqTypeChainLocks);
+    BOOST_CHECK(t.llmqTypeChainLocks == Consensus::LLMQType::LLMQ_400_60);
+    BOOST_CHECK(t.llmqTypeDIP0024InstantSend == m.llmqTypeDIP0024InstantSend);
+    BOOST_CHECK(t.llmqTypePlatform == m.llmqTypePlatform);
+    BOOST_CHECK(t.llmqTypeMnhf == m.llmqTypeMnhf);
+    BOOST_CHECK(t.llmqTypeChainLocksV2 == m.llmqTypeChainLocksV2);
+    BOOST_CHECK(t.llmqTypeDIP0024InstantSendV2 == m.llmqTypeDIP0024InstantSendV2);
+}
+
+namespace {
+
+//! The two profiles mainnet registers and never forms. The rule reads the
+//! selected network, so each case selects it for real rather than faking it.
+void CheckRegisteredButUnformedProfiles(bool expect_formed)
+{
+    CBlockIndex index;
+    index.nHeight = 100000;
+    for (const auto type : {Consensus::LLMQType::LLMQ_50_60, Consensus::LLMQType::LLMQ_60_75}) {
+        BOOST_CHECK_EQUAL(llmq::IsQuorumTypeEnabledInternal(type, &index, false, false), expect_formed);
+    }
+}
+
+struct TestNetSetup : public BasicTestingSetup {
+    TestNetSetup() : BasicTestingSetup(CBaseChainParams::TESTNET) {}
+};
+
+struct DevNetSetup : public BasicTestingSetup {
+    DevNetSetup() : BasicTestingSetup(CBaseChainParams::DEVNET, {"-devnet=v23-bundle-tests", "-listen=0"}) {}
+};
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(mainnet_never_forms_its_unused_profiles)
+{
+    BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::MAIN);
+    CheckRegisteredButUnformedProfiles(/*expect_formed=*/false);
+}
+
+BOOST_FIXTURE_TEST_CASE(testnet_never_forms_mainnets_unused_profiles, TestNetSetup)
+{
+    BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::TESTNET);
+    CheckRegisteredButUnformedProfiles(/*expect_formed=*/false);
+}
+
+// The control: devnet still forms them (stopping that there is a separate,
+// height-gated change), so the two checks above can fail and are not reading a
+// constant.
+BOOST_FIXTURE_TEST_CASE(devnet_still_forms_them, DevNetSetup)
+{
+    BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::DEVNET);
+    CheckRegisteredButUnformedProfiles(/*expect_formed=*/true);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
