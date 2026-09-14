@@ -12,6 +12,7 @@
 #include <llmq/params.h>
 
 #include <limits>
+#include <map>
 #include <vector>
 
 namespace Consensus {
@@ -352,6 +353,17 @@ struct Params {
     int nInstantSendV2ActivationHeight{std::numeric_limits<int>::max()};
     LLMQType llmqTypePlatform{LLMQType::LLMQ_NONE};
     LLMQType llmqTypeMnhf{LLMQType::LLMQ_NONE};
+    /** Profiles that stop forming new quorums, each from its own height: no
+     *  DKG session starts for a cycle whose base block is at or above it, no
+     *  commitment is required for such a cycle, and the profile no longer lists
+     *  as enabled from that height. The profile stays registered, so every
+     *  quorum it formed below the height -- and every commitment already on the
+     *  chain -- verifies exactly as before, which a reindex needs. One-way and
+     *  height-only like the switchovers above. Empty on every network until a
+     *  profile is retired deliberately; the startup check refuses a height off
+     *  the profile's DKG grid and a profile that still holds a live role
+     *  (CheckLLMQConfiguration). */
+    std::map<LLMQType, int> llmqFormationEndHeights;
 
     int DeploymentHeight(BuriedDeployment dep) const
     {

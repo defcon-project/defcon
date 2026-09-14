@@ -369,6 +369,7 @@ BASE_SCRIPTS = [
     'rpc_masternode.py',
     'rpc_mnauth.py',
     'p2p_mnauth_before_sync.py',
+    'feature_llmq_formation_end.py',
     'rpc_verifychainlock.py',
     'wallet_create_tx.py --legacy-wallet',
     'wallet_send.py --legacy-wallet',

@@ -263,10 +263,10 @@ namespace {
 
 //! The two profiles mainnet registers and never forms. The rule reads the
 //! selected network, so each case selects it for real rather than faking it.
-void CheckRegisteredButUnformedProfiles(bool expect_formed)
+void CheckRegisteredButUnformedProfiles(bool expect_formed, int prev_height = 100000)
 {
     CBlockIndex index;
-    index.nHeight = 100000;
+    index.nHeight = prev_height;
     for (const auto type : {Consensus::LLMQType::LLMQ_50_60, Consensus::LLMQType::LLMQ_60_75}) {
         BOOST_CHECK_EQUAL(llmq::IsQuorumTypeEnabledInternal(type, &index, false, false), expect_formed);
     }
@@ -294,13 +294,13 @@ BOOST_FIXTURE_TEST_CASE(testnet_never_forms_mainnets_unused_profiles, TestNetSet
     CheckRegisteredButUnformedProfiles(/*expect_formed=*/false);
 }
 
-// The control: devnet still forms them (stopping that there is a separate,
-// height-gated change), so the two checks above can fail and are not reading a
-// constant.
+// The control: devnet formed them below its formation end height, so the two
+// checks above can fail and are not reading a constant. Where devnet stops them
+// is pinned in llmq_formation_end_tests.
 BOOST_FIXTURE_TEST_CASE(devnet_still_forms_them, DevNetSetup)
 {
     BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::DEVNET);
-    CheckRegisteredButUnformedProfiles(/*expect_formed=*/true);
+    CheckRegisteredButUnformedProfiles(/*expect_formed=*/true, /*prev_height=*/1000);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

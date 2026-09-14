@@ -170,10 +170,28 @@ int GetDkgBadVotesThreshold(const ::Consensus::Params& params, const Consensus::
     return llmqParams.dkgBadVotesThreshold;
 }
 
+int GetQuorumFormationEndHeight(const ::Consensus::Params& params, Consensus::LLMQType llmqType)
+{
+    const auto it = params.llmqFormationEndHeights.find(llmqType);
+    return it == params.llmqFormationEndHeights.end() ? std::numeric_limits<int>::max() : it->second;
+}
+
 bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev,
                                 std::optional<bool> optDIP0024IsActive, std::optional<bool> optHaveDIP0024Quorums)
 {
     const Consensus::Params& consensusParams = Params().GetConsensus();
+
+    // A retired profile is disabled for the block after pindexPrev once that
+    // block reaches its formation end -- the same "next block" reading as the
+    // Q60 formation gate below. Every consumer asks through here: the DKG
+    // session and the member list with the cycle base's predecessor, block
+    // validation and the miner with the new block's predecessor. A cycle based
+    // below the end therefore still runs to completion and its commitment is
+    // still required; none based at or above it starts. Checked before the
+    // per-type rules so it can only narrow them.
+    if (pindexPrev->nHeight + 1 >= GetQuorumFormationEndHeight(consensusParams, llmqType)) {
+        return false;
+    }
 
     const bool fDIP0024IsActive{optDIP0024IsActive.value_or(DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_DIP0024))};
     const bool fHaveDIP0024Quorums{optHaveDIP0024Quorums.value_or(pindexPrev->nHeight >= consensusParams.DIP0024QuorumsHeight)};
