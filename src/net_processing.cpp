@@ -304,6 +304,17 @@ struct Peer {
     /** Whether the peer has requested to receive llmq recovered signatures */
     std::atomic<bool> m_wants_recsigs{false};
 
+    /** Protects m_deferred_mnauth */
+    Mutex m_deferred_mnauth_mutex;
+    /** An MNAUTH that arrived before blockchain sync had finished, when the
+     *  masternode list it is checked against is not usable yet. A masternode
+     *  sends MNAUTH once per connection, so dropping it (as the handler still
+     *  does before sync) left the connection unverified for its whole life
+     *  (dash#7562). Held as its raw bytes, at most one per connection, it grants
+     *  nothing until the ordinary handler has checked it after sync, and it goes
+     *  away with this Peer when the connection does. */
+    std::optional<std::vector<uint8_t>> m_deferred_mnauth GUARDED_BY(m_deferred_mnauth_mutex);
+
     struct TxRelay {
         mutable RecursiveMutex m_bloom_filter_mutex;
         /** Whether the peer wishes to receive transaction announcements.
@@ -783,6 +794,11 @@ private:
 
     /** Helpers to process result of external handlers of message */
     void ProcessPeerMsgRet(const PeerMsgRet& ret, CNode& pfrom) EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
+
+    /** Hold an MNAUTH received before blockchain sync (see Peer::m_deferred_mnauth). */
+    void DeferMNAuthUntilSynced(const CNode& pfrom, Peer& peer, const CDataStream& vRecv);
+    /** Run a held MNAUTH through the ordinary handler once blockchain sync has finished. */
+    void MaybeProcessDeferredMNAuth(CNode& node, Peer& peer) EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void PostProcessMessage(MessageProcessingResult&& ret, NodeId node) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
 
     /** Consider evicting an outbound peer based on the amount of time they've been behind our tip */
@@ -3793,6 +3809,66 @@ void PeerManagerImpl::ProcessPeerMsgRet(const PeerMsgRet& ret, CNode& pfrom)
     if (!ret) Misbehaving(pfrom.GetId(), ret.error().score, ret.error().message);
 }
 
+void PeerManagerImpl::DeferMNAuthUntilSynced(const CNode& pfrom, Peer& peer, const CDataStream& vRecv)
+{
+    // An MNAUTH is exactly a proRegTxHash and a BLS signature. Anything else is
+    // not held: before sync it is ignored exactly as it always was, and a
+    // well-formed copy costs this connection 128 bytes at most.
+    static constexpr size_t MNAUTH_SIZE{sizeof(uint256) + CBLSSignature::SerSize};
+    if (vRecv.size() != MNAUTH_SIZE) return;
+
+    // The right size is not the right shape: a signature that is not a canonical
+    // encoding under either BLS scheme throws while it is read. A live MNAUTH is
+    // read inside ProcessMessages' try/catch; the held one is replayed from
+    // SendMessages, which has none. Read a copy now, and hold only what reads --
+    // the unreadable is ignored before sync, exactly as it always was. The reader
+    // tries both schemes, so a scheme switch between now and the replay cannot
+    // turn a readable message into a throwing one.
+    try {
+        CDataStream probe(vRecv);
+        CMNAuth parsed;
+        probe >> parsed;
+    } catch (const std::exception& e) {
+        LogPrint(BCLog::NET_NETCONN, "CMNAuth -- MNAUTH received before blockchain sync is unreadable (%s), not held, peer=%d\n", e.what(), pfrom.GetId());
+        return;
+    }
+
+    LOCK(peer.m_deferred_mnauth_mutex);
+    // The sender sends one per connection; keep the first, as a later one from
+    // the same connection has no claim to replace it.
+    if (peer.m_deferred_mnauth) return;
+    peer.m_deferred_mnauth.emplace(UCharCast(vRecv.data()), UCharCast(vRecv.data()) + vRecv.size());
+    LogPrint(BCLog::NET_NETCONN, "CMNAuth -- MNAUTH received before blockchain sync, held until it finishes, peer=%d\n", pfrom.GetId());
+}
+
+void PeerManagerImpl::MaybeProcessDeferredMNAuth(CNode& node, Peer& peer)
+{
+    if (!m_mn_sync.IsBlockchainSynced() || node.fDisconnect || !node.fSuccessfullyConnected) return;
+
+    std::optional<std::vector<uint8_t>> held;
+    {
+        LOCK(peer.m_deferred_mnauth_mutex);
+        if (!peer.m_deferred_mnauth) return;
+        held.swap(peer.m_deferred_mnauth);
+    }
+    LogPrint(BCLog::NET_NETCONN, "CMNAuth -- processing the MNAUTH held until blockchain sync, peer=%d\n", node.GetId());
+    // The same handler, the same list and the same misbehaviour accounting as a
+    // live MNAUTH: holding it bought time, not trust.
+    CDataStream vRecv(Span<const uint8_t>{*held}, SER_NETWORK, node.GetCommonVersion());
+    // SendMessages runs outside the dispatcher's try/catch, and an exception
+    // leaving here would end the message handler thread. The read was proved at
+    // hold time; this is the same guard the live path has, kept anyway.
+    try {
+        ProcessPeerMsgRet(CMNAuth::ProcessMessage(node, peer.m_their_services, m_connman, m_mn_metaman, m_mn_activeman,
+                                                  m_mn_sync, m_dmnman->GetListAtChainTip(), NetMsgType::MNAUTH, vRecv),
+                          node);
+    } catch (const std::exception& e) {
+        LogPrint(BCLog::NET, "%s(mnauth, held): Exception '%s' (%s) caught, peer=%d\n", __func__, e.what(), typeid(e).name(), node.GetId());
+    } catch (...) {
+        LogPrint(BCLog::NET, "%s(mnauth, held): Unknown exception caught, peer=%d\n", __func__, node.GetId());
+    }
+}
+
 void PeerManagerImpl::PostProcessMessage(MessageProcessingResult&& result, NodeId node)
 {
     if (result.m_error) {
@@ -5599,7 +5675,16 @@ void PeerManagerImpl::ProcessMessage(
         ProcessPeerMsgRet(m_sporkman.ProcessMessage(pfrom, m_connman, *this, msg_type, vRecv), pfrom);
         m_mn_sync.ProcessMessage(pfrom, msg_type, vRecv);
         ProcessPeerMsgRet(m_govman.ProcessMessage(pfrom, m_connman, *this, msg_type, vRecv), pfrom);
-        ProcessPeerMsgRet(CMNAuth::ProcessMessage(pfrom, peer->m_their_services, m_connman, m_mn_metaman, m_mn_activeman, m_mn_sync, m_dmnman->GetListAtChainTip(), msg_type, vRecv), pfrom);
+        if (msg_type == NetMsgType::MNAUTH && !m_mn_sync.IsBlockchainSynced()) {
+            DeferMNAuthUntilSynced(pfrom, *peer, vRecv);
+        } else {
+            if (msg_type == NetMsgType::MNAUTH) {
+                // A live MNAUTH after sync supersedes a held one: processing
+                // both would read the second as a duplicate and punish it.
+                WITH_LOCK(peer->m_deferred_mnauth_mutex, peer->m_deferred_mnauth.reset());
+            }
+            ProcessPeerMsgRet(CMNAuth::ProcessMessage(pfrom, peer->m_their_services, m_connman, m_mn_metaman, m_mn_activeman, m_mn_sync, m_dmnman->GetListAtChainTip(), msg_type, vRecv), pfrom);
+        }
         ProcessDSLMessage(pfrom, *peer, msg_type, vRecv);
         PostProcessMessage(m_llmq_ctx->quorum_block_processor->ProcessMessage(
                                pfrom, msg_type, vRecv,
@@ -6975,6 +7060,10 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
     PeerRef peer = GetPeerRef(pto->GetId());
     if (!peer) return false;
     const Consensus::Params& consensusParams = m_chainparams.GetConsensus();
+
+    // Before the discouragement check, so a held MNAUTH that fails is accounted
+    // for in this same pass.
+    MaybeProcessDeferredMNAuth(*pto, *peer);
 
     // We must call MaybeDiscourageAndDisconnect first, to ensure that we'll
     // disconnect misbehaving peers even before the version handshake is complete.
