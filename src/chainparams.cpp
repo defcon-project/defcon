@@ -1908,14 +1908,22 @@ void CheckLLMQConfiguration(const CChainParams& params)
         if (type == consensus.llmqTypeMnhf) refuse_role("llmqTypeMnhf");
         if (type == consensus.llmqTypeChainLocksV2) refuse_role("llmqTypeChainLocksV2");
         if (type == consensus.llmqTypeDIP0024InstantSendV2) refuse_role("llmqTypeDIP0024InstantSendV2");
-        // A pre-switchover role may stop only once its successor has taken over:
-        // everything it still has to sign is below the switchover, and the
-        // quorums for that were formed below it too.
-        if (type == consensus.llmqTypeChainLocks && end < consensus.nChainLocksV2ActivationHeight) {
-            refuse_role("llmqTypeChainLocks below its switchover");
+        // A pre-switchover role may stop only once its successor has taken over,
+        // and strictly after the switchover, not at it. Its resolver still names
+        // the old profile one block below the switchover -- InstantSend by the
+        // tip height (GetInstantSendLLMQType), ChainLocks by the height signed
+        // (GetChainLocksLLMQType) -- while the gate above reads the block after
+        // the tip, so an end equal to the switchover disables the profile for
+        // exactly that tip, and IsQuorumActive, which scans at the tip, then
+        // refuses the sig shares and recovered sigs its quorums still produce.
+        // ChainLocks happen to pause signing over the formation lead before
+        // their switchover, which kept the equal end harmless there; this check
+        // does not lean on that.
+        if (type == consensus.llmqTypeChainLocks && end <= consensus.nChainLocksV2ActivationHeight) {
+            refuse_role("llmqTypeChainLocks at or below its switchover");
         }
-        if (type == consensus.llmqTypeDIP0024InstantSend && end < consensus.nInstantSendV2ActivationHeight) {
-            refuse_role("llmqTypeDIP0024InstantSend below its switchover");
+        if (type == consensus.llmqTypeDIP0024InstantSend && end <= consensus.nInstantSendV2ActivationHeight) {
+            refuse_role("llmqTypeDIP0024InstantSend at or below its switchover");
         }
     }
 }

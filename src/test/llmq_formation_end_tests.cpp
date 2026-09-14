@@ -23,6 +23,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -150,8 +151,9 @@ BOOST_AUTO_TEST_CASE(startup_check_refuses_what_would_break)
     // A rotating profile.
     BOOST_CHECK_THROW(CheckLLMQConfiguration(*with_end(Consensus::LLMQType::LLMQ_TEST_DIP0024, 480)), std::runtime_error);
 
-    // A pre-switchover role stops only once its successor has taken over. On
-    // devnet llmq_60_75 signed InstantSend below 7200.
+    // A pre-switchover role stops only after its successor has taken over, and
+    // not at the switchover itself. On devnet llmq_60_75 signed InstantSend
+    // below 7200 and llmq_400_60 signed ChainLocks below 3240.
     DevNetArg devnet_arg;
     auto devnet = CreateChainParams(args, CBaseChainParams::DEVNET);
     BOOST_CHECK_NO_THROW(CheckLLMQConfiguration(*devnet));
@@ -160,7 +162,63 @@ BOOST_AUTO_TEST_CASE(startup_check_refuses_what_would_break)
     dc.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_60_75] = dc.nInstantSendV2ActivationHeight - 48;
     BOOST_CHECK_THROW(CheckLLMQConfiguration(*devnet), std::runtime_error);
     dc.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_60_75] = dc.nInstantSendV2ActivationHeight;
+    BOOST_CHECK_THROW(CheckLLMQConfiguration(*devnet), std::runtime_error);
+    dc.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_60_75] = dc.nInstantSendV2ActivationHeight + 48;
     BOOST_CHECK_NO_THROW(CheckLLMQConfiguration(*devnet));
+
+    BOOST_REQUIRE(dc.llmqTypeChainLocks == Consensus::LLMQType::LLMQ_400_60);
+    dc.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_400_60] = dc.nChainLocksV2ActivationHeight;
+    BOOST_CHECK_THROW(CheckLLMQConfiguration(*devnet), std::runtime_error);
+    dc.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_400_60] = dc.nChainLocksV2ActivationHeight + 72;
+    BOOST_CHECK_NO_THROW(CheckLLMQConfiguration(*devnet));
+}
+
+// What the refusal above is for, asked of the running code rather than of the
+// check: whenever the check accepts an end for a pre-switchover role, that
+// role's resolver never names the profile at a tip where the gate has already
+// disabled it. A tip like that is where IsQuorumActive, scanning at the tip,
+// refuses the sig shares and recovered sigs of the profile's own quorums, so a
+// lock that is still due cannot be signed. Every end on the grid from two
+// intervals below the switchover to two above is tried, each against the tips
+// around both heights.
+BOOST_FIXTURE_TEST_CASE(accepted_end_keeps_a_pre_switchover_role_live, DevNetSetup)
+{
+    auto& c = const_cast<Consensus::Params&>(Params().GetConsensus());
+    const auto check_role = [&](const std::string& role, Consensus::LLMQType type, int switchover, bool instantsend) {
+        const auto profile = Params().GetLLMQ(type);
+        BOOST_REQUIRE(profile.has_value());
+        const auto resolve = [&](int height) {
+            return instantsend ? llmq::GetInstantSendLLMQType(c, height) : llmq::GetChainLocksLLMQType(c, height);
+        };
+        const auto saved = c.llmqFormationEndHeights;
+        const int interval = profile->dkgInterval;
+        const int first_grid = (switchover / interval) * interval;
+        int accepted = 0;
+        for (int end = first_grid - 2 * interval; end <= first_grid + 2 * interval; end += interval) {
+            c.llmqFormationEndHeights = saved;
+            c.llmqFormationEndHeights[type] = end;
+            bool ok{true};
+            try {
+                CheckLLMQConfiguration(Params());
+            } catch (const std::runtime_error&) {
+                ok = false;
+            }
+            if (!ok) continue;
+            ++accepted;
+            for (int tip = std::min(end, switchover) - 3; tip <= std::max(end, switchover) + 1; ++tip) {
+                if (resolve(tip) != type) continue;
+                BOOST_CHECK_MESSAGE(FormsNextBlock(type, tip),
+                                    role << ": the check accepted end " << end << ", but at tip " << tip
+                                         << " the resolver still names " << profile->name << " and the gate has disabled it");
+            }
+        }
+        // Not vacuous: some end near the switchover is accepted.
+        BOOST_CHECK_MESSAGE(accepted > 0, role << ": no end near the switchover was accepted");
+        c.llmqFormationEndHeights = saved;
+    };
+
+    check_role("InstantSend", c.llmqTypeDIP0024InstantSend, c.nInstantSendV2ActivationHeight, /*instantsend=*/true);
+    check_role("ChainLocks", c.llmqTypeChainLocks, c.nChainLocksV2ActivationHeight, /*instantsend=*/false);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
