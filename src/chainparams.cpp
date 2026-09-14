@@ -826,6 +826,20 @@ public:
         // tip before shipping the binary that carries it (see above).
         consensus.llmqTypeDIP0024InstantSendV2 = Consensus::LLMQType::LLMQ_DEFCON;
         consensus.nInstantSendV2ActivationHeight = 7200;
+        // Mainnet registers llmq_50_60 and llmq_60_75 and never forms them;
+        // since 7200 nothing on this devnet signs with either (ChainLocks and
+        // InstantSend are on llmq_defcon), yet both kept running DKG rounds and
+        // punishing members, so every PoSe figure measured here was a round
+        // pessimistic against mainnet. They stop forming at this height and stay
+        // registered, so their history still verifies. A multiple of 48: the last
+        // cycle of either profile below it mines its commitment before it. It is
+        // also the rehearsal for retiring a profile on mainnet. Re-check against
+        // the tip before shipping (tip + 100, on the grid): every node must run
+        // the binary before this height, and an old one past it forks off.
+        consensus.llmqFormationEndHeights = {
+            {Consensus::LLMQType::LLMQ_50_60, 13200},
+            {Consensus::LLMQType::LLMQ_60_75, 13200},
+        };
 
         UpdateDevnetLLMQChainLocksFromArgs(args);
         UpdateDevnetLLMQInstantSendFromArgs(args);
@@ -1192,6 +1206,7 @@ public:
         UpdateLLMQTestParametersFromArgs(args, Consensus::LLMQType::LLMQ_TEST);
         UpdateLLMQTestParametersFromArgs(args, Consensus::LLMQType::LLMQ_TEST_INSTANTSEND);
         UpdateLLMQInstantSendDIP0024FromArgs(args);
+        UpdateLLMQFormationEndHeightsFromArgs(args);
     }
 
     /**
@@ -1281,6 +1296,7 @@ public:
 
     void UpdateLLMQTestParametersFromArgs(const ArgsManager& args, const Consensus::LLMQType llmqType);
     void UpdateLLMQInstantSendDIP0024FromArgs(const ArgsManager& args);
+    void UpdateLLMQFormationEndHeightsFromArgs(const ArgsManager& args);
 };
 
 static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& consensus)
@@ -1566,6 +1582,27 @@ void CRegTestParams::UpdateLLMQInstantSendDIP0024FromArgs(const ArgsManager& arg
     UpdateLLMQDIP0024InstantSend(llmqType);
 }
 
+void CRegTestParams::UpdateLLMQFormationEndHeightsFromArgs(const ArgsManager& args)
+{
+    for (const std::string& entry : args.GetArgs("-llmqformationendheight")) {
+        const auto sep = entry.find(':');
+        if (sep == std::string::npos) {
+            throw std::runtime_error(strprintf("Invalid -llmqformationendheight=%s: expected <quorum name>:<height>", entry));
+        }
+        const std::string name = entry.substr(0, sep);
+        int32_t height{0};
+        if (!ParseInt32(entry.substr(sep + 1), &height) || height <= 0) {
+            throw std::runtime_error(strprintf("Invalid -llmqformationendheight=%s: the height must be a positive integer", entry));
+        }
+        const auto it = ranges::find_if(consensus.llmqs, [&](const auto& p) { return p.name == name; });
+        if (it == consensus.llmqs.end()) {
+            throw std::runtime_error(strprintf("Invalid -llmqformationendheight=%s: regtest registers no quorum named %s", entry, name));
+        }
+        consensus.llmqFormationEndHeights[it->type] = height;
+        LogPrintf("Setting formation end height of %s to %d\n", name, height);
+    }
+}
+
 void CDevNetParams::UpdateDevnetSubsidyAndDiffParametersFromArgs(const ArgsManager& args)
 {
     if (!args.IsArgSet("-minimumdifficultyblocks") && !args.IsArgSet("-highsubsidyblocks") && !args.IsArgSet("-highsubsidyfactor")) return;
@@ -1836,6 +1873,51 @@ void CheckLLMQConfiguration(const CChainParams& params)
             __func__, consensus.nInstantSendV2ActivationHeight, consensus.nChainLocksV2ActivationHeight,
             network));
     }
+
+    // A retired profile. Each of these is a configuration that stops a profile
+    // somebody still depends on, or stops it in the middle of a cycle, and each
+    // fails where the chain would otherwise report it: locks or signals that
+    // simply stop, or a commitment mined past the end that one binary requires
+    // and another refuses.
+    for (const auto& [type, end] : consensus.llmqFormationEndHeights) {
+        const auto profile = params.GetLLMQ(type);
+        if (!profile.has_value()) {
+            throw std::runtime_error(strprintf("%s: a formation end height is set for LLMQ type %d, which %s does not register",
+                                               __func__, static_cast<int>(type), network));
+        }
+        if (end <= 0) {
+            throw std::runtime_error(strprintf("%s: the formation end height of %s on %s must be positive, got %d",
+                                               __func__, profile->name, network, end));
+        }
+        if (profile->useRotation) {
+            throw std::runtime_error(strprintf("%s: %s rotates; retiring a rotating profile is not supported (%s)",
+                                               __func__, profile->name, network));
+        }
+        // On the grid, and with the mining window inside the cycle, the last
+        // cycle below the end mines its commitment before the end: no commitment
+        // is ever required on one side of the height and refused on the other.
+        if (end % profile->dkgInterval != 0 || profile->dkgMiningWindowEnd >= profile->dkgInterval) {
+            throw std::runtime_error(strprintf("%s: the formation end height %d of %s on %s is not on its DKG grid (interval %d, mining window ends at +%d)",
+                                               __func__, end, profile->name, network, profile->dkgInterval, profile->dkgMiningWindowEnd));
+        }
+        const auto refuse_role = [&](const std::string& role) {
+            throw std::runtime_error(strprintf("%s: %s is %s on %s and cannot stop forming at %d",
+                                               __func__, profile->name, role, network, end));
+        };
+        if (type == consensus.llmqTypePlatform) refuse_role("llmqTypePlatform");
+        if (type == consensus.llmqTypeMnhf) refuse_role("llmqTypeMnhf");
+        if (type == consensus.llmqTypeChainLocksV2) refuse_role("llmqTypeChainLocksV2");
+        if (type == consensus.llmqTypeDIP0024InstantSendV2) refuse_role("llmqTypeDIP0024InstantSendV2");
+        // A pre-switchover role may stop only once its successor has taken over:
+        // everything it still has to sign is below the switchover, and the
+        // quorums for that were formed below it too.
+        if (type == consensus.llmqTypeChainLocks && end < consensus.nChainLocksV2ActivationHeight) {
+            refuse_role("llmqTypeChainLocks below its switchover");
+        }
+        if (type == consensus.llmqTypeDIP0024InstantSend && end < consensus.nInstantSendV2ActivationHeight) {
+            refuse_role("llmqTypeDIP0024InstantSend below its switchover");
+        }
+    }
 }
 
 void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::string& network)
@@ -1935,6 +2017,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-llmqplatform=<quorum name>", "Override the LLMQ type recorded for the (unused) platform role. (default: llmq_100_67, devnet-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqmnhf=<quorum name>", "Override the LLMQ type recorded for EHF signalling, which no deployment on this chain uses. (default: llmq_400_85, devnet-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqtestinstantsenddip0024=<quorum name>", "Override the LLMQ type that signs InstantSend locks on regtest, e.g. llmq_test_instantsend for the non-rotating path this chain runs. (default: llmq_test_dip0024, regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-llmqformationendheight=<quorum name>:<height>", "Stop the named quorum profile forming new quorums from this height; may be given once per profile (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqtestinstantsendparams=<size>:<threshold>", "Override the default LLMQ size for the LLMQ_TEST_INSTANTSEND quorums (default: 3:2, regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqtestparams=<size>:<threshold>", "Override the default LLMQ size for the LLMQ_TEST quorum (default: 3:2, regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-minimumdifficultyblocks=<n>", "The number of blocks that can be mined with the minimum difficulty at the start of a chain (default: 0, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);

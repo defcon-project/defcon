@@ -88,6 +88,11 @@ bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBloc
 [[nodiscard]] int GetDkgBadVotesThreshold(const ::Consensus::Params& params,
                                           const Consensus::LLMQParams& llmqParams, int nHeight);
 
+/** The height from which a profile forms no new quorums (see
+ *  Consensus::Params::llmqFormationEndHeights), or an unreachable height when
+ *  the profile is not retired. */
+[[nodiscard]] int GetQuorumFormationEndHeight(const ::Consensus::Params& params, Consensus::LLMQType llmqType);
+
 bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev, std::optional<bool> optDIP0024IsActive, std::optional<bool> optHaveDIP0024Quorums);
 
 std::vector<Consensus::LLMQType> GetEnabledQuorumTypes(gsl::not_null<const CBlockIndex*> pindex);
