@@ -3817,6 +3817,22 @@ void PeerManagerImpl::DeferMNAuthUntilSynced(const CNode& pfrom, Peer& peer, con
     static constexpr size_t MNAUTH_SIZE{sizeof(uint256) + CBLSSignature::SerSize};
     if (vRecv.size() != MNAUTH_SIZE) return;
 
+    // The right size is not the right shape: a signature that is not a canonical
+    // encoding under either BLS scheme throws while it is read. A live MNAUTH is
+    // read inside ProcessMessages' try/catch; the held one is replayed from
+    // SendMessages, which has none. Read a copy now, and hold only what reads --
+    // the unreadable is ignored before sync, exactly as it always was. The reader
+    // tries both schemes, so a scheme switch between now and the replay cannot
+    // turn a readable message into a throwing one.
+    try {
+        CDataStream probe(vRecv);
+        CMNAuth parsed;
+        probe >> parsed;
+    } catch (const std::exception& e) {
+        LogPrint(BCLog::NET_NETCONN, "CMNAuth -- MNAUTH received before blockchain sync is unreadable (%s), not held, peer=%d\n", e.what(), pfrom.GetId());
+        return;
+    }
+
     LOCK(peer.m_deferred_mnauth_mutex);
     // The sender sends one per connection; keep the first, as a later one from
     // the same connection has no claim to replace it.
@@ -3839,9 +3855,18 @@ void PeerManagerImpl::MaybeProcessDeferredMNAuth(CNode& node, Peer& peer)
     // The same handler, the same list and the same misbehaviour accounting as a
     // live MNAUTH: holding it bought time, not trust.
     CDataStream vRecv(Span<const uint8_t>{*held}, SER_NETWORK, node.GetCommonVersion());
-    ProcessPeerMsgRet(CMNAuth::ProcessMessage(node, peer.m_their_services, m_connman, m_mn_metaman, m_mn_activeman,
-                                              m_mn_sync, m_dmnman->GetListAtChainTip(), NetMsgType::MNAUTH, vRecv),
-                      node);
+    // SendMessages runs outside the dispatcher's try/catch, and an exception
+    // leaving here would end the message handler thread. The read was proved at
+    // hold time; this is the same guard the live path has, kept anyway.
+    try {
+        ProcessPeerMsgRet(CMNAuth::ProcessMessage(node, peer.m_their_services, m_connman, m_mn_metaman, m_mn_activeman,
+                                                  m_mn_sync, m_dmnman->GetListAtChainTip(), NetMsgType::MNAUTH, vRecv),
+                          node);
+    } catch (const std::exception& e) {
+        LogPrint(BCLog::NET, "%s(mnauth, held): Exception '%s' (%s) caught, peer=%d\n", __func__, e.what(), typeid(e).name(), node.GetId());
+    } catch (...) {
+        LogPrint(BCLog::NET, "%s(mnauth, held): Unknown exception caught, peer=%d\n", __func__, node.GetId());
+    }
 }
 
 void PeerManagerImpl::PostProcessMessage(MessageProcessingResult&& result, NodeId node)

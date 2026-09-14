@@ -12,11 +12,12 @@ faked with the mnauth RPC, which would not exercise this path at all.
 
 1. Control: a connection opened after sync is verified at once.
 2. A connection opened before sync is verified once sync finishes -- the same
-   connection, no reconnect.
+   connection, no reconnect -- and the held message is processed exactly once.
 3. A connection that goes away before sync takes its held MNAUTH with it.
-4. Holding buys time, not trust: a message of the wrong size is not held, and a
-   well-sized one with an invalid signature is judged after sync by the ordinary
-   handler, with its ordinary penalty.
+4. Holding buys time, not trust: a message of the wrong size is not held; one of
+   the right size that cannot be read (a non-canonical BLS encoding, which throws)
+   is not held either, and the node keeps running; a readable one with an invalid
+   signature is judged after sync by the ordinary handler, with its ordinary penalty.
 """
 
 from test_framework.messages import NODE_BLOOM, msg_generic
@@ -26,6 +27,7 @@ from test_framework.util import assert_equal, force_finish_mnsync, p2p_port
 
 HELD = "MNAUTH received before blockchain sync, held until it finishes"
 PROCESSED = "processing the MNAUTH held until blockchain sync"
+UNREADABLE = "MNAUTH received before blockchain sync is unreadable"
 
 
 class MNAuthBeforeSyncTest(DashTestFramework):
@@ -49,6 +51,17 @@ class MNAuthBeforeSyncTest(DashTestFramework):
     def disconnect_from_mn(self):
         self.disconnect_nodes(self.plain.index, self.mn.nodeIdx)
         self.wait_until(lambda: self.mn_peer() is None)
+
+    def log_since(self, pos):
+        with open(self.plain.debug_log_path, encoding="utf-8") as dl:
+            dl.seek(pos)
+            return dl.read()
+
+    def let_message_loop_run(self, rounds=5):
+        """Round trips on every connection; each is answered from the message loop."""
+        for _ in range(rounds):
+            self.plain.ping()
+            self.wait_until(lambda: all("pingwait" not in p for p in self.plain.getpeerinfo()), timeout=20)
 
     def reset_sync(self):
         # The controller link keeps the peer count above zero: a 0 <-> non-0
@@ -77,10 +90,20 @@ class MNAuthBeforeSyncTest(DashTestFramework):
         # the handshake is done and the MNAUTH is in, but nothing can check it yet
         assert_equal(self.plain.mnsync("status")["IsBlockchainSynced"], False)
         assert "verified_proregtx_hash" not in self.mn_peer()
+        log_start = self.plain.debug_log_bytes()
         # the trailing newline keeps peer=3 from matching peer=31
         with self.plain.assert_debug_log([f"{PROCESSED}, peer={peer_id}\n"], timeout=20):
             force_finish_mnsync(self.plain)
             self.wait_until(lambda: (self.mn_peer() or {}).get("verified_proregtx_hash") == protx, timeout=10)
+        assert_equal(self.mn_peer()["id"], peer_id)
+        # Held once, processed once: let the message loop pass over this peer many
+        # more times, then read the whole window. A held MNAUTH that survived its
+        # own processing would be replayed on every pass and punished as a duplicate
+        # each time -- and the verified identity above would still look right.
+        self.let_message_loop_run()
+        window = self.log_since(log_start)
+        assert_equal(window.count(f"{PROCESSED}, peer={peer_id}\n"), 1)
+        assert "duplicate mnauth" not in window
         assert_equal(self.mn_peer()["id"], peer_id)
         self.disconnect_from_mn()
 
@@ -99,27 +122,40 @@ class MNAuthBeforeSyncTest(DashTestFramework):
             self.wait_until(lambda: self.mn_peer().get("verified_proregtx_hash") == protx, timeout=10)
         self.disconnect_from_mn()
 
-        self.log.info("4. holding grants nothing: wrong size is not held, an invalid signature is punished after sync")
+        self.log.info("4. holding grants nothing: wrong size and unreadable are not held, an invalid signature is punished after sync")
         self.reset_sync()
         short = self.plain.add_p2p_connection(P2PInterface())
         short_id = self.plain.getpeerinfo()[-1]["id"]
+        unreadable = self.plain.add_p2p_connection(P2PInterface())
+        unreadable_id = self.plain.getpeerinfo()[-1]["id"]
         # NODE_BLOOM as well, or the handler would stop at the services check
         # before it ever reached the signature this case is about
         forged = self.plain.add_p2p_connection(P2PInterface(), services=P2P_SERVICES | NODE_BLOOM)
         forged_id = self.plain.getpeerinfo()[-1]["id"]
-        with self.plain.assert_debug_log([f"{HELD}, peer={forged_id}\n"],
-                                         unexpected_msgs=[f"{HELD}, peer={short_id}\n"]):
+        with self.plain.assert_debug_log([f"{HELD}, peer={forged_id}\n", UNREADABLE, f"not held, peer={unreadable_id}\n"],
+                                         unexpected_msgs=[f"{HELD}, peer={short_id}\n", f"{HELD}, peer={unreadable_id}\n"]):
             # one byte short of a proRegTxHash and a BLS signature
             short.send_and_ping(msg_generic(b"mnauth", b"\x01" * 127))
-            # the right size, a made-up proRegTxHash and an all-zero signature, which is never valid
+            # the right size, but the signature is the G2 identity (0xc0, then zeros): it
+            # parses, is rejected as the identity, and writes back as zeros under both
+            # schemes, so reading it throws -- which a held copy must never do later.
+            # (Arbitrary bytes are not enough: some round-trip under one scheme.)
+            unreadable.send_and_ping(msg_generic(b"mnauth", b"\x01" * 32 + b"\xc0" + b"\x00" * 95))
+            # the right size, a made-up proRegTxHash and an all-zero signature: it reads,
+            # as the null signature, and is never valid
             forged.send_and_ping(msg_generic(b"mnauth", b"\x01" * 32 + b"\x00" * 96))
         assert_equal(self.plain.mnsync("status")["IsBlockchainSynced"], False)
         with self.plain.assert_debug_log([f"{PROCESSED}, peer={forged_id}\n", "invalid mnauth signature"],
-                                         unexpected_msgs=[f"{PROCESSED}, peer={short_id}\n"], timeout=20):
+                                         unexpected_msgs=[f"{PROCESSED}, peer={short_id}\n",
+                                                          f"{PROCESSED}, peer={unreadable_id}\n",
+                                                          "(mnauth, held): Exception"], timeout=20):
             force_finish_mnsync(self.plain)
             forged.wait_for_disconnect(timeout=20)
-            short.sync_with_ping()
-        assert all("verified_proregtx_hash" not in p for p in self.plain.getpeerinfo() if p["id"] == short_id)
+            self.let_message_loop_run()
+        # the node is still answering, and neither of the other two gained anything or was dropped
+        short.sync_with_ping()
+        unreadable.sync_with_ping()
+        assert all("verified_proregtx_hash" not in p for p in self.plain.getpeerinfo() if p["id"] in (short_id, unreadable_id))
 
 
 if __name__ == '__main__':
