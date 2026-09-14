@@ -837,8 +837,8 @@ public:
         // the tip before shipping (tip + 100, on the grid): every node must run
         // the binary before this height, and an old one past it forks off.
         consensus.llmqFormationEndHeights = {
-            {Consensus::LLMQType::LLMQ_50_60, 13200},
-            {Consensus::LLMQType::LLMQ_60_75, 13200},
+            {Consensus::LLMQType::LLMQ_50_60, 13536},
+            {Consensus::LLMQType::LLMQ_60_75, 13536},
         };
 
         UpdateDevnetLLMQChainLocksFromArgs(args);
