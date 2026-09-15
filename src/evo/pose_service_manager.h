@@ -13,7 +13,9 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <set>
+#include <utility>
 #include <vector>
 
 class CBLSSecretKey;
@@ -144,6 +146,40 @@ public:
     /** Whether this masternode's announcement was already seen this epoch. */
     bool HasResponded(const uint256& proTxHash) const;
 
+    /**
+     * Keep the commitment this node asked the quorum to sign, under the hash it
+     * was signed as. A member's pool keeps growing after it signs, so when the
+     * recovered signature arrives it is this commitment -- not a rebuild from
+     * the pool -- that matches it, and that the member relays.
+     */
+    void RememberSigningCandidate(const CPoSeServiceCommitment& commitment, const uint256& msgHash);
+    std::optional<CPoSeServiceCommitment> SigningCandidate(uint32_t nEpoch, const uint256& msgHash) const;
+
+    /**
+     * Keep a commitment whose quorum signature the caller has verified, for a
+     * block producer whose own pool no longer reproduces what was signed.
+     * Returns true only the first time a given (epoch, hash) is kept -- the
+     * caller relays it then and not again, which ends the flood -- and false
+     * for a duplicate or once kSignedCommitmentsPerEpoch are held for that
+     * epoch. Honest operation produces one per epoch: every member is locked
+     * to a single message hash, so two signed variants need members that
+     * signed twice -- at least 2 * threshold - size of them, 22 on a 60/41
+     * quorum. A producer holding its own recovered signature picks by that
+     * signature's hash; one without it takes the first kept for its base.
+     */
+    bool StoreSignedCommitment(const CPoSeServiceCommitment& commitment, const uint256& msgHash);
+    bool HasSignedCommitment(uint32_t nEpoch, const uint256& msgHash) const;
+    /** The kept signed commitment for an epoch over `epochBlockHash`, under
+     *  `msgHash` or, with no hash given, the first one kept for that base. The
+     *  base is matched explicitly: a peer can deliver the commitment of the
+     *  chain this node just switched to before the tick has moved the manager
+     *  onto it, so one epoch can briefly hold entries for two bases, and the
+     *  one kept first must not hide the one a block on this chain needs. */
+    std::optional<CPoSeServiceCommitment> SignedCommitment(uint32_t nEpoch, const uint256& epochBlockHash,
+                                                           const std::optional<uint256>& msgHash) const;
+
+    static constexpr size_t kSignedCommitmentsPerEpoch{4};
+
 private:
     mutable Mutex m_mutex;
     CServiceReportStore m_store;
@@ -154,6 +190,25 @@ private:
     // window as the store, so an announcement racing the local epoch tick in
     // either direction still lands in its own epoch's set.
     std::map<uint32_t, std::set<uint256>> m_responded GUARDED_BY(m_mutex);
+    // per-epoch commitments, each under the hash the quorum signs. Only the
+    // current epoch and the one before it are kept: a commitment is useful up
+    // to its boundary block, and the previous epoch covers a producer whose
+    // tick for the boundary has already run. A reorg drops what it invalidated
+    // -- judged by the base block each commitment names, not by epoch number.
+    struct EpochCommitments {
+        std::vector<std::pair<uint256, CPoSeServiceCommitment>> candidates;
+        std::vector<std::pair<uint256, CPoSeServiceCommitment>> signedCommitments;
+    };
+    std::map<uint32_t, EpochCommitments> m_commitments GUARDED_BY(m_mutex);
+
+    // Drops every commitment older than the epoch before `nEpoch`. Called where
+    // commitments are added, not only from BeginEpoch: a node that is not yet
+    // blockchain-synced keeps connecting blocks -- and can keep receiving
+    // commitments -- while ProcessDSLTick returns before BeginEpoch runs, so the
+    // tick cannot be what keeps this map at two epochs (the same reasoning as the
+    // global bound in HoldDSLEarlyResponse). Newer epochs are left alone: the wire
+    // can deliver the next epoch's commitment before the tick reaches it.
+    void PruneCommitmentsBefore(uint32_t nEpoch) EXCLUSIVE_LOCKS_REQUIRED(m_mutex);
 };
 
 } // namespace dsl

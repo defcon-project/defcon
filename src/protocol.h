@@ -301,6 +301,7 @@ extern const char* QUORUMROTATIONINFO;
 extern const char* POSECHALLENGE;
 extern const char* POSERESPONSE;
 extern const char* POSEREPORT;
+extern const char* POSECOMMIT;
 };
 
 /* Get a vector of all valid message types (see above) */

@@ -190,8 +190,11 @@ CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& ep
  * transaction, matching what consensus recomputes in
  * CheckPoSeServiceCommitmentTx. Deterministic in its inputs, so quorum members
  * with the same report pool sign the same hash, and a miner with the same pool
- * can rebuild the transaction and attach the recovered signature only when its
- * own hash matches -- a diverged pool yields no commitment, never a wrong one.
+ * can rebuild the transaction and attach the recovered signature when its own
+ * hash matches. A miner whose pool no longer reproduces the signed hash cannot
+ * rebuild the bitfields from the signature, so the members that signed relay
+ * the exact commitment instead (MakeServiceCommitmentTx) -- a signed commitment
+ * is the quorum's assertion, and consensus checks the signature, not the pool.
  */
 struct ServiceCommitmentTxCandidate {
     CMutableTransaction tx;        // signature zeroed
@@ -204,6 +207,15 @@ ServiceCommitmentTxCandidate BuildServiceCommitmentTx(uint32_t nEpoch, const uin
                                                       const std::vector<CPoSeServiceReport>& reports,
                                                       const CDeterministicMNList& epochBaseList,
                                                       const Consensus::Params& params);
+
+/**
+ * The same transaction for a commitment that already exists rather than one
+ * aggregated from a pool: the one a quorum member asked to be signed, or one a
+ * peer relayed with its signature. The signature is zeroed in `tx` and in
+ * `commitment`, so `msgHash` is the hash the quorum signed. BuildServiceCommitmentTx
+ * is exactly this applied to BuildServiceCommitment's result.
+ */
+ServiceCommitmentTxCandidate MakeServiceCommitmentTx(const CPoSeServiceCommitment& commitment);
 
 } // namespace dsl
 

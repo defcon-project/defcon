@@ -61,6 +61,30 @@ CPoSeServiceManager::EpochChange CPoSeServiceManager::BeginEpoch(uint32_t nEpoch
                 ++it;
             }
         }
+
+        // Commitments. Anything older than the epoch before this one has
+        // passed its boundary block for good, and on a rewind every epoch above
+        // the new one was on the abandoned chain. For the epoch itself, on a
+        // rewind or a rebase, the base block decides and not the epoch number:
+        // a commitment signed over the base this epoch still has is still the
+        // one its boundary needs (a rewind that stops above the base), one
+        // signed over a replaced base can enter no block on this chain.
+        for (auto it = m_commitments.begin(); it != m_commitments.end();) {
+            if (it->first + 1 < nEpoch || (result == EpochChange::Rewound && it->first > nEpoch)) {
+                it = m_commitments.erase(it);
+                continue;
+            }
+            if (it->first == nEpoch && (result == EpochChange::Rewound || result == EpochChange::Rebased)) {
+                const auto other_base = [&](const auto& entry) { return entry.second.epochBlockHash != epochBlockHash; };
+                auto& kept = it->second;
+                kept.candidates.erase(std::remove_if(kept.candidates.begin(), kept.candidates.end(), other_base),
+                                      kept.candidates.end());
+                kept.signedCommitments.erase(
+                    std::remove_if(kept.signedCommitments.begin(), kept.signedCommitments.end(), other_base),
+                    kept.signedCommitments.end());
+            }
+            ++it;
+        }
     }
     for (const uint32_t e : stale) m_store.DropEpoch(e);
     m_store.SetCurrentEpoch(nEpoch);
@@ -239,6 +263,82 @@ bool CPoSeServiceManager::HasResponded(const uint256& proTxHash) const
     LOCK(m_mutex);
     const auto it = m_responded.find(m_epoch);
     return it != m_responded.end() && it->second.count(proTxHash) > 0;
+}
+
+namespace {
+template <typename Entries>
+auto FindCommitment(Entries& entries, const uint256& msgHash)
+{
+    return std::find_if(entries.begin(), entries.end(), [&](const auto& e) { return e.first == msgHash; });
+}
+} // namespace
+
+void CPoSeServiceManager::PruneCommitmentsBefore(uint32_t nEpoch)
+{
+    AssertLockHeld(m_mutex);
+    for (auto it = m_commitments.begin(); it != m_commitments.end() && it->first + 1 < nEpoch;) {
+        it = m_commitments.erase(it);
+    }
+}
+
+void CPoSeServiceManager::RememberSigningCandidate(const CPoSeServiceCommitment& commitment, const uint256& msgHash)
+{
+    LOCK(m_mutex);
+    // An epoch that already left the window cannot be signed for any more.
+    if (commitment.nEpoch + 1 < m_epoch) return;
+    PruneCommitmentsBefore(commitment.nEpoch);
+    auto& candidates = m_commitments[commitment.nEpoch].candidates;
+    if (FindCommitment(candidates, msgHash) != candidates.end()) return;
+    if (candidates.size() >= kSignedCommitmentsPerEpoch) return;
+    candidates.emplace_back(msgHash, commitment);
+}
+
+std::optional<CPoSeServiceCommitment> CPoSeServiceManager::SigningCandidate(uint32_t nEpoch, const uint256& msgHash) const
+{
+    LOCK(m_mutex);
+    const auto epoch = m_commitments.find(nEpoch);
+    if (epoch == m_commitments.end()) return std::nullopt;
+    const auto it = FindCommitment(epoch->second.candidates, msgHash);
+    if (it == epoch->second.candidates.end()) return std::nullopt;
+    return it->second;
+}
+
+bool CPoSeServiceManager::StoreSignedCommitment(const CPoSeServiceCommitment& commitment, const uint256& msgHash)
+{
+    LOCK(m_mutex);
+    if (commitment.nEpoch + 1 < m_epoch) return false;
+    PruneCommitmentsBefore(commitment.nEpoch);
+    auto& kept = m_commitments[commitment.nEpoch].signedCommitments;
+    if (FindCommitment(kept, msgHash) != kept.end()) return false;
+    if (kept.size() >= kSignedCommitmentsPerEpoch) {
+        LogPrint(BCLog::DSL, "DSL -- signed commitment for epoch %u not kept: %d already held for that epoch\n",
+                 commitment.nEpoch, kept.size());
+        return false;
+    }
+    kept.emplace_back(msgHash, commitment);
+    return true;
+}
+
+bool CPoSeServiceManager::HasSignedCommitment(uint32_t nEpoch, const uint256& msgHash) const
+{
+    LOCK(m_mutex);
+    const auto epoch = m_commitments.find(nEpoch);
+    return epoch != m_commitments.end() &&
+           FindCommitment(epoch->second.signedCommitments, msgHash) != epoch->second.signedCommitments.end();
+}
+
+std::optional<CPoSeServiceCommitment> CPoSeServiceManager::SignedCommitment(uint32_t nEpoch, const uint256& epochBlockHash,
+                                                                            const std::optional<uint256>& msgHash) const
+{
+    LOCK(m_mutex);
+    const auto epoch = m_commitments.find(nEpoch);
+    if (epoch == m_commitments.end()) return std::nullopt;
+    for (const auto& [hash, commitment] : epoch->second.signedCommitments) {
+        if (commitment.epochBlockHash != epochBlockHash) continue;
+        if (msgHash.has_value() && hash != *msgHash) continue;
+        return commitment;
+    }
+    return std::nullopt;
 }
 
 } // namespace dsl

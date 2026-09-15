@@ -202,9 +202,15 @@ ServiceCommitmentTxCandidate BuildServiceCommitmentTx(uint32_t nEpoch, const uin
                                                       const CDeterministicMNList& epochBaseList,
                                                       const Consensus::Params& params)
 {
+    return MakeServiceCommitmentTx(BuildServiceCommitment(nEpoch, epochBlockHash, llmqType, quorumHash,
+                                                          reports, epochBaseList, params));
+}
+
+ServiceCommitmentTxCandidate MakeServiceCommitmentTx(const CPoSeServiceCommitment& commitment)
+{
     ServiceCommitmentTxCandidate out;
-    out.commitment = BuildServiceCommitment(nEpoch, epochBlockHash, llmqType, quorumHash,
-                                            reports, epochBaseList, params);
+    out.commitment = commitment;
+    out.commitment.quorumSig = CBLSSignature();
 
     CPoSeServiceCommitmentTxPayload payload;
     payload.commitment = out.commitment;

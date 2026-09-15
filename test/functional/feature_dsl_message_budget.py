@@ -89,8 +89,9 @@ REFILL_EPOCHS = 2          # DSL_MSG_BUDGET_REFILL_EPOCHS
 # inbound connections of one identity, plus the one outbound it can hold to us
 GRANTS_PER_IDENTITY = 3 + 1
 GRANTS_PER_OUTBOUND_ADDR = 2  # DSL_MSG_BUDGET_GRANTS_PER_OUTBOUND_ADDR
+COMMITMENTS_PER_EPOCH = 2     # DSL_COMMITMENTS_PER_EPOCH: the quorum's signed commitment, relayed once
 # This network has no masternodes, so the floor is what sizes the budget.
-CEILING = MIN_MNS * (1 + SENTINELS)                           # honest messages per peer per epoch
+CEILING = MIN_MNS * (1 + SENTINELS) + COMMITMENTS_PER_EPOCH  # honest messages per peer per epoch
 BUDGET = CAP_EPOCHS * CEILING                                 # what a connection may hold at once
 PER_BLOCK = REFILL_EPOCHS * CEILING // EPOCH_INTERVAL         # whole messages one block returns
 BLOCKS_TO_CAP = CAP_EPOCHS * EPOCH_INTERVAL // REFILL_EPOCHS  # blocks from empty to the cap
