@@ -81,10 +81,16 @@ class LLMQQ60ProtoFloorTest(BitcoinTestFramework):
             self.wait_until(lambda: self.peer_versions(node) == [FLOOR], timeout=30)
 
         self.log.info("The old peer cannot come back")
-        with node.assert_debug_log(["using obsolete version %d" % OLD]):
+        # Expected: the VERSION-handler rejection, not the later post-handshake drop.
+        # Unexpected: lines that only an admitted obsolete peer can produce.
+        with node.assert_debug_log(["using obsolete version %d (required %d); disconnecting" % (OLD, FLOOR)],
+                                   unexpected_msgs=["version %d, blocks=" % OLD,
+                                                    "using obsolete version %d after the protocol floor moved" % OLD]):
             old.addnode("127.0.0.1:%d" % p2p_port(0), "onetry")
-            # A negative wait: two peers must NOT reappear.
-            assert not self.wait_until(lambda: len(node.getpeerinfo()) == 2, timeout=5, do_assert=False)
+            # A connection is visible with version 0 before VERSION is processed.
+            # Rejecting it before publishing OLD is correct; counting it is not.
+            assert not self.wait_until(lambda: OLD in self.peer_versions(node), timeout=5, do_assert=False)
+        self.wait_until(lambda: self.peer_versions(node) == [FLOOR], timeout=30)
         assert_equal(self.peer_versions(node), [FLOOR])
 
         self.log.info("The current-version peer keeps following the chain across the lead")
