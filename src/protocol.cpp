@@ -93,6 +93,7 @@ MAKE_MSG(QUORUMROTATIONINFO, "qrinfo");
 MAKE_MSG(POSECHALLENGE, "posechal");
 MAKE_MSG(POSERESPONSE, "poseresp");
 MAKE_MSG(POSEREPORT, "posereport");
+MAKE_MSG(POSECOMMIT, "posecommit");
 }; // namespace NetMsgType
 
 /** All known message types. Keep this in the same order as the list of
@@ -176,7 +177,8 @@ const static std::string allNetMessageTypes[] = {
     NetMsgType::QUORUMROTATIONINFO,
     NetMsgType::POSECHALLENGE,
     NetMsgType::POSERESPONSE,
-    NetMsgType::POSEREPORT
+    NetMsgType::POSEREPORT,
+    NetMsgType::POSECOMMIT
 };
 const static std::vector<std::string> allNetMessageTypesVec(std::begin(allNetMessageTypes), std::end(allNetMessageTypes));
 
@@ -197,6 +199,7 @@ const static std::string netMessageTypesViolateBlocksOnly[] = {
     NetMsgType::DSVIN,
     NetMsgType::GETQUORUMROTATIONINFO,
     NetMsgType::POSECHALLENGE,
+    NetMsgType::POSECOMMIT,
     NetMsgType::POSEREPORT,
     NetMsgType::POSERESPONSE,
     NetMsgType::QBSIGSHARES,

@@ -16,8 +16,17 @@ and candidate verdict) -- never the fault list alone.
                     nobody else is ever marked, and one clean epoch resets it.
   diverged-pool     two sentinels deliver their reports after the signing
                     offset: the quorum signs a verdict the miner's later pool
-                    no longer reproduces, so the boundary carries no
-                    commitment and no counter moves -- fail-open.
+                    no longer reproduces. The members relay the commitment
+                    they signed, and the boundary carries that one -- the
+                    quorum's verdict, not the miner's -- so the late reports
+                    move no counter and the epoch is not lost.
+  forged-commitment while the genuine signed commitment is in flight, a peer
+                    sends variants of it -- a bit cleared under the genuine
+                    signature, a quorum the epoch does not select, the version-1
+                    format, a bitfield one bit short, an oversized payload; each
+                    is refused for its own reason, a second peer of the same node
+                    receives none of them, and the boundary still carries the
+                    genuine one.
   quorum-member-skip one of three signing members withholding its share still
                     yields a commitment; two withholding yield none.
   miner-skip        the block producer leaves the commitment out; the epoch
@@ -30,8 +39,12 @@ tick of the boundary block that opens an epoch, so a fault meant for an epoch
 must be armed *before* that boundary is mined -- between `walk` and `close`.
 """
 
+import struct
 import time
+from io import BytesIO
 
+from test_framework.messages import deser_compact_size, ser_compact_size
+from test_framework.p2p import MESSAGEMAP, P2PInterface, p2p_lock
 from test_framework.test_framework import DashTestFramework
 from test_framework.util import assert_equal, assert_greater_than, force_finish_mnsync
 
@@ -40,6 +53,77 @@ CUTOFF = EPOCH - EPOCH // 4   # 18: reports are emitted from here
 SIGNING = EPOCH - EPOCH // 8  # 21: the quorum is asked to sign from here
 ARGS = ["-testactivationheight=dsl@1", "-enablefaultinjection=1"]
 DSL_TX_TYPE = 10
+
+
+class msg_posecommit:
+    """A Sentinel commitment on the wire, kept as raw bytes: the test forges
+    variants of a genuine one and never relies on the node's own parser."""
+    __slots__ = ("payload",)
+    msgtype = b"posecommit"
+
+    def __init__(self, payload=b""):
+        self.payload = payload
+
+    def deserialize(self, f):
+        self.payload = f.read()
+
+    def serialize(self):
+        return self.payload
+
+    def __repr__(self):
+        return "msg_posecommit(%d bytes)" % len(self.payload)
+
+
+# DSL traffic an observer is flooded with but does not inspect
+for _msgtype in (b"poseresp", b"posereport", b"posechal"):
+    MESSAGEMAP.setdefault(_msgtype, None)
+MESSAGEMAP[b"posecommit"] = msg_posecommit
+
+
+class CommitmentObserver(P2PInterface):
+    def __init__(self):
+        super().__init__()
+        self.commitments = []
+
+    def on_posecommit(self, message):
+        self.commitments.append(message.payload)
+
+
+def read_bits(f):
+    n = deser_compact_size(f)
+    raw = f.read((n + 7) // 8)
+    return [bool(raw[i // 8] >> (i % 8) & 1) for i in range(n)]
+
+
+def write_bits(bits):
+    raw = bytearray((len(bits) + 7) // 8)
+    for i, bit in enumerate(bits):
+        if bit:
+            raw[i // 8] |= 1 << (i % 8)
+    return ser_compact_size(len(bits)) + bytes(raw)
+
+
+def parse_commitment(payload):
+    """CPoSeServiceCommitment's SERIALIZE_METHODS: nVersion u16, nEpoch u32, epochBlockHash,
+    llmqType u8, quorumHash, DYNBITSET missed, DYNBITSET observed (version 2 only), BLS signature."""
+    f = BytesIO(payload)
+    c = {}
+    c["version"], c["epoch"] = struct.unpack("<HI", f.read(6))
+    c["base"] = f.read(32)
+    c["llmq"] = f.read(1)
+    c["quorum"] = f.read(32)
+    c["missed"] = read_bits(f)
+    c["observed"] = read_bits(f) if c["version"] >= 2 else None
+    c["sig"] = f.read(96)
+    assert_equal(f.read(), b"")
+    return c
+
+
+def build_commitment(c):
+    out = struct.pack("<HI", c["version"], c["epoch"]) + c["base"] + c["llmq"] + c["quorum"] + write_bits(c["missed"])
+    if c["version"] >= 2:
+        out += write_bits(c["observed"])
+    return out + c["sig"]
 
 
 def canonical(hashes):
@@ -146,6 +230,42 @@ class DSLScenariosTest(DashTestFramework):
             elif time.time() - stable_since >= 6:
                 return
 
+    def assert_nothing_relayed(self, bystander, genuine_payload):
+        """The node relays to every peer but the sender, so a forgery it forwarded would
+        reach `bystander`. Everything the bystander holds must be the genuine commitment."""
+        bystander.sync_with_ping()
+        with p2p_lock:
+            foreign = [p for p in bystander.commitments if p != genuine_payload]
+        assert_equal(foreign, [])
+
+    def forge_commitments(self, node, observer, bystander, genuine, genuine_payload):
+        """Send `node` variants of the genuine commitment it already holds, each with a
+        different hash (so no duplicate check hides it) and each broken in one way."""
+        size = len(genuine["missed"])
+        # clear one observed bit whose missed bit is clear: the shape stays legal, the signature does not
+        at = next(i for i in range(size) if genuine["observed"][i] and not genuine["missed"][i])
+        cleared = dict(genuine, observed=[bit and i != at for i, bit in enumerate(genuine["observed"])])
+        forgeries = [
+            ("a bit cleared under the genuine signature", cleared, "refused: bad-dsl-invalid-sig"),
+            ("a quorum the epoch does not select", dict(genuine, quorum=bytes([0x5a]) * 32),
+             "refused: not the quorum the epoch selects"),
+            ("the version-1 format", dict(genuine, version=1), "refused: format v1 where the boundary requires v2"),
+            ("a bitfield one bit short", dict(genuine, missed=genuine["missed"][:-1], observed=genuine["observed"][:-1]),
+             "refused: a bitfield of %d for a list of %d" % (size - 1, size)),
+        ]
+        for what, forged, reason in forgeries:
+            self.log.info("  forged commitment, %s: refused, not relayed", what)
+            with node.assert_debug_log(expected_msgs=["signed commitment for epoch %d from peer=" % genuine["epoch"], reason],
+                                       unexpected_msgs=["accepted from peer="]):
+                observer.send_and_ping(msg_posecommit(build_commitment(forged)))
+            self.assert_nothing_relayed(bystander, genuine_payload)
+        self.log.info("  forged commitment, oversized: dropped before it is read")
+        huge = dict(genuine, missed=[False] * 70000, observed=[False] * 70000)
+        with node.assert_debug_log(expected_msgs=["oversized posecommit"],
+                                   unexpected_msgs=["accepted from peer=", "signed commitment for epoch"]):
+            observer.send_and_ping(msg_posecommit(build_commitment(huge)))
+        self.assert_nothing_relayed(bystander, genuine_payload)
+
     # -- the scenarios -------------------------------------------------------
 
     def run_test(self):
@@ -203,8 +323,11 @@ class DSLScenariosTest(DashTestFramework):
         self.walk(node, mn_count)
 
         # ---- diverged-pool -------------------------------------------------
-        self.log.info("diverged-pool: reports arriving after the signing offset leave the boundary without a commitment")
+        self.log.info("diverged-pool: reports arriving after the signing offset; the boundary carries the commitment the quorum signed")
         late = [self.mn_node(m.proTxHash) for m in self.mninfo[1:3]]
+        # connected an epoch ahead: a new connection earns its DSL budget block by block
+        observer = node.add_p2p_connection(CommitmentObserver())
+        bystander = node.add_p2p_connection(CommitmentObserver())  # never sends: sees what the node relays
         tnode.faultinject("set", "response-drop", self.far(node), "diverged-pool")
         for lnode in late:
             lnode.faultinject("set", "report-delay", self.far(node), "diverged-pool", 4)
@@ -218,10 +341,43 @@ class DSLScenariosTest(DashTestFramework):
             assert_greater_than(statuses[lnode.index]["faults"][0]["hits"], 0)
             assert_equal(lnode.faultinject("clear")["cleared"], 1)
         assert_equal(tnode.faultinject("clear")["cleared"], 1)
-        c = self.close(node)
-        # ... but the quorum signed a pool without the late reports (4 < nDSLSentinelAgree), so nothing was minable
-        assert c is None, "a commitment was mined from a pool that diverged from the quorum's: %r" % c
+        diverged_epoch = node.getblockcount() // EPOCH
+
+        # ---- forged-commitment ---------------------------------------------
+        # The members' relay has already carried the genuine commitment through
+        # this node to the observer; forgeries of it must all be refused.
+        self.log.info("forged-commitment: variants of the signed commitment in flight are refused and not relayed")
+
+        def delivered():
+            return [p for p in observer.commitments if parse_commitment(p)["epoch"] == diverged_epoch]
+        observer.wait_until(lambda: len(delivered()) > 0, timeout=30)
+        genuine_payload = delivered()[0]
+        genuine = parse_commitment(genuine_payload)
+        assert_equal(genuine["version"], 2)
+        assert_equal(genuine["base"][::-1].hex(), node.getblockhash(diverged_epoch * EPOCH))
+        # the bystander has the genuine commitment too before any forgery is sent
+        bystander.wait_until(lambda: genuine_payload in bystander.commitments, timeout=30)
+        self.forge_commitments(node, observer, bystander, genuine, genuine_payload)
+
+        with node.assert_debug_log([
+            "attached the DSL service commitment the quorum signed for epoch %d, relayed by its members "
+            "(this producer's own pool diverged)" % diverged_epoch,
+        ]):
+            c = self.close(node)
+        # ... but the quorum signed a pool without the late reports (4 < nDSLSentinelAgree), and that
+        # signed commitment, relayed by the members, is what the boundary carries: nobody MISSED
+        assert c is not None, "the boundary carried no commitment although the quorum had signed one"
+        assert_equal(c["epoch"], diverged_epoch)
+        assert_equal(c["missedCount"], 0)
         assert_equal(self.missed_epochs(node, target), 0)
+        # what the quorum signed reached no verdict on the target (4 reports < nDSLSentinelAgree): unobserved,
+        # neither MISSED nor ONLINE -- the late reports that would have made it MISSED move nothing
+        order = canonical([m["proRegTxHash"] for m in node.protx("diff", 1, diverged_epoch * EPOCH)["mnList"]])
+        assert order.index(target) in c["unobservedIndices"], (order.index(target), c["unobservedIndices"])
+        # once its boundary block is connected, the genuine commitment itself is not even checked
+        with node.assert_debug_log(["ignored: its boundary block is already connected"]):
+            observer.send_and_ping(msg_posecommit(build_commitment(genuine)))
+        node.disconnect_p2ps()
         self.walk(node, mn_count)
 
         # ---- quorum-member-skip --------------------------------------------

@@ -789,6 +789,17 @@ private:
     /** Flood a DSL probe message to every full-relay peer except `skip_id`. */
     template <typename T>
     void RelayDSLMessage(const std::string& msg_type, const T& obj, NodeId skip_id);
+    /**
+     * Whether a relayed Sentinel commitment is one a block producer here may
+     * carry for its epoch: the format its boundary requires, bitfields the size
+     * of the epoch-base list, the attesting profile and the quorum the epoch
+     * selects, and a threshold signature that verifies over `msgHash`. The block
+     * rule re-checks all of it before the commitment enters a block
+     * (CheckPoSeServiceCommitmentTx); this decides whether it is kept and
+     * relayed. `reason` names the first check that failed.
+     */
+    bool CheckRelayedServiceCommitment(const CPoSeServiceCommitment& commitment, const CBlockIndex* pindexEpochBase,
+                                       const uint256& msgHash, std::string& reason) const;
 
     void _RelayTransaction(const uint256& txid) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
@@ -5837,9 +5848,27 @@ static constexpr int DSL_MSG_BUDGET_GRANTS_PER_OUTBOUND_ADDR{2};
  *  recovering. */
 static constexpr int DSL_MSG_MISBEHAVING_UNREADABLE{10};
 
+/** Signed commitments (POSECOMMIT) one peer may legitimately deliver over one
+ *  epoch. The members that signed relay the commitment once its signature is
+ *  recovered and every node forwards a verified one once, so an honest peer
+ *  delivers one; two covers an epoch whose base block a shallow reorg replaced. */
+static constexpr int64_t DSL_COMMITMENTS_PER_EPOCH{2};
+
+/** The largest POSECOMMIT read at all: the fixed fields and two bitfields for a
+ *  list of DSL_POSECOMMIT_MAX_LIST masternodes. The bitfields are the only DSL
+ *  wire field whose length the sender chooses, and they are read, copied,
+ *  hashed and walked bit by bit before any check can compare them with the
+ *  real list -- so without this bound one budget token buys work in proportion
+ *  to a message of up to MAX_PROTOCOL_MESSAGE_LENGTH. No list is anywhere near
+ *  the bound; a larger message cannot be honest and is scored as unreadable. */
+static constexpr size_t DSL_POSECOMMIT_MAX_LIST{65536};
+static constexpr size_t DSL_POSECOMMIT_MAX_SIZE{2 + 4 + 32 + 1 + 32 +
+                                                2 * (5 + (DSL_POSECOMMIT_MAX_LIST + 7) / 8) + BLS_CURVE_SIG_SIZE};
+
 /** What one peer may legitimately deliver over one DSL epoch: every masternode
  *  announces once, EmitReports files a report for every target a sentinel is
- *  assigned whether the target answered or not, and the flood forwards each
+ *  assigned whether the target answered or not, the quorum's signed commitment
+ *  travels once (DSL_COMMITMENTS_PER_EPOCH), and the flood forwards each
  *  message once per peer. This is ordinary traffic, not a worst case --
  *  measured on the devnet, one peer delivered 1215 of 1216 in a single epoch
  *  while the commitments recorded nobody missing. Honest duplicates are free,
@@ -5849,7 +5878,7 @@ static constexpr int DSL_MSG_MISBEHAVING_UNREADABLE{10};
 static int64_t DSLHonestEpochCeiling(int64_t mn_count, const Consensus::Params& consensus)
 {
     const int64_t mns{std::max(mn_count, DSL_MSG_BUDGET_MIN_MNS)};
-    return mns + mns * std::max<int64_t>(consensus.nDSLSentinelCount, 0);
+    return mns + mns * std::max<int64_t>(consensus.nDSLSentinelCount, 0) + DSL_COMMITMENTS_PER_EPOCH;
 }
 
 void PeerManagerImpl::RefreshDSLBudgetEpoch()
@@ -6006,10 +6035,62 @@ bool PeerManagerImpl::ReadDSLMessage(CDataStream& vRecv, NodeId nodeid, const st
     }
 }
 
+bool PeerManagerImpl::CheckRelayedServiceCommitment(const CPoSeServiceCommitment& c, const CBlockIndex* pindexEpochBase,
+                                                    const uint256& msgHash, std::string& reason) const
+{
+    const Consensus::Params& consensus = m_chainparams.GetConsensus();
+    const int64_t boundary = (static_cast<int64_t>(c.nEpoch) + 1) * consensus.nDSLEpochInterval;
+    if (consensus.nDSLEpochInterval <= 0 || boundary > std::numeric_limits<int>::max()) {
+        reason = "epoch out of range";
+        return false;
+    }
+    const int boundaryHeight = static_cast<int>(boundary);
+    const uint16_t required = RequiredServiceCommitmentVersion(consensus, boundaryHeight);
+    if (c.nVersion != required) {
+        reason = strprintf("format v%d where the boundary requires v%d", c.nVersion, required);
+        return false;
+    }
+    TxValidationState state;
+    if (!CheckServiceCommitmentBitfields(c, state)) {
+        reason = state.GetRejectReason();
+        return false;
+    }
+    if (c.epochBlockHash != pindexEpochBase->GetBlockHash()) {
+        reason = "names another epoch base";
+        return false;
+    }
+    const size_t list_size = m_dmnman->GetListForBlock(pindexEpochBase).GetAllMNsCount();
+    if (c.missed.size() != list_size) {
+        reason = strprintf("a bitfield of %d for a list of %d", c.missed.size(), list_size);
+        return false;
+    }
+    if (c.llmqType != llmq::GetChainLocksLLMQType(consensus, boundaryHeight)) {
+        reason = "not the attesting profile";
+        return false;
+    }
+    const auto& llmq_params_opt = Params().GetLLMQ(c.llmqType);
+    const CBlockIndex* pindexSelect = pindexEpochBase->GetAncestor(pindexEpochBase->nHeight - llmq::SIGN_HEIGHT_OFFSET);
+    if (!llmq_params_opt.has_value() || pindexSelect == nullptr) {
+        reason = "no attesting quorum can be selected";
+        return false;
+    }
+    const auto selected = llmq::SelectQuorumForSigningAt(*llmq_params_opt, *m_llmq_ctx->qman, pindexSelect,
+                                                         ServiceCommitmentQuorumSelectionHash(c.nEpoch));
+    if (selected == nullptr || selected->qc->quorumHash != c.quorumHash) {
+        reason = selected == nullptr ? "no attesting quorum can be selected" : "not the quorum the epoch selects";
+        return false;
+    }
+    if (!c.Verify(*m_llmq_ctx->qman, msgHash, state)) {
+        reason = state.GetRejectReason();
+        return false;
+    }
+    return true;
+}
+
 void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::string& msg_type, CDataStream& vRecv)
 {
     if (msg_type != NetMsgType::POSECHALLENGE && msg_type != NetMsgType::POSERESPONSE &&
-        msg_type != NetMsgType::POSEREPORT) {
+        msg_type != NetMsgType::POSEREPORT && msg_type != NetMsgType::POSECOMMIT) {
         return;
     }
     if (m_dslman == nullptr || m_dmnman == nullptr) return;
@@ -6017,7 +6098,7 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
     if (m_best_height < consensus.nDSLActivationHeight) return;
 
     // The per-peer budget, before any deserialization, so that it covers all
-    // three message types and precedes the BLS verification each of them can
+    // four message types and precedes the BLS verification each of them can
     // cost -- 2.49 ms on this tree, and a failed verification is not
     // remembered, so one real proTxHash with a wrong signature re-verifies for
     // as long as the sender keeps sending it. Per peer and not globally,
@@ -6092,6 +6173,44 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
                  report.nEpoch, report.targetProTxHash.ToString(), accepted, pfrom.GetId());
         if (accepted) {
             RelayDSLMessage(NetMsgType::POSEREPORT, report, pfrom.GetId());
+        }
+        return;
+    }
+    if (msg_type == NetMsgType::POSECOMMIT) {
+        if (vRecv.size() > DSL_POSECOMMIT_MAX_SIZE) {
+            Misbehaving(pfrom.GetId(), DSL_MSG_MISBEHAVING_UNREADABLE,
+                        strprintf("oversized %s: %u bytes, at most %u", msg_type, vRecv.size(), DSL_POSECOMMIT_MAX_SIZE));
+            return;
+        }
+        CPoSeServiceCommitment commitment;
+        if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, commitment)) return;
+        // Of use only until its boundary block is connected here: after that it
+        // can enter no block on this chain, nor help a peer build one.
+        const CBlockIndex* base = epoch_base(commitment.nEpoch);
+        const int64_t boundary = (static_cast<int64_t>(commitment.nEpoch) + 1) * consensus.nDSLEpochInterval;
+        const int tip = WITH_LOCK(cs_main, return m_chainman.ActiveChain().Height());
+        if (base == nullptr || boundary <= tip) {
+            LogPrint(BCLog::DSL, "DSL -- signed commitment for epoch %u from peer=%d ignored: %s\n", commitment.nEpoch,
+                     pfrom.GetId(), base == nullptr ? "its epoch base is not on this chain" : "its boundary block is already connected");
+            return;
+        }
+        const uint256 msgHash = dsl::MakeServiceCommitmentTx(commitment).msgHash;
+        // The duplicate check first: every peer forwards a copy, and only the
+        // first one pays for the signature check. Only a commitment that passed
+        // every check is remembered, and a refusal is not: the hash leaves the
+        // signature out, so remembering a failure would let one copy carrying a
+        // forged signature shut out the genuine commitment it was copied from.
+        if (m_dslman->HasSignedCommitment(commitment.nEpoch, msgHash)) return;
+        std::string reason;
+        if (!CheckRelayedServiceCommitment(commitment, base, msgHash, reason)) {
+            LogPrint(BCLog::DSL, "DSL -- signed commitment for epoch %u from peer=%d refused: %s\n", commitment.nEpoch,
+                     pfrom.GetId(), reason);
+            return;
+        }
+        if (m_dslman->StoreSignedCommitment(commitment, msgHash)) {
+            LogPrint(BCLog::DSL, "DSL -- signed commitment for epoch %u (missed=%d, unobserved=%d) accepted from peer=%d, relaying\n",
+                     commitment.nEpoch, commitment.CountMissed(), commitment.CountUnobserved(), pfrom.GetId());
+            RelayDSLMessage(NetMsgType::POSECOMMIT, commitment, pfrom.GetId());
         }
         return;
     }
@@ -6559,6 +6678,7 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
                                                               candidate.commitment.GetRequestId(),
                                                               candidate.msgHash, quorum->qc->quorumHash)) {
                         m_dsl_last_signed_epoch = epoch;
+                        m_dslman->RememberSigningCandidate(candidate.commitment, candidate.msgHash);
                         LogPrint(BCLog::NET, "DSL -- asked quorum %s to sign epoch %d (format v%d), missed=%d, unobserved=%d\n",
                                  quorum->qc->quorumHash.ToString(), epoch, candidate.commitment.nVersion,
                                  candidate.commitment.CountMissed(), candidate.commitment.CountUnobserved());
@@ -6576,6 +6696,33 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
         } else {
             LogPrint(BCLog::DSL, "DSL -- the ChainLock profile at the boundary of epoch %d is not registered here; nothing can sign it\n",
                      epoch);
+        }
+    }
+
+    // Once the quorum's signature is recovered, a member that asked for it
+    // relays the exact commitment that was signed. The block producer rebuilds
+    // the commitment from its own pool, and a pool that took in reports after the
+    // signing offset -- or missed some -- builds different bytes that the
+    // signature does not cover. Consensus checks the signature, not the pool,
+    // so the quorum's own commitment is what that producer needs. Tried on every
+    // tick from the signing offset to the boundary; only the first success
+    // relays (StoreSignedCommitment), and a node receiving it relays it on once.
+    if (pos >= interval - interval / 8) {
+        const int boundaryHeight = static_cast<int>((epoch + 1) * interval);
+        const auto llmqType = llmq::GetChainLocksLLMQType(consensus, boundaryHeight);
+        CPoSeServiceCommitment probe;
+        probe.nEpoch = epoch;
+        probe.epochBlockHash = pindexBase->GetBlockHash();
+        llmq::CRecoveredSig recSig;
+        if (m_llmq_ctx->sigman->GetRecoveredSigForId(llmqType, probe.GetRequestId(), recSig)) {
+            if (auto signed_commitment = m_dslman->SigningCandidate(epoch, recSig.getMsgHash())) {
+                signed_commitment->quorumSig = recSig.sig.Get();
+                if (m_dslman->StoreSignedCommitment(*signed_commitment, recSig.getMsgHash())) {
+                    LogPrint(BCLog::DSL, "DSL -- relaying the commitment the quorum signed for epoch %d (missed=%d, unobserved=%d)\n",
+                             epoch, signed_commitment->CountMissed(), signed_commitment->CountUnobserved());
+                    RelayDSLMessage(NetMsgType::POSECOMMIT, *signed_commitment, /*skip_id=*/-1);
+                }
+            }
         }
     }
 }

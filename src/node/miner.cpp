@@ -188,9 +188,12 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
 
         // A DSL service commitment closes the observation epoch that ended at
         // this boundary. The miner rebuilds the commitment from its own report
-        // pool and attaches the quorum's recovered signature only when the hash
-        // it signed matches -- a pool that diverged from the quorum's yields no
-        // commitment this epoch, never a wrong one.
+        // pool and attaches the quorum's recovered signature when the hash it
+        // signed matches. When its own pool no longer reproduces that hash, or
+        // no recovered signature reached it, it attaches the commitment the
+        // quorum's members relayed -- the bytes the signature covers -- once the
+        // block rule has accepted it at this height. Without either, the epoch
+        // closes without a commitment, never with a wrong one.
         const auto& consensus = chainparams.GetConsensus();
         if (m_dslman != nullptr && m_sigman != nullptr && consensus.nDSLEpochInterval > 0 &&
             nHeight >= consensus.nDSLActivationHeight &&
@@ -216,6 +219,40 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
             // The request id is bound to the epoch base, so the probe must carry
             // it too or it would look for a session that was never opened.
             if (pindexEpochBase != nullptr) requestProbe.epochBlockHash = pindexEpochBase->GetBlockHash();
+            // A commitment the quorum's members relayed, attached only if this
+            // block can carry it: the transaction rule, plus the bitfield size
+            // against the epoch-base list, which the block rule checks only when
+            // the block is connected -- a template failing it would throw at the
+            // CbTx merkle root instead of leaving the commitment out. Either
+            // refusal costs this producer the commitment, never the block.
+            const auto attach_relayed = [&](const std::optional<CPoSeServiceCommitment>& relayed, const char* why) {
+                if (!relayed.has_value()) return false;
+                const size_t list_size = m_dmnman.GetListForBlock(pindexEpochBase).GetAllMNsCount();
+                if (relayed->missed.size() != list_size) {
+                    LogPrintf("%s: relayed DSL service commitment for epoch %d refused: a bitfield of %d for a list of %d\n",
+                              __func__, closedEpoch, relayed->missed.size(), list_size);
+                    return false;
+                }
+                CMutableTransaction tx = dsl::MakeServiceCommitmentTx(*relayed).tx;
+                CPoSeServiceCommitmentTxPayload payload;
+                payload.commitment = *relayed;
+                SetTxPayload(tx, payload);
+                TxValidationState state;
+                if (!CheckPoSeServiceCommitmentTx(m_chainstate.m_chainman, m_qman, CTransaction(tx), pindexPrev, state)) {
+                    LogPrintf("%s: relayed DSL service commitment for epoch %d refused by the block rule: %s\n",
+                              __func__, closedEpoch, state.ToString());
+                    return false;
+                }
+                const CTransactionRef dslTx = MakeTransactionRef(tx);
+                pblock->vtx.emplace_back(dslTx);
+                pblocktemplate->vTxFees.emplace_back(0);
+                pblocktemplate->vTxSigOps.emplace_back(0);
+                nBlockSize += dslTx->GetTotalSize();
+                ++nBlockTx;
+                LogPrintf("%s: attached the DSL service commitment the quorum signed for epoch %d, relayed by its members (%s), missed=%d, unobserved=%d\n",
+                          __func__, closedEpoch, why, relayed->CountMissed(), relayed->CountUnobserved());
+                return true;
+            };
             if (!skip.has_value() && pindexEpochBase != nullptr &&
                 m_sigman->GetRecoveredSigForId(llmqType, requestProbe.GetRequestId(), recSig)) {
                 auto candidate = dsl::BuildServiceCommitmentTx(
@@ -236,11 +273,17 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
                     LogPrintf("%s: attached DSL service commitment for epoch %d (format v%d), missed=%d, unobserved=%d\n",
                               __func__, closedEpoch, candidate.commitment.nVersion,
                               candidate.commitment.CountMissed(), candidate.commitment.CountUnobserved());
-                } else {
+                } else if (!attach_relayed(m_dslman->SignedCommitment(closedEpoch, pindexEpochBase->GetBlockHash(),
+                                                                      recSig.getMsgHash()),
+                                           "this producer's own pool diverged")) {
                     LogPrintf("%s: DSL report pool diverged from the quorum for epoch %d, no commitment\n",
                               __func__, closedEpoch);
                 }
-            } else if (!skip.has_value()) {
+            } else if (!skip.has_value() &&
+                       !(pindexEpochBase != nullptr &&
+                         attach_relayed(m_dslman->SignedCommitment(closedEpoch, pindexEpochBase->GetBlockHash(),
+                                                                   std::nullopt),
+                                        "no recovered signature reached this producer"))) {
                 // The branch the field met and could not explain (F-2026-140):
                 // the boundary block goes out without the epoch's commitment,
                 // and until now without a word. Same verbosity as its two
