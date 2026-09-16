@@ -133,7 +133,9 @@ def canonical(hashes):
 
 class DSLScenariosTest(DashTestFramework):
     def set_test_params(self):
-        self.set_dash_test_params(8, 7, extra_args=[ARGS] * 8)
+        # Preserve the early-signing divergence that exercises the signed
+        # commitment relay. The default wait policy has its own test.
+        self.set_dash_test_params(8, 7, extra_args=[ARGS + ["-dslsignwait=0"]] * 8)
 
     # -- chain helpers -------------------------------------------------------
 

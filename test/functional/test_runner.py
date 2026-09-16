@@ -135,6 +135,7 @@ BASE_SCRIPTS = [
     'feature_dsl_fault_injection.py',
     'feature_dsl_faults.py',
     'feature_dsl_scenarios.py',
+    'feature_dsl_sign_wait.py',
     'feature_dsl_commit_decision_log.py',
     'feature_dsl_commitment_v2.py',
     'feature_dsl_early_announcement_hold.py',
