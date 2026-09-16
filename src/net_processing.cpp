@@ -945,6 +945,13 @@ private:
     std::atomic<int64_t> m_dsl_last_announced_epoch{-1};
     std::atomic<int64_t> m_dsl_last_emitted_epoch{-1};
     std::atomic<int64_t> m_dsl_last_signed_epoch{-1};
+    /** What this node asked the quorum to sign for m_dsl_last_signed_epoch:
+     *  the message hash and the quorum. The later ticks of the signing window
+     *  ask again for exactly that hash until the signature is recovered
+     *  (ProcessDSLTick). Null when that epoch was retired without a request,
+     *  i.e. this node is not a member. Validation-interface thread only. */
+    uint256 m_dsl_signed_msg_hash;
+    uint256 m_dsl_signed_quorum_hash;
     /** An epoch entered mid-way (a start or restart inside it): its verdict is
      *  a warm-up, never emitted, since this node did not watch it from the
      *  start and would report announcements it simply never saw as MISSED. */
@@ -6466,6 +6473,8 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
         m_dsl_last_announced_epoch = -1;
         m_dsl_last_emitted_epoch = -1;
         m_dsl_last_signed_epoch = -1;
+        m_dsl_signed_msg_hash.SetNull();
+        m_dsl_signed_quorum_hash.SetNull();
         m_dsl_warmup_epoch = epoch;
         LogPrint(BCLog::NET, "DSL -- epoch %d %s by a reorg, re-observing as warm-up\n", epoch,
                  change == dsl::CPoSeServiceManager::EpochChange::Rewound ? "rewound" : "rebased");
@@ -6635,9 +6644,12 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
     // every member -- and later the miner -- names the same one.
     // Not exchange(): the signing quorum can still be loading when the offset
     // is first reached, and marking the epoch signed on that first look would
-    // spend the whole three-block window on one failed attempt. The flag is set
-    // only once signing actually starts, so a transient quorum-state delay is
-    // retried on the next block instead of losing the epoch's commitment.
+    // spend the window on one failed attempt. The flag is set only once
+    // signing actually starts, so a transient quorum-state delay is retried
+    // on the next block instead of losing the epoch's commitment. A complete
+    // candidate has the three blocks of the window for that; an incomplete one
+    // is held until the last block (below), so it gets one attempt there.
+    bool signed_this_tick{false};
     if (pos >= interval - interval / 8 &&
         static_cast<int64_t>(epoch) != m_dsl_warmup_epoch.load() &&
         m_dsl_last_signed_epoch.load() != static_cast<int64_t>(epoch) &&
@@ -6664,7 +6676,9 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
                 // mirrors AsyncSignIfMember's own IsValidMember gate.
                 if (!quorum->IsValidMember(myProTxHash)) {
                     m_dsl_last_signed_epoch = epoch;
-                    LogPrint(BCLog::NET, "DSL -- not in the signing quorum for epoch %d, nothing to sign\n", epoch);
+                    m_dsl_signed_msg_hash.SetNull();
+                    m_dsl_signed_quorum_hash.SetNull();
+                    LogPrint(BCLog::DSL, "DSL -- not in the signing quorum for epoch %d, nothing to sign\n", epoch);
                 } else {
                     const auto candidate = dsl::BuildServiceCommitmentTx(
                         epoch, pindexBase->GetBlockHash(), llmqType, quorum->qc->quorumHash,
@@ -6674,16 +6688,29 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
                     // did not start (quorum state still loading); only a true
                     // return retires the epoch, so a transient delay is retried
                     // on the next block instead of losing the commitment.
-                    if (m_llmq_ctx->sigman->AsyncSignIfMember(llmqType, *m_llmq_ctx->shareman,
+                    // A late report can turn an unobserved target into a verdict,
+                    // changing the hash that this member can sign only once. Give
+                    // that pool until the last epoch block to fill; genuine outages
+                    // must still be signed as unobserved at the deadline.
+                    const bool wait_for_reports = m_chainparams.NetworkIDString() != CBaseChainParams::REGTEST ||
+                                                  gArgs.GetBoolArg("-dslsignwait", true);
+                    const int unobserved = candidate.commitment.CountUnobserved();
+                    if (wait_for_reports && unobserved > 0 && pos < interval - 1) {
+                        LogPrint(BCLog::DSL, "DSL -- holding commitment signing for epoch %d at position %d, unobserved=%d\n",
+                                 epoch, pos, unobserved);
+                    } else if (m_llmq_ctx->sigman->AsyncSignIfMember(llmqType, *m_llmq_ctx->shareman,
                                                               candidate.commitment.GetRequestId(),
                                                               candidate.msgHash, quorum->qc->quorumHash)) {
                         m_dsl_last_signed_epoch = epoch;
+                        m_dsl_signed_msg_hash = candidate.msgHash;
+                        m_dsl_signed_quorum_hash = quorum->qc->quorumHash;
+                        signed_this_tick = true;
                         m_dslman->RememberSigningCandidate(candidate.commitment, candidate.msgHash);
-                        LogPrint(BCLog::NET, "DSL -- asked quorum %s to sign epoch %d (format v%d), missed=%d, unobserved=%d\n",
+                        LogPrint(BCLog::DSL, "DSL -- asked quorum %s to sign epoch %d (format v%d), missed=%d, unobserved=%d\n",
                                  quorum->qc->quorumHash.ToString(), epoch, candidate.commitment.nVersion,
                                  candidate.commitment.CountMissed(), candidate.commitment.CountUnobserved());
                     } else {
-                        LogPrint(BCLog::NET, "DSL -- sign start failed for epoch %d, retrying next block\n", epoch);
+                        LogPrint(BCLog::DSL, "DSL -- sign start failed for epoch %d, retrying next block\n", epoch);
                     }
                 }
             } else {
@@ -6707,6 +6734,19 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
     // so the quorum's own commitment is what that producer needs. Tried on every
     // tick from the signing offset to the boundary; only the first success
     // relays (StoreSignedCommitment), and a node receiving it relays it on once.
+    //
+    // Until the signature is recovered, a member that asked for it asks again
+    // on every later tick of the window, for exactly the hash it signed. Members
+    // sign on different ticks -- a complete pool at the offset, a pool that
+    // filled a block later, or the deadline -- and a signing session drops its
+    // shares after SESSION_NEW_SHARES_TIMEOUT (60 s) without a new one, while a
+    // member never signs the same request twice on its own. Two groups further
+    // apart than that would never hold each other's shares at once, and the
+    // epoch would end without a signature unless one group reached the
+    // threshold by itself. Asking again re-creates and re-announces this node's
+    // share, so the earlier group's shares meet the later group's. Same hash
+    // only: the vote is cast, and a different one is neither asked for nor
+    // accepted (allowDiffMsgHashSigning stays false).
     if (pos >= interval - interval / 8) {
         const int boundaryHeight = static_cast<int>((epoch + 1) * interval);
         const auto llmqType = llmq::GetChainLocksLLMQType(consensus, boundaryHeight);
@@ -6722,6 +6762,18 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
                              epoch, signed_commitment->CountMissed(), signed_commitment->CountUnobserved());
                     RelayDSLMessage(NetMsgType::POSECOMMIT, *signed_commitment, /*skip_id=*/-1);
                 }
+            }
+        } else if (!signed_this_tick &&
+                   m_dsl_last_signed_epoch.load() == static_cast<int64_t>(epoch) &&
+                   !m_dsl_signed_msg_hash.IsNull()) {
+            if (m_llmq_ctx->sigman->AsyncSignIfMember(llmqType, *m_llmq_ctx->shareman, probe.GetRequestId(),
+                                                      m_dsl_signed_msg_hash, m_dsl_signed_quorum_hash,
+                                                      /*allowReSign=*/true)) {
+                LogPrint(BCLog::DSL, "DSL -- asked quorum %s to sign epoch %d again at position %d, no signature recovered yet\n",
+                         m_dsl_signed_quorum_hash.ToString(), epoch, pos);
+            } else {
+                LogPrint(BCLog::DSL, "DSL -- could not ask quorum %s to sign epoch %d again at position %d\n",
+                         m_dsl_signed_quorum_hash.ToString(), epoch, pos);
             }
         }
     }

@@ -87,8 +87,9 @@ class DSLCommitmentV2Test(DashTestFramework):
             assert_equal(node.dslstatus()["epochreports"], 0)
         self.generate(node, EPOCH_INTERVAL - CUTOFF - 2, sync_fun=lambda: self.sync_blocks(alive))
         self.bump_mocktime(10, nodes=alive)
-        time.sleep(3)
-        self.generate(node, 2, sync_fun=lambda: self.sync_blocks(alive))
+        self.generate(node, 1, sync_fun=lambda: self.sync_blocks(alive))
+        time.sleep(3)  # an incomplete pool starts signing at the +23 deadline
+        self.generate(node, 1, sync_fun=lambda: self.sync_blocks(alive))
         block = node.getblock(node.getbestblockhash(), 2)
         txs = [tx for tx in block["tx"] if tx.get("type") == DSL_TX_TYPE]
         assert len(txs) <= 1, "a block carried more than one service commitment"
