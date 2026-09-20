@@ -179,12 +179,17 @@ class LLMQInstantSendNonRotatedVerifyTest(DashTestFramework):
         assert_equal(islocks[0]["cycleHash"], middle)
 
 
-    def find_misleading_tx(self, signer, older, attempts=8):
+    def find_misleading_tx(self, signer, older, attempts=32):
         """
         A transaction whose request id makes the OLD re-derivation prefer
         `older` to `signer` -- the case the receiver used to reject. Computed
         here rather than waited for: with two candidates it is about one
         transaction in two, and a test that hoped for it would be a coin flip.
+
+        Each attempt is one wallet transaction, so the search is cheap, and the
+        number of attempts is the test's own flake budget: eight attempts fail
+        one run in 256 by bad luck alone, which is too often for a CI gate;
+        thirty-two fail one in four billion.
         """
         node = self.nodes[0]
         for _ in range(attempts):

@@ -264,16 +264,89 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
         c.nDSLCommitmentV2Height = 12744;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
+    // The number itself. Eight equal heights agree with each other whatever
+    // they are, so a hand edit that moves all eight -- profiles named, the
+    // Sentinel start at the right distance, everything the comparisons above
+    // look at -- used to pass with a height Apply would have refused. The first
+    // block is the control: the same hand edit, on the grid, is fine.
+    const auto move_every_gate_by_hand = [](Consensus::Params& c, int height) {
+        for (int* h : {&c.nChainLocksV2ActivationHeight, &c.nInstantSendV2ActivationHeight,
+                       &c.nPosKernelV2ActivationHeight, &c.nPosCoinbaseBoundActivationHeight,
+                       &c.nPosStakeModifierV2ActivationHeight, &c.nPosBlockTimeBoundActivationHeight,
+                       &c.nPosFeeBurnActivationHeight, &c.nDkgBadVotesV2ActivationHeight}) {
+            *h = height;
+        }
+        c.nDSLActivationHeight = height + DSL_OFFSET;
+    };
+    {
+        Consensus::Params c = params->GetConsensus();
+        ApplyV23ActivationBundle(c, H);
+        move_every_gate_by_hand(c, H + Q60_DKG_INTERVAL);
+        BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN));
+        BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::TESTNET));
+    }
+    for (const int off_the_grid_or_not_positive : {H + 1, H + Q60_DKG_INTERVAL / 2, 0, -Q60_DKG_INTERVAL}) {
+        Consensus::Params c = params->GetConsensus();
+        ApplyV23ActivationBundle(c, H);
+        move_every_gate_by_hand(c, off_the_grid_or_not_positive);
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::TESTNET), std::runtime_error);
+    }
+    // Two devnet instruments a release network does not carry: the ComputeNode
+    // layer's height, and an end to a profile's formation. Neither is reachable
+    // from the command line on these networks, so the edit is the only way in --
+    // with the bundle scheduled or without it.
+    for (const bool scheduled : {false, true}) {
+        Consensus::Params c = params->GetConsensus();
+        if (scheduled) ApplyV23ActivationBundle(c, H);
+        BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN));
+
+        Consensus::Params with_compute = c;
+        with_compute.nComputeNodeActivationHeight = H;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(with_compute, CBaseChainParams::MAIN), std::runtime_error);
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(with_compute, CBaseChainParams::TESTNET), std::runtime_error);
+
+        Consensus::Params with_formation_end = c;
+        with_formation_end.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_50_60] = H;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(with_formation_end, CBaseChainParams::MAIN), std::runtime_error);
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(with_formation_end, CBaseChainParams::TESTNET), std::runtime_error);
+    }
     // The same partial edits are legitimate where gates are scheduled one by one.
     {
         Consensus::Params c = params->GetConsensus();
-        c.nChainLocksV2ActivationHeight = H;
+        c.nChainLocksV2ActivationHeight = H + 1; // off the grid as well: the grid is Apply's rule there, not this check's
         c.nStrictBLSSigSizeActivationHeight = 0;
         c.nDSLActivationHeight = 1;
         c.nDSLEnforcementHeight = 1;
         c.nDSLCommitmentV2Height = 12744;
+        c.nComputeNodeActivationHeight = 1;
+        c.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_50_60] = H;
         BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::REGTEST));
         BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::DEVNET));
+    }
+}
+
+// Apply divides by the Sentinel epoch interval. A parameter set that carries a
+// non-positive one is refused by name instead of being divided by.
+BOOST_AUTO_TEST_CASE(apply_refuses_a_non_positive_sentinel_epoch_interval)
+{
+    ArgsManager args;
+    const auto params = CreateChainParams(args, CBaseChainParams::MAIN);
+    constexpr int H = 168000;
+    for (const int interval : {0, -24}) {
+        Consensus::Params c = params->GetConsensus();
+        c.nDSLEpochInterval = interval;
+        BOOST_CHECK_THROW(ApplyV23ActivationBundle(c, H), std::runtime_error);
+        // Refused before any field was written.
+        ExpectAllHeights(c, UNSET, "after a refused Apply");
+        BOOST_CHECK_EQUAL(c.nDSLActivationHeight, UNSET);
+    }
+    // And the hand-edit path: a complete schedule with the interval zeroed afterwards.
+    {
+        Consensus::Params c = params->GetConsensus();
+        ApplyV23ActivationBundle(c, H);
+        c.nDSLEpochInterval = 0;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
 }
 
