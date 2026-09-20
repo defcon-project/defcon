@@ -62,11 +62,16 @@ void MasternodeListTests::viewSurvivesRestart()
         // disabled because no wallet is bound yet.
         QVERIFY(!w.essential->isChecked());
         QVERIFY(!w.table->isColumnHidden(MasternodeList::COLUMN_TYPE));
+        QVERIFY(!w.table->isColumnHidden(MasternodeList::COLUMN_COLLATERAL_ADDRESS));
         QVERIFY(w.table->isColumnHidden(MasternodeList::COLUMN_PROTX_HASH));
         QVERIFY(!w.mine->isEnabled());
 
+        // The essential view drops the type and the owner address, and keeps
+        // the collateral address.
         w.essential->setChecked(true);
         QVERIFY(w.table->isColumnHidden(MasternodeList::COLUMN_TYPE));
+        QVERIFY(w.table->isColumnHidden(MasternodeList::COLUMN_OWNER_ADDRESS));
+        QVERIFY(!w.table->isColumnHidden(MasternodeList::COLUMN_COLLATERAL_ADDRESS));
         w.table->setColumnWidth(MasternodeList::COLUMN_STATUS, 123);
         w.table->horizontalHeader()->setSortIndicator(MasternodeList::COLUMN_POSE, Qt::DescendingOrder);
     }
@@ -93,6 +98,44 @@ void MasternodeListTests::viewSurvivesRestart()
         const Widgets w = find(third);
         QVERIFY(!w.essential->isChecked());
         QVERIFY(!w.table->isColumnHidden(MasternodeList::COLUMN_TYPE));
+    }
+    forget();
+}
+
+// A layout saved while the essential view still hid the collateral address
+// remembers that section as hidden, and the layout is restored before the
+// toggle is applied. The toggle decides: the old layout's widths come back,
+// its hidden collateral column does not.
+void MasternodeListTests::oldLayoutDoesNotHideTheCollateral()
+{
+    forget();
+    {
+        MasternodeList old;
+        const Widgets w = find(old);
+        QVERIFY(w.table && w.essential);
+        w.essential->setChecked(true);
+        // What the earlier view did, done by hand; the resize writes the state.
+        w.table->setColumnHidden(MasternodeList::COLUMN_COLLATERAL_ADDRESS, true);
+        w.table->setColumnWidth(MasternodeList::COLUMN_STATUS, 111);
+        QSettings settings;
+        QVERIFY(!settings.value("MasternodeListHeaderState").toByteArray().isEmpty());
+    }
+    {
+        MasternodeList upgraded;
+        const Widgets w = find(upgraded);
+        QVERIFY(w.table && w.essential);
+        QVERIFY(w.essential->isChecked());
+        // The old layout was restored...
+        QCOMPARE(w.table->columnWidth(MasternodeList::COLUMN_STATUS), 111);
+        // ...and did not get to keep the column hidden.
+        QVERIFY(!w.table->isColumnHidden(MasternodeList::COLUMN_COLLATERAL_ADDRESS));
+        QVERIFY(w.table->isColumnHidden(MasternodeList::COLUMN_OWNER_ADDRESS));
+        QVERIFY(w.table->isColumnHidden(MasternodeList::COLUMN_PROTX_HASH));
+
+        w.essential->setChecked(false);
+        for (int column = 0; column < MasternodeList::COLUMN_PROTX_HASH; ++column) {
+            QVERIFY2(!w.table->isColumnHidden(column), qPrintable(QString::number(column)));
+        }
     }
     forget();
 }

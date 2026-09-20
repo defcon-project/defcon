@@ -15,6 +15,9 @@
 
 #include <univalue.h>
 
+#include <algorithm>
+#include <vector>
+
 #include <QMessageBox>
 #include <QSettings>
 #include <QSignalBlocker>
@@ -381,21 +384,25 @@ void MasternodeList::on_filterLineEditDIP3_textChanged(const QString& strFilterI
 void MasternodeList::applyColumnVisibility()
 {
     const bool essentialOnly = ui->checkBoxEssentialInfoOnly->isChecked();
-    // Everything the "essential" view leaves out. COLUMN_PROTX_HASH is absent
-    // on purpose: it is not a column anybody reads, it carries the hash the
-    // context menu copies, and it stays hidden in both modes -- putting it in
-    // this list would make the full view show it.
+    // Everything the "essential" view leaves out. The collateral address is
+    // not among them: it is what tells an owner's masternodes apart.
+    // COLUMN_PROTX_HASH is absent on purpose: it is not a column anybody reads,
+    // it carries the hash the context menu copies, and it stays hidden in both
+    // modes -- putting it in this list would make the full view show it.
     static const std::vector<int> optional{
         COLUMN_TYPE,
         COLUMN_REGISTERED,
         COLUMN_PAYOUT_ADDRESS,
         COLUMN_OPERATOR_REWARD,
-        COLUMN_COLLATERAL_ADDRESS,
         COLUMN_OWNER_ADDRESS,
         COLUMN_VOTING_ADDRESS,
     };
-    for (const int column : optional) {
-        ui->tableWidgetMasternodesDIP3->setColumnHidden(column, essentialOnly);
+    // Every column is set, not only the optional ones. A header state saved
+    // by an earlier session remembers which sections were hidden, so a column
+    // that has left the list above would otherwise stay hidden for good.
+    for (int column = 0; column < COLUMN_PROTX_HASH; ++column) {
+        const bool is_optional = std::find(optional.begin(), optional.end(), column) != optional.end();
+        ui->tableWidgetMasternodesDIP3->setColumnHidden(column, essentialOnly && is_optional);
     }
 }
 
