@@ -219,6 +219,10 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
         // bound cannot drift from the payout rule. If the payee cannot be
         // resolved the existing code declines to verify rather than reject,
         // and this follows it.
+        //
+        // The expected sum has no term for superblock payments: the reward
+        // schedule has no governance share (GetBlockSubsidyHelper), so
+        // CSuperblock::GetPaymentsLimit is zero on every network.
         std::vector<CTxOut> voutExpected;
         if (GetBlockTxOuts(pindexPrev, blockSubsidy, feeReward, voutExpected)) {
             CAmount expected = 0;
@@ -234,7 +238,8 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
     strErrorRet = "";
 
     //  defcon's staking block structure
-    //  vtx[0] contains masternode/superblock output
+    //  vtx[0] contains the masternode output (the reward schedule has no
+    //         governance share, see above)
     //  vtx[1] contains staking output
     //  both of which get checked below
 
