@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-//! The v23 activation bundle: one number, eight gates, two networks.
+//! The v23 activation bundle: one number, eight gates and the Sentinel start, two networks.
 //!
 //! Three things are pinned here. That mainnet and testnet are dormant today
 //! with the Q60 profile already registered, so the activating commit is a
@@ -10,6 +10,11 @@
 //! and nothing outside it. And that a partial edit -- some heights set, some
 //! not, or a height with no profile -- is refused at startup on the two
 //! networks that release together, and only there.
+//!
+//! The Sentinel layer rides the same number: it starts observing a fixed
+//! offset after H, and its enforcing half gets NO height from v23 -- that is a
+//! later release's decision (owner, 2026-09-20) -- so a value for it on the
+//! release networks is refused exactly as M-02's is.
 
 #include <chain.h>
 #include <chainparams.h>
@@ -35,6 +40,7 @@ namespace {
 
 constexpr int UNSET = std::numeric_limits<int>::max();
 constexpr int Q60_DKG_INTERVAL = 24; // llmq_defcon, Consensus::available_llmqs
+constexpr int DSL_OFFSET = 24 * 24;   // V23_DSL_ACTIVATION_OFFSET, chainparams.cpp: one day of Q60 intervals
 
 //! The eight heights the bundle owns, by name, so a failure names the field.
 std::vector<std::pair<std::string, int>> BundleHeights(const Consensus::Params& c)
@@ -89,6 +95,8 @@ BOOST_AUTO_TEST_CASE(mainnet_and_testnet_are_dormant_with_the_profile_registered
         BOOST_CHECK_EQUAL(c.nComputeNodeActivationHeight, UNSET);
         BOOST_CHECK_EQUAL(c.nDSLActivationHeight, UNSET);
         BOOST_CHECK_EQUAL(c.nDSLEnforcementHeight, UNSET);
+        // No version-1 history here, so version 2 from the first commitment.
+        BOOST_CHECK_EQUAL(c.nDSLCommitmentV2Height, 0);
     }
 }
 
@@ -107,12 +115,17 @@ BOOST_AUTO_TEST_CASE(apply_sets_the_eight_gates_and_both_profiles_together)
     // The dropped candidates are not the bundle's to touch.
     BOOST_CHECK_EQUAL(scheduled.nStrictBLSSigSizeActivationHeight, UNSET);
     BOOST_CHECK_EQUAL(scheduled.nComputeNodeActivationHeight, UNSET);
-    BOOST_CHECK_EQUAL(scheduled.nDSLActivationHeight, UNSET);
+    // The Sentinel layer follows H at a fixed offset. Its enforcing half does
+    // not ride v23 at all, and the format is version 2 from the first commitment.
+    BOOST_CHECK_EQUAL(scheduled.nDSLActivationHeight, H + DSL_OFFSET);
+    BOOST_CHECK_EQUAL(scheduled.nDSLEnforcementHeight, UNSET);
+    BOOST_CHECK_EQUAL(scheduled.nDSLCommitmentV2Height, 0);
 
     // Unset is a no-op, which is what keeps every network dormant today.
     Consensus::Params dormant = params->GetConsensus();
     ApplyV23ActivationBundle(dormant, UNSET);
     ExpectAllHeights(dormant, UNSET, "dormant");
+    BOOST_CHECK_EQUAL(dormant.nDSLActivationHeight, UNSET);
     BOOST_CHECK(dormant.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_NONE);
     BOOST_CHECK(dormant.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_NONE);
 }
@@ -125,12 +138,25 @@ BOOST_AUTO_TEST_CASE(apply_refuses_a_height_off_the_grid_or_not_positive)
     ArgsManager args;
     const auto params = CreateChainParams(args, CBaseChainParams::MAIN);
 
-    for (const int bad : {1, Q60_DKG_INTERVAL + 1, 168001, 0, -Q60_DKG_INTERVAL}) {
+    // The last value sits on the grid but leaves no room for the Sentinel offset.
+    constexpr int NEAR_TOP = (UNSET / Q60_DKG_INTERVAL) * Q60_DKG_INTERVAL;
+    for (const int bad : {1, Q60_DKG_INTERVAL + 1, 168001, 0, -Q60_DKG_INTERVAL, NEAR_TOP}) {
         Consensus::Params c = params->GetConsensus();
         BOOST_CHECK_THROW(ApplyV23ActivationBundle(c, bad), std::runtime_error);
         // Nothing was written before the refusal.
         ExpectAllHeights(c, UNSET, "after refusing " + std::to_string(bad));
         BOOST_CHECK(c.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_NONE);
+        BOOST_CHECK_EQUAL(c.nDSLActivationHeight, UNSET);
+    }
+    // The Sentinel start must sit on the DSL epoch grid, which is not the Q60
+    // grid by construction: with a 25-block epoch a height on the Q60 grid is
+    // refused, and nothing is written.
+    {
+        Consensus::Params c = params->GetConsensus();
+        c.nDSLEpochInterval = 25;
+        BOOST_CHECK_THROW(ApplyV23ActivationBundle(c, 168000), std::runtime_error);
+        ExpectAllHeights(c, UNSET, "after refusing an off-grid Sentinel start");
+        BOOST_CHECK_EQUAL(c.nDSLActivationHeight, UNSET);
     }
 }
 
@@ -185,11 +211,67 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
         c.nStrictBLSSigSizeActivationHeight = H;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
-    // The same partial edit is legitimate where gates are scheduled one by one.
+    // The Sentinel start is the bundle's: scheduled without it, or at the wrong
+    // distance from H, is a partial edit like any other.
+    {
+        Consensus::Params c = params->GetConsensus();
+        ApplyV23ActivationBundle(c, H);
+        c.nDSLActivationHeight = UNSET;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
+    }
+    {
+        Consensus::Params c = params->GetConsensus();
+        ApplyV23ActivationBundle(c, H);
+        c.nDSLActivationHeight = H; // a real height, the wrong distance
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
+    }
+    // The layer scheduled while the bundle is unset would attest with a quorum
+    // that never forms.
+    {
+        Consensus::Params c = params->GetConsensus();
+        c.nDSLActivationHeight = H + DSL_OFFSET;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
+    }
+    // Enforcement is a later release's decision; a height for it here is that
+    // decision undone by accident, on either release network.
+    {
+        Consensus::Params c = params->GetConsensus();
+        ApplyV23ActivationBundle(c, H);
+        c.nDSLEnforcementHeight = H + 10 * DSL_OFFSET;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::TESTNET), std::runtime_error);
+    }
+    // A hand edit just below the unset value: the mismatch has to be found
+    // without the int sum overflowing (the check computes in 64 bits).
+    {
+        Consensus::Params c = params->GetConsensus();
+        constexpr int near_top = (UNSET / Q60_DKG_INTERVAL) * Q60_DKG_INTERVAL;
+        for (int* h : {&c.nChainLocksV2ActivationHeight, &c.nInstantSendV2ActivationHeight,
+                       &c.nPosKernelV2ActivationHeight, &c.nPosCoinbaseBoundActivationHeight,
+                       &c.nPosStakeModifierV2ActivationHeight, &c.nPosBlockTimeBoundActivationHeight,
+                       &c.nPosFeeBurnActivationHeight, &c.nDkgBadVotesV2ActivationHeight}) {
+            *h = near_top;
+        }
+        c.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
+        c.llmqTypeDIP0024InstantSendV2 = Consensus::LLMQType::LLMQ_DEFCON;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
+    }
+    // A devnet flip height copied onto a release network would require the
+    // healing version-1 format below it, on a chain that has no version-1 history.
+    {
+        Consensus::Params c = params->GetConsensus();
+        ApplyV23ActivationBundle(c, H);
+        c.nDSLCommitmentV2Height = 12744;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
+    }
+    // The same partial edits are legitimate where gates are scheduled one by one.
     {
         Consensus::Params c = params->GetConsensus();
         c.nChainLocksV2ActivationHeight = H;
         c.nStrictBLSSigSizeActivationHeight = 0;
+        c.nDSLActivationHeight = 1;
+        c.nDSLEnforcementHeight = 1;
+        c.nDSLCommitmentV2Height = 12744;
         BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::REGTEST));
         BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::DEVNET));
     }
@@ -207,6 +289,10 @@ BOOST_AUTO_TEST_CASE(regtest_v23_alias_schedules_the_whole_bundle)
         const auto params = CreateChainParams(args, CBaseChainParams::REGTEST);
         const auto& c = params->GetConsensus();
         ExpectAllHeights(c, 480, "regtest v23@480");
+        // The alias schedules the Sentinel start too, at the release's offset,
+        // and leaves enforcement where the release leaves it.
+        BOOST_CHECK_EQUAL(c.nDSLActivationHeight, 480 + DSL_OFFSET);
+        BOOST_CHECK_EQUAL(c.nDSLEnforcementHeight, UNSET);
         BOOST_CHECK(c.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_DEFCON);
         BOOST_CHECK(c.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_DEFCON);
         BOOST_CHECK(params->GetLLMQ(Consensus::LLMQType::LLMQ_DEFCON).has_value());
@@ -225,6 +311,7 @@ BOOST_AUTO_TEST_CASE(regtest_v23_alias_schedules_the_whole_bundle)
         BOOST_CHECK_EQUAL(c.nChainLocksV2ActivationHeight, 600);
         BOOST_CHECK_EQUAL(c.nInstantSendV2ActivationHeight, UNSET);
         BOOST_CHECK_EQUAL(c.nPosKernelV2ActivationHeight, 0); // regtest's own default, untouched
+        BOOST_CHECK_EQUAL(c.nDSLActivationHeight, UNSET);      // only the alias brings the layer along
         BOOST_CHECK(c.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_DEFCON);
         BOOST_CHECK(c.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_NONE);
     }
