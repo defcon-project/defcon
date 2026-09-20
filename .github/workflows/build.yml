@@ -324,6 +324,7 @@ jobs:
             feature_llmq_is_nonrotation.py         # an InstantSend lock on a quorum that does not rotate
             feature_llmq_is_nonrotated_verify.py   # the receiving side of the same: a non-masternode accepts a lock signed by a quorum older than one cycle (#238)
             feature_superblock_retirement.py       # a test chain with the superblock spork on: getblocktemplate at the retirement height, and the regtest alias
+            feature_v23_bundle_heights.py          # the v23 bundle's own regtest name on a running chain: three of its heights observed where the one number puts them
             feature_llmq_q60_proto_floor.py        # the peer protocol floor from the formation lead, against the real predecessor version
             feature_evodb_reconcile.py             # an evodb that stopped short of the coins tip is rebuilt at startup, with its log line
             rpc_verifychainlock.py                 # the lock-verifying RPCs
