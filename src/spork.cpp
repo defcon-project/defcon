@@ -27,6 +27,17 @@
 
 const std::string SporkStore::SERIALIZATION_VERSION_STRING = "CSporkManager-Version-2";
 
+//! What every spork definition uses for "off": 2099-01-01, a time
+//! IsSporkActive never reaches. Held against the definition it is used for, so
+//! the hardwired value below cannot drift from the spork's own default.
+static constexpr SporkValue SPORK_VALUE_OFF{4070908800LL};
+static_assert([] {
+    for (const auto& def : sporkDefs) {
+        if (def.sporkId == SPORK_9_SUPERBLOCKS_ENABLED) return def.defaultValue == SPORK_VALUE_OFF;
+    }
+    return false;
+}(), "SPORK_9_SUPERBLOCKS_ENABLED must be defined, with the off value as its default");
+
 std::optional<SporkValue> CSporkManager::SporkValueIfActive(SporkId nSporkID) const
 {
     AssertLockHeld(cs);
@@ -285,6 +296,19 @@ SporkValue CSporkManager::GetSporkValue(SporkId nSporkID) const
         switch (nSporkID) {
             case SPORK_21_QUORUM_ALL_CONNECTED:
                 return 1;
+            case SPORK_9_SUPERBLOCKS_ENABLED:
+                // The one spork hardwired OFF. Governance has no budget on
+                // this chain: GetBlockSubsidyHelper gives superblocks a zero
+                // share of the subsidy, so CSuperblock::GetPaymentsLimit is
+                // zero and no superblock that pays can be valid. With nothing
+                // to pay there is nothing to enable. Off, block production
+                // never adds superblock outputs and validation never consults
+                // a trigger (AreSuperblocksEnabled, masternode/payments.cpp),
+                // so every block is held to the ordinary reward limits and
+                // nothing else. No superblock has ever paid on this chain, so
+                // no block's verdict changes. A release that funds governance
+                // turns this back on in the same change.
+                return SPORK_VALUE_OFF;
             default:
                 return 0;
         }
