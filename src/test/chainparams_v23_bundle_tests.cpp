@@ -116,8 +116,7 @@ BOOST_AUTO_TEST_CASE(apply_sets_the_eight_gates_and_both_profiles_together)
     BOOST_CHECK_EQUAL(scheduled.nStrictBLSSigSizeActivationHeight, UNSET);
     BOOST_CHECK_EQUAL(scheduled.nComputeNodeActivationHeight, UNSET);
     // The Sentinel layer follows H at a fixed offset. Its enforcing half does
-    // not ride v23 at all (owner, 2026-09-20), and the format is version 2 from
-    // the first commitment.
+    // not ride v23 at all, and the format is version 2 from the first commitment.
     BOOST_CHECK_EQUAL(scheduled.nDSLActivationHeight, H + DSL_OFFSET);
     BOOST_CHECK_EQUAL(scheduled.nDSLEnforcementHeight, UNSET);
     BOOST_CHECK_EQUAL(scheduled.nDSLCommitmentV2Height, 0);
@@ -139,12 +138,25 @@ BOOST_AUTO_TEST_CASE(apply_refuses_a_height_off_the_grid_or_not_positive)
     ArgsManager args;
     const auto params = CreateChainParams(args, CBaseChainParams::MAIN);
 
-    for (const int bad : {1, Q60_DKG_INTERVAL + 1, 168001, 0, -Q60_DKG_INTERVAL}) {
+    // The last value sits on the grid but leaves no room for the Sentinel offset.
+    constexpr int NEAR_TOP = (UNSET / Q60_DKG_INTERVAL) * Q60_DKG_INTERVAL;
+    for (const int bad : {1, Q60_DKG_INTERVAL + 1, 168001, 0, -Q60_DKG_INTERVAL, NEAR_TOP}) {
         Consensus::Params c = params->GetConsensus();
         BOOST_CHECK_THROW(ApplyV23ActivationBundle(c, bad), std::runtime_error);
         // Nothing was written before the refusal.
         ExpectAllHeights(c, UNSET, "after refusing " + std::to_string(bad));
         BOOST_CHECK(c.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_NONE);
+        BOOST_CHECK_EQUAL(c.nDSLActivationHeight, UNSET);
+    }
+    // The Sentinel start must sit on the DSL epoch grid, which is not the Q60
+    // grid by construction: with a 25-block epoch a height on the Q60 grid is
+    // refused, and nothing is written.
+    {
+        Consensus::Params c = params->GetConsensus();
+        c.nDSLEpochInterval = 25;
+        BOOST_CHECK_THROW(ApplyV23ActivationBundle(c, 168000), std::runtime_error);
+        ExpectAllHeights(c, UNSET, "after refusing an off-grid Sentinel start");
+        BOOST_CHECK_EQUAL(c.nDSLActivationHeight, UNSET);
     }
 }
 
@@ -220,14 +232,29 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
         c.nDSLActivationHeight = H + DSL_OFFSET;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
-    // Enforcement is a later release's decision (owner, 2026-09-20); a height for
-    // it here is that decision undone by accident, on either release network.
+    // Enforcement is a later release's decision; a height for it here is that
+    // decision undone by accident, on either release network.
     {
         Consensus::Params c = params->GetConsensus();
         ApplyV23ActivationBundle(c, H);
         c.nDSLEnforcementHeight = H + 10 * DSL_OFFSET;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::TESTNET), std::runtime_error);
+    }
+    // A hand edit just below the unset value: the mismatch has to be found
+    // without the int sum overflowing (the check computes in 64 bits).
+    {
+        Consensus::Params c = params->GetConsensus();
+        constexpr int near_top = (UNSET / Q60_DKG_INTERVAL) * Q60_DKG_INTERVAL;
+        for (int* h : {&c.nChainLocksV2ActivationHeight, &c.nInstantSendV2ActivationHeight,
+                       &c.nPosKernelV2ActivationHeight, &c.nPosCoinbaseBoundActivationHeight,
+                       &c.nPosStakeModifierV2ActivationHeight, &c.nPosBlockTimeBoundActivationHeight,
+                       &c.nPosFeeBurnActivationHeight, &c.nDkgBadVotesV2ActivationHeight}) {
+            *h = near_top;
+        }
+        c.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
+        c.llmqTypeDIP0024InstantSendV2 = Consensus::LLMQType::LLMQ_DEFCON;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
     // A devnet flip height copied onto a release network would require the
     // healing version-1 format below it, on a chain that has no version-1 history.

@@ -165,7 +165,12 @@ std::optional<Consensus::LLMQParams> CChainParams::GetLLMQ(Consensus::LLMQType l
  * punishment is a later release's decision, taken after the shadow window has
  * been measured on these networks (owner, 2026-09-20), and
  * CheckV23ActivationBundle refuses a value for it until that release edits
- * the refusal on purpose, exactly as it does for M-02.
+ * the refusal on purpose, exactly as it does for M-02. The offset being
+ * positive is not only readability: a service commitment must be attested by
+ * the ChainLock quorum type resolved at its own height (pose_service.cpp,
+ * bad-dsl-quorum-type), and that type becomes Q60 only at H, so a layer
+ * starting at or below H would demand a quorum it never attests with. The
+ * check's exact equality is what keeps H1 above H.
  * Devnet keeps its own history -- the rules shipped
  * there one at a time, each at the height it was measured at -- and regtest
  * schedules them by name; neither goes through here.
@@ -213,10 +218,16 @@ void ApplyV23ActivationBundle(Consensus::Params& consensus, int height)
         throw std::runtime_error(strprintf("%s: the v23 activation height %d is not a multiple of the Q60 DKG interval %d",
                                            __func__, height, q60->dkgInterval));
     }
-    assert(V23_DSL_ACTIVATION_OFFSET % q60->dkgInterval == 0);
     if (height > UNSET - V23_DSL_ACTIVATION_OFFSET) {
         throw std::runtime_error(strprintf("%s: the v23 activation height %d leaves no room for the Sentinel offset %d",
                                            __func__, height, V23_DSL_ACTIVATION_OFFSET));
+    }
+    // The layer's first epoch has to start on the epoch grid, and that grid is
+    // the DSL's own interval, not the Q60 one: both are 24 today and nothing
+    // ties them together. The sum cannot overflow past the check above.
+    if ((height + V23_DSL_ACTIVATION_OFFSET) % consensus.nDSLEpochInterval != 0) {
+        throw std::runtime_error(strprintf("%s: the Sentinel start %d is not a multiple of the DSL epoch interval %d",
+                                           __func__, height + V23_DSL_ACTIVATION_OFFSET, consensus.nDSLEpochInterval));
     }
 
     consensus.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
@@ -232,9 +243,8 @@ void ApplyV23ActivationBundle(Consensus::Params& consensus, int height)
 
     // H1: the Sentinel layer observes from one day after H, attesting with the
     // Q60 quorums the same number brings into being. H2, the enforcing half
-    // (nDSLEnforcementHeight), is deliberately NOT written here: by the owner's
-    // decision of 2026-09-20 punishment is scheduled by a later release, after
-    // the shadow window between the two has been measured on this network.
+    // (nDSLEnforcementHeight), is deliberately NOT written here -- see the
+    // bundle's comment above for the decision.
     consensus.nDSLActivationHeight = height + V23_DSL_ACTIVATION_OFFSET;
 }
 
@@ -329,7 +339,7 @@ public:
         // nDkgBadVotesV2ActivationHeight -- and, from the same number,
         // nDSLActivationHeight = H + V23_DSL_ACTIVATION_OFFSET, the Sentinel
         // layer's first observed hour. nDSLEnforcementHeight stays unset: the
-        // punishing half is a later release's decision (owner, 2026-09-20).
+        // punishing half is a later release's decision (see the bundle above).
         // CheckV23ActivationBundle refuses to start a node that sets any of
         // them in isolation, or that gives enforcement a height here.
         //
@@ -1998,14 +2008,17 @@ void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::str
     // fixed offset when the bundle is scheduled and unset when it is not, so a
     // release can neither start the layer without the quorum it attests with
     // nor schedule the quorum and forget the layer.
-    const int expected_dsl = first == UNSET ? UNSET : first + V23_DSL_ACTIVATION_OFFSET;
-    if (consensus.nDSLActivationHeight != expected_dsl) {
+    // Computed in 64 bits: this check exists for hand edits, and a hand-edited
+    // height just below the unset value would overflow the int sum that the
+    // Apply path never lets be formed.
+    const int64_t expected_dsl = first == UNSET ? int64_t{UNSET} : int64_t{first} + V23_DSL_ACTIVATION_OFFSET;
+    if (int64_t{consensus.nDSLActivationHeight} != expected_dsl) {
         throw std::runtime_error(strprintf(
             "%s: nDSLActivationHeight is %s on %s while the v23 bundle is %s; the Sentinel layer starts %d blocks after the bundle or not at all",
             __func__, describe(consensus.nDSLActivationHeight), network, describe(first), V23_DSL_ACTIVATION_OFFSET));
     }
-    // Enforcement is not part of v23 (owner, 2026-09-20): the punishing half is
-    // a later release's decision, and it is taken here, deliberately, when that
+    // Enforcement is not part of v23: the punishing half is a later release's
+    // decision (see the bundle's comment), taken here, deliberately, when that
     // release edits this refusal -- the same discipline as M-02 below.
     if (consensus.nDSLEnforcementHeight != UNSET) {
         throw std::runtime_error(strprintf(
@@ -2090,7 +2103,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-dslactivationheight=<n>", "Height from which the DSL service-commitment protocol runs, recording missed epochs without acting on them (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslenforcementheight=<n>", "Height from which a DSL verdict suspends rewards and bans, instead of only being recorded. Must not be below -dslactivationheight; the gap between them is the shadow window (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslcommitmentv2height=<n>", "Height from which DSL service commitments must carry the observed bitfield (format version 2); below it version 1 stays required, so a devnet that already carries version-1 commitments keeps its history valid. Every node must run a binary that knows the format before this height (default: 0, i.e. version 2 from the first commitment; devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-testactivationheight=name@height.", "Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, chainlocksv2, instantsendv2, v23, dsl, dslenforcement, dslcommitmentv2). v23 schedules the whole mainnet bundle at one height, exactly as the release does, including the Sentinel layer's start at v23+576; dslenforcement stays unset, as the release leaves it. (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-testactivationheight=name@height.", strprintf("Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, chainlocksv2, instantsendv2, v23, dsl, dslenforcement, dslcommitmentv2). v23 schedules the whole mainnet bundle at one height, exactly as the release does, including the Sentinel layer's start at v23+%d; dslenforcement stays unset, as the release leaves it. (regtest-only)", V23_DSL_ACTIVATION_OFFSET), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-vbparams=<deployment>:<start>:<end>(:min_activation_height(:<window>:<threshold/thresholdstart>(:<thresholdmin>:<falloffcoeff>:<mnactivation>)))",
                  "Use given start/end times and min_activation_height for specified version bits deployment (regtest-only). "
                  "Specifying window, threshold/thresholdstart, thresholdmin, falloffcoeff and mnactivation is optional.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
