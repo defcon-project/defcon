@@ -224,8 +224,10 @@ void ApplyV23ActivationBundle(Consensus::Params& consensus, int height)
     }
     // The layer's first epoch has to start on the epoch grid, and that grid is
     // the DSL's own interval, not the Q60 one: both are 24 today and nothing
-    // ties them together. The sum cannot overflow past the check above.
-    if ((height + V23_DSL_ACTIVATION_OFFSET) % consensus.nDSLEpochInterval != 0) {
+    // ties them together. The sum cannot overflow past the check above, and an
+    // interval that is not positive is refused rather than divided by.
+    if (consensus.nDSLEpochInterval <= 0 ||
+        (height + V23_DSL_ACTIVATION_OFFSET) % consensus.nDSLEpochInterval != 0) {
         throw std::runtime_error(strprintf("%s: the Sentinel start %d is not a multiple of the DSL epoch interval %d",
                                            __func__, height + V23_DSL_ACTIVATION_OFFSET, consensus.nDSLEpochInterval));
     }
@@ -1996,6 +1998,28 @@ void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::str
         }
     }
 
+    // The number itself. ApplyV23ActivationBundle refuses a height that is not
+    // positive or sits off the grid, but a hand edit writes the eight fields
+    // directly and never passes through it -- and every other check here only
+    // compares the fields with each other, where eight equal wrong numbers
+    // agree. In 64 bits for the same reason as the Sentinel comparison below.
+    if (first != UNSET) {
+        const auto q60 = ranges::find_if(Consensus::available_llmqs,
+                                         [](const auto& p) { return p.type == Consensus::LLMQType::LLMQ_DEFCON; });
+        assert(q60 != Consensus::available_llmqs.end());
+        if (first <= 0 || first % q60->dkgInterval != 0) {
+            throw std::runtime_error(strprintf(
+                "%s: the v23 activation height %d on %s is not a positive multiple of the Q60 DKG interval %d",
+                __func__, first, network, q60->dkgInterval));
+        }
+        if (consensus.nDSLEpochInterval <= 0 ||
+            (int64_t{first} + V23_DSL_ACTIVATION_OFFSET) % consensus.nDSLEpochInterval != 0) {
+            throw std::runtime_error(strprintf(
+                "%s: the Sentinel start %d on %s is not a multiple of the DSL epoch interval %d",
+                __func__, int64_t{first} + V23_DSL_ACTIVATION_OFFSET, network, consensus.nDSLEpochInterval));
+        }
+    }
+
     // The two profile halves follow the heights: named exactly when scheduled.
     const auto expected_type = first == UNSET ? Consensus::LLMQType::LLMQ_NONE : Consensus::LLMQType::LLMQ_DEFCON;
     if (consensus.llmqTypeChainLocksV2 != expected_type || consensus.llmqTypeDIP0024InstantSendV2 != expected_type) {
@@ -2040,6 +2064,22 @@ void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::str
         throw std::runtime_error(strprintf(
             "%s: nStrictBLSSigSizeActivationHeight is set on %s; M-02 is not part of the v23 bundle",
             __func__, network));
+    }
+
+    // Two devnet instruments a release network does not carry. Neither can be
+    // reached from the command line here, only by editing the source, and that
+    // edit is what this refuses: the ComputeNode layer has no height outside
+    // devnet, and ending a profile's formation is a later release's decision,
+    // taken here and on purpose like the two above.
+    if (consensus.nComputeNodeActivationHeight != UNSET) {
+        throw std::runtime_error(strprintf(
+            "%s: nComputeNodeActivationHeight is set on %s; the ComputeNode layer is not part of v23",
+            __func__, network));
+    }
+    if (!consensus.llmqFormationEndHeights.empty()) {
+        throw std::runtime_error(strprintf(
+            "%s: llmqFormationEndHeights names %d profile(s) on %s; ending a profile's formation is not part of v23",
+            __func__, consensus.llmqFormationEndHeights.size(), network));
     }
 }
 
