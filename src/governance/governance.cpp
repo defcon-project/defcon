@@ -2020,7 +2020,8 @@ void CGovernanceManager::ExecuteBestSuperblock(const CDeterministicMNList& tip_m
 }
 
 
-bool AreSuperblocksEnabled(const CSporkManager& sporkman)
+bool AreSuperblocksEnabled(const CSporkManager& sporkman, int nHeight, const Consensus::Params& consensusParams)
 {
+    if (nHeight >= consensusParams.nSuperblocksRetiredHeight) return false;
     return sporkman.IsSporkActive(SPORK_9_SUPERBLOCKS_ENABLED);
 }

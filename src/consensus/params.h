@@ -341,6 +341,13 @@ struct Params {
      *  default -- an unreachable height -- leaves every network on the value it
      *  has today until one is set deliberately. */
     int nDkgBadVotesV2ActivationHeight{std::numeric_limits<int>::max()};
+    /** Height at and above which superblocks are retired on this chain:
+     *  AreSuperblocksEnabled answers no. The reward schedule has no governance
+     *  share, so the feature inherited from Dash is unused; below the height it
+     *  stays exactly as it was. Height-only and one-way, like the other v23
+     *  gates; the default -- an unreachable height -- changes nothing until one
+     *  is set. */
+    int nSuperblocksRetiredHeight{std::numeric_limits<int>::max()};
     LLMQType llmqTypeDIP0024InstantSend{LLMQType::LLMQ_NONE};
     /** The InstantSend profile that takes over at and above
      *  nInstantSendV2ActivationHeight, resolved from the chain tip by both the

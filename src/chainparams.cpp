@@ -158,7 +158,7 @@ std::optional<Consensus::LLMQParams> CChainParams::GetLLMQ(Consensus::LLMQType l
  * Every consensus change gated on this chain since v22.1.4 activates on mainnet
  * and on testnet at ONE height, in ONE commit, and the two constants below are
  * that commit's whole surface. ApplyV23ActivationBundle is the only place the
- * eight gated fields are written for those two networks, so the release sets a
+ * nine gated fields are written for those two networks, so the release sets a
  * number and nothing else. The Sentinel layer is scheduled from the same
  * number: it starts observing at H + V23_DSL_ACTIVATION_OFFSET, and its
  * enforcing half (nDSLEnforcementHeight) gets no height from v23 at all --
@@ -189,7 +189,7 @@ std::optional<Consensus::LLMQParams> CChainParams::GetLLMQ(Consensus::LLMQType l
  * grid loses part of the first of those.
  *
  * CheckV23ActivationBundle, run at startup for mainnet and testnet, refuses a
- * configuration that sets some of the eight and not the others, so a partial
+ * configuration that sets some of the nine and not the others, so a partial
  * edit fails in the first unit-test run rather than at the first block after
  * it.
  */
@@ -242,6 +242,9 @@ void ApplyV23ActivationBundle(Consensus::Params& consensus, int height)
     consensus.nPosBlockTimeBoundActivationHeight = height;
     consensus.nPosFeeBurnActivationHeight = height;
     consensus.nDkgBadVotesV2ActivationHeight = height;
+    // Superblocks are retired at the same height: the reward schedule has no
+    // governance share, so the feature is unused (AreSuperblocksEnabled).
+    consensus.nSuperblocksRetiredHeight = height;
 
     // H1: the Sentinel layer observes from one day after H, attesting with the
     // Q60 quorums the same number brings into being. H2, the enforcing half
@@ -337,8 +340,9 @@ public:
         // The bundle: nChainLocksV2ActivationHeight (Q60) with its InstantSend
         // counterpart, nPosKernelV2ActivationHeight,
         // nPosCoinbaseBoundActivationHeight, nPosStakeModifierV2ActivationHeight,
-        // nPosBlockTimeBoundActivationHeight, nPosFeeBurnActivationHeight and
-        // nDkgBadVotesV2ActivationHeight -- and, from the same number,
+        // nPosBlockTimeBoundActivationHeight, nPosFeeBurnActivationHeight,
+        // nDkgBadVotesV2ActivationHeight and nSuperblocksRetiredHeight -- and,
+        // from the same number,
         // nDSLActivationHeight = H + V23_DSL_ACTIVATION_OFFSET, the Sentinel
         // layer's first observed hour. nDSLEnforcementHeight stays unset: the
         // punishing half is a later release's decision (see the bundle above).
@@ -768,6 +772,9 @@ public:
         consensus.nPosStakeModifierV2ActivationHeight = 7560;
         consensus.nPosBlockTimeBoundActivationHeight = 7560;
         consensus.nPosFeeBurnActivationHeight = 7920;
+        // Superblocks are retired from genesis on this devnet, so it runs what
+        // ships.
+        consensus.nSuperblocksRetiredHeight = 0;
         // M-02 is dropped from the v23 release (2026-09-05), so it now has a
         // height on no network at all -- devnet included, deliberately, so that
         // what this network tests is what ships. It was 5250 here and active
@@ -1389,6 +1396,8 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
             consensus.nPosFeeBurnActivationHeight = int{height};
         } else if (name == "compute") {
             consensus.nComputeNodeActivationHeight = int{height};
+        } else if (name == "superblocksretired") {
+            consensus.nSuperblocksRetiredHeight = int{height};
         } else if (name == "chainlocksv2") {
             consensus.nChainLocksV2ActivationHeight = int{height};
         } else if (name == "instantsendv2") {
@@ -1988,6 +1997,7 @@ void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::str
         {"nPosBlockTimeBoundActivationHeight", consensus.nPosBlockTimeBoundActivationHeight},
         {"nPosFeeBurnActivationHeight", consensus.nPosFeeBurnActivationHeight},
         {"nDkgBadVotesV2ActivationHeight", consensus.nDkgBadVotesV2ActivationHeight},
+        {"nSuperblocksRetiredHeight", consensus.nSuperblocksRetiredHeight},
     };
     const int first = gates[0].height;
     for (const auto& gate : gates) {
@@ -1999,9 +2009,9 @@ void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::str
     }
 
     // The number itself. ApplyV23ActivationBundle refuses a height that is not
-    // positive or sits off the grid, but a hand edit writes the eight fields
+    // positive or sits off the grid, but a hand edit writes the nine fields
     // directly and never passes through it -- and every other check here only
-    // compares the fields with each other, where eight equal wrong numbers
+    // compares the fields with each other, where nine equal wrong numbers
     // agree. In 64 bits for the same reason as the Sentinel comparison below.
     if (first != UNSET) {
         const auto q60 = ranges::find_if(Consensus::available_llmqs,
@@ -2143,7 +2153,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-dslactivationheight=<n>", "Height from which the DSL service-commitment protocol runs, recording missed epochs without acting on them (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslenforcementheight=<n>", "Height from which a DSL verdict suspends rewards and bans, instead of only being recorded. Must not be below -dslactivationheight; the gap between them is the shadow window (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslcommitmentv2height=<n>", "Height from which DSL service commitments must carry the observed bitfield (format version 2); below it version 1 stays required, so a devnet that already carries version-1 commitments keeps its history valid. Every node must run a binary that knows the format before this height (default: 0, i.e. version 2 from the first commitment; devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-testactivationheight=name@height.", strprintf("Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, chainlocksv2, instantsendv2, v23, dsl, dslenforcement, dslcommitmentv2). v23 schedules the whole mainnet bundle at one height, exactly as the release does, including the Sentinel layer's start at v23+%d; dslenforcement stays unset, as the release leaves it. (regtest-only)", V23_DSL_ACTIVATION_OFFSET), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-testactivationheight=name@height.", strprintf("Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, superblocksretired, chainlocksv2, instantsendv2, v23, dsl, dslenforcement, dslcommitmentv2). v23 schedules the whole mainnet bundle at one height, exactly as the release does, including the Sentinel layer's start at v23+%d; dslenforcement stays unset, as the release leaves it. (regtest-only)", V23_DSL_ACTIVATION_OFFSET), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-vbparams=<deployment>:<start>:<end>(:min_activation_height(:<window>:<threshold/thresholdstart>(:<thresholdmin>:<falloffcoeff>:<mnactivation>)))",
                  "Use given start/end times and min_activation_height for specified version bits deployment (regtest-only). "
                  "Specifying window, threshold/thresholdstart, thresholdmin, falloffcoeff and mnactivation is optional.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
