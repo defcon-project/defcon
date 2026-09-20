@@ -334,7 +334,7 @@ BOOST_AUTO_TEST_CASE(llmq_configuration_coherence)
 
     // On mainnet the same edit passes this check, because the profile is
     // registered -- and is refused one layer up, by CheckV23ActivationBundle,
-    // as a partial schedule: one gate of eight, on a release network.
+    // as a partial schedule: one gate of nine, on a release network.
     {
         auto params = CreateChainParams(args, CBaseChainParams::MAIN);
         auto& consensus = const_cast<Consensus::Params&>(params->GetConsensus());

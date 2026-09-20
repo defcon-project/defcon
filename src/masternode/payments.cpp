@@ -288,7 +288,7 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
 
     // we are synced and possibly on a superblock now
 
-    if (!AreSuperblocksEnabled(m_sporkman)) {
+    if (!AreSuperblocksEnabled(m_sporkman, nBlockHeight, m_consensus_params)) {
         // should NOT allow superblocks at all, when superblocks are disabled
         // revert to block reward limits in this case
         LogPrint(BCLog::GOBJECT, "CMNPaymentsProcessor::%s -- Superblocks are disabled, no superblocks allowed\n", __func__);
@@ -354,7 +354,7 @@ bool CMNPaymentsProcessor::IsBlockPayeeValid(const CTransaction& txNew, const CB
 
     // superblocks started
 
-    if (AreSuperblocksEnabled(m_sporkman)) {
+    if (AreSuperblocksEnabled(m_sporkman, nBlockHeight, m_consensus_params)) {
         if (!check_superblock) return true;
         const auto tip_mn_list = m_dmnman.GetListAtChainTip();
         if (m_govman.IsSuperblockTriggered(tip_mn_list, nBlockHeight)) {
@@ -387,7 +387,7 @@ void CMNPaymentsProcessor::FillBlockPayments(CMutableTransaction& txNew, const C
     // only create superblocks if spork is enabled AND if superblock is actually triggered
     // (height should be validated inside)
     const auto tip_mn_list = m_dmnman.GetListAtChainTip();
-    if (AreSuperblocksEnabled(m_sporkman) && m_govman.IsSuperblockTriggered(tip_mn_list, nBlockHeight)) {
+    if (AreSuperblocksEnabled(m_sporkman, nBlockHeight, m_consensus_params) && m_govman.IsSuperblockTriggered(tip_mn_list, nBlockHeight)) {
         LogPrint(BCLog::GOBJECT, "CMNPaymentsProcessor::%s -- Triggered superblock creation at height %d\n", __func__, nBlockHeight);
         m_govman.GetSuperblockPayments(tip_mn_list, nBlockHeight, voutSuperblockPaymentsRet);
     }

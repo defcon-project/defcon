@@ -73,7 +73,7 @@ class LLMQSwitchoverConfigTest(BitcoinTestFramework):
             "is not a multiple of the Q60 DKG interval",
             match=ErrorMatch.PARTIAL_REGEX)
         self.start_node(0, extra_args=["-testactivationheight=v23@%d" % CL])
-        # Started, so the eight-way pairing the release relies on passed the
+        # Started, so the nine-way pairing the release relies on passed the
         # startup guards; the unit suite pins each field the alias wrote.
         assert "llmq_defcon" not in node.quorum("list")
         assert_equal(node.getblockcount(), 0)

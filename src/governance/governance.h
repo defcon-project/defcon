@@ -15,6 +15,7 @@
 
 #include <optional>
 
+namespace Consensus { struct Params; }
 class CBloomFilter;
 class CBlockIndex;
 class CConnman;
@@ -417,6 +418,9 @@ private:
 
 };
 
-bool AreSuperblocksEnabled(const CSporkManager& sporkman);
+/** Whether superblocks are enabled for the block at nHeight: the spork, below
+ *  the height that retires them on this chain
+ *  (Consensus::Params::nSuperblocksRetiredHeight), and no from that height on. */
+bool AreSuperblocksEnabled(const CSporkManager& sporkman, int nHeight, const Consensus::Params& consensusParams);
 
 #endif // BITCOIN_GOVERNANCE_GOVERNANCE_H

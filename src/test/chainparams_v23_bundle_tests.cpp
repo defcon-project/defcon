@@ -2,7 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-//! The v23 activation bundle: one number, eight gates and the Sentinel start, two networks.
+//! The v23 activation bundle: one number, nine gates and the Sentinel start, two networks.
 //!
 //! Three things are pinned here. That mainnet and testnet are dormant today
 //! with the Q60 profile already registered, so the activating commit is a
@@ -42,7 +42,7 @@ constexpr int UNSET = std::numeric_limits<int>::max();
 constexpr int Q60_DKG_INTERVAL = 24; // llmq_defcon, Consensus::available_llmqs
 constexpr int DSL_OFFSET = 24 * 24;   // V23_DSL_ACTIVATION_OFFSET, chainparams.cpp: one day of Q60 intervals
 
-//! The eight heights the bundle owns, by name, so a failure names the field.
+//! The nine heights the bundle owns, by name, so a failure names the field.
 std::vector<std::pair<std::string, int>> BundleHeights(const Consensus::Params& c)
 {
     return {
@@ -54,6 +54,7 @@ std::vector<std::pair<std::string, int>> BundleHeights(const Consensus::Params& 
         {"nPosBlockTimeBoundActivationHeight", c.nPosBlockTimeBoundActivationHeight},
         {"nPosFeeBurnActivationHeight", c.nPosFeeBurnActivationHeight},
         {"nDkgBadVotesV2ActivationHeight", c.nDkgBadVotesV2ActivationHeight},
+        {"nSuperblocksRetiredHeight", c.nSuperblocksRetiredHeight},
     };
 }
 
@@ -101,7 +102,7 @@ BOOST_AUTO_TEST_CASE(mainnet_and_testnet_are_dormant_with_the_profile_registered
 }
 
 // One call, every gate, the same height -- and nothing outside the bundle.
-BOOST_AUTO_TEST_CASE(apply_sets_the_eight_gates_and_both_profiles_together)
+BOOST_AUTO_TEST_CASE(apply_sets_the_nine_gates_and_both_profiles_together)
 {
     ArgsManager args;
     const auto params = CreateChainParams(args, CBaseChainParams::MAIN);
@@ -191,6 +192,20 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
         c.nPosFeeBurnActivationHeight = UNSET;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
+    // The ninth as well: superblocks kept alive past H, or retired without H.
+    {
+        Consensus::Params c = params->GetConsensus();
+        ApplyV23ActivationBundle(c, H);
+        c.nSuperblocksRetiredHeight = UNSET;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::TESTNET), std::runtime_error);
+    }
+    {
+        Consensus::Params c = params->GetConsensus();
+        c.nSuperblocksRetiredHeight = H;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::TESTNET), std::runtime_error);
+    }
     // Heights scheduled, profiles forgotten: the resolver would never switch.
     {
         Consensus::Params c = params->GetConsensus();
@@ -249,7 +264,8 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
         for (int* h : {&c.nChainLocksV2ActivationHeight, &c.nInstantSendV2ActivationHeight,
                        &c.nPosKernelV2ActivationHeight, &c.nPosCoinbaseBoundActivationHeight,
                        &c.nPosStakeModifierV2ActivationHeight, &c.nPosBlockTimeBoundActivationHeight,
-                       &c.nPosFeeBurnActivationHeight, &c.nDkgBadVotesV2ActivationHeight}) {
+                       &c.nPosFeeBurnActivationHeight, &c.nDkgBadVotesV2ActivationHeight,
+                       &c.nSuperblocksRetiredHeight}) {
             *h = near_top;
         }
         c.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
@@ -264,8 +280,8 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
         c.nDSLCommitmentV2Height = 12744;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
-    // The number itself. Eight equal heights agree with each other whatever
-    // they are, so a hand edit that moves all eight -- profiles named, the
+    // The number itself. Nine equal heights agree with each other whatever
+    // they are, so a hand edit that moves all nine -- profiles named, the
     // Sentinel start at the right distance, everything the comparisons above
     // look at -- used to pass with a height Apply would have refused. The first
     // block is the control: the same hand edit, on the grid, is fine.
@@ -273,7 +289,8 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
         for (int* h : {&c.nChainLocksV2ActivationHeight, &c.nInstantSendV2ActivationHeight,
                        &c.nPosKernelV2ActivationHeight, &c.nPosCoinbaseBoundActivationHeight,
                        &c.nPosStakeModifierV2ActivationHeight, &c.nPosBlockTimeBoundActivationHeight,
-                       &c.nPosFeeBurnActivationHeight, &c.nDkgBadVotesV2ActivationHeight}) {
+                       &c.nPosFeeBurnActivationHeight, &c.nDkgBadVotesV2ActivationHeight,
+                       &c.nSuperblocksRetiredHeight}) {
             *h = height;
         }
         c.nDSLActivationHeight = height + DSL_OFFSET;
