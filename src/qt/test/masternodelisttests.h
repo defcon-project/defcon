@@ -22,6 +22,7 @@ public:
 
 private Q_SLOTS:
     void viewSurvivesRestart();
+    void oldLayoutDoesNotHideTheCollateral();
     void mineOnlyWaitsForTheWallet();
 };
 
