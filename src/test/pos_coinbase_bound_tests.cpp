@@ -5,6 +5,7 @@
 #include <chainparams.h>
 #include <consensus/amount.h>
 #include <evo/chainhelper.h>
+#include <governance/classes.h>
 #include <masternode/payments.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
@@ -86,6 +87,29 @@ struct ScopedPosRegime {
     const int m_saved_last_pow;
     const int m_saved_gate;
 };
+
+//! Makes one chosen height a superblock height for the duration of a scope:
+//! CSuperblock::IsValidBlockHeight reads the start block and the cycle, and
+//! with both set to the height itself that height is the first superblock.
+//! Restores on scope exit.
+struct ScopedSuperblockHeight {
+    ScopedSuperblockHeight(Consensus::Params& params, int height) :
+        m_params(params),
+        m_saved_start(params.nSuperblockStartBlock),
+        m_saved_cycle(params.nSuperblockCycle)
+    {
+        m_params.nSuperblockStartBlock = height;
+        m_params.nSuperblockCycle = height;
+    }
+    ~ScopedSuperblockHeight()
+    {
+        m_params.nSuperblockStartBlock = m_saved_start;
+        m_params.nSuperblockCycle = m_saved_cycle;
+    }
+    Consensus::Params& m_params;
+    const int m_saved_start;
+    const int m_saved_cycle;
+};
 } // namespace
 
 BOOST_AUTO_TEST_CASE(past_the_pow_boundary_the_coinbase_may_carry_only_the_required_payouts)
@@ -157,6 +181,74 @@ BOOST_AUTO_TEST_CASE(past_the_pow_boundary_the_coinbase_may_carry_only_the_requi
     // Restored: the fixture is back below the boundary and the gate at 0.
     BOOST_CHECK_LT(height, params.lastPowBlock);
     BOOST_CHECK_EQUAL(params.nPosCoinbaseBoundActivationHeight, 0);
+}
+
+/**
+ * At a superblock height, past the gate, the coinbase may carry at most the
+ * required payouts, as at any other height. This case checks that on both
+ * sides of the gate: the bound with the gate active, the inherited superblock
+ * ceiling with it unset.
+ */
+BOOST_AUTO_TEST_CASE(at_a_superblock_height_the_bound_is_still_exactly_the_required_payouts)
+{
+    const CBlockIndex* tip{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip())};
+    BOOST_REQUIRE(tip != nullptr);
+    auto& payments = *Assert(Assert(m_node.chain_helper.get())->mn_payments);
+    Consensus::Params& params{const_cast<Consensus::Params&>(Params().GetConsensus())};
+
+    const int height{tip->nHeight + 1};
+    const CAmount subsidy{500 * COIN};
+    const CAmount fees{0};
+    const CAmount staked{12345 * COIN};
+    std::string err;
+
+    BOOST_REQUIRE(!CSuperblock::IsValidBlockHeight(height));
+    const int saved_start{params.nSuperblockStartBlock};
+    const int saved_cycle{params.nSuperblockCycle};
+    {
+        ScopedSuperblockHeight superblock(params, height);
+        BOOST_REQUIRE(CSuperblock::IsValidBlockHeight(height));
+        // The schedule's governance share is zero here as everywhere.
+        BOOST_REQUIRE_EQUAL(CSuperblock::GetPaymentsLimit(m_node.chainman->ActiveChain(), height), 0);
+
+        // Gate active: no masternode is registered on this fixture, so the
+        // required payouts sum to zero and the coinbase must be empty. The
+        // superblock height buys it nothing.
+        {
+            ScopedPosRegime regime(params, /*last_pow_block=*/tip->nHeight - 1, /*coinbase_bound_height=*/0);
+
+            CBlock empty = MakeStakeBlock(staked + subsidy, /*coinbase_out=*/0);
+            BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(empty, tip, subsidy, fees, staked, err, /*check_superblock=*/true),
+                                "an empty coinbase was rejected at a superblock height: " + err);
+
+            CBlock one_satoshi = MakeStakeBlock(staked + subsidy, /*coinbase_out=*/1);
+            BOOST_CHECK(!payments.IsBlockValueValid(one_satoshi, tip, subsidy, fees, staked, err, /*check_superblock=*/true));
+            BOOST_CHECK_MESSAGE(err.find("proof-of-stake coinbase may carry only the required payouts") != std::string::npos,
+                                "the rejection did not come from the coinbase bound: " + err);
+        }
+
+        // Gate unset: the inherited superblock ceiling applies: the flat
+        // masternode payment plus the block reward is accepted, one satoshi
+        // more is refused.
+        {
+            ScopedPosRegime regime(params, /*last_pow_block=*/tip->nHeight - 1, std::numeric_limits<int>::max());
+            const CAmount inherited_ceiling{GetMasternodePayment(height) + subsidy + fees};
+
+            CBlock at_ceiling = MakeStakeBlock(staked + subsidy, inherited_ceiling);
+            BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(at_ceiling, tip, subsidy, fees, staked, err, /*check_superblock=*/true),
+                                "with the gate unset the inherited superblock ceiling refused its own maximum: " + err);
+
+            CBlock above_ceiling = MakeStakeBlock(staked + subsidy, inherited_ceiling + 1);
+            BOOST_CHECK(!payments.IsBlockValueValid(above_ceiling, tip, subsidy, fees, staked, err, /*check_superblock=*/true));
+            BOOST_CHECK_MESSAGE(err.find("exceeded superblock max value") != std::string::npos,
+                                "the rejection did not come from the superblock ceiling: " + err);
+        }
+    }
+
+    // Restored.
+    BOOST_CHECK_EQUAL(params.nSuperblockStartBlock, saved_start);
+    BOOST_CHECK_EQUAL(params.nSuperblockCycle, saved_cycle);
+    BOOST_CHECK(!CSuperblock::IsValidBlockHeight(height));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

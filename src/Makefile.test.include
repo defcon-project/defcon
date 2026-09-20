@@ -137,6 +137,7 @@ BITCOIN_TESTS =\
   test/flatfile_tests.cpp \
   test/fs_tests.cpp \
   test/getarg_tests.cpp \
+  test/governance_budget_tests.cpp \
   test/governance_validators_tests.cpp \
   test/governance_vote_sync_tests.cpp \
   test/hash_tests.cpp \
