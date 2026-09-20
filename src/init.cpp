@@ -802,11 +802,11 @@ std::string LicenseInfo()
            "Copyright (C) 2014-2026 The Dash Core developers\n" +
            "Copyright (C) 2009-2026 The Bitcoin Core developers\n" +
            "\n" +
-           "Please contribute if you find DeFCoN useful. Visit <https://www.dfcn.io/> for further information about the software.\n" +
-           "The source code is available from <https://github.com/defcon-project/defcon>.\n" +
+           "Please contribute if you find DeFCoN useful. Visit <https://www.dfcn.io/> for more information about the software.\n" +
+           "The source code is available at <https://github.com/defcon-project/defcon>.\n" +
            "\n" +
            "This is experimental software.\n" +
-           "Distributed under the MIT software license, see the accompanying file COPYING or <https://opensource.org/licenses/MIT>\n";
+           "Distributed under the MIT software license. See the accompanying file COPYING or <https://opensource.org/licenses/MIT>.\n";
 }
 
 static bool fHaveGenesis = false;
