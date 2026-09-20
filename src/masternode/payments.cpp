@@ -238,8 +238,7 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
     strErrorRet = "";
 
     //  defcon's staking block structure
-    //  vtx[0] contains the masternode output, and below the height that
-    //         retires them any superblock outputs
+    //  vtx[0] contains masternode/superblock output
     //  vtx[1] contains staking output
     //  both of which get checked below
 

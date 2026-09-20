@@ -5,9 +5,9 @@
 """The retirement of superblocks, seen through getblocktemplate.
 
 A test chain, the superblock spork switched on, and the retirement height set
-with -testactivationheight=superblocksretired@N: the one state no unit test
-reaches, because a fresh spork manager on a test chain holds the spork's
-default.
+with -testactivationheight=superblocksretired@N. superblock_retirement_tests
+holds the predicate and the block value check in that state; this test holds
+the RPC, and the option that sets the height.
 
 getblocktemplate asks whether superblocks are enabled twice, both times for
 the block it is about to describe: once before it builds the template (with
@@ -47,8 +47,9 @@ class SuperblockRetirementTest(BitcoinTestFramework):
 
     def mine(self, count):
         # Block times creep ahead of a frozen mock clock, about a second every
-        # six blocks, and a block more than two hours ahead is refused: move
-        # the clock along with the chain.
+        # six blocks, and a block more than MAX_FUTURE_BLOCK_TIME (three
+        # minutes here) ahead is refused: move the clock along with the chain,
+        # and let the other node catch up while the clock stands still.
         node = self.nodes[0]
         done = 0
         while done < count:
@@ -56,9 +57,9 @@ class SuperblockRetirementTest(BitcoinTestFramework):
             self.generate(node, step, sync_fun=self.no_op)
             done += step
             self.now += 100
+            self.sync_blocks(wait=0.1)
             for n in self.nodes:
                 n.setmocktime(self.now)
-        self.sync_blocks()
 
     def template(self):
         return self.nodes[0].getblocktemplate({"rules": ["segwit"]})
@@ -83,6 +84,12 @@ class SuperblockRetirementTest(BitcoinTestFramework):
 
         self.log.info("The block at the retirement height: a template, and superblocks off")
         self.mine(1)
+        # The first of the two questions only matters on a node whose masternode
+        # sync has not finished. Put the node there rather than rely on how far
+        # its sync happens to have come: with a peer it finishes within a few
+        # clock steps.
+        node.mnsync("reset")
+        assert_equal(node.mnsync("status")["IsSynced"], False)
         at = self.template()
         assert_equal(at["height"], RETIRED_AT)
         assert_equal(at["superblocks_enabled"], False)

@@ -34,7 +34,9 @@
  * exactly as before, below the height; and no from the height on.
  *
  * The cases ask it with the height unset, with the bundle applied, below and
- * at a height set by hand, and with the devnet's value.
+ * at a height set by hand, and with the devnet's value; then on a test chain
+ * with the spork on, at the predicate and through IsBlockValueValid; and the
+ * last one reads the devnet's superblock schedule against its gate heights.
  */
 BOOST_AUTO_TEST_SUITE(superblock_retirement_tests)
 
@@ -129,8 +131,8 @@ BOOST_FIXTURE_TEST_CASE(a_test_chain_with_the_spork_on, TestChain100Setup)
     params.nSuperblocksRetiredHeight = UNSET;
     BOOST_CHECK(AreSuperblocksEnabled(sporkman, 2000, params));
 
-    // The payments code only asks the predicate on a node that has finished
-    // its masternode sync.
+    // IsBlockValueValid only reaches the predicate on a node that has
+    // finished its masternode sync.
     BOOST_REQUIRE(m_node.netfulfilledman->LoadCache(false));
     BOOST_REQUIRE(m_node.govman->LoadCache(false));
     for (int i = 0; i < 4 && !m_node.mn_sync->IsSynced(); ++i) m_node.mn_sync->SwitchToNextAsset();
@@ -145,9 +147,9 @@ BOOST_FIXTURE_TEST_CASE(a_test_chain_with_the_spork_on, TestChain100Setup)
     params.nSuperblockCycle = height;
     BOOST_REQUIRE(CSuperblock::IsValidBlockHeight(height));
 
-    // A proof-of-work block whose coinbase is over the block reward and inside
-    // the superblock ceiling. With superblocks enabled and check_superblock
-    // false the reward is not compared; retired, the block is held to it.
+    // A proof-of-work block whose coinbase is one coin over the block reward.
+    // Whether it is accepted follows the predicate's answer, so the three
+    // calls below read the height IsBlockValueValid hands the predicate.
     const CAmount subsidy{500 * COIN};
     const CAmount fees{0};
     CBlock block;
@@ -175,40 +177,23 @@ BOOST_FIXTURE_TEST_CASE(a_test_chain_with_the_spork_on, TestChain100Setup)
     params.nSuperblockCycle = saved_cycle;
 }
 
-// From the retirement on, a block at a superblock height is held to the
-// ordinary limits, and on a proof-of-stake block the ordinary limit on the
-// coinbase is the bound behind nPosCoinbaseBoundActivationHeight. So no
-// superblock height may lie at or after the one and before the other.
-namespace {
-void CheckNoSuperblockHeightBetweenTheGates(const Consensus::Params& c, const std::string& where)
+// Parameter consistency on the devnet, whose heights are set one by one and
+// not by the bundle: the first height of the superblock schedule from
+// nSuperblocksRetiredHeight on, read against nPosCoinbaseBoundActivationHeight.
+// The bundle writes one height into both, and chainparams_v23_bundle_tests
+// holds that.
+BOOST_FIXTURE_TEST_CASE(superblock_schedule_vs_gate_heights_on_devnet, DevNetSetup)
 {
-    if (c.nSuperblocksRetiredHeight == UNSET) return;
+    const Consensus::Params& c = Params().GetConsensus();
+    BOOST_REQUIRE(c.nSuperblocksRetiredHeight != UNSET);
     const int cycle{c.nSuperblockCycle};
     int first{std::max(c.nSuperblockStartBlock, c.nSuperblocksRetiredHeight)};
     if (first % cycle != 0) first += cycle - first % cycle;
+    BOOST_REQUIRE(CSuperblock::IsValidBlockHeight(first));
     BOOST_CHECK_MESSAGE(first >= c.nPosCoinbaseBoundActivationHeight,
-                        where + ": superblock height " + std::to_string(first) + " lies after the retirement (" +
-                            std::to_string(c.nSuperblocksRetiredHeight) + ") and before the coinbase bound (" +
-                            std::to_string(c.nPosCoinbaseBoundActivationHeight) + ")");
-}
-} // namespace
-
-BOOST_FIXTURE_TEST_CASE(no_superblock_height_between_the_retirement_and_the_coinbase_bound_on_devnet, DevNetSetup)
-{
-    CheckNoSuperblockHeightBetweenTheGates(Params().GetConsensus(), "devnet");
-}
-
-BOOST_FIXTURE_TEST_CASE(no_superblock_height_between_the_retirement_and_the_coinbase_bound_with_the_bundle, MainNetSetup)
-{
-    Consensus::Params c = Params().GetConsensus();
-    ApplyV23ActivationBundle(c, H);
-    BOOST_REQUIRE_EQUAL(c.nSuperblocksRetiredHeight, c.nPosCoinbaseBoundActivationHeight);
-    CheckNoSuperblockHeightBetweenTheGates(c, "mainnet with the bundle");
-    // The control that the helper can fail: the bound one cycle later.
-    c.nPosCoinbaseBoundActivationHeight = H + 2 * c.nSuperblockCycle;
-    int first{std::max(c.nSuperblockStartBlock, c.nSuperblocksRetiredHeight)};
-    if (first % c.nSuperblockCycle != 0) first += c.nSuperblockCycle - first % c.nSuperblockCycle;
-    BOOST_CHECK_LT(first, c.nPosCoinbaseBoundActivationHeight);
+                        "devnet: first scheduled height " + std::to_string(first) + ", nSuperblocksRetiredHeight " +
+                            std::to_string(c.nSuperblocksRetiredHeight) + ", nPosCoinbaseBoundActivationHeight " +
+                            std::to_string(c.nPosCoinbaseBoundActivationHeight));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
