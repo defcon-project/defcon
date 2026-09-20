@@ -5,11 +5,21 @@
 #include <chainparams.h>
 #include <consensus/amount.h>
 #include <evo/chainhelper.h>
+#include <governance/classes.h>
+#include <governance/governance.h>
+#include <key.h>
+#include <key_io.h>
 #include <masternode/payments.h>
+#include <masternode/sync.h>
+#include <net_processing.h>
+#include <netfulfilledman.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
+#include <script/standard.h>
+#include <spork.h>
 #include <test/util/setup_common.h>
+#include <tinyformat.h>
 #include <validation.h>
 
 #include <boost/test/unit_test.hpp>
@@ -109,6 +119,105 @@ BOOST_AUTO_TEST_CASE(past_the_gate_the_coinstake_may_not_keep_the_fees)
         CBlock block = MakeStakeBlock(staked + subsidy - 1);
         BOOST_CHECK(payments.IsBlockValueValid(block, tip, subsidy, fees, staked, err, /*check_superblock=*/false));
     }
+}
+
+// The same wording at a superblock height. IsBlockValueValid falls back to the
+// block reward limits there in two places -- superblocks disabled, and enabled
+// with no superblock triggered -- and both report a proof-of-stake block by
+// its coinstake and the coinstake's own ceiling, as the ordinary-height branch
+// above does, and a proof-of-work block by its coinbase and the block reward.
+BOOST_AUTO_TEST_CASE(at_a_superblock_height_the_rejection_names_the_coinstake_too)
+{
+    const CBlockIndex* tip{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip())};
+    BOOST_REQUIRE(tip != nullptr);
+    auto& payments = *Assert(Assert(m_node.chain_helper.get())->mn_payments);
+    Consensus::Params& params{const_cast<Consensus::Params&>(Params().GetConsensus())};
+    CSporkManager& sporkman = *Assert(m_node.sporkman.get());
+
+    const CAmount subsidy{500 * COIN};
+    const CAmount fees{7277};
+    const CAmount staked{12345 * COIN};
+    const int height{tip->nHeight + 1};
+    // Past the fee gate the coinstake's ceiling is the subsidy and the block
+    // reward is the subsidy plus the fees: the two limits differ, so a message
+    // that printed the wrong one would show.
+    BOOST_REQUIRE(PosFeesAreBurned(height, params));
+
+    // Both fallbacks sit behind the masternode sync.
+    BOOST_REQUIRE(m_node.netfulfilledman->LoadCache(false));
+    BOOST_REQUIRE(m_node.govman->LoadCache(false));
+    for (int i = 0; i < 4 && !m_node.mn_sync->IsSynced(); ++i) m_node.mn_sync->SwitchToNextAsset();
+    BOOST_REQUIRE(m_node.mn_sync->IsSynced());
+    BOOST_REQUIRE(m_node.govman->IsValid());
+
+    // The next height made a superblock height for the rest of the case.
+    struct ScopedSuperblockHeight {
+        ScopedSuperblockHeight(Consensus::Params& p, int h) : m_p(p), m_start(p.nSuperblockStartBlock), m_cycle(p.nSuperblockCycle)
+        {
+            m_p.nSuperblockStartBlock = h;
+            m_p.nSuperblockCycle = h;
+        }
+        ~ScopedSuperblockHeight()
+        {
+            m_p.nSuperblockStartBlock = m_start;
+            m_p.nSuperblockCycle = m_cycle;
+        }
+        Consensus::Params& m_p;
+        const int m_start;
+        const int m_cycle;
+    } superblock_height(params, height);
+    BOOST_REQUIRE(CSuperblock::IsValidBlockHeight(height));
+
+    const CBlock stake_at_ceiling = MakeStakeBlock(staked + subsidy);
+    const CBlock stake_over = MakeStakeBlock(staked + subsidy + 1);
+    CBlock work_over;
+    {
+        CMutableTransaction coinbase;
+        coinbase.vin.resize(1);
+        coinbase.vin[0].prevout.SetNull();
+        coinbase.vout.resize(1);
+        coinbase.vout[0].nValue = subsidy + fees + 1;
+        coinbase.vout[0].scriptPubKey = CScript() << OP_TRUE;
+        work_over.vtx.push_back(MakeTransactionRef(std::move(coinbase)));
+    }
+    BOOST_REQUIRE(stake_over.IsProofOfStake());
+    BOOST_REQUIRE(work_over.IsProofOfWork());
+    const std::string stake_numbers{strprintf("at height %d (actual=%d vs limit=%d)", height, subsidy + 1, subsidy)};
+    const std::string work_numbers{strprintf("at height %d (actual=%d vs limit=%d)", height, subsidy + fees + 1, subsidy + fees)};
+
+    const auto check_wording = [&](const std::string& branch) {
+        std::string err;
+        BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(stake_at_ceiling, tip, subsidy, fees, staked, err, /*check_superblock=*/true),
+                            branch + ": a coinstake at its ceiling was rejected: " + err);
+
+        BOOST_CHECK(!payments.IsBlockValueValid(stake_over, tip, subsidy, fees, staked, err, /*check_superblock=*/true));
+        const std::string stake_err{err};
+        BOOST_CHECK_MESSAGE(stake_err.find("coinstake mints too much " + stake_numbers) != std::string::npos,
+                            branch + ": the rejection did not report the coinstake and its ceiling: " + stake_err);
+        BOOST_CHECK_MESSAGE(stake_err.find("coinbase pays") == std::string::npos,
+                            branch + ": the rejection of a proof-of-stake block named the coinbase: " + stake_err);
+        BOOST_CHECK_MESSAGE(stake_err.find(branch) != std::string::npos, "not the " + branch + " fallback: " + stake_err);
+
+        BOOST_CHECK(!payments.IsBlockValueValid(work_over, tip, subsidy, fees, 0, err, /*check_superblock=*/true));
+        const std::string work_err{err};
+        BOOST_CHECK_MESSAGE(work_err.find("coinbase pays too much " + work_numbers) != std::string::npos,
+                            branch + ": the rejection did not report the coinbase and the block reward: " + work_err);
+        BOOST_CHECK_MESSAGE(work_err.find(branch) != std::string::npos, "not the " + branch + " fallback: " + work_err);
+    };
+
+    // A fresh spork manager on a test chain holds the spork's default: off.
+    BOOST_REQUIRE(!AreSuperblocksEnabled(sporkman, height, params));
+    check_wording("superblocks are disabled");
+
+    // The spork on, and nothing in the governance store to trigger a superblock.
+    CKey key;
+    key.MakeNewKey(false);
+    BOOST_REQUIRE(sporkman.SetSporkAddress(EncodeDestination(PKHash(key.GetPubKey()))));
+    BOOST_REQUIRE(sporkman.SetMinSporkKeys(1));
+    BOOST_REQUIRE(sporkman.SetPrivKey(EncodeSecret(key)));
+    BOOST_REQUIRE(sporkman.UpdateSpork(*Assert(m_node.peerman.get()), SPORK_9_SUPERBLOCKS_ENABLED, 0));
+    BOOST_REQUIRE(AreSuperblocksEnabled(sporkman, height, params));
+    check_wording("no triggered superblock detected");
 }
 
 BOOST_AUTO_TEST_CASE(below_the_gate_the_old_ceiling_stands)
