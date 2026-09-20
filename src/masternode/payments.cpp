@@ -238,8 +238,8 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
     strErrorRet = "";
 
     //  defcon's staking block structure
-    //  vtx[0] contains the masternode output (the reward schedule has no
-    //         governance share, see above)
+    //  vtx[0] contains the masternode output, and below the height that
+    //         retires them any superblock outputs
     //  vtx[1] contains staking output
     //  both of which get checked below
 
@@ -293,8 +293,13 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
         // revert to block reward limits in this case
         LogPrint(BCLog::GOBJECT, "CMNPaymentsProcessor::%s -- Superblocks are disabled, no superblocks allowed\n", __func__);
         if(!isBlockRewardValueMet) {
-            strErrorRet = strprintf("coinbase pays too much at height %d (actual=%d vs limit=%d), exceeded block reward, superblocks are disabled",
-                                    nBlockHeight, block.vtx[0]->GetValueOut(), blockReward);
+            // As at an ordinary height: on a proof-of-stake block the check reads
+            // the coinstake, so that is what the message reports.
+            strErrorRet = block.IsProofOfStake()
+                ? strprintf("coinstake mints too much at height %d (actual=%d vs limit=%d), exceeded block reward, superblocks are disabled",
+                            nBlockHeight, block.vtx[1]->GetValueOut() - stakeValueIn, coinstakeCeiling)
+                : strprintf("coinbase pays too much at height %d (actual=%d vs limit=%d), exceeded block reward, superblocks are disabled",
+                            nBlockHeight, block.vtx[0]->GetValueOut(), blockReward);
         }
         return isBlockRewardValueMet;
     }
@@ -305,8 +310,11 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
         // we are on a valid superblock height but a superblock was not triggered
         // revert to block reward limits in this case
         if(!isBlockRewardValueMet) {
-            strErrorRet = strprintf("coinbase pays too much at height %d (actual=%d vs limit=%d), exceeded block reward, no triggered superblock detected",
-                                    nBlockHeight, block.vtx[0]->GetValueOut(), blockReward);
+            strErrorRet = block.IsProofOfStake()
+                ? strprintf("coinstake mints too much at height %d (actual=%d vs limit=%d), exceeded block reward, no triggered superblock detected",
+                            nBlockHeight, block.vtx[1]->GetValueOut() - stakeValueIn, coinstakeCeiling)
+                : strprintf("coinbase pays too much at height %d (actual=%d vs limit=%d), exceeded block reward, no triggered superblock detected",
+                            nBlockHeight, block.vtx[0]->GetValueOut(), blockReward);
         }
         return isBlockRewardValueMet;
     }
