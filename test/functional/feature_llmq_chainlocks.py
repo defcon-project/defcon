@@ -165,6 +165,7 @@ class LLMQChainLocksTest(DashTestFramework):
         self.nodes[0].reconsiderblock(good_tip)
         assert self.nodes[0].getbestblockhash() != good_tip
         good_fork = good_tip
+        self.log.info(f"node0 has {len(self.nodes[0].getpeerinfo())} peer(s) before it is reconnected to node1")
         # Use a link that is made after the fork exchange, so that the recovery does not depend on the earlier one.
         self.disconnect_nodes(0, 1)
         self.connect_nodes(0, 1)
