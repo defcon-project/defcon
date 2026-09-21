@@ -43,6 +43,10 @@
 BOOST_FIXTURE_TEST_SUITE(pos_coinstake_fee_tests, TestChain100Setup)
 
 namespace {
+//! The release height: the one place this file names it. It is V23_MAINNET_ACTIVATION_HEIGHT in
+//! chainparams.cpp, and moving the release height moves both. Testnet stays unscheduled.
+constexpr int RELEASE_H = 144888;
+
 //! A block shaped like a proof-of-stake block: an empty-first-output coinstake
 //! at vtx[1], and a coinbase at vtx[0] carrying the masternode payout.
 CBlock MakeStakeBlock(CAmount coinstake_out, CAmount coinbase_out = 0)
@@ -242,7 +246,7 @@ BOOST_AUTO_TEST_CASE(fee_burn_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nPosFeeBurnActivationHeight,
-                      std::numeric_limits<int>::max());
+                      RELEASE_H);
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nPosFeeBurnActivationHeight,
                       std::numeric_limits<int>::max());
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosFeeBurnActivationHeight,

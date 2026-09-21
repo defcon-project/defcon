@@ -16,6 +16,12 @@
 
 BOOST_FIXTURE_TEST_SUITE(llmq_instantsend_tests, BasicTestingSetup)
 
+namespace {
+//! The release height: the one place this file names it. It is V23_MAINNET_ACTIVATION_HEIGHT in
+//! chainparams.cpp, and moving the release height moves both.
+constexpr int RELEASE_H = 144888;
+} // namespace
+
 // The tip-height profile resolver is the single point that keeps every node
 // signing and verifying InstantSend locks with the same quorum type across
 // the switchover. Same contract as the ChainLock resolver: one-way, exact at
@@ -69,11 +75,27 @@ BOOST_AUTO_TEST_CASE(devnet_instantsend_moves_to_q60)
     BOOST_CHECK(chainparams->GetLLMQ(consensus.llmqTypeDIP0024InstantSend).has_value());
 }
 
-// Mainnet gets its heights in the v23 bundle, all at once. Until then the
-// resolver must be inert there: no V2 type, an unreachable height.
-BOOST_AUTO_TEST_CASE(mainnet_instantsend_switchover_unset)
+// Mainnet gets its heights in the v23 bundle, all at once: InstantSend moves to
+// the Q60 profile at the release height, exactly there and one-way, with the
+// profile registered so the resolver never names a type the network lacks.
+BOOST_AUTO_TEST_CASE(mainnet_instantsend_switchover_is_scheduled)
 {
     const auto chainparams = CreateChainParams(*m_node.args, CBaseChainParams::MAIN);
+    const auto& consensus = chainparams->GetConsensus();
+
+    BOOST_CHECK(consensus.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_DEFCON);
+    BOOST_CHECK_EQUAL(consensus.nInstantSendV2ActivationHeight, RELEASE_H);
+    BOOST_CHECK(chainparams->GetLLMQ(consensus.llmqTypeDIP0024InstantSendV2).has_value());
+    BOOST_CHECK(llmq::GetInstantSendLLMQType(consensus, RELEASE_H - 1) == consensus.llmqTypeDIP0024InstantSend);
+    BOOST_CHECK(llmq::GetInstantSendLLMQType(consensus, RELEASE_H) == Consensus::LLMQType::LLMQ_DEFCON);
+    BOOST_CHECK(llmq::GetInstantSendLLMQType(consensus, 1000000000) == Consensus::LLMQType::LLMQ_DEFCON);
+}
+
+// Testnet stays unscheduled in this release, and there the resolver must be
+// inert: no V2 type, an unreachable height.
+BOOST_AUTO_TEST_CASE(testnet_instantsend_switchover_unset)
+{
+    const auto chainparams = CreateChainParams(*m_node.args, CBaseChainParams::TESTNET);
     const auto& consensus = chainparams->GetConsensus();
 
     BOOST_CHECK(consensus.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_NONE);

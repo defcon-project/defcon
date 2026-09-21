@@ -22,6 +22,10 @@
 BOOST_FIXTURE_TEST_SUITE(pos_kernel_tests, TestChain100Setup)
 
 namespace {
+//! The release height: the one place this file names it. It is V23_MAINNET_ACTIVATION_HEIGHT in
+//! chainparams.cpp, and moving the release height moves both. Testnet stays unscheduled.
+constexpr int RELEASE_H = 144888;
+
 //! A transaction shaped like a coinstake (empty first output) spending `prevout`.
 CMutableTransaction MakeCoinstakeSpending(const COutPoint& prevout)
 {
@@ -441,7 +445,7 @@ BOOST_AUTO_TEST_CASE(pos_block_time_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nPosBlockTimeBoundActivationHeight,
-                      std::numeric_limits<int>::max());
+                      RELEASE_H);
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nPosBlockTimeBoundActivationHeight,
                       std::numeric_limits<int>::max());
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosBlockTimeBoundActivationHeight,
@@ -456,7 +460,7 @@ BOOST_AUTO_TEST_CASE(pos_stake_modifier_v2_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nPosStakeModifierV2ActivationHeight,
-                      std::numeric_limits<int>::max());
+                      RELEASE_H);
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nPosStakeModifierV2ActivationHeight,
                       std::numeric_limits<int>::max());
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosStakeModifierV2ActivationHeight,
@@ -471,7 +475,7 @@ BOOST_AUTO_TEST_CASE(pos_coinbase_bound_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nPosCoinbaseBoundActivationHeight,
-                      std::numeric_limits<int>::max());
+                      RELEASE_H);
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nPosCoinbaseBoundActivationHeight,
                       std::numeric_limits<int>::max());
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosCoinbaseBoundActivationHeight,
@@ -511,7 +515,7 @@ BOOST_AUTO_TEST_CASE(kernel_v2_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::MAIN)->GetConsensus().nPosKernelV2ActivationHeight,
-                      std::numeric_limits<int>::max());
+                      RELEASE_H);
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus().nPosKernelV2ActivationHeight,
                       std::numeric_limits<int>::max());
     BOOST_CHECK_EQUAL(CreateChainParams(args, CBaseChainParams::REGTEST)->GetConsensus().nPosKernelV2ActivationHeight,

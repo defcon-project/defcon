@@ -57,6 +57,10 @@ struct ChainLocksTestAccess {
 } // namespace llmq
 
 namespace {
+//! The release height: the one place this file names it. It is V23_MAINNET_ACTIVATION_HEIGHT in
+//! chainparams.cpp, and moving the release height moves both.
+constexpr int RELEASE_H = 144888;
+
 uint256 TestChainLockHash(uint32_t n)
 {
     uint256 hash;
@@ -284,8 +288,7 @@ BOOST_AUTO_TEST_CASE(q60_formation_lead)
 BOOST_AUTO_TEST_CASE(unset_switchover_height_never_forms)
 {
     ArgsManager args;
-    for (const std::string& chain : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET,
-                                     CBaseChainParams::REGTEST}) {
+    for (const std::string& chain : {CBaseChainParams::TESTNET, CBaseChainParams::REGTEST}) {
         const auto params = CreateChainParams(args, chain);
         const auto& consensus = params->GetConsensus();
         BOOST_CHECK_MESSAGE(consensus.nChainLocksV2ActivationHeight == std::numeric_limits<int>::max(),
@@ -294,6 +297,26 @@ BOOST_AUTO_TEST_CASE(unset_switchover_height_never_forms)
         BOOST_CHECK_MESSAGE(consensus.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_NONE,
                             chain + " names a Q60 switchover profile without a height");
     }
+}
+
+// Mainnet has scheduled the switchover: the height and the profile are set
+// together, the height sits on the Q60 DKG grid so that formation opens a whole
+// lead ahead of it, and the resolver flips exactly there and one-way.
+BOOST_AUTO_TEST_CASE(mainnet_switchover_is_scheduled)
+{
+    ArgsManager args;
+    const auto params = CreateChainParams(args, CBaseChainParams::MAIN);
+    const auto& consensus = params->GetConsensus();
+
+    BOOST_CHECK_EQUAL(consensus.nChainLocksV2ActivationHeight, RELEASE_H);
+    BOOST_CHECK(consensus.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_DEFCON);
+    const auto q60 = params->GetLLMQ(Consensus::LLMQType::LLMQ_DEFCON);
+    BOOST_REQUIRE(q60.has_value());
+    BOOST_CHECK_EQUAL(RELEASE_H % q60->dkgInterval, 0);
+
+    BOOST_CHECK(llmq::GetChainLocksLLMQType(consensus, RELEASE_H - 1) == consensus.llmqTypeChainLocks);
+    BOOST_CHECK(llmq::GetChainLocksLLMQType(consensus, RELEASE_H) == Consensus::LLMQType::LLMQ_DEFCON);
+    BOOST_CHECK(llmq::GetChainLocksLLMQType(consensus, 1000000000) == Consensus::LLMQType::LLMQ_DEFCON);
 }
 
 // The startup coherence check. Each of these configurations is one somebody can
