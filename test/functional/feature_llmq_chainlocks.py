@@ -165,7 +165,13 @@ class LLMQChainLocksTest(DashTestFramework):
         self.nodes[0].reconsiderblock(good_tip)
         assert self.nodes[0].getbestblockhash() != good_tip
         good_fork = good_tip
+        # Use a link that is made after the fork exchange, so that the recovery does not depend on the earlier one.
+        self.disconnect_nodes(0, 1)
+        self.connect_nodes(0, 1)
         good_tip = self.generatetoaddress(self.nodes[1], 1, node0_mining_addr, sync_fun=self.no_op)[-1]  # this should mark bad_tip as conflicting
+        self.log.info("Wait for the new ChainLock on node1, then on node0")
+        self.wait_for_chainlocked_block(self.nodes[1], good_tip)
+        self.wait_for_chainlocked_block(self.nodes[0], good_tip)
         self.wait_for_chainlocked_block_all_nodes(good_tip)
         self.test_coinbase_best_cl(self.nodes[0])
         assert self.nodes[0].getbestblockhash() == good_tip
