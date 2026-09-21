@@ -1,0 +1,111 @@
+# Smoke test of the cross-built macOS binaries on a real Mac, for a project that has no Mac of its own.
+# Runs on a push to the branch this file lives on. It downloads the release assets, checks them against
+# the published checksums, clears the quarantine flag the way a user would, and starts the node.
+name: macos-smoke
+
+on:
+  push:
+    branches: [ci/macos-smoke]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to test
+        required: true
+        default: v23.0.0-fork-rehearsal
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    # GitHub's Intel macOS runner. The binaries are x86_64; an arm64 runner would need Rosetta,
+    # which these runners do not carry.
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.inputs.tag || 'v23.0.0-fork-rehearsal' }}
+    steps:
+      - name: The machine
+        run: |
+          sw_vers
+          uname -m
+          echo "runner arch: $(arch)"
+
+      - name: Download the release assets
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'defcon-apple.tgz' --pattern 'SHA256SUMS' --pattern 'SHA256SUMS.binaries'
+          ls -la
+
+      - name: Verify the archive against the published checksum
+        run: |
+          grep 'defcon-apple.tgz' SHA256SUMS | shasum -a 256 -c -
+
+      - name: Unpack as a user would, and look at what we got
+        run: |
+          tar -xzf defcon-apple.tgz
+          ls -la defcon-apple
+          file defcon-apple/*
+          echo "--- what the daemon links against"
+          otool -L defcon-apple/defcond
+          echo "--- minimum macOS version"
+          otool -l defcon-apple/defcond | grep -A5 LC_BUILD_VERSION | head -8
+
+      - name: Verify each binary against the published checksum
+        run: |
+          grep -A6 '# macos' SHA256SUMS.binaries | grep -E '^[0-9a-f]{64}' > macos.sums
+          cat macos.sums
+          (cd defcon-apple && shasum -a 256 -c ../macos.sums)
+
+      - name: Clear the quarantine flag, the step a real user has to take
+        run: |
+          # Simulate a browser download first, so the step is a real test and not a no-op.
+          xattr -w com.apple.quarantine "0081;00000000;Safari;" defcon-apple/defcond || true
+          xattr -l defcon-apple/defcond || true
+          xattr -d com.apple.quarantine defcon-apple/defcond 2>/dev/null || true
+          for b in defcon-cli defcon-tx defcon-wallet defcon-qt; do
+            xattr -d com.apple.quarantine "defcon-apple/$b" 2>/dev/null || true
+          done
+
+      - name: Versions
+        run: |
+          cd defcon-apple
+          ./defcond -version | head -2
+          ./defcon-cli -version | head -1
+          ./defcon-tx -version | head -1
+          ./defcon-wallet -version | head -1
+
+      - name: The node starts, answers and stops (regtest, no network)
+        run: |
+          cd defcon-apple
+          D="$RUNNER_TEMP/rt"; mkdir -p "$D"
+          ./defcond -regtest -datadir="$D" -listen=0 -connect=0 -dnsseed=0 -printtoconsole=0 -daemon=1
+          for i in $(seq 1 90); do ./defcon-cli -regtest -datadir="$D" getblockcount >/dev/null 2>&1 && break; sleep 1; done
+          ./defcon-cli -regtest -datadir="$D" getblockchaininfo | head -5
+          ./defcon-cli -regtest -datadir="$D" getnetworkinfo | grep -E '"subversion"|"protocolversion"'
+          ./defcon-cli -regtest -datadir="$D" stop
+          for i in $(seq 1 60); do pgrep -x defcond >/dev/null || break; sleep 1; done
+          tail -2 "$D/regtest/debug.log"
+
+      - name: Mainnet parameters load, and the scheduled heights read back
+        run: |
+          cd defcon-apple
+          D="$RUNNER_TEMP/mn"; mkdir -p "$D"
+          ./defcond -datadir="$D" -listen=0 -connect=0 -dnsseed=0 -fixedseeds=0 -disablewallet \
+                    -port=19999 -rpcport=19998 -printtoconsole=0 -daemon=1
+          for i in $(seq 1 90); do ./defcon-cli -datadir="$D" -rpcport=19998 getblockcount >/dev/null 2>&1 && break; sleep 1; done
+          ./defcon-cli -datadir="$D" -rpcport=19998 getblockchaininfo | grep '"chain"'
+          ACT=$(./defcon-cli -datadir="$D" -rpcport=19998 dslstatus | grep '"activationheight"' | tr -dc 0-9)
+          ENF=$(./defcon-cli -datadir="$D" -rpcport=19998 dslstatus | grep '"enforcementheight"' | tr -dc 0-9)
+          echo "activationheight=$ACT enforcementheight=$ENF"
+          ./defcon-cli -datadir="$D" -rpcport=19998 stop
+          for i in $(seq 1 60); do pgrep -x defcond >/dev/null || break; sleep 1; done
+          test "$ACT" = "145464" || { echo "FAIL: Sentinel start is $ACT, expected 145464"; exit 1; }
+          test "$ENF" = "2147483647" || { echo "FAIL: enforcement height is $ENF, expected unset"; exit 1; }
+          tail -2 "$D/debug.log"
+
+      - name: The GUI binary loads its libraries (it cannot open a window here)
+        run: |
+          cd defcon-apple
+          ./defcon-qt -version | head -2
