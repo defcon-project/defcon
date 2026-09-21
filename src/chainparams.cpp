@@ -194,8 +194,8 @@ std::optional<Consensus::LLMQParams> CChainParams::GetLLMQ(Consensus::LLMQType l
  * it.
  */
 //! The one number the DAO sets for mainnet. Unset keeps the bundle dormant.
-static constexpr int V23_MAINNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
-//! Testnet's height, set in the same commit.
+static constexpr int V23_MAINNET_ACTIVATION_HEIGHT = 144888;
+//! Testnet's height. The v23 release leaves testnet unscheduled.
 static constexpr int V23_TESTNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
 //! Blocks between H and the Sentinel layer's first observed epoch: one day of
 //! Q60 intervals (24 x 24), so the hour the switchover itself lands in is not

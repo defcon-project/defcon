@@ -17,6 +17,11 @@
 BOOST_FIXTURE_TEST_SUITE(pose_service_tests, BasicTestingSetup)
 
 namespace {
+//! The release height: the one place this file names it. It is V23_MAINNET_ACTIVATION_HEIGHT in
+//! chainparams.cpp, and moving the release height moves both.
+constexpr int RELEASE_H = 144888;
+constexpr int DSL_OFFSET = 24 * 24; // V23_DSL_ACTIVATION_OFFSET, chainparams.cpp: one day of epochs
+
 CPoSeServiceCommitment MakeCommitment()
 {
     CPoSeServiceCommitment c;
@@ -125,15 +130,18 @@ BOOST_AUTO_TEST_CASE(quorum_selection_hash_is_per_epoch_only)
                 ServiceCommitmentQuorumSelectionHash(b.nEpoch));
 }
 
-// DSL ships dormant: its activation and enforcement heights must be the
-// unreachable maximum on every network until a coordinated release sets them,
-// and the epoch length must be the Q60 DKG interval.
-BOOST_AUTO_TEST_CASE(activation_is_pinned_dormant)
+// The layer's observing half is scheduled on mainnet one day of epochs after
+// the release height, and stays dormant on testnet and regtest. Its enforcing
+// half rides no release yet: the unreachable maximum on all three. The epoch
+// length must be the Q60 DKG interval, and the start must sit on that grid.
+BOOST_AUTO_TEST_CASE(activation_heights_are_pinned)
 {
     for (const auto& chain : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET, CBaseChainParams::REGTEST}) {
         const auto params = CreateChainParams(ArgsManager{}, chain);
         const auto& c = params->GetConsensus();
-        BOOST_CHECK_EQUAL(c.nDSLActivationHeight, std::numeric_limits<int>::max());
+        const int expected_start = chain == CBaseChainParams::MAIN ? RELEASE_H + DSL_OFFSET : std::numeric_limits<int>::max();
+        BOOST_CHECK_EQUAL(c.nDSLActivationHeight, expected_start);
+        if (chain == CBaseChainParams::MAIN) BOOST_CHECK_EQUAL(c.nDSLActivationHeight % c.nDSLEpochInterval, 0);
         BOOST_CHECK_EQUAL(c.nDSLEnforcementHeight, std::numeric_limits<int>::max());
         BOOST_CHECK_EQUAL(c.nDSLEpochInterval, 24);
         // None of these three carries a version-1 commitment, so version 2 is

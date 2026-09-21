@@ -4,12 +4,13 @@
 
 //! The v23 activation bundle: one number, nine gates and the Sentinel start, two networks.
 //!
-//! Three things are pinned here. That mainnet and testnet are dormant today
-//! with the Q60 profile already registered, so the activating commit is a
-//! number and not code. That applying a height sets every gate in the bundle
-//! and nothing outside it. And that a partial edit -- some heights set, some
-//! not, or a height with no profile -- is refused at startup on the two
-//! networks that release together, and only there.
+//! Three things are pinned here. That mainnet is scheduled at the release
+//! height while testnet stays dormant, both with the Q60 profile registered,
+//! so that moving the height is a number and not code. That applying a height
+//! sets every gate in the bundle and nothing outside it. And that a partial
+//! edit -- some heights set, some not, or a height with no profile -- is
+//! refused at startup on the two networks that release together, and only
+//! there.
 //!
 //! The Sentinel layer rides the same number: it starts observing a fixed
 //! offset after H, and its enforcing half gets NO height from v23 -- that is a
@@ -41,6 +42,9 @@ namespace {
 constexpr int UNSET = std::numeric_limits<int>::max();
 constexpr int Q60_DKG_INTERVAL = 24; // llmq_defcon, Consensus::available_llmqs
 constexpr int DSL_OFFSET = 24 * 24;   // V23_DSL_ACTIVATION_OFFSET, chainparams.cpp: one day of Q60 intervals
+//! The release height: the one place this file names it. It is V23_MAINNET_ACTIVATION_HEIGHT in
+//! chainparams.cpp, and moving the release height moves both.
+constexpr int RELEASE_H = 144888;
 
 //! The nine heights the bundle owns, by name, so a failure names the field.
 std::vector<std::pair<std::string, int>> BundleHeights(const Consensus::Params& c)
@@ -67,48 +71,87 @@ void ExpectAllHeights(const Consensus::Params& c, int expected, const std::strin
     }
 }
 
-} // namespace
-
-// The state the tree ships in, and the state the DAO's commit starts from.
-// A height appearing here by accident is a consensus change nobody decided to
-// make; a profile missing here would make that commit add code, not a number.
-BOOST_AUTO_TEST_CASE(mainnet_and_testnet_are_dormant_with_the_profile_registered)
+//! Consensus parameters with the bundle unset: testnet's, because the release leaves testnet
+//! dormant. Mainnet's carry the release height, and applying an unset height is a no-op, so they
+//! cannot be turned back into a dormant base.
+Consensus::Params DormantBase()
 {
     ArgsManager args;
-    for (const std::string& chain : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
-        const auto params = CreateChainParams(args, chain);
-        const auto& c = params->GetConsensus();
+    return CreateChainParams(args, CBaseChainParams::TESTNET)->GetConsensus();
+}
 
-        ExpectAllHeights(c, UNSET, chain);
-        BOOST_CHECK_MESSAGE(c.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_NONE,
-                            chain + " names a ChainLock switchover profile while the bundle is unset");
-        BOOST_CHECK_MESSAGE(c.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_NONE,
-                            chain + " names an InstantSend switchover profile while the bundle is unset");
+} // namespace
 
-        // Registered and dormant: the profile is present so that the activating
-        // commit changes a number, and disabled because its height is unset.
-        BOOST_CHECK_MESSAGE(params->GetLLMQ(Consensus::LLMQType::LLMQ_DEFCON).has_value(),
-                            chain + " does not register llmq_defcon");
+// The state testnet ships in: dormant, with the profile registered so that
+// scheduling it later is a number and not code. A height appearing here by
+// accident is a consensus change nobody decided to make.
+BOOST_AUTO_TEST_CASE(testnet_is_dormant_with_the_profile_registered)
+{
+    ArgsManager args;
+    const std::string chain{CBaseChainParams::TESTNET};
+    const auto params = CreateChainParams(args, chain);
+    const auto& c = params->GetConsensus();
 
-        // Outside the bundle by decision, and unset until a release says otherwise:
-        // M-02 (dropped 2026-09-05), the Compute masternode type, and both DSL heights.
-        BOOST_CHECK_EQUAL(c.nStrictBLSSigSizeActivationHeight, UNSET);
-        BOOST_CHECK_EQUAL(c.nComputeNodeActivationHeight, UNSET);
-        BOOST_CHECK_EQUAL(c.nDSLActivationHeight, UNSET);
-        BOOST_CHECK_EQUAL(c.nDSLEnforcementHeight, UNSET);
-        // No version-1 history here, so version 2 from the first commitment.
-        BOOST_CHECK_EQUAL(c.nDSLCommitmentV2Height, 0);
-    }
+    ExpectAllHeights(c, UNSET, chain);
+    BOOST_CHECK_MESSAGE(c.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_NONE,
+                        chain + " names a ChainLock switchover profile while the bundle is unset");
+    BOOST_CHECK_MESSAGE(c.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_NONE,
+                        chain + " names an InstantSend switchover profile while the bundle is unset");
+
+    // Registered and dormant: the profile is present so that scheduling it
+    // changes a number, and disabled because its height is unset.
+    BOOST_CHECK_MESSAGE(params->GetLLMQ(Consensus::LLMQType::LLMQ_DEFCON).has_value(),
+                        chain + " does not register llmq_defcon");
+
+    // Outside the bundle by decision, and unset until a release says otherwise:
+    // M-02 (dropped 2026-09-05), the Compute masternode type, and both DSL heights.
+    BOOST_CHECK_EQUAL(c.nStrictBLSSigSizeActivationHeight, UNSET);
+    BOOST_CHECK_EQUAL(c.nComputeNodeActivationHeight, UNSET);
+    BOOST_CHECK_EQUAL(c.nDSLActivationHeight, UNSET);
+    BOOST_CHECK_EQUAL(c.nDSLEnforcementHeight, UNSET);
+    // No version-1 history here, so version 2 from the first commitment.
+    BOOST_CHECK_EQUAL(c.nDSLCommitmentV2Height, 0);
+}
+
+// The state mainnet ships in: the whole bundle at the release height, the
+// Sentinel layer's observing half one day later, both profiles named, and
+// nothing outside the bundle. A moved or missing height here is a consensus
+// change nobody decided to make.
+BOOST_AUTO_TEST_CASE(mainnet_is_scheduled_at_the_release_height)
+{
+    ArgsManager args;
+    const std::string chain{CBaseChainParams::MAIN};
+    const auto params = CreateChainParams(args, chain);
+    const auto& c = params->GetConsensus();
+
+    ExpectAllHeights(c, RELEASE_H, chain);
+    BOOST_CHECK(c.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_DEFCON);
+    BOOST_CHECK(c.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_DEFCON);
+    BOOST_CHECK(params->GetLLMQ(Consensus::LLMQType::LLMQ_DEFCON).has_value());
+
+    // The two grids the bundle needs, read off the number itself.
+    BOOST_CHECK_EQUAL(RELEASE_H % Q60_DKG_INTERVAL, 0);
+    BOOST_CHECK_EQUAL((RELEASE_H + DSL_OFFSET) % c.nDSLEpochInterval, 0);
+
+    // The Sentinel layer's observing half follows a day later; its enforcing
+    // half rides no release yet, and nothing outside the bundle moved.
+    BOOST_CHECK_EQUAL(c.nDSLActivationHeight, RELEASE_H + DSL_OFFSET);
+    BOOST_CHECK_EQUAL(c.nDSLEnforcementHeight, UNSET);
+    BOOST_CHECK_EQUAL(c.nStrictBLSSigSizeActivationHeight, UNSET);
+    BOOST_CHECK_EQUAL(c.nComputeNodeActivationHeight, UNSET);
+    BOOST_CHECK_EQUAL(c.nDSLCommitmentV2Height, 0);
+
+    // The startup guard accepts it, as it does at every start.
+    BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, chain));
 }
 
 // One call, every gate, the same height -- and nothing outside the bundle.
 BOOST_AUTO_TEST_CASE(apply_sets_the_nine_gates_and_both_profiles_together)
 {
-    ArgsManager args;
-    const auto params = CreateChainParams(args, CBaseChainParams::MAIN);
+    const Consensus::Params base = DormantBase();
     constexpr int H = 7 * Q60_DKG_INTERVAL * 1000; // 168000, on the grid
 
-    Consensus::Params scheduled = params->GetConsensus();
+    Consensus::Params scheduled = base;
     ApplyV23ActivationBundle(scheduled, H);
     ExpectAllHeights(scheduled, H, "scheduled");
     BOOST_CHECK(scheduled.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_DEFCON);
@@ -122,8 +165,8 @@ BOOST_AUTO_TEST_CASE(apply_sets_the_nine_gates_and_both_profiles_together)
     BOOST_CHECK_EQUAL(scheduled.nDSLEnforcementHeight, UNSET);
     BOOST_CHECK_EQUAL(scheduled.nDSLCommitmentV2Height, 0);
 
-    // Unset is a no-op, which is what keeps every network dormant today.
-    Consensus::Params dormant = params->GetConsensus();
+    // Unset is a no-op, which is what keeps a network dormant.
+    Consensus::Params dormant = base;
     ApplyV23ActivationBundle(dormant, UNSET);
     ExpectAllHeights(dormant, UNSET, "dormant");
     BOOST_CHECK_EQUAL(dormant.nDSLActivationHeight, UNSET);
@@ -136,13 +179,12 @@ BOOST_AUTO_TEST_CASE(apply_sets_the_nine_gates_and_both_profiles_together)
 // any field is written.
 BOOST_AUTO_TEST_CASE(apply_refuses_a_height_off_the_grid_or_not_positive)
 {
-    ArgsManager args;
-    const auto params = CreateChainParams(args, CBaseChainParams::MAIN);
+    const Consensus::Params base = DormantBase();
 
     // The last value sits on the grid but leaves no room for the Sentinel offset.
     constexpr int NEAR_TOP = (UNSET / Q60_DKG_INTERVAL) * Q60_DKG_INTERVAL;
     for (const int bad : {1, Q60_DKG_INTERVAL + 1, 168001, 0, -Q60_DKG_INTERVAL, NEAR_TOP}) {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         BOOST_CHECK_THROW(ApplyV23ActivationBundle(c, bad), std::runtime_error);
         // Nothing was written before the refusal.
         ExpectAllHeights(c, UNSET, "after refusing " + std::to_string(bad));
@@ -153,7 +195,7 @@ BOOST_AUTO_TEST_CASE(apply_refuses_a_height_off_the_grid_or_not_positive)
     // grid by construction: with a 25-block epoch a height on the Q60 grid is
     // refused, and nothing is written.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         c.nDSLEpochInterval = 25;
         BOOST_CHECK_THROW(ApplyV23ActivationBundle(c, 168000), std::runtime_error);
         ExpectAllHeights(c, UNSET, "after refusing an off-grid Sentinel start");
@@ -166,13 +208,12 @@ BOOST_AUTO_TEST_CASE(apply_refuses_a_height_off_the_grid_or_not_positive)
 // unit test sees it rather than where the chain does.
 BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
 {
-    ArgsManager args;
-    const auto params = CreateChainParams(args, CBaseChainParams::MAIN);
+    const Consensus::Params base = DormantBase();
     constexpr int H = 168000;
 
     // Complete, and dormant: both fine.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN));
         ApplyV23ActivationBundle(c, H);
         BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN));
@@ -180,62 +221,62 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
     }
     // One height set on its own -- the edit this check exists for.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         c.nChainLocksV2ActivationHeight = H;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::TESTNET), std::runtime_error);
     }
     // Every height set, but one left behind.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         ApplyV23ActivationBundle(c, H);
         c.nPosFeeBurnActivationHeight = UNSET;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
     // The ninth as well: superblocks kept alive past H, or retired without H.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         ApplyV23ActivationBundle(c, H);
         c.nSuperblocksRetiredHeight = UNSET;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::TESTNET), std::runtime_error);
     }
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         c.nSuperblocksRetiredHeight = H;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::TESTNET), std::runtime_error);
     }
     // Heights scheduled, profiles forgotten: the resolver would never switch.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         ApplyV23ActivationBundle(c, H);
         c.llmqTypeDIP0024InstantSendV2 = Consensus::LLMQType::LLMQ_NONE;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
     // Profiles named, heights unset: the mirror image.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         c.llmqTypeChainLocksV2 = Consensus::LLMQType::LLMQ_DEFCON;
         c.llmqTypeDIP0024InstantSendV2 = Consensus::LLMQType::LLMQ_DEFCON;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
     // M-02 is out of v23 by decision; a height for it here is that decision undone by accident.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         c.nStrictBLSSigSizeActivationHeight = H;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
     // The Sentinel start is the bundle's: scheduled without it, or at the wrong
     // distance from H, is a partial edit like any other.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         ApplyV23ActivationBundle(c, H);
         c.nDSLActivationHeight = UNSET;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         ApplyV23ActivationBundle(c, H);
         c.nDSLActivationHeight = H; // a real height, the wrong distance
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
@@ -243,14 +284,14 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
     // The layer scheduled while the bundle is unset would attest with a quorum
     // that never forms.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         c.nDSLActivationHeight = H + DSL_OFFSET;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
     }
     // Enforcement is a later release's decision; a height for it here is that
     // decision undone by accident, on either release network.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         ApplyV23ActivationBundle(c, H);
         c.nDSLEnforcementHeight = H + 10 * DSL_OFFSET;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
@@ -259,7 +300,7 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
     // A hand edit just below the unset value: the mismatch has to be found
     // without the int sum overflowing (the check computes in 64 bits).
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         constexpr int near_top = (UNSET / Q60_DKG_INTERVAL) * Q60_DKG_INTERVAL;
         for (int* h : {&c.nChainLocksV2ActivationHeight, &c.nInstantSendV2ActivationHeight,
                        &c.nPosKernelV2ActivationHeight, &c.nPosCoinbaseBoundActivationHeight,
@@ -275,7 +316,7 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
     // A devnet flip height copied onto a release network would require the
     // healing version-1 format below it, on a chain that has no version-1 history.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         ApplyV23ActivationBundle(c, H);
         c.nDSLCommitmentV2Height = 12744;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
@@ -296,14 +337,14 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
         c.nDSLActivationHeight = height + DSL_OFFSET;
     };
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         ApplyV23ActivationBundle(c, H);
         move_every_gate_by_hand(c, H + Q60_DKG_INTERVAL);
         BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN));
         BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::TESTNET));
     }
     for (const int off_the_grid_or_not_positive : {H + 1, H + Q60_DKG_INTERVAL / 2, 0, -Q60_DKG_INTERVAL}) {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         ApplyV23ActivationBundle(c, H);
         move_every_gate_by_hand(c, off_the_grid_or_not_positive);
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
@@ -314,7 +355,7 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
     // from the command line on these networks, so the edit is the only way in --
     // with the bundle scheduled or without it.
     for (const bool scheduled : {false, true}) {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         if (scheduled) ApplyV23ActivationBundle(c, H);
         BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN));
 
@@ -330,7 +371,7 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
     }
     // The same partial edits are legitimate where gates are scheduled one by one.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         c.nChainLocksV2ActivationHeight = H + 1; // off the grid as well: the grid is Apply's rule there, not this check's
         c.nStrictBLSSigSizeActivationHeight = 0;
         c.nDSLActivationHeight = 1;
@@ -347,11 +388,10 @@ BOOST_AUTO_TEST_CASE(check_refuses_a_partial_edit_on_the_release_networks_only)
 // non-positive one is refused by name instead of being divided by.
 BOOST_AUTO_TEST_CASE(apply_refuses_a_non_positive_sentinel_epoch_interval)
 {
-    ArgsManager args;
-    const auto params = CreateChainParams(args, CBaseChainParams::MAIN);
+    const Consensus::Params base = DormantBase();
     constexpr int H = 168000;
     for (const int interval : {0, -24}) {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         c.nDSLEpochInterval = interval;
         BOOST_CHECK_THROW(ApplyV23ActivationBundle(c, H), std::runtime_error);
         // Refused before any field was written.
@@ -360,7 +400,7 @@ BOOST_AUTO_TEST_CASE(apply_refuses_a_non_positive_sentinel_epoch_interval)
     }
     // And the hand-edit path: a complete schedule with the interval zeroed afterwards.
     {
-        Consensus::Params c = params->GetConsensus();
+        Consensus::Params c = base;
         ApplyV23ActivationBundle(c, H);
         c.nDSLEpochInterval = 0;
         BOOST_CHECK_THROW(CheckV23ActivationBundle(c, CBaseChainParams::MAIN), std::runtime_error);
@@ -409,7 +449,8 @@ BOOST_AUTO_TEST_CASE(regtest_v23_alias_schedules_the_whole_bundle)
 
 // Testnet is where the DAO rehearses the switchover, so its quorum table has to
 // be mainnet's: the same registered profiles in the same order and the same
-// profile in every role, before and after H. A difference means the rehearsal
+// profile in every role, the two switchover roles aside, which follow the
+// schedule (below). A difference means the rehearsal
 // crosses from a profile mainnet does not use, or punishes on DKG rounds mainnet
 // never runs.
 BOOST_AUTO_TEST_CASE(testnet_quorum_table_is_mainnets)
@@ -432,8 +473,12 @@ BOOST_AUTO_TEST_CASE(testnet_quorum_table_is_mainnets)
     BOOST_CHECK(t.llmqTypeDIP0024InstantSend == m.llmqTypeDIP0024InstantSend);
     BOOST_CHECK(t.llmqTypePlatform == m.llmqTypePlatform);
     BOOST_CHECK(t.llmqTypeMnhf == m.llmqTypeMnhf);
-    BOOST_CHECK(t.llmqTypeChainLocksV2 == m.llmqTypeChainLocksV2);
-    BOOST_CHECK(t.llmqTypeDIP0024InstantSendV2 == m.llmqTypeDIP0024InstantSendV2);
+    // The switchover roles differ only by the schedule: mainnet is scheduled at the
+    // release height and names the Q60 profile, testnet is dormant and names none.
+    BOOST_CHECK(m.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_DEFCON);
+    BOOST_CHECK(m.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_DEFCON);
+    BOOST_CHECK(t.llmqTypeChainLocksV2 == Consensus::LLMQType::LLMQ_NONE);
+    BOOST_CHECK(t.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_NONE);
 }
 
 namespace {

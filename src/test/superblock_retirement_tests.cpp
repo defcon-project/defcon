@@ -43,6 +43,8 @@ BOOST_AUTO_TEST_SUITE(superblock_retirement_tests)
 namespace {
 constexpr int UNSET = std::numeric_limits<int>::max();
 constexpr int H = 168000; // on the Q60 grid, as the release requires
+//! The release height: V23_MAINNET_ACTIVATION_HEIGHT in chainparams.cpp, named here once.
+constexpr int RELEASE_H = 144888;
 
 struct MainNetSetup : public BasicTestingSetup {
     MainNetSetup() : BasicTestingSetup(CBaseChainParams::MAIN) {}
@@ -62,15 +64,25 @@ BOOST_FIXTURE_TEST_CASE(the_bundle_retires_superblocks_at_its_height, MainNetSet
     const CSporkManager sporkman;
     const bool spork{sporkman.IsSporkActive(SPORK_9_SUPERBLOCKS_ENABLED)};
 
+    // The release: retired with the bundle, at the release height. Below it the
+    // spork still answers, and from it on nothing does.
     Consensus::Params c = Params().GetConsensus();
-    BOOST_REQUIRE_EQUAL(c.nSuperblocksRetiredHeight, UNSET);
-    // Dormant: at every height the answer is the spork's.
+    BOOST_REQUIRE_EQUAL(c.nSuperblocksRetiredHeight, RELEASE_H);
+    BOOST_CHECK_EQUAL(AreSuperblocksEnabled(sporkman, RELEASE_H - 1, c), spork);
+    BOOST_CHECK(!AreSuperblocksEnabled(sporkman, RELEASE_H, c));
+    BOOST_CHECK(!AreSuperblocksEnabled(sporkman, RELEASE_H + 100000, c));
+    BOOST_CHECK(!AreSuperblocksEnabled(sporkman, UNSET - 1, c));
+
+    // Dormant, on a copy: at every height the answer is the spork's.
+    Consensus::Params dormant = c;
+    dormant.nSuperblocksRetiredHeight = UNSET;
     for (const int height : {1, 1000, 100000, 10000000}) {
-        BOOST_CHECK_MESSAGE(AreSuperblocksEnabled(sporkman, height, c) == spork,
+        BOOST_CHECK_MESSAGE(AreSuperblocksEnabled(sporkman, height, dormant) == spork,
                             "the answer at " + std::to_string(height) + " is not the spork's, with no height set");
     }
 
-    // Scheduled: the spork still answers below H, and nothing does from H on.
+    // Scheduled by hand at another height, as the bundle does: the spork still
+    // answers below H, and nothing does from H on.
     ApplyV23ActivationBundle(c, H);
     BOOST_REQUIRE_EQUAL(c.nSuperblocksRetiredHeight, H);
     BOOST_CHECK_EQUAL(AreSuperblocksEnabled(sporkman, H - 1, c), spork);
