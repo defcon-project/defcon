@@ -1,17 +1,15 @@
 # Smoke test of the cross-built macOS binaries on a real Mac, for a project that has no Mac of its own.
-# Runs on a push to the branch this file lives on. It downloads the release assets, checks them against
-# the published checksums, clears the quarantine flag the way a user would, and starts the node.
+# It downloads a published release's macOS archive, checks it against the published checksums, clears
+# the quarantine flag the way a user would, and starts the node.
+#
+# To run it against a release: edit .github/macos-smoke.env (repository, tag, expected heights) and
+# push this branch. It runs on push only: a manually dispatched workflow has to live on the default
+# branch, and this one deliberately does not.
 name: macos-smoke
 
 on:
   push:
     branches: [ci/macos-smoke]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Release tag to test
-        required: true
-        default: v23.0.0-fork-rehearsal
 
 permissions:
   contents: read
@@ -24,8 +22,19 @@ jobs:
     timeout-minutes: 25
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: ${{ github.event.inputs.tag || 'v23.0.0-fork-rehearsal' }}
     steps:
+      - name: What to test
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/macos-smoke.env
+          sparse-checkout-cone-mode: false
+
+      - name: Load the settings
+        run: |
+          grep -E '^(REPO|TAG|EXPECT_DSL_ACTIVATION|EXPECT_DSL_ENFORCEMENT)=' .github/macos-smoke.env | tee -a "$GITHUB_ENV"
+          . .github/macos-smoke.env
+          test -n "$REPO" && test -n "$TAG" || { echo "REPO and TAG must be set"; exit 1; }
+
       - name: The machine
         run: |
           sw_vers
@@ -34,7 +43,7 @@ jobs:
 
       - name: Download the release assets
         run: |
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+          gh release download "$TAG" --repo "$REPO" \
             --pattern 'defcon-apple.tgz' --pattern 'SHA256SUMS' --pattern 'SHA256SUMS.binaries'
           ls -la
 
@@ -101,8 +110,12 @@ jobs:
           echo "activationheight=$ACT enforcementheight=$ENF"
           ./defcon-cli -datadir="$D" -rpcport=19998 stop
           for i in $(seq 1 60); do pgrep -x defcond >/dev/null || break; sleep 1; done
-          test "$ACT" = "145464" || { echo "FAIL: Sentinel start is $ACT, expected 145464"; exit 1; }
-          test "$ENF" = "2147483647" || { echo "FAIL: enforcement height is $ENF, expected unset"; exit 1; }
+          if [ -n "$EXPECT_DSL_ACTIVATION" ]; then
+            test "$ACT" = "$EXPECT_DSL_ACTIVATION" || { echo "FAIL: Sentinel start is $ACT, expected $EXPECT_DSL_ACTIVATION"; exit 1; }
+          else echo "Sentinel start not checked (EXPECT_DSL_ACTIVATION empty)"; fi
+          if [ -n "$EXPECT_DSL_ENFORCEMENT" ]; then
+            test "$ENF" = "$EXPECT_DSL_ENFORCEMENT" || { echo "FAIL: enforcement height is $ENF, expected $EXPECT_DSL_ENFORCEMENT"; exit 1; }
+          else echo "enforcement height not checked (EXPECT_DSL_ENFORCEMENT empty)"; fi
           tail -2 "$D/debug.log"
 
       - name: The GUI binary loads its libraries (it cannot open a window here)
