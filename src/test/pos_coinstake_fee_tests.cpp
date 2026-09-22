@@ -242,6 +242,59 @@ BOOST_AUTO_TEST_CASE(below_the_gate_the_old_ceiling_stands)
     BOOST_CHECK(PosFeesAreBurned(0, p));
 }
 
+BOOST_AUTO_TEST_CASE(below_the_gate_the_coinstake_may_keep_the_fees)
+{
+    // The case above reads the decision alone. This one goes through
+    // IsBlockValueValid, as the case past the gate does: the chain cannot be
+    // moved below height 0, so the gate is moved above the next height instead,
+    // for the length of the case.
+    const CBlockIndex* tip{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip())};
+    BOOST_REQUIRE(tip != nullptr);
+    auto& payments = *Assert(Assert(m_node.chain_helper.get())->mn_payments);
+    Consensus::Params& params{const_cast<Consensus::Params&>(Params().GetConsensus())};
+
+    const CAmount subsidy{500 * COIN};
+    const CAmount fees{7277};
+    const CAmount staked{12345 * COIN};
+    const int height{tip->nHeight + 1};
+
+    struct ScopedFeeBurnGate {
+        ScopedFeeBurnGate(Consensus::Params& p, int h) : m_p(p), m_saved(p.nPosFeeBurnActivationHeight)
+        {
+            m_p.nPosFeeBurnActivationHeight = h;
+        }
+        ~ScopedFeeBurnGate() { m_p.nPosFeeBurnActivationHeight = m_saved; }
+        Consensus::Params& m_p;
+        const int m_saved;
+    } gate(params, height + 1);
+    BOOST_REQUIRE(!PosFeesAreBurned(height, params));
+
+    std::string err;
+
+    // Keeping the fees: valid below the gate, which is what the chain allowed
+    // until now.
+    {
+        CBlock block = MakeStakeBlock(staked + subsidy + fees);
+        BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(block, tip, subsidy, fees, staked, err, /*check_superblock=*/false),
+                            "below the gate a coinstake that kept the fees was rejected: " + err);
+    }
+
+    // The subsidy alone, as the wallet mints it, is valid on both sides.
+    {
+        CBlock block = MakeStakeBlock(staked + subsidy);
+        BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(block, tip, subsidy, fees, staked, err, /*check_superblock=*/false),
+                            "below the gate the subsidy alone was rejected: " + err);
+    }
+
+    // The old ceiling is still a ceiling: one satoshi over subsidy plus fees.
+    {
+        CBlock block = MakeStakeBlock(staked + subsidy + fees + 1);
+        BOOST_CHECK(!payments.IsBlockValueValid(block, tip, subsidy, fees, staked, err, /*check_superblock=*/false));
+        BOOST_CHECK_MESSAGE(err.find("coinstake mints too much") != std::string::npos,
+                            "the rejection did not name the coinstake: " + err);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(fee_burn_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;
