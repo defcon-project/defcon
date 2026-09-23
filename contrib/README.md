@@ -11,7 +11,7 @@ Construct a linear, no-fork, best version of the blockchain.
 ### [Seeds](/contrib/seeds) ###
 Utility to generate the pnSeed[] array that is compiled into the client.
 
-Build Tools and Keys
+Build Tools
 ---------------------
 
 ### [MacDeploy](/contrib/macdeploy) ###
