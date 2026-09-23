@@ -1,21 +1,30 @@
 # Security Policy
 
-## Supported Versions
+## Supported versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 22.x    | :white_check_mark: |
-| < 22    | :x:                |
+| Version | Supported |
+| ------- | --------- |
+| 23.x    | :white_check_mark: |
+| 22.x    | :x: — stops receiving the mainnet chain at block 144,768; upgrade to 23.x |
+| < 22    | :x: |
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-To report security issues send an email to security@dash.org (not for support).
+**Please do not report security issues in public GitHub issues, pull requests or community channels.**
 
-The following keys may be used to communicate sensitive information to developers:
+Report them privately through GitHub:
+[**Report a vulnerability**](https://github.com/defcon-project/defcon/security/advisories/new)
+(the *Security* tab of this repository → *Report a vulnerability*).
 
-| Name | Fingerprint |
-|------|-------------|
-| UdjinM6 | 3F5D 48C9 F002 93CD 365A 3A98 8359 2BD1 400D 58D9 |
-| Pasta | 2959 0362 EC87 8A81 FD3C 202B 5252 7BED ABE8 7984 |
+Please include:
 
-You can import a key by running the following command with that individual’s fingerprint: `gpg --keyserver hkps://keys.openpgp.org --recv-keys "<fingerprint>"` Ensure that you put quotes around fingerprints containing spaces.
+- the affected version or commit;
+- what an attacker could do, and under which conditions;
+- how you found it, and anything that helps us confirm it.
+
+The report is visible only to the maintainers. We will acknowledge it, keep you informed while a fix is
+prepared, and coordinate the disclosure with you. A fix for a consensus or network issue may need a
+coordinated release before any detail is made public.
+
+This policy covers DeFCoN Core in this repository. Issues inherited unchanged from upstream Dash Core or
+Bitcoin Core should also be reported to those projects.

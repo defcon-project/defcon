@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/defcon-project/defcon/security/advisories/new
+    about: Please report security issues privately here, never in a public issue.
+  - name: Questions and support
+    url: https://discord.gg/UpUq7V7Fg7
+    about: General questions and help with running a node or a wallet belong on the DeFCoN Discord.
