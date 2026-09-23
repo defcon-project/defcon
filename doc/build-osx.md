@@ -92,7 +92,7 @@ Now that all the required dependencies are installed, let's clone the DeFCoN Cor
 All build scripts and commands will run from this directory.
 
 ``` bash
-git clone https://github.com/dashpay/dash.git
+git clone https://github.com/defcon-project/defcon.git
 ```
 
 ### 5. Install Optional Dependencies

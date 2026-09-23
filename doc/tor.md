@@ -10,7 +10,7 @@ for how to properly configure Tor.
 
 ## Compatibility
 
-- Starting with version 20.0, DeFCoN Core only supports Tor version 3 hidden
+- Since Dash Core 20.0, and so in every DeFCoN Core release, only Tor version 3 hidden
   services (Tor v3). Tor v2 addresses are ignored by DeFCoN Core and neither
   relayed nor stored.
 
@@ -169,11 +169,11 @@ config file): *Needed for Tor version 0.2.7.0 and older versions of Tor only. Fo
 versions of Tor see [Section 4](#4-automatically-listen-on-tor).*
 
     HiddenServiceDir /var/lib/tor/defcon-service/
-    HiddenServicePort 9999 127.0.0.1:9996
+    HiddenServicePort 8192 127.0.0.1:8189
 
 The directory can be different of course, but virtual port numbers should be equal to
-your defcond's P2P listen port (9999 by default), and target addresses and ports
-should be equal to binding address and port for inbound Tor connections (127.0.0.1:9996 by default).
+your defcond's P2P listen port (8192 by default), and target addresses and ports
+should be equal to binding address and port for inbound Tor connections (127.0.0.1:8189 by default).
 
     -externalip=X   You can tell DeFCoN Core about its publicly reachable addresses using
                     this option, and this can be an onion address. Given the above
@@ -213,27 +213,13 @@ as well, use `discover` instead:
 
     ./defcond ... -discover
 
-and open port 9999 on your firewall (or use port mapping, i.e., `-upnp` or `-natpmp`).
+and open port 8192 on your firewall (or use port mapping, i.e., `-upnp` or `-natpmp`).
 
 If you only want to use Tor to reach .onion addresses, but not use it as a proxy
 for normal IPv4/IPv6 communication, use:
 
     ./defcond -onion=127.0.0.1:9050 -externalip=7zvj7a2imdgkdbg4f2dryd5rgtrn7upivr5eeij4cicjh65pooxeshid.onion -discover
 
-
-## 3.1. List of known DeFCoN Core Tor relays
-
-cmhr5r3lqhy7ic2ebeil66ftcz5u62zq5qhbfdz53l6sqxljh7zxntyd.onion
-k532fqvgzqotj6epfw3rfc377elrj3td47ztad2tkn6vwnw6nhxacrqd.onion
-v7ttoiov7rc5aut64nfomyfwxt424ihufwvr5ilf7moeg3fwibjpjcqd.onion
-snu2xaql3crh2b4t6g2wxemgrpzmaxfxla4tua63bnp2phhxwr6hzzid.onion
-fq63mjtyamklhxtskvvdf7tcdckwvtoo7kb5eazi34tsxuvexveyroad.onion
-5v5lgddolcidtt2qmhmvyka2ewht4mkmmj73tfwuimlckgmqb5lthtid.onion
-
-You can easily validate which of these are still online via nc such as
-```
-nc -v -x 127.0.0.1:9050 -z *.onion 9999
-```
 
 ## 4. Privacy recommendations
 
