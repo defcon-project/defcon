@@ -4,6 +4,7 @@
 
 #include <qt/test/masternodelisttests.h>
 
+#include <evo/deterministicmns.h>
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
 #include <qt/clientmodel.h>
@@ -11,12 +12,15 @@
 #include <qt/optionsmodel.h>
 #include <qt/walletmodel.h>
 #include <test/util/setup_common.h>
+#include <util/time.h>
+#include <validation.h>
 #include <wallet/wallet.h>
 
 #include <memory>
 
 #include <QCheckBox>
 #include <QHeaderView>
+#include <QLineEdit>
 #include <QSettings>
 #include <QTableWidget>
 
@@ -46,6 +50,64 @@ void forget()
 }
 
 } // namespace
+
+// Exercise both ownership paths repeatedly. With a leak checker, this also
+// detects items abandoned when a row does not match the filter.
+void MasternodeListTests::repeatedFiltering()
+{
+    forget();
+    TestChain100Setup test;
+    struct RestoreContext {
+        interfaces::Node& node;
+        NodeContext* previous;
+        std::chrono::seconds mock_time;
+        ~RestoreContext()
+        {
+            node.setContext(previous);
+            SetMockTime(mock_time);
+            forget();
+        }
+    } restore{m_node, m_node.context(), GetMockTime()};
+    m_node.setContext(&test.m_node);
+
+    OptionsModel optionsModel;
+    ClientModel clientModel(m_node, &optionsModel);
+    MasternodeList view;
+    view.setClientModel(&clientModel);
+    const Widgets widgets = find(view);
+    auto* filter = view.findChild<QLineEdit*>("filterLineEditDIP3");
+    QVERIFY(widgets.table && filter);
+
+    const CBlockIndex* tip = test.m_node.chainman->ActiveChain().Tip();
+    CDeterministicMNList mnList(uint256S("03"), tip->nHeight, 1);
+    auto mn = std::make_shared<CDeterministicMN>(0);
+    mn->proTxHash = uint256S("01");
+    mn->collateralOutpoint = COutPoint(uint256S("02"), 0);
+    auto state = std::make_shared<CDeterministicMNState>();
+    state->keyIDOwner = test.coinbaseKey.GetPubKey().GetID();
+    // A banned MN remains visible without requiring a payment projection.
+    state->BanIfNotBanned(0);
+    mn->pdmnState = state;
+    mnList.AddMN(mn);
+    clientModel.setMasternodeList(mnList, tip);
+
+    for (int iteration = 0; iteration < 128; ++iteration) {
+        filter->setText("does-not-match-any-masternode");
+        SetMockTime(GetTime() + 4);
+        QVERIFY(QMetaObject::invokeMethod(&view, "updateDIP3ListScheduled", Qt::DirectConnection));
+        QCOMPARE(widgets.table->rowCount(), 0);
+
+        filter->clear();
+        SetMockTime(GetTime() + 4);
+        QVERIFY(QMetaObject::invokeMethod(&view, "updateDIP3ListScheduled", Qt::DirectConnection));
+        QCOMPARE(widgets.table->rowCount(), 1);
+        for (int column = 0; column <= MasternodeList::COLUMN_PROTX_HASH; ++column) {
+            QVERIFY(widgets.table->item(0, column));
+        }
+        QCOMPARE(widgets.table->item(0, MasternodeList::COLUMN_PROTX_HASH)->text(),
+                 QString::fromStdString(mn->proTxHash.ToString()));
+    }
+}
 
 // What a user sets on the masternode tab is still set after a restart: the
 // column toggle, a column width, the sort column and direction. The dummy

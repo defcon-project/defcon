@@ -16,6 +16,7 @@
 #include <univalue.h>
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
 #include <QMessageBox>
@@ -281,13 +282,13 @@ void MasternodeList::updateDIP3List()
         // Address, Protocol, Status, Active Seconds, Last Seen, Pub Key
         auto addr_key = dmn.pdmnState->addr.GetKey();
         QByteArray addr_ba(reinterpret_cast<const char*>(addr_key.data()), addr_key.size());
-        QTableWidgetItem* addressItem = new CMasternodeListWidgetItem<QByteArray>(
+        auto addressItem = std::make_unique<CMasternodeListWidgetItem<QByteArray>>(
             QString::fromStdString(dmn.pdmnState->addr.ToStringAddrPort()), addr_ba);
-        QTableWidgetItem* typeItem = new QTableWidgetItem(QString::fromStdString(std::string(GetMnType(dmn.nType).description)));
-        QTableWidgetItem* statusItem = new QTableWidgetItem(dmn.pdmnState->IsBanned() ? tr("POSE_BANNED") : tr("ENABLED"));
-        QTableWidgetItem* PoSeScoreItem = new CMasternodeListWidgetItem<int>(QString::number(dmn.pdmnState->nPoSePenalty), dmn.pdmnState->nPoSePenalty);
-        QTableWidgetItem* registeredItem = new CMasternodeListWidgetItem<int>(QString::number(dmn.pdmnState->nRegisteredHeight), dmn.pdmnState->nRegisteredHeight);
-        QTableWidgetItem* lastPaidItem = new CMasternodeListWidgetItem<int>(QString::number(dmn.pdmnState->nLastPaidHeight), dmn.pdmnState->nLastPaidHeight);
+        auto typeItem = std::make_unique<QTableWidgetItem>(QString::fromStdString(std::string(GetMnType(dmn.nType).description)));
+        auto statusItem = std::make_unique<QTableWidgetItem>(dmn.pdmnState->IsBanned() ? tr("POSE_BANNED") : tr("ENABLED"));
+        auto PoSeScoreItem = std::make_unique<CMasternodeListWidgetItem<int>>(QString::number(dmn.pdmnState->nPoSePenalty), dmn.pdmnState->nPoSePenalty);
+        auto registeredItem = std::make_unique<CMasternodeListWidgetItem<int>>(QString::number(dmn.pdmnState->nRegisteredHeight), dmn.pdmnState->nRegisteredHeight);
+        auto lastPaidItem = std::make_unique<CMasternodeListWidgetItem<int>>(QString::number(dmn.pdmnState->nLastPaidHeight), dmn.pdmnState->nLastPaidHeight);
 
         QString strNextPayment = "UNKNOWN";
         int nNextPayment = 0;
@@ -295,14 +296,14 @@ void MasternodeList::updateDIP3List()
             nNextPayment = nextPayments[dmn.proTxHash];
             strNextPayment = QString::number(nNextPayment);
         }
-        QTableWidgetItem* nextPaymentItem = new CMasternodeListWidgetItem<int>(strNextPayment, nNextPayment);
+        auto nextPaymentItem = std::make_unique<CMasternodeListWidgetItem<int>>(strNextPayment, nNextPayment);
 
         CTxDestination payeeDest;
         QString payeeStr = tr("UNKNOWN");
         if (ExtractDestination(dmn.pdmnState->scriptPayout, payeeDest)) {
             payeeStr = QString::fromStdString(EncodeDestination(payeeDest));
         }
-        QTableWidgetItem* payeeItem = new QTableWidgetItem(payeeStr);
+        auto payeeItem = std::make_unique<QTableWidgetItem>(payeeStr);
 
         QString operatorRewardStr = tr("NONE");
         if (dmn.nOperatorReward) {
@@ -319,22 +320,22 @@ void MasternodeList::updateDIP3List()
                 operatorRewardStr += tr("but not claimed");
             }
         }
-        QTableWidgetItem* operatorRewardItem = new CMasternodeListWidgetItem<uint16_t>(operatorRewardStr, dmn.nOperatorReward);
+        auto operatorRewardItem = std::make_unique<CMasternodeListWidgetItem<uint16_t>>(operatorRewardStr, dmn.nOperatorReward);
 
         QString collateralStr = tr("UNKNOWN");
         auto collateralDestIt = mapCollateralDests.find(dmn.proTxHash);
         if (collateralDestIt != mapCollateralDests.end()) {
             collateralStr = QString::fromStdString(EncodeDestination(collateralDestIt->second));
         }
-        QTableWidgetItem* collateralItem = new QTableWidgetItem(collateralStr);
+        auto collateralItem = std::make_unique<QTableWidgetItem>(collateralStr);
 
         QString ownerStr = QString::fromStdString(EncodeDestination(PKHash(dmn.pdmnState->keyIDOwner)));
-        QTableWidgetItem* ownerItem = new QTableWidgetItem(ownerStr);
+        auto ownerItem = std::make_unique<QTableWidgetItem>(ownerStr);
 
         QString votingStr = QString::fromStdString(EncodeDestination(PKHash(dmn.pdmnState->keyIDVoting)));
-        QTableWidgetItem* votingItem = new QTableWidgetItem(votingStr);
+        auto votingItem = std::make_unique<QTableWidgetItem>(votingStr);
 
-        QTableWidgetItem* proTxHashItem = new QTableWidgetItem(QString::fromStdString(dmn.proTxHash.ToString()));
+        auto proTxHashItem = std::make_unique<QTableWidgetItem>(QString::fromStdString(dmn.proTxHash.ToString()));
 
         if (strCurrentFilterDIP3 != "") {
             strToFilter = addressItem->text() + " " +
@@ -354,19 +355,19 @@ void MasternodeList::updateDIP3List()
         }
 
         ui->tableWidgetMasternodesDIP3->insertRow(0);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_SERVICE, addressItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_TYPE, typeItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_STATUS, statusItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_POSE, PoSeScoreItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_REGISTERED, registeredItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_LAST_PAYMENT, lastPaidItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_NEXT_PAYMENT, nextPaymentItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_PAYOUT_ADDRESS, payeeItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_OPERATOR_REWARD, operatorRewardItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_COLLATERAL_ADDRESS, collateralItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_OWNER_ADDRESS, ownerItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_VOTING_ADDRESS, votingItem);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_PROTX_HASH, proTxHashItem);
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_SERVICE, addressItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_TYPE, typeItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_STATUS, statusItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_POSE, PoSeScoreItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_REGISTERED, registeredItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_LAST_PAYMENT, lastPaidItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_NEXT_PAYMENT, nextPaymentItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_PAYOUT_ADDRESS, payeeItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_OPERATOR_REWARD, operatorRewardItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_COLLATERAL_ADDRESS, collateralItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_OWNER_ADDRESS, ownerItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_VOTING_ADDRESS, votingItem.release());
+        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_PROTX_HASH, proTxHashItem.release());
     });
 
     ui->countLabelDIP3->setText(QString::number(ui->tableWidgetMasternodesDIP3->rowCount()));
