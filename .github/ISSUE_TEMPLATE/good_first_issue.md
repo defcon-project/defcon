@@ -15,8 +15,8 @@ assignees: ''
 
 #### Useful skills:
 
-<!-- (For example, “std::thread”, “Qt5 GUI and async GUI design” or “basic understanding of Bitcoin mining and the Bitcoin Core RPC interface”.) -->
+<!-- (For example, “std::thread”, “Qt5 GUI and async GUI design” or “basic understanding of proof-of-stake and the DeFCoN Core RPC interface”.) -->
 
 #### Want to work on this issue?
 
-For guidance on contributing, please read [CONTRIBUTING.md](https://github.com/dashpay/dash/blob/master/CONTRIBUTING.md) before opening your pull request.
+For guidance on contributing, please read [CONTRIBUTING.md](https://github.com/defcon-project/defcon/blob/v22.1.x/CONTRIBUTING.md) before opening your pull request.
