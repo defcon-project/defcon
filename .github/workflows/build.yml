@@ -306,10 +306,9 @@ jobs:
 
       # Functional tests: a named gate, not the whole runner.
       #
-      # Until this step existed the workflow ran zero functional tests. The
-      # inherited ci/dash/test_integrationtests.sh is never called from here
-      # (and it still cds into build-ci/dashcore-*, a directory this tree does
-      # not produce), so every regression that only test/functional covers --
+      # Until this step existed the workflow ran zero functional tests: the
+      # inherited integration runner was never wired into this workflow.
+      # Every regression that only test/functional covers --
       # proof-of-stake, the evodb recovery, the Q60 switchover, the Sentinel
       # layer, the peer protocol -- was guarded by hand. Two defects lived
       # under a green CI because of it: feature_llmq_chainlocks.py failed
