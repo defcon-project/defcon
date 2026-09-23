@@ -1,4 +1,4 @@
-When Dash Core automatically opens outgoing P2P connections, it chooses
+When DeFCoN Core automatically opens outgoing P2P connections, it chooses
 a peer (address and port) from its list of potential peers. This list is
 populated with unchecked data gossiped over the P2P network by other peers.
 
@@ -8,7 +8,7 @@ As a result, this service may occasionally get connection attempts from Dash
 nodes.
 
 "Bad" ports are ones used by services which are usually not open to the public
-and usually require authentication. A connection attempt (by Dash Core,
+and usually require authentication. A connection attempt (by DeFCoN Core,
 trying to connect because it thinks there is a Dash node on that
 address:port) to such service may be considered a malicious action by an
 ultra-paranoid administrator. An example for such a port is 22 (ssh).
@@ -19,7 +19,7 @@ They are also considered "bad" ports as they require clients to either run Dash
 Core with elevated privileges or configure their system to relax such requirements,
 which may not be possible or desirable in some deployments.
 
-Below is a list of "bad" ports which Dash Core avoids when choosing a peer to
+Below is a list of "bad" ports which DeFCoN Core avoids when choosing a peer to
 connect to. If a node is listening on such a port, it will likely receive fewer
 incoming connections.
 

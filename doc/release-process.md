@@ -43,7 +43,7 @@ git clone https://github.com/dashpay/dash-detached-sigs.git
 git clone https://github.com/dashpay/dash.git
 ```
 
-### Dash Core maintainers/release engineers, suggestion for writing release notes
+### DeFCoN Core maintainers/release engineers, suggestion for writing release notes
 
 Write release notes. git shortlog helps a lot, for example:
 
@@ -65,7 +65,7 @@ git tag -s v(new version, e.g. 20.0.0)
 
 ### Setup and perform Guix builds
 
-Checkout the Dash Core version you'd like to build:
+Checkout the DeFCoN Core version you'd like to build:
 
 ```sh
 pushd ./dash
@@ -101,7 +101,7 @@ _Note: we ship releases for only some supported HOSTs so consider providing limi
 
 ### Verify other builders' signatures to your own. (Optional)
 
-Add other builders keys to your gpg keyring, and/or refresh keys: See `../dash/contrib/builder-keys/README.md`.
+Add the other builders' keys to your gpg keyring, and/or refresh them.
 
 Follow the relevant Guix README.md sections:
 - [Verifying build output attestations](/contrib/guix/README.md#verifying-build-output-attestations)

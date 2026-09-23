@@ -62,7 +62,7 @@ The repository's [root README](/README.md) contains relevant information on the 
 ### Miscellaneous
 - [Assets Attribution](assets-attribution.md)
 - [Assumeutxo design](assumeutxo.md)
-- [Configuration File](dash-conf.md)
+- [Configuration File](defcon-conf.md)
 - [CJDNS Support](cjdns.md)
 - [Files](files.md)
 - [Fuzz-testing](fuzzing.md)

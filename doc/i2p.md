@@ -1,16 +1,16 @@
-# I2P support in Dash Core
+# I2P support in DeFCoN Core
 
-It is possible to run Dash Core as an
+It is possible to run DeFCoN Core as an
 [I2P (Invisible Internet Project)](https://en.wikipedia.org/wiki/I2P)
 service and connect to such services.
 
 This [glossary](https://geti2p.net/en/about/glossary) may be useful to get
 started with I2P terminology.
 
-## Run Dash Core with an I2P router (proxy)
+## Run DeFCoN Core with an I2P router (proxy)
 
 A running I2P router (proxy) is required with the [SAM](https://geti2p.net/en/docs/api/samv3)
-application bridge enabled. The following routers are recommended for use with Dash Core:
+application bridge enabled. The following routers are recommended for use with DeFCoN Core:
 
 - [i2prouter (I2P Router)](https://geti2p.net), the official implementation in
   Java. The SAM bridge is not enabled by default; it must be started manually,
@@ -41,7 +41,7 @@ Core configuration options:
 In a typical situation, this suffices:
 
 ```
-dashd -i2psam=127.0.0.1:7656
+defcond -i2psam=127.0.0.1:7656
 ```
 
 ## Additional configuration options related to I2P
@@ -51,7 +51,7 @@ dashd -i2psam=127.0.0.1:7656
 ```
 
 Set the `debug=i2p` config logging option to see additional information in the
-debug log about your I2P configuration and connections. Run `dash-cli help
+debug log about your I2P configuration and connections. Run `defcon-cli help
 logging` for more information.
 
 ```
@@ -62,11 +62,11 @@ Make automatic outbound connections only to I2P addresses. Inbound and manual
 connections are not affected by this option. It can be specified multiple times
 to allow multiple networks, e.g. onlynet=onion, onlynet=i2p.
 
-I2P support was added to Dash Core in version 20.0 and there may be fewer I2P
+I2P support was added to DeFCoN Core in version 20.0 and there may be fewer I2P
 peers than Tor or IP ones. Therefore, using I2P alone without other networks may
 make a node more susceptible to [Sybil
 attacks](https://en.bitcoin.it/wiki/Weaknesses#Sybil_attack). You can use
-`dash-cli -addrinfo` to see the number of I2P addresses known to your node.
+`defcon-cli -addrinfo` to see the number of I2P addresses known to your node.
 
 Another consideration with `onlynet=i2p` is that the initial blocks download
 phase when syncing up a new node can be very slow. This phase can be sped up by
@@ -78,10 +78,10 @@ one of the networks has issues.
 
 ## Persistent vs transient I2P addresses
 
-The first time Dash Core connects to the I2P router, it automatically
+The first time DeFCoN Core connects to the I2P router, it automatically
 generates a persistent I2P address and its corresponding private key by default
 or if `-i2pacceptincoming=1` is set.  The private key is saved in a file named
-`i2p_private_key` in the Dash Core data directory.  The persistent I2P
+`i2p_private_key` in the DeFCoN Core data directory.  The persistent I2P
 address is used for making outbound connections and accepting inbound
 connections.
 
@@ -98,26 +98,26 @@ I2P addresses are designed to be long-lived.  Waiting for tunnels to be built
 for every peer connection adds delay to connection setup time.  Therefore, I2P
 listening should only be turned off if really needed.
 
-## Fetching I2P-related information from Dash Core
+## Fetching I2P-related information from DeFCoN Core
 
-There are several ways to see your I2P address in Dash Core if accepting
+There are several ways to see your I2P address in DeFCoN Core if accepting
 incoming I2P connections (`-i2pacceptincoming`):
 - in the "Local addresses" output of CLI `-netinfo`
 - in the "localaddresses" output of RPC `getnetworkinfo`
 - in the debug log (grep for `AddLocal`; the I2P address ends in `.b32.i2p`)
 
-To see which I2P peers your node is connected to, use `dash-cli -netinfo 4`
-or the `getpeerinfo` RPC (e.g. `dash-cli getpeerinfo`).
+To see which I2P peers your node is connected to, use `defcon-cli -netinfo 4`
+or the `getpeerinfo` RPC (e.g. `defcon-cli getpeerinfo`).
 
 To see which I2P addresses your node knows, use the `getnodeaddresses 0 i2p`
 RPC.
 
 ## Compatibility
 
-Dash Core uses the [SAM v3.1](https://geti2p.net/en/docs/api/samv3) protocol
+DeFCoN Core uses the [SAM v3.1](https://geti2p.net/en/docs/api/samv3) protocol
 to connect to the I2P network. Any I2P router that supports it can be used.
 
-## Ports in I2P and Dash Core
+## Ports in I2P and DeFCoN Core
 
 One particularity of SAM v3.1 is that it does not support ports,
 unlike newer versions of SAM (v3.2 and up) that do support them and default the
@@ -125,11 +125,11 @@ port numbers to 0. From the point of view of peers that use newer versions of
 SAM or other protocols that support ports, a SAM v3.1 peer is connecting to them
 on port 0, from source port 0.
 
-To allow future upgrades to newer versions of SAM, Dash Core sets its
+To allow future upgrades to newer versions of SAM, DeFCoN Core sets its
 listening port to 0 when listening for incoming I2P connections and advertises
 its own I2P address with port 0. Furthermore, it will not attempt to connect to
 I2P addresses with a non-zero port number because with SAM v3.1 the destination
-port (`TO_PORT`) is always set to 0 and is not in the control of Dash Core.
+port (`TO_PORT`) is always set to 0 and is not in the control of DeFCoN Core.
 
 ## Bandwidth
 

@@ -2,7 +2,7 @@
 
 **Updated for MacOS [11.2](https://www.apple.com/macos/big-sur/)**
 
-This guide describes how to build dashd, command-line utilities, and GUI on macOS
+This guide describes how to build defcond, command-line utilities, and GUI on macOS
 
 **Note:** The following is for Intel Macs only!
 
@@ -53,7 +53,7 @@ macOS comes with a built-in Terminal located in:
 ### 1. Xcode Command Line Tools
 
 The Xcode Command Line Tools are a collection of build tools for macOS.
-These tools must be installed in order to build Dash Core from source.
+These tools must be installed in order to build DeFCoN Core from source.
 
 To install, run the following command from your terminal:
 
@@ -88,7 +88,7 @@ brew install automake libtool boost gmp pkg-config libevent
 ### 4. Clone Dash repository
 
 `git` should already be installed by default on your system.
-Now that all the required dependencies are installed, let's clone the Dash Core repository to a directory.
+Now that all the required dependencies are installed, let's clone the DeFCoN Core repository to a directory.
 All build scripts and commands will run from this directory.
 
 ``` bash
@@ -99,7 +99,7 @@ git clone https://github.com/dashpay/dash.git
 
 #### Wallet Dependencies
 
-It is not necessary to build wallet functionality to run `dashd` or  `dash-qt`.
+It is not necessary to build wallet functionality to run `defcond` or  `defcon-qt`.
 To enable legacy wallets, you must install `berkeley-db@4`.
 To enable [descriptor wallets](https://github.com/dashpay/dash/blob/master/doc/descriptors.md), `sqlite` is required.
 Skip `berkeley-db@4` if you intend to *exclusively* use descriptor wallets.
@@ -130,7 +130,7 @@ brew install sqlite
 
 ###### Qt
 
-Dash Core includes a GUI built with the cross-platform Qt Framework.
+DeFCoN Core includes a GUI built with the cross-platform Qt Framework.
 To compile the GUI, we need to install `qt@5`.
 Skip if you don't intend to use the GUI.
 
@@ -213,14 +213,14 @@ brew install python
 
 #### Deploy Dependencies
 
-You can deploy a `.zip` containing the Dash Core application using `make deploy`.
+You can deploy a `.zip` containing the DeFCoN Core application using `make deploy`.
 It is required that you have `python` installed.
 
-## Building Dash Core
+## Building DeFCoN Core
 
 ### 1. Configuration
 
-There are many ways to configure Dash Core, here are a few common examples:
+There are many ways to configure DeFCoN Core, here are a few common examples:
 
 ##### Wallet (BDB + SQlite) Support, No GUI:
 
@@ -274,7 +274,7 @@ Examine the output of the following command for a full list of configuration opt
 ### 2. Compile
 
 After configuration, you are ready to compile.
-Run the following in your terminal to compile Dash Core:
+Run the following in your terminal to compile DeFCoN Core:
 
 ``` bash
 make        # use "-j N" here for N parallel jobs
@@ -289,12 +289,12 @@ You can also create a  `.zip` containing the `.app` bundle by running the follow
 make deploy
 ```
 
-## Running Dash Core
+## Running DeFCoN Core
 
-Dash Core should now be available at `./src/dashd`.
-If you compiled support for the GUI, it should be available at `./src/qt/dash-qt`.
+DeFCoN Core should now be available at `./src/defcond`.
+If you compiled support for the GUI, it should be available at `./src/qt/defcon-qt`.
 
-The first time you run `dashd` or `dash-qt`, it will start downloading the blockchain.
+The first time you run `defcond` or `defcon-qt`, it will start downloading the blockchain.
 This process could take many hours, or even days on slower than average systems.
 
 By default, blockchain and wallet data files will be stored in:
@@ -306,24 +306,24 @@ By default, blockchain and wallet data files will be stored in:
 Before running, you may create an empty configuration file:
 
 ```shell
-mkdir -p "/Users/${USER}/Library/Application Support/DashCore"
+mkdir -p "/Users/${USER}/Library/Application Support/Defcon"
 
-touch "/Users/${USER}/Library/Application Support/DashCore/dash.conf"
+touch "/Users/${USER}/Library/Application Support/Defcon/defcon.conf"
 
-chmod 600 "/Users/${USER}/Library/Application Support/DashCore/dash.conf"
+chmod 600 "/Users/${USER}/Library/Application Support/Defcon/defcon.conf"
 ```
 
 You can monitor the download process by looking at the debug.log file:
 
 ```shell
-tail -f $HOME/Library/Application\ Support/DashCore/debug.log
+tail -f $HOME/Library/Application\ Support/Defcon/debug.log
 ```
 
 ## Other commands:
 
 ```shell
-./src/dashd -daemon      # Starts the dashd daemon.
-./src/dash-cli --help    # Outputs a list of command-line options.
-./src/dash-cli help      # Outputs a list of RPC commands when the daemon is running.
-./src/qt/dash-qt -server # Starts the dash-qt server mode, allows dash-cli control
+./src/defcond -daemon      # Starts the defcond daemon.
+./src/defcon-cli --help    # Outputs a list of command-line options.
+./src/defcon-cli help      # Outputs a list of RPC commands when the daemon is running.
+./src/qt/defcon-qt -server # Starts the defcon-qt server mode, allows defcon-cli control
 ```
