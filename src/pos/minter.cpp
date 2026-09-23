@@ -316,28 +316,34 @@ void PoSMiner(NodeContext& node)
 
             CAmount reserve_balance;
             {
+                bool wallet_locked;
                 {
                     LOCK(this_wallet->cs_wallet);
                     if (nSearchTime <= this_wallet->nLastCoinStakeSearchTime) {
                         continue;
                     }
 
-                    if (this_wallet->IsLocked()) {
+                    wallet_locked = this_wallet->IsLocked();
+                    if (wallet_locked) {
                         this_wallet->m_is_staking = NOT_STAKING_LOCKED;
-                        LogPrint(BCLog::POS, "%s: Wallet %d, locked wallet.\n", __func__, y);
-                        UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
-                        continue;
                     }
 
                     reserve_balance = this_wallet->nReserveBalance;
+                }
+                if (wallet_locked) {
+                    LogPrint(BCLog::POS, "%s: Wallet %d, locked wallet.\n", __func__, y);
+                    UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
+                    continue;
                 }
 
                 CAmount balance = this_wallet->GetAvailableBalance();
 
                 if (balance <= reserve_balance) {
-                    LOCK(this_wallet->cs_wallet);
-                    this_wallet->m_is_staking = NOT_STAKING_BALANCE;
-                    this_wallet->nLastCoinStakeSearchTime = nSearchTime + 60;
+                    {
+                        LOCK(this_wallet->cs_wallet);
+                        this_wallet->m_is_staking = NOT_STAKING_BALANCE;
+                        this_wallet->nLastCoinStakeSearchTime = nSearchTime + 60;
+                    }
                     LogPrint(BCLog::POS, "%s: Wallet %d, low balance.\n", __func__, y);
                     UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
                     continue;
@@ -380,9 +386,11 @@ void PoSMiner(NodeContext& node)
                     // -- the outcome of nearly every attempt -- was reported as "no
                     // outputs with required depth" and cost the wallet the next
                     // minute of search times.
-                    LOCK(this_wallet->cs_wallet);
-                    this_wallet->m_is_staking = NOT_STAKING_DEPTH;
-                    this_wallet->nLastCoinStakeSearchTime = nSearchTime + 60;
+                    {
+                        LOCK(this_wallet->cs_wallet);
+                        this_wallet->m_is_staking = NOT_STAKING_DEPTH;
+                        this_wallet->nLastCoinStakeSearchTime = nSearchTime + 60;
+                    }
                     LogPrint(BCLog::POS, "%s: No outputs eligible to stake.\n", __func__);
                     UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
                     continue;
