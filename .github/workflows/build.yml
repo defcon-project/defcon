@@ -2,7 +2,15 @@ name: CI
 
 on:
   push:
+    branches: [v22.1.x]
+    tags: ['v*']
   pull_request:
+
+# A newer push to the same pull request makes the running build pointless;
+# a push to the release branch is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -13,8 +21,51 @@ env:
   FAST_MODE: false
 
 jobs:
+  # A change that touches documentation only needs no build. The build jobs
+  # below still run, so the required check keeps its name and turns green,
+  # but every step in them is skipped. Skipping the jobs themselves would
+  # report the matrix job under a different name and leave the required
+  # check pending forever.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-22.04
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Anything besides documentation?
+        id: diff
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          DOCS='\.md$|^COPYING$|^\.github/ISSUE_TEMPLATE/|^doc/.*\.(txt|png)$'
+          if [[ "$EVENT" == "pull_request" ]]; then base="$PR_BASE"; else base="$PUSH_BEFORE"; fi
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "No usable base commit; running the full build."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only "$base" HEAD)"
+          printf 'Changed files:\n%s\n' "$files"
+          if printf '%s\n' "$files" | grep -v '^$' | grep -qvE "$DOCS"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Documentation only; the build steps are skipped."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-image:
     name: Build Image
+    needs: changes
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -43,11 +94,11 @@ jobs:
           echo "repo-name=${REPO_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && needs.changes.outputs.code == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && needs.changes.outputs.code == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -55,7 +106,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && needs.changes.outputs.code == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./contrib/containers/ci
@@ -69,7 +120,7 @@ jobs:
 
   build-depends:
     name: Build Dependencies
-    needs: build-image
+    needs: [changes, build-image]
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -82,11 +133,13 @@ jobs:
       options: --user root
     steps:
       - name: Checkout code
+        if: needs.changes.outputs.code == 'true'
         uses: actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Cache depends sources
+        if: needs.changes.outputs.code == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -96,6 +149,7 @@ jobs:
             depends-sources-
 
       - name: Cache depends
+        if: needs.changes.outputs.code == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -107,11 +161,12 @@ jobs:
             ${{ runner.os }}-depends-${{ matrix.build_target }}
 
       - name: Build depends
+        if: needs.changes.outputs.code == 'true'
         run: make -j$(nproc) -C depends HOST=${{ matrix.host }}
 
   build:
     name: Build
-    needs: [build-image, build-depends]
+    needs: [changes, build-image, build-depends]
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -125,12 +180,14 @@ jobs:
       options: --user root
     steps:
       - name: Checkout code
+        if: needs.changes.outputs.code == 'true'
         uses: actions/checkout@v4
         with:
           persist-credentials: false
           fetch-depth: 0
 
       - name: Restore depends cache
+        if: needs.changes.outputs.code == 'true'
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -139,11 +196,13 @@ jobs:
           key: ${{ runner.os }}-depends-${{ matrix.depends_on }}-${{ hashFiles('depends/packages/*') }}
 
       - name: Determine PR Base SHA
+        if: needs.changes.outputs.code == 'true'
         id: vars
         run: |
           echo "PR_BASE_SHA=${{ github.event.pull_request.base.sha || '' }}" >> "$GITHUB_OUTPUT"
 
       - name: CCache
+        if: needs.changes.outputs.code == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -155,6 +214,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.build_target }}
 
       - name: Build source and run tests
+        if: needs.changes.outputs.code == 'true'
         run: |
           git config --global --add advice.detachedHead false
           git config --global --add safe.directory "$PWD"
@@ -219,6 +279,7 @@ jobs:
       #                                          validation_chainstatemanager_tests,
       #                                          wallet_tests
       - name: Unit suites (all but the named exceptions)
+        if: needs.changes.outputs.code == 'true'
         run: |
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
@@ -303,6 +364,7 @@ jobs:
       # what the runner does; its failure ends the step explicitly, not
       # only through the shell's -e.
       - name: Functional tests (named gate)
+        if: needs.changes.outputs.code == 'true'
         run: |
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
@@ -347,6 +409,7 @@ jobs:
         shell: bash
 
       - name: Upload build artifacts
+        if: needs.changes.outputs.code == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts-${{ matrix.build_target }}
