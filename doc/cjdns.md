@@ -72,7 +72,7 @@ Make automatic outbound connections only to CJDNS addresses. Inbound and manual
 connections are not affected by this option. It can be specified multiple times
 to allow multiple networks, e.g. onlynet=cjdns, onlynet=i2p, onlynet=onion.
 
-CJDNS support was added to DeFCoN Core in version 21.0 and there may be fewer
+CJDNS support was added upstream in Dash Core 21.0 and there may be fewer
 CJDNS peers than Tor or IP ones. You can use `defcon-cli -addrinfo` to see the
 number of CJDNS addresses known to your node.
 

@@ -6,10 +6,11 @@ on:
     tags: ['v*']
   pull_request:
 
-# A newer push to the same pull request makes the running build pointless;
-# a push to the release branch is never cancelled.
+# A newer push to the same pull request makes the running build pointless.
+# Pushes are grouped per commit: GitHub keeps only one pending run per group,
+# so a shared group would let the next merge displace a queued release build.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -21,7 +22,7 @@ env:
   FAST_MODE: false
 
 jobs:
-  # A change that touches documentation only needs no build. The build jobs
+  # A pull request that touches documentation only needs no build. The build jobs
   # below still run, so the required check keeps its name and turns green,
   # but every step in them is skipped. Skipping the jobs themselves would
   # report the matrix job under a different name and leave the required
@@ -48,15 +49,26 @@ jobs:
         run: |
           set -euo pipefail
           DOCS='\.md$|^COPYING$|^\.github/ISSUE_TEMPLATE/|^doc/.*\.(txt|png)$'
-          if [[ "$EVENT" == "pull_request" ]]; then base="$PR_BASE"; else base="$PUSH_BEFORE"; fi
+          # Pushes to the release branch and tags always build: only a pull
+          # request may skip, because only there is the base the reviewed one.
+          if [[ "$EVENT" != "pull_request" ]]; then
+            echo "Push event; running the full build."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="$PR_BASE"
           if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
             echo "No usable base commit; running the full build."
             echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          files="$(git diff --name-only "$base" HEAD)"
-          printf 'Changed files:\n%s\n' "$files"
-          if printf '%s\n' "$files" | grep -v '^$' | grep -qvE "$DOCS"; then
+          # --no-renames lists both sides of a rename, so a source file moved
+          # to a .md name still counts as a code change. -z keeps odd names whole.
+          git diff --no-renames --name-only -z "$base" HEAD > "$RUNNER_TEMP/changed.txt"
+          echo "Changed files:"; tr '\0' '\n' < "$RUNNER_TEMP/changed.txt"
+          # grep reads the whole list (no -q), so an early exit cannot turn into
+          # a SIGPIPE that pipefail would misread as "documentation only".
+          if tr '\0' '\n' < "$RUNNER_TEMP/changed.txt" | grep -v '^$' | grep -vE "$DOCS" > /dev/null; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "Documentation only; the build steps are skipped."

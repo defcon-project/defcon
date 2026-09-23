@@ -115,7 +115,7 @@ Fuzzing on a harness compiled with `--with-sanitizers=address,fuzzer,undefined` 
 
 If you find coverage increasing inputs when fuzzing you are highly encouraged to submit them for inclusion in the [`bitcoin-core/qa-assets`](https://github.com/bitcoin-core/qa-assets) repo.
 
-Every single pull request submitted against the DeFCoN Core repo is automatically tested against all inputs in the [`bitcoin-core/qa-assets`](https://github.com/bitcoin-core/qa-assets) repo. Contributing new coverage increasing inputs is an easy way to help make DeFCoN Core more robust.
+The DeFCoN Core CI does not run the fuzz corpus; fuzzing is run by hand, as described above. Inputs that increase coverage of code inherited from Bitcoin Core are best contributed to [`bitcoin-core/qa-assets`](https://github.com/bitcoin-core/qa-assets).
 
 ## macOS hints for libFuzzer
 

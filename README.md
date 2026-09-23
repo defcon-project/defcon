@@ -24,7 +24,8 @@ the masternode software, in one program. It is derived from Dash Core, and throu
 Version 23 activates at block **144,888** on mainnet and is a mandatory upgrade: every node must run it
 before block **144,768**, where v22 nodes stop receiving the chain. It moves ChainLocks to
 the Q60 quorum, which is structurally unable to produce two conflicting ChainLocks, and starts the
-Sentinel Layer, a service-level liveness record for masternodes, in observation mode. See the
+Sentinel Layer, a service-level liveness record for masternodes, which starts observing at block
+**145,464** (576 blocks after the activation) and does not punish anyone in v23. See the
 [v23.0.0 release](https://github.com/defcon-project/defcon/releases/tag/v23.0.0) for the full notes.
 
 ## Running a node

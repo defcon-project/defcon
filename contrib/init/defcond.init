@@ -25,12 +25,16 @@ lockfile=${BITCOIND_LOCKFILE-/var/lock/subsys/defcond}
 # defcond defaults to /usr/bin/defcond, override with BITCOIND_BIN
 defcond=${BITCOIND_BIN-/usr/bin/defcond}
 
-# defcond opts default to -disablewallet, override with BITCOIND_OPTS
-defcond_opts=${BITCOIND_OPTS--disablewallet}
+# defcond opts default to the same files and directories as the systemd unit,
+# override with BITCOIND_OPTS
+defcond_opts=${BITCOIND_OPTS--conf=/etc/defcon/defcon.conf -datadir=/var/lib/defcond -pid=/var/lib/defcond/defcond.pid -disablewallet}
+
+# run as the defcon user, override with BITCOIND_USER
+defcond_user=${BITCOIND_USER-defcon}
 
 start() {
     echo -n $"Starting $prog: "
-    daemon $DAEMONOPTS $defcond $defcond_opts
+    daemon --user="$defcond_user" $DAEMONOPTS $defcond $defcond_opts
     RETVAL=$?
     echo
     [ $RETVAL -eq 0 ] && touch $lockfile

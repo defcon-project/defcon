@@ -346,8 +346,8 @@ This example lists the steps necessary to setup and build a command line only, n
 
 ```sh
 pacman -S git base-devel boost libevent python
-git clone https://github.com/dashpay/dash.git
-cd dash/
+git clone https://github.com/defcon-project/defcon.git
+cd defcon
 ./autogen.sh
 ./configure --disable-wallet --without-gui --without-miniupnpc
 make check
