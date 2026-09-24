@@ -24,6 +24,35 @@ Before tests can be run locally, Dash Core must be built.  See the [building ins
 
 See [/doc/fuzzing.md](/doc/fuzzing.md)
 
+## Qt tests
+
+With Qt and tests enabled, build and run the GUI test binary from the build directory:
+
+```sh
+make -C src qt/test/test_defcon-qt
+QT_QPA_PLATFORM=minimal ./src/qt/test/test_defcon-qt
+```
+
+The default runs every compiled suite. To isolate a suite, pass its exact Qt class
+name with `--suite=`, for example `MasternodeListTests` or `GUIUtilTests`. The
+remaining arguments go to QTest, so individual test functions can also be selected:
+
+```sh
+QT_QPA_PLATFORM=minimal ./src/qt/test/test_defcon-qt --suite=MasternodeListTests
+QT_QPA_PLATFORM=minimal ./src/qt/test/test_defcon-qt --suite=MasternodeListTests repeatedFiltering filteredRowsKeepOrderAndIdentity
+```
+
+An empty, repeated, unknown or unavailable suite selector fails. Selecting a suite
+that is not compiled (for example a wallet suite in a build without wallet support)
+does not silently pass. On Linux, use a temporary `XDG_CONFIG_HOME` to isolate the
+settings that GUI tests write.
+
+The linux64 CI gate runs the complete `MasternodeListTests` suite, then repeats the
+two filtering/ordering cases with LeakSanitizer. This is targeted GUI coverage:
+the inherited `WalletTests` suite still has a known fatal failure, and the full Qt
+suite is not yet gated. The leak check deliberately overrides the generic
+`libQt5Widgets` suppression so table-item leaks remain visible.
+
 ### Functional tests
 
 #### Dependencies and prerequisites

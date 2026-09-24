@@ -304,6 +304,31 @@ jobs:
             --catch_system_errors=no -l test_suite
         shell: bash
 
+      # Run the whole masternode-list suite, including future cases. The
+      # inherited WalletTests suite still has a fatal failure, so the Qt
+      # runner supports explicit suite selection without weakening its default.
+      - name: Qt masternode-list tests and leak check
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          BASE_OUTDIR="/output"
+          BUILD_TARGET="${{ matrix.build_target }}"
+          source ./ci/dash/matrix.sh
+          export LD_LIBRARY_PATH="$DEPENDS_DIR/$HOST/lib"
+          cd "build-ci/DeFCoN-${BUILD_TARGET}"
+          make -j"$(nproc)" -C src qt/test/test_defcon-qt
+          export QT_QPA_PLATFORM=minimal
+          export XDG_CONFIG_HOME="$(mktemp -d)"
+          trap 'rm -rf "$XDG_CONFIG_HOME"' EXIT
+          ./src/qt/test/test_defcon-qt --suite=MasternodeListTests
+          LSAN_RUNTIME="$(gcc -print-file-name=liblsan.so)"
+          test -f "$LSAN_RUNTIME"
+          # Do not inherit the generic libQt5Widgets suppression: it would
+          # hide the table-item leak these cases are meant to catch.
+          LSAN_OPTIONS=exitcode=23 LD_PRELOAD="$LSAN_RUNTIME" \
+            ./src/qt/test/test_defcon-qt --suite=MasternodeListTests \
+              repeatedFiltering filteredRowsKeepOrderAndIdentity
+        shell: bash
+
       # Functional tests: a named gate, not the whole runner.
       #
       # Until this step existed the workflow ran zero functional tests: the
