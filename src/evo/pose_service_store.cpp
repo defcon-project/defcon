@@ -69,7 +69,7 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
     // paid a full derivation while holding m_mutex. Memoised, assignment is a
     // lookup after the first report for a target -- so it is now both the cheaper
     // test and the only one that stops the case the other cannot.
-    const auto& sentinels = SentinelsFor(epochList, report.targetProTxHash, epochBlockHash,
+    const auto& sentinels = SentinelsFor(report.nEpoch, epochList, report.targetProTxHash, epochBlockHash,
                                          static_cast<size_t>(params.nDSLSentinelCount));
     if (std::find(sentinels.begin(), sentinels.end(), report.sentinelProTxHash) == sentinels.end()) {
         return refuse("sentinel was not assigned to this target");
@@ -84,20 +84,22 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
     return true;
 }
 
-const std::vector<uint256>& CServiceReportStore::SentinelsFor(const CDeterministicMNList& epochList,
+const std::vector<uint256>& CServiceReportStore::SentinelsFor(uint32_t nEpoch, const CDeterministicMNList& epochList,
                                                               const uint256& targetProTxHash,
                                                               const uint256& epochBlockHash,
                                                               size_t count)
 {
     AssertLockHeld(m_mutex);
-    if (m_assignBase != epochBlockHash) {
-        m_assignBase = epochBlockHash;
-        m_assignCache.clear();
+    auto& cache = m_assignCache[nEpoch];
+    if (cache.base != epochBlockHash || cache.count != count) {
+        cache.base = epochBlockHash;
+        cache.count = count;
+        cache.targets.clear();
     }
-    if (const auto it = m_assignCache.find(targetProTxHash); it != m_assignCache.end()) {
+    if (const auto it = cache.targets.find(targetProTxHash); it != cache.targets.end()) {
         return it->second;
     }
-    return m_assignCache
+    return cache.targets
         .emplace(targetProTxHash,
                  CalcSentinelsForMN(epochList, targetProTxHash, epochBlockHash, count))
         .first->second;
@@ -122,8 +124,12 @@ bool CServiceReportStore::HaveReport(uint32_t nEpoch, const uint256& target, con
 void CServiceReportStore::SetCurrentEpoch(uint32_t nEpoch)
 {
     LOCK(m_mutex);
+    // A rewind may replace epoch bases. Refill lazily from the caller's new
+    // chain view, without retaining assignments above the rewound tip.
+    if (nEpoch < m_currentEpoch) m_assignCache.clear();
     m_currentEpoch = nEpoch;
     const uint32_t oldest = OldestKeptEpoch();
+    m_assignCache.erase(m_assignCache.begin(), m_assignCache.lower_bound(oldest));
     for (auto it = m_reports.begin(); it != m_reports.end();) {
         if (std::get<0>(it->first) < oldest) {
             it = m_reports.erase(it);
@@ -136,6 +142,7 @@ void CServiceReportStore::SetCurrentEpoch(uint32_t nEpoch)
 void CServiceReportStore::DropEpoch(uint32_t nEpoch)
 {
     LOCK(m_mutex);
+    m_assignCache.erase(nEpoch);
     size_t dropped{0};
     for (auto it = m_reports.begin(); it != m_reports.end();) {
         if (std::get<0>(it->first) == nEpoch) {

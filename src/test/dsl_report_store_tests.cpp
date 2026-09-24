@@ -20,6 +20,20 @@
 #include <memory>
 #include <vector>
 
+namespace dsl {
+// Inspect retained allocations without adding a runtime API or timing-based
+// assertions. Acceptance alone cannot detect an accidentally unbounded cache.
+struct CServiceReportStoreTestAccess {
+    static std::map<uint32_t, size_t> CachedTargets(const CServiceReportStore& store)
+    {
+        LOCK(store.m_mutex);
+        std::map<uint32_t, size_t> out;
+        for (const auto& [epoch, cache] : store.m_assignCache) out.emplace(epoch, cache.targets.size());
+        return out;
+    }
+};
+} // namespace dsl
+
 BOOST_FIXTURE_TEST_SUITE(dsl_report_store_tests, BasicTestingSetup)
 
 namespace {
@@ -262,6 +276,102 @@ BOOST_AUTO_TEST_CASE(rejects_out_of_window_and_prunes)
     BOOST_CHECK_EQUAL(store.Size(), 0u);
     BOOST_CHECK(store.GetReportsForEpoch(495).empty());
     BOOST_CHECK(store.GetReportsForEpoch(500).empty());
+}
+
+BOOST_AUTO_TEST_CASE(assignment_cache_retains_only_the_report_window)
+{
+    auto fx = MakeFixture(30);
+    const Consensus::Params params{};
+    dsl::CServiceReportStore store(8);
+    store.SetCurrentEpoch(500);
+    const auto add = [&](uint32_t epoch, size_t target_id, size_t sender) {
+        const auto base = TaggedHash(epoch, 0, "epoch");
+        const auto target = TaggedHash(target_id, 0, "protx");
+        const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, base, params.nDSLSentinelCount);
+        return store.AddReport(SignedReportOn(base, epoch, target, sentinels.at(sender),
+            dsl::ServiceStatus::ONLINE, fx.opKeys.at(sentinels.at(sender))), fx.list, base, params);
+    };
+    // Alternate epochs and targets, then send a second distinct report for
+    // every pair. Earlier assignments must survive these interleaved reports.
+    std::map<uint32_t, size_t> expected;
+    for (size_t sender = 0; sender < 2; ++sender) {
+        for (size_t target = 0; target < 2; ++target) {
+            for (uint32_t epoch = 493; epoch <= 500; ++epoch) {
+                BOOST_REQUIRE(add(epoch, target, sender));
+                expected[epoch] = target + 1;
+            }
+        }
+        BOOST_CHECK(dsl::CServiceReportStoreTestAccess::CachedTargets(store) == expected);
+    }
+    BOOST_CHECK_EQUAL(store.Size(), 32U);
+
+    store.SetCurrentEpoch(501);
+    expected.erase(493);
+    BOOST_CHECK(dsl::CServiceReportStoreTestAccess::CachedTargets(store) == expected);
+    BOOST_CHECK_EQUAL(store.Size(), 28U);
+    BOOST_CHECK(!add(493, 0, 2));
+    BOOST_CHECK(!add(502, 0, 2));
+    BOOST_CHECK(dsl::CServiceReportStoreTestAccess::CachedTargets(store) == expected);
+    BOOST_REQUIRE(add(501, 0, 0));
+    expected.emplace(501, 1);
+    BOOST_CHECK(dsl::CServiceReportStoreTestAccess::CachedTargets(store) == expected);
+
+    store.DropEpoch(499);
+    expected.erase(499);
+    BOOST_CHECK(dsl::CServiceReportStoreTestAccess::CachedTargets(store) == expected);
+    BOOST_CHECK(store.GetReportsForEpoch(499).empty());
+    BOOST_REQUIRE(add(499, 0, 0));
+    expected.emplace(499, 1);
+    BOOST_CHECK(dsl::CServiceReportStoreTestAccess::CachedTargets(store) == expected);
+
+    store.SetCurrentEpoch(498); // Rewind: invalidate assignments and refill lazily.
+    BOOST_CHECK(dsl::CServiceReportStoreTestAccess::CachedTargets(store).empty());
+    BOOST_REQUIRE(add(498, 0, 2));
+    BOOST_CHECK_EQUAL(dsl::CServiceReportStoreTestAccess::CachedTargets(store).size(), 1U);
+    store.SetCurrentEpoch(510);
+    BOOST_CHECK(dsl::CServiceReportStoreTestAccess::CachedTargets(store).empty());
+    BOOST_CHECK_EQUAL(store.Size(), 0U);
+}
+
+BOOST_AUTO_TEST_CASE(assignment_cache_replaces_a_base_or_count_within_one_epoch)
+{
+    auto fx = MakeFixture(30);
+    Consensus::Params params;
+    const auto target = TaggedHash(11, 0, "protx");
+    const auto baseA = fx.epoch;
+    const auto baseB = TaggedHash(501, 0, "epoch");
+    const auto assignedA = dsl::CalcSentinelsForMN(fx.list, target, baseA, 7);
+    const auto assignedB = dsl::CalcSentinelsForMN(fx.list, target, baseB, 7);
+    const auto onlyA = std::find_if(assignedA.begin(), assignedA.end(), [&](const auto& hash) {
+        return std::find(assignedB.begin(), assignedB.end(), hash) == assignedB.end();
+    });
+    const auto onlyB = std::find_if(assignedB.begin(), assignedB.end(), [&](const auto& hash) {
+        return std::find(assignedA.begin(), assignedA.end(), hash) == assignedA.end();
+    });
+    BOOST_REQUIRE(onlyA != assignedA.end());
+    BOOST_REQUIRE(onlyB != assignedB.end());
+    const auto seed = *std::find_if(assignedA.begin(), assignedA.end(), [&](const auto& h) { return h != *onlyA; });
+    dsl::CServiceReportStore store;
+    store.SetCurrentEpoch(500);
+    const auto add = [&](const auto& base, const auto& sender) {
+        return store.AddReport(SignedReportOn(base, 500, target, sender,
+            dsl::ServiceStatus::ONLINE, fx.opKeys.at(sender)), fx.list, base, params);
+    };
+    BOOST_REQUIRE(add(baseA, seed));
+    BOOST_CHECK(!add(baseB, *onlyA)); // New base must not use the old assignment.
+    BOOST_REQUIRE(add(baseB, *onlyB));
+    BOOST_REQUIRE(add(baseA, *onlyA)); // Returning to A also replaces B.
+    BOOST_CHECK_EQUAL(dsl::CServiceReportStoreTestAccess::CachedTargets(store).size(), 1U);
+
+    store.DropEpoch(500);
+    BOOST_REQUIRE(add(baseA, assignedA[0]));
+    params.nDSLSentinelCount = 1;
+    BOOST_CHECK(!add(baseA, assignedA[1]));
+    params.nDSLSentinelCount = 7;
+    BOOST_REQUIRE(add(baseA, assignedA[1]));
+    const auto cached = dsl::CServiceReportStoreTestAccess::CachedTargets(store);
+    BOOST_REQUIRE_EQUAL(cached.size(), 1U);
+    BOOST_CHECK_EQUAL(cached.at(500), 1U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
