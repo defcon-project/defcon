@@ -2,10 +2,30 @@
 
 This directory contains configuration files for containerization utilities.
 
-`ci` defines the build image published to GHCR by the GitHub Actions workflow.
-`develop` extends it with tools for a local development environment. The `guix`
+`ci/Dockerfile.linux64` defines the native Linux build image published to GHCR
+by the GitHub Actions workflow. It contains the GCC, Qt host dependencies and
+Python tools used by the linux64 build, unit, Qt/leak and functional gates.
+It keeps the full image's Python version and mount paths, but omits cross
+compilers, Wine, LLVM, Valgrind and the standalone lint toolchains.
+
+`ci/Dockerfile` remains the full environment for cross builds, sanitizers and
+lint tools. `develop` extends that full image for local development. The `guix`
 directory provides a separate container definition for Guix builds. These are
 build environments, not deployment images for a running DeFCoN node.
+
+From the repository root, build either environment explicitly:
+
+```bash
+docker build -f contrib/containers/ci/Dockerfile.linux64 -t defcon-ci-linux64 contrib/containers/ci
+docker build -f contrib/containers/ci/Dockerfile -t defcon-ci-full contrib/containers/ci
+```
+
+The workflow retains its existing GHCR image name and tags. PRs consume the
+latest published image; pushes to the release branch or a release tag build
+and publish it. When this change first lands, its PR still uses the previous
+full image; the merge push publishes and tests the native image. When adding
+a different CI target or lint/sanitizer gate, select the full environment or
+add its required tools explicitly.
 
 ### Usage Guide
 

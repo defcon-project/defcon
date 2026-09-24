@@ -117,12 +117,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push native Linux CI image
         if: github.event_name == 'push' && needs.changes.outputs.code == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./contrib/containers/ci
-          file: ./contrib/containers/ci/Dockerfile
+          # This workflow's only target is linux64. Cross-build/development
+          # tooling remains in the separate full Dockerfile.
+          file: ./contrib/containers/ci/Dockerfile.linux64
           push: true
           tags: |
             ghcr.io/${{ steps.prepare.outputs.repo-name }}/dashcore-ci-runner:${{ steps.prepare.outputs.image-tag }}
