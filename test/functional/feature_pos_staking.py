@@ -244,6 +244,56 @@ class PosStakingTest(BitcoinTestFramework):
         mine = node.getbalances()["mine"]
         return mine["trusted"] + mine["untrusted_pending"] + mine["immature"]
 
+    def check_orphan_cleanup(self, node):
+        """Online and unloaded-wallet rollbacks must rediscover a coinstake."""
+        self.disconnect_nodes(0, 1)
+        block_hash = node.getbestblockhash()
+        block = node.getblock(block_hash)
+        txid = block["tx"][1]
+        wallet_name = node.getwalletinfo()["walletname"]
+        passphrase = "orphan-cleanup-test"
+        node.encryptwallet(passphrase)
+        # Freeze at the tip while enabling, then lock the wallet before the
+        # rollback. Cleanup still runs, but a new stake cannot race this test.
+        self.mocktime = block["time"]
+        set_node_times(self.nodes, self.mocktime)
+        force_finish_mnsync(node)
+        node.walletpassphrase(passphrase, 60)
+        self.enable_staking(node)
+        node.walletlock()
+
+        def abandoned():
+            sent = [entry for entry in node.gettransaction(txid)["details"] if "abandoned" in entry]
+            assert sent, "coinstake must expose an abandonment status"
+            return all(entry["abandoned"] for entry in sent)
+
+        for attempt in range(2):
+            self.log.info("Orphan cleanup after rollback/reconfirmation, attempt %d", attempt + 1)
+            node.invalidateblock(block_hash)
+            self.wait_until(abandoned, timeout=60)
+            assert_equal(node.gettransaction(txid)["confirmations"], 0)
+            node.reconsiderblock(block_hash)
+            self.wait_until(lambda: node.gettransaction(txid)["confirmations"] > 0, timeout=60)
+            assert_equal(abandoned(), False)
+
+        self.disable_staking(node)
+        self.log.info("Reloading a wallet whose confirming block was disconnected while unloaded")
+        node.unloadwallet(wallet_name)
+        node.invalidateblock(block_hash)
+        node.loadwallet(wallet_name)
+        # LoadToWallet/rescan must rediscover this orphan without a new txid.
+        self.wait_until(lambda: any(w["name"] == wallet_name for w in node.liststakingwallets().values()), timeout=30)
+        self.mocktime = node.getblockheader(node.getbestblockhash())["time"]
+        set_node_times(self.nodes, self.mocktime)
+        node.walletpassphrase(passphrase, 60)
+        self.enable_staking(node)
+        node.walletlock()
+        self.wait_until(abandoned, timeout=60)
+        self.disable_staking(node)
+        node.reconsiderblock(block_hash)
+        self.wait_until(lambda: node.gettransaction(txid)["confirmations"] > 0, timeout=60)
+        assert_equal(abandoned(), False)
+
     # ----- the test --------------------------------------------------------
 
     def run_test(self):
@@ -304,6 +354,8 @@ class PosStakingTest(BitcoinTestFramework):
         assert_equal(staker.getblock(final_hash)["flags"], "proof-of-stake")
         self.connect_nodes(0, 1)
         self.sync_blocks()
+
+        self.check_orphan_cleanup(staker)
 
 
 if __name__ == "__main__":
