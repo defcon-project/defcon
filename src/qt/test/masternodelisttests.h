@@ -25,6 +25,7 @@ private Q_SLOTS:
     void oldLayoutDoesNotHideTheCollateral();
     void mineOnlyWaitsForTheWallet();
     void repeatedFiltering();
+    void filteredRowsKeepOrderAndIdentity();
 };
 
 #endif // BITCOIN_QT_TEST_MASTERNODELISTTESTS_H
