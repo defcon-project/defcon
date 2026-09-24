@@ -16,6 +16,7 @@
 #include <univalue.h>
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -269,6 +270,8 @@ void MasternodeList::updateDIP3List()
         }
     }
 
+    using Row = std::array<std::unique_ptr<QTableWidgetItem>, COLUMN_PROTX_HASH + 1>;
+    std::vector<Row> rows;
     mnList.ForEachMN(false, [&](auto& dmn) {
         if (walletModel && ui->checkBoxMyMasternodesOnly->isChecked()) {
             bool fMyMasternode = setOutpts.count(dmn.collateralOutpoint) ||
@@ -354,21 +357,33 @@ void MasternodeList::updateDIP3List()
             if (!strToFilter.contains(strCurrentFilterDIP3)) return;
         }
 
-        ui->tableWidgetMasternodesDIP3->insertRow(0);
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_SERVICE, addressItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_TYPE, typeItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_STATUS, statusItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_POSE, PoSeScoreItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_REGISTERED, registeredItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_LAST_PAYMENT, lastPaidItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_NEXT_PAYMENT, nextPaymentItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_PAYOUT_ADDRESS, payeeItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_OPERATOR_REWARD, operatorRewardItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_COLLATERAL_ADDRESS, collateralItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_OWNER_ADDRESS, ownerItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_VOTING_ADDRESS, votingItem.release());
-        ui->tableWidgetMasternodesDIP3->setItem(0, COLUMN_PROTX_HASH, proTxHashItem.release());
+        rows.emplace_back();
+        auto& row = rows.back();
+        row[COLUMN_SERVICE] = std::move(addressItem);
+        row[COLUMN_TYPE] = std::move(typeItem);
+        row[COLUMN_STATUS] = std::move(statusItem);
+        row[COLUMN_POSE] = std::move(PoSeScoreItem);
+        row[COLUMN_REGISTERED] = std::move(registeredItem);
+        row[COLUMN_LAST_PAYMENT] = std::move(lastPaidItem);
+        row[COLUMN_NEXT_PAYMENT] = std::move(nextPaymentItem);
+        row[COLUMN_PAYOUT_ADDRESS] = std::move(payeeItem);
+        row[COLUMN_OPERATOR_REWARD] = std::move(operatorRewardItem);
+        row[COLUMN_COLLATERAL_ADDRESS] = std::move(collateralItem);
+        row[COLUMN_OWNER_ADDRESS] = std::move(ownerItem);
+        row[COLUMN_VOTING_ADDRESS] = std::move(votingItem);
+        row[COLUMN_PROTX_HASH] = std::move(proTxHashItem);
     });
+
+    // Allocate once, avoiding repeated shifts of all preceding rows. Fill in
+    // reverse traversal order, as insertRow(0) did, to preserve sort ties.
+    ui->tableWidgetMasternodesDIP3->setRowCount(rows.size());
+    int row_index = rows.size();
+    for (auto& row : rows) {
+        --row_index;
+        for (int column = 0; column <= COLUMN_PROTX_HASH; ++column) {
+            ui->tableWidgetMasternodesDIP3->setItem(row_index, column, row[column].release());
+        }
+    }
 
     ui->countLabelDIP3->setText(QString::number(ui->tableWidgetMasternodesDIP3->rowCount()));
     ui->tableWidgetMasternodesDIP3->setSortingEnabled(true);
