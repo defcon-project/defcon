@@ -22,6 +22,7 @@
 
 #include <QMessageBox>
 #include <QSettings>
+#include <QShowEvent>
 #include <QSignalBlocker>
 #include <QTableWidgetItem>
 #include <QtGui/QClipboard>
@@ -187,10 +188,25 @@ void MasternodeList::handleMasternodeListChanged()
     mnListChanged = true;
 }
 
+void MasternodeList::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    LOCK(cs_dip3list);
+    if (fFilterUpdatedDIP3 || mnListChanged) {
+        // Apply deferred changes before the user sees an old filtered list.
+        refreshFilterNow();
+        updateDIP3ListScheduled();
+    }
+}
+
 void MasternodeList::updateDIP3ListScheduled()
 {
     TRY_LOCK(cs_dip3list, fLockAcquired);
     if (!fLockAcquired) return;
+
+    // Keep the pending flags while this tab (or its parent) is hidden.
+    // Showing it applies the latest list/filter once, without a cooldown.
+    if (!isVisible()) return;
 
     if (!clientModel || clientModel->node().shutdownRequested()) {
         return;
@@ -202,35 +218,34 @@ void MasternodeList::updateDIP3ListScheduled()
         int64_t nSecondsToWait = nTimeFilterUpdatedDIP3 - GetTime() + MASTERNODELIST_FILTER_COOLDOWN_SECONDS;
         ui->countLabelDIP3->setText(tr("Please wait…") + " " + QString::number(nSecondsToWait));
 
-        if (nSecondsToWait <= 0) {
-            updateDIP3List();
+        if (nSecondsToWait <= 0 && updateDIP3List()) {
             fFilterUpdatedDIP3 = false;
+            mnListChanged = false;
         }
     } else if (mnListChanged) {
         int64_t nMnListUpdateSecods = clientModel->masternodeSync().isBlockchainSynced() ? MASTERNODELIST_UPDATE_SECONDS : MASTERNODELIST_UPDATE_SECONDS * 10;
         int64_t nSecondsToWait = nTimeUpdatedDIP3 - GetTime() + nMnListUpdateSecods;
 
-        if (nSecondsToWait <= 0) {
-            updateDIP3List();
+        if (nSecondsToWait <= 0 && updateDIP3List()) {
             mnListChanged = false;
         }
     }
 }
 
-void MasternodeList::updateDIP3List()
+bool MasternodeList::updateDIP3List()
 {
     if (!clientModel || clientModel->node().shutdownRequested()) {
-        return;
+        return false;
     }
 
     auto [mnList, pindex] = clientModel->getMasternodeList();
-    if (!pindex) return;
+    if (!pindex) return false;
     auto projectedPayees = mnList.GetProjectedMNPayees(pindex);
 
     if (projectedPayees.empty() && mnList.GetValidMNsCount() > 0) {
         // GetProjectedMNPayees failed to provide results for a list with valid mns.
         // Keep current list and let it try again later.
-        return;
+        return false;
     }
 
     std::map<uint256, CTxDestination> mapCollateralDests;
@@ -387,6 +402,7 @@ void MasternodeList::updateDIP3List()
 
     ui->countLabelDIP3->setText(QString::number(ui->tableWidgetMasternodesDIP3->rowCount()));
     ui->tableWidgetMasternodesDIP3->setSortingEnabled(true);
+    return true;
 }
 
 void MasternodeList::on_filterLineEditDIP3_textChanged(const QString& strFilterIn)

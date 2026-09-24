@@ -59,6 +59,9 @@ public:
     void setClientModel(ClientModel* clientModel);
     void setWalletModel(WalletModel* walletModel);
 
+protected:
+    void showEvent(QShowEvent* event) override;
+
 private:
     QMenu* contextMenuDIP3;
     int64_t nTimeFilterUpdatedDIP3{0};
@@ -79,7 +82,7 @@ private:
 
     CDeterministicMNCPtr GetSelectedDIP3MN();
 
-    void updateDIP3List();
+    bool updateDIP3List();
 
     //! Hide or show the columns the "Essential info only" toggle governs.
     void applyColumnVisibility();
