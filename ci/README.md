@@ -2,6 +2,12 @@
 
 This directory contains scripts for each build step in each build stage.
 
+The active GitHub Actions pipeline is defined in
+[`build.yml`](../.github/workflows/build.yml). It uses `ci/dash/matrix.sh` and
+`ci/dash/build_src.sh`; dependency builds, unit tests and the functional gate
+are invoked by the workflow itself. The local stage runner below is a separate
+entry point.
+
 ### Running a Stage Locally
 
 Be aware that the tests will be built and run in-place, so please run at your own risk.
