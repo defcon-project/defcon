@@ -3,18 +3,140 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chainparams.h>
+#include <context.h>
 #include <pos/minter.h>
 #include <pos/stake.h>
 #include <pos/multiwallet.h>
+#include <rpc/server.h>
 #include <wallet/test/wallet_test_fixture.h>
 #include <wallet/wallet.h>
 #include <wallet/walletdb.h>
 
 #include <boost/test/unit_test.hpp>
 
+#include <chrono>
+#include <future>
 #include <memory>
+#include <thread>
+
+extern RecursiveMutex stakable_mutex;
+
+namespace {
+UniValue CallStakingRPC(NodeContext& node, const char* method)
+{
+    JSONRPCRequest request;
+    request.context = CoreContext{node};
+    request.strMethod = method;
+    request.params.setArray();
+    return tableRPC.execute(request);
+}
+
+// Hold only the wallet lock, on a separate thread so the test can probe the
+// registry without introducing a reverse lock order on its own thread.
+class BusyWallet {
+    std::promise<void> m_locked;
+    std::promise<void> m_release;
+    std::future<void> m_thread;
+public:
+    explicit BusyWallet(CWallet& wallet) : m_thread(std::async(std::launch::async, [&] {
+        LOCK(wallet.cs_wallet);
+        m_locked.set_value();
+        m_release.get_future().wait();
+    }))
+    {
+        m_locked.get_future().wait();
+    }
+    ~BusyWallet() { m_release.set_value(); m_thread.wait(); }
+};
+} // namespace
 
 BOOST_FIXTURE_TEST_SUITE(pos_multiwallet_tests, WalletTestingSetup)
+
+BOOST_AUTO_TEST_CASE(staking_rpc_does_not_hold_registry_while_waiting_for_wallet)
+{
+    if (RPCIsInWarmup(nullptr)) SetRPCWarmupFinished();
+    auto wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                           "pos-rpc-lock-test", CreateDummyWalletDatabase());
+    AddWallet(wallet);
+    struct Cleanup {
+        std::shared_ptr<CWallet>& wallet;
+        ~Cleanup() { RemoveWallet(wallet, std::nullopt); MultiwalletInitialize(); }
+    } cleanup{wallet};
+    MultiwalletInitialize();
+
+    for (const char* method : {"getstakinginfo", "liststakingwallets"}) {
+        BOOST_REQUIRE(ToggleWalletStaking(wallet->GetName()));
+        const auto owners = wallet.use_count();
+        std::future<UniValue> result;
+        {
+            BusyWallet busy(*wallet);
+            result = std::async(std::launch::async, [&] { return CallStakingRPC(m_node, method); });
+            // Both the old and new RPC implementations acquire a strong wallet
+            // reference before asking for its balance. Wait for that reference,
+            // not an arbitrary sleep, to know the RPC has reached this wallet.
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+            while (wallet.use_count() <= owners && std::chrono::steady_clock::now() < deadline &&
+                   result.wait_for(std::chrono::milliseconds{0}) != std::future_status::ready) {
+                std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            }
+            BOOST_CHECK_GT(wallet.use_count(), owners);
+            TRY_LOCK(stakable_mutex, registry);
+            BOOST_CHECK_MESSAGE(bool(registry), method << " kept the registry locked while waiting for a wallet");
+            if (registry) {
+                BOOST_CHECK(!ToggleWalletStaking(wallet->GetName()));
+                MultiwalletMaintenance();
+            }
+        }
+        const UniValue response = result.get();
+        BOOST_REQUIRE_EQUAL(response.size(), 1U);
+        BOOST_CHECK_EQUAL(response["0"]["name"].get_str(), wallet->GetName());
+        const char* enabled = std::string{method} == "getstakinginfo" ? "staking" : "enabled";
+        // This response describes the list captured before the concurrent
+        // toggle. The next call must see the updated switch.
+        BOOST_CHECK(response["0"][enabled].get_bool());
+        BOOST_CHECK(!CallStakingRPC(m_node, method)["0"][enabled].get_bool());
+        if (IsWalletStaking(wallet->GetName())) ToggleWalletStaking(wallet->GetName());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(staking_rpc_skips_expired_registry_entries)
+{
+    if (RPCIsInWarmup(nullptr)) SetRPCWarmupFinished();
+    auto gone = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                         "pos-rpc-gone", CreateDummyWalletDatabase());
+    auto live = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                         "pos-rpc-live", CreateDummyWalletDatabase());
+    AddWallet(gone);
+    AddWallet(live);
+    struct Cleanup {
+        std::shared_ptr<CWallet>& gone;
+        std::shared_ptr<CWallet>& live;
+        ~Cleanup() {
+            if (gone) RemoveWallet(gone, std::nullopt);
+            RemoveWallet(live, std::nullopt);
+            MultiwalletInitialize();
+        }
+    } cleanup{gone, live};
+    MultiwalletInitialize();
+    RemoveWallet(gone, std::nullopt);
+    std::weak_ptr<CWallet> observer = gone;
+    gone.reset();
+    BOOST_REQUIRE(observer.expired());
+
+    // Maintenance has not run yet. The stale entry must be skipped without
+    // renumbering the surviving wallet within this snapshot.
+    for (const char* method : {"getstakinginfo", "liststakingwallets"}) {
+        const UniValue response = CallStakingRPC(m_node, method);
+        BOOST_REQUIRE_EQUAL(response.size(), 1U);
+        BOOST_CHECK_EQUAL(response["1"]["name"].get_str(), live->GetName());
+    }
+    MultiwalletMaintenance();
+    for (const char* method : {"getstakinginfo", "liststakingwallets"}) {
+        const UniValue response = CallStakingRPC(m_node, method);
+        BOOST_REQUIRE_EQUAL(response.size(), 1U);
+        BOOST_CHECK_EQUAL(response["0"]["name"].get_str(), live->GetName());
+    }
+}
 
 // ThreadStakeMiner restarts PoSMiner after an unexpected failure, and PoSMiner
 // begins by rebuilding the stakable-wallet list. That rebuild used to hand

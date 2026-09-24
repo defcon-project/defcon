@@ -107,13 +107,18 @@ static RPCHelpMan getstakinginfo()
     uint64_t lastCoinStakeSearchInterval;
     UniValue obj(UniValue::VOBJ);
 
-    // The miner's maintenance rebuilds this vector on its own thread.
-    LOCK(stakable_mutex);
+    // Copy the registry as the minter does: balance/coin scans can wait on a
+    // wallet, and must not hold up maintenance or another staking toggle.
+    std::vector<CStakeWallet> wallets_snapshot;
+    {
+        LOCK(stakable_mutex);
+        wallets_snapshot = stakable_wallets;
+    }
 
     //multiwallet loop
-    for (int y = 0; y < stakable_sz; y++)
+    for (size_t y = 0; y < wallets_snapshot.size(); y++)
     {
-        const std::shared_ptr<CWallet> this_wallet = stakable_wallets[y].GetWallet();
+        const std::shared_ptr<CWallet> this_wallet = wallets_snapshot[y].GetWallet();
         if (!this_wallet)
             continue;
 
@@ -125,7 +130,7 @@ static RPCHelpMan getstakinginfo()
         //
         // No cs_main here: GetStakeWeight takes cs_wallet and reaches the chain
         // from underneath it, which is the order the rest of the tree keeps.
-        nWeight = stakable_wallets[y].GetStakeWeight(tip_time, tip_height + 1);
+        nWeight = wallets_snapshot[y].GetStakeWeight(tip_time, tip_height + 1);
         lastCoinStakeSearchInterval = this_wallet->nLastCoinStakeSearchTime;
 
         int64_t nTargetSpacing = consensusParams.posTargetSpacing;
@@ -138,7 +143,7 @@ static RPCHelpMan getstakinginfo()
         obj2.pushKV("name", this_wallet->GetName());
         // A real JSON boolean: the help has always documented BOOL here, while
         // the ternary produced const char* and so a quoted string.
-        obj2.pushKV("staking", stakable_wallets[y].CanStake());
+        obj2.pushKV("staking", wallets_snapshot[y].CanStake());
 
         // Node-wide, and repeated on every wallet on purpose: one minter serves
         // them all, so a wallet's own switch says nothing about whether anything
@@ -175,7 +180,7 @@ static RPCHelpMan getstakinginfo()
         // The tip's time and the height after it, matching GetStakeWeight above:
         // age is measured against a candidate block, and the tip's timestamp is
         // the closest one the node can state rather than guess.
-        const StakeSkipReport skipped = stakable_wallets[y].ExplainExcludedCoins(tip_time, tip_height + 1);
+        const StakeSkipReport skipped = wallets_snapshot[y].ExplainExcludedCoins(tip_time, tip_height + 1);
         if (skipped.Total() > 0) {
             UniValue excluded(UniValue::VOBJ);
             if (skipped.immature > 0)   excluded.pushKV("immature", ValueFromAmount(skipped.immature));
@@ -220,18 +225,22 @@ static RPCHelpMan liststakingwallets()
 {
     UniValue obj(UniValue::VOBJ);
 
-    // The miner's maintenance rebuilds this vector on its own thread.
-    LOCK(stakable_mutex);
+    // Keep slow wallet balance reads outside the shared registry lock.
+    std::vector<CStakeWallet> wallets_snapshot;
+    {
+        LOCK(stakable_mutex);
+        wallets_snapshot = stakable_wallets;
+    }
 
     //multiwallet loop
-    for (int y = 0; y < stakable_sz; y++)
+    for (size_t y = 0; y < wallets_snapshot.size(); y++)
     {
         UniValue obj2(UniValue::VOBJ);
-        const std::shared_ptr<CWallet> this_wallet = stakable_wallets[y].GetWallet();
+        const std::shared_ptr<CWallet> this_wallet = wallets_snapshot[y].GetWallet();
         if (!this_wallet)
             continue;
         obj2.pushKV("name", this_wallet->GetName());
-        obj2.pushKV("enabled", stakable_wallets[y].CanStake());
+        obj2.pushKV("enabled", wallets_snapshot[y].CanStake());
         obj2.pushKV("balance", FormatMoney(this_wallet->GetAvailableBalance() - this_wallet->nReserveBalance));
         obj.pushKV(std::to_string(y), obj2);
     }
