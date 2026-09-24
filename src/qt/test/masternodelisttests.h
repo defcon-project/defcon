@@ -26,6 +26,7 @@ private Q_SLOTS:
     void mineOnlyWaitsForTheWallet();
     void repeatedFiltering();
     void filteredRowsKeepOrderAndIdentity();
+    void hiddenUpdatesWaitForShow();
 };
 
 #endif // BITCOIN_QT_TEST_MASTERNODELISTTESTS_H

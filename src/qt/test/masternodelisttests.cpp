@@ -78,6 +78,7 @@ void MasternodeListTests::repeatedFiltering()
     ClientModel clientModel(m_node, &optionsModel);
     MasternodeList view;
     view.setClientModel(&clientModel);
+    view.show();
     const Widgets widgets = find(view);
     auto* filter = view.findChild<QLineEdit*>("filterLineEditDIP3");
     QVERIFY(widgets.table && filter);
@@ -130,6 +131,7 @@ void MasternodeListTests::filteredRowsKeepOrderAndIdentity()
     ClientModel clientModel(m_node, &optionsModel);
     MasternodeList view;
     view.setClientModel(&clientModel);
+    view.show();
     const Widgets w = find(view);
     QVERIFY(w.table && w.essential);
     const CBlockIndex* tip = test.m_node.chainman->ActiveChain().Tip();
@@ -190,6 +192,78 @@ void MasternodeListTests::filteredRowsKeepOrderAndIdentity()
     QCOMPARE(w.table->rowCount(), 0);
     QVERIFY(refresh(QString()));
     QCOMPARE(w.table->rowCount(), 16);
+}
+
+void MasternodeListTests::hiddenUpdatesWaitForShow()
+{
+    forget();
+    TestChain100Setup test;
+    struct RestoreContext {
+        interfaces::Node& node;
+        NodeContext* previous;
+        std::chrono::seconds mock_time;
+        ~RestoreContext() { node.setContext(previous); SetMockTime(mock_time); forget(); }
+    } restore{m_node, m_node.context(), GetMockTime()};
+    m_node.setContext(&test.m_node);
+    OptionsModel optionsModel;
+    ClientModel clientModel(m_node, &optionsModel);
+    QWidget parent;
+    MasternodeList view(&parent);
+    view.setClientModel(&clientModel);
+    view.show(); // The parent is still hidden, as when another tab is selected.
+    const Widgets w = find(view);
+    auto* filter = view.findChild<QLineEdit*>("filterLineEditDIP3");
+    QVERIFY(w.table && filter);
+    const CBlockIndex* tip = test.m_node.chainman->ActiveChain().Tip();
+    CDeterministicMNList mnList(uint256S("abcd"), tip->nHeight, 2);
+    for (int i = 1; i <= 2; ++i) {
+        auto mn = std::make_shared<CDeterministicMN>(i);
+        mn->proTxHash = uint256S(strprintf("%064x", i));
+        mn->collateralOutpoint = COutPoint(mn->proTxHash, 0);
+        auto state = std::make_shared<CDeterministicMNState>();
+        std::memcpy(state->keyIDOwner.begin(), mn->proTxHash.begin(), state->keyIDOwner.size());
+        state->nRegisteredHeight = i;
+        state->BanIfNotBanned(0);
+        mn->pdmnState = state;
+        mnList.AddMN(mn);
+    }
+    clientModel.setMasternodeList(mnList, tip);
+    SetMockTime(GetTime() + 4);
+    QVERIFY(QMetaObject::invokeMethod(&view, "updateDIP3ListScheduled", Qt::DirectConnection));
+    QCOMPARE(w.table->rowCount(), 0);
+    parent.show();
+    QCOMPARE(w.table->rowCount(), 2);
+
+    w.table->sortItems(MasternodeList::COLUMN_REGISTERED, Qt::DescendingOrder);
+    w.table->selectRow(0);
+    const QString selected = w.table->item(0, MasternodeList::COLUMN_PROTX_HASH)->text();
+    // No changes while hidden: showing again must not rebuild the rows or
+    // discard the user's selection.
+    parent.hide();
+    parent.show();
+    QCOMPARE(w.table->selectedRanges().size(), 1);
+    QCOMPARE(w.table->selectedRanges().front().topRow(), 0);
+    QCOMPARE(w.table->item(0, MasternodeList::COLUMN_PROTX_HASH)->text(), selected);
+
+    parent.hide();
+    filter->setText(selected);
+    SetMockTime(GetTime() + 4);
+    QVERIFY(QMetaObject::invokeMethod(&view, "updateDIP3ListScheduled", Qt::DirectConnection));
+    QCOMPARE(w.table->rowCount(), 2);
+    parent.show();
+    QCOMPARE(w.table->rowCount(), 1);
+    QCOMPARE(w.table->item(0, MasternodeList::COLUMN_PROTX_HASH)->text(), selected);
+    QCOMPARE(w.table->horizontalHeader()->sortIndicatorOrder(), Qt::DescendingOrder);
+
+    parent.hide();
+    mnList.RemoveMN(uint256S(selected.toStdString()));
+    mnList.SetBlockHash(uint256S("abce"));
+    clientModel.setMasternodeList(mnList, tip);
+    SetMockTime(GetTime() + 1000);
+    QVERIFY(QMetaObject::invokeMethod(&view, "updateDIP3ListScheduled", Qt::DirectConnection));
+    QCOMPARE(w.table->rowCount(), 1);
+    parent.show();
+    QCOMPARE(w.table->rowCount(), 0);
 }
 
 // What a user sets on the masternode tab is still set after a restart: the
