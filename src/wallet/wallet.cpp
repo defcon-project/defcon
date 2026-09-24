@@ -951,6 +951,12 @@ CWalletTx* CWallet::AddToWallet(CTransactionRef tx, const CWalletTx::Confirmatio
 
     LockProTxCoins(candidates, &batch);
 
+    if (wtx.IsCoinStake() && wtx.isUnconfirmed()) {
+        m_coinstakes_to_check.insert(hash);
+    } else {
+        m_coinstakes_to_check.erase(hash);
+    }
+
     //// debug print
     WalletLogPrintf("AddToWallet %s  %s%s\n", hash.ToString(), (fInsertedNew ? "new" : ""), (fUpdated ? "update" : ""));
 
@@ -1027,6 +1033,11 @@ bool CWallet::LoadToWallet(const uint256& hash, const UpdateWalletTxFn& fill_wtx
             wtx.m_confirm.block_height = 0;
             wtx.m_confirm.nIndex = 0;
         }
+    }
+    if (wtx.IsCoinStake() && wtx.isUnconfirmed()) {
+        m_coinstakes_to_check.insert(hash);
+    } else {
+        m_coinstakes_to_check.erase(hash);
     }
     if (/* insertion took place */ ins.second) {
         wtx.m_it_wtxOrdered = wtxOrdered.insert(std::make_pair(wtx.nOrderPos, &wtx));
@@ -1195,12 +1206,29 @@ void CWallet::AbandonOrphanedCoinstakes()
 {
     LOCK(cs_wallet);
 
-    for (std::pair<const uint256, CWalletTx>& item : mapWallet) {
-        const uint256& wtxid = item.first;
-        CWalletTx& wtx = item.second;
-        assert(wtx.GetHash() == wtxid);
-        if (wtx.GetDepthInMainChain() == 0 && !wtx.isAbandoned() && wtx.IsCoinStake()) {
-            AbandonTransaction(wtxid);
+    if (m_rescan_coinstakes) {
+        // A rollback can give a conflicted coinstake depth zero even when it
+        // was not itself in the disconnected block. Recheck once after a
+        // rollback (and on the first cleanup), not on every staking tick.
+        for (const auto& [hash, wtx] : mapWallet) {
+            if (wtx.IsCoinStake() && !wtx.isAbandoned() && wtx.GetDepthInMainChain() == 0) {
+                m_coinstakes_to_check.insert(hash);
+            }
+        }
+        m_rescan_coinstakes = false;
+    }
+
+    for (auto it = m_coinstakes_to_check.begin(); it != m_coinstakes_to_check.end();) {
+        const auto tx = mapWallet.find(*it);
+        // AddToWallet queues confirmation changes, including disconnects and
+        // rescans. LoadToWallet queues transactions restored from disk.
+        if (tx == mapWallet.end() || tx->second.isAbandoned() ||
+            tx->second.GetDepthInMainChain() != 0 || AbandonTransaction(*it)) {
+            it = m_coinstakes_to_check.erase(it);
+        } else {
+            // A mempool or InstantSend lock can temporarily prevent abandonment.
+            // Keep retrying even when no new wallet transaction arrives.
+            ++it;
         }
     }
 }
@@ -1360,6 +1388,7 @@ void CWallet::blockConnected(const CBlock& block, int height)
 void CWallet::blockDisconnected(const CBlock& block, int height)
 {
     LOCK(cs_wallet);
+    m_rescan_coinstakes = true;
 
     // At block disconnection, this will change an abandoned transaction to
     // be unconfirmed, whether or not the transaction is added back to the mempool.
@@ -4116,6 +4145,7 @@ DBErrors CWallet::ZapSelectTx(std::vector<uint256>& vHashIn, std::vector<uint256
         for (const auto& txin : it->second.tx->vin)
             mapTxSpends.erase(txin.prevout);
         mapWallet.erase(it);
+        m_coinstakes_to_check.erase(hash);
         NotifyTransactionChanged(hash, CT_DELETED);
     }
 

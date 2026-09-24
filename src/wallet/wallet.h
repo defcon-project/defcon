@@ -898,6 +898,11 @@ private:
      */
     int m_last_block_processed_height GUARDED_BY(cs_wallet) = -1;
 
+    // Unconfirmed coinstakes to check or retry (for example while in the mempool).
+    // Confirmed history is not duplicated in this index.
+    std::set<uint256> m_coinstakes_to_check GUARDED_BY(cs_wallet);
+    bool m_rescan_coinstakes{true} GUARDED_BY(cs_wallet);
+
     ScriptPubKeyMan* m_external_spk_managers{nullptr};
     ScriptPubKeyMan* m_internal_spk_managers{nullptr};
 
@@ -1560,6 +1565,7 @@ public:
     void SetLastBlockProcessed(int block_height, uint256 block_hash) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet)
     {
         AssertLockHeld(cs_wallet);
+        if (block_height < m_last_block_processed_height) m_rescan_coinstakes = true;
         m_last_block_processed_height = block_height;
         m_last_block_processed = block_hash;
     };

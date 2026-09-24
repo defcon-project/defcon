@@ -535,4 +535,115 @@ BOOST_FIXTURE_TEST_CASE(a_watch_only_output_is_never_offered_as_a_kernel, TestCh
     BOOST_CHECK_EQUAL(chosen.count({wtx, 1}), 0U);
 }
 
+static CTransactionRef CleanupTx(uint32_t id, bool coinstake = true)
+{
+    CMutableTransaction tx;
+    tx.nLockTime = id;
+    tx.vin.emplace_back(COutPoint(uint256S("ab"), id));
+    if (coinstake) {
+        tx.vout.emplace_back();
+        tx.vout.back().SetEmpty();
+    }
+    tx.vout.emplace_back(COIN, CScript() << OP_TRUE);
+    return MakeTransactionRef(tx);
+}
+
+BOOST_AUTO_TEST_CASE(orphan_cleanup_tracks_updates_and_descendants)
+{
+    LOCK(m_wallet.cs_wallet);
+    const uint256 block_hash = m_node.chainman->ActiveChain().Tip()->GetBlockHash();
+    m_wallet.SetLastBlockProcessed(10, block_hash);
+    // Finish the initial scan before adding anything: subsequent calls must
+    // discover new/updated coinstakes through the wallet's normal entry points.
+    m_wallet.AbandonOrphanedCoinstakes();
+    const auto regular = CleanupTx(1, false);
+    const auto confirmed = CleanupTx(2);
+    const auto orphan = CleanupTx(3);
+    const CWalletTx::Confirmation confirmation{CWalletTx::CONFIRMED, 5, block_hash, 0};
+    BOOST_REQUIRE(m_wallet.AddToWallet(regular, {}));
+    BOOST_REQUIRE(m_wallet.AddToWallet(confirmed, confirmation));
+    BOOST_REQUIRE(m_wallet.AddToWallet(orphan, {}));
+    CMutableTransaction child;
+    child.vin.emplace_back(COutPoint(orphan->GetHash(), 1));
+    child.vout.emplace_back(COIN - 1, CScript() << OP_TRUE);
+    const auto descendant = MakeTransactionRef(child);
+    BOOST_REQUIRE(m_wallet.AddToWallet(descendant, {}));
+
+    m_wallet.AbandonOrphanedCoinstakes();
+    BOOST_CHECK(!m_wallet.GetWalletTx(regular->GetHash())->isAbandoned());
+    BOOST_CHECK(!m_wallet.GetWalletTx(confirmed->GetHash())->isAbandoned());
+    BOOST_CHECK(m_wallet.GetWalletTx(orphan->GetHash())->isAbandoned());
+    BOOST_CHECK(m_wallet.GetWalletTx(descendant->GetHash())->isAbandoned());
+
+    // Disconnect/reconfirm/disconnect an existing entry without changing the
+    // number of transactions in the wallet.
+    BOOST_REQUIRE(m_wallet.AddToWallet(confirmed, {}));
+    m_wallet.AbandonOrphanedCoinstakes();
+    BOOST_CHECK(m_wallet.GetWalletTx(confirmed->GetHash())->isAbandoned());
+    BOOST_REQUIRE(m_wallet.AddToWallet(confirmed, confirmation));
+    m_wallet.AbandonOrphanedCoinstakes();
+    BOOST_CHECK(!m_wallet.GetWalletTx(confirmed->GetHash())->isAbandoned());
+    BOOST_REQUIRE(m_wallet.AddToWallet(confirmed, {}));
+    m_wallet.AbandonOrphanedCoinstakes();
+    BOOST_CHECK(m_wallet.GetWalletTx(confirmed->GetHash())->isAbandoned());
+}
+
+BOOST_AUTO_TEST_CASE(orphan_cleanup_retries_and_loads)
+{
+    LOCK(m_wallet.cs_wallet);
+    m_wallet.SetLastBlockProcessed(10, m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+    m_wallet.AbandonOrphanedCoinstakes();
+    const auto pending = CleanupTx(10);
+    auto* wtx = m_wallet.AddToWallet(pending, {});
+    BOOST_REQUIRE(wtx);
+    wtx->fInMempool = true;
+    m_wallet.AbandonOrphanedCoinstakes();
+    BOOST_CHECK(!wtx->isAbandoned());
+    m_wallet.AbandonOrphanedCoinstakes();
+    BOOST_CHECK(!wtx->isAbandoned());
+    wtx->fInMempool = false;
+    // Clearing the mempool flag does not queue a new transaction.
+    m_wallet.AbandonOrphanedCoinstakes();
+    BOOST_CHECK(wtx->isAbandoned());
+
+    const auto loaded = CleanupTx(11);
+    BOOST_REQUIRE(m_wallet.LoadToWallet(loaded->GetHash(), [&](CWalletTx& tx, bool) {
+        tx.tx = loaded;
+        // The saved confirming block is absent, as after an offline reorg.
+        tx.m_confirm = {CWalletTx::CONFIRMED, 1, uint256S("abcd"), 0};
+        return true;
+    }));
+    m_wallet.AbandonOrphanedCoinstakes();
+    BOOST_CHECK(m_wallet.GetWalletTx(loaded->GetHash())->isAbandoned());
+    m_wallet.AbandonOrphanedCoinstakes();
+    BOOST_CHECK(m_wallet.GetWalletTx(loaded->GetHash())->isAbandoned());
+}
+
+BOOST_AUTO_TEST_CASE(orphan_cleanup_rechecks_conflicts_after_rollback)
+{
+    LOCK(m_wallet.cs_wallet);
+    const uint256 block_hash = m_node.chainman->ActiveChain().Tip()->GetBlockHash();
+    m_wallet.SetLastBlockProcessed(10, block_hash);
+    const auto conflict = CleanupTx(20);
+    BOOST_REQUIRE(m_wallet.AddToWallet(conflict, {CWalletTx::CONFLICTED, 5, block_hash, 0}));
+    m_wallet.AbandonOrphanedCoinstakes();
+    BOOST_CHECK(!m_wallet.GetWalletTx(conflict->GetHash())->isAbandoned());
+    CBlock disconnected;
+    disconnected.hashPrevBlock = block_hash;
+    // This coinstake is not in the disconnected block, but its conflict depth
+    // becomes zero. A transaction-update-only index must not miss that case.
+    m_wallet.blockDisconnected(disconnected, 5);
+    BOOST_CHECK_EQUAL(m_wallet.GetWalletTx(conflict->GetHash())->GetDepthInMainChain(), 0);
+    m_wallet.AbandonOrphanedCoinstakes();
+    BOOST_CHECK(m_wallet.GetWalletTx(conflict->GetHash())->isAbandoned());
+
+    const auto removed = CleanupTx(21);
+    BOOST_REQUIRE(m_wallet.AddToWallet(removed, {}));
+    std::vector<uint256> requested{removed->GetHash()}, erased;
+    BOOST_CHECK(m_wallet.ZapSelectTx(requested, erased) == DBErrors::LOAD_OK);
+    BOOST_REQUIRE_EQUAL(erased.size(), 1U);
+    BOOST_CHECK(!m_wallet.GetWalletTx(removed->GetHash()));
+    m_wallet.AbandonOrphanedCoinstakes();
+}
+
 BOOST_AUTO_TEST_SUITE_END()
