@@ -74,6 +74,7 @@ public:
     size_t Size() const;
 
 private:
+    friend struct CServiceReportStoreTestAccess;
     using Key = std::tuple<uint32_t, uint256, uint256>; // (epoch, target, sentinel)
 
     mutable Mutex m_mutex;
@@ -81,7 +82,7 @@ private:
     uint32_t m_currentEpoch GUARDED_BY(m_mutex){0};
     const uint32_t m_keepEpochs;
 
-    // The epoch's sentinel assignment, memoised per target.
+    // Sentinel assignments, memoised per retained epoch and target.
     //
     // Deriving one target's set scores the whole masternode list, and AddReport
     // runs on every report the network floods: seven per target at the healthy
@@ -91,18 +92,22 @@ private:
     // 5000 masternodes, all of it holding this mutex. Memoised, an epoch costs at
     // most one derivation per target however many reports arrive.
     //
-    // Keyed by the base hash it was derived against, so a reorg that moves the
-    // epoch base discards it instead of answering from the chain that is gone.
-    // std::map, not unordered_map: SentinelsFor hands out a reference, and only
-    // std::map keeps that valid across later insertions.
-    uint256 m_assignBase GUARDED_BY(m_mutex);
-    std::map<uint256, std::vector<uint256>> m_assignCache GUARDED_BY(m_mutex);
+    // Interleaved reports from retained epochs must not evict each other.
+    // Keep one base/count variant per epoch, bounded by the report window and
+    // the known targets in each epoch's list. Replacing a base discards only
+    // that epoch's assignments; dropping/aging an epoch also drops its cache.
+    struct AssignmentEpoch {
+        uint256 base;
+        size_t count{0};
+        std::map<uint256, std::vector<uint256>> targets;
+    };
+    std::map<uint32_t, AssignmentEpoch> m_assignCache GUARDED_BY(m_mutex);
 
     // Lowest epoch still inside the retained window for m_currentEpoch.
     uint32_t OldestKeptEpoch() const EXCLUSIVE_LOCKS_REQUIRED(m_mutex);
 
     // This epoch's sentinels for one target, deriving them at most once.
-    const std::vector<uint256>& SentinelsFor(const CDeterministicMNList& epochList,
+    const std::vector<uint256>& SentinelsFor(uint32_t nEpoch, const CDeterministicMNList& epochList,
                                              const uint256& targetProTxHash,
                                              const uint256& epochBlockHash,
                                              size_t count) EXCLUSIVE_LOCKS_REQUIRED(m_mutex);
