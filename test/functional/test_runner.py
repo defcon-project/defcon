@@ -148,6 +148,8 @@ BASE_SCRIPTS = [
     'feature_pos_staking.py --legacy-wallet',
     'feature_pos_stake_combine.py --descriptors',
     'feature_pos_stake_combine.py --legacy-wallet',
+    'wallet_combineoutputs.py --descriptors',
+    'wallet_combineoutputs.py --legacy-wallet',
     'feature_pos_verifychain.py --descriptors',
     'feature_evodb_reconcile_below_dip3.py',
     'feature_evodb_reconcile.py', # NOTE: needs dash_hash to pass
