@@ -1,0 +1,41 @@
+FROM ubuntu:jammy
+
+# Native linux64 CI. The full Dockerfile remains available for cross builds,
+# sanitizers and lint tooling that the linux64 gate does not use.
+ENV DEBIAN_FRONTEND="noninteractive" TZ="Europe/London"
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    autoconf automake autotools-dev bc bison bsdmainutils build-essential \
+    ca-certificates ccache cmake curl gawk gettext git jq libtool m4 \
+    parallel pkg-config unzip wget xz-utils zip zlib1g-dev \
+    libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+    libxcb-render-util0 libxcb-shape0 libxcb-sync1 libxcb-xfixes0 \
+    libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 \
+    libbz2-dev libffi-dev liblzma-dev libncurses5-dev libncursesw5-dev \
+    libreadline-dev libsqlite3-dev libssl-dev tk-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Keep the same interpreter as the full image and .python-version.
+ARG PYTHON_VERSION=3.9.18
+ENV PYENV_ROOT="/usr/local/pyenv"
+ENV PATH="${PYENV_ROOT}/shims:${PYENV_ROOT}/bin:${PATH}"
+RUN curl https://pyenv.run | bash \
+    && pyenv update \
+    && pyenv install $PYTHON_VERSION \
+    && pyenv global $PYTHON_VERSION \
+    && pyenv rehash
+RUN pip3 install --no-cache-dir jinja2 lief==0.13.2 multiprocess pyzmq==22.3.0
+
+ARG DASH_HASH_VERSION=1.4.0
+RUN git clone --depth 1 --no-tags --branch=${DASH_HASH_VERSION} https://github.com/dashpay/dash_hash /tmp/dash_hash \
+    && pip3 install --no-cache-dir -r /tmp/dash_hash/requirements.txt /tmp/dash_hash \
+    && rm -rf /tmp/dash_hash
+
+# Preserve the existing mount paths and non-root developer usage.
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+RUN groupadd -g ${GROUP_ID} dash \
+    && useradd -u ${USER_ID} -g dash -s /bin/bash -m -d /home/dash dash \
+    && mkdir -p /src/dash /cache/ccache /cache/depends /cache/sdk-sources \
+    && chown -R ${USER_ID}:${GROUP_ID} /src /cache
+WORKDIR /src/dash
+USER dash
