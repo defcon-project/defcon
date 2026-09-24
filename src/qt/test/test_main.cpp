@@ -26,7 +26,9 @@
 #include <QApplication>
 #include <QObject>
 #include <QTest>
+#include <cstdio>
 #include <functional>
+#include <string>
 
 #if defined(QT_STATIC)
 #include <QtPlugin>
@@ -49,6 +51,22 @@ const std::function<std::vector<const char*>()> G_TEST_COMMAND_LINE_ARGUMENTS{};
 // This is all you need to run all the tests
 int main(int argc, char* argv[])
 {
+    // Strip our selector before forwarding the remaining arguments to QTest.
+    // Without a selector the normal run still includes every compiled suite.
+    std::string suite;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg{argv[i]};
+        if (arg.compare(0, 8, "--suite=") != 0) continue;
+        if (!suite.empty() || arg.size() == 8) {
+            std::fprintf(stderr, "Use one non-empty --suite=ClassName selector\n");
+            return 1;
+        }
+        suite = arg.substr(8);
+        for (int j = i; j < argc; ++j) argv[j] = argv[j + 1];
+        --argc;
+        --i;
+    }
+
     // Initialize persistent globals with the testing setup state for sanity.
     // E.g. -datadir in gArgs is set to a temp directory dummy value (instead
     // of defaulting to the default datadir), or globalChainParams is set to
@@ -70,6 +88,12 @@ int main(int argc, char* argv[])
     gArgs.ForceSetArg("-natpmp", "0");
 
     bool fInvalid = false;
+    bool matched = false;
+    const auto run = [&](QObject& test) {
+        if (!suite.empty() && suite != test.metaObject()->className()) return;
+        matched = true;
+        if (QTest::qExec(&test, argc, argv) != 0) fInvalid = true;
+    };
 
     // Prefer the "minimal" platform for the test instead of the normal default
     // platform ("xcb", "windows", or "cocoa") so tests can't unintentionally
@@ -86,44 +110,33 @@ int main(int argc, char* argv[])
 
     app.node().context()->args = &gArgs;     // Make gArgs available in the NodeContext
     AppTests app_tests(app);
-    if (QTest::qExec(&app_tests) != 0) {
-        fInvalid = true;
-    }
+    run(app_tests);
     // Pure arithmetic, so it runs on every platform plugin including `minimal`
     // and is placed ahead of the suites that are known to die on this fork.
     GUIUtilTests guiutil_tests;
-    if (QTest::qExec(&guiutil_tests) != 0) {
-        fInvalid = true;
-    }
+    run(guiutil_tests);
 #ifdef ENABLE_WALLET
     // Ahead of the wallet suite on purpose: that one still dies with a fatal
     // error on this fork, and nothing queued behind it gets to run.
     MasternodeListTests masternode_list_tests(app.node());
-    if (QTest::qExec(&masternode_list_tests) != 0) {
-        fInvalid = true;
-    }
+    run(masternode_list_tests);
 #endif
     URITests test1;
-    if (QTest::qExec(&test1) != 0) {
-        fInvalid = true;
-    }
+    run(test1);
     RPCNestedTests test3(app.node());
-    if (QTest::qExec(&test3) != 0) {
-        fInvalid = true;
-    }
+    run(test3);
 #ifdef ENABLE_WALLET
     WalletTests test5(app.node());
-    if (QTest::qExec(&test5) != 0) {
-        fInvalid = true;
-    }
+    run(test5);
     AddressBookTests test6(app.node());
-    if (QTest::qExec(&test6) != 0) {
-        fInvalid = true;
-    }
+    run(test6);
 #endif
 
     TrafficGraphDataTests test7;
-    if (QTest::qExec(&test7) != 0)
-        fInvalid = true;
+    run(test7);
+    if (!matched) {
+        std::fprintf(stderr, "Unknown or unavailable Qt test suite: %s\n", suite.c_str());
+        return 1;
+    }
     return fInvalid;
 }
