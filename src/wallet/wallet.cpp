@@ -5018,6 +5018,19 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, interfaces::C
         walletInstance->m_default_max_tx_fee = max_fee.value();
     }
 
+    // Zero, the default, keeps the size automatic. A configured size is taken
+    // as given here and clamped to what the network can stake when it is used,
+    // because the limits live in the consensus parameters, not in the wallet.
+    if (gArgs.IsArgSet("-staketarget")) {
+        std::optional<CAmount> stake_target = ParseMoney(gArgs.GetArg("-staketarget", ""));
+        if (!stake_target) {
+            error = AmountErrMsg("staketarget", gArgs.GetArg("-staketarget", ""));
+            return nullptr;
+        }
+        walletInstance->m_stake_target = stake_target.value();
+    }
+    walletInstance->m_stake_combine = gArgs.GetBoolArg("-stakecombine", DEFAULT_STAKE_COMBINE);
+
     if (chain && chain->relayMinFee().GetFeePerK() > HIGH_TX_FEE_PER_KB)
         warnings.push_back(AmountHighWarn("-minrelaytxfee") + Untranslated(" ") +
                     _("The wallet will avoid paying less than the minimum relay fee."));

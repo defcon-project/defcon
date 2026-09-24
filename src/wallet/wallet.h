@@ -96,6 +96,8 @@ static const bool DEFAULT_WALLET_REJECT_LONG_CHAINS = false;
 static const unsigned int DEFAULT_TX_CONFIRM_TARGET = 6;
 static const bool DEFAULT_WALLETBROADCAST = true;
 static const bool DEFAULT_DISABLE_WALLET = false;
+//! -stakecombine default: a coinstake also spends the winning key's small outputs
+static const bool DEFAULT_STAKE_COMBINE = true;
 //! -maxtxfee default
 static const CAmount DEFAULT_TRANSACTION_MAXFEE = COIN / 10;
 //! Discourage users to set fees higher than this amount (in satoshis) per kB
@@ -1238,7 +1240,11 @@ public:
        Proof of Stake Variables
      */
     CAmount nReserveBalance{0};
-    CAmount nStakeSplitThreshold = 15000 * COIN;
+    //! The size a coinstake lays its credit out in (-staketarget). Zero lets
+    //! the wallet derive it from the network's stake weight: StakeTargetSize.
+    CAmount m_stake_target{0};
+    //! Whether a coinstake also spends this key's small outputs (-stakecombine).
+    bool m_stake_combine{DEFAULT_STAKE_COMBINE};
     int64_t nLastCoinStakeSearchTime{0};
     std::atomic<int> m_is_staking{NOT_STAKING};
 
