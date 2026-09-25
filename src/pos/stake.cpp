@@ -143,12 +143,12 @@ StakeWalletInfo CStakeWallet::GetStakingInfo(int64_t nTime, int nHeight) const
 
     // Collect the union of the selection and report ranges. In particular,
     // regtest permits zero-value staking inputs, while the report starts at 1.
+    // COutput holds raw mapWallet pointers. Keep them alive for both consumers:
+    // removeprunedfunds, for example, can erase entries under this same lock.
+    LOCK(wallet->cs_wallet);
     std::vector<COutput> coins;
-    {
-        LOCK(wallet->cs_wallet);
-        wallet->AvailableCoins(coins, nullptr, std::min(CAmount{1}, params.stakeValueRange[0]),
-                               std::max(MAX_MONEY, params.stakeValueRange[1]));
-    }
+    wallet->AvailableCoins(coins, nullptr, std::min(CAmount{1}, params.stakeValueRange[0]),
+                           std::max(MAX_MONEY, params.stakeValueRange[1]));
     StakeWalletInfo info;
     info.weight = GetStakeWeight(nTime, nHeight, &coins);
     info.excluded = ExplainExcludedCoins(nTime, nHeight, &coins);
