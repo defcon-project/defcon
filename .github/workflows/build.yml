@@ -324,6 +324,8 @@ jobs:
           ./src/qt/test/test_defcon-qt --suite=MasternodeListTests
           LSAN_RUNTIME="$(gcc -print-file-name=liblsan.so)"
           test -f "$LSAN_RUNTIME"
+          readlink -f "$LSAN_RUNTIME"
+          sha256sum "$LSAN_RUNTIME"
           # Do not inherit the generic libQt5Widgets suppression: it would
           # hide the table-item leak these cases are meant to catch.
           LSAN_OPTIONS=exitcode=23 LD_PRELOAD="$LSAN_RUNTIME" \
@@ -331,11 +333,14 @@ jobs:
               repeatedFiltering filteredRowsKeepOrderAndIdentity
           # Prove that this runtime detects leaks in this Qt executable.
           # Keep the intentional leak confined to a separate preload/run.
+          # Use a large allocation: the old 12345-byte allocation landed at
+          # 0x627000000000, which pairs of 32-bit stack-depot IDs in liblsan
+          # could accidentally mark reachable during conservative scanning.
           cat > "$XDG_CONFIG_HOME/lsan-canary.c" <<'C'
           #include <stdlib.h>
           __attribute__((constructor, noinline)) static void lsan_canary(void)
           {
-              void *leak = malloc(12345);
+              void *leak = malloc(1234567);
               __asm__ volatile("" : : "r"(leak) : "memory");
           }
           C
@@ -348,7 +353,7 @@ jobs:
               > "$XDG_CONFIG_HOME/lsan-canary.log" 2>&1 || canary_status=$?
           cat "$XDG_CONFIG_HOME/lsan-canary.log"
           if [[ "$canary_status" -ne 23 ]] || \
-             ! grep -F 'Direct leak of 12345 byte(s) in 1 object(s)' "$XDG_CONFIG_HOME/lsan-canary.log"; then
+             ! grep -F 'Direct leak of 1234567 byte(s) in 1 object(s)' "$XDG_CONFIG_HOME/lsan-canary.log"; then
             echo "LSan canary failed: expected the injected leak and exit 23, got $canary_status"
             exit 1
           fi
