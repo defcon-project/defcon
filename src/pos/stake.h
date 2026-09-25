@@ -60,6 +60,12 @@ struct StakeSkipReport
     CAmount Total() const;
 };
 
+struct StakeWalletInfo
+{
+    uint64_t weight{0};
+    StakeSkipReport excluded;
+};
+
 /**
  * The part of a report that will not resolve on its own.
  *
@@ -168,6 +174,12 @@ class CStakeWallet
         std::string name;
         Consensus::Params params;
 
+        uint64_t GetStakeWeight(int64_t nTime, int nHeight, const std::vector<COutput>* coins) const;
+        StakeSkipReport ExplainExcludedCoins(int64_t nTime, int nHeight, const std::vector<COutput>* coins) const;
+        bool SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight,
+                                  std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet,
+                                  CAmount& nValueRet, const std::vector<COutput>* coins) const;
+
     public:
         static constexpr int SHORTDELAY = 2500;
         static constexpr int LARGEDELAY = 10000;
@@ -217,6 +229,12 @@ class CStakeWallet
          * loop does: age is measured against it, not against the wall clock.
          */
         StakeSkipReport ExplainExcludedCoins(int64_t nTime, int nHeight) const;
+
+        /** Weight and exclusions from one available-coin list, in its original
+         * order. The list is local to this call, not a cached or atomic chain
+         * snapshot. The standalone selection/report entry points are unchanged.
+         */
+        StakeWalletInfo GetStakingInfo(int64_t nTime, int nHeight) const;
 
         /**
          * The time of the block that contains `coin`, or 0 when there is none

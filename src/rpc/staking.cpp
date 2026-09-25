@@ -123,14 +123,15 @@ static RPCHelpMan getstakinginfo()
             continue;
 
         // Resolved from the height being mined, which is the one after the
-        // tip and the same height ExplainExcludedCoins is given below. Read a
+        // tip and the same height the exclusion report uses. Read a
         // block apart, the two halves of this answer could describe different
         // rules across an activation height -- which is why both are given the
         // one snapshot taken above rather than each reading the tip again.
         //
-        // No cs_main here: GetStakeWeight takes cs_wallet and reaches the chain
+        // No cs_main here: GetStakingInfo takes cs_wallet and reaches the chain
         // from underneath it, which is the order the rest of the tree keeps.
-        nWeight = wallets_snapshot[y].GetStakeWeight(tip_time, tip_height + 1);
+        const StakeWalletInfo info = wallets_snapshot[y].GetStakingInfo(tip_time, tip_height + 1);
+        nWeight = info.weight;
         lastCoinStakeSearchInterval = this_wallet->nLastCoinStakeSearchTime;
 
         int64_t nTargetSpacing = consensusParams.posTargetSpacing;
@@ -177,10 +178,10 @@ static RPCHelpMan getstakinginfo()
         // A full balance next to a weight of zero used to have no explanation
         // anywhere. Report what the rules held back, and only what they held
         // back, so an empty field means there is nothing to explain.
-        // The tip's time and the height after it, matching GetStakeWeight above:
+        // The tip's time and the height after it, matching the weight above:
         // age is measured against a candidate block, and the tip's timestamp is
         // the closest one the node can state rather than guess.
-        const StakeSkipReport skipped = wallets_snapshot[y].ExplainExcludedCoins(tip_time, tip_height + 1);
+        const StakeSkipReport& skipped = info.excluded;
         if (skipped.Total() > 0) {
             UniValue excluded(UniValue::VOBJ);
             if (skipped.immature > 0)   excluded.pushKV("immature", ValueFromAmount(skipped.immature));
