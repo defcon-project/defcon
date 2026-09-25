@@ -20,8 +20,8 @@
 #include <cstring>
 #include <memory>
 
-#include <QCheckBox>
 #include <QApplication>
+#include <QCheckBox>
 #include <QClipboard>
 #include <QHeaderView>
 #include <QLineEdit>
