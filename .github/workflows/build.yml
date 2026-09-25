@@ -329,6 +329,29 @@ jobs:
           LSAN_OPTIONS=exitcode=23 LD_PRELOAD="$LSAN_RUNTIME" \
             ./src/qt/test/test_defcon-qt --suite=MasternodeListTests \
               repeatedFiltering filteredRowsKeepOrderAndIdentity
+          # Prove that this runtime detects leaks in this Qt executable.
+          # Keep the intentional leak confined to a separate preload/run.
+          cat > "$XDG_CONFIG_HOME/lsan-canary.c" <<'C'
+          #include <stdlib.h>
+          __attribute__((constructor, noinline)) static void lsan_canary(void)
+          {
+              void *leak = malloc(12345);
+              __asm__ volatile("" : : "r"(leak) : "memory");
+          }
+          C
+          gcc -shared -fPIC -O0 -g -o "$XDG_CONFIG_HOME/lsan-canary.so" \
+            "$XDG_CONFIG_HOME/lsan-canary.c"
+          canary_status=0
+          LSAN_OPTIONS=exitcode=23 LD_PRELOAD="$LSAN_RUNTIME:$XDG_CONFIG_HOME/lsan-canary.so" \
+            ./src/qt/test/test_defcon-qt --suite=MasternodeListTests \
+              repeatedFiltering filteredRowsKeepOrderAndIdentity \
+              > "$XDG_CONFIG_HOME/lsan-canary.log" 2>&1 || canary_status=$?
+          cat "$XDG_CONFIG_HOME/lsan-canary.log"
+          if [[ "$canary_status" -ne 23 ]] || \
+             ! grep -F 'Direct leak of 12345 byte(s) in 1 object(s)' "$XDG_CONFIG_HOME/lsan-canary.log"; then
+            echo "LSan canary failed: expected the injected leak and exit 23, got $canary_status"
+            exit 1
+          fi
         shell: bash
 
       # Functional tests: a named gate, not the whole runner.
