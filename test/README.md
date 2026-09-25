@@ -47,11 +47,12 @@ that is not compiled (for example a wallet suite in a build without wallet suppo
 does not silently pass. On Linux, use a temporary `XDG_CONFIG_HOME` to isolate the
 settings that GUI tests write.
 
-The linux64 CI gate runs the complete `MasternodeListTests` suite, then repeats the
-two filtering/ordering cases with LeakSanitizer. This is targeted GUI coverage:
-the inherited `WalletTests` suite still has a known fatal failure, and the full Qt
-suite is not yet gated. The leak check deliberately overrides the generic
-`libQt5Widgets` suppression so table-item leaks remain visible.
+The linux64 CI gate runs the complete `WalletTests` and `MasternodeListTests`
+suites, then repeats the two masternode filtering/ordering cases with
+LeakSanitizer. This is targeted GUI coverage; the full Qt suite is not yet gated.
+The leak check deliberately overrides the generic `libQt5Widgets` suppression so
+table-item leaks remain visible, and a separate intentional-leak canary verifies
+that detection is active.
 
 ### Functional tests
 
