@@ -485,13 +485,6 @@ bool PaysToKey(const CScript& script, const CPubKey& pubkey)
         return false;
     }
 }
-
-//! Upper bounds used to fit a coinstake to the room left in its block: a
-//! signed input with an uncompressed key, and a pay-to-pubkey output.
-constexpr size_t COINSTAKE_INPUT_BYTES{180};
-constexpr size_t COINSTAKE_OUTPUT_BYTES{45};
-//! Version, lock time and the counts of an otherwise empty transaction.
-constexpr size_t COINSTAKE_FIXED_BYTES{16};
 } // namespace
 
 /**

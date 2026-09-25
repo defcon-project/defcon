@@ -2538,15 +2538,15 @@ static RPCHelpMan combineoutputs()
                 below_floor |= output_size > 0 && out.nValue < consensus.stakeValueRange[0];
                 on_collateral |= is_collateral_amount(out.nValue);
             }
-            if (below_floor && pieces > 1) {
-                --pieces;
-            } else if (on_collateral) {
-                ++pieces;
-            } else {
+            const CombinePieceStep step = NextCombinePieceStep(below_floor, on_collateral, pieces);
+            if (step == CombinePieceStep::Done) break;
+            tx.reset();
+            if (step == CombinePieceStep::Fail) {
+                failure = "the batch, less its fee, is under the stakeable floor";
                 break;
             }
+            pieces += step == CombinePieceStep::Fewer ? -1 : 1;
             failure = "could not lay the batch out in stakeable pieces";
-            tx.reset();
         }
 
         if (!tx) {

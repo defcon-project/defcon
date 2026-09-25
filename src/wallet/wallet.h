@@ -98,6 +98,22 @@ static const bool DEFAULT_WALLETBROADCAST = true;
 static const bool DEFAULT_DISABLE_WALLET = false;
 //! -stakecombine default: a coinstake also spends the winning key's small outputs
 static const bool DEFAULT_STAKE_COMBINE = true;
+
+//! combineoutputs lays a batch out in `pieces` equal outputs with the fee taken
+//! out of them, then looks at the result. What it tries next:
+enum class CombinePieceStep {
+    Done,  //!< every piece can stake, and none lands on a collateral amount
+    Fewer, //!< the fee took a piece under the stakeable floor: one piece fewer
+    More,  //!< a piece landed on a collateral amount: one piece more
+    Fail,  //!< a single piece under the floor: the batch, less its fee, cannot
+           //!< make one stakeable output, and is not sent under the floor
+};
+inline CombinePieceStep NextCombinePieceStep(bool below_floor, bool on_collateral, int64_t pieces)
+{
+    if (below_floor) return pieces > 1 ? CombinePieceStep::Fewer : CombinePieceStep::Fail;
+    if (on_collateral) return CombinePieceStep::More;
+    return CombinePieceStep::Done;
+}
 //! -maxtxfee default
 static const CAmount DEFAULT_TRANSACTION_MAXFEE = COIN / 10;
 //! Discourage users to set fees higher than this amount (in satoshis) per kB

@@ -20,6 +20,20 @@ using valtype = std::vector<unsigned char>;
 static constexpr size_t MAX_STAKE_COMBINE_INPUTS{20};
 /** The most pieces one coinstake lays its credit out in. */
 static constexpr size_t MAX_STAKE_SPLIT_OUTPUTS{10};
+/**
+ * Upper bounds used to fit a coinstake to the room left in its block.
+ *
+ * An input: outpoint (36), script length (1), a push of the largest DER
+ * signature with its hash type (1 + 73) and of an uncompressed public key
+ * (1 + 65), sequence (4) -- 181 bytes. An output: value (8), script length (1)
+ * and a pay-to-pubkey script with an uncompressed key (1 + 65 + 1) -- 76
+ * bytes. The kernel's key can be uncompressed, and every piece of a split
+ * pays to the kernel's own script.
+ */
+static constexpr size_t COINSTAKE_INPUT_BYTES{181};
+static constexpr size_t COINSTAKE_OUTPUT_BYTES{76};
+/** Version and type, lock time and the counts of an otherwise empty transaction. */
+static constexpr size_t COINSTAKE_FIXED_BYTES{16};
 /** The smallest target size, where the network's own floor is lower or absent. */
 static constexpr CAmount MIN_STAKE_TARGET{20000 * COIN};
 /**

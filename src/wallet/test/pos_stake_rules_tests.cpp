@@ -686,4 +686,50 @@ BOOST_FIXTURE_TEST_CASE(a_watch_only_output_is_never_offered_as_a_kernel, TestCh
     BOOST_CHECK_EQUAL(chosen.count({wtx, 1}), 0U);
 }
 
+BOOST_AUTO_TEST_CASE(the_coinstake_size_bounds_hold_for_an_uncompressed_key)
+{
+    // The kernel's key can be uncompressed, and every piece of a split pays to
+    // the kernel's own script. A bound that assumed a compressed key let a
+    // nearly full block take more combined inputs than fit, and the stake
+    // attempt was then lost at the final size check.
+    CKey key;
+    key.MakeNewKey(/*fCompressed=*/false);
+    const CPubKey pubkey = key.GetPubKey();
+    BOOST_REQUIRE(!pubkey.IsCompressed());
+    const CScript pay_to_pubkey = CScript() << ToByteVector(pubkey) << OP_CHECKSIG;
+    // The largest DER signature with its hash type, then the key: a spend of a
+    // pay-to-pubkey-hash output, the larger of the two input forms.
+    const CScript script_sig = CScript() << std::vector<unsigned char>(73, 0x30) << ToByteVector(pubkey);
+
+    for (const size_t inputs : {size_t{1}, size_t{2}, MAX_STAKE_COMBINE_INPUTS}) {
+        CMutableTransaction tx;
+        for (size_t i = 0; i < inputs; ++i) {
+            tx.vin.emplace_back(COutPoint(uint256S(strprintf("%064x", i + 1)), 1), script_sig);
+        }
+        tx.vout.emplace_back(0, CScript()); // the coinstake's empty first output
+        for (size_t k = 0; k < MAX_STAKE_SPLIT_OUTPUTS + 2; ++k) {
+            tx.vout.emplace_back(10000 * COIN, pay_to_pubkey);
+        }
+        const size_t actual = ::GetSerializeSize(CTransaction(tx), PROTOCOL_VERSION);
+        const size_t bound = COINSTAKE_FIXED_BYTES + inputs * COINSTAKE_INPUT_BYTES +
+                             (MAX_STAKE_SPLIT_OUTPUTS + 3) * COINSTAKE_OUTPUT_BYTES;
+        BOOST_CHECK_MESSAGE(actual <= bound, strprintf("%u inputs: %u bytes, bound %u", inputs, actual, bound));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(a_combine_batch_is_never_sent_under_the_stakeable_floor)
+{
+    // combineoutputs with an output size takes the fee out of the pieces. One
+    // piece fewer mends a piece the fee took under the floor; a single piece
+    // under it cannot be mended, and the batch fails rather than send an output
+    // that cannot stake. Regtest's floor is zero, so the functional test cannot
+    // reach this: the rule is pinned here.
+    BOOST_CHECK(NextCombinePieceStep(false, false, 3) == CombinePieceStep::Done);
+    BOOST_CHECK(NextCombinePieceStep(true, false, 3) == CombinePieceStep::Fewer);
+    BOOST_CHECK(NextCombinePieceStep(true, false, 2) == CombinePieceStep::Fewer);
+    BOOST_CHECK(NextCombinePieceStep(true, false, 1) == CombinePieceStep::Fail);
+    BOOST_CHECK(NextCombinePieceStep(false, true, 1) == CombinePieceStep::More);
+    BOOST_CHECK(NextCombinePieceStep(false, true, 4) == CombinePieceStep::More);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
