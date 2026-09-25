@@ -646,4 +646,110 @@ BOOST_AUTO_TEST_CASE(orphan_cleanup_rechecks_conflicts_after_rollback)
     m_wallet.AbandonOrphanedCoinstakes();
 }
 
+// Compare the RPC's shared collection with the independent entry points and
+// with explicit amounts, so a shared filtering regression cannot pass both.
+BOOST_FIXTURE_TEST_CASE(staking_info_preserves_selection_and_exclusions, TestChain100Setup)
+{
+    for (int i = 0; i < 3; ++i) CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+    const CBlockIndex* tip = m_node.chainman->ActiveChain().Tip();
+    const CBlockIndex* old = m_node.chainman->ActiveChain()[1];
+    Consensus::Params params = Params().GetConsensus();
+    params.stakeValueRange = {10 * COIN, 50 * COIN};
+    params.regularMnCollateral = 20 * COIN;
+    params.evoMnCollateral = 40 * COIN;
+    params.stakeAgeRange = {600, 1800};
+    params.nPosKernelV2ActivationHeight = tip->nHeight + 1;
+
+    auto wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "staking-info", CreateMockWalletDatabase());
+    wallet->LoadWallet();
+    CKey held, watched;
+    held.MakeNewKey(true);
+    watched.MakeNewKey(true);
+    const CScript owned = GetScriptForDestination(PKHash(held.GetPubKey()));
+    const CScript watch = GetScriptForDestination(PKHash(watched.GetPubKey()));
+    {
+        auto* manager = wallet->GetOrCreateLegacyScriptPubKeyMan();
+        LOCK2(wallet->cs_wallet, manager->cs_KeyStore);
+        BOOST_REQUIRE(manager->AddKeyPubKey(held, held.GetPubKey()));
+        BOOST_REQUIRE(manager->AddWatchOnly(watch, 0));
+        wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+        const auto load = [&](const CMutableTransaction& tx, const CBlockIndex* block) {
+            const auto ref = MakeTransactionRef(tx);
+            BOOST_REQUIRE(wallet->LoadToWallet(ref->GetHash(), [&](CWalletTx& wtx, bool) {
+                wtx.tx = ref;
+                wtx.m_confirm = {CWalletTx::CONFIRMED, block->nHeight, block->GetBlockHash(), 0};
+                return true;
+            }));
+        };
+        CMutableTransaction tx;
+        tx.vin.emplace_back(COutPoint(uint256S("01"), 0));
+        // One tx fixes the relative order of the eligible 10 and 15 outputs.
+        for (CAmount amount : {5, 10, 15, 20, 35, 50, 60, 0, 13}) tx.vout.emplace_back(amount * COIN, owned);
+        tx.vout.emplace_back(7 * COIN, watch);
+        tx.vout.emplace_back(25 * COIN, watch);
+        load(tx, old);
+        wallet->LockCoin(COutPoint(tx.GetHash(), 8));
+
+        CMutableTransaction immature;
+        immature.vin.emplace_back(COutPoint(uint256S("02"), 0));
+        immature.vout.emplace_back();
+        immature.vout.back().SetEmpty();
+        immature.vout.emplace_back(17 * COIN, owned);
+        load(immature, tip);
+
+        CMutableTransaction edge;
+        edge.vin.emplace_back(COutPoint(uint256S("03"), 0));
+        edge.vout.emplace_back(23 * COIN, owned);
+        // Available to spend, still one block short of staking maturity.
+        load(edge, m_node.chainman->ActiveChain()[tip->nHeight - COINBASE_MATURITY]);
+        wallet->AutoLockMasternodeCollaterals();
+    }
+    CStakeWallet staker(wallet, params);
+    const CAmount balance = wallet->GetBalance().m_mine_trusted;
+    BOOST_REQUIRE_EQUAL(balance, 231 * COIN);
+    const auto check_report = [](const StakeSkipReport& a, const StakeSkipReport& b) {
+        BOOST_CHECK_EQUAL(a.immature, b.immature);
+        BOOST_CHECK_EQUAL(a.bls, b.bls);
+        BOOST_CHECK_EQUAL(a.below_min, b.below_min);
+        BOOST_CHECK_EQUAL(a.above_max, b.above_max);
+        BOOST_CHECK_EQUAL(a.collateral, b.collateral);
+        BOOST_CHECK_EQUAL(a.too_young, b.too_young);
+        BOOST_CHECK_EQUAL(a.too_old, b.too_old);
+    };
+    for (int age : {599, 600, 1800, 1801}) {
+        for (int height : {params.nPosKernelV2ActivationHeight - 1, params.nPosKernelV2ActivationHeight}) {
+            for (CAmount target : {CAmount{0}, COIN, 12 * COIN, 25 * COIN, balance}) {
+                wallet->nReserveBalance = balance - target;
+                const int64_t time = old->GetBlockTime() + age;
+                const auto info = staker.GetStakingInfo(time, height);
+                BOOST_CHECK_EQUAL(info.weight, staker.GetStakeWeight(time, height));
+                check_report(info.excluded, staker.ExplainExcludedCoins(time, height));
+                const bool old_age = age > 1800 && height < params.nPosKernelV2ActivationHeight;
+                const bool eligible = age >= 600 && !old_age;
+                const CAmount expected = !eligible || target == 0 ? 0 : target == COIN ? 10 * COIN : target <= 25 * COIN ? 25 * COIN : 110 * COIN;
+                BOOST_CHECK_EQUAL(info.weight, expected);
+                BOOST_CHECK_EQUAL(info.excluded.immature, 40 * COIN);
+                BOOST_CHECK_EQUAL(info.excluded.below_min, 12 * COIN);
+                BOOST_CHECK_EQUAL(info.excluded.above_max, 60 * COIN);
+                BOOST_CHECK_EQUAL(info.excluded.collateral, 20 * COIN);
+                BOOST_CHECK_EQUAL(info.excluded.bls, 0);
+                BOOST_CHECK_EQUAL(info.excluded.too_young, age < 600 ? 135 * COIN : 0);
+                BOOST_CHECK_EQUAL(info.excluded.too_old, old_age ? 135 * COIN : 0);
+            }
+        }
+    }
+    wallet->nReserveBalance = balance + COIN;
+    BOOST_CHECK_EQUAL(staker.GetStakingInfo(old->GetBlockTime() + 600, tip->nHeight + 1).weight, 0U);
+    // The zero-valued input accepted by regtest must not narrow the report.
+    params.stakeValueRange = {0, MAX_MONEY};
+    CStakeWallet regtest_staker(wallet, params);
+    wallet->nReserveBalance = 0;
+    const auto regtest = regtest_staker.GetStakingInfo(old->GetBlockTime() + 600, tip->nHeight + 1);
+    BOOST_CHECK_EQUAL(regtest.weight, regtest_staker.GetStakeWeight(old->GetBlockTime() + 600, tip->nHeight + 1));
+    check_report(regtest.excluded, regtest_staker.ExplainExcludedCoins(old->GetBlockTime() + 600, tip->nHeight + 1));
+    CStakeWallet expired(nullptr, params);
+    BOOST_CHECK_EQUAL(expired.GetStakingInfo(0, 0).weight, 0U);
+    BOOST_CHECK_EQUAL(expired.GetStakingInfo(0, 0).excluded.Total(), 0);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
