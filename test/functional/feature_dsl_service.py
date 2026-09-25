@@ -13,8 +13,10 @@ epoch's cutoff report it MISSED. Everything observed here is the off-chain
 pool; no consensus rule is exercised.
 """
 
+import struct
 import time
 
+from test_framework.messages import hash256, ser_string
 from test_framework.test_framework import DashTestFramework
 from test_framework.util import assert_equal, force_finish_mnsync
 
@@ -32,6 +34,14 @@ class DSLServiceTest(DashTestFramework):
         # advances instead of the guard freezing the epoch.
         self.extra_args = [["-testactivationheight=dsl@1"]] * 8
         self.set_dash_test_params(8, 7, extra_args=self.extra_args)
+
+    def has_signature(self, node, epoch):
+        # Match the producer-side barrier in feature_dsl_sign_wait.py. Two
+        # probes detect a recovered signature regardless of its message hash.
+        base = bytes.fromhex(node.getblockhash(epoch * EPOCH_INTERVAL))[::-1]
+        request_id = hash256(ser_string(b"dslcommitment") + struct.pack("<I", epoch) + base)[::-1].hex()
+        return (node.quorum("isconflicting", 100, request_id, "00" * 32) or
+                node.quorum("isconflicting", 100, request_id, "11" * 32))
 
     def run_test(self):
         node = self.nodes[0]
@@ -108,7 +118,12 @@ class DSLServiceTest(DashTestFramework):
             self.generate(node, EPOCH_INTERVAL - CUTOFF - 2, sync_fun=lambda: self.sync_blocks(alive))
             self.bump_mocktime(10, nodes=alive)
             time.sleep(3)
-            self.generate(node, 2, sync_fun=lambda: self.sync_blocks(alive))
+            # The last signing tick must finish before mining the boundary.
+            # A delay at +22 cannot establish that work triggered at +23 ran.
+            self.generate(node, 1, sync_fun=lambda: self.sync_blocks(alive))
+            epoch = node.getblockcount() // EPOCH_INTERVAL
+            self.wait_until(lambda: self.has_signature(node, epoch), timeout=60)
+            self.generate(node, 1, sync_fun=lambda: self.sync_blocks(alive))
             block = node.getblock(node.getbestblockhash(), 2)
             dsl_txs = [tx for tx in block["tx"] if tx.get("type") == 10]
             if dsl_txs:
