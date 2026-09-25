@@ -314,6 +314,14 @@ class V23JointActivationPosMnTest(DashTestFramework):
         enough for the minter to use both. For the last block the clock now
         moves 2 s, which opens at most one, and the loop polls instead of
         sleeping, so staking is switched off as soon as the target lands.
+
+        The deadline for one block is a budget of search times, not of wall
+        clock: a 2 s step opens a quarter as many per real second as an 8 s
+        step, so the last block gets four times the wall-clock budget. With one
+        budget for both, two runs ended on a last block late in the chain, where
+        the wallet's expected time had grown to ~76 mock seconds: the staker had
+        tried 71 of the 85 search times the budget held and found none, a ~2 %
+        outcome per step that some 120 such steps a run turn into the rule.
         """
         assert node.getblockcount() <= height, (node.getblockcount(), height)
         if node.getblockcount() == height:
@@ -322,14 +330,16 @@ class V23JointActivationPosMnTest(DashTestFramework):
         last_progress = deadline = None
         while node.getblockcount() < height:
             now = node.getblockcount()
+            step = STAKE_CLOCK_STEP if height - now > 1 else LAST_BLOCK_CLOCK_STEP
+            budget = STAKE_TIMEOUT * self.options.timeout_factor * (STAKE_CLOCK_STEP // step)
             if now != last_progress:
                 last_progress = now
-                deadline = time.time() + STAKE_TIMEOUT * self.options.timeout_factor
+                deadline = time.time() + budget
                 if now % 50 == 0:
                     self.mark("staking towards %d" % height)
-            assert time.time() < deadline, "no block above %d in %d s; getstakinginfo: %s; debug.log tail: %s" % (
-                now, STAKE_TIMEOUT, self.staking_info(node), self.tail_debug_log(node))
-            self.advance_clock(STAKE_CLOCK_STEP if height - now > 1 else LAST_BLOCK_CLOCK_STEP)
+            assert time.time() < deadline, "no block above %d in %d s (clock step %d s); getstakinginfo: %s; debug.log tail: %s" % (
+                now, budget, step, self.staking_info(node), self.tail_debug_log(node))
+            self.advance_clock(step)
             poll_until = time.time() + STAKE_CLOCK_SLEEP
             while time.time() < poll_until and node.getblockcount() < height:
                 time.sleep(0.2)
