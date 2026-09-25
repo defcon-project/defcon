@@ -306,10 +306,9 @@ jobs:
             --catch_system_errors=no -l test_suite
         shell: bash
 
-      # Run the whole masternode-list suite, including future cases. The
-      # inherited WalletTests suite still has a fatal failure, so the Qt
-      # runner supports explicit suite selection without weakening its default.
-      - name: Qt masternode-list tests and leak check
+      # Run the wallet and whole masternode-list suites, including future cases.
+      # Explicit suite selection leaves the default full Qt run unchanged.
+      - name: Qt wallet and masternode-list tests and leak check
         if: needs.changes.outputs.code == 'true'
         run: |
           BASE_OUTDIR="/output"
@@ -321,6 +320,7 @@ jobs:
           export QT_QPA_PLATFORM=minimal
           export XDG_CONFIG_HOME="$(mktemp -d)"
           trap 'rm -rf "$XDG_CONFIG_HOME"' EXIT
+          ./src/qt/test/test_defcon-qt --suite=WalletTests
           ./src/qt/test/test_defcon-qt --suite=MasternodeListTests
           LSAN_RUNTIME="$(gcc -print-file-name=liblsan.so)"
           test -f "$LSAN_RUNTIME"

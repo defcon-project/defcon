@@ -111,13 +111,10 @@ int main(int argc, char* argv[])
     app.node().context()->args = &gArgs;     // Make gArgs available in the NodeContext
     AppTests app_tests(app);
     run(app_tests);
-    // Pure arithmetic, so it runs on every platform plugin including `minimal`
-    // and is placed ahead of the suites that are known to die on this fork.
+    // Pure arithmetic, so it runs on every platform plugin including `minimal`.
     GUIUtilTests guiutil_tests;
     run(guiutil_tests);
 #ifdef ENABLE_WALLET
-    // Ahead of the wallet suite on purpose: that one still dies with a fatal
-    // error on this fork, and nothing queued behind it gets to run.
     MasternodeListTests masternode_list_tests(app.node());
     run(masternode_list_tests);
 #endif

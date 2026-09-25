@@ -6,6 +6,7 @@
 #include <qt/test/util.h>
 
 #include <interfaces/chain.h>
+#include <interfaces/handler.h>
 #include <interfaces/node.h>
 #include <qt/bitcoinamountfield.h>
 #include <qt/clientmodel.h>
@@ -111,6 +112,9 @@ void TestGUI(interfaces::Node& node)
     node.setContext(&test.m_node);
     std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(node.context()->chain.get(), node.context()->coinjoin_loader.get(), "", CreateMockWalletDatabase());
     AddWallet(wallet);
+    // QCOMPARE/QVERIFY return early on failure. Unregister the wallet before
+    // the test chain destroys the CoinJoin loader it refers to.
+    auto wallet_cleanup = interfaces::MakeHandler([&wallet] { RemoveWallet(wallet, std::nullopt); });
     wallet->LoadWallet();
     {
         auto spk_man = wallet->GetOrCreateLegacyScriptPubKeyMan();
@@ -194,7 +198,7 @@ void TestGUI(interfaces::Node& node)
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("payment_header")->text(), QString("Payment information"));
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("uri_tag")->text(), QString("URI:"));
             QString uri = receiveRequestDialog->QObject::findChild<QLabel*>("uri_content")->text();
-            QCOMPARE(uri.count("dash:"), 2);
+            QCOMPARE(uri.count("defcon:"), 2);
             QCOMPARE(receiveRequestDialog->QObject::findChild<QLabel*>("address_tag")->text(), QString("Address:"));
             QVERIFY(address.isEmpty());
             address = receiveRequestDialog->QObject::findChild<QLabel*>("address_content")->text();
@@ -246,7 +250,7 @@ void TestGUI(interfaces::Node& node)
     QPushButton* removeRequestButton = receiveCoinsDialog.findChild<QPushButton*>("removeRequestButton");
     removeRequestButton->click();
     QCOMPARE(requestTableModel->rowCount({}), currentRowCount-1);
-    RemoveWallet(wallet, std::nullopt);
+    wallet_cleanup.reset();
 
     // Check removal from wallet
     QCOMPARE(walletModel.wallet().getAddressReceiveRequests().size(), size_t{0});
