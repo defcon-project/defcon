@@ -423,6 +423,7 @@ jobs:
             feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
             feature_llmq_is_nonrotation.py         # an InstantSend lock on a quorum that does not rotate
             feature_llmq_is_nonrotated_verify.py   # the receiving side of the same: a non-masternode accepts a lock signed by a quorum older than one cycle (#238)
+            feature_llmq_is_named_quorum_window.py # and one signed by the quorum that has just left the signing-active set, right after a new commitment
             feature_superblock_retirement.py       # a test chain with the superblock spork on: getblocktemplate at the retirement height, and the regtest alias
             feature_v23_bundle_heights.py          # the v23 bundle's own regtest name on a running chain: three of its heights observed where the one number puts them
             feature_llmq_q60_proto_floor.py        # the peer protocol floor from the formation lead, against the real predecessor version

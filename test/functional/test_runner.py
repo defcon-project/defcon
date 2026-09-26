@@ -114,6 +114,7 @@ BASE_SCRIPTS = [
     'p2p_instantsend.py',
     'feature_llmq_is_nonrotation.py',
     'feature_llmq_is_nonrotated_verify.py',
+    'feature_llmq_is_named_quorum_window.py',
     'wallet_basic.py --legacy-wallet',
     'wallet_basic.py --descriptors',
     'wallet_labels.py --legacy-wallet',
