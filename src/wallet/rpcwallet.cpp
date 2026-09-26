@@ -2336,6 +2336,258 @@ static RPCHelpMan lockunspent()
     };
 }
 
+static RPCHelpMan combineoutputs()
+{
+    return RPCHelpMan{"combineoutputs",
+        "\nCombine this wallet's small outputs into a few larger ones, in batches of one transaction each.\n"
+        "Only spendable, unlocked outputs below max_amount are used, and never one of exactly a masternode collateral amount. "
+        "Every batch pays to one new address of this wallet and pays its own fee out of the combined amount, so nothing "
+        "else in the wallet is touched. Spending outputs of several addresses in one transaction links those addresses on the chain.\n"
+        "By default nothing is sent: the batches are only reported, with their fees (dry_run).\n"
+        "A staking wallet combines its winning key's small outputs by itself when it wins; this is for the outputs that "
+        "never win, or sit at other addresses.\n" +
+            HELP_REQUIRING_PASSPHRASE,
+        {
+            {"dry_run", RPCArg::Type::BOOL, RPCArg::Default{true}, "Only report the batches; send nothing"},
+            {"max_amount", RPCArg::Type::AMOUNT, RPCArg::DefaultHint{"the smallest stakeable amount"}, "Only outputs below this amount; at most the masternode collateral amount"},
+            {"min_amount", RPCArg::Type::AMOUNT, RPCArg::Default{0}, "Only outputs of at least this amount"},
+            {"batch_size", RPCArg::Type::NUM, RPCArg::Default{500}, "Inputs per transaction, 2 to 600: a transaction has to stay under the 100,000-byte standard size"},
+            {"output_size", RPCArg::Type::AMOUNT, RPCArg::Default{0}, "0 pays each batch to one output. Otherwise equal outputs of about this size, each stakeable"},
+            {"minconf", RPCArg::Type::NUM, RPCArg::Default{1}, "Only outputs with at least this many confirmations"},
+        },
+        RPCResult{
+            RPCResult::Type::OBJ, "", "",
+            {
+                {RPCResult::Type::BOOL, "dry_run", "Whether this only reported"},
+                {RPCResult::Type::NUM, "candidates", "Outputs that qualified"},
+                {RPCResult::Type::STR_AMOUNT, "candidate_amount", "Their total"},
+                {RPCResult::Type::STR, "address", /*optional=*/true, "The address every batch paid to. Absent in a dry run"},
+                {RPCResult::Type::ARR, "batches", "",
+                {
+                    {RPCResult::Type::OBJ, "", "",
+                    {
+                        {RPCResult::Type::NUM, "inputs", "Outputs spent by this batch"},
+                        {RPCResult::Type::STR_AMOUNT, "amount_in", "Their total"},
+                        {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The fee, paid out of amount_in"},
+                        {RPCResult::Type::NUM, "size", /*optional=*/true, "Transaction size in bytes; estimated in a dry run"},
+                        {RPCResult::Type::ARR, "outputs", /*optional=*/true, "The amounts paid", {{RPCResult::Type::STR_AMOUNT, "", ""}}},
+                        {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction sent, when not a dry run"},
+                        {RPCResult::Type::STR, "error", /*optional=*/true, "Why this batch was not built or not accepted. A send stops at the first such batch"},
+                    }},
+                }},
+            }
+        },
+        RPCExamples{
+            "\nSee what would be combined, and at what fee\n"
+            + HelpExampleCli("combineoutputs", "") +
+            "\nCombine, in batches of 500\n"
+            + HelpExampleCli("combineoutputs", "false") +
+            "\nCombine everything below 5000 into outputs of about 2 million\n"
+            + HelpExampleCli("-named combineoutputs", "dry_run=false max_amount=5000 output_size=2000000")
+        },
+        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
+    if (!pwallet) return NullUniValue;
+
+    pwallet->BlockUntilSyncedToCurrentChain();
+
+    const Consensus::Params& consensus = Params().GetConsensus();
+    const auto is_collateral_amount = [&](CAmount value) {
+        return value == consensus.regularMnCollateral || value == consensus.evoMnCollateral;
+    };
+
+    const bool dry_run = request.params[0].isNull() ? true : request.params[0].get_bool();
+
+    // Nothing at or above a collateral amount: a masternode's collateral is
+    // locked by the wallet, but an output of that size may be one about to be
+    // registered, and nothing that large needs combining.
+    const CAmount collateral_cap = std::min(consensus.regularMnCollateral, consensus.evoMnCollateral);
+    const CAmount max_amount = request.params[1].isNull()
+        ? (consensus.stakeValueRange[0] > 0 ? consensus.stakeValueRange[0] : collateral_cap)
+        : AmountFromValue(request.params[1]);
+    if (max_amount <= 0 || max_amount > collateral_cap) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("max_amount must be above zero and at most the masternode collateral amount (%s)", FormatMoney(collateral_cap)));
+    }
+    const CAmount min_amount = request.params[2].isNull() ? 0 : AmountFromValue(request.params[2]);
+    if (min_amount >= max_amount) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "min_amount must be below max_amount");
+    }
+    const int batch_size = request.params[3].isNull() ? 500 : request.params[3].get_int();
+    if (batch_size < 2 || batch_size > 600) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "batch_size must be between 2 and 600");
+    }
+    const CAmount output_size = request.params[4].isNull() ? 0 : AmountFromValue(request.params[4]);
+    if (output_size != 0 && (output_size < consensus.stakeValueRange[0] || output_size > consensus.stakeValueRange[1])) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("output_size must be 0 or a stakeable amount (%s to %s)",
+                                                            FormatMoney(consensus.stakeValueRange[0]), FormatMoney(consensus.stakeValueRange[1])));
+    }
+    const int min_conf = request.params[5].isNull() ? 1 : request.params[5].get_int();
+    if (min_conf < 0) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "minconf must not be negative");
+    }
+
+    LOCK(pwallet->cs_wallet);
+
+    if (!dry_run) {
+        if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Error: Private keys are disabled for this wallet");
+        }
+        // A wallet unlocked for staking or mixing only cannot sign a send.
+        EnsureWalletIsUnlocked(*pwallet);
+    }
+
+    // AvailableCoins leaves out what is spent, what is locked -- lockunspent
+    // and the masternode collaterals the wallet locks itself -- and generated
+    // outputs that are not yet mature.
+    struct Candidate {
+        COutPoint outpoint;
+        CAmount value;
+    };
+    std::vector<Candidate> candidates;
+    CAmount candidate_amount = 0;
+    {
+        std::vector<COutput> coins;
+        pwallet->AvailableCoins(coins);
+        for (const COutput& out : coins) {
+            if (!out.fSpendable || !out.fSolvable || out.nDepth < min_conf) continue;
+            const CTxOut& txout = out.tx->tx->vout[out.i];
+            if (txout.nValue < min_amount || txout.nValue >= max_amount) continue;
+            if (is_collateral_amount(txout.nValue)) continue;
+            std::vector<std::vector<unsigned char>> solutions;
+            const TxoutType type = Solver(txout.scriptPubKey, solutions);
+            if (type != TxoutType::PUBKEY && type != TxoutType::PUBKEYHASH) continue;
+            candidates.push_back({COutPoint(out.tx->GetHash(), out.i), txout.nValue});
+            candidate_amount += txout.nValue;
+        }
+    }
+    // Smallest first, so a batch that stops short takes the dust before
+    // anything larger. Stable, so equal amounts keep the wallet's order.
+    std::stable_sort(candidates.begin(), candidates.end(),
+                     [](const Candidate& a, const Candidate& b) { return a.value < b.value; });
+
+    UniValue result(UniValue::VOBJ);
+    result.pushKV("dry_run", dry_run);
+    result.pushKV("candidates", static_cast<uint64_t>(candidates.size()));
+    result.pushKV("candidate_amount", ValueFromAmount(candidate_amount));
+
+    // One destination for the whole call: a dry run sizes the transaction with
+    // a script of the same length and takes no key from the pool.
+    CScript destination = GetScriptForDestination(PKHash());
+    if (!dry_run && candidates.size() >= 2) {
+        CTxDestination dest;
+        bilingual_str error;
+        if (!pwallet->GetNewDestination("combined", dest, error)) {
+            throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, error.original);
+        }
+        destination = GetScriptForDestination(dest);
+        result.pushKV("address", EncodeDestination(dest));
+    }
+
+    UniValue batches(UniValue::VARR);
+    // At least two outputs left, or there is nothing to combine: a lone
+    // leftover is not sent on its own. With batch_size >= 2 every batch this
+    // admits holds at least two.
+    for (size_t start = 0; start + 1 < candidates.size(); start += batch_size) {
+        const size_t end = std::min(candidates.size(), start + batch_size);
+
+        CCoinControl coin_control;
+        // Exactly the chosen outputs: nothing else is added, and all of them go in.
+        coin_control.fAllowOtherInputs = false;
+        coin_control.fRequireAllInputs = true;
+        CAmount amount_in = 0;
+        for (size_t i = start; i < end; ++i) {
+            coin_control.Select(candidates[i].outpoint);
+            amount_in += candidates[i].value;
+        }
+
+        UniValue entry(UniValue::VOBJ);
+        entry.pushKV("inputs", static_cast<uint64_t>(end - start));
+        entry.pushKV("amount_in", ValueFromAmount(amount_in));
+
+        int64_t pieces = 1;
+        if (output_size > 0) {
+            pieces = std::max<int64_t>(1, amount_in / output_size);
+            pieces = std::max<int64_t>(pieces, (amount_in + consensus.stakeValueRange[1] - 1) / consensus.stakeValueRange[1]);
+        }
+
+        // The fee comes out of the pieces, so a piece can end a little under
+        // the size asked for. One fewer piece when that takes it below the
+        // stakeable floor, one more when a piece lands on a collateral amount.
+        CTransactionRef tx;
+        CAmount fee = 0;
+        std::string failure;
+        for (int attempt = 0; attempt < 4; ++attempt) {
+            std::vector<CRecipient> recipients;
+            const CAmount each = amount_in / pieces;
+            for (int64_t k = 0; k < pieces; ++k) {
+                recipients.push_back({destination, k == 0 ? amount_in - each * (pieces - 1) : each, /*fSubtractFeeFromAmount=*/true});
+            }
+            int change_pos = -1;
+            bilingual_str error;
+            FeeCalculation fee_calc;
+            tx.reset();
+            if (!pwallet->CreateTransaction(recipients, tx, fee, change_pos, error, coin_control, fee_calc, /*sign=*/!dry_run)) {
+                failure = error.original;
+                tx.reset();
+                break;
+            }
+            bool below_floor = false;
+            bool on_collateral = false;
+            for (const CTxOut& out : tx->vout) {
+                below_floor |= output_size > 0 && out.nValue < consensus.stakeValueRange[0];
+                on_collateral |= is_collateral_amount(out.nValue);
+            }
+            const CombinePieceStep step = NextCombinePieceStep(below_floor, on_collateral, pieces);
+            if (step == CombinePieceStep::Done) break;
+            tx.reset();
+            if (step == CombinePieceStep::Fail) {
+                failure = "the batch, less its fee, is under the stakeable floor";
+                break;
+            }
+            pieces += step == CombinePieceStep::Fewer ? -1 : 1;
+            failure = "could not lay the batch out in stakeable pieces";
+        }
+
+        if (!tx) {
+            entry.pushKV("error", failure);
+            batches.push_back(entry);
+            if (!dry_run) break;
+            continue;
+        }
+
+        entry.pushKV("fee", ValueFromAmount(fee));
+        entry.pushKV("size", static_cast<uint64_t>(::GetSerializeSize(*tx, PROTOCOL_VERSION)));
+        UniValue outputs(UniValue::VARR);
+        for (const CTxOut& out : tx->vout) {
+            outputs.push_back(ValueFromAmount(out.nValue));
+        }
+        entry.pushKV("outputs", outputs);
+
+        if (!dry_run) {
+            pwallet->CommitTransaction(tx, {{"comment", "combineoutputs"}}, {} /* orderForm */);
+            const uint256 txid = tx->GetHash();
+            entry.pushKV("txid", txid.GetHex());
+            // A transaction the wallet has recorded is not one the network
+            // took: a send can return a txid for a transaction the mempool
+            // refused. Check, and if it was refused, give its inputs back to
+            // the wallet rather than leave them marked spent. A wallet that
+            // does not broadcast (-walletbroadcast=0) keeps it out on purpose.
+            if (pwallet->GetBroadcastTransactions() && !pwallet->chain().isInMempool(txid)) {
+                pwallet->AbandonTransaction(txid);
+                entry.pushKV("error", "not accepted into the mempool; abandoned, its outputs are spendable again");
+                batches.push_back(entry);
+                break;
+            }
+        }
+        batches.push_back(entry);
+    }
+    result.pushKV("batches", batches);
+    return result;
+},
+    };
+}
+
 static RPCHelpMan listlockunspent()
 {
     return RPCHelpMan{"listlockunspent",
@@ -4802,6 +5054,7 @@ static const CRPCCommand commands[] =
     { "wallet",             &abortrescan,                    },
     { "wallet",             &addmultisigaddress,             },
     { "wallet",             &backupwallet,                   },
+    { "wallet",             &combineoutputs,                 },
     { "wallet",             &createwallet,                   },
     { "wallet",             &restorewallet,                  },
     { "wallet",             &dumphdinfo,                     },
