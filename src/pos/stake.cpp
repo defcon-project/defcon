@@ -134,6 +134,30 @@ StakeEligibility CStakeWallet::ClassifyForStaking(CAmount value, int depth,
 
 StakeSkipReport CStakeWallet::ExplainExcludedCoins(int64_t nTime, int nHeight) const
 {
+    return ExplainExcludedCoins(nTime, nHeight, nullptr);
+}
+
+StakeWalletInfo CStakeWallet::GetStakingInfo(int64_t nTime, int nHeight) const
+{
+    const std::shared_ptr<CWallet> wallet = m_wallet.lock();
+    if (!wallet) return {};
+
+    // Collect the union of the selection and report ranges. In particular,
+    // regtest permits zero-value staking inputs, while the report starts at 1.
+    // COutput holds raw mapWallet pointers. Keep them alive for both consumers:
+    // removeprunedfunds, for example, can erase entries under this same lock.
+    LOCK(wallet->cs_wallet);
+    std::vector<COutput> coins;
+    wallet->AvailableCoins(coins, nullptr, std::min(CAmount{1}, params.stakeValueRange[0]),
+                           std::max(MAX_MONEY, params.stakeValueRange[1]));
+    StakeWalletInfo info;
+    info.weight = GetStakeWeight(nTime, nHeight, &coins);
+    info.excluded = ExplainExcludedCoins(nTime, nHeight, &coins);
+    return info;
+}
+
+StakeSkipReport CStakeWallet::ExplainExcludedCoins(int64_t nTime, int nHeight, const std::vector<COutput>* coins) const
+{
     const std::shared_ptr<CWallet> wallet = m_wallet.lock();
     StakeSkipReport report;
     if (!wallet) {
@@ -144,14 +168,18 @@ StakeSkipReport CStakeWallet::ExplainExcludedCoins(int64_t nTime, int nHeight) c
     // value has to reach the classifier to be counted, and AvailableCoins would
     // otherwise drop it before anything could name the reason.
     std::vector<COutput> vCoins;
-    {
+    if (!coins) {
         LOCK(wallet->cs_wallet);
         wallet->AvailableCoins(vCoins);
+        coins = &vCoins;
     }
 
-    for (const auto& output : vCoins) {
+    for (const auto& output : *coins) {
         const CWalletTx* pcoin = output.tx;
         const int i = output.i;
+        const CAmount value = pcoin->tx->vout[i].nValue;
+        // The shared list can be wider than AvailableCoins' default range.
+        if (value < 1 || value > MAX_MONEY) continue;
 
         int nDepth;
         {
@@ -161,7 +189,6 @@ StakeSkipReport CStakeWallet::ExplainExcludedCoins(int64_t nTime, int nHeight) c
 
         std::vector<valtype> vSolutions;
         const TxoutType type = Solver(pcoin->tx->vout[i].scriptPubKey, vSolutions);
-        const CAmount value = pcoin->tx->vout[i].nValue;
         const int64_t inputAge = StakeInputAge(nTime, CoinBlockTime(*pcoin), pcoin->GetTxTime());
 
         report.Add(ClassifyForStaking(value, nDepth, type, inputAge, nHeight), value);
@@ -322,6 +349,11 @@ size_t CStakeWallet::CountSpendableOutputs() const
 
 uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 {
+    return GetStakeWeight(nTime, nHeight, nullptr);
+}
+
+uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight, const std::vector<COutput>* coins) const
+{
     const std::shared_ptr<CWallet> wallet = m_wallet.lock();
     if (!wallet) return 0;
     // Choose coins to use
@@ -335,7 +367,7 @@ uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
     std::set<std::pair<const CWalletTx*,unsigned int> > setCoins;
 
     CAmount nTargetValue = nBalance - wallet->nReserveBalance;
-    if (!SelectCoinsForStaking(nTargetValue, nTime, nHeight, setCoins, nValueIn)) {
+    if (!SelectCoinsForStaking(nTargetValue, nTime, nHeight, setCoins, nValueIn, coins)) {
         return 0;
     }
 
@@ -357,22 +389,33 @@ uint64_t CStakeWallet::GetStakeWeight(int64_t nTime, int nHeight) const
 
 bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight, std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet, CAmount& nValueRet) const
 {
+    return SelectCoinsForStaking(nTargetValue, nTime, nHeight, setCoinsRet, nValueRet, nullptr);
+}
+
+bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight,
+                                      std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet,
+                                      CAmount& nValueRet, const std::vector<COutput>* coins) const
+{
     const std::shared_ptr<CWallet> wallet = m_wallet.lock();
     if (!wallet) return false;
     std::vector<COutput> vCoins;
 
-    {
+    if (!coins) {
         LOCK(wallet->cs_wallet);
         wallet->AvailableCoins(vCoins, nullptr, params.stakeValueRange[0], params.stakeValueRange[1]);
+        coins = &vCoins;
     }
 
     setCoinsRet.clear();
     nValueRet = 0;
 
-    for (const auto& output : vCoins)
+    for (const auto& output : *coins)
     {
         const CWalletTx* pcoin = output.tx;
         int i = output.i;
+        const CAmount inputValue = pcoin->tx->vout[i].nValue;
+        // Keep the selection range when consuming the wider shared list.
+        if (inputValue < params.stakeValueRange[0] || inputValue > params.stakeValueRange[1]) continue;
 
         // AvailableCoins lists watch-only outputs as well, marked not spendable,
         // and nothing below ever asked. Such a coin passes every rule that
@@ -398,7 +441,6 @@ bool CStakeWallet::SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, in
 
         std::vector<valtype> vSolutions;
         const TxoutType whichType = Solver(pcoin->tx->vout[i].scriptPubKey, vSolutions);
-        const CAmount inputValue = pcoin->tx->vout[i].nValue;
         // nTime is the block being mined, which is what CheckProofOfStake
         // measures against. It was already being passed in here and ignored,
         // while the age came from the wall clock instead.

@@ -391,8 +391,8 @@ bool MasternodeList::updateDIP3List()
 
     // Allocate once, avoiding repeated shifts of all preceding rows. Fill in
     // reverse traversal order, as insertRow(0) did, to preserve sort ties.
-    ui->tableWidgetMasternodesDIP3->setRowCount(rows.size());
-    int row_index = rows.size();
+    ui->tableWidgetMasternodesDIP3->setRowCount(static_cast<int>(rows.size()));
+    int row_index = static_cast<int>(rows.size());
     for (auto& row : rows) {
         --row_index;
         for (int column = 0; column <= COLUMN_PROTX_HASH; ++column) {

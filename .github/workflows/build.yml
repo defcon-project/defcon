@@ -306,10 +306,8 @@ jobs:
             --catch_system_errors=no -l test_suite
         shell: bash
 
-      # Run the whole masternode-list suite, including future cases. The
-      # inherited WalletTests suite still has a fatal failure, so the Qt
-      # runner supports explicit suite selection without weakening its default.
-      - name: Qt masternode-list tests and leak check
+      # Run every compiled Qt suite, including future additions.
+      - name: Qt tests and leak check
         if: needs.changes.outputs.code == 'true'
         run: |
           BASE_OUTDIR="/output"
@@ -321,14 +319,42 @@ jobs:
           export QT_QPA_PLATFORM=minimal
           export XDG_CONFIG_HOME="$(mktemp -d)"
           trap 'rm -rf "$XDG_CONFIG_HOME"' EXIT
-          ./src/qt/test/test_defcon-qt --suite=MasternodeListTests
+          ./src/qt/test/test_defcon-qt
           LSAN_RUNTIME="$(gcc -print-file-name=liblsan.so)"
           test -f "$LSAN_RUNTIME"
+          readlink -f "$LSAN_RUNTIME"
+          sha256sum "$LSAN_RUNTIME"
           # Do not inherit the generic libQt5Widgets suppression: it would
           # hide the table-item leak these cases are meant to catch.
           LSAN_OPTIONS=exitcode=23 LD_PRELOAD="$LSAN_RUNTIME" \
             ./src/qt/test/test_defcon-qt --suite=MasternodeListTests \
               repeatedFiltering filteredRowsKeepOrderAndIdentity
+          # Prove that this runtime detects leaks in this Qt executable.
+          # Keep the intentional leak confined to a separate preload/run.
+          # Use a large allocation: the old 12345-byte allocation landed at
+          # 0x627000000000, which pairs of 32-bit stack-depot IDs in liblsan
+          # could accidentally mark reachable during conservative scanning.
+          cat > "$XDG_CONFIG_HOME/lsan-canary.c" <<'C'
+          #include <stdlib.h>
+          __attribute__((constructor, noinline)) static void lsan_canary(void)
+          {
+              void *leak = malloc(1234567);
+              __asm__ volatile("" : : "r"(leak) : "memory");
+          }
+          C
+          gcc -shared -fPIC -O0 -g -o "$XDG_CONFIG_HOME/lsan-canary.so" \
+            "$XDG_CONFIG_HOME/lsan-canary.c"
+          canary_status=0
+          LSAN_OPTIONS=exitcode=23 LD_PRELOAD="$LSAN_RUNTIME:$XDG_CONFIG_HOME/lsan-canary.so" \
+            ./src/qt/test/test_defcon-qt --suite=MasternodeListTests \
+              repeatedFiltering filteredRowsKeepOrderAndIdentity \
+              > "$XDG_CONFIG_HOME/lsan-canary.log" 2>&1 || canary_status=$?
+          cat "$XDG_CONFIG_HOME/lsan-canary.log"
+          if [[ "$canary_status" -ne 23 ]] || \
+             ! grep -F 'Direct leak of 1234567 byte(s) in 1 object(s)' "$XDG_CONFIG_HOME/lsan-canary.log"; then
+            echo "LSan canary failed: expected the injected leak and exit 23, got $canary_status"
+            exit 1
+          fi
         shell: bash
 
       # Functional tests: a named gate, not the whole runner.
