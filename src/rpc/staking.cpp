@@ -48,7 +48,7 @@ static RPCHelpMan getstakinginfo()
                         {RPCResult::Type::STR_AMOUNT, "stake_target", "The size a winning coin and its reward are laid out in: split into pieces of about this size, and small outputs combined up to it. Derived from netstakeweight unless -staketarget is set"},
                         {RPCResult::Type::BOOL, "stake_target_configured", "Whether stake_target comes from -staketarget rather than from the network"},
                         {RPCResult::Type::BOOL, "stake_combine", "Whether a win also spends the same key's small outputs, at no fee (-stakecombine)"},
-                        {RPCResult::Type::NUM, "stake_outputs", "Unspent outputs this wallet can spend. Staking keeps this near the balance divided by stake_target"},
+                        {RPCResult::Type::NUM, "stake_outputs", "Spendable outputs, including outputs that are not eligible to stake; this is not a count of combined outputs"},
                         {RPCResult::Type::OBJ, "excluded", /*optional=*/true, "Coins the staking rules keep out, by reason. Absent when none are.",
                         {
                             {RPCResult::Type::STR_AMOUNT, "immature", /*optional=*/true, "Rewards not yet deep enough to spend"},
@@ -136,7 +136,10 @@ static RPCHelpMan getstakinginfo()
         // from underneath it, which is the order the rest of the tree keeps.
         const StakeWalletInfo info = wallets_snapshot[y].GetStakingInfo(tip_time, tip_height + 1);
         nWeight = info.weight;
-        lastCoinStakeSearchInterval = this_wallet->nLastCoinStakeSearchTime;
+        {
+            LOCK(this_wallet->cs_wallet);
+            lastCoinStakeSearchInterval = this_wallet->nLastCoinStakeSearchTime;
+        }
 
         int64_t nTargetSpacing = consensusParams.posTargetSpacing;
         // In 256-bit arithmetic: the 64-bit product of spacing and network
@@ -180,10 +183,10 @@ static RPCHelpMan getstakinginfo()
         }
         // The same function and the same network estimate a win would use, so
         // the size shown is the size the next coinstake writes.
-        obj2.pushKV("stake_target", ValueFromAmount(stakable_wallets[y].StakeTargetSize(static_cast<double>(nNetworkWeight), this_wallet->m_stake_target)));
+        obj2.pushKV("stake_target", ValueFromAmount(wallets_snapshot[y].StakeTargetSize(static_cast<double>(nNetworkWeight), this_wallet->m_stake_target)));
         obj2.pushKV("stake_target_configured", this_wallet->m_stake_target > 0);
         obj2.pushKV("stake_combine", this_wallet->m_stake_combine);
-        obj2.pushKV("stake_outputs", static_cast<uint64_t>(stakable_wallets[y].CountSpendableOutputs()));
+        obj2.pushKV("stake_outputs", info.spendable_outputs);
 
         // A full balance next to a weight of zero used to have no explanation
         // anywhere. Report what the rules held back, and only what they held

@@ -18,7 +18,7 @@ using valtype = std::vector<unsigned char>;
 
 /** The most inputs one coinstake spends: the kernel and the outputs it combines. */
 static constexpr size_t MAX_STAKE_COMBINE_INPUTS{20};
-/** The most pieces one coinstake lays its credit out in. */
+/** The normal split limit; up to two extra pieces avoid collateral amounts. */
 static constexpr size_t MAX_STAKE_SPLIT_OUTPUTS{10};
 /**
  * Upper bounds used to fit a coinstake to the room left in its block.
@@ -95,6 +95,7 @@ struct StakeSkipReport
 struct StakeWalletInfo
 {
     uint64_t weight{0};
+    uint64_t spendable_outputs{0};
     StakeSkipReport excluded;
 };
 
@@ -290,7 +291,8 @@ class CStakeWallet
         /**
          * How a coinstake's credit is laid out: whole while it is under twice
          * `target`, otherwise in equal pieces of about `target` -- at most
-         * MAX_STAKE_SPLIT_OUTPUTS, and never a piece that cannot stake again.
+         * MAX_STAKE_SPLIT_OUTPUTS plus two collateral-avoidance pieces. An empty
+         * result means no eligible layout exists; the caller must not publish it.
          * Takes the target rather than reading it from the wallet so the
          * decision can be exercised on its own.
          */

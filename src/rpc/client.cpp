@@ -44,6 +44,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "combineoutputs", 3, "batch_size" },
     { "combineoutputs", 4, "output_size" },
     { "combineoutputs", 5, "minconf" },
+    { "combineoutputs", 6, "staking_only" },
     { "sendtoaddress", 1, "amount" },
     { "sendtoaddress", 4, "subtractfeefromamount" },
     { "sendtoaddress", 5, "use_is" },

@@ -96,7 +96,15 @@ class WalletCombineOutputsTest(BitcoinTestFramework):
         self.log.info("A dry run reports and sends nothing")
         before = self.unspent(dust_w)
         mempool_before = set(node.getrawmempool())
-        res = dust_w.combineoutputs()
+        keypool_before = dust_w.getwalletinfo()
+        descriptors_before = dust_w.listdescriptors() if self.options.descriptors else None
+        for _ in range(3):
+            res = dust_w.combineoutputs()
+        keypool_after = dust_w.getwalletinfo()
+        for field in ("keypoolsize", "keypoolsize_hd_internal"):
+            assert_equal(keypool_before.get(field), keypool_after.get(field))
+        if descriptors_before is not None:
+            assert_equal(descriptors_before, dust_w.listdescriptors())
         assert_equal(res["dry_run"], True)
         assert_equal(res["candidates"], DUST_COUNT)
         assert_equal(Decimal(str(res["candidate_amount"])), dust_total)
@@ -120,6 +128,11 @@ class WalletCombineOutputsTest(BitcoinTestFramework):
         # 25 = 12 + 12 + 1: the last one has nothing to be combined with
         assert_equal([b["inputs"] for b in res["batches"]], [12, 12])
 
+        self.log.info("An impossible output count is refused before allocating recipients")
+        tiny = dust_w.combineoutputs(output_size=Decimal("0.00000001"))
+        assert "standard transaction size" in tiny["batches"][0]["error"]
+        assert_equal(self.unspent(dust_w), before)
+
         self.log.info("Invalid arguments are refused")
         assert_raises_rpc_error(-8, "max_amount", dust_w.combineoutputs, dry_run=True, max_amount=REGULAR_MN_COLLATERAL + 1)
         assert_raises_rpc_error(-8, "batch_size", dust_w.combineoutputs, dry_run=True, batch_size=1)
@@ -127,6 +140,7 @@ class WalletCombineOutputsTest(BitcoinTestFramework):
         assert_raises_rpc_error(-8, "min_amount", dust_w.combineoutputs, dry_run=True, min_amount=10, max_amount=10)
 
         self.log.info("A real run spends exactly the reported outputs, to one new address, without change")
+        preview = dust_w.combineoutputs(dry_run=True, batch_size=10)
         res = dust_w.combineoutputs(dry_run=False, batch_size=10)
         assert_equal(res["dry_run"], False)
         address = res["address"]
@@ -134,8 +148,12 @@ class WalletCombineOutputsTest(BitcoinTestFramework):
         assert_equal(len(res["batches"]), 3)
         spent = set()
         mempool = set(node.getrawmempool())
-        for b in res["batches"]:
+        for estimate, b in zip(preview["batches"], res["batches"]):
             assert "error" not in b, b
+            assert_equal(b["status"], "submitted")
+            assert estimate["size"] >= b["size"]
+            assert_equal(estimate["size"], estimate["estimated_signed_size"])
+            assert_equal(b["stakeable_amounts"], True)
             assert b["txid"] in mempool
             tx = node.getrawtransaction(b["txid"], True)
             ins = {(v["txid"], v["vout"]) for v in tx["vin"]}
@@ -190,7 +208,7 @@ class WalletCombineOutputsTest(BitcoinTestFramework):
         for _ in range(10):
             self.fund(funder, pieces_w.getnewaddress(), Decimal("90"))
         self.generatetoaddress(node, 1, mine_to)
-        res = pieces_w.combineoutputs(dry_run=False, output_size=Decimal("300"))
+        res = pieces_w.combineoutputs(dry_run=False, output_size=Decimal("300"), staking_only=True)
         assert_equal(len(res["batches"]), 1)
         tx = node.getrawtransaction(res["batches"][0]["txid"], True)
         values = [o["value"] for o in tx["vout"]]
@@ -209,12 +227,59 @@ class WalletCombineOutputsTest(BitcoinTestFramework):
             self.fund(funder, enc_w.getnewaddress(), Decimal("4"))
         enc_w.walletlock()
         self.generatetoaddress(node, 1, mine_to)
-        res = enc_w.combineoutputs()
+        locked_pool = enc_w.getwalletinfo()
+        for _ in range(3):
+            res = enc_w.combineoutputs()
+        for field in ("keypoolsize", "keypoolsize_hd_internal"):
+            assert_equal(locked_pool.get(field), enc_w.getwalletinfo().get(field))
         assert_equal(res["candidates"], 3)
         assert_equal(res["batches"][0]["inputs"], 3)
         assert_raises_rpc_error(-13, "passphrase", enc_w.combineoutputs, dry_run=False)
         # nothing was sent by the refused call
         assert_equal(len(self.unspent(enc_w, 1)), 3)
+        enc_w.walletpassphrase('pass', 60, True)
+        assert_equal(enc_w.combineoutputs()['candidates'], 3)
+        assert_raises_rpc_error(-13, 'passphrase', enc_w.combineoutputs, dry_run=False)
+        enc_w.walletlock()
+
+        self.log.info("A rejected batch reports abandonment only after its inputs are released")
+        node.createwallet(wallet_name="rejected", descriptors=self.options.descriptors)
+        rejected = node.get_wallet_rpc("rejected")
+        rejected.keypoolrefill(10)
+        self.fund(funder, rejected.getnewaddress(), Decimal("60"))
+        self.generatetoaddress(node, 1, mine_to)
+        self.restart_node(0, extra_args=["-limitancestorcount=1", "-walletrejectlongchains=0"])
+        node = self.nodes[0]
+        if "rejected" not in node.listwallets():
+            node.loadwallet("rejected")
+        rejected = node.get_wallet_rpc("rejected")
+        parent = rejected.sendtoaddress(rejected.getnewaddress(), Decimal("5"))
+        assert parent in node.getrawmempool()
+        # The CPFP carve-out permits a two-transaction chain even at limit 1.
+        # A third transaction exceeds that exception as well.
+        child = rejected.sendtoaddress(rejected.getnewaddress(), Decimal('10'))
+        assert_equal(node.getmempoolancestors(child), [parent])
+        before = self.unspent(rejected)
+        res = rejected.combineoutputs(dry_run=False, minconf=0)
+        failed = res["batches"][0]
+        assert_equal(failed["status"], "rejected_abandoned")
+        assert "error" in failed
+        assert failed["txid"] not in node.getrawmempool()
+        assert_equal(self.unspent(rejected), before)
+        assert rejected.gettransaction(failed["txid"])["details"][0]["abandoned"]
+
+        self.log.info("Broadcast disabled records the transaction without claiming submission")
+        self.generatetoaddress(node, 1, mine_to)
+        self.restart_node(0, extra_args=["-walletbroadcast=0"])
+        node = self.nodes[0]
+        if "rejected" not in node.listwallets():
+            node.loadwallet("rejected")
+        rejected = node.get_wallet_rpc("rejected")
+        res = rejected.combineoutputs(dry_run=False)
+        batch = res["batches"][0]
+        assert_equal(batch["status"], "recorded")
+        assert "error" not in batch
+        assert batch["txid"] not in node.getrawmempool()
 
 
 if __name__ == "__main__":

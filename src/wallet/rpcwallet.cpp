@@ -2344,6 +2344,8 @@ static RPCHelpMan combineoutputs()
         "Every batch pays to one new address of this wallet and pays its own fee out of the combined amount, so nothing "
         "else in the wallet is touched. Spending outputs of several addresses in one transaction links those addresses on the chain.\n"
         "By default nothing is sent: the batches are only reported, with their fees (dry_run).\n"
+        "Use staking_only=true to require staking-sized outputs after fees. A preview does not reserve inputs; a later call selects again. "
+        "A send may partially complete: inspect every batch and txid before retrying.\n"
         "A staking wallet combines its winning key's small outputs by itself when it wins; this is for the outputs that "
         "never win, or sit at other addresses.\n" +
             HELP_REQUIRING_PASSPHRASE,
@@ -2354,6 +2356,7 @@ static RPCHelpMan combineoutputs()
             {"batch_size", RPCArg::Type::NUM, RPCArg::Default{500}, "Inputs per transaction, 2 to 600: a transaction has to stay under the 100,000-byte standard size"},
             {"output_size", RPCArg::Type::AMOUNT, RPCArg::Default{0}, "0 pays each batch to one output. Otherwise equal outputs of about this size, each stakeable"},
             {"minconf", RPCArg::Type::NUM, RPCArg::Default{1}, "Only outputs with at least this many confirmations"},
+            {"staking_only", RPCArg::Type::BOOL, RPCArg::Default{false}, "Require every output to be within the staking amount limits after fees; outputs still need age and confirmations"},
         },
         RPCResult{
             RPCResult::Type::OBJ, "", "",
@@ -2369,9 +2372,12 @@ static RPCHelpMan combineoutputs()
                         {RPCResult::Type::NUM, "inputs", "Outputs spent by this batch"},
                         {RPCResult::Type::STR_AMOUNT, "amount_in", "Their total"},
                         {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The fee, paid out of amount_in"},
-                        {RPCResult::Type::NUM, "size", /*optional=*/true, "Transaction size in bytes; estimated in a dry run"},
+                        {RPCResult::Type::BOOL, "stakeable_amounts", /*optional=*/true, "All output amounts meet staking limits; does not imply maturity or active staking"},
+                        {RPCResult::Type::NUM, "size", /*optional=*/true, "Signed transaction size in bytes; upper estimate in a dry run"},
+                        {RPCResult::Type::NUM, "estimated_signed_size", /*optional=*/true, "Upper estimate of signed transaction size in bytes"},
+                        {RPCResult::Type::STR, "status", /*optional=*/true, "Submission state: recorded, submitted, rejected_abandoned, or unknown"},
                         {RPCResult::Type::ARR, "outputs", /*optional=*/true, "The amounts paid", {{RPCResult::Type::STR_AMOUNT, "", ""}}},
-                        {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The transaction sent, when not a dry run"},
+                        {RPCResult::Type::STR_HEX, "txid", /*optional=*/true, "The recorded transaction; inspect status for submission outcome"},
                         {RPCResult::Type::STR, "error", /*optional=*/true, "Why this batch was not built or not accepted. A send stops at the first such batch"},
                     }},
                 }},
@@ -2422,6 +2428,7 @@ static RPCHelpMan combineoutputs()
         throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("output_size must be 0 or a stakeable amount (%s to %s)",
                                                             FormatMoney(consensus.stakeValueRange[0]), FormatMoney(consensus.stakeValueRange[1])));
     }
+    const bool staking_only = request.params[6].isNull() ? false : request.params[6].get_bool();
     const int min_conf = request.params[5].isNull() ? 1 : request.params[5].get_int();
     if (min_conf < 0) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "minconf must not be negative");
@@ -2495,6 +2502,14 @@ static RPCHelpMan combineoutputs()
         // Exactly the chosen outputs: nothing else is added, and all of them go in.
         coin_control.fAllowOtherInputs = false;
         coin_control.fRequireAllInputs = true;
+        // These batches spend their full input value less the fee. Supplying
+        // the destination prevents even unsigned previews from consuming a
+        // change key. A change output is rejected below before any send.
+        CTxDestination change_destination;
+        if (!ExtractDestination(destination, change_destination)) {
+            throw JSONRPCError(RPC_WALLET_ERROR, "Invalid combine destination");
+        }
+        coin_control.destChange = change_destination;
         CAmount amount_in = 0;
         for (size_t i = start; i < end; ++i) {
             coin_control.Select(candidates[i].outpoint);
@@ -2506,8 +2521,8 @@ static RPCHelpMan combineoutputs()
         entry.pushKV("amount_in", ValueFromAmount(amount_in));
 
         int64_t pieces = 1;
-        if (output_size > 0) {
-            pieces = std::max<int64_t>(1, amount_in / output_size);
+        if (output_size > 0 || staking_only) {
+            pieces = output_size > 0 ? std::max<int64_t>(1, amount_in / output_size) : 1;
             pieces = std::max<int64_t>(pieces, (amount_in + consensus.stakeValueRange[1] - 1) / consensus.stakeValueRange[1]);
         }
 
@@ -2518,6 +2533,14 @@ static RPCHelpMan combineoutputs()
         CAmount fee = 0;
         std::string failure;
         for (int attempt = 0; attempt < 4; ++attempt) {
+            // Reject impossible layouts before allocating recipients. On
+            // networks without a staking floor, output_size may be one satoshi.
+            const size_t output_bytes = ::GetSerializeSize(CTxOut(0, destination), PROTOCOL_VERSION);
+            if (pieces > static_cast<int64_t>(MAX_STANDARD_TX_SIZE / output_bytes)) {
+                failure = "Requested output size would exceed the standard transaction size";
+                tx.reset();
+                break;
+            }
             std::vector<CRecipient> recipients;
             const CAmount each = amount_in / pieces;
             for (int64_t k = 0; k < pieces; ++k) {
@@ -2532,10 +2555,17 @@ static RPCHelpMan combineoutputs()
                 tx.reset();
                 break;
             }
+            if (change_pos != -1 || tx->vin.size() != end - start ||
+                std::any_of(tx->vin.begin(), tx->vin.end(), [&](const CTxIn& in) { return !coin_control.IsSelected(in.prevout); }) ||
+                std::any_of(tx->vout.begin(), tx->vout.end(), [&](const CTxOut& out) { return out.scriptPubKey != destination; })) {
+                failure = "Unexpected inputs or change in combine transaction";
+                tx.reset();
+                break;
+            }
             bool below_floor = false;
             bool on_collateral = false;
             for (const CTxOut& out : tx->vout) {
-                below_floor |= output_size > 0 && out.nValue < consensus.stakeValueRange[0];
+                below_floor |= (output_size > 0 || staking_only) && out.nValue < consensus.stakeValueRange[0];
                 on_collateral |= is_collateral_amount(out.nValue);
             }
             const CombinePieceStep step = NextCombinePieceStep(below_floor, on_collateral, pieces);
@@ -2556,8 +2586,21 @@ static RPCHelpMan combineoutputs()
             continue;
         }
 
+        const bool stakeable_amounts = std::all_of(tx->vout.begin(), tx->vout.end(), [&](const CTxOut& out) {
+            return out.nValue >= consensus.stakeValueRange[0] && out.nValue <= consensus.stakeValueRange[1] && !is_collateral_amount(out.nValue);
+        });
+        if ((staking_only || output_size > 0) && !stakeable_amounts) {
+            entry.pushKV("error", "Batch cannot be laid out within staking amount limits");
+            batches.push_back(entry);
+            if (!dry_run) break;
+            continue;
+        }
+        entry.pushKV("stakeable_amounts", stakeable_amounts);
         entry.pushKV("fee", ValueFromAmount(fee));
-        entry.pushKV("size", static_cast<uint64_t>(::GetSerializeSize(*tx, PROTOCOL_VERSION)));
+        const int64_t estimated_size = CalculateMaximumSignedTxSize(*tx, pwallet.get());
+        if (estimated_size < 0) throw JSONRPCError(RPC_WALLET_ERROR, "Cannot estimate signed combine size");
+        entry.pushKV("size", dry_run ? estimated_size : static_cast<int64_t>(::GetSerializeSize(*tx, PROTOCOL_VERSION)));
+        entry.pushKV("estimated_signed_size", estimated_size);
         UniValue outputs(UniValue::VARR);
         for (const CTxOut& out : tx->vout) {
             outputs.push_back(ValueFromAmount(out.nValue));
@@ -2565,17 +2608,19 @@ static RPCHelpMan combineoutputs()
         entry.pushKV("outputs", outputs);
 
         if (!dry_run) {
-            pwallet->CommitTransaction(tx, {{"comment", "combineoutputs"}}, {} /* orderForm */);
+            const auto committed = pwallet->CommitTransaction(tx, {{"comment", "combineoutputs"}}, {} /* orderForm */);
             const uint256 txid = tx->GetHash();
             entry.pushKV("txid", txid.GetHex());
-            // A transaction the wallet has recorded is not one the network
-            // took: a send can return a txid for a transaction the mempool
-            // refused. Check, and if it was refused, give its inputs back to
-            // the wallet rather than leave them marked spent. A wallet that
-            // does not broadcast (-walletbroadcast=0) keeps it out on purpose.
-            if (pwallet->GetBroadcastTransactions() && !pwallet->chain().isInMempool(txid)) {
-                pwallet->AbandonTransaction(txid);
-                entry.pushKV("error", "not accepted into the mempool; abandoned, its outputs are spendable again");
+            if (committed == CWallet::CommitResult::RECORDED) {
+                entry.pushKV("status", "recorded");
+            } else if (committed == CWallet::CommitResult::SUBMITTED) {
+                entry.pushKV("status", "submitted");
+            } else {
+                const bool abandoned = committed == CWallet::CommitResult::REJECTED && pwallet->AbandonTransaction(txid);
+                entry.pushKV("status", abandoned ? "rejected_abandoned" : "unknown");
+                entry.pushKV("error", abandoned
+                    ? "Submission failed; transaction abandoned and inputs released"
+                    : "Submission failed; transaction remains recorded. Check its state before retrying");
                 batches.push_back(entry);
                 break;
             }

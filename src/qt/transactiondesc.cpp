@@ -23,6 +23,7 @@
 #include <validation.h>
 #include <wallet/ismine.h>
 
+#include <algorithm>
 #include <stdint.h>
 #include <string>
 
@@ -277,6 +278,13 @@ QString TransactionDesc::toHTML(interfaces::Node& node, interfaces::Wallet& wall
         strHTML += "<br><b>" + tr("Message") + ":</b><br>" + GUIUtil::HtmlEscape(wtx.value_map["message"], true) + "<br>";
     if (wtx.value_map.count("comment") && !wtx.value_map["comment"].empty())
         strHTML += "<br><b>" + tr("Comment") + ":</b><br>" + GUIUtil::HtmlEscape(wtx.value_map["comment"], true) + "<br>";
+
+    if (wtx.is_coinstake) {
+        strHTML += "<b>" + tr("Staking inputs") + ":</b> " + QString::number(rec->stakeInputs) + "<br>";
+        strHTML += "<b>" + tr("Staking outputs") + ":</b> " + QString::number(rec->stakeOutputs) + "<br>";
+        strHTML += "<b>" + tr("Additional inputs combined") + ":</b> " + QString::number(std::max(0, rec->stakeInputs - 1)) + "<br>";
+        strHTML += "<b>" + tr("Net output count reduction") + ":</b> " + QString::number(rec->stakeInputs - rec->stakeOutputs) + "<br>";
+    }
 
     strHTML += "<b>" + tr("Transaction ID") + ":</b> " + rec->getTxHash() + "<br>";
     strHTML += "<b>" + tr("Output index") + ":</b> " + QString::number(rec->getOutputIndex()) + "<br>";

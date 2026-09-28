@@ -433,7 +433,7 @@ QString TransactionTableModel::formatTxType(const TransactionRecord *wtx) const
     case TransactionRecord::Generated:
         return tr("Mined");
     case TransactionRecord::Staked:
-        return tr("Staked");
+        return wtx->stakeInputs > 1 ? tr("Staked (combined)") : tr("Staked");
     case TransactionRecord::PlatformTransfer:
         return tr("Platform Transfer");
     case TransactionRecord::MasternodeReward:

@@ -15,6 +15,8 @@
 #include <qt/sendcoinsdialog.h>
 #include <qt/sendcoinsentry.h>
 #include <qt/transactiontablemodel.h>
+#include <qt/transactionrecord.h>
+#include <interfaces/wallet.h>
 #include <qt/transactionview.h>
 #include <qt/walletmodel.h>
 #include <key_io.h>
@@ -272,4 +274,40 @@ void WalletTests::walletTests()
     }
 #endif
     TestGUI(m_node);
+}
+
+void WalletTests::stakingCombinationLabels()
+{
+    TestChain100Setup test;
+    auto wallet = std::make_shared<CWallet>(test.m_node.chain.get(), test.m_node.coinjoin_loader.get(), "combine-gui", CreateMockWalletDatabase());
+    wallet->LoadWallet();
+    auto iface = interfaces::MakeWallet(wallet);
+    const CTxDestination dest = PKHash(test.coinbaseKey.GetPubKey());
+    const CScript script = GetScriptForDestination(dest);
+    for (const std::string label : {std::string{}, std::string{"combined"}}) {
+        {
+            LOCK(wallet->cs_wallet);
+            wallet->SetAddressBook(dest, label, "receive");
+        }
+        for (int inputs : {1, 3}) {
+            CMutableTransaction tx;
+            for (int i = 0; i < inputs; ++i) tx.vin.emplace_back(COutPoint(uint256S("01"), i));
+            tx.vout.emplace_back(0, CScript{});
+            tx.vout.emplace_back(1500 * COIN, script);
+            interfaces::WalletTx wtx{};
+            wtx.tx = MakeTransactionRef(tx);
+            wtx.is_coinstake = true;
+            wtx.debit = 1000 * COIN;
+            wtx.txout_is_mine = {ISMINE_NO, ISMINE_SPENDABLE};
+            wtx.txout_address_is_mine = {ISMINE_NO, ISMINE_SPENDABLE};
+            wtx.txout_address = {CNoDestination{}, dest};
+            const auto records = TransactionRecord::decomposeTransaction(*iface, wtx);
+            QCOMPARE(records.size(), 1);
+            QCOMPARE(records[0].type, TransactionRecord::Staked);
+            QCOMPARE(records[0].stakeInputs, inputs);
+            QCOMPARE(records[0].stakeOutputs, 1);
+            QCOMPARE(records[0].label, QString::fromStdString(label));
+            QCOMPARE(records[0].credit, 500 * COIN);
+        }
+    }
 }

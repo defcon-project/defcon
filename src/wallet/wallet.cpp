@@ -1193,6 +1193,13 @@ bool CWallet::AbandonTransaction(const uint256& hashTx)
             // If a transaction changes 'conflicted' state, that changes the balance
             // available of the outputs it spends. So force those to be recomputed
             MarkInputsDirty(wtx.tx);
+            // AddToSpends removed these outpoints from the spendable index.
+            // Dirty balance caches alone do not make AvailableCoins see them
+            // again. IsSpent in AddWalletUTXOs keeps any competing spend out.
+            for (const CTxIn& input : wtx.tx->vin) {
+                const auto parent = mapWallet.find(input.prevout.hash);
+                if (parent != mapWallet.end()) AddWalletUTXOs(parent->second.tx, false);
+            }
         }
     }
 
@@ -4028,7 +4035,7 @@ bool CWallet::CreateTransaction(
     return res;
 }
 
-void CWallet::CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::vector<std::pair<std::string, std::string>> orderForm)
+CWallet::CommitResult CWallet::CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::vector<std::pair<std::string, std::string>> orderForm)
 {
     LOCK(cs_wallet);
     WalletLogPrintf("CommitTransaction:\n%s", tx->ToString()); /* Continued */
@@ -4062,14 +4069,18 @@ void CWallet::CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::ve
 
     if (!fBroadcastTransactions) {
         // Don't submit tx to the mempool
-        return;
+        return CommitResult::RECORDED;
     }
 
     bilingual_str err_string;
     if (!wtx.SubmitMemoryPoolAndRelay(err_string, true)) {
         WalletLogPrintf("CommitTransaction(): Transaction cannot be broadcast immediately, %s\n", err_string.original);
-        // TODO: if we expect the failure to be long term or permanent, instead delete wtx from the wallet and return failure.
+        // An empty reason can mean already-in-chain or not eligible for
+        // resubmission. Do not treat that as a proven mempool rejection.
+        // The caller decides whether an explicit rejection can be abandoned.
+        return err_string.original.empty() ? CommitResult::UNKNOWN : CommitResult::REJECTED;
     }
+    return CommitResult::SUBMITTED;
 }
 
 DBErrors CWallet::LoadWallet()

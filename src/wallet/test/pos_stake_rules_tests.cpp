@@ -874,6 +874,7 @@ BOOST_FIXTURE_TEST_CASE(staking_info_preserves_selection_and_exclusions, TestCha
                 const int64_t time = old->GetBlockTime() + age;
                 const auto info = staker.GetStakingInfo(time, height);
                 BOOST_CHECK_EQUAL(info.weight, staker.GetStakeWeight(time, height));
+                BOOST_CHECK_EQUAL(info.spendable_outputs, staker.CountSpendableOutputs());
                 check_report(info.excluded, staker.ExplainExcludedCoins(time, height));
                 const bool old_age = age > 1800 && height < params.nPosKernelV2ActivationHeight;
                 const bool eligible = age >= 600 && !old_age;
@@ -948,6 +949,70 @@ BOOST_AUTO_TEST_CASE(a_combine_batch_is_never_sent_under_the_stakeable_floor)
     BOOST_CHECK(NextCombinePieceStep(false, true, 1) == CombinePieceStep::More);
     BOOST_CHECK(NextCombinePieceStep(false, true, 4) == CombinePieceStep::More);
 
+}
+
+
+BOOST_AUTO_TEST_CASE(unsplit_stake_credit_must_remain_stakeable)
+{
+    auto params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+    for (CAmount collateral : {params.regularMnCollateral, params.evoMnCollateral}) {
+        for (CAmount offset : {CAmount{-1}, CAmount{0}, CAmount{1}}) {
+            const CAmount credit = collateral + offset;
+            const auto outputs = staker.SplitStakeCredit(credit, collateral);
+            BOOST_REQUIRE(!outputs.empty());
+            CAmount total{0};
+            for (CAmount value : outputs) {
+                BOOST_CHECK(Stakeable(params, value));
+                total += value;
+            }
+            BOOST_CHECK_EQUAL(total, credit);
+            BOOST_CHECK_EQUAL(outputs.size(), offset == 0 ? 2U : 1U);
+        }
+    }
+    BOOST_CHECK(staker.SplitStakeCredit(params.stakeValueRange[0] - 1, 20000 * COIN).empty());
+    const auto upper = staker.SplitStakeCredit(params.stakeValueRange[1] + 500 * COIN, params.stakeValueRange[1] / 2);
+    BOOST_REQUIRE(!upper.empty());
+    for (CAmount value : upper) BOOST_CHECK(Stakeable(params, value));
+}
+
+
+BOOST_AUTO_TEST_CASE(abandon_restores_the_spendable_input_index)
+{
+    auto* manager = m_wallet.GetOrCreateLegacyScriptPubKeyMan();
+    LOCK2(m_wallet.cs_wallet, manager->cs_KeyStore);
+    CKey key;
+    key.MakeNewKey(true);
+    BOOST_REQUIRE(manager->AddKeyPubKey(key, key.GetPubKey()));
+    const CScript script = GetScriptForDestination(PKHash(key.GetPubKey()));
+    CMutableTransaction parent;
+    parent.vin.emplace_back(COutPoint(uint256S("abcd"), 0));
+    parent.vout.emplace_back(10 * COIN, script);
+    parent.vout.emplace_back(20 * COIN, script);
+    const auto parent_ref = MakeTransactionRef(parent);
+    const uint256 block_hash = m_node.chainman->ActiveChain().Tip()->GetBlockHash();
+    m_wallet.SetLastBlockProcessed(10, block_hash);
+    const CWalletTx::Confirmation confirmation{CWalletTx::CONFIRMED, 5, block_hash, 0};
+    const auto* parent_wtx = m_wallet.AddToWallet(parent_ref, confirmation);
+    BOOST_REQUIRE(parent_wtx);
+    const auto available_parent_outputs = [&] {
+        std::vector<COutput> coins;
+        m_wallet.AvailableCoins(coins);
+        return std::count_if(coins.begin(), coins.end(), [&](const COutput& coin) { return coin.tx == parent_wtx; });
+    };
+    BOOST_CHECK_EQUAL(available_parent_outputs(), 2U);
+
+    CMutableTransaction combined;
+    combined.vin.emplace_back(COutPoint(parent.GetHash(), 0));
+    combined.vin.emplace_back(COutPoint(parent.GetHash(), 1));
+    combined.vout.emplace_back(30 * COIN - 1000, script);
+    const auto child = MakeTransactionRef(combined);
+    BOOST_REQUIRE(m_wallet.AddToWallet(child, {}));
+    BOOST_CHECK_EQUAL(available_parent_outputs(), 0U);
+    BOOST_REQUIRE(m_wallet.AbandonTransaction(child->GetHash()));
+    BOOST_CHECK(!m_wallet.IsSpent(parent.GetHash(), 0));
+    BOOST_CHECK(!m_wallet.IsSpent(parent.GetHash(), 1));
+    BOOST_CHECK_EQUAL(available_parent_outputs(), 2U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
