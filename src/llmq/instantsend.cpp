@@ -938,18 +938,27 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
         // waited out the unlocked mining delay and scored its sender as bad.
         //
         // Naming is not trust: the quorum still has to be one this node holds and
-        // still counts as signing-active, and the signature is still checked
-        // against its public key below. When it is neither -- a node too far
-        // behind to know it, or a lock old enough to have aged out -- the old
-        // path is what runs, so this can add an acceptance and never remove one.
+        // still counts as active, and the signature is still checked against its
+        // public key below. When it is neither -- a node too far behind to know
+        // it, or a lock old enough to have aged out -- the old path is what runs,
+        // so this can add an acceptance and never remove one.
+        //
+        // "Active" is IsQuorumActive, the bound this node already applies to sig
+        // shares and recovered signatures: the keepOldConnections newest, more
+        // than signingActiveQuorumCount on every profile. The signer chooses
+        // among the quorums active SIGN_HEIGHT_OFFSET blocks below its tip, so
+        // for a few blocks after a new commitment is mined it can still pick the
+        // one that has just dropped out of this node's signingActiveQuorumCount;
+        // with that narrower bound the lock fell back to the replay and could be
+        // rejected again.
+        //
+        // The bound is checked before the quorum is looked up, as on the
+        // recovered-signature path: GetQuorum can rebuild a historical quorum on
+        // a cache miss, and a lock naming an old cycle must not force that work.
         CQuorumCPtr quorum;
         if (!IsQuorumRotationEnabled(llmq_params, blockIndex)) {
-            const auto signing_active = qman.ScanQuorums(llmq_params.type, llmq_params.signingActiveQuorumCount);
-            const auto named = qman.GetQuorum(llmq_params.type, islock->cycleHash);
-            if (named != nullptr &&
-                ranges::any_of(signing_active,
-                               [&named](const CQuorumCPtr& q) { return q->qc->quorumHash == named->qc->quorumHash; })) {
-                quorum = named;
+            if (IsQuorumActive(llmq_params.type, qman, islock->cycleHash)) {
+                quorum = qman.GetQuorum(llmq_params.type, islock->cycleHash);
             }
         }
         if (quorum == nullptr) {
