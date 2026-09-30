@@ -23,6 +23,7 @@ static constexpr CAmount CENT{1000000};
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 
 extern std::atomic<bool> fStopMinerProc;
 
@@ -831,6 +832,7 @@ StakeAttempt CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex
     std::vector<std::pair<const CWalletTx*, unsigned int>> refs;
     size_t max_extra = 0;
     CAmount rest_allowance = 0;
+    const CAmount allowance = nBalance - wallet->nReserveBalance - kernel_value;
     if (wallet->m_stake_combine) {
         const size_t fixed = COINSTAKE_FIXED_BYTES + COINSTAKE_INPUT_BYTES +
                              (MAX_STAKE_SPLIT_OUTPUTS + 3) * COINSTAKE_OUTPUT_BYTES;
@@ -841,25 +843,35 @@ StakeAttempt CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex
         if (max_extra > 0) {
             std::vector<COutput> coins;
             wallet->AvailableCoins(coins);
+            std::map<CScript, bool> signing_available;
             for (const COutput& out : coins) {
                 if (!out.fSpendable || COutPoint(out.tx->GetHash(), out.i) == kernel_outpoint) continue;
                 if (out.tx->GetDepthInMainChain() - 1 < COINBASE_MATURITY + 1) continue;
                 const CTxOut& txout = out.tx->tx->vout[out.i];
+                if (txout.nValue <= 0 || txout.nValue > allowance || txout.nValue > params.stakeValueRange[1] ||
+                    txout.nValue == params.regularMnCollateral || txout.nValue == params.evoMnCollateral) continue;
+                if (txout.nValue >= params.stakeValueRange[0] && txout.nValue > std::min(target, rest_allowance)) continue;
                 std::vector<valtype> solutions;
                 const TxoutType type = Solver(txout.scriptPubKey, solutions);
                 if (type != TxoutType::PUBKEY && type != TxoutType::PUBKEYHASH) continue;
                 if (!wallet->m_stake_combine_wallet && !PaysToKey(txout.scriptPubKey, key.GetPubKey())) continue;
-                std::unique_ptr<SigningProvider> owned;
-                const SigningProvider* provider = GetStakingSigningProvider(*wallet, txout.scriptPubKey, owned);
-                const CKeyID id = type == TxoutType::PUBKEY ? CPubKey(solutions[0]).GetID() : CKeyID(uint160(solutions[0]));
-                CKey candidate_key;
-                if (!provider || !provider->GetKey(id, candidate_key)) continue;
+                auto [cached, inserted] = signing_available.emplace(txout.scriptPubKey, false);
+                if (inserted) {
+                    // Descriptor providers can be expensive to derive. A wallet
+                    // often has many outputs to one script: check it only once
+                    // per plan, under the same wallet lock as signing.
+                    std::unique_ptr<SigningProvider> owned;
+                    const SigningProvider* provider = GetStakingSigningProvider(*wallet, txout.scriptPubKey, owned);
+                    const CKeyID id = type == TxoutType::PUBKEY ? CPubKey(solutions[0]).GetID() : CKeyID(uint160(solutions[0]));
+                    CKey candidate_key;
+                    cached->second = provider && provider->GetKey(id, candidate_key);
+                }
+                if (!cached->second) continue;
                 values.push_back(txout.nValue);
                 refs.emplace_back(out.tx, out.i);
             }
         }
     }
-    const CAmount allowance = nBalance - wallet->nReserveBalance - kernel_value;
     CoinstakePlan plan;
     if (wallet->m_stake_combine) {
         plan = PlanCoinstake(kernel_value, reward, values, target, max_extra, allowance, rest_allowance);
