@@ -22,6 +22,7 @@ static constexpr CAmount CENT{1000000};
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 extern std::atomic<bool> fStopMinerProc;
 
@@ -258,7 +259,7 @@ CAmount CStakeWallet::StakeTargetSize(double network_weight, CAmount configured)
     return std::clamp(whole, floor, ceiling);
 }
 
-std::vector<CAmount> CStakeWallet::SplitStakeCredit(CAmount nCredit, CAmount target) const
+std::vector<CAmount> CStakeWallet::SplitStakeCredit(CAmount nCredit, CAmount target, CAmount split_above) const
 {
     // Splitting must not manufacture an output that can never stake again.
     // Under stakeValueRange[0] a coin is skipped for good, and so is one sitting
@@ -275,7 +276,7 @@ std::vector<CAmount> CStakeWallet::SplitStakeCredit(CAmount nCredit, CAmount tar
                value != params.evoMnCollateral;
     };
 
-    if ((target <= 0 || nCredit < 2 * target) && stakeable(nCredit)) {
+    if ((target <= 0 || nCredit < (split_above > 0 ? split_above : 2 * target)) && stakeable(nCredit)) {
         return {nCredit};
     }
 
@@ -303,44 +304,77 @@ std::vector<CAmount> CStakeWallet::SplitStakeCredit(CAmount nCredit, CAmount tar
     return {}; // No safe layout; never silently return an ineligible output.
 }
 
-std::vector<size_t> CStakeWallet::ChooseCombineInputs(CAmount kernel_value, const std::vector<CAmount>& candidates,
-                                                      CAmount target, size_t max_extra, CAmount allowance) const
+CAmount CStakeWallet::CompactStakeTarget(CAmount base_target) const
 {
+    const CAmount ceiling = params.stakeValueRange[1] / 2;
+    return base_target > ceiling / 2 ? ceiling : base_target * 2;
+}
+
+CAmount CStakeWallet::CompactSplitThreshold(CAmount base_target) const
+{
+    const CAmount ceiling = params.stakeValueRange[1];
+    return base_target > ceiling / 3 ? ceiling : base_target * 3;
+}
+
+CAmount CStakeWallet::CombineRestAllowance(CAmount eligible, CAmount resting, CAmount kernel)
+{
+    if (eligible < 0 || resting < 0 || kernel < 0 || eligible > std::numeric_limits<CAmount>::max() - resting) return 0;
+    const CAmount pool = eligible + resting;
+    // Divide before multiplying, keeping integer arithmetic bounded.
+    const CAmount budget = pool / 10000 * STAKE_COMBINE_REST_BUDGET_BPS +
+                          (pool % 10000) * STAKE_COMBINE_REST_BUDGET_BPS / 10000;
+    if (resting >= budget || kernel >= budget - resting) return 0;
+    return budget - resting - kernel;
+}
+
+CoinstakePlan CStakeWallet::PlanCoinstake(CAmount kernel, CAmount reward,
+                                        const std::vector<CAmount>& candidates, CAmount base_target,
+                                        size_t max_extra, CAmount allowance, CAmount rest_allowance) const
+{
+    CoinstakePlan best;
+    if (!MoneyRange(kernel) || !MoneyRange(reward) || kernel > MAX_MONEY - reward ||
+        base_target < MIN_STAKE_TARGET || !MoneyRange(base_target)) return best;
+    const CAmount target = CompactStakeTarget(base_target);
+    const CAmount split_above = CompactSplitThreshold(base_target);
+    CAmount credit = kernel + reward;
+    best.output_values = SplitStakeCredit(credit, target, split_above);
+    if (best.output_values.empty() || allowance <= 0 || max_extra == 0) return best;
+
     std::vector<size_t> order;
-    order.reserve(candidates.size());
     for (size_t i = 0; i < candidates.size(); ++i) {
         const CAmount value = candidates[i];
-        // A collateral amount is left alone even when it is small enough to
-        // qualify: a larger network's target can exceed one, and the output may
-        // be a masternode's even when nothing has locked it.
-        if (value <= 0 || value >= target) continue;
-        if (value == params.regularMnCollateral || value == params.evoMnCollateral) continue;
-        order.push_back(i);
+        if (value > 0 && value <= params.stakeValueRange[1] && MoneyRange(value) &&
+            value != params.regularMnCollateral && value != params.evoMnCollateral) order.push_back(i);
     }
-    // Smallest first: the count falls by one per input whatever its size, and
-    // the smallest cost the least resting value. Stable, so equal amounts keep
-    // the caller's order and the choice is deterministic.
-    std::stable_sort(order.begin(), order.end(),
-                     [&](size_t a, size_t b) { return candidates[a] < candidates[b]; });
-
-    std::vector<size_t> chosen;
-    CAmount credit = kernel_value;
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) { return candidates[a] < candidates[b]; });
+    max_extra = std::min(max_extra, MAX_STAKE_COMBINE_INPUTS - 1);
+    // A win can temporarily rest at most one base target of additional eligible
+    // value, and only within the wallet's remaining rest budget.
+    rest_allowance = std::clamp(rest_allowance, CAmount{0}, base_target);
     CAmount added = 0;
+    CAmount resting = 0;
+    std::vector<size_t> chosen;
     for (const size_t i : order) {
-        if (chosen.size() >= max_extra) break;
+        if (chosen.size() == max_extra) break;
         const CAmount value = candidates[i];
-        // Ascending, so once one does not fit none after it will.
-        if (added + value > allowance) break;
-        // Value under the floor never stakes, so taking it costs no staking
-        // time at all. Value that stakes would rest with the kernel, and only
-        // up to the target is that worth paying.
-        const bool stakes = value >= params.stakeValueRange[0];
-        if (stakes && credit + value > target) break;
-        chosen.push_back(i);
-        credit += value;
+        const CAmount cost = value >= params.stakeValueRange[0] ? value : 0;
+        if (value > allowance - added || cost > rest_allowance - resting || value > MAX_MONEY - credit) break;
         added += value;
+        credit += value;
+        resting += cost;
+        chosen.push_back(i);
+        const auto outputs = SplitStakeCredit(credit, target, split_above);
+        if (outputs.empty()) continue;
+        const int delta = static_cast<int>(outputs.size()) - 1 - static_cast<int>(chosen.size());
+        // Strict improvement over the single-kernel layout AND an actual net
+        // reduction. Keep the earlier, cheaper prefix when reductions tie.
+        if (delta < 0 && delta < best.UtxoDelta()) {
+            best.extra_inputs = chosen;
+            best.output_values = outputs;
+            best.extra_resting_value = resting;
+        }
     }
-    return chosen;
+    return best;
 }
 
 size_t CStakeWallet::CountSpendableOutputs() const
@@ -666,6 +700,8 @@ StakeAttempt CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex
 {
     const std::shared_ptr<CWallet> wallet = m_wallet.lock();
     if (!wallet) return StakeAttempt::Error;
+    const CAmount target = StakeTargetSize(GetPoSKernelPS(pindexPrev, Params().GetConsensus()), wallet->m_stake_target);
+    LOCK(wallet->cs_wallet);
     arith_uint256 bnTargetPerCoinDay;
     bnTargetPerCoinDay.SetCompact(nBits);
     CAmount nBalance = wallet->GetAvailableBalance();
@@ -786,126 +822,92 @@ StakeAttempt CStakeWallet::CreateCoinStake(CChainState& chain_state, CBlockIndex
         return StakeAttempt::NoKernelFound;
     }
 
-    // The size this win lays its credit out in: -staketarget if set, otherwise
-    // derived from the network's weight. Read with no wallet lock held;
-    // GetPoSKernelPS takes cs_main, which the tree only ever takes under
-    // cs_wallet, never around it.
-    const CAmount target = StakeTargetSize(GetPoSKernelPS(pindexPrev, Params().GetConsensus()), wallet->m_stake_target);
-
-    // Combine: spend some of the kernel key's small outputs in the same
-    // coinstake. A coinstake pays no fee and consensus judges only its first
-    // input as the kernel (CheckProofOfStake reads vin[0]); every further input
-    // is an ordinary spend, checked for maturity and signature like any other,
-    // and its value counts in stakeValueIn, so the reward ceiling is unchanged.
-    size_t combined = 0;
-    size_t combine_candidates = 0;
-    const char* combine_reason = wallet->m_stake_combine ? "no_block_space" : "disabled";
-    CAmount combined_value = 0;
+    const CAmount reward = GetProofOfStakeReward();
+    if (!MoneyRange(reward) || nCredit > MAX_MONEY - reward) return StakeAttempt::Error;
+    const CAmount kernel_value = nCredit;
+    const CScript output_script = txNew.vout[1].scriptPubKey;
+    const COutPoint kernel_outpoint = txNew.vin[0].prevout;
+    std::vector<CAmount> values;
+    std::vector<std::pair<const CWalletTx*, unsigned int>> refs;
+    size_t max_extra = 0;
+    CAmount rest_allowance = 0;
     if (wallet->m_stake_combine) {
-        // The kernel's own input and the largest split this can write are paid
-        // for first; each combined input comes out of what is left.
         const size_t fixed = COINSTAKE_FIXED_BYTES + COINSTAKE_INPUT_BYTES +
                              (MAX_STAKE_SPLIT_OUTPUTS + 3) * COINSTAKE_OUTPUT_BYTES;
-        const size_t max_extra = max_coinstake_bytes > fixed
-            ? std::min<size_t>(MAX_STAKE_COMBINE_INPUTS - 1, (max_coinstake_bytes - fixed) / COINSTAKE_INPUT_BYTES)
-            : 0;
+        max_extra = max_coinstake_bytes > fixed
+            ? std::min<size_t>(MAX_STAKE_COMBINE_INPUTS - 1, (max_coinstake_bytes - fixed) / COINSTAKE_INPUT_BYTES) : 0;
+        const StakeWalletInfo info = GetStakingInfo(nTime, nBlockHeight);
+        rest_allowance = CombineRestAllowance(info.weight, info.excluded.immature + info.excluded.too_young, kernel_value);
         if (max_extra > 0) {
-            const CPubKey kernel_pubkey = key.GetPubKey();
-            const COutPoint kernel_outpoint = txNew.vin[0].prevout;
             std::vector<COutput> coins;
-            std::vector<CAmount> values;
-            std::vector<std::pair<const CWalletTx*, unsigned int>> refs;
-            LOCK(wallet->cs_wallet);
-            // AvailableCoins already leaves out what is spent, what is locked --
-            // lockunspent, and the masternode collaterals the wallet locks at
-            // startup -- and generated outputs that are not yet mature.
             wallet->AvailableCoins(coins);
             for (const COutput& out : coins) {
-                if (!out.fSpendable) continue;
-                if (COutPoint(out.tx->GetHash(), out.i) == kernel_outpoint) continue;
-                // As deep as a kernel has to be: past consensus maturity for a
-                // generated output, and clear of a shallow reorg for any.
+                if (!out.fSpendable || COutPoint(out.tx->GetHash(), out.i) == kernel_outpoint) continue;
                 if (out.tx->GetDepthInMainChain() - 1 < COINBASE_MATURITY + 1) continue;
                 const CTxOut& txout = out.tx->tx->vout[out.i];
-                if (!PaysToKey(txout.scriptPubKey, kernel_pubkey)) continue;
+                std::vector<valtype> solutions;
+                const TxoutType type = Solver(txout.scriptPubKey, solutions);
+                if (type != TxoutType::PUBKEY && type != TxoutType::PUBKEYHASH) continue;
+                if (!wallet->m_stake_combine_wallet && !PaysToKey(txout.scriptPubKey, key.GetPubKey())) continue;
+                std::unique_ptr<SigningProvider> owned;
+                const SigningProvider* provider = GetStakingSigningProvider(*wallet, txout.scriptPubKey, owned);
+                const CKeyID id = type == TxoutType::PUBKEY ? CPubKey(solutions[0]).GetID() : CKeyID(uint160(solutions[0]));
+                CKey candidate_key;
+                if (!provider || !provider->GetKey(id, candidate_key)) continue;
                 values.push_back(txout.nValue);
                 refs.emplace_back(out.tx, out.i);
             }
-            combine_candidates = values.size();
-            combine_reason = values.empty() ? "no_mature_same_key_outputs" : "no_inputs_fit_limits";
-            const CAmount allowance = nBalance - wallet->nReserveBalance - nCredit;
-            for (const size_t i : ChooseCombineInputs(nCredit, values, target, max_extra, allowance)) {
-                txNew.vin.push_back(CTxIn(refs[i].first->GetHash(), refs[i].second));
-                vwtxPrev.push_back(refs[i].first);
-                nCredit += values[i];
-                combined_value += values[i];
-                ++combined;
-            }
-            if (combined > 0) combine_reason = "inputs_selected";
         }
     }
-
-    // Get block reward
-    // The subsidy, and deliberately not the fees of the block being built.
-    //
-    // A coinstake may mint at most what IsBlockValueValid allows it, and past
-    // nPosFeeBurnActivationHeight that is the subsidy alone: the fees of the
-    // transactions in the block are destroyed. Adding them here would build a
-    // block the network refuses. Before that height the ceiling was subsidy
-    // plus fees and this line still minted the subsidy, which is why every
-    // block on the chain burns its fees -- the rule now says so rather than
-    // relying on this line to keep saying it.
-    CAmount nReward = GetProofOfStakeReward();
-    if (nReward < 0) {
-        return StakeAttempt::Error;
+    const CAmount allowance = nBalance - wallet->nReserveBalance - kernel_value;
+    CoinstakePlan plan;
+    if (wallet->m_stake_combine) {
+        plan = PlanCoinstake(kernel_value, reward, values, target, max_extra, allowance, rest_allowance);
+    } else {
+        plan.output_values = SplitStakeCredit(kernel_value + reward, target);
     }
-
-    nCredit += nReward;
-    {
-        // Every piece goes to the kernel's pay-to-pubkey script, which
-        // CheckBlockSignature reads from vout[1].
-        const std::vector<CAmount> outputs = SplitStakeCredit(nCredit, target);
-        if (outputs.empty()) return StakeAttempt::Error;
-        const CScript script_out = txNew.vout[1].scriptPubKey;
+    // Optional consolidation must not cost a winning kernel. If a selected
+    // input cannot be signed or its actual encoding will not fit, retry
+    // with only the kernel and a newly planned output layout.
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        if (plan.output_values.empty()) return StakeAttempt::Error;
+        txNew.vin.resize(1);
+        txNew.vin[0].scriptSig.clear();
+        vwtxPrev.resize(1);
+        for (const size_t i : plan.extra_inputs) {
+            txNew.vin.emplace_back(refs[i].first->GetHash(), refs[i].second);
+            vwtxPrev.push_back(refs[i].first);
+        }
         txNew.vout.resize(1);
-        for (const CAmount value : outputs) {
-            txNew.vout.emplace_back(value, script_out);
+        for (const CAmount value : plan.output_values) txNew.vout.emplace_back(value, output_script);
+        bool signed_all = true;
+        for (size_t i = 0; i < vwtxPrev.size(); ++i) {
+            const CTxOut& previous = vwtxPrev[i]->tx->vout[txNew.vin[i].prevout.n];
+            std::unique_ptr<SigningProvider> owned;
+            const SigningProvider* provider = GetStakingSigningProvider(*wallet, previous.scriptPubKey, owned);
+            SignatureData sigdata;
+            if (!provider || !ProduceSignature(*provider, MutableTransactionSignatureCreator(&txNew, i, previous.nValue, SIGHASH_ALL), previous.scriptPubKey, sigdata)) {
+                signed_all = false;
+                break;
+            }
+            UpdateInput(txNew.vin[i], sigdata);
         }
-        LogPrint(BCLog::POS, "%s: wallet '%s': building coinstake: target %s, combined %u outputs (%s), %u pieces, %u mature same-key candidates, reason=%s (not yet accepted)\n", __func__,
-                 wallet->GetName(), FormatMoney(target), combined, FormatMoney(combined_value), outputs.size(), combine_candidates, combine_reason);
-    }
-
-    // Sign
-    int nIn = 0;
-    LOCK(wallet->cs_wallet);
-    for (const auto& pcoin : vwtxPrev)
-    {
-        uint32_t nPrev = txNew.vin[nIn].prevout.n;
-        CTxOut prevOut = pcoin->tx->vout[nPrev];
-        CAmount amount = prevOut.nValue;
-        CScript& scriptPubKeyOut = prevOut.scriptPubKey;
-
-        SignatureData sigdata;
-        std::unique_ptr<SigningProvider> provider_owned;
-        const SigningProvider* provider = GetStakingSigningProvider(*wallet, scriptPubKeyOut, provider_owned);
-        if (!provider) {
-            LogPrint(BCLog::POS, "%s: no signing provider for input %d.", __func__, nIn);
-            return StakeAttempt::Error;
+        const size_t bytes = ::GetSerializeSize(txNew, PROTOCOL_VERSION);
+        if (signed_all && bytes < MaxBlockSize() / 5 && bytes <= max_coinstake_bytes) {
+            LogPrint(BCLog::POS, "%s: wallet '%s': coinstake plan inputs=%u outputs=%u utxo_delta=%d extra_resting=%s scope=%s (not yet accepted)\n", __func__,
+                wallet->GetName(), txNew.vin.size(), plan.output_values.size(), plan.UtxoDelta(), FormatMoney(plan.extra_resting_value),
+                wallet->m_stake_combine_wallet ? "wallet" : "key");
+            break;
         }
-        if (!ProduceSignature(*provider, MutableTransactionSignatureCreator(&txNew, nIn, amount, SIGHASH_ALL), scriptPubKeyOut, sigdata)) {
-            LogPrint(BCLog::POS, "%s: ProduceSignature failed.", __func__);
-            return StakeAttempt::Error;
+        if (!plan.extra_inputs.empty()) {
+            LogPrint(BCLog::POS, "%s: optional consolidation did not sign or fit; retrying kernel only\n", __func__);
+            plan = PlanCoinstake(kernel_value, reward, {}, target, 0, 0, 0);
+        } else {
+            if (!signed_all || attempt == 2) return StakeAttempt::Error;
+            // A nearly full block may fit the principal without the optional
+            // policy split. Keep amount/collateral safety, minimize outputs.
+            plan.output_values = SplitStakeCredit(kernel_value + reward, params.stakeValueRange[1] / 2);
         }
-
-        UpdateInput(txNew.vin[nIn], sigdata);
-        nIn++;
-    }
-
-    // Limit size
-    unsigned int nBytes = ::GetSerializeSize(txNew, PROTOCOL_VERSION);
-    if (nBytes >= MaxBlockSize() / 5 || nBytes > max_coinstake_bytes) {
-        LogPrint(BCLog::POS, "%s: Exceeded coinstake size limit.", __func__);
-        return StakeAttempt::Error;
     }
 
     // Successfully generated coinstake

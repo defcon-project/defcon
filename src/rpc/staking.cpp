@@ -45,9 +45,13 @@ static RPCHelpMan getstakinginfo()
                         {RPCResult::Type::NUM, "weight", "The staker weight"},
                         {RPCResult::Type::NUM, "netstakeweight", "Network stake weight"},
                         {RPCResult::Type::NUM, "expectedtime", "Expected time to earn reward"},
-                        {RPCResult::Type::STR_AMOUNT, "stake_target", "The size a winning coin and its reward are laid out in: split into pieces of about this size, and small outputs combined up to it. Derived from netstakeweight unless -staketarget is set"},
+                        {RPCResult::Type::STR_AMOUNT, "stake_target", "Base size used by the staking layout policy. With consolidation enabled see stake_compact_target and stake_split_threshold. Derived from netstakeweight unless -staketarget is set"},
                         {RPCResult::Type::BOOL, "stake_target_configured", "Whether stake_target comes from -staketarget rather than from the network"},
-                        {RPCResult::Type::BOOL, "stake_combine", "Whether a win also spends the same key's small outputs, at no fee (-stakecombine)"},
+                        {RPCResult::Type::BOOL, "stake_combine", "Whether continuous stake consolidation is enabled (-stakecombine)"},
+                        {RPCResult::Type::STR, "stake_combine_scope", "wallet links own addresses on chain; key stays within the winning key"},
+                        {RPCResult::Type::STR_AMOUNT, "stake_compact_target", "Target piece size when consolidation is enabled"},
+                        {RPCResult::Type::STR_AMOUNT, "stake_split_threshold", "Splitting boundary when consolidation is enabled; collateral avoidance and stake limits take precedence"},
+                        {RPCResult::Type::NUM, "stake_combine_rest_budget_bps", "Optional consolidation pauses when the wallet resting-value budget is exhausted; 100 basis points is one percent"},
                         {RPCResult::Type::NUM, "stake_outputs", "Spendable outputs, including outputs that are not eligible to stake; this is not a count of combined outputs"},
                         {RPCResult::Type::OBJ, "excluded", /*optional=*/true, "Coins the staking rules keep out, by reason. Absent when none are.",
                         {
@@ -186,6 +190,11 @@ static RPCHelpMan getstakinginfo()
         obj2.pushKV("stake_target", ValueFromAmount(wallets_snapshot[y].StakeTargetSize(static_cast<double>(nNetworkWeight), this_wallet->m_stake_target)));
         obj2.pushKV("stake_target_configured", this_wallet->m_stake_target > 0);
         obj2.pushKV("stake_combine", this_wallet->m_stake_combine);
+        obj2.pushKV("stake_combine_scope", this_wallet->m_stake_combine_wallet ? "wallet" : "key");
+        const CAmount base_target = wallets_snapshot[y].StakeTargetSize(nNetworkWeight, this_wallet->m_stake_target);
+        obj2.pushKV("stake_compact_target", ValueFromAmount(wallets_snapshot[y].CompactStakeTarget(base_target)));
+        obj2.pushKV("stake_split_threshold", ValueFromAmount(wallets_snapshot[y].CompactSplitThreshold(base_target)));
+        obj2.pushKV("stake_combine_rest_budget_bps", STAKE_COMBINE_REST_BUDGET_BPS);
         obj2.pushKV("stake_outputs", info.spendable_outputs);
 
         // A full balance next to a weight of zero used to have no explanation

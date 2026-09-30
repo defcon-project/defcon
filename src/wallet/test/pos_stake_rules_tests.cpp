@@ -183,83 +183,6 @@ BOOST_AUTO_TEST_CASE(the_stake_target_follows_the_network_weight)
 }
 
 /**
- * A win takes the kernel key's small outputs with it, and nothing else.
- *
- * The caller hands over only outputs this wallet can sign, paid to the
- * kernel's key, unlocked and deep enough; what is left to decide is amounts.
- * Value under the stakeable floor never stakes, so taking it costs nothing.
- * Value that stakes rests with the kernel after the win, so it is taken only
- * while the credit stays within the target.
- */
-BOOST_AUTO_TEST_CASE(a_win_combines_small_outputs_within_the_target)
-{
-    Consensus::Params params = MainnetLikeLimits();
-    CStakeWallet staker(nullptr, params);
-    const CAmount target = 50000 * COIN;
-    const CAmount plenty = MAX_MONEY;
-
-    const auto values_of = [](const std::vector<CAmount>& candidates, const std::vector<size_t>& chosen) {
-        std::vector<CAmount> out;
-        for (const size_t i : chosen) out.push_back(candidates[i]);
-        return out;
-    };
-
-    // Smallest first; dust whatever the kernel's size; stakeable value only up
-    // to the target; nothing at or over the target, and no collateral amount.
-    const std::vector<CAmount> candidates{
-        15000 * COIN,                // stakes, fits after the dust: 10k + dust + 15k <= 50k
-        9 * COIN,                    // dust
-        params.regularMnCollateral,  // never, whatever the target
-        target,                      // not under the target
-        30000 * COIN,                // stakes, would pass the target after the 15k
-        1 * COIN,                    // dust
-        12000 * COIN,                // stakes, fits: 10k + dust + 12k
-    };
-    {
-        const std::vector<size_t> chosen = staker.ChooseCombineInputs(10000 * COIN, candidates, target, 19, plenty);
-        const std::vector<CAmount> got = values_of(candidates, chosen);
-        const std::vector<CAmount> want{1 * COIN, 9 * COIN, 12000 * COIN, 15000 * COIN};
-        BOOST_CHECK_EQUAL_COLLECTIONS(got.begin(), got.end(), want.begin(), want.end());
-    }
-
-    // A kernel already at the target takes only what never stakes.
-    {
-        const std::vector<CAmount> got = values_of(candidates, staker.ChooseCombineInputs(target, candidates, target, 19, plenty));
-        const std::vector<CAmount> want{1 * COIN, 9 * COIN};
-        BOOST_CHECK_EQUAL_COLLECTIONS(got.begin(), got.end(), want.begin(), want.end());
-    }
-
-    // The input bound and the value bound both hold.
-    BOOST_CHECK_EQUAL(staker.ChooseCombineInputs(10000 * COIN, candidates, target, 1, plenty).size(), 1u);
-    BOOST_CHECK(staker.ChooseCombineInputs(10000 * COIN, candidates, target, 0, plenty).empty());
-    {
-        const std::vector<CAmount> got = values_of(candidates, staker.ChooseCombineInputs(10000 * COIN, candidates, target, 19, 10 * COIN));
-        const std::vector<CAmount> want{1 * COIN, 9 * COIN};
-        BOOST_CHECK_EQUAL_COLLECTIONS(got.begin(), got.end(), want.begin(), want.end());
-    }
-
-    // A target large enough to take a collateral amount still leaves it: the
-    // negative control for the exclusion, since only the target differs.
-    const std::vector<CAmount> with_collateral{params.regularMnCollateral, params.regularMnCollateral + 1};
-    {
-        const std::vector<CAmount> got = values_of(with_collateral,
-            staker.ChooseCombineInputs(10000 * COIN, with_collateral, 5000000 * COIN, 19, plenty));
-        const std::vector<CAmount> want{params.regularMnCollateral + 1};
-        BOOST_CHECK_EQUAL_COLLECTIONS(got.begin(), got.end(), want.begin(), want.end());
-    }
-
-    // Nothing to take, nothing taken; zero and negative amounts never qualify.
-    BOOST_CHECK(staker.ChooseCombineInputs(10000 * COIN, {}, target, 19, plenty).empty());
-    BOOST_CHECK(staker.ChooseCombineInputs(10000 * COIN, {0, -1}, target, 19, plenty).empty());
-
-    // The case that motivated it: pieces of exactly 10,000 at a target of
-    // 20,000. Half the target is exactly such a piece, so a bound at half the
-    // target -- the first draft -- combined none of them.
-    const std::vector<CAmount> old_pieces(50, 10000 * COIN);
-    BOOST_CHECK_EQUAL(staker.ChooseCombineInputs(10000 * COIN, old_pieces, 20000 * COIN, 19, plenty).size(), 1u);
-}
-
-/**
  * Every reason a coin is held back has a name.
  *
  * Seven rules can each remove a coin from the staking loop, and one of them
@@ -1013,6 +936,114 @@ BOOST_AUTO_TEST_CASE(abandon_restores_the_spendable_input_index)
     BOOST_CHECK(!m_wallet.IsSpent(parent.GetHash(), 0));
     BOOST_CHECK(!m_wallet.IsSpent(parent.GetHash(), 1));
     BOOST_CHECK_EQUAL(available_parent_outputs(), 2U);
+}
+
+
+BOOST_AUTO_TEST_CASE(continuous_consolidation_plans_inputs_and_outputs_together)
+{
+    auto params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+    const CAmount base = 250000 * COIN;
+    auto plan = staker.PlanCoinstake(200000 * COIN, 500 * COIN,
+                                    {50000 * COIN, 100000 * COIN, 150000 * COIN}, base, 19, MAX_MONEY, MAX_MONEY);
+    // The additional eligible-value budget is one base target, so take the
+    // two smallest pieces, not all three. Principal and reward are conserved.
+    BOOST_CHECK_EQUAL(plan.extra_inputs.size(), 2u);
+    BOOST_REQUIRE_EQUAL(plan.output_values.size(), 1u);
+    BOOST_CHECK_EQUAL(plan.output_values[0], 350500 * COIN);
+    BOOST_CHECK_EQUAL(plan.UtxoDelta(), -2);
+    const auto next = staker.PlanCoinstake(plan.output_values[0], 500 * COIN, {}, base, 19, MAX_MONEY, MAX_MONEY);
+    BOOST_REQUIRE_EQUAL(next.output_values.size(), 1u);
+    BOOST_CHECK_EQUAL(next.output_values[0], 351000 * COIN);
+
+    // Pieces at the OLD target can now combine. Neither is below that target.
+    plan = staker.PlanCoinstake(base, 500 * COIN, {base}, base, 19, MAX_MONEY, MAX_MONEY);
+    BOOST_CHECK_EQUAL(plan.UtxoDelta(), -1);
+    BOOST_CHECK_EQUAL(plan.extra_inputs.size(), 1u);
+    // Two just-split pieces cannot be combined only to split them again.
+    plan = staker.PlanCoinstake(400000 * COIN, 500 * COIN, {400000 * COIN}, base, 19, MAX_MONEY, MAX_MONEY);
+    BOOST_CHECK(plan.extra_inputs.empty());
+    BOOST_CHECK_EQUAL(plan.output_values.size(), 1u);
+
+    // Dust can be reclaimed even while the additional eligible-value budget
+    // is exhausted. Reward + principal, never a synthetic fee or bonus.
+    plan = staker.PlanCoinstake(base, 500 * COIN, {2900 * COIN, base}, base, 19, MAX_MONEY, 0);
+    BOOST_REQUIRE_EQUAL(plan.extra_inputs.size(), 1u);
+    BOOST_CHECK_EQUAL(plan.extra_inputs[0], 0u);
+    BOOST_CHECK_EQUAL(plan.output_values[0], 253400 * COIN);
+    BOOST_CHECK_EQUAL(plan.extra_resting_value, 0);
+
+    const std::vector<CAmount> dust(100, COIN);
+    plan = staker.PlanCoinstake(base, 500 * COIN, dust, base, 100, MAX_MONEY, 0);
+    BOOST_CHECK_EQUAL(plan.extra_inputs.size(), MAX_STAKE_COMBINE_INPUTS - 1);
+    plan = staker.PlanCoinstake(base, 500 * COIN, dust, base, 0, MAX_MONEY, MAX_MONEY);
+    BOOST_CHECK(plan.extra_inputs.empty());
+    plan = staker.PlanCoinstake(base, 500 * COIN, dust, base, 19, 2 * COIN, MAX_MONEY);
+    BOOST_CHECK_EQUAL(plan.extra_inputs.size(), 2u);
+
+    plan = staker.PlanCoinstake(base, 500 * COIN,
+        {0, -1, params.regularMnCollateral, params.evoMnCollateral, MAX_MONEY}, base, 19, MAX_MONEY, MAX_MONEY);
+    BOOST_CHECK(plan.extra_inputs.empty());
+    BOOST_CHECK(staker.PlanCoinstake(MAX_MONEY, COIN, {}, base, 0, 0, 0).output_values.empty());
+    BOOST_CHECK(staker.PlanCoinstake(base, -1, {}, base, 0, 0, 0).output_values.empty());
+}
+
+BOOST_AUTO_TEST_CASE(continuous_consolidation_preserves_amounts_and_stakeability)
+{
+    auto params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+    for (const CAmount base : {20000 * COIN, 250000 * COIN, 1000000 * COIN, 6250000 * COIN}) {
+        for (CAmount kernel = 10000 * COIN; kernel <= params.stakeValueRange[1]; kernel += 137113 * COIN) {
+            const std::vector<CAmount> candidates{COIN, 2900 * COIN, 10000 * COIN, base, params.regularMnCollateral};
+            const auto plan = staker.PlanCoinstake(kernel, 500 * COIN, candidates, base, 19, MAX_MONEY, MAX_MONEY);
+            BOOST_REQUIRE(!plan.output_values.empty());
+            CAmount expected = kernel + 500 * COIN;
+            for (const size_t i : plan.extra_inputs) expected += candidates[i];
+            CAmount actual = 0;
+            for (const CAmount out : plan.output_values) {
+                BOOST_CHECK(Stakeable(params, out));
+                actual += out;
+            }
+            BOOST_CHECK_EQUAL(actual, expected);
+            BOOST_CHECK(plan.output_values.size() <= MAX_STAKE_SPLIT_OUTPUTS + 2);
+            if (!plan.extra_inputs.empty()) BOOST_CHECK(plan.UtxoDelta() < 0);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(continuous_consolidation_rest_budget_is_wallet_local)
+{
+    BOOST_CHECK_EQUAL(CStakeWallet::CombineRestAllowance(10000000 * COIN, 0, 100000 * COIN), 400000 * COIN);
+    BOOST_CHECK_EQUAL(CStakeWallet::CombineRestAllowance(9600000 * COIN, 400000 * COIN, 100000 * COIN), 0);
+    BOOST_CHECK_EQUAL(CStakeWallet::CombineRestAllowance(100000 * COIN, 0, 100000 * COIN), 0);
+    BOOST_CHECK_EQUAL(CStakeWallet::CombineRestAllowance(std::numeric_limits<CAmount>::max(), COIN, COIN), 0);
+    BOOST_CHECK_EQUAL(CStakeWallet::CombineRestAllowance(-1, 0, 0), 0);
+}
+
+BOOST_AUTO_TEST_CASE(continuous_consolidation_reduces_fragmentation_over_repeated_wins)
+{
+    auto params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+    const CAmount base = 250000 * COIN;
+    std::vector<CAmount> coins(80, base);
+    const CAmount starting = 80 * base;
+    CAmount rewards = 0;
+    // Deterministic mature snapshots isolate the policy from kernel luck;
+    // functional tests separately exercise actual maturity and block acceptance.
+    for (size_t win = 0; win < 100; ++win) {
+        const CAmount kernel = coins.front();
+        coins.erase(coins.begin());
+        const auto plan = staker.PlanCoinstake(kernel, 500 * COIN, coins, base, 19, MAX_MONEY, MAX_MONEY);
+        auto used = plan.extra_inputs;
+        std::sort(used.rbegin(), used.rend());
+        for (const size_t i : used) coins.erase(coins.begin() + i);
+        coins.insert(coins.end(), plan.output_values.begin(), plan.output_values.end());
+        rewards += 500 * COIN;
+    }
+    BOOST_CHECK(coins.size() < 80);
+    CAmount total = 0;
+    for (const CAmount value : coins) { total += value; BOOST_CHECK(Stakeable(params, value)); }
+    BOOST_CHECK_EQUAL(total, starting + rewards);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

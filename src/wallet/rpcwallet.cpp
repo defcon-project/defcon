@@ -1712,6 +1712,57 @@ static RPCHelpMan listsinceblock()
     };
 }
 
+// Reconstruct from wallet history: spent inputs are no longer in the UTXO set.
+// Call with cs_wallet held. Missing parents remain explicit, never a zero amount.
+static UniValue CoinstakeDetails(const CWallet& wallet, const CWalletTx& wtx)
+{
+    UniValue result(UniValue::VOBJ), inputs(UniValue::VARR), outputs(UniValue::VARR);
+    CAmount value_in = 0;
+    bool complete = true;
+    for (size_t i = 0; i < wtx.tx->vin.size(); ++i) {
+        const COutPoint& op = wtx.tx->vin[i].prevout;
+        UniValue input(UniValue::VOBJ);
+        input.pushKV("txid", op.hash.GetHex());
+        input.pushKV("vout", static_cast<int>(op.n));
+        input.pushKV("role", i == 0 ? "winning_stake" : "combined");
+        const auto parent = wallet.mapWallet.find(op.hash);
+        const bool known = parent != wallet.mapWallet.end() && op.n < parent->second.tx->vout.size();
+        input.pushKV("known", known);
+        if (known) {
+            const CTxOut& prev = parent->second.tx->vout[op.n];
+            input.pushKV("amount", ValueFromAmount(prev.nValue));
+            CTxDestination dest;
+            if (ExtractDestination(prev.scriptPubKey, dest)) input.pushKV("address", EncodeDestination(dest));
+            if (!MoneyRange(prev.nValue) || value_in > MAX_MONEY - prev.nValue) complete = false;
+            else value_in += prev.nValue;
+        } else complete = false;
+        inputs.push_back(input);
+    }
+    for (size_t i = 0; i < wtx.tx->vout.size(); ++i) {
+        const CTxOut& out = wtx.tx->vout[i];
+        if (out.nValue <= 0) continue;
+        UniValue output(UniValue::VOBJ);
+        output.pushKV("vout", static_cast<int>(i));
+        output.pushKV("amount", ValueFromAmount(out.nValue));
+        CTxDestination dest;
+        if (ExtractDestination(out.scriptPubKey, dest)) output.pushKV("address", EncodeDestination(dest));
+        outputs.push_back(output);
+    }
+    result.pushKV("confirmed", wtx.GetDepthInMainChain() > 0);
+    result.pushKV("input_count", static_cast<int>(inputs.size()));
+    result.pushKV("output_count", static_cast<int>(outputs.size()));
+    result.pushKV("utxo_delta", static_cast<int>(outputs.size()) - static_cast<int>(inputs.size()));
+    result.pushKV("input_details_complete", complete);
+    if (complete) {
+        result.pushKV("principal", ValueFromAmount(value_in));
+        result.pushKV("net_reward", ValueFromAmount(wtx.tx->GetValueOut() - value_in));
+    }
+    result.pushKV("output_total", ValueFromAmount(wtx.tx->GetValueOut()));
+    result.pushKV("inputs", inputs);
+    result.pushKV("outputs", outputs);
+    return result;
+}
+
 static RPCHelpMan gettransaction()
 {
     return RPCHelpMan{"gettransaction",
@@ -1753,6 +1804,29 @@ static RPCHelpMan gettransaction()
                                                                          "'send' category of transactions."},
                             }},
                     }},
+                  {RPCResult::Type::OBJ, "stake_details", /*optional=*/true, "Coinstake details for this transaction, not the wallet's total UTXO count", {
+                      {RPCResult::Type::BOOL, "confirmed", "Currently included in the active chain"},
+                      {RPCResult::Type::NUM, "input_count", "All inputs, including the winning kernel"},
+                      {RPCResult::Type::NUM, "output_count", "Positive-value outputs; excludes the empty marker"},
+                      {RPCResult::Type::NUM, "utxo_delta", "Output count minus input count; negative means fewer UTXOs"},
+                      {RPCResult::Type::BOOL, "input_details_complete", "Every previous output is available in wallet history"},
+                      {RPCResult::Type::STR_AMOUNT, "principal", /*optional=*/true, "Existing coins used, if all inputs are known"},
+                      {RPCResult::Type::STR_AMOUNT, "net_reward", /*optional=*/true, "Output total minus principal, if all inputs are known"},
+                      {RPCResult::Type::STR_AMOUNT, "output_total", "Total value in the new outputs"},
+                      {RPCResult::Type::ARR, "inputs", "Original outputs consumed", {{RPCResult::Type::OBJ, "", "", {
+                          {RPCResult::Type::STR_HEX, "txid", "Previous transaction"},
+                          {RPCResult::Type::NUM, "vout", "Previous output index"},
+                          {RPCResult::Type::STR, "role", "winning_stake or combined"},
+                          {RPCResult::Type::BOOL, "known", "Previous output is available"},
+                          {RPCResult::Type::STR_AMOUNT, "amount", /*optional=*/true, "Original value"},
+                          {RPCResult::Type::STR, "address", /*optional=*/true, "Source address, when extractable"},
+                      }}}},
+                      {RPCResult::Type::ARR, "outputs", "New positive-value outputs", {{RPCResult::Type::OBJ, "", "", {
+                          {RPCResult::Type::NUM, "vout", "New output index"},
+                          {RPCResult::Type::STR_AMOUNT, "amount", "New value"},
+                          {RPCResult::Type::STR, "address", /*optional=*/true, "Destination address, when extractable"},
+                      }}}},
+                  }},
                   {RPCResult::Type::STR_HEX, "hex", "Raw data for transaction"},
                   {RPCResult::Type::OBJ, "decoded", /*optional=*/true, "the decoded transaction (only present when `verbose` is passed), equivalent to the",
                   {
@@ -1803,6 +1877,7 @@ static RPCHelpMan gettransaction()
         entry.pushKV("fee", ValueFromAmount(nFee));
 
     WalletTxToJSON(pwallet->chain(), wtx, entry);
+    if (wtx.IsCoinStake()) entry.pushKV("stake_details", CoinstakeDetails(*pwallet, wtx));
 
     UniValue details(UniValue::VARR);
     ListTransactions(*pwallet, wtx, 0, false, details, filter, nullptr /* filter_label */);

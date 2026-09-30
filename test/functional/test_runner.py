@@ -149,6 +149,7 @@ BASE_SCRIPTS = [
     'feature_pos_staking.py --legacy-wallet',
     'feature_pos_stake_combine.py --descriptors',
     'feature_pos_stake_combine.py --legacy-wallet',
+    'feature_pos_stake_combine.py --legacy-wallet --key-only',
     'wallet_combineoutputs.py --descriptors',
     'wallet_combineoutputs.py --legacy-wallet',
     'wallet_staking_info_multiwallet.py --descriptors',

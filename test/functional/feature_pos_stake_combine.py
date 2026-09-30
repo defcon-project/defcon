@@ -2,38 +2,12 @@
 # Copyright (c) 2026 The DeFCoN Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Stake coinstakes that combine outputs and split into equal pieces, and have
-a second node accept them.
+"""Continuous stake consolidation: disabled control, default cross-key inputs,
+rest budget, excluded outputs, stable layout, and observer reindex. Run both
+legacy and descriptor variants. --key-only checks the privacy-preserving scope;
+--observer-binary can use an unchanged validator from the previous build."""
 
-A coinstake used to spend exactly one input, the kernel, and to pay at most
-two outputs. The wallet now also spends some of the kernel key's small outputs
-in the same coinstake -- at no fee, since a coinstake pays none -- and lays the
-credit out in pieces of about a target size. Consensus has always allowed both
-shapes (CheckProofOfStake judges vin[0] alone; every further input is an
-ordinary spend, and the reward ceiling counts every input), but no block on any
-chain has carried either, so this test is where they are first built by a real
-node and validated by another.
-
-Three wallets on the staking node, one per phase, each staking alone:
-
-1. combining switched off (-stakecombine=0): a win spends only its kernel,
-   although the same key holds other outputs that would qualify -- the
-   negative control for the feature itself;
-2. combining on: one key holds fourteen equal outputs, next to one output of
-   each kind that must never be combined -- locked with lockunspent, exactly a
-   masternode collateral amount, too shallow, and held by another key of the
-   same wallet. A win by one of the fourteen spends thirteen of them: the
-   fourteenth would take the credit past the target. None of the four ever
-   appears in a coinstake;
-3. a single output three times the target: the win is split into three equal
-   pieces, all paid to the kernel's pay-to-pubkey script.
-
-Every coinstake must mint exactly the reward, and every block must be accepted
-over P2P by a node that does not stake and then survive that node's -reindex.
-
-The clock handling follows feature_pos_staking.py, whose notes apply here.
-"""
-
+import os
 import time
 from decimal import Decimal
 
@@ -59,8 +33,8 @@ POS_REWARD = Decimal("500")
 COINBASE_MATURITY = 25
 KERNEL_DEPTH = COINBASE_MATURITY + 2
 
-PIECE = Decimal("1500")          # not a collateral amount on regtest
-SAME_KEY_PIECES = 14
+PIECE = Decimal("20000")          # not a collateral amount on regtest
+SAME_KEY_PIECES = 64
 # The shallow output and the other key's are smaller than every piece, so that
 # combining -- smallest first -- would reach them before any piece if the rule
 # that keeps them out were missing. At equal amounts the order among them is
@@ -81,6 +55,10 @@ class PosStakeCombineTest(BitcoinTestFramework):
             ["-staking=1", "-txindex=1", "-debug=pos", "-stakecombine=0"],
             ["-staking=0"],
         ]
+
+    def add_options(self, parser):
+        parser.add_argument("--key-only", action="store_true")
+        parser.add_argument("--observer-binary", default=os.environ.get("STAKE_TEST_OBSERVER_BINARY"))
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -215,6 +193,11 @@ class PosStakeCombineTest(BitcoinTestFramework):
 
     def run_test(self):
         staker, observer = self.nodes[0], self.nodes[1]
+        if self.options.observer_binary:
+            self.stop_node(1)
+            observer.binary = self.options.observer_binary
+            self.start_node(1)
+            self.connect_nodes(0, 1)
         if self.mocktime == 0:
             self.mocktime = staker.getblockheader(staker.getbestblockhash())["time"]
             set_node_times(self.nodes, self.mocktime)
@@ -234,8 +217,8 @@ class PosStakeCombineTest(BitcoinTestFramework):
         off_addr = w_off.getnewaddress()
         off_outs = {self.fund(funder, off_addr, PIECE) for _ in range(5)}
 
-        # phase 2: fourteen equal outputs on one key, and one of each kind that
-        # must never be combined
+        # A sufficiently funded pool leaves room for gradual consolidation
+        # within the default 5% resting-value budget.
         key_a = w_comb.getnewaddress()
         key_b = w_comb.getnewaddress()
         same_key = {self.fund(funder, key_a, PIECE) for _ in range(SAME_KEY_PIECES)}
@@ -279,7 +262,7 @@ class PosStakeCombineTest(BitcoinTestFramework):
 
         # ---- restart with combining on (the default) -------------------------
         self.log.info("Restarting the staking node with the defaults")
-        self.restart_node(0, extra_args=["-staking=1", "-txindex=1", "-debug=pos"])
+        self.restart_node(0, extra_args=["-staking=1", "-txindex=1", "-debug=pos"] + (["-stakecombinescope=key"] if self.options.key_only else []))
         for name in ("combine", "split"):
             if name not in staker.listwallets():
                 staker.loadwallet(name)
@@ -292,13 +275,16 @@ class PosStakeCombineTest(BitcoinTestFramework):
         self.sync_blocks()
 
         # ---- phase 2 --------------------------------------------------------
-        self.log.info("Phase 2: a win combines the kernel key's outputs up to the target")
+        self.log.info("Phase 2: continuous consolidation respects scope and the wallet rest budget")
         info = self.staking_info(staker, "combine")
         assert_equal(info["stake_combine"], True)
+        assert_equal(info["stake_combine_scope"], "key" if self.options.key_only else "wallet")
+        assert_equal(info["stake_compact_target"], 2 * MIN_STAKE_TARGET)
+        assert_equal(info["stake_split_threshold"], 3 * MIN_STAKE_TARGET)
         assert_equal(info["stake_target_configured"], False)
         target = Decimal(str(info["stake_target"]))
         assert_equal(target, MIN_STAKE_TARGET)
-        # the fourteen, the collateral amount, the shallow one and the other
+        # The regular pieces, the collateral, the shallow output and the other
         # key's: the locked output is not available to spend, so not counted
         assert_equal(info["stake_outputs"], SAME_KEY_PIECES + 3)
 
@@ -308,39 +294,49 @@ class PosStakeCombineTest(BitcoinTestFramework):
             return len(block["tx"][1]["vin"]) > 1
 
         blocks = self.stake_until(staker, "combine", combines, max_blocks=4)
-        # the kernel and twelve more reach 19,500; a thirteenth would pass the
-        # target. A later win in the same phase finds fewer left to take.
-        by_target = int((target - PIECE) // PIECE)
-        assert_equal(by_target, 12)
-        left = set(same_key)
-        full_combines = 0
+        combined_blocks = 0
+        all_spent = set()
         for block in blocks:
             coinstake = self.check_coinstake(staker, block)
             spent = [self.outpoint(v) for v in coinstake["vin"]]
-            kernel, extra = spent[0], spent[1:]
+            all_spent.update(spent)
+            assert len(spent) <= MAX_STAKE_COMBINE_INPUTS
             for op in spent:
-                assert op not in never, "coinstake %s spent %s, which must never be combined" % (coinstake["txid"], op)
-            if kernel == other_key:
-                # the other key has nothing of its own to combine
-                assert_equal(extra, [])
-                continue
-            assert kernel in left
-            left.discard(kernel)
-            # only the kernel key's outputs, never the other key's
-            assert other_key not in extra
-            for op in extra:
-                assert op in left
-                left.discard(op)
-            expected_extra = min(MAX_STAKE_COMBINE_INPUTS - 1, by_target, len(left) + len(extra))
-            assert_equal(len(extra), expected_extra)
-            credit = PIECE * (1 + len(extra)) + POS_REWARD
-            # under twice the target the credit stays whole
-            assert_equal([o["value"] for o in coinstake["vout"][1:]], [credit])
-            if len(extra) == by_target:
-                full_combines += 1
-            self.log.info("block %d: coinstake %s spent %d inputs into one output of %s",
-                          block["height"], coinstake["txid"], len(spent), credit)
-        assert_equal(full_combines, 1)
+                assert op not in never
+            if len(spent) > 1:
+                combined_blocks += 1
+                assert len(coinstake["vout"]) - 1 < len(spent)
+                assert_equal(len(coinstake["vout"]), 2)
+                if self.options.key_only:
+                    assert other_key not in spent
+                details = w_comb.gettransaction(coinstake["txid"])["stake_details"]
+                assert_equal(details["confirmed"], True)
+                assert_equal(details["input_details_complete"], True)
+                assert_equal(details["net_reward"], POS_REWARD)
+                assert_equal(details["input_count"], len(spent))
+                assert_equal(details["output_count"], 1)
+                assert_equal(details["utxo_delta"], 1 - len(spent))
+                assert_equal(details["inputs"][0]["role"], "winning_stake")
+                assert_equal(details["principal"] + POS_REWARD, details["output_total"])
+                self.log.info("block %d: %d inputs -> %d outputs", block["height"], len(spent), len(coinstake["vout"]) - 1)
+        assert_greater_than(combined_blocks, 0)
+        if not self.options.key_only:
+            assert other_key in all_spent
+
+        # At-target inputs must also combine into one piece above the OLD
+        # splitting boundary. Re-stake that actual output after it matures.
+        compact_tx = next((b["tx"][1] for b in blocks if len(b["tx"][1]["vin"]) > 1
+                           and b["tx"][1]["vout"][1]["value"] >= 2 * target), None)
+        if compact_tx is None:
+            more = self.stake_until(staker, "combine", lambda b: len(b["tx"][1]["vin"]) > 1
+                                    and b["tx"][1]["vout"][1]["value"] >= 2 * target, max_blocks=3)
+            for block in more:
+                tx = self.check_coinstake(staker, block)
+                if len(tx["vin"]) > 1 and tx["vout"][1]["value"] >= 2 * target:
+                    compact_tx = tx
+            blocks += more
+        assert compact_tx is not None
+        assert_equal(len(compact_tx["vout"]), 2)
 
         # the four that must never be combined are all still unspent
         unspent = {(u["txid"], u["vout"]) for u in w_comb.listunspent(0)}
@@ -360,13 +356,41 @@ class PosStakeCombineTest(BitcoinTestFramework):
         coinstake = self.check_coinstake(staker, blocks[0])
         assert_equal([self.outpoint(v) for v in coinstake["vin"]], [big])
         credit = BIG_COIN + POS_REWARD
-        pieces = int(credit // target)
-        assert_equal(pieces, 3)
+        pieces = max(2, int(credit // (2 * target)))
+        assert_equal(pieces, 2)
         values = [o["value"] for o in coinstake["vout"][1:]]
         assert_equal(len(values), pieces)
         assert_equal(sum(values), credit)
         assert_equal(len(set(values)), 1)
         self.log.info("block %d: %s split into %s", blocks[0]["height"], credit, values)
+
+        # Disconnect/reconnect a real coinstake block. Details describe its
+        # recorded inputs even while it is no longer confirmed in this chain.
+        split_txid = coinstake["txid"]
+        detached_tip = staker.getbestblockhash()
+        staker.invalidateblock(detached_tip)
+        assert_equal(w_split.gettransaction(split_txid)["stake_details"]["confirmed"], False)
+        staker.reconsiderblock(detached_tip)
+        self.wait_until(lambda: staker.getbestblockhash() == detached_tip)
+        assert_equal(w_split.gettransaction(split_txid)["stake_details"]["confirmed"], True)
+
+        # Advance this isolated chain with another wallet, leaving the
+        # compact output alone until both depth and age have passed.
+        mature_height = staker.getblockcount() + KERNEL_DEPTH
+        self.stake_until(staker, self.default_wallet_name,
+                         lambda b: b["height"] >= mature_height, max_blocks=KERNEL_DEPTH + 2)
+        compact_op = (compact_tx["txid"], 1)
+        # Exclude the other spendable coins so the intended output must win.
+        to_lock = [{"txid": u["txid"], "vout": u["vout"]} for u in w_comb.listunspent()
+                   if (u["txid"], u["vout"]) != compact_op]
+        assert w_comb.lockunspent(False, to_lock)
+        stable_blocks = self.stake_until(staker, "combine", lambda b: True, max_blocks=1)
+        assert_equal(len(stable_blocks), 1)
+        stable_tx = self.check_coinstake(staker, stable_blocks[0])
+        assert_equal([self.outpoint(v) for v in stable_tx["vin"]], [compact_op])
+        assert_equal(len(stable_tx["vout"]), 2)
+        assert_equal(stable_tx["vout"][1]["value"], compact_tx["vout"][1]["value"] + POS_REWARD)
+        self.log.info("The compact output won again and remained a single output")
 
         # ---- the observer --------------------------------------------------
         self.log.info("The non-staking node accepted every block, and re-validates them from disk")

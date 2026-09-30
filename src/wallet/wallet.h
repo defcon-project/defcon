@@ -1264,6 +1264,7 @@ public:
     //! The size a coinstake lays its credit out in (-staketarget). Zero lets
     //! the wallet derive it from the network's stake weight: StakeTargetSize.
     CAmount m_stake_target{0};
+    bool m_stake_combine_wallet{true};
     //! Whether a coinstake also spends this key's small outputs (-stakecombine).
     bool m_stake_combine{DEFAULT_STAKE_COMBINE};
     int64_t nLastCoinStakeSearchTime{0};

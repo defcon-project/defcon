@@ -47,6 +47,17 @@ static constexpr CAmount MIN_STAKE_TARGET{20000 * COIN};
  * the target is sized from the network, not from the wallet.
  */
 static constexpr int64_t STAKE_REST_BUDGET_BPS{100};
+/** Only optional consolidation is held back when 5% of this wallet's staking
+ * pool is resting. The winning kernel is never rejected for this policy. */
+static constexpr int64_t STAKE_COMBINE_REST_BUDGET_BPS{500};
+
+struct CoinstakePlan
+{
+    std::vector<size_t> extra_inputs;
+    std::vector<CAmount> output_values;
+    CAmount extra_resting_value{0};
+    int UtxoDelta() const { return static_cast<int>(output_values.size()) - 1 - static_cast<int>(extra_inputs.size()); }
+};
 
 /**
  * Convenience class allowing stake functions to have easy access to the wallet,
@@ -277,11 +288,13 @@ class CStakeWallet
         int64_t CoinBlockTime(const CWalletTx& coin) const;
 
         /**
-         * The size a coinstake lays its credit out in.
+         * The base size used by the coinstake layout policy.
          *
          * `configured` is -staketarget; zero derives the size from
          * `network_weight` (getstakinginfo's netstakeweight, in satoshis) so
-         * that the resting value stays near STAKE_REST_BUDGET_BPS. Either way
+         * that the original layout resting value stays near STAKE_REST_BUDGET_BPS.
+         * Continuous mode derives larger pieces from this base; see the compact
+         * target and split threshold. Either way
          * the result lies between twice the lowest stakeable amount (at least
          * MIN_STAKE_TARGET) and half the highest, so that every piece of a
          * split and every combined credit can stake again.
@@ -296,21 +309,17 @@ class CStakeWallet
          * Takes the target rather than reading it from the wallet so the
          * decision can be exercised on its own.
          */
-        std::vector<CAmount> SplitStakeCredit(CAmount nCredit, CAmount target) const;
+        std::vector<CAmount> SplitStakeCredit(CAmount nCredit, CAmount target, CAmount split_above = 0) const;
 
-        /**
-         * Which of `candidates` a coinstake also spends, as indices into it.
-         *
-         * The caller has already kept only outputs this wallet can sign, paid
-         * to the kernel's own key, unlocked and as deep as a kernel must be.
-         * This decides on amounts alone: smallest first, only outputs under
-         * `target` and never a collateral amount; value too small ever to stake
-         * costs nothing to take, value that stakes is taken only while the
-         * credit stays within `target`, since it rests after the win with the
-         * kernel. At most `max_extra` outputs and `allowance` in value.
-         */
-        std::vector<size_t> ChooseCombineInputs(CAmount kernel_value, const std::vector<CAmount>& candidates,
-                                                CAmount target, size_t max_extra, CAmount allowance) const;
+        /** Joint input/output plan, including the reward. Candidates have passed
+         * ownership, script, lock and depth checks. No wallet-count thresholds.
+         * Amounts below the staking floor consume no eligible-value budget. */
+        CoinstakePlan PlanCoinstake(CAmount kernel, CAmount reward,
+                                   const std::vector<CAmount>& candidates, CAmount base_target,
+                                   size_t max_extra, CAmount allowance, CAmount rest_allowance) const;
+        CAmount CompactStakeTarget(CAmount base_target) const;
+        CAmount CompactSplitThreshold(CAmount base_target) const;
+        static CAmount CombineRestAllowance(CAmount eligible, CAmount resting, CAmount kernel);
 
         /** Unspent outputs the wallet can spend, for getstakinginfo. */
         size_t CountSpendableOutputs() const;

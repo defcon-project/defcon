@@ -5071,6 +5071,14 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, interfaces::C
         walletInstance->m_stake_target = stake_target.value();
     }
     walletInstance->m_stake_combine = gArgs.GetBoolArg("-stakecombine", DEFAULT_STAKE_COMBINE);
+    const std::string combine_scope = gArgs.GetArg("-stakecombinescope", "wallet");
+    if (combine_scope != "wallet" && combine_scope != "key") {
+        error = Untranslated("-stakecombinescope must be wallet or key");
+        return nullptr;
+    }
+    walletInstance->m_stake_combine_wallet = combine_scope == "wallet";
+    walletInstance->WalletLogPrintf("Stake consolidation: %s; scope=%s%s\n", walletInstance->m_stake_combine ? "enabled" : "disabled", combine_scope,
+        walletInstance->m_stake_combine && walletInstance->m_stake_combine_wallet ? " (spending own addresses together links them on chain)" : "");
 
     if (chain && chain->relayMinFee().GetFeePerK() > HIGH_TX_FEE_PER_KB)
         warnings.push_back(AmountHighWarn("-minrelaytxfee") + Untranslated(" ") +
