@@ -8,6 +8,8 @@
 #include <evo/dmnstate.h>
 #include <evo/pose_service.h>
 #include <evo/pose_service_sentinels.h>
+#include <evo/pose_service_metrics.h>
+#include <evo/pose_service_store.h>
 #include <hash.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
@@ -15,6 +17,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <map>
 #include <memory>
@@ -201,6 +204,64 @@ BOOST_AUTO_TEST_CASE(commitment_tx_candidate_is_deterministic_and_unsigned)
                                                  uint256::ONE, reports, fx.list, params);
     BOOST_CHECK(c.msgHash != a.msgHash);
     BOOST_CHECK_EQUAL(c.commitment.CountMissed(), 0);
+}
+
+// Real signed report/store/build workload. The same snapshot is reused with
+// diagnostics off and on; assignment-only extrapolations miss repeated BLS work.
+BOOST_AUTO_TEST_CASE(repeated_candidate_cost_and_measurement_equivalence)
+{
+    struct RestoreMetrics {
+        bool old{dsl::PerfEnabled()};
+        ~RestoreMetrics() { dsl::SetPerfEnabled(old); dsl::TakePerfSnapshot(); }
+    } restore;
+    for (const size_t population : {152u, 220u}) {
+        auto fx = MakeFixture(population);
+        Consensus::Params params;
+        std::vector<dsl::CPoSeServiceReport> reports;
+        fx.list.ForEachMN(false, [&](const auto& dmn) {
+            const auto sentinels = dsl::CalcSentinelsForMN(fx.list, dmn.proTxHash, fx.epoch, 7);
+            for (const auto& sentinel : sentinels) {
+                reports.push_back(SignedReport(500, dmn.proTxHash, sentinel,
+                                               dsl::ServiceStatus::ONLINE, fx.opKeys.at(sentinel)));
+            }
+        });
+        dsl::SetPerfEnabled(false);
+        dsl::CServiceReportStore store;
+        store.SetCurrentEpoch(500);
+        for (const auto& report : reports) BOOST_REQUIRE(store.AddReport(report, fx.list, fx.epoch, params));
+        const auto pooled = store.GetReportsForEpoch(500);
+        BOOST_REQUIRE_EQUAL(pooled.size(), population * 7);
+        const auto build = [&] {
+            return dsl::BuildServiceCommitmentTx(500, fx.epoch, Consensus::LLMQType::LLMQ_50_60,
+                                                 uint256::ONE, pooled, fx.list, params);
+        };
+        const auto expected = build();
+        const auto off_start = std::chrono::steady_clock::now();
+        for (int i = 0; i < 3; ++i) BOOST_CHECK(build().msgHash == expected.msgHash);
+        const auto off_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - off_start).count();
+        dsl::TakePerfSnapshot();
+        dsl::SetPerfEnabled(true);
+        const auto on_start = std::chrono::steady_clock::now();
+        for (int i = 0; i < 3; ++i) {
+            const auto actual = build();
+            BOOST_CHECK(actual.msgHash == expected.msgHash);
+            BOOST_CHECK(actual.commitment.missed == expected.commitment.missed);
+            BOOST_CHECK(actual.commitment.observed == expected.commitment.observed);
+            BOOST_CHECK(CTransaction(actual.tx).GetHash() == CTransaction(expected.tx).GetHash());
+        }
+        const auto on_us = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - on_start).count();
+        const auto snapshot = dsl::TakePerfSnapshot();
+        const auto& values = snapshot.epochs[0].values;
+        BOOST_CHECK_EQUAL(values[static_cast<size_t>(dsl::PerfMetric::VERIFY_REQUEST)].count, population * 7 * 3);
+        BOOST_CHECK_EQUAL(values[static_cast<size_t>(dsl::PerfMetric::COMMITMENT_BUILD)].count, 3u);
+        BOOST_TEST_MESSAGE("N=" << population << " reports=" << pooled.size()
+                           << " repeated3 off_us=" << off_us << " on_us=" << on_us
+                           << " bls_calls=" << values[static_cast<size_t>(dsl::PerfMetric::BLS_VERIFY)].count
+                           << " cache_hits=" << values[static_cast<size_t>(dsl::PerfMetric::CACHE_HIT)].count);
+        dsl::SetPerfEnabled(false);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

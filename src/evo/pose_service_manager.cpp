@@ -7,6 +7,7 @@
 #include <bls/bls.h>
 #include <consensus/params.h>
 #include <evo/deterministicmns.h>
+#include <evo/pose_service_metrics.h>
 #include <logging.h>
 
 #include <algorithm>
@@ -88,6 +89,7 @@ CPoSeServiceManager::EpochChange CPoSeServiceManager::BeginEpoch(uint32_t nEpoch
     }
     for (const uint32_t e : stale) m_store.DropEpoch(e);
     m_store.SetCurrentEpoch(nEpoch);
+    LogPerfSummary();
     LogPrint(BCLog::DSL, "DSL -- epoch %u %s, base %s%s\n", nEpoch,
              result == EpochChange::Rewound ? "rewound (reorg across a boundary)"
              : result == EpochChange::Rebased ? "rebased (base block replaced)"
@@ -230,8 +232,12 @@ std::vector<CPoSeServiceReport> CPoSeServiceManager::EmitReports(const CDetermin
         epochHash = m_epochBlockHash;
         if (const auto it = m_responded.find(m_epoch); it != m_responded.end()) responded = it->second;
     }
-    const auto targets = GetProbeTargetsForSentinel(list, myProTxHash, epochHash,
-                                                    static_cast<size_t>(params.nDSLSentinelCount));
+    PerfTimer emit_timer(epoch, epochHash, PerfMetric::EMIT_REPORTS);
+    const auto targets = [&] {
+        PerfTimer assignment_timer(epoch, epochHash, PerfMetric::INVERSE_ASSIGNMENT);
+        return GetProbeTargetsForSentinel(list, myProTxHash, epochHash,
+                                         static_cast<size_t>(params.nDSLSentinelCount));
+    }();
     std::vector<CPoSeServiceReport> out;
     out.reserve(targets.size());
     for (const auto& t : targets) {
@@ -240,7 +246,10 @@ std::vector<CPoSeServiceReport> CPoSeServiceManager::EmitReports(const CDetermin
         r.targetProTxHash = t;
         r.sentinelProTxHash = myProTxHash;
         r.status = static_cast<uint8_t>(responded.count(t) ? ServiceStatus::ONLINE : ServiceStatus::MISSED);
-        r.sig = signer(r.GetSignHash(epochHash));
+        {
+            PerfTimer sign_timer(epoch, epochHash, PerfMetric::REPORT_SIGN);
+            r.sig = signer(r.GetSignHash(epochHash));
+        }
         out.push_back(std::move(r));
     }
     const auto missed = std::count_if(out.begin(), out.end(), [](const CPoSeServiceReport& r) {

@@ -6,6 +6,7 @@
 
 #include <consensus/params.h>
 #include <evo/deterministicmns.h>
+#include <evo/pose_service_metrics.h>
 #include <logging.h>
 
 #include <algorithm>
@@ -22,12 +23,16 @@ uint32_t CServiceReportStore::OldestKeptEpoch() const
 bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDeterministicMNList& epochList,
                                     const uint256& epochBlockHash, const Consensus::Params& params)
 {
+    PerfTimer wait_timer(report.nEpoch, epochBlockHash, PerfMetric::STORE_WAIT);
     LOCK(m_mutex);
+    wait_timer.Stop();
+    PerfTimer hold_timer(report.nEpoch, epochBlockHash, PerfMetric::STORE_HOLD);
 
     // Every refusal below names its reason under the dsl category, except the
     // duplicate: on a gossip mesh each report arrives many times over, and a
     // line per copy would drown the rest.
     const auto refuse = [&](const char* why) {
+        RecordPerf(report.nEpoch, epochBlockHash, PerfMetric::REFUSED);
         LogPrint(BCLog::DSL, "DSL -- report by %s on %s for epoch %u refused: %s\n",
                  report.sentinelProTxHash.ToString(), report.targetProTxHash.ToString(), report.nEpoch, why);
         return false;
@@ -39,7 +44,10 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
     if (report.nEpoch < OldestKeptEpoch()) return refuse("epoch aged out");
 
     const Key key{report.nEpoch, report.targetProTxHash, report.sentinelProTxHash};
-    if (m_reports.count(key)) return false; // one report per sentinel per target per epoch
+    if (m_reports.count(key)) {
+        RecordPerf(report.nEpoch, epochBlockHash, PerfMetric::DUPLICATE);
+        return false; // one report per sentinel per target per epoch
+    }
 
     // Both ends have to be masternodes the epoch knew about, and the target is
     // the one that bounds this store. The assignment below is derived FROM the
@@ -78,6 +86,7 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
     if (!report.VerifySig(sdmn->pdmnState->pubKeyOperator.Get(), epochBlockHash)) return refuse("bad signature");
 
     m_reports.emplace(key, report);
+    RecordPerf(report.nEpoch, epochBlockHash, PerfMetric::ACCEPTED);
     LogPrint(BCLog::DSL, "DSL -- report by %s on %s for epoch %u kept: %s (%d reports held)\n",
              report.sentinelProTxHash.ToString(), report.targetProTxHash.ToString(), report.nEpoch,
              report.status == static_cast<uint8_t>(ServiceStatus::MISSED) ? "missed" : "online", m_reports.size());
@@ -97,8 +106,11 @@ const std::vector<uint256>& CServiceReportStore::SentinelsFor(uint32_t nEpoch, c
         cache.targets.clear();
     }
     if (const auto it = cache.targets.find(targetProTxHash); it != cache.targets.end()) {
+        RecordPerf(nEpoch, epochBlockHash, PerfMetric::ASSIGNMENT_HIT);
         return it->second;
     }
+    RecordPerf(nEpoch, epochBlockHash, PerfMetric::ASSIGNMENT_MISS);
+    PerfTimer assignment_timer(nEpoch, epochBlockHash, PerfMetric::ASSIGNMENT);
     return cache.targets
         .emplace(targetProTxHash,
                  CalcSentinelsForMN(epochList, targetProTxHash, epochBlockHash, count))

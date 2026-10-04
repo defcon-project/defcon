@@ -33,6 +33,7 @@
 #include <evo/mnhftx.h>
 #include <evo/pose_service.h>
 #include <evo/pose_service_manager.h>
+#include <evo/pose_service_metrics.h>
 #include <evo/pose_service_faults.h>
 #include <evo/simplifiedmns.h>
 #include <governance/governance.h>
@@ -255,6 +256,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
             };
             if (!skip.has_value() && pindexEpochBase != nullptr &&
                 m_sigman->GetRecoveredSigForId(llmqType, requestProbe.GetRequestId(), recSig)) {
+                dsl::PerfTimer miner_timer(closedEpoch, pindexEpochBase->GetBlockHash(), dsl::PerfMetric::MINER_BUILD);
                 auto candidate = dsl::BuildServiceCommitmentTx(
                     closedEpoch, pindexEpochBase->GetBlockHash(), llmqType, recSig.getQuorumHash(),
                     m_dslman->Store().GetReportsForEpoch(closedEpoch),

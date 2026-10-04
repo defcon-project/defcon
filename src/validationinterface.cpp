@@ -6,6 +6,7 @@
 #include <validationinterface.h>
 
 #include <chain.h>
+#include <chainparams.h>
 #include <consensus/validation.h>
 #include <governance/common.h>
 #include <logging.h>
@@ -13,6 +14,7 @@
 #include <primitives/transaction.h>
 #include <scheduler.h>
 #include <evo/deterministicmns.h>
+#include <evo/pose_service_metrics.h>
 #include <governance/vote.h>
 #include <llmq/clsig.h>
 #include <llmq/signing.h>
@@ -195,7 +197,17 @@ void CMainSignals::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockInd
     // the chain actually updates. One way to ensure this is for the caller to invoke this signal
     // in the same critical section where the chain is updated
 
-    auto event = [pindexNew, pindexFork, fInitialDownload, this] {
+    const auto enqueued = dsl::PerfEnabled() ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    auto event = [pindexNew, pindexFork, fInitialDownload, this, enqueued] {
+        if (enqueued != std::chrono::steady_clock::time_point{} && pindexNew != nullptr) {
+            const auto& consensus = Params().GetConsensus();
+            if (consensus.nDSLEpochInterval > 0 && pindexNew->nHeight >= consensus.nDSLActivationHeight) {
+                const auto epoch = static_cast<uint32_t>(pindexNew->nHeight / consensus.nDSLEpochInterval);
+                const auto base = pindexNew->GetAncestor(static_cast<int>(epoch) * consensus.nDSLEpochInterval);
+                const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - enqueued).count();
+                if (base != nullptr) dsl::RecordPerf(epoch, base->GetBlockHash(), dsl::PerfMetric::TIP_QUEUE, nanos);
+            }
+        }
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.UpdatedBlockTip(pindexNew, pindexFork, fInitialDownload); });
     };
     ENQUEUE_AND_LOG_EVENT(event, "%s: new block hash=%s fork block hash=%s (in IBD=%s)", __func__,
