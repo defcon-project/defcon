@@ -133,6 +133,8 @@ BASE_SCRIPTS = [
     'feature_dip3_v19_legacy.py --legacy-wallet',
     'feature_dip3_v19_legacy.py --descriptors',
     'feature_dsl_service.py',
+    'feature_dsl_perf.py',
+    'feature_dsl_perf_burst.py',
     'feature_dsl_enforcement.py',
     'feature_dsl_fault_injection.py',
     'feature_dsl_faults.py',

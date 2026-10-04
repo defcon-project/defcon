@@ -15,9 +15,11 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <map>
 #include <memory>
+#include <thread>
 #include <vector>
 
 namespace dsl {
@@ -372,6 +374,50 @@ BOOST_AUTO_TEST_CASE(assignment_cache_replaces_a_base_or_count_within_one_epoch)
     const auto cached = dsl::CServiceReportStoreTestAccess::CachedTargets(store);
     BOOST_REQUIRE_EQUAL(cached.size(), 1U);
     BOOST_CHECK_EQUAL(cached.at(500), 1U);
+}
+
+BOOST_AUTO_TEST_CASE(cache_hits_do_not_bypass_admission_and_parallel_dedup)
+{
+    auto fx = MakeFixture(30);
+    Consensus::Params params;
+    const uint256 target = TaggedHash(3, 0, "protx");
+    const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, fx.epoch, 7);
+    const auto pk = fx.opKeys.at(sentinels[0]).GetPublicKey();
+    auto good = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::ONLINE, fx.opKeys.at(sentinels[0]));
+    BOOST_REQUIRE(good.VerifySig(pk, fx.epoch));
+    dsl::CServiceReportStore store;
+    store.SetCurrentEpoch(500);
+    std::atomic<int> accepted{0};
+    std::vector<std::thread> workers;
+    for (int i = 0; i < 8; ++i) workers.emplace_back([&] {
+        if (store.AddReport(good, fx.list, fx.epoch, params)) ++accepted;
+    });
+    for (auto& worker : workers) worker.join();
+    BOOST_CHECK_EQUAL(accepted.load(), 1);
+    BOOST_CHECK_EQUAL(store.Size(), 1u);
+    store.DropEpoch(500);
+    BOOST_CHECK(!store.AddReport(good, fx.list, TaggedHash(501, 0, "epoch"), params));
+    BOOST_CHECK(store.AddReport(good, fx.list, fx.epoch, params));
+    store.SetCurrentEpoch(600);
+    BOOST_CHECK(good.VerifySig(pk, fx.epoch)); // still a true crypto fact
+    BOOST_CHECK(!store.AddReport(good, fx.list, fx.epoch, params)); // aged out
+
+    store.SetCurrentEpoch(500);
+    auto unknown = good;
+    unknown.targetProTxHash = TaggedHash(123456, 0, "unknown");
+    unknown.Sign(fx.opKeys.at(sentinels[0]), fx.epoch);
+    BOOST_REQUIRE(unknown.VerifySig(pk, fx.epoch));
+    BOOST_CHECK(!store.AddReport(unknown, fx.list, fx.epoch, params));
+    const auto outsider = std::find_if(fx.opKeys.begin(), fx.opKeys.end(), [&](const auto& entry) {
+        return std::find(sentinels.begin(), sentinels.end(), entry.first) == sentinels.end();
+    });
+    BOOST_REQUIRE(outsider != fx.opKeys.end());
+    auto unassigned = good;
+    unassigned.sentinelProTxHash = outsider->first;
+    unassigned.Sign(outsider->second, fx.epoch);
+    BOOST_REQUIRE(unassigned.VerifySig(outsider->second.GetPublicKey(), fx.epoch));
+    BOOST_CHECK(!store.AddReport(unassigned, fx.list, fx.epoch, params));
+    BOOST_CHECK_EQUAL(store.Size(), 0u);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

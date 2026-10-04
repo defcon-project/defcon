@@ -119,6 +119,8 @@ BITCOIN_TESTS =\
   test/dsl_aggregation_tests.cpp \
   test/dsl_report_store_tests.cpp \
   test/dsl_perf_tests.cpp \
+  test/dsl_metrics_tests.cpp \
+  test/dsl_sigcache_tests.cpp \
   test/dsl_probe_tests.cpp \
   test/dsl_manager_tests.cpp \
   test/dsl_apply_tests.cpp \

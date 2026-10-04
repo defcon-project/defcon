@@ -87,6 +87,7 @@
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
 #include <evo/pose_service_manager.h>
+#include <evo/pose_service_metrics.h>
 #include <evo/pose_service_faults.h>
 #include <flat-database.h>
 #include <governance/governance.h>
@@ -508,6 +509,7 @@ void SetupServerArgs(ArgsManager& argsman)
     argsman.AddArg("-blocksdir=<dir>", "Specify directory to hold blocks subdirectory for *.dat files (default: <datadir>)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-fastprune", "Use smaller block files and lower minimum prune height for testing purposes", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-dslsignwait", "Wait for complete Sentinel verdicts before signing until the last epoch block (regtest only; default: 1)", ArgsManager::ALLOW_BOOL | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-dslperf", "Log bounded per-epoch Sentinel cost summaries (default: 0)", ArgsManager::ALLOW_BOOL | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-enablefaultinjection", "Enable DSL fault injection (devnet and regtest only; startup is refused elsewhere). Faults are armed with the faultinject RPC over cookie authentication, expire by height and are never persisted (default: 0)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
 #if HAVE_SYSTEM
     argsman.AddArg("-blocknotify=<cmd>", "Execute command when the best block changes (%s in cmd is replaced by block hash)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
@@ -2010,6 +2012,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     ChainstateManager& chainman = *Assert(node.chainman);
 
     assert(!node.dslman);
+    dsl::SetPerfEnabled(args.GetBoolArg("-dslperf", false));
     node.dslman = std::make_unique<dsl::CPoSeServiceManager>();
     assert(!node.faultinjector);
     {

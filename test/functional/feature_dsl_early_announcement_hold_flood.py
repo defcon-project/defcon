@@ -341,10 +341,20 @@ class DSLEarlyAnnouncementHoldFloodTest(DashTestFramework):
             receiver.syncwithvalidationinterfacequeue()
 
         def leave(peers, remaining):
-            for peer in peers:
-                peer.peer_disconnect()
-                peer.wait_for_disconnect()
-            self.wait_until(lambda: receiver.getconnectioncount() == remaining, timeout=30)
+            before = {peer["id"] for peer in receiver.getpeerinfo()}
+            finalized = []
+            # getconnectioncount excludes closing sockets before FinalizeNode
+            # removes their vouchers. Keep the tip fixed until that removal,
+            # otherwise a short departure can be classified one block older.
+            with receiver.assert_debug_log(expected_msgs=finalized, timeout=15):
+                for peer in peers:
+                    peer.peer_disconnect()
+                    peer.wait_for_disconnect()
+                self.wait_until(lambda: receiver.getconnectioncount() == remaining, timeout=30)
+                after = {peer["id"] for peer in receiver.getpeerinfo()}
+                departed = before - after
+                assert_equal(len(departed), len(peers))
+                finalized.extend(f"Cleared nodestate for peer={peer_id}\n" for peer_id in departed)
 
         # phase 5: EPOCH_INTERVAL - 1 blocks old when they leave
         base, epoch = bases[4], bases[4] // EPOCH_INTERVAL

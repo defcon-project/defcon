@@ -65,6 +65,7 @@
 #include <evo/deterministicmns.h>
 #include <evo/mnauth.h>
 #include <evo/pose_service_manager.h>
+#include <evo/pose_service_metrics.h>
 #include <evo/pose_service_faults.h>
 #include <evo/simplifiedmns.h>
 #include <llmq/blockprocessor.h>
@@ -5755,6 +5756,14 @@ void PeerManagerImpl::ProcessMessage(
 template <typename T>
 void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj, NodeId skip_id)
 {
+    uint256 perf_base;
+    if (dsl::PerfEnabled()) {
+        const int64_t base_height = static_cast<int64_t>(obj.nEpoch) * m_chainparams.GetConsensus().nDSLEpochInterval;
+        LOCK(cs_main);
+        if (base_height >= 0 && base_height <= m_chainman.ActiveChain().Height()) {
+            perf_base = m_chainman.ActiveChain()[static_cast<int>(base_height)]->GetBlockHash();
+        }
+    }
     m_connman.ForEachNode([&](CNode* pnode) {
         if (pnode->GetId() == skip_id) return;
         if (!pnode->fSuccessfullyConnected || pnode->fDisconnect) return;
@@ -5773,7 +5782,12 @@ void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj,
         // where every one of the miner's seven peers was a quorum connection.
         if (pnode->IsBlockOnlyConn()) return;
         const CNetMsgMaker msgMaker(pnode->GetCommonVersion());
-        m_connman.PushMessage(pnode, msgMaker.Make(msg_type, obj));
+        auto message = [&] {
+            dsl::PerfTimer serialize_timer(obj.nEpoch, perf_base, dsl::PerfMetric::RELAY_SERIALIZE);
+            return msgMaker.Make(msg_type, obj);
+        }();
+        dsl::PerfTimer push_timer(obj.nEpoch, perf_base, dsl::PerfMetric::RELAY_PUSH);
+        m_connman.PushMessage(pnode, std::move(message));
     });
 }
 
@@ -6103,6 +6117,13 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
     if (m_dslman == nullptr || m_dmnman == nullptr) return;
     const Consensus::Params& consensus = m_chainparams.GetConsensus();
     if (m_best_height < consensus.nDSLActivationHeight) return;
+    uint32_t perf_epoch{0};
+    uint256 perf_base;
+    if (dsl::PerfEnabled()) {
+        perf_epoch = m_dslman->CurrentEpoch();
+        perf_base = m_dslman->CurrentEpochHash();
+        if (msg_type == NetMsgType::POSEREPORT) dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::WIRE_REPORT);
+    }
 
     // The per-peer budget, before any deserialization, so that it covers all
     // four message types and precedes the BLS verification each of them can
@@ -6113,7 +6134,10 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
     // crowds out the honest announcements. The epoch refresh runs first and for
     // every peer, whitelisted ones included: the early hold is sized from it.
     RefreshDSLBudgetEpoch();
-    if (!ChargeDSLMessageBudget(pfrom, peer)) return;
+    if (!ChargeDSLMessageBudget(pfrom, peer)) {
+        if (msg_type == NetMsgType::POSEREPORT) dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::BUDGET_REFUSED);
+        return;
+    }
 
     // The epoch base block for a wire-supplied epoch, off this node's active
     // chain (not the manager's tick, which runs on the validation-interface
@@ -6172,8 +6196,12 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
     }
     if (msg_type == NetMsgType::POSEREPORT) {
         dsl::CPoSeServiceReport report;
-        if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, report)) return;
+        if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, report)) {
+            dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::DECODE_REFUSED);
+            return;
+        }
         const CBlockIndex* base = epoch_base(report.nEpoch);
+        if (base == nullptr) dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::BASE_REFUSED);
         const bool accepted = base != nullptr &&
             m_dslman->ProcessReport(report, m_dmnman->GetListForBlock(base), base->GetBlockHash(), consensus);
         LogPrint(BCLog::NET, "DSL -- posereport epoch=%d target=%s accepted=%d, peer=%d\n",
@@ -6680,10 +6708,12 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
                     m_dsl_signed_quorum_hash.SetNull();
                     LogPrint(BCLog::DSL, "DSL -- not in the signing quorum for epoch %d, nothing to sign\n", epoch);
                 } else {
+                    dsl::PerfTimer signing_timer(epoch, pindexBase->GetBlockHash(), dsl::PerfMetric::SIGNING_BUILD);
                     const auto candidate = dsl::BuildServiceCommitmentTx(
                         epoch, pindexBase->GetBlockHash(), llmqType, quorum->qc->quorumHash,
                         m_dslman->Store().GetReportsForEpoch(epoch),
                         m_dmnman->GetListForBlock(pindexBase), consensus);
+                    signing_timer.Stop();
                     // Here AsyncSignIfMember can only fail if the signing session
                     // did not start (quorum state still loading); only a true
                     // return retires the epoch, so a transient delay is retried

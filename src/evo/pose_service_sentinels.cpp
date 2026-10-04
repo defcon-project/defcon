@@ -6,6 +6,8 @@
 
 #include <evo/deterministicmns.h>
 #include <evo/pose_service.h>
+#include <evo/pose_service_metrics.h>
+#include <evo/pose_service_sigcache.h>
 #include <evo/specialtx.h>
 #include <hash.h>
 
@@ -123,7 +125,8 @@ void CPoSeServiceReport::Sign(const CBLSSecretKey& operatorKey, const uint256& e
 
 bool CPoSeServiceReport::VerifySig(const CBLSPublicKey& operatorPubKey, const uint256& epochBlockHash) const
 {
-    return sig.VerifyInsecure(operatorPubKey, GetSignHash(epochBlockHash), /*specificLegacyScheme=*/false);
+    static CReportSignatureCache cache;
+    return cache.Verify(*this, operatorPubKey, epochBlockHash);
 }
 
 CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& epochBlockHash,
@@ -133,6 +136,7 @@ CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& ep
                                               const Consensus::Params& params)
 {
     // canonical order the bitfield indexes
+    PerfTimer build_timer(nEpoch, epochBlockHash, PerfMetric::COMMITMENT_BUILD);
     std::vector<uint256> order;
     order.reserve(epochBaseList.GetAllMNsCount());
     epochBaseList.ForEachMN(false, [&](const auto& dmn) { order.push_back(dmn.proTxHash); });
@@ -162,8 +166,11 @@ CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& ep
     if (withObserved) c.observed.assign(order.size(), false);
 
     for (size_t i = 0; i < order.size(); ++i) {
-        const auto sentinels = CalcSentinelsForMN(epochBaseList, order[i], epochBlockHash,
-                                                  static_cast<size_t>(params.nDSLSentinelCount));
+        const auto sentinels = [&] {
+            PerfTimer assignment_timer(nEpoch, epochBlockHash, PerfMetric::ASSIGNMENT);
+            return CalcSentinelsForMN(epochBaseList, order[i], epochBlockHash,
+                                     static_cast<size_t>(params.nDSLSentinelCount));
+        }();
         const std::set<uint256> assigned(sentinels.begin(), sentinels.end());
         std::set<uint256> counted;
         size_t missedCount = 0;
