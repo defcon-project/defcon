@@ -81,6 +81,7 @@ TEST_FRAMEWORK_MODULES = [
     "crypto.poly1305",
     "crypto.ripemd160",
     "script",
+    "test_node_lifecycle",
 ]
 
 EXTENDED_SCRIPTS = [
@@ -368,6 +369,7 @@ BASE_SCRIPTS = [
     'rpc_estimatefee.py',
     'p2p_unrequested_blocks.py', # NOTE: needs dash_hash to pass
     'feature_shutdown.py',
+    'feature_framework_lifecycle.py',
     'p2p_ibd_txrelay.py',
     'rpc_coinjoin.py',
     'rpc_masternode.py',

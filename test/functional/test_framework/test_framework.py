@@ -672,13 +672,25 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
 
     def stop_nodes(self, expected_stderr='', wait=0):
         """Stop multiple dashd test nodes"""
+        errors = []
         for node in self.nodes:
-            # Issue RPC to stop nodes
-            node.stop_node(expected_stderr=expected_stderr, wait=wait, wait_until_stopped=False)
+            # Request shutdown on every node even when one request or stderr
+            # check fails. Preserve those failures after the cleanup attempts.
+            try:
+                node.stop_node(expected_stderr=expected_stderr, wait=wait, wait_until_stopped=False)
+            except Exception as error:
+                self.log.exception("Unable to request shutdown of node %d", node.index)
+                errors.append(error)
 
         for node in self.nodes:
-            # Wait for nodes to stop
-            node.wait_until_stopped()
+            try:
+                node.wait_until_stopped()
+            except Exception as error:
+                self.log.exception("Unable to finish shutdown of node %d", node.index)
+                errors.append(error)
+
+        if errors:
+            raise errors[0]
 
     def restart_node(self, i, extra_args=None, expected_stderr=''):
         """Stop and start a test node"""
