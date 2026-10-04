@@ -2107,6 +2107,7 @@ static RPCHelpMan dslstatus()
             dsl::PerfTimer rpc_timer(epoch, base->GetBlockHash(), dsl::PerfMetric::RPC_BUILD);
             const auto built = dsl::BuildServiceCommitment(epoch, base->GetBlockHash(), Consensus::LLMQType::LLMQ_NONE,
                                                             uint256(), reports, list, consensus);
+            rpc_timer.Stop();
             // the same canonical order ApplyServiceCommitment resolves bits by
             std::vector<uint256> order;
             order.reserve(list.GetAllMNsCount());

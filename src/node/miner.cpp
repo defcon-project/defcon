@@ -261,6 +261,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock(const CScript& sc
                     closedEpoch, pindexEpochBase->GetBlockHash(), llmqType, recSig.getQuorumHash(),
                     m_dslman->Store().GetReportsForEpoch(closedEpoch),
                     m_dmnman.GetListForBlock(pindexEpochBase), consensus);
+                miner_timer.Stop();
                 if (candidate.msgHash == recSig.getMsgHash()) {
                     CPoSeServiceCommitmentTxPayload payload;
                     payload.commitment = candidate.commitment;

@@ -6713,6 +6713,7 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
                         epoch, pindexBase->GetBlockHash(), llmqType, quorum->qc->quorumHash,
                         m_dslman->Store().GetReportsForEpoch(epoch),
                         m_dmnman->GetListForBlock(pindexBase), consensus);
+                    signing_timer.Stop();
                     // Here AsyncSignIfMember can only fail if the signing session
                     // did not start (quorum state still loading); only a true
                     // return retires the epoch, so a transient delay is retried

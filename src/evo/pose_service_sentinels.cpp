@@ -7,6 +7,7 @@
 #include <evo/deterministicmns.h>
 #include <evo/pose_service.h>
 #include <evo/pose_service_metrics.h>
+#include <evo/pose_service_sigcache.h>
 #include <evo/specialtx.h>
 #include <hash.h>
 
@@ -124,11 +125,8 @@ void CPoSeServiceReport::Sign(const CBLSSecretKey& operatorKey, const uint256& e
 
 bool CPoSeServiceReport::VerifySig(const CBLSPublicKey& operatorPubKey, const uint256& epochBlockHash) const
 {
-    RecordPerf(nEpoch, epochBlockHash, PerfMetric::VERIFY_REQUEST);
-    PerfTimer timer(nEpoch, epochBlockHash, PerfMetric::BLS_VERIFY);
-    const bool valid = sig.VerifyInsecure(operatorPubKey, GetSignHash(epochBlockHash), /*specificLegacyScheme=*/false);
-    if (valid) RecordPerf(nEpoch, epochBlockHash, PerfMetric::BLS_SUCCESS);
-    return valid;
+    static CReportSignatureCache cache;
+    return cache.Verify(*this, operatorPubKey, epochBlockHash);
 }
 
 CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& epochBlockHash,

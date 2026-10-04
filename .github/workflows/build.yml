@@ -447,6 +447,8 @@ jobs:
             p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
             rpc_verifyislock.py                    # the lock-verifying RPCs
             feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
+            feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
+            feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
             feature_llmq_is_nonrotation.py         # an InstantSend lock on a quorum that does not rotate
             feature_llmq_is_nonrotated_verify.py   # the receiving side of the same: a non-masternode accepts a lock signed by a quorum older than one cycle (#238)
             feature_llmq_is_named_quorum_window.py # and one signed by the quorum that has just left the signing-active set, right after a new commitment

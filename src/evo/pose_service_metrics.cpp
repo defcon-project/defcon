@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <mutex>
+#include <string>
 #include <utility>
 
 namespace dsl {
