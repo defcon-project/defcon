@@ -280,7 +280,8 @@ class TestNode():
                 if self.version_is_at_least(180000):
                     # getmempoolinfo.loaded is available since commit
                     # 71e38b9ebcb78b3a264a4c25c7c4e373317f2a40 (version 0.18.0)
-                    wait_until_helper(lambda: rpc.getmempoolinfo()['loaded'])
+                    # rpc_timeout already includes the test's timeout factor.
+                    wait_until_helper(lambda: rpc.getmempoolinfo()['loaded'], timeout=self.rpc_timeout)
                     # Wait for the node to finish reindex, block import, and
                     # loading the mempool. Usually importing happens fast or
                     # even "immediate" when the node is started. However, there
@@ -374,14 +375,22 @@ class TestNode():
         if not self.running:
             return
         self.log.debug("Stopping node")
-        try:
-            # Do not use wait argument when testing older nodes, e.g. in feature_backwards_compatibility.py
-            if self.version_is_at_least(180000):
-                self.stop(wait=wait)
-            else:
-                self.stop()
-        except http.client.CannotSendRequest:
-            self.log.exception("Unable to stop node.")
+        if not self.use_cli and not self.rpc_connected:
+            # Startup can fail before the RPC proxy is installed. On POSIX,
+            # SIGTERM lets the daemon flush instead of relying on __del__.
+            if self.process.poll() is None:
+                self.process.terminate()
+        else:
+            try:
+                # Do not use wait argument when testing older nodes, e.g. in feature_backwards_compatibility.py
+                if self.version_is_at_least(180000):
+                    self.stop(wait=wait)
+                else:
+                    self.stop()
+            except (http.client.CannotSendRequest, OSError):
+                self.log.exception("Unable to stop node via RPC; sending SIGTERM.")
+                if self.process.poll() is None:
+                    self.process.terminate()
 
         # If there are any running perf processes, stop them.
         for profile_name in tuple(self.perf_subprocesses.keys()):
