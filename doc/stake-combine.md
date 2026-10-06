@@ -5,35 +5,42 @@ There are two independent ways to combine outputs.
 ## Combining while staking
 
 With `-stakecombine=1` (the default), a winning coinstake can spend up to 19
-additional mature, unlocked outputs paid to the winning key. It does not
-combine outputs across different wallets or different keys. Masternode
-collateral amounts are excluded. The additional inputs do not increase the
-winning kernel's weight; they are selected after the kernel is found.
+additional eligible, unlocked outputs from the SAME wallet. The default
+`-stakecombinescope=wallet` permits different own keys and links those source
+addresses on chain. `-stakecombinescope=key` restricts gathering to the winning
+key. Masternode collateral amounts are excluded. Additional inputs are selected
+after the kernel is found and do not increase its winning weight.
 
-The combined value matures again with the coinstake. `-staketarget=<amount>`
-sets the desired layout size, within network limits. The automatic target is
-an estimate based on network weight, not a guaranteed resting-value limit.
-Already stakeable inputs are only combined up to that target. For example,
-two 12,000 outputs are not combined when the target is 20,000.
+The wallet evaluates inputs and new outputs together, including the reward.
+Optional inputs must reduce the UTXO count and improve on the kernel-only layout.
+There is no wallet UTXO-count activation threshold or guaranteed maximum count.
+The base target comes from network weight or `-staketarget=<amount>`. Continuous
+mode aims for twice that base and normally splits at three times the base,
+subject to staking limits and collateral avoidance. An optional consolidation
+budget accounts for already-resting value and the winning input; it can leave
+no room to gather additional stakeable coins.
 
-`-stakecombine=0` disables additional inputs. Target-based splitting remains
-enabled. These startup options apply to every wallet loaded by the process.
+The combined value matures again with the coinstake. `-stakecombine=0` disables
+additional inputs and restores the original target-based split policy. Startup
+options apply to every wallet loaded by the process. See
+[Continuous staking consolidation](staking-consolidation.md) for the complete
+size and resting-value policy, exclusions and validation limits.
 
 The transaction list shows **Staked (combined)** when a coinstake actually
-contains more than one input. Its details show the input count, the number
-of positive-value outputs, and the net output-count reduction (which can be
-negative if splitting creates more outputs). The status column still tells
-you whether the transaction is confirmed or accepted.
+contains more than one input. Its details explain the inputs, new outputs,
+principal, net minted reward and transaction-level UTXO-count change. Missing
+input records and unconfirmed transactions are identified explicitly. The status
+column still tells you whether the transaction is confirmed or accepted.
 
 An address-book label such as `combined` is independent of this information.
 It can appear beside an ordinary one-input stake and may be absent beside a
 multi-input stake. Renaming a label does not affect staking or combination.
 
-`getstakinginfo` reports `stake_combine`, `stake_target`, and `stake_outputs`
-for each wallet. `stake_outputs` counts spendable outputs, including amounts
-that cannot stake. The `excluded` fields explain staking exclusions by value.
-With POS logging enabled, coinstake construction logs include the wallet
-name, candidate count, and selection reason. These are construction attempts,
+`getstakinginfo` reports the combine scope, base target, compact target, split
+threshold, resting-value budget and `stake_outputs` for each wallet.
+`stake_outputs` counts spendable outputs, including amounts that cannot stake;
+the `excluded` fields explain staking exclusions by value. `gettransaction`
+includes `stake_details` for coinstakes. POS logs describe construction attempts,
 not proof of block acceptance.
 
 ## Manual combining
