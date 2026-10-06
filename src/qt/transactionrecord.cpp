@@ -106,6 +106,10 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(interfaces::Wal
                 {
                     // Staked
                     sub.type = TransactionRecord::Staked;
+                    sub.stakeInputs = static_cast<int>(wtx.tx->vin.size());
+                    for (const auto& output : wtx.tx->vout) {
+                        if (output.nValue > 0) ++sub.stakeOutputs;
+                    }
                 }
                 if (wtx.is_platform_transfer)
                 {

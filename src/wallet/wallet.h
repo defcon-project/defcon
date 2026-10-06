@@ -96,6 +96,24 @@ static const bool DEFAULT_WALLET_REJECT_LONG_CHAINS = false;
 static const unsigned int DEFAULT_TX_CONFIRM_TARGET = 6;
 static const bool DEFAULT_WALLETBROADCAST = true;
 static const bool DEFAULT_DISABLE_WALLET = false;
+//! -stakecombine default: a coinstake also spends the winning key's small outputs
+static const bool DEFAULT_STAKE_COMBINE = true;
+
+//! combineoutputs lays a batch out in `pieces` equal outputs with the fee taken
+//! out of them, then looks at the result. What it tries next:
+enum class CombinePieceStep {
+    Done,  //!< every piece can stake, and none lands on a collateral amount
+    Fewer, //!< the fee took a piece under the stakeable floor: one piece fewer
+    More,  //!< a piece landed on a collateral amount: one piece more
+    Fail,  //!< a single piece under the floor: the batch, less its fee, cannot
+           //!< make one stakeable output, and is not sent under the floor
+};
+inline CombinePieceStep NextCombinePieceStep(bool below_floor, bool on_collateral, int64_t pieces)
+{
+    if (below_floor) return pieces > 1 ? CombinePieceStep::Fewer : CombinePieceStep::Fail;
+    if (on_collateral) return CombinePieceStep::More;
+    return CombinePieceStep::Done;
+}
 //! -maxtxfee default
 static const CAmount DEFAULT_TRANSACTION_MAXFEE = COIN / 10;
 //! Discourage users to set fees higher than this amount (in satoshis) per kB
@@ -1243,7 +1261,12 @@ public:
        Proof of Stake Variables
      */
     CAmount nReserveBalance{0};
-    CAmount nStakeSplitThreshold = 15000 * COIN;
+    //! The size a coinstake lays its credit out in (-staketarget). Zero lets
+    //! the wallet derive it from the network's stake weight: StakeTargetSize.
+    CAmount m_stake_target{0};
+    bool m_stake_combine_wallet{true};
+    //! Whether a coinstake also spends this key's small outputs (-stakecombine).
+    bool m_stake_combine{DEFAULT_STAKE_COMBINE};
     int64_t nLastCoinStakeSearchTime{0};
     std::atomic<int> m_is_staking{NOT_STAKING};
 
@@ -1253,6 +1276,9 @@ public:
      * @note passing nChangePosInOut as -1 will result in setting a random position
      */
     bool CreateTransaction(const std::vector<CRecipient>& vecSend, CTransactionRef& tx, CAmount& nFeeRet, int& nChangePosInOut, bilingual_str& error, const CCoinControl& coin_control, FeeCalculation& fee_calc_out, bool sign = true, int nExtraPayloadSize = 0);
+    //! Result of recording and optionally submitting a transaction.
+    enum class CommitResult { RECORDED, SUBMITTED, REJECTED, UNKNOWN };
+
     /**
      * Submit the transaction to the node's mempool and then relay to peers.
      * Should be called after CreateTransaction unless you want to abort
@@ -1262,7 +1288,7 @@ public:
      * @param[in] mapValue key-values to be set on the transaction.
      * @param[in] orderForm BIP 70 / BIP 21 order form details to be set on the transaction.
      */
-    void CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::vector<std::pair<std::string, std::string>> orderForm);
+    CommitResult CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::vector<std::pair<std::string, std::string>> orderForm);
 
     bool DummySignTx(CMutableTransaction &txNew, const std::set<CTxOut> &txouts, bool use_max_sig = false) const
     {

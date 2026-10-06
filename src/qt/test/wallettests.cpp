@@ -15,6 +15,10 @@
 #include <qt/sendcoinsdialog.h>
 #include <qt/sendcoinsentry.h>
 #include <qt/transactiontablemodel.h>
+#include <qt/transactionrecord.h>
+#include <qt/transactiondesc.h>
+#include <qt/bitcoinunits.h>
+#include <interfaces/wallet.h>
 #include <qt/transactionview.h>
 #include <qt/walletmodel.h>
 #include <key_io.h>
@@ -39,6 +43,8 @@
 #include <QTextEdit>
 #include <QListView>
 #include <QDialogButtonBox>
+#include <QScrollBar>
+#include <QFile>
 
 namespace
 {
@@ -272,4 +278,111 @@ void WalletTests::walletTests()
     }
 #endif
     TestGUI(m_node);
+}
+
+void WalletTests::stakingCombinationLabels()
+{
+    TestChain100Setup test;
+    auto wallet = std::make_shared<CWallet>(test.m_node.chain.get(), test.m_node.coinjoin_loader.get(), "combine-gui", CreateMockWalletDatabase());
+    wallet->LoadWallet();
+    auto iface = interfaces::MakeWallet(wallet);
+    const CTxDestination dest = PKHash(test.coinbaseKey.GetPubKey());
+    const CScript script = GetScriptForDestination(dest);
+    for (const std::string label : {std::string{}, std::string{"combined"}}) {
+        {
+            LOCK(wallet->cs_wallet);
+            wallet->SetAddressBook(dest, label, "receive");
+        }
+        for (int inputs : {1, 3}) {
+            CMutableTransaction tx;
+            for (int i = 0; i < inputs; ++i) tx.vin.emplace_back(COutPoint(uint256S("01"), i));
+            tx.vout.emplace_back(0, CScript{});
+            tx.vout.emplace_back(1500 * COIN, script);
+            interfaces::WalletTx wtx{};
+            wtx.tx = MakeTransactionRef(tx);
+            wtx.is_coinstake = true;
+            wtx.debit = 1000 * COIN;
+            wtx.txout_is_mine = {ISMINE_NO, ISMINE_SPENDABLE};
+            wtx.txout_address_is_mine = {ISMINE_NO, ISMINE_SPENDABLE};
+            wtx.txout_address = {CNoDestination{}, dest};
+            const auto records = TransactionRecord::decomposeTransaction(*iface, wtx);
+            QCOMPARE(records.size(), 1);
+            QCOMPARE(records[0].type, TransactionRecord::Staked);
+            QCOMPARE(records[0].stakeInputs, inputs);
+            QCOMPARE(records[0].stakeOutputs, 1);
+            QCOMPARE(records[0].label, QString::fromStdString(label));
+            QCOMPARE(records[0].credit, 500 * COIN);
+        }
+    }
+}
+
+void WalletTests::stakingTransactionDetails()
+{
+    TestChain100Setup test;
+    CKey other;
+    other.MakeNewKey(true);
+    const CScript first_script = GetScriptForRawPubKey(test.coinbaseKey.GetPubKey());
+    const CScript other_script = GetScriptForDestination(PKHash(other.GetPubKey()));
+    std::vector<CTxOut> previous{{10000 * COIN, first_script}, {20000 * COIN, other_script}, {30000 * COIN, other_script}};
+    CMutableTransaction tx;
+    for (int i = 0; i < 3; ++i) tx.vin.emplace_back(COutPoint(uint256S("1234"), i));
+    tx.vout.emplace_back(0, CScript{});
+    tx.vout.emplace_back(60500 * COIN, first_script);
+    interfaces::WalletTx wtx{};
+    wtx.tx = MakeTransactionRef(tx);
+    wtx.is_coinstake = true;
+    wtx.txin_is_mine = {ISMINE_SPENDABLE, ISMINE_SPENDABLE, ISMINE_SPENDABLE};
+    wtx.txout_is_mine = {ISMINE_NO, ISMINE_SPENDABLE};
+    interfaces::WalletTxStatus status{};
+    status.is_in_main_chain = true;
+    status.depth_in_main_chain = 30;
+    const QStringList labels{"Main stake", "<b>untrusted label</b>", "Savings"};
+    const QStringList outputs{"", "Main stake"};
+    const int unit = BitcoinUnits::DASH;
+    const QString html = TransactionDesc::FormatStakeDetails(wtx, status, previous, labels, outputs, unit);
+    QVERIFY(html.contains("3 existing outputs were used and combined into 1 new output, reducing the UTXO count by 2."));
+    QCOMPARE(html.count("Additional combined input"), 2);
+    QVERIFY(html.contains("Winning stake input"));
+    QVERIFY(html.contains("Inputs from 2 addresses"));
+    QVERIFY(html.contains("&lt;b&gt;untrusted label&lt;/b&gt;"));
+    QVERIFY(!html.contains("<b>untrusted label</b>"));
+    QVERIFY(html.contains(BitcoinUnits::formatHtmlWithUnit(unit, 500 * COIN)));
+    QVERIFY(html.contains(BitcoinUnits::formatHtmlWithUnit(unit, 60000 * COIN)));
+    QVERIFY(html.contains(BitcoinUnits::formatHtmlWithUnit(unit, 60500 * COIN)));
+    QVERIFY(html.contains("No separate consolidation fee"));
+    QVERIFY(!html.contains("not currently confirmed"));
+    QTextEdit preview;
+    preview.setReadOnly(true);
+    preview.setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    preview.setHtml(html);
+    preview.resize(860, 620);
+    preview.show();
+    QApplication::processEvents();
+    const QString screenshot = qEnvironmentVariable("STAKE_DETAILS_SCREENSHOT");
+    if (!screenshot.isEmpty()) {
+        QVERIFY(preview.grab().save(screenshot));
+        preview.verticalScrollBar()->setValue(preview.verticalScrollBar()->maximum());
+        QApplication::processEvents();
+        QVERIFY(preview.grab().save(screenshot + ".outputs.png"));
+        QFile document(screenshot + ".html");
+        QVERIFY(document.open(QIODevice::WriteOnly));
+        document.write(html.toUtf8());
+    }
+
+    previous[1].SetNull();
+    const QString missing = TransactionDesc::FormatStakeDetails(wtx, status, previous, labels, outputs, unit);
+    QVERIFY(missing.contains("Unknown: some previous outputs"));
+    QVERIFY(missing.contains("Cannot be calculated"));
+    QVERIFY(!missing.contains("No separate consolidation fee"));
+    status.is_in_main_chain = false;
+    status.depth_in_main_chain = -1;
+    QVERIFY(TransactionDesc::FormatStakeDetails(wtx, status, previous, labels, outputs, unit).contains("not currently confirmed"));
+
+    // Combining and splitting can coexist: never describe an increase as a
+    // negative reduction or claim that this is the wallet's total count.
+    tx.vin.resize(2);
+    tx.vout.emplace_back(10000 * COIN, first_script);
+    tx.vout.emplace_back(10000 * COIN, first_script);
+    wtx.tx = MakeTransactionRef(tx);
+    QVERIFY(TransactionDesc::FormatStakeDetails(wtx, status, previous, labels, outputs, unit).contains("increasing the UTXO count by 1"));
 }

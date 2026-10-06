@@ -18,6 +18,9 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -33,79 +36,150 @@ Consensus::Params MainnetLikeLimits()
     params.regularMnCollateral = 1000000 * COIN;
     params.evoMnCollateral = 4000000 * COIN;
     params.nPosKernelV2ActivationHeight = 1000;
+    params.stakeAgeRange = {60 * 60, 60 * 60 * 24 * 60};
+    params.posTargetSpacing = 150;
     return params;
 }
 
-constexpr CAmount SPLIT_THRESHOLD = 15000 * COIN;
+//! The full stakeable rule -- both bounds and the collateral exclusions.
+bool Stakeable(const Consensus::Params& params, CAmount value)
+{
+    return value >= params.stakeValueRange[0] &&
+           value <= params.stakeValueRange[1] &&
+           value != params.regularMnCollateral &&
+           value != params.evoMnCollateral;
+}
 } // namespace
 
 /**
- * A win must never leave the winner with a coin that can no longer stake.
+ * A win must never leave the winner with a coin that can no longer stake, and
+ * must not walk its coins down to the floor either.
  *
- * The wallet halves an output every time it wins, and repeats that on every
- * later win, so an output walks down by a factor of two until it stops. Halving
- * without looking at where the halves land is what retires coins: below the
- * minimum stakeable amount, or exactly on a collateral amount, a coin is skipped
- * from then on with nothing said. Roughly a third of starting sizes reach such a
- * half.
+ * The rule this replaced halved an output on every win from 15,000 up, so every
+ * output ended between 10,000 and 20,000 and a wallet held its balance in
+ * thousands of them. A split now happens only from twice the target, into equal
+ * pieces of about the target. What must not change is the older guarantee:
+ * below the minimum stakeable amount, above the maximum, or exactly on a
+ * collateral amount, a piece is skipped from then on with nothing said.
  */
 BOOST_AUTO_TEST_CASE(a_split_never_produces_an_output_that_cannot_stake)
 {
     Consensus::Params params = MainnetLikeLimits();
     CStakeWallet staker(nullptr, params);
 
-    // The full stakeable rule -- both bounds and the collateral exclusions. If
-    // it repeated the code's earlier partial predicate (no upper bound) it could
-    // never catch a regression that let a split cross the ceiling.
-    const auto stakeable = [&](CAmount value) {
-        return value >= params.stakeValueRange[0] &&
-               value <= params.stakeValueRange[1] &&
-               value != params.regularMnCollateral &&
-               value != params.evoMnCollateral;
-    };
+    for (const CAmount target : {20000 * COIN, 50000 * COIN, 1000000 * COIN}) {
+        for (CAmount credit = 10000 * COIN; credit <= 12 * target; credit += target / 37 + 13 * CENT) {
+            const std::vector<CAmount> outputs = staker.SplitStakeCredit(credit, target);
+            BOOST_REQUIRE(!outputs.empty());
+            BOOST_CHECK(outputs.size() <= MAX_STAKE_SPLIT_OUTPUTS + 2);
 
-    // Whatever it decides, the credit is preserved and a split leaves two
-    // outputs that can both stake again.
-    for (CAmount credit = 10000 * COIN; credit <= 60000 * COIN; credit += 137 * CENT) {
-        const std::vector<CAmount> outputs = staker.SplitStakeCredit(credit, SPLIT_THRESHOLD);
-        BOOST_REQUIRE(outputs.size() == 1 || outputs.size() == 2);
-
-        CAmount sum = 0;
-        for (const CAmount value : outputs) {
-            sum += value;
-        }
-        BOOST_CHECK_EQUAL(sum, credit);
-
-        if (outputs.size() == 2) {
+            CAmount sum = 0;
+            CAmount smallest = MAX_MONEY;
+            CAmount largest = 0;
             for (const CAmount value : outputs) {
-                BOOST_CHECK_MESSAGE(stakeable(value),
+                sum += value;
+                smallest = std::min(smallest, value);
+                largest = std::max(largest, value);
+            }
+            BOOST_CHECK_EQUAL(sum, credit);
+
+            // Under twice the target a credit stays whole: a piece smaller
+            // than the target is exactly what the target exists to prevent.
+            if (credit < 2 * target) {
+                BOOST_CHECK_EQUAL(outputs.size(), 1u);
+                continue;
+            }
+            BOOST_CHECK_MESSAGE(outputs.size() >= 2, "a credit of " << credit / COIN << " was not split at target " << target / COIN);
+            for (const CAmount value : outputs) {
+                BOOST_CHECK_MESSAGE(Stakeable(params, value),
                                     "splitting " << credit / COIN << " produced "
                                                  << value / COIN << ", which cannot stake");
+                // About the target: never under it, never twice it.
+                BOOST_CHECK(value >= target);
+                BOOST_CHECK(value < 2 * target);
             }
+            // Equal pieces: the first carries the rounding, less than a cent a piece.
+            BOOST_CHECK(largest - smallest < static_cast<CAmount>(outputs.size()) * CENT);
         }
     }
 
-    // The band that used to be split into dust: anything from the threshold up
-    // to twice the minimum has halves below the floor, so it must stay whole.
-    for (CAmount credit = SPLIT_THRESHOLD; credit < 2 * params.stakeValueRange[0]; credit += 97 * CENT) {
-        BOOST_CHECK_MESSAGE(staker.SplitStakeCredit(credit, SPLIT_THRESHOLD).size() == 1,
-                            "a credit of " << credit / COIN << " was split into unusable halves");
+    // Twice a collateral amount at a target of one collateral would land both
+    // pieces on it; a third piece moves every piece off it.
+    for (const CAmount collateral : {params.regularMnCollateral, params.evoMnCollateral}) {
+        const std::vector<CAmount> outputs = staker.SplitStakeCredit(2 * collateral, collateral);
+        BOOST_CHECK_EQUAL(outputs.size(), 3u);
+        for (const CAmount value : outputs) {
+            BOOST_CHECK(Stakeable(params, value));
+        }
     }
 
-    // Exactly twice a collateral amount halves onto it from both sides.
-    BOOST_CHECK_EQUAL(staker.SplitStakeCredit(2 * params.regularMnCollateral, SPLIT_THRESHOLD).size(), 1u);
-    BOOST_CHECK_EQUAL(staker.SplitStakeCredit(2 * params.evoMnCollateral, SPLIT_THRESHOLD).size(), 1u);
+    // One win writes at most MAX_STAKE_SPLIT_OUTPUTS pieces, however large the
+    // credit is against the target; later wins keep dividing the pieces.
+    BOOST_CHECK_EQUAL(staker.SplitStakeCredit(12000000 * COIN, 20000 * COIN).size(), MAX_STAKE_SPLIT_OUTPUTS);
 
-    // A comfortable size still splits, or the wallet would stop spreading coins.
-    BOOST_CHECK_EQUAL(staker.SplitStakeCredit(12000000 * COIN, SPLIT_THRESHOLD).size(), 2u);
-
-    // The upper bound the predicate now carries: a credit whose halves would
-    // both exceed the ceiling must stay whole rather than fragment into two
-    // outputs that equally cannot stake. Unreachable with real rewards, but it
-    // is what pins the completed rule -- and what the old partial lambda missed.
+    // A credit over the ceiling is split far enough that every piece is under
+    // it, even at a target that would otherwise leave it whole.
     const CAmount over = 3 * params.stakeValueRange[1];
-    BOOST_CHECK(!stakeable(over / 2));
-    BOOST_CHECK_EQUAL(staker.SplitStakeCredit(over, SPLIT_THRESHOLD).size(), 1u);
+    BOOST_CHECK(!Stakeable(params, over));
+    for (const CAmount value : staker.SplitStakeCredit(over, params.stakeValueRange[1] / 2)) {
+        BOOST_CHECK(Stakeable(params, value));
+    }
+
+    // A target of zero or less never splits: the caller's guard, not a crash.
+    BOOST_CHECK_EQUAL(staker.SplitStakeCredit(100000 * COIN, 0).size(), 1u);
+}
+
+/**
+ * The target is sized from the network, not from the wallet.
+ *
+ * Whatever wins rests for about COINBASE_MATURITY blocks, and a wallet wins in
+ * proportion to its share of the network's weight, so the value resting at
+ * once is close to rest_blocks * target / network_weight for every wallet. A
+ * target chosen as a share of the wallet's own balance -- the first design --
+ * cost a two-million wallet 11 % of its reward at a 250,000 target on a
+ * network of today's weight, in simulation. The automatic size keeps the
+ * resting value near STAKE_REST_BUDGET_BPS instead.
+ */
+BOOST_AUTO_TEST_CASE(the_stake_target_follows_the_network_weight)
+{
+    Consensus::Params params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+    const CAmount floor = 2 * params.stakeValueRange[0];   // 20,000
+    const CAmount ceiling = params.stakeValueRange[1] / 2; // 6,250,000
+    BOOST_REQUIRE_EQUAL(floor, MIN_STAKE_TARGET);
+
+    // Nothing to go on: the floor, never a size made up from a bad estimate.
+    BOOST_CHECK_EQUAL(staker.StakeTargetSize(0, 0), floor);
+    BOOST_CHECK_EQUAL(staker.StakeTargetSize(-1, 0), floor);
+    BOOST_CHECK_EQUAL(staker.StakeTargetSize(std::nan(""), 0), floor);
+    BOOST_CHECK_EQUAL(staker.StakeTargetSize(std::numeric_limits<double>::infinity(), 0), floor);
+
+    // The rest is the kernel's depth rule, 27 blocks, which outlasts the hour
+    // of minimum age at 150 s spacing (24 blocks). One per cent of a billion
+    // over 27 blocks is 370,370 whole coins.
+    BOOST_CHECK_EQUAL(staker.StakeTargetSize(1000000000.0 * COIN, 0), 370370 * COIN);
+    // A network of today's measured weight sits at the floor.
+    BOOST_CHECK_EQUAL(staker.StakeTargetSize(42000000.0 * COIN, 0), floor);
+    // And it cannot pass the ceiling, where a credit of just under two targets
+    // would no longer be stakeable.
+    BOOST_CHECK_EQUAL(staker.StakeTargetSize(1e30, 0), ceiling);
+
+    // Where the minimum age is the longer wait, it sets the rest instead.
+    Consensus::Params slow = params;
+    slow.stakeAgeRange[0] = 2 * 60 * 60; // 48 blocks at 150 s
+    CStakeWallet slow_staker(nullptr, slow);
+    BOOST_CHECK_EQUAL(slow_staker.StakeTargetSize(1000000000.0 * COIN, 0), 208333 * COIN);
+
+    // A configured size wins over the network, inside the same bounds.
+    BOOST_CHECK_EQUAL(staker.StakeTargetSize(1000000000.0 * COIN, 100000 * COIN), 100000 * COIN);
+    BOOST_CHECK_EQUAL(staker.StakeTargetSize(0, 5000 * COIN), floor);
+    BOOST_CHECK_EQUAL(staker.StakeTargetSize(0, MAX_MONEY), ceiling);
+
+    // Where the network has no floor at all (regtest), MIN_STAKE_TARGET is it.
+    Consensus::Params open = params;
+    open.stakeValueRange = {0, MAX_MONEY};
+    CStakeWallet open_staker(nullptr, open);
+    BOOST_CHECK_EQUAL(open_staker.StakeTargetSize(0, 0), MIN_STAKE_TARGET);
 }
 
 /**
@@ -723,6 +797,7 @@ BOOST_FIXTURE_TEST_CASE(staking_info_preserves_selection_and_exclusions, TestCha
                 const int64_t time = old->GetBlockTime() + age;
                 const auto info = staker.GetStakingInfo(time, height);
                 BOOST_CHECK_EQUAL(info.weight, staker.GetStakeWeight(time, height));
+                BOOST_CHECK_EQUAL(info.spendable_outputs, staker.CountSpendableOutputs());
                 check_report(info.excluded, staker.ExplainExcludedCoins(time, height));
                 const bool old_age = age > 1800 && height < params.nPosKernelV2ActivationHeight;
                 const bool eligible = age >= 600 && !old_age;
@@ -750,6 +825,225 @@ BOOST_FIXTURE_TEST_CASE(staking_info_preserves_selection_and_exclusions, TestCha
     CStakeWallet expired(nullptr, params);
     BOOST_CHECK_EQUAL(expired.GetStakingInfo(0, 0).weight, 0U);
     BOOST_CHECK_EQUAL(expired.GetStakingInfo(0, 0).excluded.Total(), 0);
+}
+
+BOOST_AUTO_TEST_CASE(the_coinstake_size_bounds_hold_for_an_uncompressed_key)
+{
+    // The kernel's key can be uncompressed, and every piece of a split pays to
+    // the kernel's own script. A bound that assumed a compressed key let a
+    // nearly full block take more combined inputs than fit, and the stake
+    // attempt was then lost at the final size check.
+    CKey key;
+    key.MakeNewKey(/*fCompressed=*/false);
+    const CPubKey pubkey = key.GetPubKey();
+    BOOST_REQUIRE(!pubkey.IsCompressed());
+    const CScript pay_to_pubkey = CScript() << ToByteVector(pubkey) << OP_CHECKSIG;
+    // The largest DER signature with its hash type, then the key: a spend of a
+    // pay-to-pubkey-hash output, the larger of the two input forms.
+    const CScript script_sig = CScript() << std::vector<unsigned char>(73, 0x30) << ToByteVector(pubkey);
+
+    for (const size_t inputs : {size_t{1}, size_t{2}, MAX_STAKE_COMBINE_INPUTS}) {
+        CMutableTransaction tx;
+        for (size_t i = 0; i < inputs; ++i) {
+            tx.vin.emplace_back(COutPoint(uint256S(strprintf("%064x", i + 1)), 1), script_sig);
+        }
+        tx.vout.emplace_back(0, CScript()); // the coinstake's empty first output
+        for (size_t k = 0; k < MAX_STAKE_SPLIT_OUTPUTS + 2; ++k) {
+            tx.vout.emplace_back(10000 * COIN, pay_to_pubkey);
+        }
+        const size_t actual = ::GetSerializeSize(CTransaction(tx), PROTOCOL_VERSION);
+        const size_t bound = COINSTAKE_FIXED_BYTES + inputs * COINSTAKE_INPUT_BYTES +
+                             (MAX_STAKE_SPLIT_OUTPUTS + 3) * COINSTAKE_OUTPUT_BYTES;
+        BOOST_CHECK_MESSAGE(actual <= bound, strprintf("%u inputs: %u bytes, bound %u", inputs, actual, bound));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(a_combine_batch_is_never_sent_under_the_stakeable_floor)
+{
+    // combineoutputs with an output size takes the fee out of the pieces. One
+    // piece fewer mends a piece the fee took under the floor; a single piece
+    // under it cannot be mended, and the batch fails rather than send an output
+    // that cannot stake. Regtest's floor is zero, so the functional test cannot
+    // reach this: the rule is pinned here.
+    BOOST_CHECK(NextCombinePieceStep(false, false, 3) == CombinePieceStep::Done);
+    BOOST_CHECK(NextCombinePieceStep(true, false, 3) == CombinePieceStep::Fewer);
+    BOOST_CHECK(NextCombinePieceStep(true, false, 2) == CombinePieceStep::Fewer);
+    BOOST_CHECK(NextCombinePieceStep(true, false, 1) == CombinePieceStep::Fail);
+    BOOST_CHECK(NextCombinePieceStep(false, true, 1) == CombinePieceStep::More);
+    BOOST_CHECK(NextCombinePieceStep(false, true, 4) == CombinePieceStep::More);
+
+}
+
+
+BOOST_AUTO_TEST_CASE(unsplit_stake_credit_must_remain_stakeable)
+{
+    auto params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+    for (CAmount collateral : {params.regularMnCollateral, params.evoMnCollateral}) {
+        for (CAmount offset : {CAmount{-1}, CAmount{0}, CAmount{1}}) {
+            const CAmount credit = collateral + offset;
+            const auto outputs = staker.SplitStakeCredit(credit, collateral);
+            BOOST_REQUIRE(!outputs.empty());
+            CAmount total{0};
+            for (CAmount value : outputs) {
+                BOOST_CHECK(Stakeable(params, value));
+                total += value;
+            }
+            BOOST_CHECK_EQUAL(total, credit);
+            BOOST_CHECK_EQUAL(outputs.size(), offset == 0 ? 2U : 1U);
+        }
+    }
+    BOOST_CHECK(staker.SplitStakeCredit(params.stakeValueRange[0] - 1, 20000 * COIN).empty());
+    const auto upper = staker.SplitStakeCredit(params.stakeValueRange[1] + 500 * COIN, params.stakeValueRange[1] / 2);
+    BOOST_REQUIRE(!upper.empty());
+    for (CAmount value : upper) BOOST_CHECK(Stakeable(params, value));
+}
+
+
+BOOST_AUTO_TEST_CASE(abandon_restores_the_spendable_input_index)
+{
+    auto* manager = m_wallet.GetOrCreateLegacyScriptPubKeyMan();
+    LOCK2(m_wallet.cs_wallet, manager->cs_KeyStore);
+    CKey key;
+    key.MakeNewKey(true);
+    BOOST_REQUIRE(manager->AddKeyPubKey(key, key.GetPubKey()));
+    const CScript script = GetScriptForDestination(PKHash(key.GetPubKey()));
+    CMutableTransaction parent;
+    parent.vin.emplace_back(COutPoint(uint256S("abcd"), 0));
+    parent.vout.emplace_back(10 * COIN, script);
+    parent.vout.emplace_back(20 * COIN, script);
+    const auto parent_ref = MakeTransactionRef(parent);
+    const uint256 block_hash = m_node.chainman->ActiveChain().Tip()->GetBlockHash();
+    m_wallet.SetLastBlockProcessed(10, block_hash);
+    const CWalletTx::Confirmation confirmation{CWalletTx::CONFIRMED, 5, block_hash, 0};
+    const auto* parent_wtx = m_wallet.AddToWallet(parent_ref, confirmation);
+    BOOST_REQUIRE(parent_wtx);
+    const auto available_parent_outputs = [&] {
+        std::vector<COutput> coins;
+        m_wallet.AvailableCoins(coins);
+        return std::count_if(coins.begin(), coins.end(), [&](const COutput& coin) { return coin.tx == parent_wtx; });
+    };
+    BOOST_CHECK_EQUAL(available_parent_outputs(), 2U);
+
+    CMutableTransaction combined;
+    combined.vin.emplace_back(COutPoint(parent.GetHash(), 0));
+    combined.vin.emplace_back(COutPoint(parent.GetHash(), 1));
+    combined.vout.emplace_back(30 * COIN - 1000, script);
+    const auto child = MakeTransactionRef(combined);
+    BOOST_REQUIRE(m_wallet.AddToWallet(child, {}));
+    BOOST_CHECK_EQUAL(available_parent_outputs(), 0U);
+    BOOST_REQUIRE(m_wallet.AbandonTransaction(child->GetHash()));
+    BOOST_CHECK(!m_wallet.IsSpent(parent.GetHash(), 0));
+    BOOST_CHECK(!m_wallet.IsSpent(parent.GetHash(), 1));
+    BOOST_CHECK_EQUAL(available_parent_outputs(), 2U);
+}
+
+
+BOOST_AUTO_TEST_CASE(continuous_consolidation_plans_inputs_and_outputs_together)
+{
+    auto params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+    const CAmount base = 250000 * COIN;
+    auto plan = staker.PlanCoinstake(200000 * COIN, 500 * COIN,
+                                    {50000 * COIN, 100000 * COIN, 150000 * COIN}, base, 19, MAX_MONEY, MAX_MONEY);
+    // The additional eligible-value budget is one base target, so take the
+    // two smallest pieces, not all three. Principal and reward are conserved.
+    BOOST_CHECK_EQUAL(plan.extra_inputs.size(), 2u);
+    BOOST_REQUIRE_EQUAL(plan.output_values.size(), 1u);
+    BOOST_CHECK_EQUAL(plan.output_values[0], 350500 * COIN);
+    BOOST_CHECK_EQUAL(plan.UtxoDelta(), -2);
+    const auto next = staker.PlanCoinstake(plan.output_values[0], 500 * COIN, {}, base, 19, MAX_MONEY, MAX_MONEY);
+    BOOST_REQUIRE_EQUAL(next.output_values.size(), 1u);
+    BOOST_CHECK_EQUAL(next.output_values[0], 351000 * COIN);
+
+    // Pieces at the OLD target can now combine. Neither is below that target.
+    plan = staker.PlanCoinstake(base, 500 * COIN, {base}, base, 19, MAX_MONEY, MAX_MONEY);
+    BOOST_CHECK_EQUAL(plan.UtxoDelta(), -1);
+    BOOST_CHECK_EQUAL(plan.extra_inputs.size(), 1u);
+    // Two just-split pieces cannot be combined only to split them again.
+    plan = staker.PlanCoinstake(400000 * COIN, 500 * COIN, {400000 * COIN}, base, 19, MAX_MONEY, MAX_MONEY);
+    BOOST_CHECK(plan.extra_inputs.empty());
+    BOOST_CHECK_EQUAL(plan.output_values.size(), 1u);
+
+    // Dust can be reclaimed even while the additional eligible-value budget
+    // is exhausted. Reward + principal, never a synthetic fee or bonus.
+    plan = staker.PlanCoinstake(base, 500 * COIN, {2900 * COIN, base}, base, 19, MAX_MONEY, 0);
+    BOOST_REQUIRE_EQUAL(plan.extra_inputs.size(), 1u);
+    BOOST_CHECK_EQUAL(plan.extra_inputs[0], 0u);
+    BOOST_CHECK_EQUAL(plan.output_values[0], 253400 * COIN);
+    BOOST_CHECK_EQUAL(plan.extra_resting_value, 0);
+
+    const std::vector<CAmount> dust(100, COIN);
+    plan = staker.PlanCoinstake(base, 500 * COIN, dust, base, 100, MAX_MONEY, 0);
+    BOOST_CHECK_EQUAL(plan.extra_inputs.size(), MAX_STAKE_COMBINE_INPUTS - 1);
+    plan = staker.PlanCoinstake(base, 500 * COIN, dust, base, 0, MAX_MONEY, MAX_MONEY);
+    BOOST_CHECK(plan.extra_inputs.empty());
+    plan = staker.PlanCoinstake(base, 500 * COIN, dust, base, 19, 2 * COIN, MAX_MONEY);
+    BOOST_CHECK_EQUAL(plan.extra_inputs.size(), 2u);
+
+    plan = staker.PlanCoinstake(base, 500 * COIN,
+        {0, -1, params.regularMnCollateral, params.evoMnCollateral, MAX_MONEY}, base, 19, MAX_MONEY, MAX_MONEY);
+    BOOST_CHECK(plan.extra_inputs.empty());
+    BOOST_CHECK(staker.PlanCoinstake(MAX_MONEY, COIN, {}, base, 0, 0, 0).output_values.empty());
+    BOOST_CHECK(staker.PlanCoinstake(base, -1, {}, base, 0, 0, 0).output_values.empty());
+}
+
+BOOST_AUTO_TEST_CASE(continuous_consolidation_preserves_amounts_and_stakeability)
+{
+    auto params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+    for (const CAmount base : {20000 * COIN, 250000 * COIN, 1000000 * COIN, 6250000 * COIN}) {
+        for (CAmount kernel = 10000 * COIN; kernel <= params.stakeValueRange[1]; kernel += 137113 * COIN) {
+            const std::vector<CAmount> candidates{COIN, 2900 * COIN, 10000 * COIN, base, params.regularMnCollateral};
+            const auto plan = staker.PlanCoinstake(kernel, 500 * COIN, candidates, base, 19, MAX_MONEY, MAX_MONEY);
+            BOOST_REQUIRE(!plan.output_values.empty());
+            CAmount expected = kernel + 500 * COIN;
+            for (const size_t i : plan.extra_inputs) expected += candidates[i];
+            CAmount actual = 0;
+            for (const CAmount out : plan.output_values) {
+                BOOST_CHECK(Stakeable(params, out));
+                actual += out;
+            }
+            BOOST_CHECK_EQUAL(actual, expected);
+            BOOST_CHECK(plan.output_values.size() <= MAX_STAKE_SPLIT_OUTPUTS + 2);
+            if (!plan.extra_inputs.empty()) BOOST_CHECK(plan.UtxoDelta() < 0);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(continuous_consolidation_rest_budget_is_wallet_local)
+{
+    BOOST_CHECK_EQUAL(CStakeWallet::CombineRestAllowance(10000000 * COIN, 0, 100000 * COIN), 400000 * COIN);
+    BOOST_CHECK_EQUAL(CStakeWallet::CombineRestAllowance(9600000 * COIN, 400000 * COIN, 100000 * COIN), 0);
+    BOOST_CHECK_EQUAL(CStakeWallet::CombineRestAllowance(100000 * COIN, 0, 100000 * COIN), 0);
+    BOOST_CHECK_EQUAL(CStakeWallet::CombineRestAllowance(std::numeric_limits<CAmount>::max(), COIN, COIN), 0);
+    BOOST_CHECK_EQUAL(CStakeWallet::CombineRestAllowance(-1, 0, 0), 0);
+}
+
+BOOST_AUTO_TEST_CASE(continuous_consolidation_reduces_fragmentation_over_repeated_wins)
+{
+    auto params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+    const CAmount base = 250000 * COIN;
+    std::vector<CAmount> coins(80, base);
+    const CAmount starting = 80 * base;
+    CAmount rewards = 0;
+    // Deterministic mature snapshots isolate the policy from kernel luck;
+    // functional tests separately exercise actual maturity and block acceptance.
+    for (size_t win = 0; win < 100; ++win) {
+        const CAmount kernel = coins.front();
+        coins.erase(coins.begin());
+        const auto plan = staker.PlanCoinstake(kernel, 500 * COIN, coins, base, 19, MAX_MONEY, MAX_MONEY);
+        auto used = plan.extra_inputs;
+        std::sort(used.rbegin(), used.rend());
+        for (const size_t i : used) coins.erase(coins.begin() + i);
+        coins.insert(coins.end(), plan.output_values.begin(), plan.output_values.end());
+        rewards += 500 * COIN;
+    }
+    BOOST_CHECK(coins.size() < 80);
+    CAmount total = 0;
+    for (const CAmount value : coins) { total += value; BOOST_CHECK(Stakeable(params, value)); }
+    BOOST_CHECK_EQUAL(total, starting + rewards);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

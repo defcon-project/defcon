@@ -16,6 +16,49 @@
 
 using valtype = std::vector<unsigned char>;
 
+/** The most inputs one coinstake spends: the kernel and the outputs it combines. */
+static constexpr size_t MAX_STAKE_COMBINE_INPUTS{20};
+/** The normal split limit; up to two extra pieces avoid collateral amounts. */
+static constexpr size_t MAX_STAKE_SPLIT_OUTPUTS{10};
+/**
+ * Upper bounds used to fit a coinstake to the room left in its block.
+ *
+ * An input: outpoint (36), script length (1), a push of the largest DER
+ * signature with its hash type (1 + 73) and of an uncompressed public key
+ * (1 + 65), sequence (4) -- 181 bytes. An output: value (8), script length (1)
+ * and a pay-to-pubkey script with an uncompressed key (1 + 65 + 1) -- 76
+ * bytes. The kernel's key can be uncompressed, and every piece of a split
+ * pays to the kernel's own script.
+ */
+static constexpr size_t COINSTAKE_INPUT_BYTES{181};
+static constexpr size_t COINSTAKE_OUTPUT_BYTES{76};
+/** Version and type, lock time and the counts of an otherwise empty transaction. */
+static constexpr size_t COINSTAKE_FIXED_BYTES{16};
+/** The smallest target size, where the network's own floor is lower or absent. */
+static constexpr CAmount MIN_STAKE_TARGET{20000 * COIN};
+/**
+ * How much of a wallet's value may sit resting after its wins, in parts per ten
+ * thousand, when the target size is derived automatically.
+ *
+ * A winning coin and everything spent with it cannot stake again for about
+ * COINBASE_MATURITY blocks. A wallet wins in proportion to its share of the
+ * network's weight, so the value resting at any moment is close to
+ * rest_blocks * target / network_weight whatever the wallet's own balance:
+ * the target is sized from the network, not from the wallet.
+ */
+static constexpr int64_t STAKE_REST_BUDGET_BPS{100};
+/** Only optional consolidation is held back when 5% of this wallet's staking
+ * pool is resting. The winning kernel is never rejected for this policy. */
+static constexpr int64_t STAKE_COMBINE_REST_BUDGET_BPS{500};
+
+struct CoinstakePlan
+{
+    std::vector<size_t> extra_inputs;
+    std::vector<CAmount> output_values;
+    CAmount extra_resting_value{0};
+    int UtxoDelta() const { return static_cast<int>(output_values.size()) - 1 - static_cast<int>(extra_inputs.size()); }
+};
+
 /**
  * Convenience class allowing stake functions to have easy access to the wallet,
  * without the linking issues that come with later bitcoin releases.
@@ -63,6 +106,7 @@ struct StakeSkipReport
 struct StakeWalletInfo
 {
     uint64_t weight{0};
+    uint64_t spendable_outputs{0};
     StakeSkipReport excluded;
 };
 
@@ -244,15 +288,51 @@ class CStakeWallet
         int64_t CoinBlockTime(const CWalletTx& coin) const;
 
         /**
-         * How a coinstake's credit is laid out: one output, or two that can each
-         * stake again. Takes the threshold rather than reading it from the
-         * wallet so the decision can be exercised on its own.
+         * The base size used by the coinstake layout policy.
+         *
+         * `configured` is -staketarget; zero derives the size from
+         * `network_weight` (getstakinginfo's netstakeweight, in satoshis) so
+         * that the original layout resting value stays near STAKE_REST_BUDGET_BPS.
+         * Continuous mode derives larger pieces from this base; see the compact
+         * target and split threshold. Either way
+         * the result lies between twice the lowest stakeable amount (at least
+         * MIN_STAKE_TARGET) and half the highest, so that every piece of a
+         * split and every combined credit can stake again.
          */
-        std::vector<CAmount> SplitStakeCredit(CAmount nCredit, CAmount threshold) const;
+        CAmount StakeTargetSize(double network_weight, CAmount configured) const;
+
+        /**
+         * How a coinstake's credit is laid out: whole while it is under twice
+         * `target`, otherwise in equal pieces of about `target` -- at most
+         * MAX_STAKE_SPLIT_OUTPUTS plus two collateral-avoidance pieces. An empty
+         * result means no eligible layout exists; the caller must not publish it.
+         * Takes the target rather than reading it from the wallet so the
+         * decision can be exercised on its own.
+         */
+        std::vector<CAmount> SplitStakeCredit(CAmount nCredit, CAmount target, CAmount split_above = 0) const;
+
+        /** Joint input/output plan, including the reward. Candidates have passed
+         * ownership, script, lock and depth checks. No wallet-count thresholds.
+         * Amounts below the staking floor consume no eligible-value budget. */
+        CoinstakePlan PlanCoinstake(CAmount kernel, CAmount reward,
+                                   const std::vector<CAmount>& candidates, CAmount base_target,
+                                   size_t max_extra, CAmount allowance, CAmount rest_allowance) const;
+        CAmount CompactStakeTarget(CAmount base_target) const;
+        CAmount CompactSplitThreshold(CAmount base_target) const;
+        static CAmount CombineRestAllowance(CAmount eligible, CAmount resting, CAmount kernel);
+
+        /** Unspent outputs the wallet can spend, for getstakinginfo. */
+        size_t CountSpendableOutputs() const;
 
         uint64_t GetStakeWeight(int64_t nTime, int nHeight) const;
         bool SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight, std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet, CAmount& nValueRet) const;
-        StakeAttempt CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key);
+        /**
+         * `max_coinstake_bytes` is the room left in the block being signed. A
+         * coinstake that combines outputs grows by an input each, and the block
+         * template reserves only a little for it, so the combining is fitted to
+         * this bound rather than to a fixed count.
+         */
+        StakeAttempt CreateCoinStake(CChainState& chain_state, CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, int nBlockHeight, int64_t nFees, CMutableTransaction& txNew, CKey& key, size_t max_coinstake_bytes);
         StakeAttempt SignBlock(CChainState& chain_state, CBlockTemplate* pblocktemplate, int nHeight, int64_t nSearchTime);
 };
 

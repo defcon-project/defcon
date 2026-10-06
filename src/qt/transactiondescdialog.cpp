@@ -11,6 +11,8 @@
 #include <QModelIndex>
 #include <QSettings>
 #include <QString>
+#include <QGuiApplication>
+#include <QScreen>
 
 TransactionDescDialog::TransactionDescDialog(const QModelIndex &idx, QWidget *parent) :
     QDialog(parent, GUIUtil::dialog_flags),
@@ -18,8 +20,12 @@ TransactionDescDialog::TransactionDescDialog(const QModelIndex &idx, QWidget *pa
 {
     ui->setupUi(this);
     GUIUtil::updateFonts();
+    if (QScreen* screen = QGuiApplication::primaryScreen()) {
+        resize(size().boundedTo(screen->availableGeometry().size() * 0.9));
+    }
     setWindowTitle(tr("Details for %1").arg(idx.data(TransactionTableModel::TxHashRole).toString()));
     QString desc = idx.data(TransactionTableModel::LongDescriptionRole).toString();
+    ui->detailText->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
     ui->detailText->setHtml(desc);
 
     GUIUtil::handleCloseWindowShortcut(this);

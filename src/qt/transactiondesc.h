@@ -7,6 +7,9 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
+#include <primitives/transaction.h>
+#include <vector>
 
 class TransactionRecord;
 
@@ -24,6 +27,12 @@ class TransactionDesc: public QObject
     Q_OBJECT
 
 public:
+    /** Render recorded transaction facts; null prevouts remain explicitly unknown. */
+    static QString FormatStakeDetails(const interfaces::WalletTx& wtx,
+                                     const interfaces::WalletTxStatus& status,
+                                     const std::vector<CTxOut>& previous_outputs,
+                                     const QStringList& input_labels,
+                                     const QStringList& output_labels, int unit);
     static QString toHTML(interfaces::Node& node, interfaces::Wallet& wallet, TransactionRecord *rec, int unit);
 
 private:

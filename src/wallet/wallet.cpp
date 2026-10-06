@@ -1193,6 +1193,13 @@ bool CWallet::AbandonTransaction(const uint256& hashTx)
             // If a transaction changes 'conflicted' state, that changes the balance
             // available of the outputs it spends. So force those to be recomputed
             MarkInputsDirty(wtx.tx);
+            // AddToSpends removed these outpoints from the spendable index.
+            // Dirty balance caches alone do not make AvailableCoins see them
+            // again. IsSpent in AddWalletUTXOs keeps any competing spend out.
+            for (const CTxIn& input : wtx.tx->vin) {
+                const auto parent = mapWallet.find(input.prevout.hash);
+                if (parent != mapWallet.end()) AddWalletUTXOs(parent->second.tx, false);
+            }
         }
     }
 
@@ -4028,7 +4035,7 @@ bool CWallet::CreateTransaction(
     return res;
 }
 
-void CWallet::CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::vector<std::pair<std::string, std::string>> orderForm)
+CWallet::CommitResult CWallet::CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::vector<std::pair<std::string, std::string>> orderForm)
 {
     LOCK(cs_wallet);
     WalletLogPrintf("CommitTransaction:\n%s", tx->ToString()); /* Continued */
@@ -4062,14 +4069,18 @@ void CWallet::CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::ve
 
     if (!fBroadcastTransactions) {
         // Don't submit tx to the mempool
-        return;
+        return CommitResult::RECORDED;
     }
 
     bilingual_str err_string;
     if (!wtx.SubmitMemoryPoolAndRelay(err_string, true)) {
         WalletLogPrintf("CommitTransaction(): Transaction cannot be broadcast immediately, %s\n", err_string.original);
-        // TODO: if we expect the failure to be long term or permanent, instead delete wtx from the wallet and return failure.
+        // An empty reason can mean already-in-chain or not eligible for
+        // resubmission. Do not treat that as a proven mempool rejection.
+        // The caller decides whether an explicit rejection can be abandoned.
+        return err_string.original.empty() ? CommitResult::UNKNOWN : CommitResult::REJECTED;
     }
+    return CommitResult::SUBMITTED;
 }
 
 DBErrors CWallet::LoadWallet()
@@ -5047,6 +5058,27 @@ std::shared_ptr<CWallet> CWallet::Create(interfaces::Chain* chain, interfaces::C
 
         walletInstance->m_default_max_tx_fee = max_fee.value();
     }
+
+    // Zero, the default, keeps the size automatic. A configured size is taken
+    // as given here and clamped to what the network can stake when it is used,
+    // because the limits live in the consensus parameters, not in the wallet.
+    if (gArgs.IsArgSet("-staketarget")) {
+        std::optional<CAmount> stake_target = ParseMoney(gArgs.GetArg("-staketarget", ""));
+        if (!stake_target) {
+            error = AmountErrMsg("staketarget", gArgs.GetArg("-staketarget", ""));
+            return nullptr;
+        }
+        walletInstance->m_stake_target = stake_target.value();
+    }
+    walletInstance->m_stake_combine = gArgs.GetBoolArg("-stakecombine", DEFAULT_STAKE_COMBINE);
+    const std::string combine_scope = gArgs.GetArg("-stakecombinescope", "wallet");
+    if (combine_scope != "wallet" && combine_scope != "key") {
+        error = Untranslated("-stakecombinescope must be wallet or key");
+        return nullptr;
+    }
+    walletInstance->m_stake_combine_wallet = combine_scope == "wallet";
+    walletInstance->WalletLogPrintf("Stake consolidation: %s; scope=%s%s\n", walletInstance->m_stake_combine ? "enabled" : "disabled", combine_scope,
+        walletInstance->m_stake_combine && walletInstance->m_stake_combine_wallet ? " (spending own addresses together links them on chain)" : "");
 
     if (chain && chain->relayMinFee().GetFeePerK() > HIGH_TX_FEE_PER_KB)
         warnings.push_back(AmountHighWarn("-minrelaytxfee") + Untranslated(" ") +

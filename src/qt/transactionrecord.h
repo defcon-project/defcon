@@ -154,6 +154,10 @@ public:
     /** Whether the transaction was sent/received with a watch-only address */
     bool involvesWatchAddress;
 
+    /// Counts from the transaction, independent of address-book labels.
+    int stakeInputs{0};
+    int stakeOutputs{0};
+
     /// Label
     QString label;
 

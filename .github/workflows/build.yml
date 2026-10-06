@@ -440,6 +440,7 @@ jobs:
           GATE=(
             feature_llmq_chainlocks.py             # ChainLocks, with a masternode added dynamically
             feature_pos_staking.py                 # real proof-of-stake blocks on regtest; descriptor and legacy wallet
+            feature_pos_stake_combine.py           # continuous consolidation, both wallets and key-only scope
             feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates
             feature_dsl_sign_wait.py               # wait for late Sentinel reports, with a signing deadline
             feature_dsl_commitment_v2.py           # the Sentinel commitment's second bitfield: who the pool judged at all (#231)
