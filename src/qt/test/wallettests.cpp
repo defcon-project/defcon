@@ -340,8 +340,8 @@ void WalletTests::stakingTransactionDetails()
     const QStringList outputs{"", "Main stake"};
     const int unit = BitcoinUnits::DASH;
     const QString html = TransactionDesc::FormatStakeDetails(wtx, status, previous, labels, outputs, unit);
-    QVERIFY(html.contains("2 fewer UTXOs"));
-    QCOMPARE(html.count("Additional input combined"), 2);
+    QVERIFY(html.contains("3 existing outputs were used and combined into 1 new output, reducing the UTXO count by 2."));
+    QCOMPARE(html.count("Additional combined input"), 2);
     QVERIFY(html.contains("Winning stake input"));
     QVERIFY(html.contains("Inputs from 2 addresses"));
     QVERIFY(html.contains("&lt;b&gt;untrusted label&lt;/b&gt;"));
@@ -349,7 +349,7 @@ void WalletTests::stakingTransactionDetails()
     QVERIFY(html.contains(BitcoinUnits::formatHtmlWithUnit(unit, 500 * COIN)));
     QVERIFY(html.contains(BitcoinUnits::formatHtmlWithUnit(unit, 60000 * COIN)));
     QVERIFY(html.contains(BitcoinUnits::formatHtmlWithUnit(unit, 60500 * COIN)));
-    QVERIFY(html.contains("No separate consolidation transaction fee"));
+    QVERIFY(html.contains("No separate consolidation fee"));
     QVERIFY(!html.contains("not currently confirmed"));
     QTextEdit preview;
     preview.setReadOnly(true);
@@ -373,7 +373,7 @@ void WalletTests::stakingTransactionDetails()
     const QString missing = TransactionDesc::FormatStakeDetails(wtx, status, previous, labels, outputs, unit);
     QVERIFY(missing.contains("Unknown: some previous outputs"));
     QVERIFY(missing.contains("Cannot be calculated"));
-    QVERIFY(!missing.contains("No separate consolidation transaction fee"));
+    QVERIFY(!missing.contains("No separate consolidation fee"));
     status.is_in_main_chain = false;
     status.depth_in_main_chain = -1;
     QVERIFY(TransactionDesc::FormatStakeDetails(wtx, status, previous, labels, outputs, unit).contains("not currently confirmed"));
@@ -384,5 +384,5 @@ void WalletTests::stakingTransactionDetails()
     tx.vout.emplace_back(10000 * COIN, first_script);
     tx.vout.emplace_back(10000 * COIN, first_script);
     wtx.tx = MakeTransactionRef(tx);
-    QVERIFY(TransactionDesc::FormatStakeDetails(wtx, status, previous, labels, outputs, unit).contains("one more UTXO"));
+    QVERIFY(TransactionDesc::FormatStakeDetails(wtx, status, previous, labels, outputs, unit).contains("increasing the UTXO count by 1"));
 }
