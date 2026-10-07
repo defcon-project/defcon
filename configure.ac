@@ -238,7 +238,7 @@ AC_ARG_ENABLE([lcov],
 AC_ARG_ENABLE([lcov-branch-coverage],
   [AS_HELP_STRING([--enable-lcov-branch-coverage],
   [enable lcov testing branch coverage (default is no)])],
-  [use_lcov_branch=yes],
+  [use_lcov_branch=$enableval],
   [use_lcov_branch=no])
 
 AC_ARG_ENABLE([threadlocal],
@@ -1813,7 +1813,7 @@ else
 fi
 AC_MSG_RESULT($dsymutil_needs_flat)
 
-if test x$build_bitcoin_wallet$build_bitcoin_cli$build_bitcoin_tx$build_bitcoind$bitcoin_enable_qt$use_tests$use_bench = xnonononononono; then
+if test x$build_bitcoin_wallet$build_bitcoin_cli$build_bitcoin_tx$build_bitcoind$bitcoin_enable_qt$use_tests$use_bench$build_bitcoin_libs = xnononononononono; then
   AC_MSG_ERROR([No targets! Please specify at least one of: --with-utils --with-libs --with-daemon --with-gui --enable-bench or --enable-tests])
 fi
 

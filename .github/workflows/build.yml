@@ -244,6 +244,17 @@ jobs:
           ./ci/dash/build_src.sh
         shell: bash
 
+      - name: Configure option regressions
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          configure_tests="$(mktemp -d)/configure-tests"
+          python3 test/configure/test_configure.py \
+            --prefix="$PWD/depends/${{ matrix.host }}" \
+            --output-dir="$configure_tests"
+          make -j4 -C "$configure_tests/lcov-default/src" bls/libbitcoin_consensus_a-bls.o
+          make -j4 -C "$configure_tests/library-only"
+        shell: bash
+
       # Every unit suite runs; the exceptions are named, with the reason.
       #
       # This was an allowlist of eleven, because the test binary died partway
