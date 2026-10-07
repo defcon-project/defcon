@@ -21,9 +21,11 @@
 #include <validation.h>
 #include <warnings.h>
 
+#ifdef ENABLE_WALLET
 extern int stakable_sz;
 extern RecursiveMutex stakable_mutex;
 extern std::vector<CStakeWallet> stakable_wallets;
+#endif
 
 static RPCHelpMan getstakinginfo()
 {
@@ -71,6 +73,7 @@ static RPCHelpMan getstakinginfo()
                 },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+#ifdef ENABLE_WALLET
     ChainstateManager& chainman = EnsureAnyChainman(request.context);
     CTxMemPool& mempool = EnsureAnyMemPool(request.context);
     const Consensus::Params& consensusParams = Params().GetConsensus();
@@ -220,6 +223,15 @@ static RPCHelpMan getstakinginfo()
     }
 
     return obj;
+#else
+    ChainstateManager& chainman = EnsureAnyChainman(request.context);
+    EnsureAnyMemPool(request.context);
+    LOCK(cs_main);
+    if (chainman.ActiveChainstate().m_chain.Tip() == nullptr) {
+        throw JSONRPCError(RPC_IN_WARMUP, "Chain tip not available yet");
+    }
+    return UniValue(UniValue::VOBJ);
+#endif
 },
     };
 }
@@ -246,6 +258,7 @@ static RPCHelpMan liststakingwallets()
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+#ifdef ENABLE_WALLET
     UniValue obj(UniValue::VOBJ);
 
     // Keep slow wallet balance reads outside the shared registry lock.
@@ -269,6 +282,9 @@ static RPCHelpMan liststakingwallets()
     }
 
     return obj;
+#else
+    return UniValue(UniValue::VOBJ);
+#endif
 },
     };
 }
@@ -288,6 +304,7 @@ static RPCHelpMan setstaking()
         },
     [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
+#ifdef ENABLE_WALLET
     int walletid = 0;
     if (!request.params[0].isNull())
         walletid = request.params[0].get_int();
@@ -305,6 +322,12 @@ static RPCHelpMan setstaking()
     // One enable path for RPC and GUI alike; the coinstake-descriptor
     // preparation lives inside the toggle.
     return ToggleWalletStaking(name);
+#else
+    if (!request.params[0].isNull()) {
+        request.params[0].get_int();
+    }
+    return NullUniValue;
+#endif
 },
     };
 }

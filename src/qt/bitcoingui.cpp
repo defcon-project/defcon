@@ -240,10 +240,12 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const NetworkStyle* networkStyle,
     m_app_nap_inhibitor = new CAppNapInhibitor;
 #endif
 
+#ifdef ENABLE_WALLET
     QTimer* timerStakingIcon = new QTimer(labelStakingIcon);
     connect(timerStakingIcon, SIGNAL(timeout()), this, SLOT(setStakingStatus()));
     timerStakingIcon->start(1500);
     setStakingStatus();
+#endif
 
     incomingTransactionsTimer = new QTimer(this);
     incomingTransactionsTimer->setSingleShot(true);

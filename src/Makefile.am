@@ -548,10 +548,7 @@ libbitcoin_server_a_SOURCES = \
   policy/packages.cpp \
   policy/policy.cpp \
   policy/settings.cpp \
-  pos/minter.cpp \
   pos/kernel.cpp \
-  pos/multiwallet.cpp \
-  pos/stake.cpp \
   pow.cpp \
   rest.cpp \
   rpc/blockchain.cpp \
@@ -588,7 +585,11 @@ libbitcoin_server_a_SOURCES = \
   $(BITCOIN_CORE_H)
 
 if ENABLE_WALLET
-libbitcoin_server_a_SOURCES += wallet/init.cpp
+libbitcoin_server_a_SOURCES += \
+  wallet/init.cpp \
+  pos/minter.cpp \
+  pos/multiwallet.cpp \
+  pos/stake.cpp
 endif
 if !ENABLE_WALLET
 libbitcoin_server_a_SOURCES += dummywallet.cpp

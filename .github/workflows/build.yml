@@ -255,6 +255,30 @@ jobs:
           make -j4 -C "$configure_tests/library-only"
         shell: bash
 
+      - name: No-wallet build and RPC/PoS regressions
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          BASE_OUTDIR="/output"
+          BUILD_TARGET="${{ matrix.build_target }}"
+          source ./ci/dash/matrix.sh
+          export LD_LIBRARY_PATH="$DEPENDS_DIR/$HOST/lib"
+          source_dir="$PWD"
+          nowallet_build="$(mktemp -d)/no-wallet"
+          mkdir "$nowallet_build"
+          cd "$nowallet_build"
+          "$source_dir/configure" \
+            --enable-suppress-external-warnings --disable-dependency-tracking \
+            --prefix="$DEPENDS_DIR/$HOST" $BITCOIN_CONFIG --disable-wallet
+          make -j4 all
+          make -j4 -C src test/test_defcon qt/test/test_defcon-qt
+          ./src/test/test_defcon \
+            --run_test=crypto_tests,hash_tests,pos_kernel_tests,pos_coinbase_bound_tests,pos_reorg_maturity_tests,pos_coinstake_fee_tests,pos_dirty_index_tests \
+            --catch_system_errors=no -l test_suite
+          QT_QPA_PLATFORM=minimal XDG_CONFIG_HOME="$(mktemp -d)" ./src/qt/test/test_defcon-qt
+          python3 "$source_dir/test/functional/rpc_bls.py" \
+            --configfile="$nowallet_build/test/config.ini" --timeout-factor="$TEST_RUNNER_TIMEOUT_FACTOR"
+        shell: bash
+
       # Every unit suite runs; the exceptions are named, with the reason.
       #
       # This was an allowlist of eleven, because the test binary died partway
@@ -458,6 +482,7 @@ jobs:
             feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
             p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
             rpc_verifyislock.py                    # the lock-verifying RPCs
+            rpc_bls.py                             # BLS key persistence and the empty staking registry, both wallet formats
             feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
             feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
             feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff

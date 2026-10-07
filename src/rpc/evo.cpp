@@ -1894,10 +1894,12 @@ static RPCHelpMan bls_generate()
         RPCExamples{HelpExampleCli("bls generate", "")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
 
+#ifdef ENABLE_WALLET
             std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
             if (!pwallet) return NullUniValue;
 
             EnsureWalletIsUnlocked(*pwallet);
+#endif
 
             CBLSSecretKey sk;
             sk.MakeNewKey();
@@ -1906,9 +1908,11 @@ static RPCHelpMan bls_generate()
                 bls_legacy_scheme = ParseBoolV(request.params[0], "bls_legacy_scheme");
             }
             std::string bls_secret = sk.ToString();
+#ifdef ENABLE_WALLET
             if (!pwallet->WriteToBLSWallet(bls_secret)) {
                 throw JSONRPCError(RPC_WALLET_ERROR, "Failed to write BLS private key to wallet.");
             }
+#endif
 
             UniValue ret(UniValue::VOBJ);
             ret.pushKV("secret", bls_secret);
