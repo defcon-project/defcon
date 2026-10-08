@@ -5,6 +5,7 @@ etc.
 
 This directory contains the following sets of tests:
 
+- [configure](/test/configure) checks build option contracts using fresh out-of-tree configure runs.
 - [fuzz](/test/fuzz) A runner to execute all fuzz targets from
   [/src/test/fuzz](/src/test/fuzz).
 - [functional](/test/functional) which test the functionality of
@@ -369,3 +370,7 @@ test/lint/all-lint.py
 You are encouraged to write functional tests for new or existing features.
 Further information about the functional test framework and individual
 tests is found in [test/functional](/test/functional).
+
+# Configure tests
+
+After `./autogen.sh`, run `python3 test/configure/test_configure.py --output-dir /tmp/defcon-configure-tests` with native build dependencies available; the output directory must be new. Use `--prefix=/path/to/depends/x86_64-pc-linux-gnu` to select depends libraries. The tests check default, enabled and disabled branch coverage, explicit/default library-only targets, and rejection when all targets are disabled. Logs and generated Makefiles remain in the output directory. The script configures targets; the linux64 CI step also compiles an out-of-tree BLS object using the common Core include flags and builds the library-only target in its fresh build directory.

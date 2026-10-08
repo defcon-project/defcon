@@ -250,6 +250,7 @@ EXTRA_DIST += \
     test/fuzz
 
 EXTRA_DIST += \
+    test/configure/test_configure.py \
     test/util/test_runner.py \
     test/util/data/bitcoin-util-test.json \
     test/util/data/blanktxv1.hex \

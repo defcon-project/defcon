@@ -367,6 +367,8 @@ BASE_SCRIPTS = [
     'feature_new_quorum_type_activation.py',
     'feature_governance_objects.py',
     'p2p_governance_invs.py',
+    'rpc_bls.py --descriptors',
+    'rpc_bls.py --legacy-wallet',
     'rpc_uptime.py',
     'feature_discover.py',
     'wallet_resendwallettransactions.py --legacy-wallet',
