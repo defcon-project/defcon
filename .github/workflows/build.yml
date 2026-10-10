@@ -350,7 +350,17 @@ jobs:
           source ./ci/dash/matrix.sh
           export LD_LIBRARY_PATH="$DEPENDS_DIR/$HOST/lib"
           cd "build-ci/DeFCoN-${BUILD_TARGET}"
-          make -j"$(nproc)" -C src qt/test/test_defcon-qt
+          # GCC 11 LSan reserves 0x600000000000..0x640000000000.
+          # A randomized PIE test executable can overlap that reservation and
+          # crash in the loader before main. Relink only this test executable;
+          # keep the daemon, wallet and CLI binaries byte-for-byte unchanged.
+          sha256sum src/defcond src/defcon-cli src/qt/defcon-qt > production-before-lsan.sha256
+          rm -f src/qt/test/test_defcon-qt
+          make V=1 -j"$(nproc)" -C src qt/test/test_defcon-qt \
+            'qt_test_test_defcon_qt_LDFLAGS=$(LDFLAGS_WRAP_EXCEPTIONS) $(RELDFLAGS) $(AM_LDFLAGS) $(QT_LDFLAGS) $(LIBTOOL_APP_LDFLAGS) $(PTHREAD_FLAGS) -no-pie'
+          readelf -h src/qt/test/test_defcon-qt | grep -E 'Type: +EXEC '
+          readelf -lW src/qt/test/test_defcon-qt
+          sha256sum -c production-before-lsan.sha256
           export QT_QPA_PLATFORM=minimal
           export XDG_CONFIG_HOME="$(mktemp -d)"
           trap 'rm -rf "$XDG_CONFIG_HOME"' EXIT

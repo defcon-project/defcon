@@ -18,6 +18,7 @@
 #include <test/util/setup_common.h>
 
 #ifdef ENABLE_WALLET
+#include <qt/test/abysstests.h>
 #include <qt/test/addressbooktests.h>
 #include <qt/test/masternodelisttests.h>
 #include <qt/test/wallettests.h>
@@ -115,6 +116,8 @@ int main(int argc, char* argv[])
     GUIUtilTests guiutil_tests;
     run(guiutil_tests);
 #ifdef ENABLE_WALLET
+    AbyssTests abyss_tests(app.node());
+    run(abyss_tests);
     MasternodeListTests masternode_list_tests(app.node());
     run(masternode_list_tests);
 #endif

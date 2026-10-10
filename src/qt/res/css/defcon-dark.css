@@ -53,7 +53,6 @@ WalletFrame QDialog {
 QWidget {
     selection-color: #f7fbff;
     selection-background-color: #0b6cc6;
-    font-family: "Roboto";
 }
 
 QCheckBox,
@@ -215,8 +214,9 @@ Tables, lists, tabs and progress
 
 .QTableView,
 .QTableWidget,
+QTreeView,
 QTreeWidget {
-    alternate-background-color: #0d1c2e;
+    alternate-background-color: #0e1f33;
     background-color: #0b1727;
     border: 1px solid #20344c;
     color: #e6edf7;
@@ -225,17 +225,20 @@ QTreeWidget {
 
 QTableView::item,
 QTableWidget::item,
+QTreeView::item,
 QTreeWidget::item {
-    background-color: #0b1727;
+    /* Clear the inherited Dark item brush; the view supplies Base/AlternateBase. */
+    background-color: transparent;
     border-color: #1b2d43;
     padding: 5px;
 }
 
 QTableView::item:selected,
 QTableWidget::item:selected,
+QTreeView::item:selected,
 QTreeWidget::item:selected {
-    background-color: #12375b;
-    color: #ffffff;
+    background-color: #0b6cc6;
+    color: #f7fbff;
 }
 
 QHeaderView::section {
@@ -409,8 +412,6 @@ QWidget#OverviewPage QWidget#modernOverviewHeader {
 
 QWidget#OverviewPage QLabel#modernOverviewTitle {
     color: #ffffff;
-    font-size: 24px;
-    font-weight: 600;
 }
 
 QWidget#OverviewPage QLabel#modernOverviewSubtitle {
@@ -442,14 +443,10 @@ QWidget#OverviewPage QFrame#frame QLabel#label_5,
 QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCoinJoinHeader,
 QWidget#OverviewPage QFrame#frame_2 QLabel#label_4 {
     color: #ffffff;
-    font-size: 15px;
-    font-weight: 600;
 }
 
 QWidget#OverviewPage QFrame#frame QLabel#labelTotal {
     color: #ffffff;
-    font-size: 20px;
-    font-weight: 600;
 }
 
 QWidget#OverviewPage QFrame#frame QLabel#labelSpendable,
@@ -509,10 +506,10 @@ QDialog#OptionsDialog QWidget {
     background-color: #0b1727;
 }
 
+
 QDialog#OptionsDialog QPushButton {
     background-color: #0f75d6;
 }
-
 
 /******************************************************
 QPushButton - Special case, tabbar replacement buttons
@@ -527,15 +524,22 @@ filled button style, whose text is unreadable there.
 #btnPeers,
 #btnRepair,
 #btnMain,
+QDialog#OptionsDialog #btnMain,
 #btnWallet,
+QDialog#OptionsDialog #btnWallet,
 #btnCoinJoin,
+QDialog#OptionsDialog #btnCoinJoin,
 #btnNetwork,
+QDialog#OptionsDialog #btnNetwork,
 #btnDisplay,
+QDialog#OptionsDialog #btnDisplay,
 #btnAppearance,
+QDialog#OptionsDialog #btnAppearance,
 #btnSignMessage,
 #btnVerifyMessage {
     background-color: transparent;
     border: none;
+    border-color: transparent;
     border-bottom: 2px solid transparent;
     border-radius: 0;
     color: #a8b9cc;
@@ -548,13 +552,20 @@ filled button style, whose text is unreadable there.
 #btnPeers:checked,
 #btnRepair:checked,
 #btnMain:checked,
+QDialog#OptionsDialog #btnMain:checked,
 #btnWallet:checked,
+QDialog#OptionsDialog #btnWallet:checked,
 #btnCoinJoin:checked,
+QDialog#OptionsDialog #btnCoinJoin:checked,
 #btnNetwork:checked,
+QDialog#OptionsDialog #btnNetwork:checked,
 #btnDisplay:checked,
+QDialog#OptionsDialog #btnDisplay:checked,
 #btnAppearance:checked,
+QDialog#OptionsDialog #btnAppearance:checked,
 #btnSignMessage:checked,
 #btnVerifyMessage:checked {
+    border-color: #1297ff;
     border-bottom: 2px solid #1297ff;
     color: #ffffff;
 }
@@ -565,17 +576,23 @@ filled button style, whose text is unreadable there.
 #btnPeers:hover:!checked,
 #btnRepair:hover:!checked,
 #btnMain:hover:!checked,
+QDialog#OptionsDialog #btnMain:hover:!checked,
 #btnWallet:hover:!checked,
+QDialog#OptionsDialog #btnWallet:hover:!checked,
 #btnCoinJoin:hover:!checked,
+QDialog#OptionsDialog #btnCoinJoin:hover:!checked,
 #btnNetwork:hover:!checked,
+QDialog#OptionsDialog #btnNetwork:hover:!checked,
 #btnDisplay:hover:!checked,
+QDialog#OptionsDialog #btnDisplay:hover:!checked,
 #btnAppearance:hover:!checked,
+QDialog#OptionsDialog #btnAppearance:hover:!checked,
 #btnSignMessage:hover:!checked,
 #btnVerifyMessage:hover:!checked {
     background-color: #10263e;
+    border-color: #3a5e82;
     color: #ffffff;
 }
-
 
 /******************************************************
 Abyss scrollbars
@@ -617,45 +634,14 @@ QScrollBar::sub-page {
     width: 0;
 }
 
-
-/******************************************************
-Abyss polish: focus visibility and table readability
-
-Appended override layer: keyboard focus gets the accent
-border everywhere text is entered, and the dense views
-(transactions, peers, addresses) get zebra rows, a hover
-row and an unmistakable selection.
-******************************************************/
-
-QLineEdit:focus,
-QPlainTextEdit:focus,
-QTextEdit:focus,
-QComboBox:focus,
-QSpinBox:focus,
-QDoubleSpinBox:focus,
-QDateTimeEdit:focus {
-    border: 1px solid #1297ff;
-}
-
-QTreeWidget,
-QTreeView,
-QTableView {
-    alternate-background-color: #0e1f33;
-}
-
-QTreeWidget::item:hover,
-QTreeView::item:hover,
-QTableView::item:hover {
+/* Item backgrounds are deliberately unset: the view paints alternating rows.
+   Hover precedes selection so selected rows retain the accent under the mouse. */
+QTreeWidget::item:hover:!selected,
+QTreeView::item:hover:!selected,
+QTableWidget::item:hover:!selected,
+QTableView::item:hover:!selected {
     background-color: #16283e;
 }
-
-QTreeWidget::item:selected,
-QTreeView::item:selected,
-QTableView::item:selected {
-    background-color: #0b6cc6;
-    color: #f7fbff;
-}
-
 
 /******************************************************
 Overview network card
@@ -671,7 +657,6 @@ QWidget#OverviewPage QLabel#labelNetworkStatus {
     color: #91a5bc;
 }
 
-
 /******************************************************
 Devnet badge
 ******************************************************/
@@ -683,5 +668,256 @@ QLabel#devnetBadge {
     border-radius: 6px;
     padding: 3px 10px;
     margin: 6px 10px;
-    font-weight: bold;
+}
+
+/******************************************************
+Explicit overrides of inherited Dark ID selectors
+******************************************************/
+QWidget#AddressBookPage QPushButton#newAddress,
+QWidget#AddressBookPage QPushButton#copyAddress,
+QWidget#AddressBookPage QPushButton#showAddressQRCode,
+QWidget#AddressBookPage QPushButton#deleteAddress,
+QDialog#OpenURIDialog QPushButton#selectFileButton,
+QDialog#OptionsDialog QPushButton#resetButton,
+QDialog#SendCoinsDialog .QPushButton#addButton,
+QDialog#SendCoinsDialog .QPushButton#clearButton,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton,
+QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM {
+    background-color: #0b1727;
+    border: 1px solid #29435f;
+    color: #e6edf7;
+}
+
+QWidget#AddressBookPage QPushButton#newAddress:hover,
+QWidget#AddressBookPage QPushButton#copyAddress:hover,
+QWidget#AddressBookPage QPushButton#showAddressQRCode:hover,
+QWidget#AddressBookPage QPushButton#deleteAddress:hover,
+QDialog#OpenURIDialog QPushButton#selectFileButton:hover,
+QDialog#OptionsDialog QPushButton#resetButton:hover,
+QDialog#SendCoinsDialog .QPushButton#addButton:hover,
+QDialog#SendCoinsDialog .QPushButton#clearButton:hover,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton:hover,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:hover,
+QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton:hover,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM:hover,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:hover {
+    background-color: #10263e;
+    border-color: #3a5e82;
+    color: #e6edf7;
+}
+
+QWidget#AddressBookPage QPushButton#newAddress:pressed,
+QWidget#AddressBookPage QPushButton#copyAddress:pressed,
+QWidget#AddressBookPage QPushButton#showAddressQRCode:pressed,
+QWidget#AddressBookPage QPushButton#deleteAddress:pressed,
+QDialog#OpenURIDialog QPushButton#selectFileButton:pressed,
+QDialog#OptionsDialog QPushButton#resetButton:pressed,
+QDialog#SendCoinsDialog .QPushButton#addButton:pressed,
+QDialog#SendCoinsDialog .QPushButton#clearButton:pressed,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton:pressed,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:pressed,
+QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton:pressed,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM:pressed,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:pressed {
+    background-color: #10263e;
+    border: 1px solid #1297ff;
+    color: #ffffff;
+}
+
+QWidget#AddressBookPage QPushButton#newAddress:disabled,
+QWidget#AddressBookPage QPushButton#copyAddress:disabled,
+QWidget#AddressBookPage QPushButton#showAddressQRCode:disabled,
+QWidget#AddressBookPage QPushButton#deleteAddress:disabled,
+QDialog#OpenURIDialog QPushButton#selectFileButton:disabled,
+QDialog#OptionsDialog QPushButton#resetButton:disabled,
+QDialog#SendCoinsDialog .QPushButton#addButton:disabled,
+QDialog#SendCoinsDialog .QPushButton#clearButton:disabled,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton:disabled,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:disabled,
+QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton:disabled,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM:disabled,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:disabled {
+    background-color: #0b1727;
+    border-color: #1b2d43;
+    color: #526780;
+}
+
+#btnInfo:hover:checked,
+#btnConsole:hover:checked,
+#btnNetTraffic:hover:checked,
+#btnPeers:hover:checked,
+#btnRepair:hover:checked,
+#btnMain:hover:checked,
+QDialog#OptionsDialog #btnMain:hover:checked,
+#btnWallet:hover:checked,
+QDialog#OptionsDialog #btnWallet:hover:checked,
+#btnCoinJoin:hover:checked,
+QDialog#OptionsDialog #btnCoinJoin:hover:checked,
+#btnNetwork:hover:checked,
+QDialog#OptionsDialog #btnNetwork:hover:checked,
+#btnDisplay:hover:checked,
+QDialog#OptionsDialog #btnDisplay:hover:checked,
+#btnAppearance:hover:checked,
+QDialog#OptionsDialog #btnAppearance:hover:checked,
+#btnSignMessage:hover:checked,
+#btnVerifyMessage:hover:checked {
+    background-color: #10263e;
+    border-color: #1297ff;
+    color: #ffffff;
+}
+
+#btnInfo:disabled,
+#btnConsole:disabled,
+#btnNetTraffic:disabled,
+#btnPeers:disabled,
+#btnRepair:disabled,
+#btnMain:disabled,
+QDialog#OptionsDialog #btnMain:disabled,
+#btnWallet:disabled,
+QDialog#OptionsDialog #btnWallet:disabled,
+#btnCoinJoin:disabled,
+QDialog#OptionsDialog #btnCoinJoin:disabled,
+#btnNetwork:disabled,
+QDialog#OptionsDialog #btnNetwork:disabled,
+#btnDisplay:disabled,
+QDialog#OptionsDialog #btnDisplay:disabled,
+#btnAppearance:disabled,
+QDialog#OptionsDialog #btnAppearance:disabled,
+#btnSignMessage:disabled,
+#btnVerifyMessage:disabled {
+    color: #526780;
+    border-color: #1b2d43;
+}
+
+QDialog#CoinControlDialog .CoinControlTreeWidget#treeWidget::item {
+    border-color: #1b2d43;
+}
+
+QDialog#CoinControlDialog .CoinControlTreeWidget#treeWidget::item:selected,
+QDialog#CoinControlDialog .CoinControlTreeWidget#treeWidget::item:checked,
+QDialog#CoinControlDialog .CoinControlTreeWidget#treeWidget::branch:selected,
+QDialog#CoinControlDialog .CoinControlTreeWidget#treeWidget::branch:checked {
+    background-color: #0b6cc6;
+    color: #f7fbff;
+}
+
+QDialog#AppearanceSetup > QFrame,
+HelpMessageDialog QWidget#scrollAreaWidgetContents,
+QWidget#contentWidget,
+#rpcAutoCompleter {
+    background-color: #0b1727;
+    border-color: #29435f;
+    color: #e6edf7;
+}
+
+QWidget#RPCConsole,
+RPCConsole QWidget#detailWidget,
+QWidget#ShutdownWindow {
+    background-color: #0b1727;
+}
+
+QWidget#bgWidget,
+QWidget#no_wallet_group {
+    background-color: #cc07111f;
+    color: #526780;
+}
+
+QDialog#SendCoinsDialog .QFrame#frameCoinControl,
+QDialog#SendCoinsDialog #scrollArea {
+    border-color: #29435f;
+}
+
+#rpcAutoCompleter::item {
+    color: #e6edf7;
+}
+
+#rpcAutoCompleter::item:selected {
+    background-color: #0b6cc6;
+    color: #f7fbff;
+}
+
+/* Calendar weekday headers use AlternateBase from this inherited scoped
+   rule; the ID backgrounds alone do not replace Dark's grey header/selection. */
+QCalendarWidget QWidget {
+    alternate-background-color: #10263e;
+}
+
+QCalendarWidget QToolButton {
+    color: #e6edf7;
+    background-color: #0b1727;
+}
+
+QCalendarWidget QAbstractItemView:enabled {
+    color: #e6edf7;
+    background-color: #0b1727;
+    selection-background-color: #1297ff;
+    selection-color: #ffffff;
+}
+
+QCalendarWidget QAbstractItemView:disabled {
+    color: #526780;
+}
+
+#qt_calendar_calendarview,
+#qt_calendar_navigationbar,
+#qt_calendar_prevmonth,
+#qt_calendar_nextmonth,
+#qt_calendar_monthbutton,
+#qt_calendar_yearbutton {
+    background-color: #0b1727;
+    border-color: #29435f;
+    color: #e6edf7;
+}
+
+#qt_calendar_prevmonth:hover,
+#qt_calendar_nextmonth:hover,
+#qt_calendar_monthbutton:hover,
+#qt_calendar_yearbutton:hover {
+    background-color: #10263e;
+    border-color: #3a5e82;
+    color: #ffffff;
+}
+
+BitcoinAmountField:disabled,
+QAbstractSpinBox:disabled,
+QComboBox:disabled,
+QPlainTextEdit:disabled,
+QLineEdit:disabled {
+    background-color: #0b1727;
+    border-color: #1b2d43;
+    color: #526780;
+}
+
+AddressBookPage QTableView,
+GovernanceList QTableView,
+ReceiveCoinsDialog QTableView,
+RPCConsole QTableView {
+    color: #e6edf7;
+}
+
+#btnInfo:pressed,
+#btnConsole:pressed,
+#btnNetTraffic:pressed,
+#btnPeers:pressed,
+#btnRepair:pressed,
+#btnMain:pressed,
+QDialog#OptionsDialog #btnMain:pressed,
+#btnWallet:pressed,
+QDialog#OptionsDialog #btnWallet:pressed,
+#btnCoinJoin:pressed,
+QDialog#OptionsDialog #btnCoinJoin:pressed,
+#btnNetwork:pressed,
+QDialog#OptionsDialog #btnNetwork:pressed,
+#btnDisplay:pressed,
+QDialog#OptionsDialog #btnDisplay:pressed,
+#btnAppearance:pressed,
+QDialog#OptionsDialog #btnAppearance:pressed,
+#btnSignMessage:pressed,
+#btnVerifyMessage:pressed {
+    background-color: #10263e;
+    border-color: #1297ff;
+    color: #ffffff;
 }

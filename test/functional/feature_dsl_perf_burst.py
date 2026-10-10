@@ -74,6 +74,10 @@ class DSLPerfBurstTest(DSLPerfTest):
         self.wait_until(current_reports, timeout=60)
         for peer in self.nodes:
             assert_equal(peer.dslstatus()["missedreports"], 0)
+        # Receiving a lock on node1 does not mean node0 has processed it yet.
+        # The next template needs the producer's own lock state for these TXs.
+        self.wait_until(lambda: all(node.getrawtransaction(txid, True)["instantlock_internal"]
+                                   for txid in txids), timeout=30)
         block = self.generate(node, 1)[0]
         self.wait_for_chainlocked_block(receiver, block)
         for txid in txids:

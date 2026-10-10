@@ -6,6 +6,8 @@
 
 #include <qt/guiutil.h>
 
+#include <algorithm>
+
 #include <QApplication>
 #include <QClipboard>
 #include <QDrag>
@@ -50,52 +52,42 @@ bool QRImageWidget::setQR(const QString& data, const QString& text, int max_char
         return false;
     }
 
-    QImage qrImage = QImage(code->width + 6, code->width + 6, QImage::Format_RGB32);
-    qrImage.fill(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BACKGROUND_WIDGET));
-    unsigned char *p = code->data;
-    for (int y = 0; y < code->width; y++)
-    {
-        for (int x = 0; x < code->width; x++)
-        {
-            qrImage.setPixel(x + 3, y + 3, ((*p & 1) ? GUIUtil::getThemedQColor(GUIUtil::ThemedColor::QR_PIXEL).rgb() : GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BACKGROUND_WIDGET).rgb()));
-            p++;
+    // A QR is data, not a theme surface. Inverting it or tinting its quiet
+    // zone makes the exported/clipboard image unreadable to scanners that
+    // expect dark modules on white. Draw physical pixels at one INTEGER
+    // module size; scaling a small bitmap to 296px gave neighbouring modules
+    // different widths, including on fractional-DPI displays.
+    constexpr int quiet_modules{4};
+    const qreal scale = qApp->devicePixelRatio();
+    const int modules = code->width + 2 * quiet_modules;
+    const int qr_side = std::max(qRound(QR_IMAGE_SIZE * scale), modules);
+    const int module_size = std::max(1, qr_side / modules);
+    const int offset = (qr_side - code->width * module_size) / 2;
+    QImage qrAddrImage(qr_side, qr_side + qRound(QR_IMAGE_MARGIN * scale), QImage::Format_RGB32);
+    qrAddrImage.fill(Qt::white);
+    for (int y = 0; y < code->width; ++y) {
+        for (int x = 0; x < code->width; ++x) {
+            if (!(code->data[y * code->width + x] & 1)) continue;
+            for (int dy = 0; dy < module_size; ++dy) {
+                for (int dx = 0; dx < module_size; ++dx) {
+                    qrAddrImage.setPixel(offset + x * module_size + dx,
+                                         offset + y * module_size + dy, qRgb(0, 0, 0));
+                }
+            }
         }
     }
     QRcode_free(code);
-
-    // Create the image with respect to the device pixel ratio
-    int qr_addr_image_width = QR_IMAGE_SIZE;
-    int qr_addr_image_height = QR_IMAGE_SIZE + QR_IMAGE_MARGIN;
-    qreal scale = qApp->devicePixelRatio();
-    QImage qrAddrImage = QImage(qr_addr_image_width * scale, qr_addr_image_height * scale, QImage::Format_RGB32);
     qrAddrImage.setDevicePixelRatio(scale);
-    {
+    if (!text.isEmpty()) {
         QPainter painter(&qrAddrImage);
-
-        // Fill the whole image with border color
-        qrAddrImage.fill(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BORDER_WIDGET));
-
-        // Create a 2px/2px smaller rect and fill it with background color to keep the 1px border with the border color
-        QRect paddedRect = QRect(1, 1, qr_addr_image_width - 2, qr_addr_image_height - 2);
-        painter.fillRect(paddedRect, GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BACKGROUND_WIDGET));
-        painter.drawImage(2, 2, qrImage.scaled(QR_IMAGE_SIZE - 4, QR_IMAGE_SIZE - 4));
-
-        if (!text.isEmpty()) {
-
-            // calculate ideal font size
-            QFont font = GUIUtil::getFontNormal();
-            font.setStretch(QFont::SemiCondensed);
-            font.setLetterSpacing(QFont::AbsoluteSpacing, 1);
-            qreal font_size = GUIUtil::calculateIdealFontSize((paddedRect.width() - QR_IMAGE_MARGIN), text, font);
-            font.setPointSizeF(font_size);
-
-            // paint the address
-            painter.setFont(font);
-            painter.setPen(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::QR_PIXEL));
-            paddedRect.setHeight(QR_IMAGE_SIZE + 3);
-            painter.drawText(paddedRect, Qt::AlignBottom|Qt::AlignCenter, text);
-        }
-        painter.end();
+        QFont font = GUIUtil::getFontNormal();
+        font.setStretch(QFont::SemiCondensed);
+        font.setLetterSpacing(QFont::AbsoluteSpacing, 1);
+        font.setPointSizeF(GUIUtil::calculateIdealFontSize(qr_side / scale - QR_IMAGE_MARGIN, text, font));
+        painter.setFont(font);
+        painter.setPen(Qt::black);
+        painter.drawText(QRectF(0, qr_side / scale, qr_side / scale, QR_IMAGE_MARGIN),
+                         Qt::AlignCenter, text);
     }
     setPixmap(QPixmap::fromImage(qrAddrImage));
 

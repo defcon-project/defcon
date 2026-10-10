@@ -647,6 +647,7 @@ int GuiMain(int argc, char* argv[])
         return EXIT_FAILURE;
     }
     // Load GUI settings from QSettings
+    const bool font_family_argument = gArgs.IsArgSet("-font-family");
     app.createOptionsModel(gArgs.GetBoolArg("-resetguisettings", false));
     // Validate/set font family
     if (gArgs.IsArgSet("-font-family")) {
@@ -659,7 +660,7 @@ int GuiMain(int argc, char* argv[])
                                   QObject::tr("Error: Specified font-family invalid. Valid values: %1.").arg("SystemDefault, Montserrat, Roboto"));
             return EXIT_FAILURE;
         }
-        GUIUtil::setFontFamily(family);
+        GUIUtil::setFontFamily(family, font_family_argument || GUIUtil::hasExplicitFontFamily());
     }
     // Validate/set normal font weight
     if (gArgs.IsArgSet("-font-weight-normal")) {

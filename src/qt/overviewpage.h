@@ -8,6 +8,7 @@
 #include <interfaces/wallet.h>
 
 #include <QWidget>
+#include <QSizePolicy>
 #include <map>
 #include <memory>
 #include <vector>
@@ -27,6 +28,7 @@ class QFrame;
 class QLabel;
 class QModelIndex;
 class QPaintEvent;
+class QSpacerItem;
 QT_END_NAMESPACE
 
 /** Overview ("home") page widget */
@@ -54,6 +56,7 @@ Q_SIGNALS:
 protected:
     void changeEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 private:
     QTimer *timer;
     Ui::OverviewPage *ui;
@@ -70,12 +73,23 @@ private:
     QWidget* modernHeader{nullptr};
     QFrame* networkCard{nullptr};
     QLabel* labelNetworkStatus{nullptr};
-    //! Minimum widths as the form and the shared stylesheet set them, kept so
-    //! the themes that were laid out for those numbers get them back.
+    //! Keep form constraints separately from polished CSS floors. On leaving
+    //! Abyss the current stylesheet must restore its own minimums, including
+    //! for pages constructed while hidden or before any stylesheet was loaded.
+    std::map<QWidget*, int> m_form_minimum_widths;
     std::map<QWidget*, int> m_inherited_minimum_widths;
+    bool m_classic_widths_pending{false};
     //! The form's own stretch weights on the row of cards, kept for the same
     //! reason: only the modern theme redistributes them.
     std::map<int, int> m_inherited_stretch;
+    std::map<QSpacerItem*, std::pair<QSize, QSizePolicy>> m_inherited_spacers;
+    std::map<int, int> m_inherited_grid_stretch;
+    QSizePolicy m_total_size_policy;
+    bool m_balance_update_pending{false};
+    bool m_applying_balance_widths{false};
+    bool m_modern_presentation{false};
+    void scheduleBalanceWidths();
+    void fitTotalFont();
 
     void SetupTransactionList(int nNumItems);
     void DisableCoinJoinCompletely();

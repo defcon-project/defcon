@@ -332,7 +332,9 @@ namespace GUIUtil
     /** set/get font family: GUIUtil::fontFamily */
     FontFamily getFontFamilyDefault();
     FontFamily getFontFamily();
-    void setFontFamily(FontFamily family);
+    void setFontFamily(FontFamily family, bool explicit_selection = true);
+    /** Whether the family was chosen, rather than inherited from the theme default. */
+    bool hasExplicitFontFamily();
 
     enum class FontWeight {
         Normal, // Font weight for normal text
@@ -395,7 +397,7 @@ namespace GUIUtil
     /** Workaround to set correct font styles in all themes since there is a bug in macOS which leads to
         issues loading variations of montserrat in css it also keeps track of the set fonts to update on
         theme changes. */
-    void setFont(const std::vector<QWidget*>& vecWidgets, FontWeight weight, int nPointSize = -1, bool fItalic = false);
+    void setFont(const std::vector<QWidget*>& vecWidgets, FontWeight weight, int nPointSize = -1, bool fItalic = false, bool preserve_point_size = false);
 
     /** Update the font of all widgets where a custom font has been set with
         GUIUtil::setFont */

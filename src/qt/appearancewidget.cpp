@@ -51,6 +51,13 @@ AppearanceWidget::AppearanceWidget(QWidget* parent) :
 
     connect(ui->theme, &QComboBox::currentTextChanged, this, &AppearanceWidget::updateTheme);
     connect(ui->fontFamily, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &AppearanceWidget::updateFontFamily);
+    // Choosing the already displayed SystemDefault still expresses intent;
+    // mapper population does not. Cancelling restores this marker as well.
+    connect(ui->fontFamily, QOverload<int>::of(&QComboBox::activated), [this](int index) {
+        if (!GUIUtil::hasExplicitFontFamily()) {
+            GUIUtil::setFontFamily(static_cast<GUIUtil::FontFamily>(ui->fontFamily->itemData(index).toInt()));
+        }
+    });
     connect(ui->fontScaleSlider, &QSlider::valueChanged, this, &AppearanceWidget::updateFontScale);
     connect(ui->fontWeightNormalSlider, &QSlider::valueChanged, [this](auto nValue) { updateFontWeightNormal(nValue); });
     connect(ui->fontWeightBoldSlider, &QSlider::valueChanged, [this](auto nValue) { updateFontWeightBold(nValue); });
@@ -75,8 +82,8 @@ AppearanceWidget::~AppearanceWidget()
         if (prevTheme != GUIUtil::getActiveTheme()) {
             updateTheme(prevTheme);
         }
-        if (prevFontFamily != GUIUtil::getFontFamily()) {
-            GUIUtil::setFontFamily(prevFontFamily);
+        if (prevFontFamily != GUIUtil::getFontFamily() || prevFontFamilyExplicit != GUIUtil::hasExplicitFontFamily()) {
+            GUIUtil::setFontFamily(prevFontFamily, prevFontFamilyExplicit);
         }
         if (prevScale != GUIUtil::getFontScale()) {
             GUIUtil::setFontScale(prevScale);
@@ -99,6 +106,7 @@ void AppearanceWidget::setModel(OptionsModel* _model)
     this->model = _model;
 
     if (_model) {
+        const QSignalBlocker font_family_blocker(ui->fontFamily);
         mapper->setModel(_model);
         mapper->addMapping(ui->theme, OptionsModel::Theme);
         mapper->addMapping(ui->fontFamily, OptionsModel::FontFamily);
