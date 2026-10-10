@@ -152,13 +152,14 @@ static const int defaultFontScale = 0;
 /** Font related variables. */
 // Application font family. May be overwritten by -font-family.
 static FontFamily fontFamily = defaultFontFamily;
+static bool fontFamilyExplicit{false};
 // Application font scale value. May be overwritten by -font-scale.
 static int fontScale = defaultFontScale;
 // Contains the weight settings separated for all available fonts
 static std::map<FontFamily, std::pair<QFont::Weight, QFont::Weight>> mapDefaultWeights;
 static std::map<FontFamily, std::pair<QFont::Weight, QFont::Weight>> mapWeights;
 // Contains all widgets and its font attributes (weight, italic, size) with font changes due to GUIUtil::setFont
-static std::map<QPointer<QWidget>, std::tuple<FontWeight, bool, int>> mapFontUpdates;
+static std::map<QPointer<QWidget>, std::tuple<FontWeight, bool, int, bool>> mapFontUpdates;
 // Contains a list of supported font weights for all members of GUIUtil::FontFamily
 static std::map<FontFamily, std::vector<QFont::Weight>> mapSupportedWeights;
 
@@ -1122,11 +1123,26 @@ QString fontFamilyToString(FontFamily family)
     }
 }
 
-void setFontFamily(FontFamily family)
+void setFontFamily(FontFamily family, bool explicit_selection)
 {
     fontFamily = family;
+    fontFamilyExplicit = explicit_selection;
     setApplicationFont();
     updateFonts();
+}
+
+bool hasExplicitFontFamily()
+{
+    return fontFamilyExplicit;
+}
+
+// The old Abyss CSS forced Roboto even over an explicit Appearance choice.
+// Keep that theme default only while no family was chosen. SystemDefault is
+// a real choice too; the marker distinguishes a fresh/default settings entry
+// from a deliberate selection without changing the other themes' defaults.
+static FontFamily presentationFontFamily()
+{
+    return isDefconDarkTheme() && !fontFamilyExplicit ? FontFamily::Roboto : fontFamily;
 }
 
 FontFamily getFontFamilyDefault()
@@ -1406,8 +1422,9 @@ void setApplicationFont()
 
     std::unique_ptr<QFont> font;
 
-    if (fontFamily != FontFamily::SystemDefault) {
-        QString family = fontFamilyToString(fontFamily);
+    const FontFamily family_selected = presentationFontFamily();
+    if (family_selected != FontFamily::SystemDefault) {
+        QString family = fontFamilyToString(family_selected);
 #ifdef Q_OS_MAC
         if (getFontWeightNormal() != getFontWeightNormalDefault()) {
             font = std::make_unique<QFont>(getFontNormal());
@@ -1432,10 +1449,10 @@ void setApplicationFont()
                 " match: " << qApp->font().exactMatch();
 }
 
-void setFont(const std::vector<QWidget*>& vecWidgets, FontWeight weight, int nPointSize, bool fItalic)
+void setFont(const std::vector<QWidget*>& vecWidgets, FontWeight weight, int nPointSize, bool fItalic, bool preserve_point_size)
 {
     for (auto it : vecWidgets) {
-        auto fontAttributes = std::make_tuple(weight, fItalic, nPointSize);
+        auto fontAttributes = std::make_tuple(weight, fItalic, nPointSize, preserve_point_size);
         auto itFontUpdate = mapFontUpdates.emplace(std::make_pair(it, fontAttributes));
         if (!itFontUpdate.second) {
             itFontUpdate.first->second = fontAttributes;
@@ -1557,6 +1574,10 @@ void updateFonts()
                 nSize = std::max(1, qRound(itDefault.first->second));
             }
             font = getFont(std::get<0>(it->second), std::get<1>(it->second), nSize);
+            // A responsive label owns its fitted point size. Global Appearance
+            // updates still supply family/style/weight, but must not undo that
+            // fit at every dialog construction and start a resize feedback loop.
+            if (std::get<3>(it->second)) font.setPointSizeF(*base_size);
         } else {
             font.setPointSizeF(getScaledFontSize(itDefault.first->second));
         }
@@ -1695,7 +1716,7 @@ QFont getFont(FontFamily family, QFont::Weight qWeight, bool fItalic, int nPoint
 
 QFont getFont(QFont::Weight qWeight, bool fItalic, int nPointSize)
 {
-    return getFont(fontFamily, qWeight, fItalic, nPointSize);
+    return getFont(presentationFontFamily(), qWeight, fItalic, nPointSize);
 }
 QFont getFont(FontWeight weight, bool fItalic, int nPointSize)
 {
@@ -1789,6 +1810,7 @@ bool dashThemeActive()
 
 void loadTheme(bool fForce)
 {
+    setApplicationFont();
     loadStyleSheet(fForce);
     updateFonts();
     updateMacFocusRects();

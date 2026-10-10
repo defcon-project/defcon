@@ -93,9 +93,15 @@ void OptionsModel::Init(bool resetSettings)
 
     if (!settings.contains("fontFamily"))
         settings.setValue("fontFamily", GUIUtil::fontFamilyToString(GUIUtil::getFontFamilyDefault()));
-    if (gArgs.SoftSetArg("-font-family", settings.value("fontFamily").toString().toStdString())) {
+    m_font_family_overridden = !gArgs.SoftSetArg("-font-family", settings.value("fontFamily").toString().toStdString());
+    if (!m_font_family_overridden) {
         if (GUIUtil::fontsLoaded()) {
-            GUIUtil::setFontFamily(GUIUtil::fontFamilyFromString(settings.value("fontFamily").toString()));
+            // Older settings always wrote SystemDefault, even if untouched. Preserve
+            // non-default choices; future explicit SystemDefault choices carry
+            // a separate marker so Abyss can honour them too.
+            const bool explicit_family = settings.value("fontFamilyExplicit",
+                settings.value("fontFamily").toString() != GUIUtil::fontFamilyToString(GUIUtil::getFontFamilyDefault())).toBool();
+            GUIUtil::setFontFamily(GUIUtil::fontFamilyFromString(settings.value("fontFamily").toString()), explicit_family);
         }
     } else {
         addOverriddenOption("-font-family");
@@ -763,6 +769,12 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
         case FontFamily:
             if (settings.value("fontFamily") != value) {
                 settings.setValue("fontFamily", value);
+            }
+            // CLI/config intent lasts for this launch. The mapper submits this
+            // field even when untouched, so it must not persist that intent as
+            // an explicit GUI preference (including explicit SystemDefault).
+            if (!m_font_family_overridden) {
+                settings.setValue("fontFamilyExplicit", GUIUtil::hasExplicitFontFamily());
             }
             break;
         case FontScale:

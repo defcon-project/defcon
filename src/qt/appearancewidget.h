@@ -52,6 +52,7 @@ private:
     QString prevTheme{GUIUtil::getActiveTheme()};
     int prevScale{GUIUtil::getFontScale()};
     GUIUtil::FontFamily prevFontFamily{GUIUtil::getFontFamily()};
+    bool prevFontFamilyExplicit{GUIUtil::hasExplicitFontFamily()};
     QFont::Weight prevWeightNormal{GUIUtil::getFontWeightNormal()};
     QFont::Weight prevWeightBold{GUIUtil::getFontWeightBold()};
     bool prevAnimateNightSky{true};

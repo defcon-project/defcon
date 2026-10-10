@@ -1065,6 +1065,7 @@ void BitcoinGUI::applyThemeLayout()
     if (devnetBadgeLabel == nullptr && !m_network_style->getTitleAddText().isEmpty()) {
         devnetBadgeLabel = new QLabel(m_network_style->getTitleAddText().trimmed());
         devnetBadgeLabel->setObjectName("devnetBadge");
+        GUIUtil::setFont({devnetBadgeLabel}, GUIUtil::FontWeight::Bold);
         devnetBadgeLabel->setAlignment(Qt::AlignCenter);
         devnetBadgeLabel->setToolTip(tr("This wallet is not on mainnet."));
         devnetBadgeAction = appToolBar->addWidget(devnetBadgeLabel);

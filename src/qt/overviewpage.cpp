@@ -20,6 +20,7 @@
 #include <interfaces/coinjoin.h>
 
 #include <QFrame>
+#include <QFontMetricsF>
 #include <QHBoxLayout>
 #include <QScreen>
 
@@ -37,6 +38,7 @@
 #include <QPainter>
 #include <QSettings>
 #include <QStatusTipEvent>
+#include <QStyle>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -166,6 +168,22 @@ OverviewPage::OverviewPage(QWidget* parent) :
 {
     ui->setupUi(this);
 
+    // These are the .ui constraints, before CSS polish or measured Abyss widths.
+    // The page itself has a 960px minimum in the form; restoring everything to
+    // zero would lose that constraint even if the stylesheet restores the card.
+    for (QLabel* label : ui->frame->findChildren<QLabel*>()) {
+        m_form_minimum_widths.emplace(label, label->minimumWidth());
+    }
+    m_form_minimum_widths.emplace(ui->frame, ui->frame->minimumWidth());
+    m_form_minimum_widths.emplace(this, minimumWidth());
+    if (!GUIUtil::isModernTheme()) {
+        // Keep the original form's screen bound without repolishing a fresh
+        // classic page: unpolish resets the fonts registered by GUIUtil.
+        if (const QScreen* display = screen()) {
+            setMinimumWidth(std::min(minimumWidth(), display->availableGeometry().width()));
+        }
+    }
+
     modernHeader = new QWidget(this);
     modernHeader->setObjectName("modernOverviewHeader");
     auto* modernHeaderLayout = new QVBoxLayout(modernHeader);
@@ -192,7 +210,9 @@ OverviewPage::OverviewPage(QWidget* parent) :
     networkLayout->addStretch();
     ui->topLayout->insertWidget(1, networkCard);
 
-    updateThemePresentation();
+    m_total_size_policy = ui->labelTotal->sizePolicy();
+    for (QLabel* label : ui->frame->findChildren<QLabel*>()) label->installEventFilter(this);
+    installEventFilter(this);
 
     GUIUtil::setFont({ui->label_4,
                       ui->label_5,
@@ -211,11 +231,9 @@ OverviewPage::OverviewPage(QWidget* parent) :
                       ui->labelSpendable
                      }, GUIUtil::FontWeight::Bold);
 
-    if (GUIUtil::isModernTheme()) {
-        // The hero number: the one figure this page exists to show.
-        GUIUtil::setFont({ui->labelTotal}, GUIUtil::FontWeight::Bold, 26);
-    }
-
+    GUIUtil::setFont({modernTitle}, GUIUtil::FontWeight::Bold, 18);
+    GUIUtil::setFont({modernSubtitle, labelNetworkStatus}, GUIUtil::FontWeight::Normal);
+    updateThemePresentation();
     GUIUtil::updateFonts();
 
     m_balances.balance = -1;
@@ -275,6 +293,34 @@ void OverviewPage::changeEvent(QEvent* event)
     if (event->type() == QEvent::StyleChange) {
         updateThemePresentation();
     }
+    if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange) {
+        scheduleBalanceWidths();
+    }
+}
+
+bool OverviewPage::eventFilter(QObject* watched, QEvent* event)
+{
+    switch (event->type()) {
+    case QEvent::FontChange:
+    case QEvent::StyleChange:
+    case QEvent::Polish:
+    case QEvent::Resize:
+        scheduleBalanceWidths();
+        break;
+    default:
+        break;
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void OverviewPage::scheduleBalanceWidths()
+{
+    if (m_balance_update_pending || m_applying_balance_widths) return;
+    m_balance_update_pending = true;
+    QTimer::singleShot(0, this, [this] {
+        m_balance_update_pending = false;
+        applyBalanceWidths();
+    });
 }
 
 void OverviewPage::paintEvent(QPaintEvent* event)
@@ -327,37 +373,50 @@ void OverviewPage::updateThemePresentation()
         networkCard->setVisible(modern);
     }
     ui->topLayout->setContentsMargins(11, 11, 11, 11);
-    ui->topLayout->setSpacing(6);
-    ui->horizontalLayout->setSpacing(6);
+    ui->topLayout->setSpacing(modern ? 12 : 6);
+    ui->horizontalLayout->setSpacing(modern ? 0 : 6);
 
-    // Who gets the room when the window grows.
-    //
-    // The form gives the stretch to the three spacers and none to the two
-    // columns of cards, so every pixel a wider window brings goes into empty
-    // space between them. Measured: the balances card is 526 px wide in a
-    // 1300 px window and 526 px wide in a 3000 px one -- half the page, then a
-    // fifth of it. Two small tiles adrift in an empty page, and the wider the
-    // screen the worse it looks.
-    //
-    // Weighting the columns far above the spacers hands them most of the
-    // growth while the gaps still widen a little, so the page keeps its margins
-    // instead of running edge to edge. The inherited weights are put back for
-    // the other themes, which were drawn for them.
     for (int item = 0; item < ui->horizontalLayout->count(); ++item) {
         const int inherited = m_inherited_stretch.emplace(item, ui->horizontalLayout->stretch(item)).first->second;
-        const bool spacer = ui->horizontalLayout->itemAt(item)->spacerItem() != nullptr;
-        ui->horizontalLayout->setStretch(item, modern ? (spacer ? 1 : 6) : inherited);
+        QSpacerItem* spacer = ui->horizontalLayout->itemAt(item)->spacerItem();
+        ui->horizontalLayout->setStretch(item, modern ? (spacer ? 0 : 1) : inherited);
+        if (spacer) {
+            const auto& original = m_inherited_spacers.emplace(spacer, std::make_pair(spacer->sizeHint(), spacer->sizePolicy())).first->second;
+            spacer->changeSize(modern ? (item == 2 ? 12 : 0) : original.first.width(), original.first.height(),
+                               modern ? QSizePolicy::Fixed : original.second.horizontalPolicy(), original.second.verticalPolicy());
+        }
     }
+    // Neither the empty fourth grid column nor its spacer may take the amount's room.
+    QSpacerItem* spacer = ui->horizontalSpacer_2;
+    const auto& original = m_inherited_spacers.emplace(spacer, std::make_pair(spacer->sizeHint(), spacer->sizePolicy())).first->second;
+    spacer->changeSize(modern ? 0 : original.first.width(), original.first.height(),
+                       modern ? QSizePolicy::Fixed : original.second.horizontalPolicy(), original.second.verticalPolicy());
+    for (int col = 0; col < ui->gridLayout->columnCount(); ++col) {
+        const int stretch = m_inherited_grid_stretch.emplace(col, ui->gridLayout->columnStretch(col)).first->second;
+        ui->gridLayout->setColumnStretch(col, modern ? (col == 1 || col == 2 ? 1 : 0) : stretch);
+    }
+    if (modern != m_modern_presentation) {
+        m_modern_presentation = modern;
+        m_inherited_minimum_widths.clear();
+        if (!modern) m_classic_widths_pending = true;
+        GUIUtil::setFont({ui->label_4, ui->label_5, ui->labelCoinJoinHeader}, GUIUtil::FontWeight::Bold, modern ? 12 : 16);
+        GUIUtil::setFont({ui->labelTotal}, GUIUtil::FontWeight::Bold, modern ? 26 : 14, false, modern);
+        ui->labelTotal->setFont(GUIUtil::getFont(GUIUtil::FontWeight::Bold, false, modern ? 26 : 14));
+        auto policy = m_total_size_policy;
+        if (modern) policy.setHorizontalPolicy(QSizePolicy::Ignored);
+        ui->labelTotal->setSizePolicy(policy);
+    }
+    ui->horizontalLayout->invalidate();
+    scheduleBalanceWidths();
 
     // The amounts are formatted per theme (see formatBalance), so a theme
     // change has to rewrite them -- otherwise the page keeps the previous
     // theme's markup until the balance next moves, which on a quiet wallet is
     // a long time. setBalance() re-derives the widths from the new text.
     //
-    // Deliberately not called from the constructor, which reaches here before
-    // the stylesheet has been polished onto the labels: the inherited minimum
-    // recorded then would be 0 rather than general.css's 60, and the themes
-    // this restores for would be handed that 0 later.
+    // Width work is queued until stylesheet polish has settled. In classic
+    // themes it only restores once on entry; subsequent resize/font events
+    // leave CSS minimums in charge rather than replaying a stale snapshot.
     if (walletModel != nullptr && m_balances.balance != -1) {
         setBalance(m_balances);
     }
@@ -402,72 +461,121 @@ QString OverviewPage::formatBalance(int unit, const CAmount& amount) const
     return BitcoinUnits::floorHtmlWithPrivacy(unit, amount, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy);
 }
 
-//! Let the amounts decide how narrow this page may become.
-//!
-//! Qt treats an explicit minimum width as a REPLACEMENT for the one the content
-//! asks for, not as a floor under it (qSmartMinSize, qlayoutengine.cpp). Three
-//! of them sit between the amount and the window, all inherited and all chosen
-//! for amounts of Dash's size at Dash's font: `min-width: 60px` on every label
-//! of the card and `min-width: 490px` on the card itself, both from general.css,
-//! and `minimumSize: 960` on this page, from overviewpage.ui. So the balances
-//! row is handed a width settled before anyone knew how long the number would
-//! be, the window's own minimum is computed from that, and at that minimum the
-//! total is cut off -- "DFCN" first. Measured on this fork: the total wants
-//! 322 px and the layout was told 60 would do.
-//!
-//! Raising each cap to what its own contents ask for puts the number back in
-//! charge, bottom up: the labels to their own width, then the card and the page
-//! to what their layouts need once the labels are honest. Nothing is ever
-//! lowered, so nothing that fits today stops fitting, and the page's minimum is
-//! held under the screen it is on -- an amount too long for the display has to
-//! be clipped somewhere, and a window that cannot be resized onto the screen is
-//! worse than a clipped digit.
-//!
-//! Only the modern theme asks for this. The others are laid out for the
-//! inherited numbers and get them back, which is why the originals are kept.
+// Coalesced after style/font/layout changes. Qt's qSmartMinSize uses explicit
+// minimums ahead of size hints, so Abyss must raise the labels before asking
+// their card and the page how much room is needed. Classic themes instead let
+// the current stylesheet restore its minimums once on entry: a snapshot taken
+// before polish is not a valid replacement for general.css's 60px/490px floors.
 void OverviewPage::applyBalanceWidths()
 {
+    m_applying_balance_widths = true;
     const bool modern = GUIUtil::isModernTheme();
+    for (QLabel* label : balanceLabels()) label->setTextFormat(modern ? Qt::PlainText : Qt::AutoText);
+    if (!modern) {
+        if (m_classic_widths_pending) {
+            std::map<QWidget*, QFont> presentation_fonts;
+            for (const auto& entry : m_form_minimum_widths) {
+                presentation_fonts.emplace(entry.first, entry.first->font());
+            }
+            const auto restore = [&](QWidget* widget) {
+                widget->setMinimumWidth(m_form_minimum_widths.at(widget));
+                widget->style()->polish(widget);
+                // Follow Qt's repolish protocol: QFrame/QLabel need StyleChange
+                // to refresh their CSS border/padding contents rectangles too.
+                QEvent style_change(QEvent::StyleChange);
+                QApplication::sendEvent(widget, &style_change);
+                // The form uses the whole widget as each frame's rectangle.
+                // Recompute contents margins from the current style's widths,
+                // rather than preserving padding left over from Abyss.
+                if (auto* frame = qobject_cast<QFrame*>(widget)) frame->setFrameRect({});
+            };
+            for (QLabel* label : ui->frame->findChildren<QLabel*>()) restore(label);
+            restore(ui->frame);
+            restore(this);
+            // Polishing ancestors can propagate their saved style font to
+            // children. Restore presentation fonts only after all polish calls,
+            // then refresh QLabel's cached rich-text font even if QWidget's
+            // public font compares equal and setFont would omit FontChange.
+            setFont(presentation_fonts.at(this));
+            ui->frame->setFont(presentation_fonts.at(ui->frame));
+            for (QLabel* label : ui->frame->findChildren<QLabel*>()) {
+                label->setFont(presentation_fonts.at(label));
+                QEvent font_change(QEvent::FontChange);
+                QApplication::sendEvent(label, &font_change);
+            }
+            // Preserve the original page's screen bound in classic themes.
+            // Resizes must not reapply these minimums after CSS has settled.
+            if (const QScreen* display = screen()) {
+                setMinimumWidth(std::min(minimumWidth(), display->availableGeometry().width()));
+            }
+            m_classic_widths_pending = false;
+            // The restored fonts and CSS box metrics also change cached heights.
+            for (QLayout* nested : findChildren<QLayout*>()) nested->invalidate();
+            ui->topLayout->invalidate();
+            ui->topLayout->activate();
+        }
+        m_applying_balance_widths = false;
+        return;
+    }
+
+    ensurePolished();
+    ui->frame->ensurePolished();
     auto inherited = [&](QWidget* widget) {
         return m_inherited_minimum_widths.emplace(widget, widget->minimumWidth()).first->second;
     };
-
-    for (QLabel* label : balanceLabels()) {
-        label->setTextFormat(modern ? Qt::PlainText : Qt::AutoText);
-    }
-
-    // Every label on the card, not only the amounts: the same `min-width: 60px`
-    // covers the row headings, and "Immature:" arrives as "mmature:" when the
-    // column is narrower than the word. A hidden one contributes nothing, so
-    // the watch-only column costs nothing until a wallet has one.
     for (QLabel* label : ui->frame->findChildren<QLabel*>()) {
+        label->ensurePolished();
         const int original = inherited(label);
-        label->setMinimumWidth(modern ? std::max(original, label->sizeHint().width()) : original);
+        int wanted;
+        if (label == ui->labelTotal) {
+            QFont font = GUIUtil::getFont(GUIUtil::FontWeight::Bold, false, 26);
+            const qreal minimum = std::max(1.0, GUIUtil::internal::EffectivePointSize(ui->labelBalance->font(), label->logicalDpiY()).value_or(1.0));
+            font.setPointSizeF(minimum);
+            const int padding = label->contentsMargins().left() + label->contentsMargins().right() +
+                                2 * label->margin() + std::max(0, label->indent());
+            wanted = std::max(original, int(std::ceil(QFontMetricsF(font).horizontalAdvance(label->text()))) + padding + 2);
+        } else {
+            wanted = std::max(original, label->sizeHint().width());
+        }
+        if (label->minimumWidth() != wanted) label->setMinimumWidth(wanted);
     }
-
-    // The card, then the page: each reads the level below it, so the order is
-    // the point. A layout answers minimumSize() from a cache and only rebuilds
-    // it when told the contents moved, so every layout underneath is
-    // invalidated first -- without that the card is asked how wide it must be
-    // and repeats the number it worked out before the labels grew, which is
-    // how this fix silently did nothing the first time it was measured.
+    // Invalidate bottom up before reading cached layout minimums. Otherwise a
+    // card can repeat its width from before the amount labels were remeasured.
     for (QWidget* widget : {static_cast<QWidget*>(ui->frame), static_cast<QWidget*>(this)}) {
-        const int original = inherited(widget);
-        int wanted = original;
-        if (modern && widget->layout() != nullptr) {
-            for (QLayout* nested : widget->findChildren<QLayout*>()) {
-                nested->invalidate();
-            }
+        int wanted = inherited(widget);
+        if (widget->layout()) {
+            for (QLayout* nested : widget->findChildren<QLayout*>()) nested->invalidate();
             widget->layout()->invalidate();
-            wanted = std::max(original, widget->layout()->minimumSize().width());
+            wanted = std::max(wanted, widget->layout()->minimumSize().width());
         }
-        if (widget == this) {
-            if (const QScreen* display = screen()) {
-                wanted = std::min(wanted, display->availableGeometry().width());
-            }
-        }
-        widget->setMinimumWidth(wanted);
+        // Abyss keeps the measured text floor even on a smaller screen so the
+        // requested minimum-size view does not clip the amount or its unit.
+        // Classic themes retain the original screen bound in the branch above.
+        if (widget->minimumWidth() != wanted) widget->setMinimumWidth(wanted);
     }
+    ui->topLayout->activate();
+    fitTotalFont();
+    m_applying_balance_widths = false;
+}
+
+void OverviewPage::fitTotalFont()
+{
+    QLabel* label = ui->labelTotal;
+    QFont font = GUIUtil::getFont(GUIUtil::FontWeight::Bold, false, 26);
+    // Pixel-sized fonts report pointSizeF() == -1. Convert the floor through
+    // the existing shared helper and keep it positive: Qt ignores nonpositive
+    // point sizes, which would otherwise leave the loop stuck at the same size.
+    const qreal minimum = std::max(1.0, GUIUtil::internal::EffectivePointSize(ui->labelBalance->font(), label->logicalDpiY()).value_or(1.0));
+    if (font.pointSizeF() <= 0) font.setPointSizeF(std::max(minimum, qreal(GUIUtil::getScaledFontSize(26))));
+    const int available = label->contentsRect().width() - 2 * label->margin() - std::max(0, label->indent()) - 2;
+    // Quarter-point steps keep the whole formatted amount visible, including
+    // its unit. The minimum width is measured at the floor, not at the hero size.
+    while (font.pointSizeF() > minimum && QFontMetricsF(font).horizontalAdvance(label->text()) > available) {
+        const qreal previous = font.pointSizeF();
+        font.setPointSizeF(std::max(minimum, previous - 0.25));
+        if (font.pointSizeF() >= previous) break;
+    }
+    if (label->font() != font) label->setFont(font);
 }
 
 void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
@@ -513,7 +621,7 @@ void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
 
     // The amounts have just changed length, and in the modern theme their
     // length is what the card and the page are allowed to shrink to.
-    applyBalanceWidths();
+    scheduleBalanceWidths();
 
     int numISLocks = walletModel->getNumISLocks();
     if(cachedNumISLocks != numISLocks) {
@@ -541,6 +649,7 @@ void OverviewPage::updateWatchOnlyLabels(bool showWatchOnly)
         ui->labelImmature->setIndent(20);
         ui->labelTotal->setIndent(20);
     }
+    scheduleBalanceWidths();
 }
 
 void OverviewPage::setClientModel(ClientModel *model)
