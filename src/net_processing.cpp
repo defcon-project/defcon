@@ -711,6 +711,10 @@ public:
         EXCLUSIVE_LOCKS_REQUIRED(!m_recent_confirmed_transactions_mutex);
     void UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload) override
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
+    void SynchronousUpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload) override
+    {
+        m_dsl_chain_height.store(pindexNew != nullptr ? pindexNew->nHeight : -1, std::memory_order_relaxed);
+    }
     void BlockChecked(const CBlock& block, const BlockValidationState& state) override
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void NewPoWValidBlock(const CBlockIndex *pindex, const std::shared_ptr<const CBlock>& pblock) override;
@@ -772,10 +776,12 @@ private:
     /** Per-block DSL epoch tick: roll the epoch, announce our own liveness, and
      *  at the cutoff turn silence into signed reports. */
     void ProcessDSLTick(const CBlockIndex* pindexNew);
-    /** Hold an announcement that arrived blocks_early blocks before its base
-     *  block, delivered by `from`, with the tip in epoch tip_epoch. */
-    void HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early,
-                              size_t hold_max);
+    /** Hold an announcement before its base block or local epoch tick.
+     *  With a connected base, false means the tick already began that epoch
+     *  (its drain may still be pending); process the response directly. */
+    bool HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early,
+                             size_t hold_max, const uint256& connected_base = uint256{},
+                             const CBLSPublicKey* connected_operator = nullptr);
     /** A disconnecting peer stops vouching for the early announcements it
      *  delivered; connected_height is the chain height it connected at. */
     void ForgetDSLEarlyVoucher(NodeId id, int connected_height);
@@ -972,6 +978,7 @@ private:
      *  outlive the connection, so reconnecting buys nothing. */
     struct DSLEarlyResponse {
         dsl::CPoSeServiceResponse resp;
+        uint256 connected_base; // null for announcements received before their base
         std::vector<NodeId> vouchers; // live peers that delivered it, first deliverer first
         /** Who delivered it and has since disconnected -- what the drain needs
          *  to tell one departed deliverer from another, and what the contest,
@@ -1017,6 +1024,9 @@ private:
 
     /** The height of the best chain */
     std::atomic<int> m_best_height{-1};
+    /** DSL activation follows the connected chain, even while the queued
+     *  UpdatedBlockTip callback (and the local epoch tick) is delayed. */
+    std::atomic<int> m_dsl_chain_height{-1};
 
     /** Next time to check for stale tip */
     std::chrono::seconds m_stale_tip_check_time GUARDED_BY(cs_main){0s};
@@ -2298,6 +2308,7 @@ PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& conn
       m_faultinjector(faultinjector),
       m_ignore_incoming_txs(ignore_incoming_txs)
 {
+    m_dsl_chain_height.store(WITH_LOCK(cs_main, return m_chainman.ActiveChain().Height()), std::memory_order_relaxed);
     // While Erlay support is incomplete, it must be enabled explicitly via -txreconciliation.
     // This argument can go away after Erlay support is complete.
     if (gArgs.GetBoolArg("-txreconciliation", DEFAULT_TXRECONCILIATION_ENABLE)) {
@@ -6116,7 +6127,13 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
     }
     if (m_dslman == nullptr || m_dmnman == nullptr) return;
     const Consensus::Params& consensus = m_chainparams.GetConsensus();
-    if (m_best_height < consensus.nDSLActivationHeight) return;
+    const int chain_height{m_dsl_chain_height.load(std::memory_order_relaxed)};
+    if (chain_height < consensus.nDSLActivationHeight) {
+        if (dsl::PerfEnabled()) {
+            dsl::RecordPerf(m_dslman->CurrentEpoch(), m_dslman->CurrentEpochHash(), dsl::PerfMetric::ACTIVATION_REFUSED);
+        }
+        return;
+    }
     uint32_t perf_epoch{0};
     uint256 perf_base;
     if (dsl::PerfEnabled()) {
@@ -6160,7 +6177,24 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
     if (msg_type == NetMsgType::POSERESPONSE) {
         dsl::CPoSeServiceResponse resp;
         if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, resp)) return;
-        const CBlockIndex* base = epoch_base(resp.nEpoch);
+        const auto [base, tip] = WITH_LOCK(cs_main, return std::make_pair(epoch_base(resp.nEpoch), m_chainman.ActiveChain().Height()));
+        if (base != nullptr && consensus.nDSLEpochInterval > 0 && m_mn_sync.IsBlockchainSynced()) {
+            const uint32_t tip_epoch = static_cast<uint32_t>(std::max(tip, 0)) / static_cast<uint32_t>(consensus.nDSLEpochInterval);
+            // The base may already be connected while BeginEpoch is still
+            // queued. Keep only the chain's current epoch in the existing
+            // bounded hold; its drain retains the normal signature checks.
+            // Recheck under the hold lock so an entry cannot land after the
+            // tick has already drained this epoch.
+            if (resp.nEpoch == tip_epoch) {
+                const auto dmn = m_dmnman->GetListForBlock(base).GetMN(resp.proTxHash);
+                if (dmn == nullptr) return;
+                if (HoldDSLEarlyResponse(pfrom.GetId(), resp, tip_epoch, /*blocks_early=*/0,
+                                        DSLEarlyResponsesMax(m_dsl_budget_mn_count), base->GetBlockHash(),
+                                        &dmn->pdmnState->pubKeyOperator.Get())) {
+                    return;
+                }
+            }
+        }
         if (base == nullptr && consensus.nDSLEpochInterval > 0) {
             // Early. A masternode announces on the tick of the block that opens
             // the epoch, and its announcement can outrun that block to a peer --
@@ -6175,7 +6209,6 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
             // verified until the base block exists, so what bounds the hold,
             // and who gives way when it is full, is HoldDSLEarlyResponse.
             const int64_t base_height = static_cast<int64_t>(resp.nEpoch) * consensus.nDSLEpochInterval;
-            const int tip = WITH_LOCK(cs_main, return m_chainman.ActiveChain().Height());
             const int64_t blocks_early = base_height - static_cast<int64_t>(tip);
             if (blocks_early >= 1 && blocks_early <= static_cast<int64_t>(consensus.nDSLEpochInterval)) {
                 const uint32_t tip_epoch = static_cast<uint32_t>(std::max(tip, 0)) / static_cast<uint32_t>(consensus.nDSLEpochInterval);
@@ -6300,18 +6333,23 @@ bool PeerManagerImpl::DslFaultHolds(dsl::FaultKind drop, dsl::FaultKind delay, u
     return false;
 }
 
-void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early,
-                                           size_t hold_max)
+bool PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early,
+                                         size_t hold_max, const uint256& connected_base, const CBLSPublicKey* connected_operator)
 {
     LOCK(m_dsl_early_mutex);
+    if (!connected_base.IsNull() && m_dslman->CurrentEpoch() == resp.nEpoch &&
+        m_dslman->CurrentEpochHash() == connected_base) {
+        return false;
+    }
 
     // The global bound lives here, not on the tick: a node that is not yet
     // masternode-synced keeps connecting blocks while ProcessDSLTick returns
     // before it drains anything, so the tick cannot be what stops this map
     // from keying one more epoch at every boundary the tip crosses. An early
-    // announcement can only name the epoch after the tip's, so any other key
-    // is stale -- left from a boundary the tip has passed, or from a reorg
-    // that abandoned the base it was signed for -- and goes, with a note:
+    // announcement can name the tip's epoch before its tick, or the next,
+    // so any other key is stale -- left from a boundary the tip has passed,
+    // or from a reorg that abandoned the base it was signed for -- and goes,
+    // with a note:
     // those announcements were never judged, which on a node that could not
     // judge is the right outcome.
     for (auto it = m_dsl_early_responses.begin(); it != m_dsl_early_responses.end();) {
@@ -6328,6 +6366,11 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
     auto& held = epoch.held;
     auto& vouchers = epoch.vouchers;
     const auto log_outcome = [&](const std::string& outcome) {
+        if (!connected_base.IsNull()) {
+            LogPrint(BCLog::DSL, "DSL -- poseresp epoch=%d proTx=%s arrived before its local epoch tick, %s, peer=%d\n",
+                     resp.nEpoch, resp.proTxHash.ToString(), outcome, from);
+            return;
+        }
         LogPrint(BCLog::NET, "DSL -- poseresp epoch=%d proTx=%s arrived %d block(s) before its base block, %s, peer=%d\n",
                  resp.nEpoch, resp.proTxHash.ToString(), blocks_early, outcome, from);
     };
@@ -6346,9 +6389,33 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
         return entry.resp.proTxHash == resp.proTxHash && entry.resp.sig == resp.sig;
     });
     if (same != held.end()) {
+        // A pre-base copy has not been verified. Only reuse verification for
+        // this same connected base; otherwise verify before adding its relayer
+        // and promote the entry so pre-base taint cannot discard it at drain.
+        if (!connected_base.IsNull() && same->connected_base != connected_base) {
+            if (connected_operator == nullptr ||
+                !dsl::VerifyChallengeResponse(resp.sig, *connected_operator, connected_base, resp.proTxHash)) {
+                log_outcome("refused (not signed for the connected base)");
+                return true;
+            }
+            same->connected_base = connected_base;
+        }
         vouch(*same);
         log_outcome(strprintf("already held, vouched for by %d peer(s)", same->vouchers.size()));
-        return;
+        return true;
+    }
+
+    // A connected-base tag records what we observed, not what the signature
+    // signed: an honest old-base response may arrive only after a rebase. Verify
+    // a new connected-base entry before holding it, without tainting its peer on
+    // failure. Duplicates already verified for this base need no second check.
+    // The entry budget already covers this BLS work; the drain still uses the normal
+    // ProcessResponse verification. Pre-base entries keep their existing rule.
+    if (!connected_base.IsNull() &&
+        (connected_operator == nullptr ||
+         !dsl::VerifyChallengeResponse(resp.sig, *connected_operator, connected_base, resp.proTxHash))) {
+        log_outcome("refused (not signed for the connected base)");
+        return true;
     }
 
     // Who competes with the newcomer: nobody until the hold is full, and then
@@ -6366,10 +6433,10 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
     // and how many connections it takes to crowd honest entries out by the
     // size of the hold (DSLEarlyResponsesMax).
     if (held.size() < hold_max) {
-        held.push_back({resp, {}});
+        held.push_back({resp, connected_base, {}, {}, false});
         vouch(held.back());
         log_outcome("held");
-        return;
+        return true;
     }
     std::vector<size_t> candidates;
     candidates.reserve(held.size());
@@ -6426,7 +6493,7 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
     const std::optional<size_t> newcomer{(in_set.count(from) != 0 ? in_set.at(from) : 0) + 1};
     if (!weaker(weakest_share, newcomer)) {
         log_outcome("dropped (hold full, no entry pushed here by fewer)");
-        return;
+        return true;
     }
     const auto share_str = weakest_share.has_value() ? strprintf("%d of this contest", *weakest_share)
                                                      : std::string{"nothing live"};
@@ -6434,9 +6501,10 @@ void PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
         if (const auto voucher = vouchers.find(id); voucher != vouchers.end() && --voucher->second == 0) vouchers.erase(voucher);
     }
     held.erase(held.begin() + static_cast<std::ptrdiff_t>(weakest));
-    held.push_back({resp, {}});
+    held.push_back({resp, connected_base, {}, {}, false});
     vouch(held.back());
     log_outcome(strprintf("held in place of one whose lightest voucher pushed %s", share_str));
+    return true;
 }
 
 void PeerManagerImpl::ForgetDSLEarlyVoucher(NodeId id, int connected_height)
@@ -6487,6 +6555,10 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
     const uint32_t epoch = static_cast<uint32_t>(pindexNew->nHeight) / interval;
     const CBlockIndex* pindexBase = pindexNew->GetAncestor(static_cast<int>(epoch * interval));
     if (pindexBase == nullptr) return;
+    // A queued tick can belong to a base that a reorg already disconnected.
+    // Leave the hold for the active base's tick instead of draining new-base
+    // announcements against that obsolete callback.
+    if (WITH_LOCK(cs_main, return m_chainman.ActiveChain()[pindexBase->nHeight]) != pindexBase) return;
     const uint32_t pos = static_cast<uint32_t>(pindexNew->nHeight) % interval;
     const auto change = m_dslman->BeginEpoch(epoch, pindexBase->GetBlockHash());
 
@@ -6561,7 +6633,10 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
             // full the hold --
             // and at most once more per masternode whose genuine copy the message
             // thread accepts while this runs, since a later entry for it is a
-            // duplicate and refused before any check.
+            // duplicate and refused before any check. Entries verified for this
+            // connected base bypass relayer taint and never add to it: their
+            // normal ProcessResponse check accepts at most once per masternode,
+            // and later duplicates are refused before signature verification.
             //
             // Honest peers never deliver a bad signature early -- they relay only
             // what they verified -- except across a reorg that moved the base
@@ -6587,8 +6662,16 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
             size_t refused_count{0};
             size_t skipped_count{0};
             for (const auto& held : early) {
+                // A response received while its old base was connected can be
+                // legitimate across a rebase. Discard it without tainting peers
+                // that also delivered announcements for the new active base.
+                if (!held.connected_base.IsNull() && held.connected_base != pindexBase->GetBlockHash()) continue;
+                // This entry was verified against the active base on insert
+                // (or on a connected-base duplicate). Pre-base old signatures
+                // can taint its relayer, but cannot invalidate that verification.
+                const bool connected_verified{held.connected_base == pindexBase->GetBlockHash()};
                 const bool listed{list_at_base.HasMN(held.resp.proTxHash)};
-                if (listed) {
+                if (listed && !connected_verified) {
                     const auto is_untrusted = [&untrusted](NodeId id) { return untrusted.count(id) != 0; };
                     const bool untrusted_only{
                         std::all_of(held.vouchers.begin(), held.vouchers.end(), is_untrusted) &&
@@ -6602,7 +6685,7 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
                 if (m_dslman->ProcessResponse(held.resp, list_at_base, pindexBase->GetBlockHash())) {
                     ++accepted_count;
                     RelayDSLMessage(NetMsgType::POSERESPONSE, held.resp, /*skip_id=*/-1);
-                } else if (listed && !m_dslman->HasResponded(held.resp.proTxHash)) {
+                } else if (listed && !connected_verified && !m_dslman->HasResponded(held.resp.proTxHash)) {
                     // A listed masternode, not a duplicate: the signature did not
                     // verify. Asked after the refusal and not before it, because
                     // the message thread can accept the genuine copy of this
