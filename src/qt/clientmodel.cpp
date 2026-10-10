@@ -96,12 +96,14 @@ int ClientModel::getNumConnections(unsigned int flags) const
 
 void ClientModel::setMasternodeList(const CDeterministicMNList& mnList, const CBlockIndex* tip)
 {
-    LOCK(cs_mnlinst);
-    if (mnListCached->GetBlockHash() == mnList.GetBlockHash()) {
-        return;
+    {
+        LOCK(cs_mnlinst);
+        if (mnListCached->GetBlockHash() == mnList.GetBlockHash()) {
+            return;
+        }
+        mnListCached = std::make_shared<CDeterministicMNList>(mnList);
+        mnListTip = tip;
     }
-    mnListCached = std::make_shared<CDeterministicMNList>(mnList);
-    mnListTip = tip;
     Q_EMIT masternodeListChanged();
 }
 
@@ -115,7 +117,6 @@ void ClientModel::refreshMasternodeList()
 {
     auto [mnList, tip] = m_node.evo().getListAtChainTip();
 
-    LOCK(cs_mnlinst);
     setMasternodeList(mnList, tip);
 }
 

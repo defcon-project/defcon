@@ -24,6 +24,7 @@ private Q_SLOTS:
     void viewSurvivesRestart();
     void oldLayoutDoesNotHideTheCollateral();
     void mineOnlyWaitsForTheWallet();
+    void refreshUpdatesVisibleList();
     void repeatedFiltering();
     void filteredRowsKeepOrderAndIdentity();
     void hiddenUpdatesWaitForShow();

@@ -26,6 +26,7 @@
 #include <QHeaderView>
 #include <QLineEdit>
 #include <QSettings>
+#include <QSignalSpy>
 #include <QTableWidget>
 
 namespace {
@@ -54,6 +55,72 @@ void forget()
 }
 
 } // namespace
+
+// Refreshing from the console must notify a visible tab without holding the
+// snapshot lock, and must keep the list/tip pair and same-hash no-op intact.
+void MasternodeListTests::refreshUpdatesVisibleList()
+{
+    forget();
+    TestChain100Setup test;
+    struct RestoreContext {
+        interfaces::Node& node;
+        NodeContext* previous;
+        std::chrono::seconds mock_time;
+        ~RestoreContext() { node.setContext(previous); SetMockTime(mock_time); forget(); }
+    } restore{m_node, m_node.context(), GetMockTime()};
+    m_node.setContext(&test.m_node);
+    OptionsModel optionsModel;
+    ClientModel clientModel(m_node, &optionsModel);
+    MasternodeList view;
+    view.setClientModel(&clientModel);
+    view.show();
+    const Widgets w = find(view);
+    QVERIFY(w.table);
+    QSignalSpy changes(&clientModel, &ClientModel::masternodeListChanged);
+    QVERIFY(changes.isValid());
+
+    const CBlockIndex* tip = test.m_node.chainman->ActiveChain().Tip();
+    CDeterministicMNList mnList(uint256S("03"), tip->nHeight, 1);
+    auto mn = std::make_shared<CDeterministicMN>(0);
+    mn->proTxHash = uint256S("01");
+    mn->collateralOutpoint = COutPoint(uint256S("02"), 0);
+    auto state = std::make_shared<CDeterministicMNState>();
+    state->keyIDOwner = test.coinbaseKey.GetPubKey().GetID();
+    state->BanIfNotBanned(0);
+    mn->pdmnState = state;
+    mnList.AddMN(mn);
+    clientModel.setMasternodeList(mnList, tip);
+    QCOMPARE(changes.count(), 1);
+    auto cached = clientModel.getMasternodeList();
+    QVERIFY(cached.first.GetBlockHash() == mnList.GetBlockHash());
+    QVERIFY(cached.second == tip);
+    view.hide();
+    view.show();
+    QCOMPARE(w.table->rowCount(), 1);
+
+    // A same-hash delivery must neither replace the pair nor emit again.
+    CDeterministicMNList duplicate(mnList.GetBlockHash(), tip->nHeight, 0);
+    clientModel.setMasternodeList(duplicate, nullptr);
+    QCOMPARE(changes.count(), 1);
+    cached = clientModel.getMasternodeList();
+    QCOMPARE(cached.first.GetAllMNsCount(), mnList.GetAllMNsCount());
+    QVERIFY(cached.second == tip);
+
+    const auto expected = m_node.evo().getListAtChainTip();
+    QVERIFY(expected.first.GetBlockHash() != mnList.GetBlockHash());
+    clientModel.refreshMasternodeList();
+    QCOMPARE(changes.count(), 2);
+    cached = clientModel.getMasternodeList();
+    QVERIFY(cached.first.GetBlockHash() == expected.first.GetBlockHash());
+    QVERIFY(cached.second == expected.second);
+    QCOMPARE(cached.first.GetAllMNsCount(), expected.first.GetAllMNsCount());
+    view.hide();
+    view.show();
+    QCOMPARE(w.table->rowCount(), 0);
+
+    clientModel.refreshMasternodeList();
+    QCOMPARE(changes.count(), 2);
+}
 
 // Exercise both ownership paths repeatedly. With a leak checker, this also
 // detects items abandoned when a row does not match the filter.
