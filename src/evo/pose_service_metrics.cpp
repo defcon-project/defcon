@@ -22,7 +22,7 @@ constexpr std::array<const char*, static_cast<size_t>(PerfMetric::COUNT)> names{
     "verify_invalid", "bls_verify", "bls_success", "cache_hit", "cache_miss",
     "commitment_build", "signing_build", "miner_build", "rpc_build",
     "emit_reports", "inverse_assignment", "report_sign", "relay_serialize", "relay_push", "tip_queue",
-    "activation_refused"
+    "activation_refused", "decode_report", "duplicate_undecoded"
 };
 }
 

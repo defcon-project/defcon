@@ -118,6 +118,7 @@ BITCOIN_TESTS =\
   test/pose_service_sentinels_tests.cpp \
   test/dsl_aggregation_tests.cpp \
   test/dsl_report_store_tests.cpp \
+  test/dsl_report_wire_tests.cpp \
   test/dsl_perf_tests.cpp \
   test/dsl_metrics_tests.cpp \
   test/dsl_activation_tests.cpp \

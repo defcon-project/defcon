@@ -10,6 +10,8 @@
 #include <evo/pose_service_sigcache.h>
 #include <evo/specialtx.h>
 #include <hash.h>
+#include <streams.h>
+#include <version.h>
 
 #include <algorithm>
 #include <limits>
@@ -127,6 +129,20 @@ bool CPoSeServiceReport::VerifySig(const CBLSPublicKey& operatorPubKey, const ui
 {
     static CReportSignatureCache cache;
     return cache.Verify(*this, operatorPubKey, epochBlockHash);
+}
+
+std::optional<ReportWire> PeekReportWire(Span<const unsigned char> payload)
+{
+    if (payload.size() != CPoSeServiceReport::WIRE_SIZE) return std::nullopt;
+    ReportWire wire;
+    // The fields in front of the signature go through the same stream operators
+    // that CPoSeServiceReport's SERIALIZE_METHODS reads them with, so the two
+    // cannot disagree about what they are. Only the signature is taken by
+    // position: it is the last BLS_CURVE_SIG_SIZE bytes.
+    SpanReader reader{SER_NETWORK, PROTOCOL_VERSION, payload, 0};
+    reader >> wire.nEpoch >> wire.targetProTxHash >> wire.sentinelProTxHash >> wire.status;
+    wire.sig = payload.last(static_cast<size_t>(BLS_CURVE_SIG_SIZE));
+    return wire;
 }
 
 CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& epochBlockHash,

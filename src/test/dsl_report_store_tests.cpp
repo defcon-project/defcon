@@ -9,8 +9,10 @@
 #include <evo/pose_service_sentinels.h>
 #include <evo/pose_service_store.h>
 #include <hash.h>
+#include <streams.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
+#include <version.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -418,6 +420,148 @@ BOOST_AUTO_TEST_CASE(cache_hits_do_not_bypass_admission_and_parallel_dedup)
     BOOST_REQUIRE(unassigned.VerifySig(outsider->second.GetPublicKey(), fx.epoch));
     BOOST_CHECK(!store.AddReport(unassigned, fx.list, fx.epoch, params));
     BOOST_CHECK_EQUAL(store.Size(), 0u);
+}
+
+namespace {
+std::vector<unsigned char> WireOf(const dsl::CPoSeServiceReport& report)
+{
+    CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+    stream << report;
+    return {UCharCast(stream.data()), UCharCast(stream.data()) + stream.size()};
+}
+
+// The view refers into `bytes`, which has to outlive it.
+dsl::ReportWire PeekOf(const std::vector<unsigned char>& bytes)
+{
+    const auto wire = dsl::PeekReportWire(MakeUCharSpan(bytes));
+    BOOST_REQUIRE(wire.has_value());
+    return *wire;
+}
+} // namespace
+
+// Reports are flooded without an inventory step, and nearly every arrival is a
+// copy of one already held. The store can say that a payload is such a copy from
+// its bytes alone, which lets the caller drop it without decoding the signature.
+// It may say so only when the payload is the held report in every byte.
+BOOST_AUTO_TEST_CASE(a_held_report_is_recognised_from_its_bytes_and_only_by_all_of_them)
+{
+    auto fx = MakeFixture(30);
+    Consensus::Params params;
+    const uint256 target = TaggedHash(3, 0, "protx");
+    const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, fx.epoch, 7);
+    dsl::CServiceReportStore store;
+    store.SetCurrentEpoch(500);
+
+    const auto report = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]);
+    const auto bytes = WireOf(report);
+    BOOST_REQUIRE_EQUAL(bytes.size(), dsl::CPoSeServiceReport::WIRE_SIZE);
+    BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(bytes))); // nothing held yet
+    BOOST_REQUIRE(store.AddReport(report, fx.list, fx.epoch, params));
+    BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
+
+    // one bit of any of the 165 bytes, and it is not the same report
+    for (size_t i = 0; i < bytes.size(); ++i) {
+        auto other = bytes;
+        other[i] ^= 0x01;
+        BOOST_CHECK_MESSAGE(!store.HaveIdenticalReport(PeekOf(other)),
+                            "a flipped bit in byte " << i << " was taken for the held report");
+    }
+    // the same key and signature under another status, or the same key and
+    // status under another valid signature: neither is the held report
+    auto flipped = report;
+    flipped.status = static_cast<uint8_t>(dsl::ServiceStatus::ONLINE);
+    BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(WireOf(flipped))));
+    auto resigned = SignedReport(500, target, sentinels[1], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[1]]);
+    resigned.sentinelProTxHash = sentinels[0];
+    BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(WireOf(resigned))));
+    // a report that is not held says nothing
+    BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(WireOf(SignedReport(500, target, sentinels[1],
+        dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[1]])))));
+
+    // asking changes nothing
+    BOOST_CHECK_EQUAL(store.Size(), 1u);
+    BOOST_CHECK(store.HaveReport(500, target, sentinels[0]));
+    BOOST_CHECK(!store.HaveReport(500, target, sentinels[1]));
+}
+
+// The question is asked only where AddReport would get as far as its duplicate
+// test: a held report outside the epoch window is none of its business, and
+// what the store has dropped is not held.
+BOOST_AUTO_TEST_CASE(a_held_report_is_recognised_only_inside_the_epoch_window)
+{
+    auto fx = MakeFixture(30);
+    Consensus::Params params;
+    const uint256 target = TaggedHash(3, 0, "protx");
+    const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, fx.epoch, 7);
+    dsl::CServiceReportStore store(/*keepEpochs=*/8);
+    store.SetCurrentEpoch(500);
+    const auto report = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]);
+    const auto bytes = WireOf(report);
+    BOOST_REQUIRE(store.AddReport(report, fx.list, fx.epoch, params));
+    BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
+
+    // the store behind the report's epoch (a rewind): held, but AddReport would
+    // call it a report from the future, and so must the caller's ordinary path
+    store.SetCurrentEpoch(499);
+    BOOST_CHECK(store.HaveReport(500, target, sentinels[0]));
+    BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(bytes)));
+    BOOST_CHECK(!store.AddReport(report, fx.list, fx.epoch, params)); // refused as from the future
+
+    store.SetCurrentEpoch(500);
+    BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
+    store.SetCurrentEpoch(507); // the window is [500, 507]: the last epoch the report is kept for
+    BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
+    store.SetCurrentEpoch(508); // [501, 508]: aged out, and dropped
+    BOOST_CHECK_EQUAL(store.Size(), 0u);
+    BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(bytes)));
+
+    // dropping an epoch (a reorg of its base) forgets what was held in it
+    store.SetCurrentEpoch(500);
+    BOOST_REQUIRE(store.AddReport(report, fx.list, fx.epoch, params));
+    BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
+    store.DropEpoch(500);
+    BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(bytes)));
+    BOOST_CHECK(store.AddReport(report, fx.list, fx.epoch, params)); // new again
+    BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
+}
+
+// The check runs on the message thread beside changes made on the validation
+// thread: nothing it reads may be torn, and nothing it does may disturb them.
+BOOST_AUTO_TEST_CASE(recognising_a_held_report_is_safe_beside_changes_to_the_store)
+{
+    auto fx = MakeFixture(30);
+    Consensus::Params params;
+    const uint256 target = TaggedHash(3, 0, "protx");
+    const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, fx.epoch, 7);
+    dsl::CServiceReportStore store;
+    store.SetCurrentEpoch(500);
+    const auto report = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]);
+    const auto bytes = WireOf(report);
+    BOOST_REQUIRE(store.AddReport(report, fx.list, fx.epoch, params));
+
+    std::atomic<bool> stop{false};
+    std::atomic<uint64_t> asked{0};
+    std::vector<std::thread> askers;
+    for (int i = 0; i < 4; ++i) askers.emplace_back([&] {
+        const auto wire = dsl::PeekReportWire(MakeUCharSpan(bytes));
+        while (!stop.load()) {
+            (void)store.HaveIdenticalReport(*wire);
+            ++asked;
+        }
+    });
+    bool all_added{true};
+    for (int round = 0; round < 100; ++round) {
+        store.DropEpoch(500);
+        all_added = store.AddReport(report, fx.list, fx.epoch, params) && all_added;
+        store.SetCurrentEpoch(499); // the window moves under the askers, and back
+        store.SetCurrentEpoch(500);
+    }
+    stop = true;
+    for (auto& asker : askers) asker.join();
+    BOOST_CHECK(all_added);
+    BOOST_CHECK_GT(asked.load(), 0u);
+    BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
+    BOOST_CHECK_EQUAL(store.Size(), 1u);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -61,6 +61,25 @@ public:
     /** True if a report for this exact (epoch, target, sentinel) is already held. */
     bool HaveReport(uint32_t nEpoch, const uint256& target, const uint256& sentinel) const;
 
+    /**
+     * True when `wire` is, byte for byte, the serialization of a report held
+     * here, and AddReport would therefore refuse what it decodes to as a
+     * duplicate. That is all it says. Reports are flooded without an inventory
+     * step, so each one reaches a node about as often as it has peers, and
+     * nearly every arrival is such a copy; asking before the signature is
+     * decoded spares that cost for the ones that need no answer.
+     *
+     * The two checks AddReport makes ahead of its duplicate test -- the epoch
+     * may not lie in the future or beyond the retained window -- are repeated
+     * here, so a report that is held but out of the window is left to AddReport
+     * to refuse as before. The held report's status and signature bytes must
+     * equal the wire's: a copy that differs in any byte, however slightly, is
+     * not recognised and takes the full path. Only held reports are compared,
+     * and every one of them passed signature verification when it was stored,
+     * so its signature serializes. Never changes the store.
+     */
+    bool HaveIdenticalReport(const ReportWire& wire) const;
+
     /** Advance the current epoch and drop everything older than the window. */
     void SetCurrentEpoch(uint32_t nEpoch);
 
