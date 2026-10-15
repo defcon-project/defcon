@@ -133,6 +133,20 @@ bool CServiceReportStore::HaveReport(uint32_t nEpoch, const uint256& target, con
     return m_reports.count(Key{nEpoch, target, sentinel}) > 0;
 }
 
+bool CServiceReportStore::HaveIdenticalReport(const ReportWire& wire) const
+{
+    LOCK(m_mutex);
+    // Where AddReport would refuse for the window and never reach its duplicate
+    // test, say nothing: the caller's ordinary path produces that refusal.
+    if (wire.nEpoch > m_currentEpoch || wire.nEpoch < OldestKeptEpoch()) return false;
+    const auto it = m_reports.find(Key{wire.nEpoch, wire.targetProTxHash, wire.sentinelProTxHash});
+    if (it == m_reports.end()) return false;
+    const CPoSeServiceReport& held = it->second;
+    if (held.status != wire.status) return false;
+    const auto held_sig = held.sig.ToBytes(/*specificLegacyScheme=*/false);
+    return std::equal(held_sig.begin(), held_sig.end(), wire.sig.begin(), wire.sig.end());
+}
+
 void CServiceReportStore::SetCurrentEpoch(uint32_t nEpoch)
 {
     LOCK(m_mutex);

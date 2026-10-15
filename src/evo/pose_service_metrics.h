@@ -23,6 +23,9 @@ enum class PerfMetric : size_t {
     COMMITMENT_BUILD, SIGNING_BUILD, MINER_BUILD, RPC_BUILD,
     EMIT_REPORTS, INVERSE_ASSIGNMENT, REPORT_SIGN, RELAY_SERIALIZE, RELAY_PUSH, TIP_QUEUE,
     ACTIVATION_REFUSED,
+    // Reading a POSEREPORT off the wire (count and time, whether or not it read), and the copies of a
+    // held report dropped from their bytes without being read; the latter are also counted as DUPLICATE.
+    DECODE_REPORT, DUPLICATE_UNDECODED,
     COUNT
 };
 

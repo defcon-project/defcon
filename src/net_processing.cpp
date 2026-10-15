@@ -5904,7 +5904,8 @@ static constexpr size_t DSL_POSECOMMIT_MAX_SIZE{2 + 4 + 32 + 1 + 32 +
  *  message once per peer. This is ordinary traffic, not a worst case --
  *  measured on the devnet, one peer delivered 1215 of 1216 in a single epoch
  *  while the commitments recorded nobody missing. Honest duplicates are free,
- *  because the manager's dedup filter runs before the signature check. The
+ *  because the manager's dedup filter runs before the signature check -- and a
+ *  report that repeats a held one byte for byte is not even read. The
  *  targeted re-request (POSECHALLENGE) has no sender anywhere in this tree;
  *  whoever adds one has to be counted here. */
 static int64_t DSLHonestEpochCeiling(int64_t mn_count, const Consensus::Params& consensus)
@@ -6228,11 +6229,36 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
         return;
     }
     if (msg_type == NetMsgType::POSEREPORT) {
+        // Reports are flooded without an inventory step, so each reaches this node
+        // about as often as it has peers, and nearly all of those arrivals are
+        // copies of a report the store already holds. AddReport drops a copy
+        // without a word, but only after ReadDSLMessage has decompressed the
+        // signature and checked its subgroup -- the largest cost this thread pays
+        // while the flood runs. A payload that is, byte for byte, a report the
+        // store holds would read to that same report and be refused there as a
+        // duplicate, so it is dropped here, unread. Nothing else changes: the
+        // budget has been charged above, the epoch's base is looked up as it
+        // always was, and a payload that differs in any byte, is not exactly one
+        // report long, or names an epoch the store would not look in goes down
+        // the ordinary path below.
+        if (const auto wire = dsl::PeekReportWire(MakeUCharSpan(vRecv)); wire) {
+            const CBlockIndex* wire_base = epoch_base(wire->nEpoch);
+            if (wire_base != nullptr && m_dslman->Store().HaveIdenticalReport(*wire)) {
+                const uint256 wire_base_hash = wire_base->GetBlockHash();
+                dsl::RecordPerf(wire->nEpoch, wire_base_hash, dsl::PerfMetric::DUPLICATE);
+                dsl::RecordPerf(wire->nEpoch, wire_base_hash, dsl::PerfMetric::DUPLICATE_UNDECODED);
+                LogPrint(BCLog::NET, "DSL -- posereport epoch=%d target=%s accepted=%d, peer=%d\n",
+                         wire->nEpoch, wire->targetProTxHash.ToString(), false, pfrom.GetId());
+                return;
+            }
+        }
         dsl::CPoSeServiceReport report;
+        dsl::PerfTimer decode_timer(perf_epoch, perf_base, dsl::PerfMetric::DECODE_REPORT);
         if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, report)) {
             dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::DECODE_REFUSED);
             return;
         }
+        decode_timer.Stop();
         const CBlockIndex* base = epoch_base(report.nEpoch);
         if (base == nullptr) dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::BASE_REFUSED);
         const bool accepted = base != nullptr &&

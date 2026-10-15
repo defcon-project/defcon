@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <evo/pose_service_metrics.h>
+#include <test/util/logging.h>
 #include <test/util/setup_common.h>
 #include <boost/test/unit_test.hpp>
 
@@ -55,5 +56,20 @@ BOOST_AUTO_TEST_CASE(parallel_updates_are_not_lost)
     BOOST_CHECK_EQUAL(value.count, 4000u);
     BOOST_CHECK_EQUAL(value.nanos, 12000u);
     BOOST_CHECK_EQUAL(snapshot.overflow, 0u);
+}
+
+// The summary names a metric by its place in a table that has to be as long as
+// the enum; the last entries are where a table that fell short would show.
+BOOST_AUTO_TEST_CASE(summary_names_every_metric_to_the_end_of_the_table)
+{
+    MetricsScope scope;
+    for (size_t i = 0; i < static_cast<size_t>(dsl::PerfMetric::COUNT); ++i) {
+        dsl::RecordPerf(7, uint256::ONE, static_cast<dsl::PerfMetric>(i), 3);
+    }
+    ASSERT_DEBUG_LOG(" activation_refused=1/3ns");
+    ASSERT_DEBUG_LOG(" decode_report=1/3ns");
+    ASSERT_DEBUG_LOG(" duplicate_undecoded=1/3ns");
+    dsl::LogPerfSummary();
+    BOOST_CHECK(!dsl::TakePerfSnapshot().epochs[0].used); // the summary took the window with it
 }
 BOOST_AUTO_TEST_SUITE_END()

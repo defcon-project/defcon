@@ -10,9 +10,11 @@
 #include <evo/pose_service.h>
 #include <primitives/transaction.h>
 #include <serialize.h>
+#include <span.h>
 #include <uint256.h>
 
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 class CDeterministicMNList;
@@ -116,6 +118,10 @@ public:
         READWRITE(CBLSSignatureVersionWrapper(const_cast<CBLSSignature&>(obj.sig), /*fLegacy=*/false));
     }
 
+    /** Bytes in a serialized report: epoch, target, sentinel, status, then the signature. */
+    static constexpr size_t WIRE_SIZE{sizeof(uint32_t) + 2 * uint256::size() + sizeof(uint8_t) +
+                                      static_cast<size_t>(BLS_CURVE_SIG_SIZE)};
+
     // All three take the epoch base hash, so the signature is bound to the
     // block the epoch was observed against and cannot be replayed onto another
     // base a reorg gave the same epoch number.
@@ -123,6 +129,31 @@ public:
     void Sign(const CBLSSecretKey& operatorKey, const uint256& epochBlockHash);
     [[nodiscard]] bool VerifySig(const CBLSPublicKey& operatorPubKey, const uint256& epochBlockHash) const;
 };
+
+/**
+ * What can be read from a serialized CPoSeServiceReport without decoding its
+ * signature. The signature is a compressed point on a curve, and turning those
+ * bytes into the point -- decompressing it and checking that it lies in the
+ * right subgroup -- is the dearest step of reading a report: profiled on a
+ * devnet node under the flood, it was the largest single cost of the message
+ * thread. The other four fields are plain integers and hashes.
+ */
+struct ReportWire {
+    uint32_t nEpoch{0};
+    uint256 targetProTxHash;
+    uint256 sentinelProTxHash;
+    uint8_t status{0};
+    /** The signature exactly as it arrived, BLS_CURVE_SIG_SIZE bytes; refers into the payload. */
+    Span<const unsigned char> sig;
+};
+
+/**
+ * The fields of a payload that is exactly one serialized report, read the way
+ * CPoSeServiceReport reads them; nothing for a payload of any other length. It
+ * validates nothing -- bytes that are no point, or the identity, peek fine -- so
+ * it may serve only to recognise bytes already accepted once, never to accept.
+ */
+std::optional<ReportWire> PeekReportWire(Span<const unsigned char> payload);
 
 /**
  * Wire message: a sentinel asks a target to prove it is alive for an epoch.

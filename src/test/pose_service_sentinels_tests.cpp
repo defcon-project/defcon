@@ -7,14 +7,18 @@
 #include <evo/dmnstate.h>
 #include <evo/pose_service_sentinels.h>
 #include <hash.h>
+#include <streams.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
+#include <version.h>
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <set>
+#include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(pose_service_sentinels_tests, BasicTestingSetup)
 
@@ -113,6 +117,60 @@ BOOST_AUTO_TEST_CASE(report_signature_roundtrips)
 
     // and neither does a different epoch base -- the signature is bound to it
     BOOST_CHECK(!rep.VerifySig(pk, TaggedHash(8, 0, "epoch")));
+}
+
+// A report's fields are read in two places: by the stream operators of
+// CPoSeServiceReport, and by PeekReportWire, for a caller that wants them
+// without decoding the signature. Whatever one writes the other must read.
+BOOST_AUTO_TEST_CASE(report_wire_peek_reads_what_the_serializer_writes)
+{
+    BOOST_CHECK_EQUAL(dsl::CPoSeServiceReport::WIRE_SIZE, 165U); // 4 + 32 + 32 + 1 + 96
+
+    CBLSSecretKey sk;
+    sk.MakeNewKey();
+    const uint256 base = TaggedHash(7, 0, "epoch");
+    for (const auto status : {dsl::ServiceStatus::UNKNOWN, dsl::ServiceStatus::ONLINE, dsl::ServiceStatus::MISSED}) {
+        dsl::CPoSeServiceReport rep;
+        rep.nEpoch = 0x01020304; // every byte different, so a byte order slip shows
+        rep.targetProTxHash = TaggedHash(1, 0, "target");
+        rep.sentinelProTxHash = TaggedHash(2, 0, "sentinel");
+        rep.status = static_cast<uint8_t>(status);
+        rep.Sign(sk, base);
+
+        CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+        stream << rep;
+        BOOST_REQUIRE_EQUAL(stream.size(), dsl::CPoSeServiceReport::WIRE_SIZE);
+        const std::vector<unsigned char> bytes{UCharCast(stream.data()), UCharCast(stream.data()) + stream.size()};
+        BOOST_CHECK_EQUAL(bytes.at(0), 0x04); // little-endian, as the serializer writes it
+
+        const auto wire = dsl::PeekReportWire(MakeUCharSpan(bytes));
+        BOOST_REQUIRE(wire.has_value());
+        BOOST_CHECK_EQUAL(wire->nEpoch, rep.nEpoch);
+        BOOST_CHECK(wire->targetProTxHash == rep.targetProTxHash);
+        BOOST_CHECK(wire->sentinelProTxHash == rep.sentinelProTxHash);
+        BOOST_CHECK_EQUAL(wire->status, rep.status);
+        // the signature is the serialized signature, still inside the payload
+        const auto sig = rep.sig.ToBytes(/*specificLegacyScheme=*/false);
+        BOOST_REQUIRE_EQUAL(wire->sig.size(), sig.size());
+        BOOST_CHECK(std::equal(sig.begin(), sig.end(), wire->sig.begin()));
+        BOOST_CHECK(wire->sig.data() == bytes.data() + bytes.size() - sig.size());
+
+        // anything but exactly one report is not read
+        auto longer = bytes;
+        longer.push_back(0x00);
+        BOOST_CHECK(!dsl::PeekReportWire(MakeUCharSpan(longer)).has_value());
+        auto shorter = bytes;
+        shorter.pop_back();
+        BOOST_CHECK(!dsl::PeekReportWire(MakeUCharSpan(shorter)).has_value());
+        BOOST_CHECK(!dsl::PeekReportWire(Span<const unsigned char>{}).has_value());
+    }
+
+    // it reads, it does not judge: bytes that are no signature at all still peek
+    std::vector<unsigned char> junk(dsl::CPoSeServiceReport::WIRE_SIZE, 0xFF);
+    const auto wire = dsl::PeekReportWire(MakeUCharSpan(junk));
+    BOOST_REQUIRE(wire.has_value());
+    BOOST_CHECK_EQUAL(wire->nEpoch, 0xFFFFFFFFU);
+    BOOST_CHECK_EQUAL(wire->status, 0xFF);
 }
 
 // A masternode announces its own liveness, so it has to know its own identity.
