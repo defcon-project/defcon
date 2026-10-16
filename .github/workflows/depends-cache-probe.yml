@@ -89,6 +89,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Trust the checked-out workspace in this container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Prepare exactly one fixture and independent input identity
         id: prepare
         env:
@@ -173,6 +175,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Trust the checked-out workspace in this container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Independently prepare consumer fixture and identity
         env:
           PACKAGE_HASH: ${{ hashFiles('depends/packages/*') }}

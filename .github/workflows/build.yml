@@ -178,6 +178,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Trust the checked-out workspace in this container
+        if: needs.changes.outputs.code == 'true'
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Identify dependency inputs before restore
         if: needs.changes.outputs.code == 'true'
         id: identity
@@ -243,6 +247,10 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+
+      - name: Trust the checked-out workspace in this container
+        if: needs.changes.outputs.code == 'true'
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Identify consumer inputs independently
         if: needs.changes.outputs.code == 'true'
