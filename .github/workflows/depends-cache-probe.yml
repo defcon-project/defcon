@@ -1,0 +1,595 @@
+# Diagnostic only: never dispatch in the upstream repository.
+name: Isolated depends cache experiment
+
+on:
+  workflow_dispatch:
+    inputs:
+      ci_image:
+        description: Existing native Linux amd64 image pinned as ghcr.io/...@sha256:...
+        required: true
+        type: string
+      baseline_namespace:
+        description: Fresh UUIDv4 for baseline caches
+        required: true
+        type: string
+      fixed_namespace:
+        description: Independent fresh UUIDv4 for fixed caches
+        required: true
+        type: string
+      review_packet_sha256:
+        description: Independently approved exact full patch SHA-256 against f41d047c
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+  actions: read
+
+# One campaign in the dedicated repository. No cancellation of protected work.
+concurrency:
+  group: isolated-depends-cache-experiment
+  cancel-in-progress: false
+
+env:
+  CI_IMAGE: ${{ inputs.ci_image }}
+  BASELINE_NAMESPACE: ${{ inputs.baseline_namespace }}
+  FIXED_NAMESPACE: ${{ inputs.fixed_namespace }}
+  REVIEW_PACKET_SHA256: ${{ inputs.review_packet_sha256 }}
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  preflight:
+    if: github.repository == 'minuszka/defcon-cache-probe-20261016' && github.ref == 'refs/heads/cache-probe-20261016'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    outputs:
+      started: ${{ steps.probe.outputs.started }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 ci/dash/depends_cache_probe.py preflight --evidence "$RUNNER_TEMP/preflight"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: probe-evidence-${{ github.run_id }}-${{ github.run_attempt }}-preflight
+          path: ${{ runner.temp }}/preflight/
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 7
+
+  baseline_c1_producer:
+    needs: [preflight]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C1
+      PROBE_VARIANT: baseline
+      PRODUCER_JOB: baseline_c1_producer
+      A_KEY: ''
+      A_ID: ''
+      A_VERSION: ''
+      A_PREFIX_SHA256: ''
+    outputs:
+      binary-key: ${{ steps.prepare.outputs.binary_key }}
+      evidence-id: ${{ steps.evidence.outputs.artifact-id }}
+      prefix-id: ${{ steps.prefix.outputs.artifact-id }}
+      envelope-sha256: ${{ steps.pack.outputs.envelope_sha256 }}
+    steps: &producer_steps
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Trust the checked-out workspace in this container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Prepare exactly one fixture and independent input identity
+        id: prepare
+        env:
+          PACKAGE_HASH: ${{ hashFiles('depends/packages/*') }}
+        run: python3 ci/dash/depends_cache_probe.py prepare --evidence "$RUNNER_TEMP/evidence"
+      - name: Restore isolated source tarballs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: depends/sources
+          key: ${{ steps.prepare.outputs.source_key }}
+      - name: Restore isolated binary cache
+        id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            depends/built
+            depends/x86_64-pc-linux-gnu
+          key: ${{ steps.prepare.outputs.binary_key }}
+          restore-keys: ${{ env.PROBE_VARIANT == 'fixed' && (env.PROBE_CASE == 'C3' || env.PROBE_CASE == 'C4') && env.A_KEY || '' }}
+      - name: Prove restore state and A cache identity before make
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BINARY_KEY: ${{ steps.prepare.outputs.binary_key }}
+          CACHE_RESULT: ${{ steps.cache.outputs.cache-hit == 'true' && 'EXACT' || (steps.cache.outputs.cache-hit == 'false' && 'FALLBACK' || 'MISS') }}
+        run: python3 ci/dash/depends_cache_probe.py restored --evidence "$RUNNER_TEMP/evidence"
+      - name: Build the actual dependencies with unchanged recipe
+        shell: bash
+        run: |
+          set -euo pipefail
+          remaining="$(python3 ci/dash/depends_cache_probe.py remaining --evidence "$RUNNER_TEMP/evidence")"
+          timeout --signal=TERM --kill-after=30s "${remaining}s" make -j4 -C depends HOST=x86_64-pc-linux-gnu
+      - name: Measure actual prefix, archive hashes and cache size bounds
+        run: python3 ci/dash/depends_cache_probe.py produced --evidence "$RUNNER_TEMP/evidence"
+      - name: Package the actual fixed producer prefix
+        if: env.PROBE_VARIANT == 'fixed'
+        id: pack
+        run: python3 ci/dash/depends_prefix.py pack --image "$CI_IMAGE" --workflow .github/workflows/depends-cache-probe.yml --case "$PROBE_CASE" --identity "$RUNNER_TEMP/evidence/input.json" --producer-job "$PRODUCER_JOB" --bundle "$RUNNER_TEMP/producer-prefix"
+      - name: Transfer fixed prefix only
+        if: env.PROBE_VARIANT == 'fixed'
+        id: prefix
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: probe-prefix-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.PROBE_VARIANT }}-${{ env.PROBE_CASE }}
+          path: ${{ runner.temp }}/producer-prefix/
+          if-no-files-found: error
+          overwrite: false
+          compression-level: 0
+          retention-days: 7
+      - name: Preserve producer evidence even on failure
+        id: evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: probe-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.PROBE_VARIANT }}-${{ env.PROBE_CASE }}-producer
+          path: ${{ runner.temp }}/evidence/
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 7
+
+  baseline_c1_consumer:
+    needs: [preflight, baseline_c1_producer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C1
+      PROBE_VARIANT: baseline
+      PRODUCER_JOB: baseline_c1_producer
+      A_KEY: ''
+      A_ID: ''
+      A_VERSION: ''
+      A_PREFIX_SHA256: ''
+    outputs:
+      cache-id: ${{ steps.consume.outputs.cache_id }}
+      cache-version: ${{ steps.consume.outputs.cache_version }}
+      prefix-sha256: ${{ steps.consume.outputs.prefix_sha256 }}
+    steps: &consumer_steps
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Trust the checked-out workspace in this container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Independently prepare consumer fixture and identity
+        env:
+          PACKAGE_HASH: ${{ hashFiles('depends/packages/*') }}
+        run: python3 ci/dash/depends_cache_probe.py prepare --evidence "$RUNNER_TEMP/evidence"
+      - name: Require explicit producer artifact IDs
+        env:
+          EVIDENCE_ID: ${{ needs[env.PRODUCER_JOB].outputs.evidence-id }}
+          PREFIX_ID: ${{ needs[env.PRODUCER_JOB].outputs.prefix-id }}
+          ENVELOPE: ${{ needs[env.PRODUCER_JOB].outputs.envelope-sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EVIDENCE_ID" =~ ^[0-9]+$ ]]
+          if [[ "$PROBE_VARIANT" == fixed ]]; then
+            [[ "$PREFIX_ID" =~ ^[0-9]+$ ]]
+            [[ "$ENVELOPE" =~ ^[0-9a-f]{64}$ ]]
+          fi
+      - name: Download producer measurements without a baseline payload
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs[env.PRODUCER_JOB].outputs.evidence-id }}
+          # Exactly one validated ID; preserve the documented direct-root layout.
+          merge-multiple: true
+          path: ${{ runner.temp }}/producer-evidence
+
+      - name: Require producer measurement at the expected download root
+        run: test -f "$RUNNER_TEMP/producer-evidence/producer.json"
+      - name: Original baseline cache-only consumer route
+        if: env.PROBE_VARIANT == 'baseline'
+        id: cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            depends/built
+            depends/x86_64-pc-linux-gnu
+          key: ${{ needs[env.PRODUCER_JOB].outputs.binary-key }}
+      - name: Download fixed payload by explicit ID
+        if: env.PROBE_VARIANT == 'fixed'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs[env.PRODUCER_JOB].outputs.prefix-id }}
+          # Exactly one validated ID; preserve the documented direct-root layout.
+          merge-multiple: true
+          path: ${{ runner.temp }}/producer-prefix
+
+      - name: Require fixed producer envelope at the expected download root
+        if: env.PROBE_VARIANT == 'fixed'
+        run: test -f "$RUNNER_TEMP/producer-prefix/envelope.json"
+      - name: Reject controls and assess actual producer-consumer output
+        id: consume
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BINARY_KEY: ${{ needs[env.PRODUCER_JOB].outputs.binary-key }}
+          ENVELOPE_SHA256: ${{ needs[env.PRODUCER_JOB].outputs.envelope-sha256 }}
+          CACHE_RESULT: ${{ steps.cache.outputs.cache-hit == 'true' && 'EXACT' || 'MISS' }}
+        run: python3 ci/dash/depends_cache_probe.py consume --evidence "$RUNNER_TEMP/evidence" --producer-evidence "$RUNNER_TEMP/producer-evidence" --bundle "$RUNNER_TEMP/producer-prefix"
+      - name: Exercise unsafe-archive and verifier regressions in the pinned environment
+        if: env.PROBE_VARIANT == 'fixed' && env.PROBE_CASE == 'C1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B ci/dash/test_depends_prefix.py > "$RUNNER_TEMP/evidence/verifier-regressions.log" 2>&1
+          python3 -B ci/dash/depends_cache_probe.py self-test --evidence "$RUNNER_TEMP/evidence" >> "$RUNNER_TEMP/evidence/verifier-regressions.log" 2>&1
+      - name: Preserve consumer evidence even on failure
+        id: evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: probe-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.PROBE_VARIANT }}-${{ env.PROBE_CASE }}-consumer
+          path: ${{ runner.temp }}/evidence/
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 7
+
+  baseline_c2_producer:
+    needs: [preflight, baseline_c1_consumer, baseline_c1_producer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C2
+      PROBE_VARIANT: baseline
+      PRODUCER_JOB: baseline_c2_producer
+      A_KEY: ${{ needs.baseline_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.baseline_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.baseline_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.baseline_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      binary-key: ${{ steps.prepare.outputs.binary_key }}
+      evidence-id: ${{ steps.evidence.outputs.artifact-id }}
+      prefix-id: ${{ steps.prefix.outputs.artifact-id }}
+      envelope-sha256: ${{ steps.pack.outputs.envelope_sha256 }}
+    steps: *producer_steps
+
+  baseline_c2_consumer:
+    needs: [preflight, baseline_c2_producer, baseline_c1_producer, baseline_c1_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C2
+      PROBE_VARIANT: baseline
+      PRODUCER_JOB: baseline_c2_producer
+      A_KEY: ${{ needs.baseline_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.baseline_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.baseline_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.baseline_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      cache-id: ${{ steps.consume.outputs.cache_id }}
+      cache-version: ${{ steps.consume.outputs.cache_version }}
+      prefix-sha256: ${{ steps.consume.outputs.prefix_sha256 }}
+    steps: *consumer_steps
+
+  baseline_c3_producer:
+    needs: [preflight, baseline_c2_consumer, baseline_c1_producer, baseline_c1_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C3
+      PROBE_VARIANT: baseline
+      PRODUCER_JOB: baseline_c3_producer
+      A_KEY: ${{ needs.baseline_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.baseline_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.baseline_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.baseline_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      binary-key: ${{ steps.prepare.outputs.binary_key }}
+      evidence-id: ${{ steps.evidence.outputs.artifact-id }}
+      prefix-id: ${{ steps.prefix.outputs.artifact-id }}
+      envelope-sha256: ${{ steps.pack.outputs.envelope_sha256 }}
+    steps: *producer_steps
+
+  baseline_c3_consumer:
+    needs: [preflight, baseline_c3_producer, baseline_c1_producer, baseline_c1_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C3
+      PROBE_VARIANT: baseline
+      PRODUCER_JOB: baseline_c3_producer
+      A_KEY: ${{ needs.baseline_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.baseline_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.baseline_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.baseline_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      cache-id: ${{ steps.consume.outputs.cache_id }}
+      cache-version: ${{ steps.consume.outputs.cache_version }}
+      prefix-sha256: ${{ steps.consume.outputs.prefix_sha256 }}
+    steps: *consumer_steps
+
+  baseline_c4_producer:
+    needs: [preflight, baseline_c3_consumer, baseline_c1_producer, baseline_c1_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C4
+      PROBE_VARIANT: baseline
+      PRODUCER_JOB: baseline_c4_producer
+      A_KEY: ${{ needs.baseline_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.baseline_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.baseline_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.baseline_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      binary-key: ${{ steps.prepare.outputs.binary_key }}
+      evidence-id: ${{ steps.evidence.outputs.artifact-id }}
+      prefix-id: ${{ steps.prefix.outputs.artifact-id }}
+      envelope-sha256: ${{ steps.pack.outputs.envelope_sha256 }}
+    steps: *producer_steps
+
+  baseline_c4_consumer:
+    needs: [preflight, baseline_c4_producer, baseline_c1_producer, baseline_c1_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C4
+      PROBE_VARIANT: baseline
+      PRODUCER_JOB: baseline_c4_producer
+      A_KEY: ${{ needs.baseline_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.baseline_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.baseline_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.baseline_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      cache-id: ${{ steps.consume.outputs.cache_id }}
+      cache-version: ${{ steps.consume.outputs.cache_version }}
+      prefix-sha256: ${{ steps.consume.outputs.prefix_sha256 }}
+    steps: *consumer_steps
+
+  fixed_c1_producer:
+    needs: [preflight, baseline_c4_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C1
+      PROBE_VARIANT: fixed
+      PRODUCER_JOB: fixed_c1_producer
+      A_KEY: ''
+      A_ID: ''
+      A_VERSION: ''
+      A_PREFIX_SHA256: ''
+    outputs:
+      binary-key: ${{ steps.prepare.outputs.binary_key }}
+      evidence-id: ${{ steps.evidence.outputs.artifact-id }}
+      prefix-id: ${{ steps.prefix.outputs.artifact-id }}
+      envelope-sha256: ${{ steps.pack.outputs.envelope_sha256 }}
+    steps: *producer_steps
+
+  fixed_c1_consumer:
+    needs: [preflight, fixed_c1_producer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C1
+      PROBE_VARIANT: fixed
+      PRODUCER_JOB: fixed_c1_producer
+      A_KEY: ''
+      A_ID: ''
+      A_VERSION: ''
+      A_PREFIX_SHA256: ''
+    outputs:
+      cache-id: ${{ steps.consume.outputs.cache_id }}
+      cache-version: ${{ steps.consume.outputs.cache_version }}
+      prefix-sha256: ${{ steps.consume.outputs.prefix_sha256 }}
+    steps: *consumer_steps
+
+  fixed_c2_producer:
+    needs: [preflight, fixed_c1_consumer, fixed_c1_producer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C2
+      PROBE_VARIANT: fixed
+      PRODUCER_JOB: fixed_c2_producer
+      A_KEY: ${{ needs.fixed_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.fixed_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.fixed_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.fixed_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      binary-key: ${{ steps.prepare.outputs.binary_key }}
+      evidence-id: ${{ steps.evidence.outputs.artifact-id }}
+      prefix-id: ${{ steps.prefix.outputs.artifact-id }}
+      envelope-sha256: ${{ steps.pack.outputs.envelope_sha256 }}
+    steps: *producer_steps
+
+  fixed_c2_consumer:
+    needs: [preflight, fixed_c2_producer, fixed_c1_producer, fixed_c1_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C2
+      PROBE_VARIANT: fixed
+      PRODUCER_JOB: fixed_c2_producer
+      A_KEY: ${{ needs.fixed_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.fixed_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.fixed_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.fixed_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      cache-id: ${{ steps.consume.outputs.cache_id }}
+      cache-version: ${{ steps.consume.outputs.cache_version }}
+      prefix-sha256: ${{ steps.consume.outputs.prefix_sha256 }}
+    steps: *consumer_steps
+
+  fixed_c3_producer:
+    needs: [preflight, fixed_c2_consumer, fixed_c1_producer, fixed_c1_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C3
+      PROBE_VARIANT: fixed
+      PRODUCER_JOB: fixed_c3_producer
+      A_KEY: ${{ needs.fixed_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.fixed_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.fixed_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.fixed_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      binary-key: ${{ steps.prepare.outputs.binary_key }}
+      evidence-id: ${{ steps.evidence.outputs.artifact-id }}
+      prefix-id: ${{ steps.prefix.outputs.artifact-id }}
+      envelope-sha256: ${{ steps.pack.outputs.envelope_sha256 }}
+    steps: *producer_steps
+
+  fixed_c3_consumer:
+    needs: [preflight, fixed_c3_producer, fixed_c1_producer, fixed_c1_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C3
+      PROBE_VARIANT: fixed
+      PRODUCER_JOB: fixed_c3_producer
+      A_KEY: ${{ needs.fixed_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.fixed_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.fixed_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.fixed_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      cache-id: ${{ steps.consume.outputs.cache_id }}
+      cache-version: ${{ steps.consume.outputs.cache_version }}
+      prefix-sha256: ${{ steps.consume.outputs.prefix_sha256 }}
+    steps: *consumer_steps
+
+  fixed_c4_producer:
+    needs: [preflight, fixed_c3_consumer, fixed_c1_producer, fixed_c1_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C4
+      PROBE_VARIANT: fixed
+      PRODUCER_JOB: fixed_c4_producer
+      A_KEY: ${{ needs.fixed_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.fixed_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.fixed_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.fixed_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      binary-key: ${{ steps.prepare.outputs.binary_key }}
+      evidence-id: ${{ steps.evidence.outputs.artifact-id }}
+      prefix-id: ${{ steps.prefix.outputs.artifact-id }}
+      envelope-sha256: ${{ steps.pack.outputs.envelope_sha256 }}
+    steps: *producer_steps
+
+  fixed_c4_consumer:
+    needs: [preflight, fixed_c4_producer, fixed_c1_producer, fixed_c1_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    container:
+      image: ${{ inputs.ci_image }}
+      options: --user root
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      PROBE_CASE: C4
+      PROBE_VARIANT: fixed
+      PRODUCER_JOB: fixed_c4_producer
+      A_KEY: ${{ needs.fixed_c1_producer.outputs.binary-key }}
+      A_ID: ${{ needs.fixed_c1_consumer.outputs.cache-id }}
+      A_VERSION: ${{ needs.fixed_c1_consumer.outputs.cache-version }}
+      A_PREFIX_SHA256: ${{ needs.fixed_c1_consumer.outputs.prefix-sha256 }}
+    outputs:
+      cache-id: ${{ steps.consume.outputs.cache_id }}
+      cache-version: ${{ steps.consume.outputs.cache_version }}
+      prefix-sha256: ${{ steps.consume.outputs.prefix_sha256 }}
+    steps: *consumer_steps
+
+  summary:
+    if: always() && github.repository == 'minuszka/defcon-cache-probe-20261016'
+    needs: [preflight, baseline_c1_producer, baseline_c1_consumer, baseline_c2_producer, baseline_c2_consumer, baseline_c3_producer, baseline_c3_consumer, baseline_c4_producer, baseline_c4_consumer, fixed_c1_producer, fixed_c1_consumer, fixed_c2_producer, fixed_c2_consumer, fixed_c3_producer, fixed_c3_consumer, fixed_c4_producer, fixed_c4_consumer]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    env:
+      CAMPAIGN_STARTED: ${{ needs.preflight.outputs.started }}
+      NEEDS_JSON: ${{ toJson(needs) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Collect only small evidence artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: probe-evidence-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/campaign-evidence
+      - name: Preserve separate experiment and dependency-contract results
+        run: python3 ci/dash/depends_cache_probe.py summary --evidence "$RUNNER_TEMP/campaign-evidence"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: probe-summary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/campaign-evidence/summary.json
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 7
