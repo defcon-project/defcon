@@ -123,6 +123,11 @@ bool CheckMNHFTx(const ChainstateManager& chainman, const llmq::CQuorumManager& 
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-mnhf-version");
     }
 
+    // IsValidMNActivation assumes an in-range version bit.
+    if (mnhfTx.signal.versionBit >= VERSIONBITS_NUM_BITS) {
+        return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-mnhf-nbit-out-of-bounds");
+    }
+
     if (!Params().IsValidMNActivation(mnhfTx.signal.versionBit, pindexPrev->GetMedianTimePast())) {
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "bad-mnhf-non-ehf");
     }
