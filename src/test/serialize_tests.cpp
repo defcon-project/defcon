@@ -226,6 +226,97 @@ BOOST_AUTO_TEST_CASE(dynbitset_accepts_maximum_size)
     BOOST_CHECK(decoded == original);
 }
 
+/**
+ * Varint-mode AUTOBITSET stores each set bit as a positive offset from the
+ * previous one. A first offset of 0x80000001 or 0xffffffff used to wrap the
+ * signed 32-bit index negative, which passed both range checks and indexed the
+ * vector out of bounds. Such offsets must be rejected as out of range, just
+ * like the plain too-large offset that was already caught. (dash ad43e1ea)
+ */
+BOOST_AUTO_TEST_CASE(autobitset_varint_rejects_wrapping_offset)
+{
+    for (const uint32_t first_offset : {uint32_t{401}, uint32_t{0x80000001}, uint32_t{0xffffffff}}) {
+        CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
+        s << uint8_t{1} << VARINT(first_offset) << VARINT(uint32_t{0});
+
+        autobitset_t bitset{{}, 400};
+        BOOST_CHECK_EXCEPTION(s >> AUTOBITSET(bitset), std::ios_base::failure,
+                              HasReason("out of bounds index"));
+    }
+}
+
+/** A later offset that wraps past the previous index must be rejected too. */
+BOOST_AUTO_TEST_CASE(autobitset_varint_rejects_wrapping_later_offset)
+{
+    CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
+    s << uint8_t{1} << VARINT(uint32_t{10}) << VARINT(uint32_t{0xffffffff}) << VARINT(uint32_t{0});
+
+    autobitset_t bitset{{}, 400};
+    BOOST_CHECK_THROW(s >> AUTOBITSET(bitset), std::ios_base::failure);
+}
+
+namespace {
+/** The varint-bitset encoder as it was before the index type change; kept to pin the wire format. */
+void LegacyWriteVarIntsBitSet(CDataStream& s, const std::vector<bool>& vec)
+{
+    int32_t last = -1;
+    for (int32_t i = 0; i < (int32_t)vec.size(); i++) {
+        if (vec[i]) {
+            WriteVarInt<CDataStream, VarIntMode::DEFAULT, uint32_t>(s, (uint32_t)(i - last));
+            last = i;
+        }
+    }
+    WriteVarInt<CDataStream, VarIntMode::DEFAULT, uint32_t>(s, 0); // stopper
+}
+} // namespace
+
+/** The writer must emit exactly the legacy bytes, and the reader must restore the input. */
+BOOST_AUTO_TEST_CASE(autobitset_varint_matches_legacy_encoding)
+{
+    for (const size_t size : {size_t{0}, size_t{1}, size_t{2}, size_t{7}, size_t{8}, size_t{9}, size_t{64},
+                              size_t{127}, size_t{128}, size_t{129}, size_t{399}, size_t{400}}) {
+        for (int density = 0; density < 4; ++density) {
+            std::vector<bool> bits(size, false);
+            for (size_t i = 0; i < size; ++i) {
+                // density 0: empty, 1: sparse, 2: random, 3: full
+                bits[i] = density == 3 || (density == 2 && InsecureRandBool()) || (density == 1 && InsecureRandRange(16) == 0);
+            }
+
+            CDataStream legacy(SER_NETWORK, PROTOCOL_VERSION);
+            LegacyWriteVarIntsBitSet(legacy, bits);
+            CDataStream current(SER_NETWORK, PROTOCOL_VERSION);
+            WriteFixedVarIntsBitSet(current, bits, bits.size());
+            BOOST_CHECK_EQUAL(HexStr(current), HexStr(legacy));
+
+            std::vector<bool> decoded;
+            ReadFixedVarIntsBitSet(current, decoded, size);
+            BOOST_CHECK(decoded == bits);
+            BOOST_CHECK(current.empty());
+        }
+    }
+}
+
+/**
+ * The wire format must not change: 400 bits with only the first and the last
+ * set select varint mode and encode the offsets 1 and 399, then the stopper.
+ */
+BOOST_AUTO_TEST_CASE(autobitset_varint_wire_format_and_boundary)
+{
+    std::vector<bool> bits(400, false);
+    bits.front() = true;
+    bits.back() = true;
+    const autobitset_t original{bits, bits.size()};
+
+    CDataStream s(SER_NETWORK, PROTOCOL_VERSION);
+    s << AUTOBITSET(original);
+    BOOST_CHECK_EQUAL(HexStr(s), "0101820f00");
+
+    autobitset_t decoded{{}, bits.size()};
+    s >> AUTOBITSET(decoded);
+    BOOST_CHECK(decoded.first == bits);
+    BOOST_CHECK(s.empty());
+}
+
 BOOST_AUTO_TEST_CASE(noncanonical)
 {
     // Write some non-canonical CompactSize encodings, and
