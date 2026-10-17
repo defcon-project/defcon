@@ -124,6 +124,11 @@ public:
     {
         uint64_t invSize = obj.inv.size();
         READWRITE(VARINT(obj.sessionId), COMPACTSIZE(invSize));
+        // An inventory has one bit per quorum member, so reject larger declared sizes
+        // before the bitset is allocated (dash 34264586, adapted).
+        if (invSize > static_cast<uint64_t>(Consensus::MAX_LLMQ_SIZE)) {
+            throw std::ios_base::failure("CSigSharesInv::inv size too large");
+        }
         autobitset_t bitset = std::make_pair(obj.inv, (size_t)invSize);
         READWRITE(AUTOBITSET(bitset));
         SER_READ(obj, obj.inv = bitset.first);
