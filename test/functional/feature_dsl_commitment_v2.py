@@ -210,7 +210,9 @@ class DSLCommitmentV2Test(DashTestFramework):
         self.log.info("Restarted, an observed online verdict clears it")
         self.start_masternode(target)
         self.bump_mocktime(1)
-        self.connect_nodes(target.nodeIdx, 0)
+        # Reuse the controller's automatic outbound masternode connection.
+        # MNAUTH drops a reverse duplicate once the target is authenticated.
+        self.connect_nodes(0, target.nodeIdx)
         self.sync_blocks()
         st = None
         for _ in range(6):
