@@ -260,6 +260,10 @@ jobs:
         if: needs.changes.outputs.code == 'true'
         run: python3 ci/dash/test_depends_prefix.py
 
+      - name: Check detached Windows signing failure handling
+        if: needs.changes.outputs.code == 'true'
+        run: python3 contrib/windeploy/test_detached_sig_create.py
+
       - name: Require one successful producer transfer
         if: needs.changes.outputs.code == 'true'
         env:
