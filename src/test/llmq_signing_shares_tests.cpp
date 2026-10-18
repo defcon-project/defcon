@@ -251,4 +251,53 @@ BOOST_AUTO_TEST_CASE(qbsigshares_accepts_aggregate_at_cap)
     BOOST_CHECK_EQUAL(decoded[1].sigShares.size(), CSigSharesManager::MAX_MSGS_TOTAL_BATCHED_SIGS - 200);
 }
 
+// dash 34264586, adapted: a QSIGSHARESINV/QGETSIGSHARES inventory carries one bit
+// per quorum member, so a declared size above the largest quorum must be rejected
+// before the bitset is allocated. Without the bound these few bytes decode into a
+// MAX_SIZE-bit inventory.
+BOOST_AUTO_TEST_CASE(sig_shares_inv_rejects_oversized_declared_size)
+{
+    CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+    stream << VARINT(uint32_t{1}) << COMPACTSIZE(uint64_t{MAX_SIZE}) << uint8_t{1} << VARINT(uint32_t{0});
+
+    CSigSharesInv inv;
+    BOOST_CHECK_EXCEPTION(stream >> inv, std::ios_base::failure, HasReason("CSigSharesInv::inv size too large"));
+    BOOST_CHECK(inv.inv.empty());
+}
+
+// The same inventory path must reject a varint offset that used to wrap the
+// signed bitset index negative (dash ad43e1ea).
+BOOST_AUTO_TEST_CASE(sig_shares_inv_rejects_wrapping_offset)
+{
+    CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+    stream << VARINT(uint32_t{1}) << COMPACTSIZE(uint64_t{Consensus::MAX_LLMQ_SIZE}) << uint8_t{1}
+           << VARINT(uint32_t{0x80000001}) << VARINT(uint32_t{0});
+
+    CSigSharesInv inv;
+    BOOST_CHECK_EXCEPTION(stream >> inv, std::ios_base::failure, HasReason("out of bounds index"));
+}
+
+// An inventory for the largest quorum must still round-trip in both bitset
+// encodings: sparse (varint offsets) and dense (fixed bitmap).
+BOOST_AUTO_TEST_CASE(sig_shares_inv_accepts_max_quorum_size)
+{
+    for (const bool dense : {false, true}) {
+        CSigSharesInv original;
+        original.sessionId = 7;
+        original.Init(Consensus::MAX_LLMQ_SIZE);
+        original.Set(0, true);
+        original.Set(Consensus::MAX_LLMQ_SIZE - 1, true);
+        if (dense) original.SetAll(true);
+
+        CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+        stream << original;
+
+        CSigSharesInv decoded;
+        stream >> decoded;
+        BOOST_CHECK_EQUAL(decoded.sessionId, original.sessionId);
+        BOOST_CHECK(decoded.inv == original.inv);
+        BOOST_CHECK(stream.empty());
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()
