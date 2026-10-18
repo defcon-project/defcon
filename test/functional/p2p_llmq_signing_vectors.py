@@ -2,9 +2,9 @@
 # Copyright (c) 2026 The DeFCoN developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-"""Malformed within-cap LLMQ signing vectors must score and disconnect."""
+"""Malformed within-cap LLMQ signing and DKG vectors must score and disconnect."""
 
-from test_framework.messages import msg_generic, ser_compact_size
+from test_framework.messages import CSigShare, msg_generic, ser_compact_size, ser_uint256
 from test_framework.p2p import P2PInterface
 from test_framework.test_framework import DashTestFramework
 from test_framework.util import assert_equal
@@ -97,6 +97,48 @@ class LLMQSigningVectorTest(DashTestFramework):
                 except AssertionError as error:
                     failures.append((f"{label}: {case}", str(error)))
                 node.disconnect_p2ps()
+
+        # A QSIGSHARE carries its LLMQ type as an unvalidated byte. A type this
+        # chain does not register must be rejected before the quorum lookup: the
+        # quorum caches only hold the registered types.
+        tip_hash = int(node.getbestblockhash(), 16)
+        for llmq_type in (0, 6):  # not an enumerator; LLMQ_25_67, registered on no DeFCoN chain
+            self.log.info(f"qsigshare with unregistered llmqType {llmq_type} scores 100 and disconnects")
+            sig_share = CSigShare()
+            sig_share.llmqType = llmq_type
+            sig_share.quorumHash = tip_hash
+            peer = node.add_p2p_connection(P2PInterface(), uacomment=f"sigshare-type-{llmq_type}")
+            peer_id = self.peer_id(node, peer)
+            try:
+                with node.assert_debug_log([
+                    f"invalid llmqType[{llmq_type}] from peer={peer_id}",
+                    f"Misbehaving: peer={peer_id} (0 -> 100)",
+                ]):
+                    peer.send_message(msg_generic(b"qsigshare", ser_compact_size(1) + sig_share.serialize()))
+                    peer.wait_for_disconnect(timeout=5)
+            except AssertionError as error:
+                failures.append((f"qsigshare: llmqType {llmq_type}", str(error)))
+            node.disconnect_p2ps()
+
+        # Genesis has no parent, so it can never be a quorum base. A DKG message
+        # naming it must be rejected before the quorum activation check.
+        self.nodes[0].sporkupdate("SPORK_17_QUORUM_DKG_ENABLED", 0)
+        self.wait_for_sporks_same()
+        genesis_hash = node.getblockhash(0)
+        llmq_type_test = 100  # LLMQ_TEST, registered on regtest
+        self.log.info("qcontrib naming the genesis block as its quorum base scores 100 and disconnects")
+        peer = node.add_p2p_connection(P2PInterface(), uacomment="dkg-genesis")
+        peer_id = self.peer_id(node, peer)
+        try:
+            with node.assert_debug_log([
+                f"parentless quorumHash {genesis_hash}",
+                f"Misbehaving: peer={peer_id} (0 -> 100)",
+            ]):
+                peer.send_message(msg_generic(b"qcontrib", bytes([llmq_type_test]) + ser_uint256(int(genesis_hash, 16))))
+                peer.wait_for_disconnect(timeout=5)
+        except AssertionError as error:
+            failures.append(("qcontrib: genesis quorum base", str(error)))
+        node.disconnect_p2ps()
 
         # An inventory for the largest quorum still decodes, and the node is
         # still serving requests after all of the above.

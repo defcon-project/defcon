@@ -115,8 +115,14 @@ std::map<Consensus::LLMQType, QvvecSyncMode> GetEnabledQuorumVvecSyncEntries()
     return mapQuorumVvecSyncEntries;
 }
 
-bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev)
+bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, const CBlockIndex* pindexPrev)
 {
+    // A parentless block index (i.e. genesis) has no prior height at which any LLMQ type could
+    // have activated, so nothing is enabled. A null here used to fail the gsl::not_null
+    // precondition and terminate the process.
+    if (pindexPrev == nullptr) {
+        return false;
+    }
     return IsQuorumTypeEnabledInternal(llmqType, pindexPrev, std::nullopt, std::nullopt);
 }
 
