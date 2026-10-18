@@ -37,6 +37,14 @@ bool CFinalCommitment::Verify(CDeterministicMNManager& dmnman, CQuorumSnapshotMa
     }
     const auto& llmq_params = llmq_params_opt.value();
 
+    // A quorum base block must have a parent; genesis can never host a quorum. quorumHash is
+    // attacker-supplied (a mined commitment or a relayed qfcommit), and the members lookup
+    // below dereferences pQuorumBaseBlockIndex->pprev, so reject it explicitly here.
+    if (pQuorumBaseBlockIndex->pprev == nullptr) {
+        LogPrint(BCLog::LLMQ, "CFinalCommitment -- q[%s] parentless quorum base block\n", quorumHash.ToString());
+        return false;
+    }
+
     const uint16_t expected_nversion{CFinalCommitment::GetVersion(IsQuorumRotationEnabled(llmq_params, pQuorumBaseBlockIndex),
             DeploymentActiveAfter(pQuorumBaseBlockIndex, Params().GetConsensus(), Consensus::DEPLOYMENT_V19))};
     if (nVersion == 0 || nVersion != expected_nversion) {

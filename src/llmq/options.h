@@ -44,7 +44,12 @@ bool IsWatchQuorumsEnabled();
 /// Returns the parsed entries given by `-llmq-qvvec-sync`
 std::map<Consensus::LLMQType, QvvecSyncMode> GetEnabledQuorumVvecSyncEntries();
 
-bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev);
+//! pindexPrev may be nullptr -- genesis has no parent, and a block index with no parent can
+//! never be a valid quorum base -- in which case no LLMQ type is enabled and this returns
+//! false. Do not tighten this to gsl::not_null: attacker-supplied quorum hashes reach it as
+//! `pindex->pprev`, and a not_null precondition turns that into a process abort rather than a
+//! rejection.
+bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, const CBlockIndex* pindexPrev);
 
 /** Resolve which LLMQ profile signs and verifies the ChainLock for a given
  *  signed height. One-way and height-only by design: signing and verification

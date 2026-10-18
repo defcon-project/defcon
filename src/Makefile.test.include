@@ -163,6 +163,8 @@ BITCOIN_TESTS =\
   test/llmq_chainlocks_tests.cpp \
   test/llmq_formation_end_tests.cpp \
   test/llmq_instantsend_tests.cpp \
+  test/llmq_invalid_type_tests.cpp \
+  test/llmq_quorum_base_tests.cpp \
   test/logging_tests.cpp \
   test/dbwrapper_tests.cpp \
   test/validation_tests.cpp \

@@ -162,6 +162,12 @@ PeerMsgRet CDKGSessionManager::ProcessMessage(CNode& pfrom, PeerManager& peerman
             return tl::unexpected{10};
         }
 
+        // Genesis (or any parentless index) is never a valid quorum base.
+        if (pQuorumBaseBlockIndex->pprev == nullptr) {
+            LogPrintf("CDKGSessionManager -- parentless quorumHash %s\n", quorumHash.ToString());
+            return tl::unexpected{100};
+        }
+
         if (!IsQuorumTypeEnabled(llmqType, pQuorumBaseBlockIndex->pprev)) {
             LogPrintf("CDKGSessionManager -- llmqType [%d] quorums aren't active\n", ToUnderlying(llmqType));
             return tl::unexpected{100};
