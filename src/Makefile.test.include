@@ -145,6 +145,8 @@ BITCOIN_TESTS =\
   test/governance_budget_tests.cpp \
   test/governance_validators_tests.cpp \
   test/governance_vote_sync_tests.cpp \
+  test/governance_vote_wire_tests.cpp \
+  test/coinjoin_inouts_tests.cpp \
   test/hash_tests.cpp \
   test/i2p_tests.cpp \
   test/interfaces_tests.cpp \
@@ -164,6 +166,7 @@ BITCOIN_TESTS =\
   test/llmq_chainlocks_tests.cpp \
   test/llmq_formation_end_tests.cpp \
   test/llmq_instantsend_tests.cpp \
+  test/instantsend_queue_tests.cpp \
   test/llmq_invalid_type_tests.cpp \
   test/llmq_quorum_base_tests.cpp \
   test/logging_tests.cpp \

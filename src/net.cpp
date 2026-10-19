@@ -2683,6 +2683,16 @@ void CConnman::SocketEvents(const std::vector<CNode*>& nodes,
     }
 }
 
+bool HasUnpausedReceivableNode(const std::unordered_map<NodeId, CNode*>& receivable_nodes)
+{
+    for (const auto& entry : receivable_nodes) {
+        if (!entry.second->fPauseRecv) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void CConnman::SocketHandler(CMasternodeSync& mn_sync)
 {
     AssertLockNotHeld(m_total_bytes_sent_mutex);
@@ -2694,7 +2704,7 @@ void CConnman::SocketHandler(CMasternodeSync& mn_sync)
     bool only_poll = [this]() {
         // Check if we have work to do and thus should avoid waiting for events
         LOCK2(m_nodes_mutex, cs_sendable_receivable_nodes);
-        if (!mapReceivableNodes.empty()) {
+        if (HasUnpausedReceivableNode(mapReceivableNodes)) {
             return true;
         }
         for (const auto& p : mapSendableNodes) {

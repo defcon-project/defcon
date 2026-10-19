@@ -11,6 +11,7 @@
 #include <masternode/node.h>
 #include <masternode/sync.h>
 #include <messagesigner.h>
+#include <pubkey.h>
 #include <net_processing.h>
 #include <timedata.h>
 #include <util/string.h>
@@ -18,6 +19,9 @@
 #include <validation.h>
 
 #include <evo/deterministicmns.h>
+
+static_assert(CGovernanceVote::COMPACT_SIG_SIZE == CPubKey::COMPACT_SIGNATURE_SIZE);
+static_assert(CGovernanceVote::BLS_SIG_SIZE == CBLSSignature::SerSize);
 
 namespace {
 //! Hash the inputs that determine the verification result. Dropping any of them

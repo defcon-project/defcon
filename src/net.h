@@ -48,6 +48,7 @@
 #include <optional>
 #include <queue>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -1182,6 +1183,9 @@ protected:
      */
     ~NetEventsInterface() = default;
 };
+
+// Receive-paused nodes must not keep the socket loop in its zero-timeout poll path.
+bool HasUnpausedReceivableNode(const std::unordered_map<NodeId, CNode*>& receivable_nodes);
 
 class CConnman
 {

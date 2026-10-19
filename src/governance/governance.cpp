@@ -326,7 +326,11 @@ PeerMsgRet CGovernanceManager::ProcessMessage(CNode& peer, CConnman& connman, Pe
     // A NEW GOVERNANCE OBJECT VOTE HAS ARRIVED
     else if (msg_type == NetMsgType::MNGOVERNANCEOBJECTVOTE) {
         CGovernanceVote vote;
-        vRecv >> vote;
+        try {
+            vRecv >> vote;
+        } catch (const std::ios_base::failure&) {
+            return tl::unexpected{100};
+        }
 
         uint256 nHash = vote.GetHash();
         WITH_LOCK(::cs_main, peerman.EraseObjectRequest(peer.GetId(), CInv(MSG_GOVERNANCE_OBJECT_VOTE, nHash)));

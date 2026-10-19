@@ -734,6 +734,11 @@ void CInstantSendManager::HandleNewInstantSendLockRecoveredSig(const llmq::CReco
         return;
     }
     LOCK(cs_pendingLocks);
+    // A locally recovered lock is already verified and takes priority over
+    // a pending verification, just like a lock leaving the no-tx queue.
+    if (!pendingInstantSendLocks.count(hash) && pendingInstantSendLocks.size() >= MAX_PENDING_INSTANTSEND_LOCKS) {
+        pendingInstantSendLocks.erase(pendingInstantSendLocks.begin());
+    }
     pendingInstantSendLocks.emplace(hash, std::make_pair(-1, islock));
 }
 
@@ -751,6 +756,10 @@ PeerMsgRet CInstantSendManager::ProcessMessage(const CNode& pfrom, PeerManager& 
 PeerMsgRet CInstantSendManager::ProcessMessageInstantSendLock(const CNode& pfrom, PeerManager& peerman,
                                                               const llmq::CInstantSendLockPtr& islock)
 {
+    // Apply the input ceiling before hashing or walking the input set.
+    if (islock->inputs.size() > CInstantSendLock::MAX_INPUTS) {
+        return tl::unexpected{100};
+    }
     auto hash = ::SerializeHash(*islock);
 
     WITH_LOCK(::cs_main, peerman.EraseObjectRequest(pfrom.GetId(), CInv(MSG_ISDLOCK, hash)));
@@ -785,6 +794,10 @@ PeerMsgRet CInstantSendManager::ProcessMessageInstantSendLock(const CNode& pfrom
             islock->txid.ToString(), hash.ToString(), pfrom.GetId());
 
     LOCK(cs_pendingLocks);
+    if (pendingInstantSendLocks.size() >= MAX_PENDING_INSTANTSEND_LOCKS) {
+        LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- pending islock queue full, dropping islock=%s\n", __func__, hash.ToString());
+        return {};
+    }
     pendingInstantSendLocks.emplace(hash, std::make_pair(pfrom.GetId(), islock));
     return {};
 }
@@ -795,7 +808,7 @@ PeerMsgRet CInstantSendManager::ProcessMessageInstantSendLock(const CNode& pfrom
  */
 bool CInstantSendLock::TriviallyValid() const
 {
-    if (txid.IsNull() || inputs.empty()) {
+    if (txid.IsNull() || inputs.empty() || inputs.size() > MAX_INPUTS) {
         return false;
     }
 
@@ -1079,7 +1092,11 @@ void CInstantSendManager::ProcessInstantSendLock(NodeId from, PeerManager& peerm
     if (tx == nullptr) {
         // put it in a separate pending map and try again later
         LOCK(cs_pendingLocks);
-        pendingNoTxInstantSendLocks.try_emplace(hash, std::make_pair(from, islock));
+        if (pendingNoTxInstantSendLocks.size() < MAX_PENDING_INSTANTSEND_LOCKS) {
+            pendingNoTxInstantSendLocks.try_emplace(hash, std::make_pair(from, islock));
+        } else {
+            LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- no-tx islock queue full, dropping islock=%s\n", __func__, hash.ToString());
+        }
     } else {
         db.WriteNewInstantSendLock(hash, *islock);
         if (pindexMined) {
@@ -1128,6 +1145,12 @@ void CInstantSendManager::TransactionAddedToMempool(PeerManager& peerman, const 
         auto it = pendingNoTxInstantSendLocks.begin();
         while (it != pendingNoTxInstantSendLocks.end()) {
             if (it->second.second->txid == tx->GetHash()) {
+                // A verified lock whose transaction arrived takes priority over a
+                // pending verification. Do not strand it in the no-tx queue.
+                if (!pendingInstantSendLocks.count(it->first) &&
+                    pendingInstantSendLocks.size() >= MAX_PENDING_INSTANTSEND_LOCKS) {
+                    pendingInstantSendLocks.erase(pendingInstantSendLocks.begin());
+                }
                 // we received an islock earlier
                 LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s, islock=%s\n", __func__,
                          tx->GetHash().ToString(), it->first.ToString());
@@ -1219,6 +1242,12 @@ void CInstantSendManager::AddNonLockedTx(const CTransactionRef& tx, const CBlock
         auto it = pendingNoTxInstantSendLocks.begin();
         while (it != pendingNoTxInstantSendLocks.end()) {
             if (it->second.second->txid == tx->GetHash()) {
+                // A verified lock whose transaction arrived takes priority over a
+                // pending verification. Do not strand it in the no-tx queue.
+                if (!pendingInstantSendLocks.count(it->first) &&
+                    pendingInstantSendLocks.size() >= MAX_PENDING_INSTANTSEND_LOCKS) {
+                    pendingInstantSendLocks.erase(pendingInstantSendLocks.begin());
+                }
                 // we received an islock earlier, let's put it back into pending and verify/lock
                 LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s, islock=%s\n", __func__,
                          tx->GetHash().ToString(), it->first.ToString());
