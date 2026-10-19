@@ -7,6 +7,7 @@
 
 #include <llmq/signing.h>
 
+#include <consensus/consensus.h>
 #include <consensus/params.h>
 #include <net_types.h>
 #include <primitives/transaction.h>
@@ -38,6 +39,8 @@ class CSigSharesManager;
 struct CInstantSendLock
 {
     static constexpr uint8_t CURRENT_VERSION{1};
+    // A valid transaction fits in a block and each serialized input needs at least 41 bytes.
+    static constexpr size_t MAX_INPUTS{MaxBlockSize() / 41};
 
     uint8_t nVersion{CURRENT_VERSION};
     std::vector<COutPoint> inputs;
@@ -195,6 +198,7 @@ public:
 
 class CInstantSendManager : public CRecoveredSigsListener
 {
+    friend struct InstantSendQueueTest;
 private:
     CInstantSendDb db;
 
@@ -231,6 +235,8 @@ private:
     // maps from txid to the in-progress islock
     std::unordered_map<uint256, CInstantSendLock*, StaticSaltedHasher> txToCreatingInstantSendLocks GUARDED_BY(cs_creating);
 
+    // Bound both unverified locks and verified locks whose transaction has not arrived.
+    static constexpr size_t MAX_PENDING_INSTANTSEND_LOCKS{1024};
     mutable Mutex cs_pendingLocks;
     // Incoming and not verified yet
     std::unordered_map<uint256, std::pair<NodeId, CInstantSendLockPtr>, StaticSaltedHasher> pendingInstantSendLocks GUARDED_BY(cs_pendingLocks);

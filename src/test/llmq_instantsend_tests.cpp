@@ -5,6 +5,7 @@
 #include <chainparams.h>
 #include <chainparamsbase.h>
 #include <consensus/params.h>
+#include <llmq/instantsend.h>
 #include <llmq/options.h>
 #include <llmq/params.h>
 #include <test/util/setup_common.h>
@@ -101,6 +102,19 @@ BOOST_AUTO_TEST_CASE(testnet_instantsend_switchover_unset)
     BOOST_CHECK(consensus.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_NONE);
     BOOST_CHECK(consensus.nInstantSendV2ActivationHeight == std::numeric_limits<int>::max());
     BOOST_CHECK(llmq::GetInstantSendLLMQType(consensus, 1000000000) == consensus.llmqTypeDIP0024InstantSend);
+}
+
+BOOST_AUTO_TEST_CASE(instantsend_input_cap)
+{
+    const size_t limit{MaxBlockSize() / 41};
+    llmq::CInstantSendLock lock;
+    lock.txid = uint256::ONE;
+    for (size_t i = 0; i < limit; ++i) {
+        lock.inputs.emplace_back(uint256::ONE, i);
+    }
+    BOOST_CHECK(lock.TriviallyValid());
+    lock.inputs.emplace_back(uint256::ONE, limit);
+    BOOST_CHECK(!lock.TriviallyValid());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
