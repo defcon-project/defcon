@@ -250,6 +250,15 @@ bool CDKGSession::PreVerifyMessage(const CDKGContribution& qc, bool& retBan) con
         return false;
     }
 
+    // Reject a structurally-invalid (e.g. all-zero) signature here. This is a cheap
+    // validity check, not the batched signature verification; it ensures the message
+    // never reaches CBLSSignature::AggregateInsecure(), which asserts validity.
+    if (!qc.sig.IsValid()) {
+        logger.Batch("invalid contribution signature");
+        retBan = true;
+        return false;
+    }
+
     if (qc.contributions->blobs.size() != members.size()) {
         logger.Batch("invalid contributions count");
         retBan = true;
@@ -570,6 +579,14 @@ bool CDKGSession::PreVerifyMessage(const CDKGComplaint& qc, bool& retBan) const
         return false;
     }
 
+    // Cheap validity check (not the batched signature verification): reject a
+    // structurally-invalid signature before it can reach AggregateInsecure().
+    if (!qc.sig.IsValid()) {
+        logger.Batch("invalid complaint signature");
+        retBan = true;
+        return false;
+    }
+
     if (qc.badMembers.size() != (size_t)params.size) {
         logger.Batch("invalid badMembers bitset size");
         retBan = true;
@@ -766,6 +783,14 @@ bool CDKGSession::PreVerifyMessage(const CDKGJustification& qj, bool& retBan) co
         return false;
     }
 
+    // Cheap validity check (not the batched signature verification): reject a
+    // structurally-invalid signature before it can reach AggregateInsecure().
+    if (!qj.sig.IsValid()) {
+        logger.Batch("invalid justification signature");
+        retBan = true;
+        return false;
+    }
+
     if (qj.contributions.empty()) {
         logger.Batch("justification with no contributions");
         retBan = true;
@@ -773,21 +798,20 @@ bool CDKGSession::PreVerifyMessage(const CDKGJustification& qj, bool& retBan) co
     }
 
     std::set<size_t> contributionsSet;
-    for (const auto& p : qj.contributions) {
-        if (p.index > members.size()) {
+    for (const auto& [index, skContribution] : qj.contributions) {
+        if (GetMemberAtIndex(index) == nullptr) {
             logger.Batch("invalid contribution index");
             retBan = true;
             return false;
         }
 
-        if (!contributionsSet.emplace(p.index).second) {
+        if (!contributionsSet.emplace(index).second) {
             logger.Batch("duplicate contribution index");
             retBan = true;
             return false;
         }
 
-        const auto& skShare = p.key;
-        if (!skShare.IsValid()) {
+        if (!skContribution.IsValid()) {
             logger.Batch("invalid contribution");
             retBan = true;
             return false;
@@ -845,8 +869,9 @@ std::optional<CInv> CDKGSession::ReceiveMessage(const CDKGJustification& qj)
         return inv;
     }
 
-    for (const auto& p : qj.contributions) {
-        const auto& member2 = members[p.index];
+    for (const auto& [index, skContribution] : qj.contributions) {
+        const auto* member2 = GetMemberAtIndex(index);
+        assert(member2);
 
         if (member->complaintsFromOthers.count(member2->dmn->proTxHash) == 0) {
             logger.Batch("got justification from %s for %s even though he didn't complain",
@@ -862,14 +887,16 @@ std::optional<CInv> CDKGSession::ReceiveMessage(const CDKGJustification& qj)
 
     std::list<std::future<bool>> futures;
     for (const auto& [index, skContribution] : qj.contributions) {
-        const auto& member2 = members[index];
+        const auto* member2 = GetMemberAtIndex(index);
+        assert(member2);
 
         // watch out to not bail out before these async calls finish (they rely on valid references)
         futures.emplace_back(blsWorker.AsyncVerifyContributionShare(member2->id, receivedVvecs[member->idx], skContribution));
     }
     auto resultIt = futures.begin();
     for (const auto& [index, skContribution] : qj.contributions) {
-        const auto& member2 = members[index];
+        const auto* member2 = GetMemberAtIndex(index);
+        assert(member2);
 
         bool result = (resultIt++)->get();
         if (!result) {
@@ -1309,6 +1336,12 @@ CDKGMember* CDKGSession::GetMember(const uint256& proTxHash) const
         return nullptr;
     }
     return members[it->second].get();
+}
+
+CDKGMember* CDKGSession::GetMemberAtIndex(size_t index) const
+{
+    if (index >= members.size()) return nullptr;
+    return members[index].get();
 }
 
 void CDKGSession::MarkBadMember(size_t idx)
