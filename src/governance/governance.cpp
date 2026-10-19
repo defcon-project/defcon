@@ -266,7 +266,6 @@ PeerMsgRet CGovernanceManager::ProcessMessage(CNode& peer, CConnman& connman, Pe
 
         uint256 nHash = govobj.GetHash();
 
-        WITH_LOCK(::cs_main, peerman.EraseObjectRequest(peer.GetId(), CInv(MSG_GOVERNANCE_OBJECT, nHash)));
 
         if (!m_mn_sync.IsBlockchainSynced()) {
             LogPrint(BCLog::GOBJECT, "MNGOVERNANCEOBJECT -- masternode list not synced\n");
@@ -277,7 +276,10 @@ PeerMsgRet CGovernanceManager::ProcessMessage(CNode& peer, CConnman& connman, Pe
 
         LogPrint(BCLog::GOBJECT, "MNGOVERNANCEOBJECT -- Received object: %s\n", strHash);
 
-        if (!AcceptMessage(nHash)) {
+        // Consume after the sync gate, so a dropped response can be retransmitted after sync.
+        const bool announced_or_requested = WITH_LOCK(
+            ::cs_main, return peerman.ConsumeObjectRequest(peer.GetId(), CInv{MSG_GOVERNANCE_OBJECT, nHash}));
+        if (!announced_or_requested) {
             LogPrint(BCLog::GOBJECT, "MNGOVERNANCEOBJECT -- Received unrequested object: %s\n", strHash);
             return {};
         }
@@ -333,7 +335,6 @@ PeerMsgRet CGovernanceManager::ProcessMessage(CNode& peer, CConnman& connman, Pe
         }
 
         uint256 nHash = vote.GetHash();
-        WITH_LOCK(::cs_main, peerman.EraseObjectRequest(peer.GetId(), CInv(MSG_GOVERNANCE_OBJECT_VOTE, nHash)));
 
         // Ignore such messages until masternode list is synced
         if (!m_mn_sync.IsBlockchainSynced()) {
@@ -345,7 +346,10 @@ PeerMsgRet CGovernanceManager::ProcessMessage(CNode& peer, CConnman& connman, Pe
 
         std::string strHash = nHash.ToString();
 
-        if (!AcceptMessage(nHash)) {
+        // Consume after the sync gate, so a dropped response can be retransmitted after sync.
+        const bool announced_or_requested = WITH_LOCK(
+            ::cs_main, return peerman.ConsumeObjectRequest(peer.GetId(), CInv{MSG_GOVERNANCE_OBJECT_VOTE, nHash}));
+        if (!announced_or_requested) {
             LogPrint(BCLog::GOBJECT, "MNGOVERNANCEOBJECTVOTE -- Received unrequested vote object: %s, hash: %s, peer = %d\n",
                 vote.ToString(tip_mn_list), strHash, peer.GetId());
             return {};
@@ -558,18 +562,7 @@ void CGovernanceManager::CheckAndRemove()
         }
     }
 
-    // forget about expired requests
-    auto r_it = m_requested_hash_time.begin();
-    while (r_it != m_requested_hash_time.end()) {
-        if (r_it->second < std::chrono::seconds(nNow)) {
-            m_requested_hash_time.erase(r_it++);
-        } else {
-            ++r_it;
-        }
-    }
-
-    LogPrint(BCLog::GOBJECT, "CGovernanceManager::UpdateCachesAndClean -- %s, m_requested_hash_time size=%d\n",
-             ToString(), m_requested_hash_time.size());
+    LogPrint(BCLog::GOBJECT, "CGovernanceManager::UpdateCachesAndClean -- %s\n", ToString());
 }
 
 const CGovernanceObject* CGovernanceManager::FindConstGovernanceObject(const uint256& nHash) const
@@ -991,16 +984,7 @@ bool CGovernanceManager::ConfirmInventoryRequest(const CInv& inv)
         return false;
     }
 
-    const auto valid_until = GetTime<std::chrono::seconds>() + std::chrono::seconds(RELIABLE_PROPAGATION_TIME);
-    const auto& [_itr, inserted] = m_requested_hash_time.emplace(inv.hash, valid_until);
-
-    if (inserted) {
-        LogPrint(BCLog::GOBJECT, /* Continued */
-                 "CGovernanceManager::ConfirmInventoryRequest added %s inv hash to m_requested_hash_time, size=%d\n",
-                 inv.type == MSG_GOVERNANCE_OBJECT ? "object" : "vote", m_requested_hash_time.size());
-    }
-
-    LogPrint(BCLog::GOBJECT, "CGovernanceManager::ConfirmInventoryRequest reached end, returning true\n");
+    // The bounded net-layer per-peer tracker records the request and authorizes the response.
     return true;
 }
 
@@ -1481,19 +1465,6 @@ int CGovernanceManager::RequestGovernanceObjectVotes(const std::vector<CNode*>& 
     return int(vTriggerObjHashes.size() + vOtherObjHashes.size());
 }
 
-bool CGovernanceManager::AcceptMessage(const uint256& nHash)
-{
-    LOCK(cs);
-    auto it = m_requested_hash_time.find(nHash);
-    if (it == m_requested_hash_time.end()) {
-        // We never requested this
-        return false;
-    }
-    // Only accept one response
-    m_requested_hash_time.erase(it);
-    return true;
-}
-
 void CGovernanceManager::RebuildIndexes()
 {
     LOCK(cs);
@@ -1725,7 +1696,6 @@ void CGovernanceManager::RemoveInvalidVotes()
             for (auto& voteHash : removed) {
                 cmapVoteToObject.Erase(voteHash);
                 cmmapOrphanVotes.Erase(voteHash);
-                m_requested_hash_time.erase(voteHash);
             }
         }
     }

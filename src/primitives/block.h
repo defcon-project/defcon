@@ -208,6 +208,7 @@ public:
 
     // memory only
     mutable bool fChecked;
+    mutable bool m_checked_merkle_root{false};
 
     CBlock()
     {
@@ -235,6 +236,7 @@ public:
         CBlockHeader::SetNull();
         vtx.clear();
         fChecked = false;
+        m_checked_merkle_root = false;
         vchBlockSig.clear();
     }
 

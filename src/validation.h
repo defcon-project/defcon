@@ -366,6 +366,11 @@ void InitScriptExecutionCache();
 /** Context-independent validity checks */
 bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true, bool fCheckMerkleRoot = true, bool fCheckSignature = true);
 
+/** Detect a block body that does not match its merkle root, including duplicate-transaction and
+ *  64-byte-transaction malleation. This does not replace full block/PoS validation. */
+bool IsBlockMutated(const CBlock& block);
+
+
 /**
  * Whether a header's nonce is acceptable at the height it claims.
  *
