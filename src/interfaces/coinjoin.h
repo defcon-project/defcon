@@ -5,6 +5,7 @@
 #ifndef BITCOIN_INTERFACES_COINJOIN_H
 #define BITCOIN_INTERFACES_COINJOIN_H
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -37,7 +38,9 @@ public:
     //! Remove wallet from CoinJoin client manager
     virtual void RemoveWallet(const std::string&) = 0;
     virtual void FlushWallet(const std::string&) = 0;
-    virtual std::unique_ptr<CoinJoin::Client> GetClient(const std::string&) = 0;
+    //! Invoke func while the named client is protected from concurrent removal.
+    //! References to the client must not escape the callback.
+    virtual bool WithClient(const std::string& name, const std::function<void(Client&)>& func) = 0;
     virtual CoinJoinWalletManager& walletman() = 0;
 };
 } // namespace CoinJoin

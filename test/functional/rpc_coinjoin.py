@@ -7,32 +7,35 @@ import random
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.messages import (
-    COIN,
-    MAX_MONEY,
     uint256_to_string,
 )
 from test_framework.util import (
     assert_equal,
     assert_is_hex_string,
     assert_raises_rpc_error,
+    force_finish_mnsync,
 )
 
 # See coinjoin/options.h
 COINJOIN_ROUNDS_DEFAULT = 4
 COINJOIN_ROUNDS_MAX = 16
 COINJOIN_ROUNDS_MIN = 2
-COINJOIN_TARGET_MAX = int(MAX_MONEY / COIN)
+COINJOIN_TARGET_MAX = 500_000_000  # src/coinjoin/options.h: MAX_MONEY / COIN
 COINJOIN_TARGET_MIN = 2
 
 class CoinJoinTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
+        # Keep automatic backups from stopping mixing before the keypool test.
+        self.extra_args = [['-keypool=200', '-createwalletbackups=10']]
+        if not self.options.descriptors:
+            self.extra_args[0].append('-usehd=0')
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
     def setup_nodes(self):
-        self.add_nodes(self.num_nodes)
+        self.add_nodes(self.num_nodes, self.extra_args)
         self.start_nodes()
 
     def run_test(self):
@@ -46,6 +49,16 @@ class CoinJoinTest(BitcoinTestFramework):
         self.test_setcoinjoinrounds(w1)
         self.test_coinjoinsalt(w1)
         w1.unloadwallet()
+
+        if not self.options.descriptors:
+            node.createwallet(wallet_name='w_keypool', blank=False, disable_private_keys=False)
+            w_keypool = node.get_wallet_rpc('w_keypool')
+            self.generate(node, 2)
+            force_finish_mnsync(node)
+            self.test_newkeypool_stops_mixing(w_keypool)
+            w_keypool.unloadwallet()
+        else:
+            self.log.info('newkeypool is incompatible with descriptor wallets')
 
         node.createwallet(wallet_name='w2', blank=True, disable_private_keys=True)
         w2 = node.get_wallet_rpc('w2')
@@ -78,6 +91,18 @@ class CoinJoinTest(BitcoinTestFramework):
         # Reset mix session
         assert_equal(node.coinjoin('reset'), "Mixing was reset")
 
+    def test_newkeypool_stops_mixing(self, node):
+        self.log.info('sethdseed keypool refresh should stop mixing without reversing the wallet/map lock order')
+        # The real mixing path holds the map and then cs_wallet. NewKeyPool
+        # calls its stop callback with cs_wallet held (Dash #7259).
+        with self.nodes[0].wait_for_debug_log([b'Not enough funds to mix.']):
+            node.coinjoin('start')
+            assert_equal(node.getcoinjoininfo()['running'], True)
+        # This fork has no standalone newkeypool RPC. Its existing sethdseed
+        # path calls NewKeyPool under cs_wallet and cs_KeyStore for a non-HD wallet.
+        node.sethdseed(True)
+        assert_equal(node.getcoinjoininfo()['running'], False)
+
     def test_setcoinjoinamount(self, node):
         self.log.info('"setcoinjoinamount" should update mixing target')
         # Test normal and large values
@@ -86,7 +111,7 @@ class CoinJoinTest(BitcoinTestFramework):
             assert_equal(node.getcoinjoininfo()['max_amount'], value)
         # Test values below minimum and above maximum
         for value in [COINJOIN_TARGET_MIN - 1, COINJOIN_TARGET_MAX + 1]:
-            assert_raises_rpc_error(-8, "Invalid amount of DASH as mixing goal amount", node.setcoinjoinamount, value)
+            assert_raises_rpc_error(-8, "Invalid amount of DFCN as mixing goal amount", node.setcoinjoinamount, value)
 
     def test_setcoinjoinrounds(self, node):
         self.log.info('"setcoinjoinrounds" should update mixing rounds')

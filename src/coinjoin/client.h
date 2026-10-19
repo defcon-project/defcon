@@ -102,7 +102,17 @@ public:
     void Remove(const std::string& name);
     void Flush(const std::string& name);
 
-    CCoinJoinClientManager* Get(const std::string& name) const;
+    //! Invoke func under the manager lock. The client must not escape func.
+    //! Return false without calling func when the wallet has been removed.
+    template <typename Callable>
+    bool DoForClient(const std::string& name, Callable&& func) EXCLUSIVE_LOCKS_REQUIRED(!cs_wallet_manager_map)
+    {
+        LOCK(cs_wallet_manager_map);
+        const auto it = m_wallet_manager_map.find(name);
+        if (it == m_wallet_manager_map.end()) return false;
+        func(*it->second);
+        return true;
+    }
 
     template <typename Callable>
     void ForEachCJClientMan(Callable&& func)
@@ -282,8 +292,6 @@ private:
     mutable Mutex cs_deqsessions;
     // TODO: or map<denom, CCoinJoinClientSession> ??
     std::deque<CCoinJoinClientSession> deqSessions GUARDED_BY(cs_deqsessions);
-
-    std::atomic<bool> fMixing{false};
 
     int nCachedLastSuccessBlock{0};
     int nMinBlocksToWait{1}; // how many blocks to wait for after one successful mixing tx in non-multisession mode

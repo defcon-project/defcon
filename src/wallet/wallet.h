@@ -789,6 +789,8 @@ private:
     std::atomic<bool> fAbortRescan{false}; // reset by WalletRescanReserver::reserve()
     std::atomic<bool> fScanningWallet{false}; // controlled by WalletRescanReserver
     std::atomic<bool> m_attaching_chain{false};
+    //! Transient CoinJoin state; stopping from NewKeyPool must not lock the client map.
+    std::atomic<bool> m_mixing{false};
     std::atomic<int64_t> m_scanning_start{0};
     std::atomic<double> m_scanning_progress{0};
     friend class WalletRescanReserver;
@@ -985,6 +987,11 @@ public:
      * is the responsibility of the caller.
      **/
     bool SetCoinJoinSalt(const uint256& cj_salt);
+
+    //! Return false if already mixing or locked for mixing.
+    bool StartMixing();
+    void StopMixing() { m_mixing = false; }
+    bool IsMixing() const { return m_mixing; }
 
     // Map from governance object hash to governance object, they are added by gobject_prepare.
     std::map<uint256, Governance::Object> m_gobjects;

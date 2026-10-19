@@ -246,17 +246,16 @@ void CCoinJoinClientSession::ProcessMessage(CNode& peer, CChainState& active_cha
 }
 
 bool CCoinJoinClientManager::StartMixing() {
-    bool expected{false};
-    return fMixing.compare_exchange_strong(expected, true);
+    return m_wallet->StartMixing();
 }
 
 void CCoinJoinClientManager::StopMixing() {
-    fMixing = false;
+    m_wallet->StopMixing();
 }
 
 bool CCoinJoinClientManager::IsMixing() const
 {
-    return fMixing;
+    return m_wallet->IsMixing();
 }
 
 void CCoinJoinClientSession::ResetPool()
@@ -1905,7 +1904,10 @@ void CoinJoinWalletManager::Add(const std::shared_ptr<CWallet>& wallet)
                                                                                   m_mn_sync, m_isman, m_queueman,
                                                                                   m_is_masternode));
     }
-    g_wallet_init_interface.InitCoinJoinSettings(*this);
+    if (!CCoinJoinClientOptions::IsEnabled()) return;
+    DoForClient(wallet->GetName(), [](CCoinJoinClientManager& manager) {
+        g_wallet_init_interface.InitCoinJoinSettings(manager);
+    });
 }
 
 void CoinJoinWalletManager::DoMaintenance(CConnman& connman)
@@ -1916,26 +1918,18 @@ void CoinJoinWalletManager::DoMaintenance(CConnman& connman)
     }
 }
 
-void CoinJoinWalletManager::Remove(const std::string& name) {
-    {
-        LOCK(cs_wallet_manager_map);
-        m_wallet_manager_map.erase(name);
-    }
-    g_wallet_init_interface.InitCoinJoinSettings(*this);
+void CoinJoinWalletManager::Remove(const std::string& name)
+{
+    LOCK(cs_wallet_manager_map);
+    m_wallet_manager_map.erase(name);
 }
 
 void CoinJoinWalletManager::Flush(const std::string& name)
 {
-    auto clientman = Assert(Get(name));
-    clientman->ResetPool();
-    clientman->StopMixing();
-}
-
-CCoinJoinClientManager* CoinJoinWalletManager::Get(const std::string& name) const
-{
-    LOCK(cs_wallet_manager_map);
-    auto it = m_wallet_manager_map.find(name);
-    return (it != m_wallet_manager_map.end()) ? it->second.get() : nullptr;
+    DoForClient(name, [](CCoinJoinClientManager& manager) {
+        manager.ResetPool();
+        manager.StopMixing();
+    });
 }
 
 CDeterministicMNCPtr CCoinJoinClientManager::GetRandomUsedMasternode()
