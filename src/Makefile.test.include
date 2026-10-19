@@ -145,6 +145,7 @@ BITCOIN_TESTS =\
   test/governance_budget_tests.cpp \
   test/governance_validators_tests.cpp \
   test/governance_vote_sync_tests.cpp \
+  test/governance_request_tests.cpp \
   test/governance_vote_wire_tests.cpp \
   test/coinjoin_inouts_tests.cpp \
   test/hash_tests.cpp \
@@ -359,6 +360,7 @@ test_fuzz_fuzz_SOURCES = \
  test/fuzz/parse_numbers.cpp \
  test/fuzz/parse_script.cpp \
  test/fuzz/parse_univalue.cpp \
+ test/fuzz/partially_downloaded_block.cpp \
  test/fuzz/policy_estimator.cpp \
  test/fuzz/policy_estimator_io.cpp \
  test/fuzz/poolresource.cpp \

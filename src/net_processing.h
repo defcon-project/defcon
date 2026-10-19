@@ -41,6 +41,8 @@ static const bool DEFAULT_PEERBLOOMFILTERS = true;
 static const bool DEFAULT_PEERBLOCKFILTERS = false;
 /** Threshold for marking a node to be discouraged, e.g. disconnected and added to the discouragement filter. */
 static const int DISCOURAGEMENT_THRESHOLD{100};
+/** Maximum number of outstanding CMPCTBLOCK requests for the same block. */
+static const unsigned int MAX_CMPCTBLOCKS_INFLIGHT_PER_BLOCK = 3;
 
 struct CNodeStateStats {
     int m_misbehavior_score = 0;
@@ -169,6 +171,11 @@ public:
     virtual bool IsBanned(NodeId pnode) = 0;
 
     virtual void EraseObjectRequest(NodeId nodeid, const CInv& inv) = 0;
+    /** Consume this peer's announcement or in-flight request for the full inv. Requires cs_main.
+     *  A queued scheduling entry is left for SendMessages to discard. Unlike EraseObjectRequest,
+     *  this does not mark the hash erased globally. Used by governance (dash#7442); GETDATA-only
+     *  message types retain the stricter ConsumeGetDataResponse authorization below. */
+    virtual bool ConsumeObjectRequest(NodeId nodeid, const CInv& inv) = 0;
     /** Consume this peer's in-flight GETDATA for the inv and report how the object was authorised.
      *  A bare announcement does not qualify, only a request we actually sent. Use for object types
      *  that are only ever sent in reply to a GETDATA (see IsGetDataOnlyObject), so a peer cannot

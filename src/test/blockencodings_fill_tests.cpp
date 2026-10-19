@@ -11,7 +11,11 @@
 #include <blockencodings.h>
 #include <chainparams.h>
 #include <consensus/merkle.h>
+#include <consensus/validation.h>
+#include <validation.h>
 #include <pow.h>
+#include <streams.h>
+#include <util/strencodings.h>
 #include <txmempool.h>
 
 #include <test/util/setup_common.h>
@@ -88,6 +92,74 @@ BOOST_AUTO_TEST_CASE(init_data_twice)
     PartiallyDownloadedBlock partialBlock(&pool);
     BOOST_CHECK(partialBlock.InitData(CBlockHeaderAndShortTxIDs{block}, extra_txn) == READ_STATUS_OK);
     BOOST_CHECK(partialBlock.InitData(CBlockHeaderAndShortTxIDs{block}, extra_txn) == READ_STATUS_INVALID);
+}
+
+
+static CBlock BuildThreeTxStakeBlock()
+{
+    CBlock block{BuildThreeTxBlock()};
+    CMutableTransaction stake{*block.vtx[1]};
+    stake.vout[0].SetEmpty();
+    stake.vout.emplace_back(42, CScript{});
+    block.vtx[1] = MakeTransactionRef(stake);
+    block.hashMerkleRoot = BlockMerkleRoot(block);
+    assert(block.IsProofOfStake());
+    return block;
+}
+
+// Export actual production-serialized compact blocks for the Python wire-format regression.
+// The signature vector is carried even for a synthetic PoW fixture; its bytes must survive
+// each Python representation just as they do for a signed PoS block.
+BOOST_AUTO_TEST_CASE(compact_block_wire_fixtures)
+{
+    for (size_t fixture = 0; fixture < 3; ++fixture) {
+        const std::vector<unsigned char> signature = fixture == 0 ? std::vector<unsigned char>{} : std::vector<unsigned char>{0x12, 0x34, 0x56};
+        CBlock block{fixture == 2 ? BuildThreeTxStakeBlock() : BuildThreeTxBlock()};
+        block.vchBlockSig = signature;
+        CDataStream full{SER_NETWORK, PROTOCOL_VERSION};
+        full << block;
+        CDataStream compact{SER_NETWORK, PROTOCOL_VERSION};
+        compact << CBlockHeaderAndShortTxIDs{block};
+        CDataStream reader{compact};
+        CBlockHeaderAndShortTxIDs decoded;
+        reader >> decoded;
+        BOOST_CHECK(decoded.vchBlockSig == signature);
+        BOOST_CHECK_EQUAL(decoded.BlockTxCount(), block.vtx.size());
+        BOOST_CHECK(reader.empty());
+        BOOST_TEST_MESSAGE("COMPACT_WIRE_FIXTURE " << HexStr(full) << " " << HexStr(compact));
+    }
+}
+
+
+// Compact reconstruction checks the body against the header, then the unchanged full validator
+// checks all consensus rules. A reconstruction alone must not mark those full checks complete.
+BOOST_AUTO_TEST_CASE(reconstruction_defers_full_block_validation)
+{
+    CTxMemPool pool;
+    const CBlock block{BuildThreeTxBlock()};
+    PartiallyDownloadedBlock partial{&pool};
+    BOOST_REQUIRE(partial.InitData(CBlockHeaderAndShortTxIDs{block}, {}) == READ_STATUS_OK);
+    CBlock reconstructed;
+    BOOST_REQUIRE(partial.FillBlock(reconstructed, {block.vtx[1], block.vtx[2]}) == READ_STATUS_OK);
+    BOOST_CHECK(!reconstructed.fChecked);
+    BlockValidationState state;
+    BOOST_REQUIRE(CheckBlock(reconstructed, state, Params().GetConsensus()));
+    BOOST_CHECK(reconstructed.fChecked);
+}
+
+BOOST_AUTO_TEST_CASE(reconstructed_stake_still_requires_block_signature)
+{
+    CTxMemPool pool;
+    const CBlock block{BuildThreeTxStakeBlock()};
+    PartiallyDownloadedBlock partial{&pool};
+    BOOST_REQUIRE(partial.InitData(CBlockHeaderAndShortTxIDs{block}, {}) == READ_STATUS_OK);
+    CBlock reconstructed;
+    BOOST_CHECK(partial.FillBlock(reconstructed, {block.vtx[1], block.vtx[2]}) == READ_STATUS_OK);
+    BOOST_CHECK(reconstructed.IsProofOfStake());
+    BOOST_CHECK(!reconstructed.fChecked);
+    BlockValidationState state;
+    BOOST_CHECK(!CheckBlock(reconstructed, state, Params().GetConsensus()));
+    BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-blk-sign");
 }
 
 BOOST_AUTO_TEST_SUITE_END()
