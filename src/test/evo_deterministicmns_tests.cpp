@@ -25,7 +25,9 @@
 #include <evo/providertx.h>
 #include <evo/specialtx.h>
 #include <llmq/context.h>
+#include <llmq/dkgsession.h>
 #include <llmq/instantsend.h>
+#include <llmq/utils.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -1178,6 +1180,65 @@ void FuncEvoDbDiffRoundTrip(TestChainSetup& setup)
     BOOST_CHECK_EQUAL(result.verified_through_height, 576);
 }
 
+// dash 590236a2: PreVerifyMessage() bounded a justification's member index with
+// `index > members.size()`, so the one-past-the-end index got through and
+// ReceiveMessage() then read members[members.size()]. The last member must be
+// accepted, and every index from members.size() on rejected with a ban. The
+// justification is otherwise valid, so no earlier check decides the outcome.
+void FuncDKGJustificationIndexBound(TestChainSetup& setup)
+{
+    auto& chainman = *Assert(setup.m_node.chainman.get());
+    auto& dmnman = *Assert(setup.m_node.dmnman);
+    auto& llmq_ctx = *Assert(setup.m_node.llmq_ctx);
+    const auto llmq_params = *Assert(Params().GetLLMQ(Consensus::LLMQType::LLMQ_TEST));
+
+    // One masternode per quorum seat, one registration per block.
+    auto utxos = BuildSimpleUtxoMap(setup.m_coinbase_txns);
+    for (int i = 0; i < llmq_params.size; ++i) {
+        CKey ownerKey;
+        CBLSSecretKey operatorKey;
+        auto tx = CreateProRegTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, i + 1, GenerateRandomAddress(), setup.coinbaseKey, ownerKey, operatorKey);
+        setup.CreateAndProcessBlock({tx}, setup.coinbaseKey);
+        dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+        BOOST_REQUIRE(dmnman.GetListAtChainTip().HasMN(tx.GetHash()));
+    }
+    // Up to the next quorum base block.
+    do {
+        setup.CreateAndProcessBlock({}, setup.coinbaseKey);
+        dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+    } while (chainman.ActiveChain().Height() % llmq_params.dkgInterval != 0);
+    const CBlockIndex* base = WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip());
+
+    // The session as an observer of that quorum.
+    llmq::CDKGSession session(base, llmq_params, *llmq_ctx.bls_worker, dmnman, *llmq_ctx.qdkgsman,
+                              *llmq_ctx.dkg_debugman, *Assert(setup.m_node.mn_metaman), *llmq_ctx.qsnapman,
+                              /*mn_activeman=*/nullptr, *Assert(setup.m_node.sporkman));
+    BOOST_REQUIRE(session.Init(/*_myProTxHash=*/uint256(), /*_quorumIndex=*/0));
+    const auto members = llmq::utils::GetAllQuorumMembers(llmq_params.type, dmnman, *llmq_ctx.qsnapman, base);
+    BOOST_REQUIRE_EQUAL(members.size(), size_t(llmq_params.size));
+
+    const auto justification = [&](size_t index) {
+        llmq::CDKGJustification qj;
+        qj.llmqType = llmq_params.type;
+        qj.quorumHash = base->GetBlockHash();
+        qj.proTxHash = members[0]->proTxHash;
+        CBLSSecretKey sk;
+        sk.MakeNewKey();
+        qj.contributions.push_back({static_cast<uint32_t>(index), sk});
+        qj.sig = sk.Sign(GetRandHash(), bls::bls_legacy_scheme.load());
+        return qj;
+    };
+
+    bool ban{true};
+    BOOST_CHECK(session.PreVerifyMessage(justification(members.size() - 1), ban));
+    BOOST_CHECK(!ban);
+    for (const size_t index : {members.size(), members.size() + 1}) {
+        ban = false;
+        BOOST_CHECK_MESSAGE(!session.PreVerifyMessage(justification(index), ban), "index " << index << " accepted");
+        BOOST_CHECK_MESSAGE(ban, "index " << index << " not scored");
+    }
+}
+
 BOOST_AUTO_TEST_SUITE(evo_dip3_activation_tests)
 
 struct TestChainDIP3BeforeActivationSetup : public TestChainSetup {
@@ -1346,6 +1407,12 @@ BOOST_AUTO_TEST_CASE(evodb_diff_round_trip)
 {
     TestChainDIP3Setup setup;
     FuncEvoDbDiffRoundTrip(setup);
+}
+
+BOOST_AUTO_TEST_CASE(dkg_justification_index_bound)
+{
+    TestChainDIP3Setup setup;
+    FuncDKGJustificationIndexBound(setup);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

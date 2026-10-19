@@ -63,7 +63,7 @@ BOOST_FIXTURE_TEST_CASE(genesis_quorum_base_commitment_is_rejected, RegTestingSe
     BOOST_REQUIRE(genesis != nullptr);
     BOOST_REQUIRE(genesis->pprev == nullptr);
 
-    const auto& llmq_params = *Assert(Params().GetLLMQ(Params().GetConsensus().llmqTypeChainLocks));
+    const auto llmq_params = *Assert(Params().GetLLMQ(Params().GetConsensus().llmqTypeChainLocks));
 
     llmq::CFinalCommitment qc(llmq_params, genesis->GetBlockHash());
     qc.nVersion = llmq::CFinalCommitment::GetVersion(llmq::IsQuorumRotationEnabled(llmq_params, genesis),

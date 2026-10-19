@@ -5234,6 +5234,17 @@ void PeerManagerImpl::ProcessMessage(
             }
 
             PartiallyDownloadedBlock& partialBlock = *it->second.second->partialBlock;
+
+            if (partialBlock.header.IsNull()) {
+                // It is possible for the header to be empty if a previous call to FillBlock wiped the header, but left
+                // the PartiallyDownloadedBlock pointer around (i.e. did not call RemoveBlockRequest). Don't attempt to
+                // reconstruct again.
+                RemoveBlockRequest(resp.blockhash);
+                Misbehaving(pfrom.GetId(), 100, "previous compact block reconstruction attempt failed");
+                LogPrint(BCLog::NET, "Peer %d sent compact block transactions multiple times\n", pfrom.GetId());
+                return;
+            }
+
             ReadStatus status = partialBlock.FillBlock(*pblock, resp.txn);
             if (status == READ_STATUS_INVALID) {
                 RemoveBlockRequest(resp.blockhash); // Reset in-flight state in case Misbehaving does not result in a disconnect

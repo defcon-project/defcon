@@ -14,7 +14,6 @@ pool; no consensus rule is exercised.
 """
 
 import struct
-import time
 
 from test_framework.messages import hash256, ser_string
 from test_framework.test_framework import DashTestFramework
@@ -42,6 +41,22 @@ class DSLServiceTest(DashTestFramework):
         request_id = hash256(ser_string(b"dslcommitment") + struct.pack("<I", epoch) + base)[::-1].hex()
         return (node.quorum("isconflicting", 100, request_id, "00" * 32) or
                 node.quorum("isconflicting", 100, request_id, "11" * 32))
+
+    def has_responses(self, node, epoch, count):
+        status = node.dslstatus()
+        return status["epoch"] == epoch and status["respondedcount"] == count
+
+    def wait_for_signature(self, node, epoch, alive):
+        def recovered():
+            if self.has_signature(node, epoch):
+                return True
+            # Share requests, connection retries and recovery-member fallback
+            # use the mockable node clock. Keep it moving while height stays
+            # at the signing offset, including when a quorum member is down.
+            self.bump_mocktime(1, nodes=alive)
+            return False
+
+        self.wait_until(recovered, timeout=60, sleep=1)
 
     def run_test(self):
         node = self.nodes[0]
@@ -111,18 +126,29 @@ class DSLServiceTest(DashTestFramework):
             height = node.getblockcount()
             self.bump_mocktime(60, nodes=alive)
             self.generate(node, EPOCH_INTERVAL - (height % EPOCH_INTERVAL), sync_fun=lambda: self.sync_blocks(alive))
-            self.wait_until(lambda: node.dslstatus()["respondedcount"] == len(self.mninfo) - 1, timeout=60)
+            epoch = node.getblockcount() // EPOCH_INTERVAL
+            self.wait_until(lambda: all(self.has_responses(n, epoch, len(self.mninfo) - 1) for n in alive),
+                            timeout=60)
             self.bump_mocktime(30, nodes=alive)
             self.generate(node, CUTOFF, sync_fun=lambda: self.sync_blocks(alive))
-            self.wait_until(lambda: node.dslstatus()["missedreports"] > 0, timeout=60)
+
+            def reports_ready():
+                # One MISSED report at the observer does not mean each signer
+                # has the same complete verdict before its one-time vote.
+                for n in alive:
+                    status = n.dslstatus()
+                    candidate = status["candidate"]
+                    if (status["epoch"] != epoch or candidate["unobservedcount"] != 0 or
+                            candidate["missedprotxhashes"] != [stopped_protx]):
+                        return False
+                return True
+
+            self.wait_until(reports_ready, timeout=60)
             self.generate(node, EPOCH_INTERVAL - CUTOFF - 2, sync_fun=lambda: self.sync_blocks(alive))
             self.bump_mocktime(10, nodes=alive)
-            time.sleep(3)
             # The last signing tick must finish before mining the boundary.
-            # A delay at +22 cannot establish that work triggered at +23 ran.
             self.generate(node, 1, sync_fun=lambda: self.sync_blocks(alive))
-            epoch = node.getblockcount() // EPOCH_INTERVAL
-            self.wait_until(lambda: self.has_signature(node, epoch), timeout=60)
+            self.wait_for_signature(node, epoch, alive)
             self.generate(node, 1, sync_fun=lambda: self.sync_blocks(alive))
             block = node.getblock(node.getbestblockhash(), 2)
             dsl_txs = [tx for tx in block["tx"] if tx.get("type") == 10]

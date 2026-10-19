@@ -387,6 +387,7 @@ public:
 
 public:
     [[nodiscard]] CDKGMember* GetMember(const uint256& proTxHash) const;
+    [[nodiscard]] CDKGMember* GetMemberAtIndex(size_t index) const;
     [[nodiscard]] const std::unordered_set<uint256, StaticSaltedHasher>& RelayMembers() const { return relayMembers; }
     [[nodiscard]] const CBlockIndex* BlockIndex() const { return m_quorum_base_block_index; }
     [[nodiscard]] const uint256& ProTx() const { return myProTxHash; }
