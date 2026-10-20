@@ -2915,9 +2915,9 @@ size_t CConnman::SocketRecvData(CNode *pnode)
         if (!pnode->m_sock)
             return 0;
         nBytes = recv(pnode->m_sock->Get(), (char*)pchBuf, sizeof(pchBuf), MSG_DONTWAIT);
-        if (nBytes < (int)sizeof(pchBuf)) {
-            pnode->fHasRecvData = false;
-        }
+        // A short read can leave EOF pending without another edge-triggered event.
+        // Keep receiving until recv() reports EOF or an error (including EAGAIN).
+        pnode->fHasRecvData = nBytes > 0;
     }
     if (nBytes > 0)
     {
