@@ -5,6 +5,8 @@
 #include <interfaces/coinjoin.h>
 
 #include <coinjoin/client.h>
+#include <coinjoin/options.h>
+#include <util/system.h>
 #include <wallet/wallet.h>
 
 #include <memory>
@@ -65,7 +67,10 @@ class CoinJoinLoaderImpl : public interfaces::CoinJoin::Loader
 
 public:
     explicit CoinJoinLoaderImpl(CoinJoinWalletManager& walletman)
-        : m_walletman(walletman) {}
+        : m_walletman(walletman)
+    {
+        CCoinJoinClientOptions::SetEnabled(gArgs.GetBoolArg("-enablecoinjoin", true));
+    }
 
     void AddWallet(const std::shared_ptr<CWallet>& wallet) override { m_walletman.Add(wallet); }
     void RemoveWallet(const std::string& name) override
@@ -76,10 +81,12 @@ public:
     {
         m_walletman.Flush(name);
     }
-    std::unique_ptr<interfaces::CoinJoin::Client> GetClient(const std::string& name) override
+    bool WithClient(const std::string& name, const std::function<void(interfaces::CoinJoin::Client&)>& func) override
     {
-        auto clientman = m_walletman.Get(name);
-        return clientman ? std::make_unique<CoinJoinClientImpl>(*clientman) : nullptr;
+        return m_walletman.DoForClient(name, [&](CCoinJoinClientManager& manager) {
+            CoinJoinClientImpl client{manager};
+            func(client);
+        });
     }
     CoinJoinWalletManager& walletman() override
     {

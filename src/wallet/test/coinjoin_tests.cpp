@@ -10,6 +10,7 @@
 #include <coinjoin/options.h>
 #include <coinjoin/util.h>
 #include <consensus/amount.h>
+#include <interfaces/coinjoin.h>
 #include <node/context.h>
 #include <util/translation.h>
 #include <policy/settings.h>
@@ -18,10 +19,19 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <chrono>
+#include <future>
+#include <functional>
+#include <stdexcept>
+#include <thread>
+
 BOOST_FIXTURE_TEST_SUITE(coinjoin_tests, BasicTestingSetup)
 
-BOOST_AUTO_TEST_CASE(coinjoin_options_tests)
+BOOST_FIXTURE_TEST_CASE(coinjoin_options_tests, TestingSetup)
 {
+    gArgs.ForceSetArg("-enablecoinjoin", "0");
+    const auto loader = interfaces::MakeCoinJoinLoader(*m_node.cj_ctx->walletman);
+
     BOOST_CHECK_EQUAL(CCoinJoinClientOptions::GetSessions(), DEFAULT_COINJOIN_SESSIONS);
     BOOST_CHECK_EQUAL(CCoinJoinClientOptions::GetRounds(), DEFAULT_COINJOIN_ROUNDS);
     BOOST_CHECK_EQUAL(CCoinJoinClientOptions::GetRandomRounds(), COINJOIN_RANDOM_ROUNDS);
@@ -211,16 +221,158 @@ public:
 
 BOOST_FIXTURE_TEST_CASE(coinjoin_manager_start_stop_tests, CTransactionBuilderTestSetup)
 {
-    CCoinJoinClientManager* cj_man = m_node.cj_ctx->walletman->Get("");
-    BOOST_REQUIRE(cj_man != nullptr);
-    BOOST_CHECK_EQUAL(cj_man->IsMixing(), false);
-    BOOST_CHECK_EQUAL(cj_man->StartMixing(), true);
-    BOOST_CHECK_EQUAL(cj_man->IsMixing(), true);
-    BOOST_CHECK_EQUAL(cj_man->StartMixing(), false);
-    cj_man->StopMixing();
-    BOOST_CHECK_EQUAL(cj_man->IsMixing(), false);
+    BOOST_CHECK(m_node.cj_ctx->walletman->DoForClient("", [](auto& manager) {
+        BOOST_CHECK_EQUAL(manager.IsMixing(), false);
+        BOOST_CHECK_EQUAL(manager.StartMixing(), true);
+        BOOST_CHECK_EQUAL(manager.IsMixing(), true);
+        BOOST_CHECK_EQUAL(manager.StartMixing(), false);
+        manager.StopMixing();
+        BOOST_CHECK_EQUAL(manager.IsMixing(), false);
+    }));
 }
 
+static bool WithCoinJoinForTest(interfaces::CoinJoin::Loader& loader, const std::string& name,
+                               const std::function<void(interfaces::CoinJoin::Client&)>& func)
+{
+    return loader.WithClient(name, func);
+}
+
+BOOST_FIXTURE_TEST_CASE(coinjoin_callback_excludes_wallet_removal, CTransactionBuilderTestSetup)
+{
+    auto& loader = *m_node.coinjoin_loader;
+    std::promise<void> entered;
+    auto entered_future = entered.get_future();
+    std::promise<void> removing;
+    auto removing_future = removing.get_future();
+    std::promise<void> removed;
+    auto removed_future = removed.get_future();
+    std::thread remover([&] {
+        entered_future.wait();
+        removing.set_value();
+        try {
+            if (!RemoveWallet(wallet, std::nullopt)) throw std::runtime_error("wallet removal failed");
+            removed.set_value();
+        } catch (...) {
+            removed.set_exception(std::current_exception());
+        }
+    });
+    bool removed_during_callback{false};
+    const bool visited = WithCoinJoinForTest(loader, "", [&](auto& client) {
+        entered.set_value();
+        removing_future.wait();
+        removed_during_callback = removed_future.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+        // Avoid touching the legacy dangling reference in the failing control.
+        if (!removed_during_callback) client.isMixing();
+    });
+    if (!visited) entered.set_value();
+    remover.join();
+    BOOST_CHECK(visited);
+    BOOST_CHECK_MESSAGE(!removed_during_callback, "wallet removal completed while the CoinJoin client was in use");
+    BOOST_CHECK_NO_THROW(removed_future.get());
+    bool called{false};
+    BOOST_CHECK(!WithCoinJoinForTest(loader, "", [&](auto&) { called = true; }));
+    BOOST_CHECK(!called);
+}
+
+BOOST_FIXTURE_TEST_CASE(coinjoin_callback_missing_and_exception, CTransactionBuilderTestSetup)
+{
+    auto& loader = *m_node.coinjoin_loader;
+    bool called{false};
+    BOOST_CHECK(!WithCoinJoinForTest(loader, "missing", [&](auto&) { called = true; }));
+    BOOST_CHECK(!called);
+    BOOST_CHECK_THROW(WithCoinJoinForTest(loader, "", [](auto&) { throw std::runtime_error("callback error"); }), std::runtime_error);
+    BOOST_CHECK(WithCoinJoinForTest(loader, "", [&](auto&) { called = true; }));
+    BOOST_CHECK(called);
+}
+
+BOOST_FIXTURE_TEST_CASE(coinjoin_newkeypool_lock_order, CTransactionBuilderTestSetup)
+{
+    // Establish the same map -> wallet order used by mixing maintenance before
+    // NewKeyPool invokes its callback while holding cs_wallet (Dash #7259).
+    m_node.cj_ctx->walletman->ForEachCJClientMan([&](auto& client) {
+        BOOST_REQUIRE(client->StartMixing());
+        LOCK(wallet->cs_wallet);
+        BOOST_CHECK(!wallet->IsLocked());
+    });
+    {
+        LOCK(wallet->cs_wallet);
+        BOOST_REQUIRE(wallet->GetLegacyScriptPubKeyMan()->NewKeyPool());
+    }
+    m_node.cj_ctx->walletman->ForEachCJClientMan([](auto& client) {
+        BOOST_CHECK(!client->IsMixing());
+    });
+}
+
+BOOST_FIXTURE_TEST_CASE(coinjoin_locked_wallet_cannot_start, CTransactionBuilderTestSetup)
+{
+    auto locked_wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                                   "coinjoin-locked", CreateDummyWalletDatabase());
+    locked_wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+    {
+        LOCK(locked_wallet->cs_wallet);
+        locked_wallet->SetupDescriptorScriptPubKeyMans();
+    }
+    BOOST_REQUIRE(locked_wallet->EncryptWallet(SecureString{"coinjoin-test-passphrase"}));
+    BOOST_REQUIRE(locked_wallet->Lock());
+    BOOST_REQUIRE(locked_wallet->IsLocked(/*fForMixing=*/true));
+    BOOST_REQUIRE(AddWallet(locked_wallet));
+    BOOST_CHECK(WithCoinJoinForTest(*m_node.coinjoin_loader, locked_wallet->GetName(), [](auto& client) {
+        BOOST_CHECK(!client.startMixing());
+        BOOST_CHECK(!client.isMixing());
+    }));
+    BOOST_CHECK(RemoveWallet(locked_wallet, std::nullopt));
+}
+
+BOOST_FIXTURE_TEST_CASE(coinjoin_wallet_add_preserves_disabled_option, CTransactionBuilderTestSetup)
+{
+    const bool enabled_before = CCoinJoinClientOptions::IsEnabled();
+    CCoinJoinClientOptions::SetEnabled(false);
+    m_node.coinjoin_loader->AddWallet(wallet);
+    BOOST_CHECK(!CCoinJoinClientOptions::IsEnabled());
+    CCoinJoinClientOptions::SetEnabled(enabled_before);
+}
+
+BOOST_FIXTURE_TEST_CASE(coinjoin_loader_applies_enable_option, CTransactionBuilderTestSetup)
+{
+    const bool enabled_before = CCoinJoinClientOptions::IsEnabled();
+    const bool had_arg = gArgs.IsArgSet("-enablecoinjoin");
+    const std::string old_arg = gArgs.GetArg("-enablecoinjoin", "");
+    CCoinJoinClientOptions::SetEnabled(false);
+    gArgs.ForceSetArg("-enablecoinjoin", "1");
+    auto enabled_loader = interfaces::MakeCoinJoinLoader(*m_node.cj_ctx->walletman);
+    BOOST_CHECK(CCoinJoinClientOptions::IsEnabled());
+    gArgs.ForceSetArg("-enablecoinjoin", "0");
+    auto disabled_loader = interfaces::MakeCoinJoinLoader(*m_node.cj_ctx->walletman);
+    BOOST_CHECK(!CCoinJoinClientOptions::IsEnabled());
+    if (had_arg) gArgs.ForceSetArg("-enablecoinjoin", old_arg);
+    else gArgs.ForceRemoveArg("-enablecoinjoin");
+    CCoinJoinClientOptions::SetEnabled(enabled_before);
+}
+
+BOOST_FIXTURE_TEST_CASE(coinjoin_autostart_only_initializes_added_wallet, CTransactionBuilderTestSetup)
+{
+    const bool had_arg = gArgs.IsArgSet("-coinjoinautostart");
+    const std::string old_arg = gArgs.GetArg("-coinjoinautostart", "");
+    const bool enabled_before = CCoinJoinClientOptions::IsEnabled();
+    CCoinJoinClientOptions::SetEnabled(true);
+    gArgs.ForceSetArg("-coinjoinautostart", "1");
+    auto added_wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                                  "coinjoin-added", CreateDummyWalletDatabase());
+    BOOST_REQUIRE(AddWallet(added_wallet));
+    BOOST_CHECK(WithCoinJoinForTest(*m_node.coinjoin_loader, "", [](auto& client) {
+        BOOST_CHECK(!client.isMixing());
+    }));
+    BOOST_CHECK(WithCoinJoinForTest(*m_node.coinjoin_loader, added_wallet->GetName(), [](auto& client) {
+        BOOST_CHECK(client.isMixing());
+    }));
+    BOOST_CHECK(RemoveWallet(added_wallet, std::nullopt));
+    BOOST_CHECK(WithCoinJoinForTest(*m_node.coinjoin_loader, "", [](auto& client) {
+        BOOST_CHECK(!client.isMixing());
+    }));
+    if (had_arg) gArgs.ForceSetArg("-coinjoinautostart", old_arg);
+    else gArgs.ForceRemoveArg("-coinjoinautostart");
+    CCoinJoinClientOptions::SetEnabled(enabled_before);
+}
 
 BOOST_FIXTURE_TEST_CASE(CTransactionBuilderTest, CTransactionBuilderTestSetup)
 {
