@@ -5,7 +5,11 @@
 #include <consensus/amount.h>
 #include <policy/feerate.h>
 
+#include <cstdint>
 #include <limits>
+#include <optional>
+#include <type_traits>
+#include <utility>
 
 #include <boost/test/unit_test.hpp>
 
@@ -18,6 +22,40 @@ BOOST_AUTO_TEST_CASE(MoneyRangeTest)
     BOOST_CHECK_EQUAL(MoneyRange(CAmount(1)), true);
     BOOST_CHECK_EQUAL(MoneyRange(MAX_MONEY), true);
     BOOST_CHECK_EQUAL(MoneyRange(MAX_MONEY + CAmount(1)), false);
+}
+
+BOOST_AUTO_TEST_CASE(FeeRateConstructorTypeConstraints)
+{
+    static_assert(std::is_constructible_v<CFeeRate, int>);
+    static_assert(std::is_constructible_v<CFeeRate, unsigned int>);
+    static_assert(std::is_constructible_v<CFeeRate, int64_t>);
+    static_assert(std::is_constructible_v<CFeeRate, uint64_t>);
+    static_assert(std::is_copy_constructible_v<CFeeRate>);
+    static_assert(std::is_move_constructible_v<CFeeRate>);
+    static_assert(!std::is_constructible_v<CFeeRate, double>);
+    static_assert(!std::is_constructible_v<CFeeRate, const char*>);
+    // A generic constructor must not compete with optional's copy constructor.
+    static_assert(!std::is_constructible_v<CFeeRate, std::optional<CFeeRate>>);
+
+    BOOST_CHECK_EQUAL(CFeeRate{1000U}.GetFeePerK(), 1000);
+    BOOST_CHECK_EQUAL(CFeeRate{int64_t{-1000}}.GetFeePerK(), -1000);
+}
+
+BOOST_AUTO_TEST_CASE(OptionalFeeRateCopy)
+{
+    const std::optional<CFeeRate> original{std::in_place, 1000};
+    const std::optional<CFeeRate> copied{original};
+    BOOST_REQUIRE(copied.has_value());
+    BOOST_CHECK_EQUAL(copied->GetFeePerK(), original->GetFeePerK());
+
+    std::optional<CFeeRate> source{std::in_place, 2000};
+    const std::optional<CFeeRate> moved{std::move(source)};
+    BOOST_REQUIRE(moved.has_value());
+    BOOST_CHECK_EQUAL(moved->GetFeePerK(), 2000);
+
+    const std::optional<CFeeRate> empty;
+    const std::optional<CFeeRate> empty_copy{empty};
+    BOOST_CHECK(!empty_copy.has_value());
 }
 
 BOOST_AUTO_TEST_CASE(GetFeeTest)
