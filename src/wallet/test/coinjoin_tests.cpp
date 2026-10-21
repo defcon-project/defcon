@@ -345,8 +345,10 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_loader_applies_enable_option, CTransactionBuild
     auto disabled_loader = interfaces::MakeCoinJoinLoader(*m_node.cj_ctx->walletman);
     BOOST_CHECK(!CCoinJoinClientOptions::IsEnabled());
     if (had_arg) gArgs.ForceSetArg("-enablecoinjoin", old_arg);
-    else gArgs.ForceRemoveArg("-enablecoinjoin");
+    else gArgs.ForceRemoveArg("enablecoinjoin");
     CCoinJoinClientOptions::SetEnabled(enabled_before);
+    BOOST_CHECK_EQUAL(gArgs.IsArgSet("-enablecoinjoin"), had_arg);
+    BOOST_CHECK_EQUAL(gArgs.GetArg("-enablecoinjoin", ""), old_arg);
 }
 
 BOOST_FIXTURE_TEST_CASE(coinjoin_autostart_only_initializes_added_wallet, CTransactionBuilderTestSetup)
@@ -370,8 +372,10 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_autostart_only_initializes_added_wallet, CTrans
         BOOST_CHECK(!client.isMixing());
     }));
     if (had_arg) gArgs.ForceSetArg("-coinjoinautostart", old_arg);
-    else gArgs.ForceRemoveArg("-coinjoinautostart");
+    else gArgs.ForceRemoveArg("coinjoinautostart");
     CCoinJoinClientOptions::SetEnabled(enabled_before);
+    BOOST_CHECK_EQUAL(gArgs.IsArgSet("-coinjoinautostart"), had_arg);
+    BOOST_CHECK_EQUAL(gArgs.GetArg("-coinjoinautostart", ""), old_arg);
 }
 
 BOOST_FIXTURE_TEST_CASE(CTransactionBuilderTest, CTransactionBuilderTestSetup)
