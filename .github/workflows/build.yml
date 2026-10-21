@@ -556,6 +556,7 @@ jobs:
       # what the runner does; its failure ends the step explicitly, not
       # only through the shell's -e.
       - name: Functional tests (named gate)
+        id: functional
         if: needs.changes.outputs.code == 'true'
         run: |
           BASE_OUTDIR="/output"
@@ -602,8 +603,17 @@ jobs:
               sys.exit("gate entries not registered in test_runner.py: " + ", ".join(missing))
           print("gate: every entry is registered in test_runner.py (%d names)" % len(sys.argv[1:]))
           PY
-          python3 test/functional/test_runner.py --jobs=4 --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}" --combinedlogslen=4000 "${GATE[@]}"
+          python3 test/functional/test_runner.py --jobs=4 --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}" --combinedlogslen=4000 --tmpdirprefix="$RUNNER_TEMP/functional-tests" "${GATE[@]}"
         shell: bash
+
+      - name: Upload failed functional test directories
+        if: ${{ failure() && steps.functional.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: failed-functional-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.build_target }}-${{ matrix.host }}
+          path: ${{ runner.temp }}/functional-tests/
+          if-no-files-found: warn
+          retention-days: 3
 
       - name: Upload build artifacts
         if: needs.changes.outputs.code == 'true'
