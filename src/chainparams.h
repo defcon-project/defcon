@@ -235,6 +235,13 @@ void ApplyV23ActivationBundle(Consensus::Params& consensus, int height);
  */
 void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::string& network);
 
+/** Prepare the v23.1 a-d bundle at one H; UNSET is a no-op. The release
+ *  heights remain UNSET until the user supplies them in December. */
+void ApplyV231ActivationBundle(Consensus::Params& consensus, int height, const std::string& network);
+/** Reject a partial v23.1 retirement/activation configuration. */
+void CheckV231ActivationBundle(const Consensus::Params& consensus, const std::string& network);
+
+
 /**
  * Return the currently selected parameters. This won't change after app
  * startup, except for unit tests.
