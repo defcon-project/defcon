@@ -12,14 +12,55 @@ Checks LLMQs based ChainLocks
 
 from io import BytesIO
 
+from test_framework.authproxy import JSONRPCException
 from test_framework.messages import CBlock, CCbTx
 from test_framework.test_framework import DashTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error, force_finish_mnsync
 
 
+WAIT_FOR_ISLOCK_TIMEOUT = 2 * 60  # CChainLocksHandler::WAIT_FOR_ISLOCK_TIMEOUT
+
+
 class LLMQChainLocksTest(DashTestFramework):
     def set_test_params(self):
         self.set_dash_test_params(5, 4)
+
+    def wait_for_recovered_chainlock(self, block_hash, txids):
+        masternodes = self.nodes[1:]
+        assert_equal(len(masternodes), 4)
+        assert txids
+        assert self.mocktime > 0
+        started = self.mocktime
+
+        def advance_mocktime():
+            # Share one budget across all stages: do not age past the fallback
+            # for transactions without IS locks merely to obtain a ChainLock.
+            assert self.mocktime - started + 1 < WAIT_FOR_ISLOCK_TIMEOUT, "ChainLock recovery exhausted the IS-lock mocktime window"
+            self.bump_mocktime(1)
+
+        self.log.info("Recovery: wait for every masternode to accept node0's tip")
+        self.wait_until(lambda: all(node.getbestblockhash() == block_hash for node in self.nodes),
+                        timeout=30, sleep=1, wait_proc=advance_mocktime)
+
+        def all_instantlocked():
+            try:
+                # A node may receive the ChainLock before a recovered IS lock.
+                # Accept only real IS locks or the target ChainLock on that node;
+                # another node's ChainLock or the derived instantlock flag is insufficient.
+                return all(all(node.getrawtransaction(txid, True)["instantlock_internal"]
+                               for txid in txids) or node.getblock(block_hash)["chainlock"]
+                           for node in masternodes)
+            except JSONRPCException as error:
+                if error.error["code"] != -5:
+                    raise
+                return False
+
+        self.log.info("Recovery: wait for all %d IS locks or the target ChainLock on each masternode", len(txids))
+        self.wait_until(all_instantlocked, timeout=30, sleep=1, wait_proc=advance_mocktime)
+        self.log.info("Recovery: wait for the ChainLock")
+        self.wait_for_chainlocked_block(self.nodes[0], block_hash, timeout=30,
+                                        wait_proc=advance_mocktime, sleep=1)
+        self.log.info("Recovery complete: mocktime advanced %d s", self.mocktime - started)
 
     def run_test(self):
         # Connect all nodes to node1 so that we always have the whole network connected
@@ -224,8 +265,9 @@ class LLMQChainLocksTest(DashTestFramework):
         # Enable network on first node again, which will cause the blocks to propagate and IS locks to happen retroactively
         # for the mined TXs, which will then allow the network to create a CLSIG
         self.log.info("Re-enable network on first node and wait for chainlock")
+        recovery_tip = self.nodes[0].getbestblockhash()
         self.reconnect_isolated_node(0, 1)
-        self.wait_for_chainlocked_block(self.nodes[0], self.nodes[0].getbestblockhash(), timeout=30)
+        self.wait_for_recovered_chainlock(recovery_tip, txs)
 
         for i in range(2):
             self.log.info(f"{'Disable' if i == 0 else 'Enable'} Chainlock")

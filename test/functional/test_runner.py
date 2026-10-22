@@ -82,6 +82,7 @@ TEST_FRAMEWORK_MODULES = [
     "crypto.ripemd160",
     "script",
     "test_node_lifecycle",
+    "test_wait",
 ]
 
 EXTENDED_SCRIPTS = [
