@@ -75,6 +75,9 @@ jobs:
             echo "code=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check CI scheduling regressions
+        run: python3 ci/dash/test_ci_scheduling.py
+
   build-image:
     name: Build Image
     needs: changes
@@ -225,8 +228,8 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-  build:
-    name: Build
+  checks:
+    name: Checks
     needs: [changes, build-image, build-depends]
     runs-on: ubuntu-22.04
     strategy:
@@ -236,6 +239,17 @@ jobs:
           - build_target: linux64
             host: x86_64-pc-linux-gnu
             depends_on: linux64
+            lane: runtime
+          - build_target: linux64
+            host: x86_64-pc-linux-gnu
+            depends_on: linux64
+            lane: build-options
+    # Every shell step must use the directory restored and saved below.
+    # In particular, no-wallet used to fall back to ci-cache-linux64/ccache.
+    env:
+      CACHE_DIR: /cache
+      CCACHE_DIR: /cache/ccache
+      CCACHE_SIZE: 400M
     container:
       # Documentation-only runs retain their existing container while all steps skip.
       image: ${{ needs.build-image.outputs.image-ref || format('ghcr.io/{0}/dashcore-ci-runner:{1}', needs.build-image.outputs.repo-name, needs.build-image.outputs.image-tag) }}
@@ -254,6 +268,7 @@ jobs:
 
       - name: Identify consumer inputs independently
         if: needs.changes.outputs.code == 'true'
+        id: identity
         run: python3 ci/dash/depends_prefix.py identity --image "${{ needs.build-image.outputs.image-ref }}" --identity "$RUNNER_TEMP/depends-input.json"
 
       - name: Check the prefix transport regressions
@@ -300,26 +315,36 @@ jobs:
 
       - name: CCache
         if: needs.changes.outputs.code == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             /cache
-          key: ${{ runner.os }}-${{ matrix.build_target }}-${{ github.sha }}
+          # Separate writers: the no-wallet cache must not evict or overwrite
+          # the runtime lane's entries. The input identity includes the image.
+          key: ccache-v2-${{ runner.os }}-${{ matrix.build_target }}-${{ matrix.lane }}-${{ steps.identity.outputs.input_sha256 }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.build_target }}-${{ github.sha }}
-            ${{ runner.os }}-${{ matrix.build_target }}-${{ steps.vars.outputs.PR_BASE_SHA }}
-            ${{ runner.os }}-${{ matrix.build_target }}
+            ccache-v2-${{ runner.os }}-${{ matrix.build_target }}-${{ matrix.lane }}-${{ steps.identity.outputs.input_sha256 }}-${{ steps.vars.outputs.PR_BASE_SHA }}
+            ccache-v2-${{ runner.os }}-${{ matrix.build_target }}-${{ matrix.lane }}-${{ steps.identity.outputs.input_sha256 }}-
+            ${{ matrix.lane == 'runtime' && format('{0}-{1}-', runner.os, matrix.build_target) || 'no-legacy-build-options-cache-' }}
+
+      - name: Prepare the compiler cache
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          mkdir -p "$CCACHE_DIR"
+          ccache --zero-stats --max-size="$CCACHE_SIZE"
+
+      - name: Prepare the build-options source
+        if: needs.changes.outputs.code == 'true' && matrix.lane == 'build-options'
+        run: ./autogen.sh
 
       - name: Build source and run tests
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true' && matrix.lane == 'runtime'
         run: |
           git config --global --add advice.detachedHead false
           git config --global --add safe.directory "$PWD"
           GIT_HEAD="$(git rev-parse HEAD)"
           git checkout v22.1.x
           git checkout "${GIT_HEAD}"
-          CCACHE_SIZE="400M"
-          CACHE_DIR="/cache"
           mkdir /output
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
@@ -328,7 +353,7 @@ jobs:
         shell: bash
 
       - name: Configure option regressions
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true' && matrix.lane == 'build-options'
         run: |
           configure_tests="$(mktemp -d)/configure-tests"
           python3 test/configure/test_configure.py \
@@ -339,14 +364,16 @@ jobs:
         shell: bash
 
       - name: No-wallet build and RPC/PoS regressions
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true' && matrix.lane == 'build-options'
         run: |
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
           source ./ci/dash/matrix.sh
           export LD_LIBRARY_PATH="$DEPENDS_DIR/$HOST/lib"
           source_dir="$PWD"
-          nowallet_build="$(mktemp -d)/no-wallet"
+          # Stable within each fresh job, so debug-info paths do not make the
+          # persisted compiler cache miss on every subsequent workflow run.
+          nowallet_build="$RUNNER_TEMP/no-wallet"
           mkdir "$nowallet_build"
           cd "$nowallet_build"
           "$source_dir/configure" \
@@ -411,7 +438,7 @@ jobs:
       #                                          validation_chainstatemanager_tests,
       #                                          wallet_tests
       - name: Unit suites (all but the named exceptions)
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true' && matrix.lane == 'runtime'
         run: |
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
@@ -426,7 +453,7 @@ jobs:
 
       # Run every compiled Qt suite, including future additions.
       - name: Qt tests and leak check
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true' && matrix.lane == 'runtime'
         run: |
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
@@ -557,7 +584,7 @@ jobs:
       # only through the shell's -e.
       - name: Functional tests (named gate)
         id: functional
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true' && matrix.lane == 'runtime'
         run: |
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
@@ -616,9 +643,50 @@ jobs:
           retention-days: 3
 
       - name: Upload build artifacts
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true' && matrix.lane == 'runtime'
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts-${{ matrix.build_target }}
           path: |
             /output
+
+      - name: Report compiler cache statistics
+        if: ${{ always() && needs.changes.outputs.code == 'true' }}
+        shell: bash
+        run: |
+          {
+            echo '### Compiler cache'
+            echo "Directory: $CCACHE_DIR"
+            echo '```text'
+            ccache --show-stats
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # Keep the existing required check name. A successful runtime lane alone
+  # cannot authorize a merge when build-options failed, skipped or cancelled.
+  build:
+    name: Build (linux64, x86_64-pc-linux-gnu, linux64)
+    if: ${{ always() }}
+    needs: [changes, build-image, build-depends, checks]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Require every CI lane
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          needs = json.loads(os.environ['NEEDS_JSON'])
+          required = {'changes', 'build-image', 'build-depends', 'checks'}
+          if set(needs) != required:
+              sys.exit('CI prerequisites are missing or unexpected')
+          failed = [name for name in sorted(required) if needs[name]['result'] != 'success']
+          if failed:
+              sys.exit('CI prerequisites did not succeed: ' + ', '.join(failed))
+          if needs['changes']['outputs'].get('code') not in ('true', 'false'):
+              sys.exit('Change detection did not produce a valid decision')
+          print('All required CI lanes succeeded')
+          PY

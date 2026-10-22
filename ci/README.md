@@ -8,6 +8,41 @@ The active GitHub Actions pipeline is defined in
 are invoked by the workflow itself. The local stage runner below is a separate
 entry point.
 
+### GitHub Actions lanes
+
+After the image and dependency prefix are ready, two jobs run on separate
+GitHub-hosted machines. The `runtime` lane builds the regular binaries and
+runs the existing unit, Qt/LSan and functional gates. The `build-options` lane
+runs the configure checks and the wallet-disabled build and regressions.
+Neither lane removes tests or changes their concurrency or timeout settings.
+
+The required check remains `Build (linux64, x86_64-pc-linux-gnu, linux64)`.
+It waits for both lanes and rejects failed, cancelled, skipped or missing
+prerequisites. Documentation-only changes still receive that check. No branch
+protection setting needs to be changed.
+
+Each lane persists its own compiler cache, bound to the dependency/image
+identity, in `/cache/ccache`. The directory is set at job scope so later shell
+steps, including the no-wallet build, use the restored cache too. The no-wallet
+build has a stable path inside each fresh job; build outputs and test results
+are not reused. Cache statistics appear in the job summary even after failure.
+The runtime lane can also seed its cache from the previous cache-key format;
+the no-wallet lane starts with an empty cache on its first run.
+
+Run the no-build scheduling and required-check regressions with:
+
+```
+python3 ci/dash/test_ci_scheduling.py
+```
+
+For a local container runner, preserve the compiler cache across runs by mounting
+a dedicated cache directory at `/cache` and setting `CACHE_DIR=/cache` and
+`CCACHE_DIR=/cache/ccache` for **every** stage. Keep a fixed container-side source
+and build path, use the same image/compiler/configuration, and retain all normal
+test gates. Do not share writable build directories or run a second heavy local
+job merely because GitHub uses separate machines. A clean source/build directory
+does not require an empty compiler cache.
+
 ### Running a Stage Locally
 
 Be aware that the tests will be built and run in-place, so please run at your own risk.
