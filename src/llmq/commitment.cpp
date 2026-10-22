@@ -16,6 +16,8 @@
 #include <validation.h>
 #include <util/underlying.h>
 
+#include <algorithm>
+
 namespace llmq
 {
 
@@ -194,7 +196,9 @@ bool CheckLLMQCommitment(CDeterministicMNManager& dmnman, CQuorumSnapshotManager
 
     if (LogAcceptDebug(BCLog::LLMQ)) {
         std::stringstream ss;
-        for (const auto i: irange::range(llmq_params_opt->size)) {
+        // The wire bitset can be shorter than the quorum size before validation.
+        const auto log_size = std::min<size_t>(llmq_params_opt->size, qcTx.commitment.validMembers.size());
+        for (const auto i: irange::range(log_size)) {
             ss << "v[" << i << "]=" << qcTx.commitment.validMembers[i];
         }
         LogPrint(BCLog::LLMQ, "CFinalCommitment -- %s llmqType[%d] validMembers[%s] signers[]\n", __func__,
