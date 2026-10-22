@@ -247,7 +247,7 @@ def satoshi_round(amount):
     return Decimal(amount).quantize(Decimal('0.00000001'), rounding=ROUND_DOWN)
 
 
-def wait_until_helper(predicate, *, attempts=float('inf'), timeout=float('inf'), sleep=0.5, timeout_factor=1.0, lock=None, do_assert=True, allow_exception=False):
+def wait_until_helper(predicate, *, attempts=float('inf'), timeout=float('inf'), sleep=0.5, timeout_factor=1.0, lock=None, do_assert=True, allow_exception=False, wait_proc=None):
     """Sleep until the predicate resolves to be True.
 
     Warning: Note that this method is not recommended to be used in tests as it is
@@ -255,6 +255,8 @@ def wait_until_helper(predicate, *, attempts=float('inf'), timeout=float('inf'),
     from `BitcoinTestFramework` or `P2PInterface` class ensures the timeout is
     properly scaled. Furthermore, `wait_until()` from `P2PInterface` class in
     `p2p.py` has a preset lock.
+
+    If supplied, wait_proc runs after an unsuccessful poll, outside lock.
     """
     if attempts == float('inf') and timeout == float('inf'):
         timeout = 60
@@ -275,6 +277,8 @@ def wait_until_helper(predicate, *, attempts=float('inf'), timeout=float('inf'),
             if not allow_exception:
                 raise
         attempt += 1
+        if wait_proc is not None:
+            wait_proc()
         time.sleep(sleep)
 
     if do_assert:

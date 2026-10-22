@@ -909,8 +909,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         for node in self.nodes:
             node.mocktime = self.mocktime
 
-    def wait_until(self, test_function, timeout=60, lock=None, sleep=0.5, do_assert=True):
-        return wait_until_helper(test_function, timeout=timeout, lock=lock, timeout_factor=self.options.timeout_factor, sleep=sleep, do_assert=do_assert)
+    def wait_until(self, test_function, timeout=60, lock=None, sleep=0.5, do_assert=True, *, wait_proc=None):
+        return wait_until_helper(test_function, timeout=timeout, lock=lock, timeout_factor=self.options.timeout_factor, sleep=sleep, do_assert=do_assert, wait_proc=wait_proc)
 
     # Private helper methods. These should not be accessed by the subclass test scripts.
 
@@ -1622,14 +1622,14 @@ class DashTestFramework(BitcoinTestFramework):
         if self.wait_until(check_instantlock, timeout=timeout, sleep=1, do_assert=expected) and not expected:
             raise AssertionError("waiting unexpectedly succeeded")
 
-    def wait_for_chainlocked_block(self, node, block_hash, expected=True, timeout=15):
+    def wait_for_chainlocked_block(self, node, block_hash, expected=True, timeout=15, *, wait_proc=None, sleep=0.1):
         def check_chainlocked_block():
             try:
                 block = node.getblock(block_hash)
                 return block["confirmations"] > 0 and block["chainlock"]
             except:
                 return False
-        if self.wait_until(check_chainlocked_block, timeout=timeout, sleep=0.1, do_assert=expected) and not expected:
+        if self.wait_until(check_chainlocked_block, timeout=timeout, sleep=sleep, do_assert=expected, wait_proc=wait_proc) and not expected:
             raise AssertionError("waiting unexpectedly succeeded")
 
     def wait_for_chainlocked_block_all_nodes(self, block_hash, timeout=15, expected=True):
