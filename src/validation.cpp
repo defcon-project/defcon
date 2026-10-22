@@ -1446,8 +1446,8 @@ CAmount GetBlockSubsidy(const CBlockIndex* const pindex, const Consensus::Params
 
 CAmount GetMasternodePayment(int nHeight, CAmount blockValue, bool fV20Active)
 {
-    CAmount nSubsidy = 10000 * COIN;
-    return nSubsidy;
+    const int height = Params().GetConsensus().nV231ActivationHeight;
+    return height != std::numeric_limits<int>::max() && nHeight >= height ? 5000 * COIN : 10000 * COIN;
 }
 
 CAmount GetMasternodePayment(int nHeight)

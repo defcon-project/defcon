@@ -22,6 +22,7 @@
 #include <validation.h>
 
 #include <cassert>
+#include <limits>
 #include <string>
 
 CAmount PlatformShare(const CAmount reward)
@@ -267,6 +268,16 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
                             nBlockHeight, block.vtx[0]->GetValueOut(), blockReward);
         }
         return isBlockRewardValueMet;
+    }
+
+    // From the v23.1 bundle height, no successful superblock path may bypass
+    // the PoS mint ceiling, including nodes still syncing masternode data.
+    // Preserve the historical acceptance rules before H.
+    if (block.IsProofOfStake() && m_consensus_params.nV231ActivationHeight != std::numeric_limits<int>::max() &&
+        nBlockHeight >= m_consensus_params.nV231ActivationHeight && !isBlockRewardValueMet) {
+        strErrorRet = strprintf("coinstake mints too much at height %d (actual=%d vs limit=%d), exceeded block reward at superblock height",
+                                nBlockHeight, block.vtx[1]->GetValueOut() - stakeValueIn, coinstakeCeiling);
+        return false;
     }
 
     // bail out in case superblock limits were exceeded

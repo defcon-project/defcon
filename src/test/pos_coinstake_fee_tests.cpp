@@ -310,4 +310,61 @@ BOOST_AUTO_TEST_CASE(fee_burn_activation_heights_are_pinned)
     gArgs.ForceRemoveArg("devnet");
 }
 
+// The pre-H unsynced path accepts the historical superblock bounds only.
+// From H the same block must also respect the coinstake ceiling.
+BOOST_AUTO_TEST_CASE(unsynced_superblock_coinstake_ceiling_activates_at_v231_height)
+{
+    const CBlockIndex* tip{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip())};
+    BOOST_REQUIRE(tip != nullptr);
+    BOOST_REQUIRE(!m_node.mn_sync->IsSynced());
+    auto& payments = *Assert(Assert(m_node.chain_helper.get())->mn_payments);
+    auto& params = const_cast<Consensus::Params&>(Params().GetConsensus());
+    struct RestoreParams {
+        Consensus::Params& params;
+        const int start{params.nSuperblockStartBlock};
+        const int cycle{params.nSuperblockCycle};
+        const int activation{params.nV231ActivationHeight};
+        ~RestoreParams()
+        {
+            params.nSuperblockStartBlock = start;
+            params.nSuperblockCycle = cycle;
+            params.nV231ActivationHeight = activation;
+        }
+    } restore{params};
+    const int height = tip->nHeight + 1;
+    params.nSuperblockStartBlock = height;
+    params.nSuperblockCycle = height;
+    BOOST_REQUIRE(CSuperblock::IsValidBlockHeight(height));
+    const CAmount subsidy{500 * COIN};
+    const CAmount fees{7277};
+    const CAmount staked{12345 * COIN};
+    BOOST_REQUIRE(PosFeesAreBurned(height, params));
+    const CBlock valid = MakeStakeBlock(staked + subsidy);
+    const CBlock excessive = MakeStakeBlock(staked + subsidy + 1);
+    BOOST_REQUIRE(valid.IsProofOfStake());
+    BOOST_REQUIRE(excessive.IsProofOfStake());
+    std::string error;
+    const auto check_activation = [&] {
+      for (bool check_superblock : {false, true}) {
+        params.nV231ActivationHeight = std::numeric_limits<int>::max();
+        BOOST_CHECK(payments.IsBlockValueValid(excessive, tip, subsidy, fees, staked, error, check_superblock));
+        params.nV231ActivationHeight = height + 1; // H - 1
+        BOOST_CHECK(payments.IsBlockValueValid(excessive, tip, subsidy, fees, staked, error, check_superblock));
+        params.nV231ActivationHeight = height; // H
+        BOOST_CHECK(payments.IsBlockValueValid(valid, tip, subsidy, fees, staked, error, check_superblock));
+        BOOST_CHECK(!payments.IsBlockValueValid(excessive, tip, subsidy, fees, staked, error, check_superblock));
+        BOOST_CHECK(error.find("coinstake mints too much") != std::string::npos);
+        params.nV231ActivationHeight = height - 1; // H + 1
+        BOOST_CHECK(payments.IsBlockValueValid(valid, tip, subsidy, fees, staked, error, check_superblock));
+        BOOST_CHECK(!payments.IsBlockValueValid(excessive, tip, subsidy, fees, staked, error, check_superblock));
+      }
+    };
+    check_activation();
+    BOOST_REQUIRE(m_node.netfulfilledman->LoadCache(false));
+    for (int i = 0; i < 4 && !m_node.mn_sync->IsSynced(); ++i) m_node.mn_sync->SwitchToNextAsset();
+    BOOST_REQUIRE(m_node.mn_sync->IsSynced());
+    BOOST_REQUIRE(!m_node.govman->IsValid());
+    check_activation();
+}
+
 BOOST_AUTO_TEST_SUITE_END()

@@ -348,6 +348,9 @@ struct Params {
      *  gates; the default -- an unreachable height -- changes nothing until one
      *  is set. */
     int nSuperblocksRetiredHeight{std::numeric_limits<int>::max()};
+
+    /** Shared v23.1 activation height H. Unset until the release bundle is scheduled. */
+    int nV231ActivationHeight{std::numeric_limits<int>::max()};
     LLMQType llmqTypeDIP0024InstantSend{LLMQType::LLMQ_NONE};
     /** The InstantSend profile that takes over at and above
      *  nInstantSendV2ActivationHeight, resolved from the chain tip by both the

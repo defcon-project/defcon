@@ -197,6 +197,11 @@ std::optional<Consensus::LLMQParams> CChainParams::GetLLMQ(Consensus::LLMQType l
 static constexpr int V23_MAINNET_ACTIVATION_HEIGHT = 144888;
 //! Testnet's height. The v23 release leaves testnet unscheduled.
 static constexpr int V23_TESTNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
+// v23.1 release heights are deliberately unscheduled; set only by the release decision.
+static constexpr int V231_MAINNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
+static constexpr int V231_TESTNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
+static constexpr int V231_DEVNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
+
 //! Blocks between H and the Sentinel layer's first observed epoch: one day of
 //! Q60 intervals (24 x 24), so the hour the switchover itself lands in is not
 //! also the layer's first recorded hour, and a fault at H is told apart from a
@@ -439,6 +444,7 @@ public:
         // Registered now, enabled only by the bundle; see ApplyV23ActivationBundle.
         AddLLMQ(Consensus::LLMQType::LLMQ_DEFCON);
         ApplyV23ActivationBundle(consensus, V23_MAINNET_ACTIVATION_HEIGHT);
+        ApplyV231ActivationBundle(consensus, V231_MAINNET_ACTIVATION_HEIGHT, CBaseChainParams::MAIN);
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = true;
@@ -655,6 +661,7 @@ public:
         // Registered now, enabled only by the bundle; see ApplyV23ActivationBundle.
         AddLLMQ(Consensus::LLMQType::LLMQ_DEFCON);
         ApplyV23ActivationBundle(consensus, V23_TESTNET_ACTIVATION_HEIGHT);
+        ApplyV231ActivationBundle(consensus, V231_TESTNET_ACTIVATION_HEIGHT, CBaseChainParams::TESTNET);
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
@@ -899,6 +906,7 @@ public:
         UpdateDevnetDSLActivationHeightFromArgs(args);
         UpdateDevnetDSLEnforcementHeightFromArgs(args);
         UpdateDevnetDSLCommitmentV2HeightFromArgs(args);
+        ApplyV231ActivationBundle(consensus, V231_DEVNET_ACTIVATION_HEIGHT, CBaseChainParams::DEVNET);
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
@@ -1955,7 +1963,11 @@ void CheckLLMQConfiguration(const CChainParams& params)
                                                __func__, profile->name, role, network, end));
         };
         if (type == consensus.llmqTypePlatform) refuse_role("llmqTypePlatform");
-        if (type == consensus.llmqTypeMnhf) refuse_role("llmqTypeMnhf");
+        if (type == consensus.llmqTypeMnhf &&
+            !(type == Consensus::LLMQType::LLMQ_400_85 && consensus.nV231ActivationHeight != UNSET &&
+              end == consensus.nV231ActivationHeight && consensus.V20Height == UNSET)) {
+            refuse_role("llmqTypeMnhf");
+        }
         if (type == consensus.llmqTypeChainLocksV2) refuse_role("llmqTypeChainLocksV2");
         if (type == consensus.llmqTypeDIP0024InstantSendV2) refuse_role("llmqTypeDIP0024InstantSendV2");
         // A pre-switchover role may stop only once its successor has taken over,
@@ -1976,6 +1988,51 @@ void CheckLLMQConfiguration(const CChainParams& params)
             refuse_role("llmqTypeDIP0024InstantSend at or below its switchover");
         }
     }
+}
+
+void CheckV231ActivationBundle(const Consensus::Params& consensus, const std::string& network)
+{
+    constexpr int UNSET = std::numeric_limits<int>::max();
+    const int height = consensus.nV231ActivationHeight;
+    if (height == UNSET) return;
+    if (height <= 0) throw std::runtime_error("v23.1 activation height must be positive");
+    for (const auto type : {Consensus::LLMQType::LLMQ_400_60, Consensus::LLMQType::LLMQ_400_85}) {
+        const auto end = consensus.llmqFormationEndHeights.find(type);
+        if (end == consensus.llmqFormationEndHeights.end() || end->second != height) {
+            throw std::runtime_error("v23.1 must end both legacy quorum formations at H");
+        }
+    }
+    if (consensus.nChainLocksV2ActivationHeight == UNSET || height <= consensus.nChainLocksV2ActivationHeight ||
+        consensus.llmqTypeChainLocksV2 != Consensus::LLMQType::LLMQ_DEFCON) {
+        throw std::runtime_error("v23.1 must follow the Q60 ChainLocks switchover");
+    }
+    // Retiring the EHF profile is safe only while no EHF signing is requested.
+    if (consensus.V20Height != UNSET) {
+        throw std::runtime_error("v23.1 cannot retire the EHF quorum while V20 is scheduled");
+    }
+    if (network == CBaseChainParams::MAIN && consensus.nComputeNodeActivationHeight != UNSET) {
+        throw std::runtime_error("v23.1 keeps mainnet Compute registration dormant");
+    }
+    if (network == CBaseChainParams::TESTNET && consensus.nComputeNodeActivationHeight != height) {
+        throw std::runtime_error("v23.1 testnet Compute activation must equal H");
+    }
+}
+
+void ApplyV231ActivationBundle(Consensus::Params& consensus, int height, const std::string& network)
+{
+    constexpr int UNSET = std::numeric_limits<int>::max();
+    if (height == UNSET) return;
+    // Validate a copy before publishing any field: a rejected bundle must not
+    // leave a partially scheduled configuration behind.
+    auto candidate = consensus;
+    candidate.nV231ActivationHeight = height;
+    candidate.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_400_60] = height;
+    candidate.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_400_85] = height;
+    if (network == CBaseChainParams::TESTNET) candidate.nComputeNodeActivationHeight = height;
+    CheckV231ActivationBundle(candidate, network);
+    // Existing profile-specific DKG-grid checks still run at startup. The final
+    // release-grid decision is not replaced with a fabricated numeric H here.
+    consensus = std::move(candidate);
 }
 
 void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::string& network)
@@ -2081,12 +2138,18 @@ void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::str
     // edit is what this refuses: the ComputeNode layer has no height outside
     // devnet, and ending a profile's formation is a later release's decision,
     // taken here and on purpose like the two above.
-    if (consensus.nComputeNodeActivationHeight != UNSET) {
+    if (consensus.nComputeNodeActivationHeight != UNSET &&
+        !(network == CBaseChainParams::TESTNET && consensus.nV231ActivationHeight != UNSET &&
+          consensus.nComputeNodeActivationHeight == consensus.nV231ActivationHeight)) {
         throw std::runtime_error(strprintf(
             "%s: nComputeNodeActivationHeight is set on %s; the ComputeNode layer is not part of v23",
             __func__, network));
     }
-    if (!consensus.llmqFormationEndHeights.empty()) {
+    const bool complete_v231_retirements = consensus.nV231ActivationHeight != UNSET &&
+        consensus.llmqFormationEndHeights.size() == 2 &&
+        consensus.llmqFormationEndHeights.count(Consensus::LLMQType::LLMQ_400_60) &&
+        consensus.llmqFormationEndHeights.count(Consensus::LLMQType::LLMQ_400_85);
+    if (!consensus.llmqFormationEndHeights.empty() && !complete_v231_retirements) {
         throw std::runtime_error(strprintf(
             "%s: llmqFormationEndHeights names %d profile(s) on %s; ending a profile's formation is not part of v23",
             __func__, consensus.llmqFormationEndHeights.size(), network));
@@ -2111,6 +2174,7 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
     // override cannot name a profile the network does not carry either.
     CheckLLMQConfiguration(*params);
     CheckV23ActivationBundle(params->GetConsensus(), params->NetworkIDString());
+    CheckV231ActivationBundle(params->GetConsensus(), params->NetworkIDString());
     return params;
 }
 

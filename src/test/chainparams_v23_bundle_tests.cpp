@@ -24,6 +24,7 @@
 #include <llmq/options.h>
 #include <llmq/params.h>
 #include <util/system.h>
+#include <validation.h>
 
 #include <test/util/setup_common.h>
 
@@ -523,6 +524,172 @@ BOOST_FIXTURE_TEST_CASE(devnet_still_forms_them, DevNetSetup)
 {
     BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::DEVNET);
     CheckRegisteredButUnformedProfiles(/*expect_formed=*/true, /*prev_height=*/1000);
+}
+
+constexpr int TEST_V231_H = 576000;
+
+std::unique_ptr<const CChainParams> ScheduledV231Params(const std::string& network)
+{
+    auto params = CreateChainParams(gArgs, network);
+    auto& consensus = const_cast<Consensus::Params&>(params->GetConsensus());
+    if (network == CBaseChainParams::TESTNET) {
+        // Testnet rehearses v23.1 only on top of the complete earlier bundle.
+        ApplyV23ActivationBundle(consensus, 288000);
+    }
+    ApplyV231ActivationBundle(consensus, TEST_V231_H, network);
+    return params;
+}
+
+// These are fixture heights, not scheduled release heights. All network
+// defaults remain UNSET until the December release decision supplies H.
+BOOST_AUTO_TEST_CASE(v231_bundle_stays_dormant_until_a_height_is_supplied)
+{
+    for (const auto& network : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
+        auto params = CreateChainParams(gArgs, network);
+        auto consensus = params->GetConsensus();
+        BOOST_CHECK_EQUAL(consensus.nV231ActivationHeight, std::numeric_limits<int>::max());
+        const auto ends = consensus.llmqFormationEndHeights;
+        const int compute = consensus.nComputeNodeActivationHeight;
+        ApplyV231ActivationBundle(consensus, std::numeric_limits<int>::max(), network);
+        BOOST_CHECK(consensus.llmqFormationEndHeights == ends);
+        BOOST_CHECK_EQUAL(consensus.nComputeNodeActivationHeight, compute);
+        BOOST_CHECK_NO_THROW(CheckV231ActivationBundle(consensus, network));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(v231_bundle_uses_one_height_for_both_retirements_and_testnet_compute)
+{
+    for (const auto& network : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
+        const auto params = ScheduledV231Params(network);
+        const auto& consensus = params->GetConsensus();
+        BOOST_CHECK_EQUAL(consensus.nV231ActivationHeight, TEST_V231_H);
+        BOOST_CHECK_EQUAL(consensus.llmqFormationEndHeights.at(Consensus::LLMQType::LLMQ_400_60), TEST_V231_H);
+        BOOST_CHECK_EQUAL(consensus.llmqFormationEndHeights.at(Consensus::LLMQType::LLMQ_400_85), TEST_V231_H);
+        BOOST_CHECK_EQUAL(consensus.nComputeNodeActivationHeight,
+                          network == CBaseChainParams::TESTNET ? TEST_V231_H : std::numeric_limits<int>::max());
+        BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(consensus, network));
+        BOOST_CHECK_NO_THROW(CheckV231ActivationBundle(consensus, network));
+
+        for (const auto type : {Consensus::LLMQType::LLMQ_400_60, Consensus::LLMQType::LLMQ_400_85}) {
+            auto mismatched = consensus;
+            mismatched.llmqFormationEndHeights[type] = TEST_V231_H + 24;
+            BOOST_CHECK_THROW(CheckV231ActivationBundle(mismatched, network), std::runtime_error);
+            auto missing = consensus;
+            missing.llmqFormationEndHeights.erase(type);
+            BOOST_CHECK_THROW(CheckV231ActivationBundle(missing, network), std::runtime_error);
+        }
+
+        auto third_retirement = consensus;
+        third_retirement.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_50_60] = TEST_V231_H;
+        BOOST_CHECK_THROW(CheckV23ActivationBundle(third_retirement, network), std::runtime_error);
+
+        if (network == CBaseChainParams::TESTNET) {
+            for (const int compute : {UNSET, TEST_V231_H + 1}) {
+                auto bad_compute = consensus;
+                bad_compute.nComputeNodeActivationHeight = compute;
+                BOOST_CHECK_THROW(CheckV231ActivationBundle(bad_compute, network), std::runtime_error);
+            }
+        } else {
+            auto bad_compute = consensus;
+            bad_compute.nComputeNodeActivationHeight = TEST_V231_H;
+            BOOST_CHECK_THROW(CheckV231ActivationBundle(bad_compute, network), std::runtime_error);
+            BOOST_CHECK_THROW(CheckV23ActivationBundle(bad_compute, network), std::runtime_error);
+        }
+    }
+
+    auto dormant_testnet = CreateChainParams(gArgs, CBaseChainParams::TESTNET)->GetConsensus();
+    dormant_testnet.nComputeNodeActivationHeight = TEST_V231_H;
+    BOOST_CHECK_THROW(CheckV23ActivationBundle(dormant_testnet, CBaseChainParams::TESTNET), std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(v231_mnhf_retirement_startup_guard)
+{
+    for (const auto& network : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
+        const auto params = ScheduledV231Params(network);
+        BOOST_CHECK_NO_THROW(CheckLLMQConfiguration(*params));
+    }
+
+    {
+        const auto params = ScheduledV231Params(CBaseChainParams::MAIN);
+        auto& consensus = const_cast<Consensus::Params&>(params->GetConsensus());
+        consensus.V20Height = TEST_V231_H;
+        BOOST_CHECK_THROW(CheckLLMQConfiguration(*params), std::runtime_error);
+    }
+    {
+        const auto params = ScheduledV231Params(CBaseChainParams::MAIN);
+        auto& consensus = const_cast<Consensus::Params&>(params->GetConsensus());
+        consensus.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_400_85] = TEST_V231_H + 576;
+        BOOST_CHECK_THROW(CheckLLMQConfiguration(*params), std::runtime_error);
+    }
+    {
+        const auto params = ScheduledV231Params(CBaseChainParams::MAIN);
+        auto& consensus = const_cast<Consensus::Params&>(params->GetConsensus());
+        consensus.nV231ActivationHeight = UNSET;
+        BOOST_CHECK_THROW(CheckLLMQConfiguration(*params), std::runtime_error);
+    }
+    {
+        auto params = CreateChainParams(gArgs, CBaseChainParams::MAIN);
+        auto& consensus = const_cast<Consensus::Params&>(params->GetConsensus());
+        constexpr int OFF_400_85_GRID = 576 * 1000 + 72;
+        ApplyV231ActivationBundle(consensus, OFF_400_85_GRID, CBaseChainParams::MAIN);
+        BOOST_CHECK_THROW(CheckLLMQConfiguration(*params), std::runtime_error);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(v231_rejected_bundle_does_not_partially_modify_consensus)
+{
+    auto consensus = CreateChainParams(gArgs, CBaseChainParams::MAIN)->GetConsensus();
+    const auto ends = consensus.llmqFormationEndHeights;
+    const int saved_height = consensus.nV231ActivationHeight;
+    for (int height : {0, -1, consensus.nChainLocksV2ActivationHeight}) {
+        BOOST_CHECK_THROW(ApplyV231ActivationBundle(consensus, height, CBaseChainParams::MAIN), std::runtime_error);
+        BOOST_CHECK_EQUAL(consensus.nV231ActivationHeight, saved_height);
+        BOOST_CHECK(consensus.llmqFormationEndHeights == ends);
+    }
+    consensus.V20Height = 100;
+    BOOST_CHECK_THROW(ApplyV231ActivationBundle(consensus, 576000, CBaseChainParams::MAIN), std::runtime_error);
+    BOOST_CHECK_EQUAL(consensus.nV231ActivationHeight, saved_height);
+    BOOST_CHECK(consensus.llmqFormationEndHeights == ends);
+}
+
+BOOST_FIXTURE_TEST_CASE(v231_devnet_preserves_its_existing_compute_and_profile_history, DevNetSetup)
+{
+    auto consensus = Params().GetConsensus();
+    const int compute = consensus.nComputeNodeActivationHeight;
+    const auto previous_ends = consensus.llmqFormationEndHeights;
+    ApplyV231ActivationBundle(consensus, 576000, CBaseChainParams::DEVNET);
+    BOOST_CHECK_EQUAL(consensus.nComputeNodeActivationHeight, compute);
+    for (const auto& [type, height] : previous_ends) {
+        if (type != Consensus::LLMQType::LLMQ_400_60 && type != Consensus::LLMQType::LLMQ_400_85) {
+            BOOST_CHECK_EQUAL(consensus.llmqFormationEndHeights.at(type), height);
+        }
+    }
+    BOOST_CHECK_NO_THROW(CheckV231ActivationBundle(consensus, CBaseChainParams::DEVNET));
+
+    auto params = CreateChainParams(gArgs, CBaseChainParams::DEVNET);
+    auto& startup_consensus = const_cast<Consensus::Params&>(params->GetConsensus());
+    ApplyV231ActivationBundle(startup_consensus, TEST_V231_H, CBaseChainParams::DEVNET);
+    BOOST_REQUIRE(params->GetLLMQ(Consensus::LLMQType::LLMQ_400_85).has_value());
+    BOOST_CHECK(params->GetConsensus().llmqTypeMnhf == Consensus::LLMQType::LLMQ_400_85);
+    BOOST_CHECK_EQUAL(startup_consensus.llmqFormationEndHeights.at(Consensus::LLMQType::LLMQ_400_85), TEST_V231_H);
+    BOOST_CHECK_NO_THROW(CheckLLMQConfiguration(*params));
+}
+
+BOOST_AUTO_TEST_CASE(v231_masternode_reward_changes_only_from_the_shared_height)
+{
+    auto& consensus = const_cast<Consensus::Params&>(Params().GetConsensus());
+    struct RestoreHeight {
+        int& target;
+        const int saved{target};
+        ~RestoreHeight() { target = saved; }
+    } restore{consensus.nV231ActivationHeight};
+    consensus.nV231ActivationHeight = std::numeric_limits<int>::max();
+    BOOST_CHECK_EQUAL(GetMasternodePayment(576000), 10000 * COIN);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(std::numeric_limits<int>::max()), 10000 * COIN);
+    consensus.nV231ActivationHeight = 576000;
+    BOOST_CHECK_EQUAL(GetMasternodePayment(575999), 10000 * COIN);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(576000), 5000 * COIN);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(576001), 5000 * COIN);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
