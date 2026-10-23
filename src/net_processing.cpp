@@ -5723,13 +5723,18 @@ void PeerManagerImpl::ProcessMessage(
 
         CSimplifiedMNListDiff mnListDiff;
         std::string strError;
+        bool invalidRequest{false};
         if (BuildSimplifiedMNListDiff(*m_dmnman, m_chainman, *m_llmq_ctx->quorum_block_processor, *m_llmq_ctx->qman,
-                                      cmd.baseBlockHash, cmd.blockHash, mnListDiff, strError))
+                                      cmd.baseBlockHash, cmd.blockHash, mnListDiff, strError, /*extended=*/false, &invalidRequest))
         {
             m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::MNLISTDIFF, mnListDiff));
         } else {
             strError = strprintf("getmnlistdiff failed for baseBlockHash=%s, blockHash=%s. error=%s", cmd.baseBlockHash.ToString(), cmd.blockHash.ToString(), strError);
-            Misbehaving(pfrom.GetId(), 1, strError);
+            if (invalidRequest) {
+                Misbehaving(pfrom.GetId(), 1, strError);
+            } else {
+                LogPrint(BCLog::NET, "%s: %s\n", __func__, strError);
+            }
         }
         return;
     }

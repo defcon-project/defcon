@@ -633,6 +633,7 @@ public:
     template <typename Stream>
     void Unserialize(Stream& s, const uint8_t format_version = CDeterministicMN::MN_CURRENT_FORMAT)
     {
+        addedMNs.clear();
         updatedMNs.clear();
         removedMns.clear();
 

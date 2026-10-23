@@ -6,6 +6,9 @@
 
 #include <bls/bls.h>
 #include <evo/simplifiedmns.h>
+#include <evo/deterministicmns.h>
+#include <clientversion.h>
+#include <streams.h>
 #include <netbase.h>
 
 #include <boost/test/unit_test.hpp>
@@ -73,4 +76,55 @@ BOOST_AUTO_TEST_CASE(simplifiedmns_merkleroots)
 
     BOOST_CHECK(expectedMerkleRoot == calculatedMerkleRoot);
 }
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_FIXTURE_TEST_SUITE(evo_listdiff_serialization_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(reused_listdiff_replaces_all_containers)
+{
+    const auto make_diff = [](uint64_t id, const uint256& hash) {
+        CDeterministicMNListDiff diff;
+        auto mn = std::make_shared<CDeterministicMN>(id);
+        mn->proTxHash = hash;
+        mn->pdmnState = std::make_shared<const CDeterministicMNState>();
+        diff.addedMNs.push_back(mn);
+        diff.updatedMNs.emplace(id + 10, CDeterministicMNStateDiff{});
+        diff.removedMns.emplace(id + 20);
+        return diff;
+    };
+    const auto first = make_diff(1, uint256::ONE);
+    const auto second = make_diff(2, uint256S("02"));
+    const CDeterministicMNListDiff empty;
+    CDeterministicMNListDiff reused;
+    const auto read_and_compare = [&](const CDeterministicMNListDiff& expected) {
+        CDataStream encoded(SER_DISK, CLIENT_VERSION);
+        encoded << expected;
+        CDataStream fresh_encoded = encoded;
+        CDeterministicMNListDiff fresh;
+        fresh_encoded >> fresh;
+        encoded >> reused;
+        BOOST_CHECK(encoded.empty());
+        BOOST_CHECK_EQUAL(reused.addedMNs.size(), fresh.addedMNs.size());
+        BOOST_CHECK_EQUAL(reused.updatedMNs.size(), fresh.updatedMNs.size());
+        BOOST_CHECK(reused.removedMns == fresh.removedMns);
+        BOOST_CHECK_EQUAL(reused.HasChanges(), fresh.HasChanges());
+        CDataStream actual(SER_DISK, CLIENT_VERSION), reference(SER_DISK, CLIENT_VERSION);
+        actual << reused;
+        reference << expected;
+        BOOST_CHECK_EQUAL_COLLECTIONS(actual.begin(), actual.end(), reference.begin(), reference.end());
+    };
+
+    read_and_compare(first);
+    read_and_compare(empty);
+    read_and_compare(first);
+    read_and_compare(second);
+
+    // A complete replacement must also discard additions left by an incomplete read.
+    CDataStream truncated(SER_DISK, CLIENT_VERSION);
+    truncated << first.addedMNs;
+    BOOST_CHECK_THROW(reused.Unserialize(truncated), std::ios_base::failure);
+    read_and_compare(empty);
+    read_and_compare(second);
+}
+
 BOOST_AUTO_TEST_SUITE_END()
