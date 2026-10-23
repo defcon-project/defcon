@@ -10,6 +10,7 @@
 #include <chainparams.h>
 #include <deploymentstatus.h>
 #include <evo/deterministicmns.h>
+#include <evo/cbtx.h>
 #include <evo/evodb.h>
 #include <masternode/meta.h>
 #include <net.h>
@@ -29,11 +30,6 @@ class CQuorum;
 using CQuorumPtr = std::shared_ptr<CQuorum>;
 using CQuorumCPtr = std::shared_ptr<const CQuorum>;
 } // namespace llmq
-
-/**
- * Forward declarations
- */
-std::optional<std::pair<CBLSSignature, uint32_t>> GetNonNullCoinbaseChainlock(const CBlockIndex* pindex);
 
 static bool IsV19Active(gsl::not_null<const CBlockIndex*> pindexPrev)
 {

@@ -59,6 +59,8 @@ static bool CheckSpecialTxInner(CDeterministicMNManager& dmnman, llmq::CQuorumSn
         case TRANSACTION_ASSET_UNLOCK:
             return CheckAssetLockUnlockTx(chainman.m_blockman, qman, tx, pindexPrev, indexes, state);
         }
+    } catch (const CoinbaseChainlockReadError& e) {
+        return state.Error(e.what());
     } catch (const std::exception& e) {
         LogPrintf("%s -- failed: %s\n", __func__, e.what());
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "failed-check-special-tx");
@@ -152,15 +154,16 @@ bool CSpecialTxProcessor::ProcessSpecialTxsInBlock(const CBlock& block, const CB
 
         for (const auto& ptr_tx : block.vtx) {
             TxValidationState tx_state;
-            // At this moment CheckSpecialTx() and ProcessSpecialTx() may fail by 2 possible ways:
-            // consensus failures and "TX_BAD_SPECIAL"
+            // Preserve local errors separately from consensus failures and TX_BAD_SPECIAL.
             if (!CheckSpecialTxInner(m_dmnman, m_qsnapman, m_chainman, m_qman, *ptr_tx, pindex->pprev, view,
                                      creditPool.indexes, fCheckCbTxMerkleRoots, tx_state)) {
+                if (tx_state.IsError()) return state.Error(tx_state.GetRejectReason());
                 assert(tx_state.GetResult() == TxValidationResult::TX_CONSENSUS || tx_state.GetResult() == TxValidationResult::TX_BAD_SPECIAL);
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, tx_state.GetRejectReason(),
                                  strprintf("Special Transaction check failed (tx hash %s) %s", ptr_tx->GetHash().ToString(), tx_state.GetDebugMessage()));
             }
             if (!ProcessSpecialTx(*ptr_tx, pindex, tx_state)) {
+                if (tx_state.IsError()) return state.Error(tx_state.GetRejectReason());
                 assert(tx_state.GetResult() == TxValidationResult::TX_CONSENSUS || tx_state.GetResult() == TxValidationResult::TX_BAD_SPECIAL);
                 return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, tx_state.GetRejectReason(),
                                  strprintf("Process Special Transaction failed (tx hash %s) %s", ptr_tx->GetHash().ToString(), tx_state.GetDebugMessage()));
@@ -222,6 +225,8 @@ bool CSpecialTxProcessor::ProcessSpecialTxsInBlock(const CBlock& block, const CB
             bls::bls_legacy_scheme.store(false);
             LogPrintf("CSpecialTxProcessor::%s -- bls_legacy_scheme=%d\n", __func__, bls::bls_legacy_scheme.load());
         }
+    } catch (const CoinbaseChainlockReadError& e) {
+        return state.Error(e.what());
     } catch (const std::exception& e) {
         LogPrintf("CSpecialTxProcessor::%s -- FAILURE! %s\n", __func__, e.what());
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "failed-procspectxsinblock");
@@ -304,6 +309,8 @@ bool CSpecialTxProcessor::CheckCreditPoolDiffForBlock(const CBlock& block, const
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cbtx-assetlocked-amount");
         }
 
+    } catch (const CoinbaseChainlockReadError& e) {
+        return state.Error(e.what());
     } catch (const std::exception& e) {
         LogPrintf("CSpecialTxProcessor::%s -- FAILURE! %s\n", __func__, e.what());
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "failed-checkcreditpooldiff");

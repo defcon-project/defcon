@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <llmq/signing.h>
+#include <evo/cbtx.h>
 
 #include <llmq/commitment.h>
 #include <llmq/options.h>
@@ -373,6 +374,7 @@ bool CSigningManager::AlreadyHave(const CInv& inv) const
 }
 
 bool CSigningManager::GetRecoveredSigForGetData(const uint256& hash, CRecoveredSig& ret) const
+try
 {
     if (!db.GetRecoveredSigByHash(hash, ret)) {
         return false;
@@ -382,6 +384,9 @@ bool CSigningManager::GetRecoveredSigForGetData(const uint256& hash, CRecoveredS
         return false;
     }
     return true;
+} catch (const CoinbaseChainlockReadError& e) {
+    LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+    return false;
 }
 
 PeerMsgRet CSigningManager::ProcessMessage(const CNode& pfrom, PeerManager& peerman, const std::string& msg_type,
@@ -740,6 +745,7 @@ void CSigningManager::UnregisterRecoveredSigsListener(CRecoveredSigsListener* l)
 bool CSigningManager::AsyncSignIfMember(Consensus::LLMQType llmqType, CSigSharesManager& shareman, const uint256& id,
                                         const uint256& msgHash, const uint256& quorumHash, bool allowReSign,
                                         bool allowDiffMsgHashSigning)
+try
 {
     if (m_mn_activeman == nullptr) return false;
     if (m_mn_activeman->GetProTxHash().IsNull()) return false;
@@ -809,6 +815,9 @@ bool CSigningManager::AsyncSignIfMember(Consensus::LLMQType llmqType, CSigShares
     shareman.AsyncSign(quorum, id, msgHash);
 
     return true;
+} catch (const CoinbaseChainlockReadError& e) {
+    LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+    return false;
 }
 
 bool CSigningManager::HasRecoveredSig(Consensus::LLMQType llmqType, const uint256& id, const uint256& msgHash) const
@@ -885,7 +894,12 @@ void CSigningManager::InterruptWorkerThread()
 void CSigningManager::WorkThreadMain(PeerManager& peerman)
 {
     while (!workInterrupt) {
-        bool fMoreWork = ProcessPendingRecoveredSigs(peerman);
+        bool fMoreWork{false};
+        try {
+            fMoreWork = ProcessPendingRecoveredSigs(peerman);
+        } catch (const CoinbaseChainlockReadError& e) {
+            LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+        }
 
         Cleanup();
         // Drop pending recovered sigs queued by banned peers so a flood's backlog does not

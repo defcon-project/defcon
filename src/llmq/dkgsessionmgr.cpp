@@ -2,6 +2,7 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <evo/cbtx.h>
 #include <llmq/debug.h>
 #include <llmq/dkgsessionmgr.h>
 #include <llmq/options.h>
@@ -304,6 +305,7 @@ void CDKGSessionManager::WriteEncryptedContributions(Consensus::LLMQType llmqTyp
 }
 
 bool CDKGSessionManager::GetVerifiedContributions(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex, const std::vector<bool>& validMembers, std::vector<uint16_t>& memberIndexesRet, std::vector<BLSVerificationVectorPtr>& vvecsRet, std::vector<CBLSSecretKey>& skContributionsRet) const
+try
 {
     auto members = utils::GetAllQuorumMembers(llmqType, m_dmnman, m_qsnapman, pQuorumBaseBlockIndex);
 
@@ -347,9 +349,13 @@ bool CDKGSessionManager::GetVerifiedContributions(Consensus::LLMQType llmqType, 
         }
     }
     return true;
+} catch (const CoinbaseChainlockReadError& e) {
+    LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+    return false;
 }
 
 bool CDKGSessionManager::GetEncryptedContributions(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex, const std::vector<bool>& validMembers, const uint256& nProTxHash, std::vector<CBLSIESEncryptedObject<CBLSSecretKey>>& vecRet) const
+try
 {
     auto members = utils::GetAllQuorumMembers(llmqType, m_dmnman, m_qsnapman, pQuorumBaseBlockIndex);
 
@@ -380,6 +386,9 @@ bool CDKGSessionManager::GetEncryptedContributions(Consensus::LLMQType llmqType,
         }
     }
     return true;
+} catch (const CoinbaseChainlockReadError& e) {
+    LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+    return false;
 }
 
 void CDKGSessionManager::CleanupCache() const

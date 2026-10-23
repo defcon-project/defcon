@@ -2,6 +2,7 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <evo/cbtx.h>
 #include <llmq/ehf_signals.h>
 #include <llmq/quorums.h>
 #include <llmq/signing_shares.h>
@@ -45,7 +46,13 @@ void CEHFSignalsHandler::UpdatedBlockTip(const CBlockIndex* const pindexNew, boo
         return;
     }
 
-    const auto ehfSignals = mnhfman.GetSignalsStage(pindexNew);
+    CMNHFManager::Signals ehfSignals;
+    try {
+        ehfSignals = mnhfman.GetSignalsStage(pindexNew);
+    } catch (const CoinbaseChainlockReadError& e) {
+        LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+        return;
+    }
     for (const auto& deployment : Params().GetConsensus().vDeployments) {
         // Skip deployments that do not use dip0023
         if (!deployment.useEHF) continue;
@@ -57,6 +64,7 @@ void CEHFSignalsHandler::UpdatedBlockTip(const CBlockIndex* const pindexNew, boo
 }
 
 void CEHFSignalsHandler::trySignEHFSignal(int bit, const CBlockIndex* const pindex)
+try
 {
     MNHFTxPayload mnhfPayload;
     mnhfPayload.signal.versionBit = bit;
@@ -87,6 +95,9 @@ void CEHFSignalsHandler::trySignEHFSignal(int bit, const CBlockIndex* const pind
 
     WITH_LOCK(cs, ids.insert(requestId));
     sigman.AsyncSignIfMember(llmqType, shareman, requestId, msgHash, quorum->qc->quorumHash, false, true);
+} catch (const CoinbaseChainlockReadError& e) {
+    LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+    return;
 }
 
 MessageProcessingResult CEHFSignalsHandler::HandleNewRecoveredSig(const CRecoveredSig& recoveredSig)

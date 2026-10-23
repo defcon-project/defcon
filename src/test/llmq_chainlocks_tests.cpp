@@ -6,21 +6,35 @@
 #include <chainparams.h>
 #include <chainparamsbase.h>
 #include <consensus/params.h>
+#include <evo/cbtx.h>
+#include <evo/specialtx.h>
 #include <crypto/common.h>
 #include <hash.h>
 #include <llmq/chainlocks.h>
 #include <llmq/context.h>
 #include <llmq/options.h>
 #include <llmq/params.h>
+#include <node/blockstorage.h>
+#include <primitives/block.h>
 #include <protocol.h>
 #include <sync.h>
+#include <streams.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
 #include <util/system.h>
 
 #include <limits>
+#include <cerrno>
+#include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
+
+#ifndef WIN32
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include <boost/test/unit_test.hpp>
 
@@ -75,6 +89,85 @@ llmq::CChainLockSig TestChainLock(int height, uint32_t block_hash_number)
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(llmq_chainlocks_tests, BasicTestingSetup)
+
+#ifndef WIN32
+BOOST_FIXTURE_TEST_CASE(cbtx_uses_one_chainlock_snapshot, TestChain100Setup)
+{
+    auto& handler = *Assert(m_node.llmq_ctx)->clhandler;
+    LOCK(cs_main);
+    CBlock previous;
+    BOOST_REQUIRE(ReadBlockFromDisk(previous, m_node.chainman->ActiveChain().Tip(), Params().GetConsensus()));
+    CCbTx cbtx;
+    cbtx.nVersion = CCbTx::Version::CLSIG_AND_BALANCE;
+    CMutableTransaction coinbase(*previous.vtx[0]);
+    coinbase.nVersion = 3;
+    coinbase.nType = TRANSACTION_COINBASE;
+    SetTxPayload(coinbase, cbtx);
+    previous.vtx[0] = MakeTransactionRef(coinbase);
+    const uint256 previous_hash = previous.GetHash();
+    CBlockIndex index;
+    index.phashBlock = &previous_hash;
+    index.nHeight = Params().GetConsensus().DIP0003Height;
+    index.nFile = 999;
+    index.nStatus = BLOCK_HAVE_DATA;
+
+    CBLSSecretKey key;
+    key.MakeNewKey();
+    const auto signature_a = key.Sign(uint256::ONE, false);
+    const auto signature_b = key.Sign(TestChainLockHash(2), false);
+    const llmq::CChainLockSig best_a{index.nHeight - 2, previous_hash, signature_a};
+    const llmq::CChainLockSig best_b{index.nHeight - 1, previous_hash, signature_b};
+    llmq::ChainLocksTestAccess::SetBest(handler, best_a, ::SerializeHash(best_a));
+
+    // FIFO open pairs only once CalcCbTxBestChainlock has taken snapshot A and
+    // started its historical read. Publish B before unblocking that read.
+    const FlatFilePos pos{999, 0};
+    const auto path = GetBlockPosFilename(pos);
+    BOOST_REQUIRE_EQUAL(::mkfifo(fs::PathToString(path).c_str(), 0600), 0);
+    std::exception_ptr writer_error;
+    std::thread writer([&] {
+        try {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};
+            int fd{-1};
+            while ((fd = ::open(fs::PathToString(path).c_str(), O_WRONLY | O_NONBLOCK)) < 0) {
+                if (errno != ENXIO || std::chrono::steady_clock::now() >= deadline) {
+                    throw std::runtime_error("ChainLock test FIFO reader did not arrive");
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds{10});
+            }
+            if (::fcntl(fd, F_SETFL, 0) < 0) {
+                ::close(fd);
+                throw std::runtime_error("Cannot make ChainLock test FIFO blocking");
+            }
+            std::FILE* stream = ::fdopen(fd, "wb");
+            if (!stream) ::close(fd);
+            CAutoFile file(stream, SER_DISK, CLIENT_VERSION);
+            if (file.IsNull()) throw std::runtime_error("Cannot open ChainLock test FIFO");
+            llmq::ChainLocksTestAccess::SetBest(handler, best_b, ::SerializeHash(best_b));
+            file << previous;
+        } catch (...) {
+            writer_error = std::current_exception();
+        }
+    });
+    uint32_t diff{0};
+    CBLSSignature signature;
+    bool found{false};
+    std::exception_ptr reader_error;
+    try {
+        found = CalcCbTxBestChainlock(handler, &index, diff, signature);
+    } catch (...) {
+        reader_error = std::current_exception();
+    }
+    writer.join();
+    fs::remove(path);
+    if (writer_error) std::rethrow_exception(writer_error);
+    if (reader_error) std::rethrow_exception(reader_error);
+    BOOST_REQUIRE(found);
+    BOOST_CHECK_EQUAL(diff, 2U);
+    BOOST_CHECK(signature == signature_a);
+    BOOST_CHECK(handler.GetBestChainLock().getSig() == signature_b);
+}
+#endif
 
 // The signed-height profile resolver is the single point that keeps signing
 // and verification agreeing across the Q60 activation boundary. It must be

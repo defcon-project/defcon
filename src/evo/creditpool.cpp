@@ -294,12 +294,12 @@ bool CCreditPoolDiff::ProcessLockUnlockTransaction(const BlockManager& blockman,
     if (!tx.IsSpecialTxVersion()) return true;
     if (tx.nType != TRANSACTION_ASSET_LOCK && tx.nType != TRANSACTION_ASSET_UNLOCK) return true;
 
-    if (!CheckAssetLockUnlockTx(blockman, qman, tx, pindexPrev, pool.indexes, state)) {
-        // pass the state returned by the function above
-        return false;
-    }
-
     try {
+        if (!CheckAssetLockUnlockTx(blockman, qman, tx, pindexPrev, pool.indexes, state)) {
+            // pass the state returned by the function above
+            return false;
+        }
+
         switch (tx.nType) {
         case TRANSACTION_ASSET_LOCK:
             return Lock(tx, state);
@@ -308,6 +308,8 @@ bool CCreditPoolDiff::ProcessLockUnlockTransaction(const BlockManager& blockman,
         default:
             return true;
         }
+    } catch (const CoinbaseChainlockReadError& e) {
+        return state.Error(e.what());
     } catch (const std::exception& e) {
         LogPrintf("%s -- failed: %s\n", __func__, e.what());
         return state.Invalid(TxValidationResult::TX_CONSENSUS, "failed-procassetlocksinblock");
@@ -353,6 +355,10 @@ std::optional<CCreditPoolDiff> GetCreditPoolDiffForBlock(CCreditPoolManager& cpo
             const auto& tx = *block.vtx[i];
             TxValidationState tx_state;
             if (!creditPoolDiff.ProcessLockUnlockTransaction(blockman, qman, tx, tx_state)) {
+                if (tx_state.IsError()) {
+                    state.Error(tx_state.GetRejectReason());
+                    return std::nullopt;
+                }
                 assert(tx_state.GetResult() == TxValidationResult::TX_CONSENSUS);
                 state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, tx_state.GetRejectReason(),
                                  strprintf("Process Lock/Unlock Transaction failed at Credit Pool (tx hash %s) %s", tx.GetHash().ToString(), tx_state.GetDebugMessage()));
@@ -360,6 +366,9 @@ std::optional<CCreditPoolDiff> GetCreditPoolDiffForBlock(CCreditPoolManager& cpo
             }
         }
         return creditPoolDiff;
+    } catch (const CoinbaseChainlockReadError& e) {
+        state.Error(e.what());
+        return std::nullopt;
     } catch (const std::exception& e) {
         LogPrintf("%s -- failed: %s\n", __func__, e.what());
         state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "failed-getcreditpooldiff");

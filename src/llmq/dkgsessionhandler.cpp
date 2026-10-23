@@ -4,6 +4,7 @@
 
 #include <util/check.h>
 #include <llmq/dkgsessionhandler.h>
+#include <evo/cbtx.h>
 
 #include <bls/bls.h>
 #include <llmq/commitment.h>
@@ -22,6 +23,9 @@
 #include <validation.h>
 #include <util/thread.h>
 #include <util/underlying.h>
+
+#include <chrono>
+#include <thread>
 
 namespace llmq
 {
@@ -858,6 +862,13 @@ void CDKGSessionHandler::PhaseHandlerThread(CConnman& connman, PeerManager& peer
         try {
             LogPrint(BCLog::LLMQ_DKG, "CDKGSessionHandler::%s -- %s qi[%d] - starting HandleDKGRound\n", __func__, params.name, quorumIndex);
             HandleDKGRound(connman, peerman);
+        } catch (const CoinbaseChainlockReadError& e) {
+            dkgDebugManager.UpdateLocalSessionStatus(params.type, quorumIndex, [&](CDKGDebugSessionStatus& status) {
+                status.statusBits.aborted = true;
+                return true;
+            });
+            LogPrintf("%s: abort current DKG round: local ChainLock history unavailable: %s\n", __func__, e.what());
+            std::this_thread::sleep_for(std::chrono::milliseconds{100});
         } catch (AbortPhaseException& e) {
             dkgDebugManager.UpdateLocalSessionStatus(params.type, quorumIndex, [&](CDKGDebugSessionStatus& status) {
                 status.statusBits.aborted = true;

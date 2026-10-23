@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <llmq/instantsend.h>
+#include <evo/cbtx.h>
 
 #include <llmq/chainlocks.h>
 #include <llmq/commitment.h>
@@ -654,6 +655,7 @@ void CInstantSendManager::HandleNewInputLockRecoveredSig(const CRecoveredSig& re
 }
 
 void CInstantSendManager::TrySignInstantSendLock(const CTransaction& tx)
+try
 {
     const auto llmqType = GetLLMQType();
 
@@ -703,6 +705,9 @@ void CInstantSendManager::TrySignInstantSendLock(const CTransaction& tx)
     }
 
     sigman.AsyncSignIfMember(llmqType, shareman, id, tx.GetHash(), quorum->m_quorum_base_block_index->GetBlockHash());
+} catch (const CoinbaseChainlockReadError& e) {
+    LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+    return;
 }
 
 void CInstantSendManager::HandleNewInstantSendLockRecoveredSig(const llmq::CRecoveredSig& recoveredSig)
@@ -1682,8 +1687,14 @@ size_t CInstantSendManager::GetInstantSendLockCount() const
 void CInstantSendManager::WorkThreadMain(PeerManager& peerman)
 {
     while (!workInterrupt) {
-        bool fMoreWork = ProcessPendingInstantSendLocks(peerman);
-        ProcessPendingRetryLockTxs();
+        bool fMoreWork{false};
+        try {
+            fMoreWork = ProcessPendingInstantSendLocks(peerman);
+            ProcessPendingRetryLockTxs();
+        } catch (const CoinbaseChainlockReadError& e) {
+            LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+            fMoreWork = false;
+        }
 
         if (!fMoreWork && !workInterrupt.sleep_for(std::chrono::milliseconds(100))) {
             return;
