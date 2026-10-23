@@ -170,6 +170,8 @@ bool CalcCbTxMerkleRootMNList(const CBlock& block, const CBlockIndex* pindexPrev
         }
 
         return true;
+    } catch (const CoinbaseChainlockReadError& e) {
+        return state.Error(e.what());
     } catch (const std::exception& e) {
         LogPrintf("%s -- failed: %s\n", __func__, e.what());
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "failed-calc-cb-mnmerkleroot");
@@ -304,7 +306,13 @@ bool CheckCbTxBestChainlock(const CBlock& block, const CBlockIndex* pindex,
         return true;
     }
 
-    const auto prevBlockCoinbaseChainlock = GetNonNullCoinbaseChainlock(pindex->pprev);
+    std::optional<std::pair<CBLSSignature, uint32_t>> prevBlockCoinbaseChainlock;
+    try {
+        prevBlockCoinbaseChainlock = GetNonNullCoinbaseChainlock(pindex->pprev);
+    } catch (const CoinbaseChainlockReadError& e) {
+        // An unavailable local block must neither relax continuity nor mark the candidate invalid.
+        return state.Error(e.what());
+    }
     // If std::optional prevBlockCoinbaseChainlock is empty, then up to the previous block, coinbase Chainlock is null.
     if (prevBlockCoinbaseChainlock.has_value()) {
         // Previous block Coinbase has a non-null Chainlock: current block's Chainlock must be non-null and at least as new as the previous one
@@ -396,7 +404,7 @@ bool CalcCbTxBestChainlock(const llmq::CChainLocksHandler& chainlock_handler, co
 
         // Inserting our best CL
         bestCLHeightDiff = pindexPrev->nHeight - best_clsig.getHeight();
-        bestCLSignature = chainlock_handler.GetBestChainLock().getSig();
+        bestCLSignature = best_clsig.getSig();
 
         return true;
     }
@@ -423,14 +431,17 @@ std::optional<std::pair<CBLSSignature, uint32_t>> GetNonNullCoinbaseChainlock(co
 
     CBlock block;
     if (!ReadBlockFromDisk(block, pindex, Params().GetConsensus())) {
-        return std::nullopt;
+        throw CoinbaseChainlockReadError("Failed to read coinbase ChainLock block");
+    }
+    if (block.vtx.empty() || !block.vtx[0]->IsCoinBase() || block.vtx[0]->nType != TRANSACTION_COINBASE) {
+        throw CoinbaseChainlockReadError("Invalid historical coinbase ChainLock transaction");
     }
 
     const CTransactionRef cbTx = block.vtx[0];
     const auto opt_cbtx = GetTxPayload<CCbTx>(*cbTx);
 
     if (!opt_cbtx.has_value()) {
-        return std::nullopt;
+        throw CoinbaseChainlockReadError("Invalid historical coinbase ChainLock payload");
     }
 
     const CCbTx& cbtx = opt_cbtx.value();

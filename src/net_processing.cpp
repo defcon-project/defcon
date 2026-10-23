@@ -3,6 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <evo/cbtx.h>
 #include <net_processing.h>
 
 #include <addrman.h>
@@ -6712,6 +6713,7 @@ void PeerManagerImpl::ForgetDSLEarlyVoucher(NodeId id, int connected_height)
 }
 
 void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
+try
 {
     if (m_dslman == nullptr || m_dmnman == nullptr) return;
     const Consensus::Params& consensus = m_chainparams.GetConsensus();
@@ -7060,6 +7062,9 @@ void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
             }
         }
     }
+} catch (const CoinbaseChainlockReadError& e) {
+    LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+    return;
 }
 
 bool PeerManagerImpl::MaybeDiscourageAndDisconnect(CNode& pnode, Peer& peer)

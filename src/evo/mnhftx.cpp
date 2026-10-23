@@ -4,6 +4,7 @@
 
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
+#include <evo/cbtx.h>
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
 #include <evo/specialtx.h>
@@ -246,6 +247,9 @@ std::optional<CMNHFManager::Signals> CMNHFManager::ProcessBlock(const CBlock& bl
 
         AddToCache(signals, pindex);
         return signals;
+    } catch (const CoinbaseChainlockReadError& e) {
+        state.Error(e.what());
+        return std::nullopt;
     } catch (const std::exception& e) {
         LogPrintf("CMNHFManager::ProcessBlock -- failed: %s\n", e.what());
         state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "failed-proc-mnhf-inblock");
@@ -303,6 +307,10 @@ CMNHFManager::Signals CMNHFManager::GetForBlock(const CBlockIndex* pindex)
         signalsTmp = ProcessBlock(block, pindex_top, false, state);
         if (!signalsTmp.has_value()) {
             LogPrintf("%s: process block failed due to %s\n", __func__, state.ToString());
+            if (state.IsError()) {
+                // Preserve the local history error across recursive ancestor replay.
+                throw CoinbaseChainlockReadError(state.GetRejectReason());
+            }
             throw std::runtime_error("failed-getehfforblock-construct");
         }
 

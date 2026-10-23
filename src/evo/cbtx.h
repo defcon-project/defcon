@@ -10,6 +10,7 @@
 #include <univalue.h>
 
 #include <optional>
+#include <stdexcept>
 
 class BlockValidationState;
 class CBlock;
@@ -102,6 +103,14 @@ bool CheckCbTxBestChainlock(const CBlock& block, const CBlockIndex* pindexPrev,
 bool CalcCbTxBestChainlock(const llmq::CChainLocksHandler& chainlock_handler, const CBlockIndex* pindexPrev,
                            uint32_t& bestCLHeightDiff, CBLSSignature& bestCLSignature);
 
+/** Local historical data is unavailable or malformed, rather than a valid absence of a ChainLock. */
+class CoinbaseChainlockReadError : public std::runtime_error
+{
+public:
+    using std::runtime_error::runtime_error;
+};
+
+/** Returns nullopt only for valid historical absence; throws CoinbaseChainlockReadError on local read failure. */
 std::optional<std::pair<CBLSSignature, uint32_t>> GetNonNullCoinbaseChainlock(const CBlockIndex* pindex);
 
 #endif // BITCOIN_EVO_CBTX_H

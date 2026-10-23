@@ -288,6 +288,32 @@ class LLMQChainLocksTest(DashTestFramework):
 
         self.log.info("Test bestCLHeightDiff restrictions")
         self.test_bestCLHeightDiff()
+        self.test_coinbase_chainlock_reindex()
+
+    def test_coinbase_chainlock_reindex(self):
+        """Intact historical v3 ChainLocks survive full replay without peer assistance."""
+        self.sync_all()
+        node = self.nodes[0]
+        tip = node.getbestblockhash()
+        height = node.getblockcount()
+        serialized_tip = node.getblock(tip, 0)
+        cbtx = node.getblock(tip, 2)["cbTx"]
+        assert int(cbtx["version"]) >= 3
+        assert int(cbtx["bestCLSignature"], 16) != 0
+
+        self.log.info("Reindex intact coinbase ChainLock history with assumevalid disabled")
+        # Keep the framework's loopback bind. Stop every peer so the replay is
+        # isolated without combining its bind setting with the incompatible listen=0.
+        for peer in self.nodes[1:]:
+            peer.stop_node()
+        self.restart_node(0, extra_args=list(node.extra_args) +
+                          ["-reindex", "-assumevalid=0", "-connect=0"])
+        self.wait_until(lambda: node.getblockcount() == height and node.getbestblockhash() == tip, timeout=120)
+        assert_equal(node.getconnectioncount(), 0)
+        assert_equal(node.getblock(tip, 0), serialized_tip)
+        assert_equal(node.getblock(tip, 2)["cbTx"], cbtx)
+        self.test_coinbase_best_cl(node)
+        self.log.info("Coinbase ChainLock reindex preserved height, tip, payload and valid signature")
 
     def create_chained_txs(self, node, amount):
         txid = node.sendtoaddress(node.getnewaddress(), amount)

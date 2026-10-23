@@ -2,6 +2,7 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <evo/cbtx.h>
 #include <llmq/quorums.h>
 #include <llmq/commitment.h>
 #include <llmq/blockprocessor.h>
@@ -278,6 +279,7 @@ void CQuorumManager::Stop()
 }
 
 void CQuorumManager::TriggerQuorumDataRecoveryThreads(CConnman& connman, const CBlockIndex* pIndex) const
+try
 {
     if ((m_mn_activeman == nullptr && !IsWatchQuorumsEnabled()) || !QuorumDataRecoveryEnabled() || pIndex == nullptr) {
         return;
@@ -327,6 +329,9 @@ void CQuorumManager::TriggerQuorumDataRecoveryThreads(CConnman& connman, const C
             StartQuorumDataRecoveryThread(connman, pQuorum, pIndex, nDataMask);
         }
     }
+} catch (const CoinbaseChainlockReadError& e) {
+    LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+    return;
 }
 
 void CQuorumManager::InitializeQuorumConnections(CConnman& connman, const CBlockIndex* pindexNew) const
@@ -355,6 +360,7 @@ void CQuorumManager::UpdatedBlockTip(const CBlockIndex* pindexNew, CConnman& con
 
 void CQuorumManager::CheckQuorumConnections(CConnman& connman, const Consensus::LLMQParams& llmqParams,
                                             const CBlockIndex* pindexNew) const
+try
 {
     if (m_mn_activeman == nullptr && !IsWatchQuorumsEnabled()) return;
 
@@ -421,6 +427,9 @@ void CQuorumManager::CheckQuorumConnections(CConnman& connman, const Consensus::
         LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- removing masternodes quorum connections for quorum %s:\n", __func__, quorumHash.ToString());
         connman.RemoveMasternodeQuorumNodes(llmqParams.type, quorumHash);
     }
+} catch (const CoinbaseChainlockReadError& e) {
+    LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+    return;
 }
 
 CQuorumPtr CQuorumManager::BuildQuorumFromCommitment(const Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pQuorumBaseBlockIndex, bool populate_cache) const
@@ -1229,40 +1238,44 @@ void CQuorumManager::StartCleanupOldQuorumDataThread(const CBlockIndex* pIndex) 
 
     // do not block the caller thread
     workerPool.push([pIndex, t, this](int threadId) {
-        std::set<uint256> dbKeysToSkip;
+        try {
+            std::set<uint256> dbKeysToSkip;
 
-        if (LOCK(cs_cleanup); cleanupQuorumsCache.empty()) {
-            utils::InitQuorumsCache(cleanupQuorumsCache, false);
-        }
-        for (const auto& params : Params().GetConsensus().llmqs) {
-            if (quorumThreadInterrupt) {
-                break;
+            if (LOCK(cs_cleanup); cleanupQuorumsCache.empty()) {
+                utils::InitQuorumsCache(cleanupQuorumsCache, false);
             }
-            LOCK(cs_cleanup);
-            auto& cache = cleanupQuorumsCache[params.type];
-            const CBlockIndex* pindex_loop{pIndex};
-            std::set<uint256> quorum_keys;
-            while (pindex_loop != nullptr && pIndex->nHeight - pindex_loop->nHeight < params.max_store_depth()) {
-                uint256 quorum_key;
-                if (cache.get(pindex_loop->GetBlockHash(), quorum_key)) {
-                    quorum_keys.insert(quorum_key);
-                    if (quorum_keys.size() >= static_cast<size_t>(params.keepOldKeys)) break; // extra safety belt
+            for (const auto& params : Params().GetConsensus().llmqs) {
+                if (quorumThreadInterrupt) {
+                    break;
                 }
-                pindex_loop = pindex_loop->pprev;
+                LOCK(cs_cleanup);
+                auto& cache = cleanupQuorumsCache[params.type];
+                const CBlockIndex* pindex_loop{pIndex};
+                std::set<uint256> quorum_keys;
+                while (pindex_loop != nullptr && pIndex->nHeight - pindex_loop->nHeight < params.max_store_depth()) {
+                    uint256 quorum_key;
+                    if (cache.get(pindex_loop->GetBlockHash(), quorum_key)) {
+                        quorum_keys.insert(quorum_key);
+                        if (quorum_keys.size() >= static_cast<size_t>(params.keepOldKeys)) break; // extra safety belt
+                    }
+                    pindex_loop = pindex_loop->pprev;
+                }
+                for (const auto& pQuorum : ScanQuorums(params.type, pIndex, params.keepOldKeys - quorum_keys.size())) {
+                    const uint256 quorum_key = MakeQuorumKey(*pQuorum);
+                    quorum_keys.insert(quorum_key);
+                    cache.insert(pQuorum->m_quorum_base_block_index->GetBlockHash(), quorum_key);
+                }
+                dbKeysToSkip.merge(quorum_keys);
             }
-            for (const auto& pQuorum : ScanQuorums(params.type, pIndex, params.keepOldKeys - quorum_keys.size())) {
-                const uint256 quorum_key = MakeQuorumKey(*pQuorum);
-                quorum_keys.insert(quorum_key);
-                cache.insert(pQuorum->m_quorum_base_block_index->GetBlockHash(), quorum_key);
+
+            if (!quorumThreadInterrupt) {
+                WITH_LOCK(cs_db, DataCleanupHelper(*db, dbKeysToSkip));
             }
-            dbKeysToSkip.merge(quorum_keys);
-        }
 
-        if (!quorumThreadInterrupt) {
-            WITH_LOCK(cs_db, DataCleanupHelper(*db, dbKeysToSkip));
+            LogPrint(BCLog::LLMQ, "CQuorumManager::StartCleanupOldQuorumDataThread -- done. time=%d\n", t.count());
+        } catch (const CoinbaseChainlockReadError& e) {
+            LogPrintf("Quorum cleanup skipped: local ChainLock history unavailable: %s\n", e.what());
         }
-
-        LogPrint(BCLog::LLMQ, "CQuorumManager::StartCleanupOldQuorumDataThread -- done. time=%d\n", t.count());
     });
 }
 

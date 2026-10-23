@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <llmq/signing_shares.h>
+#include <evo/cbtx.h>
 
 #include <llmq/options.h>
 #include <llmq/quorums.h>
@@ -1626,15 +1627,21 @@ void CSigSharesManager::WorkThreadMain(CConnman& connman, PeerManager& peerman)
     while (!workInterrupt) {
         RemoveBannedNodeStates(peerman);
 
-        bool fMoreWork = ProcessPendingSigShares(peerman, connman);
-        SignPendingSigShares(connman, peerman);
+        bool fMoreWork{false};
+        try {
+            fMoreWork = ProcessPendingSigShares(peerman, connman);
+            SignPendingSigShares(connman, peerman);
 
-        if (GetTimeMillis() - lastSendTime > 100) {
-            SendMessages(connman);
-            lastSendTime = GetTimeMillis();
+            if (GetTimeMillis() - lastSendTime > 100) {
+                SendMessages(connman);
+                lastSendTime = GetTimeMillis();
+            }
+
+            Cleanup(connman);
+        } catch (const CoinbaseChainlockReadError& e) {
+            LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
+            fMoreWork = false;
         }
-
-        Cleanup(connman);
 
         // TODO Wakeup when pending signing is needed?
         if (!fMoreWork && !workInterrupt.sleep_for(std::chrono::milliseconds(100))) {
