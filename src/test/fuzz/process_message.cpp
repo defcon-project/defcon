@@ -29,6 +29,7 @@
 #include <llmq/quorums.h>
 #include <llmq/signing.h>
 #include <llmq/signing_shares.h>
+#include <masternode/meta.h>
 
 #include <atomic>
 #include <cassert>
@@ -68,6 +69,7 @@ void initialize_process_message()
             /*chain_name=*/CBaseChainParams::REGTEST,
             /*extra_args=*/{"-txreconciliation"});
     g_setup = testing_setup.get();
+    Assert(g_setup->m_node.mn_metaman->LoadCache(false));
     for (int i = 0; i < 2 * COINBASE_MATURITY; i++) {
         MineBlock(g_setup->m_node, CScript() << OP_TRUE);
     }
@@ -155,6 +157,10 @@ FUZZ_TARGET_MSG(mnlistdiff);
 FUZZ_TARGET_MSG(notfound);
 FUZZ_TARGET_MSG(ping);
 FUZZ_TARGET_MSG(pong);
+FUZZ_TARGET_MSG(posechal);
+FUZZ_TARGET_MSG(poseresp);
+FUZZ_TARGET_MSG(posereport);
+FUZZ_TARGET_MSG(posecommit);
 FUZZ_TARGET_MSG(qbsigs);
 FUZZ_TARGET_MSG(qcomplaint);
 FUZZ_TARGET_MSG(qcontrib);
