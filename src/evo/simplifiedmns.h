@@ -172,9 +172,11 @@ public:
     [[nodiscard]] UniValue ToJson(bool extended = false) const;
 };
 
+/** invalidRequestRet is true only for invalid request hashes, chain membership or height order.
+ * Local block/quorum availability failures must not be attributed to the requester. */
 bool BuildSimplifiedMNListDiff(CDeterministicMNManager& dmnman, const ChainstateManager& chainman,
                                const llmq::CQuorumBlockProcessor& qblockman, const llmq::CQuorumManager& qman,
                                const uint256& baseBlockHash, const uint256& blockHash, CSimplifiedMNListDiff& mnListDiffRet,
-                               std::string& errorRet, bool extended = false) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+                               std::string& errorRet, bool extended = false, bool* invalidRequestRet = nullptr) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
 #endif // BITCOIN_EVO_SIMPLIFIEDMNS_H

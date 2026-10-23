@@ -6,6 +6,8 @@
 
 #include <banman.h>
 #include <chainparams.h>
+#include <evo/simplifiedmns.h>
+#include <llmq/context.h>
 #include <net.h>
 #include <net_processing.h>
 #include <pubkey.h>
@@ -21,6 +23,7 @@
 #include <validation.h>
 
 #include <array>
+#include <limits>
 #include <stdint.h>
 
 #include <boost/test/unit_test.hpp>
@@ -453,6 +456,88 @@ BOOST_AUTO_TEST_CASE(DoS_bantime)
     BOOST_CHECK(!banman->IsDiscouraged(addr));
 
     peerLogic->FinalizeNode(dummyNode);
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_FIXTURE_TEST_SUITE(mnlistdiff_peer_tests, TestChain100Setup)
+
+BOOST_AUTO_TEST_CASE(local_read_failure_does_not_score_requester)
+{
+    LOCK(NetEventsInterface::g_msgproc_mutex);
+    auto& connman = static_cast<ConnmanTestMsg&>(*m_node.connman);
+    auto& peerman = *m_node.peerman;
+    auto& chainman = *m_node.chainman;
+    auto& llmq_ctx = *m_node.llmq_ctx;
+    CBlockIndex* tip{WITH_LOCK(cs_main, return chainman.ActiveChain().Tip())};
+    const auto genesis_hash = Params().GenesisBlock().GetHash();
+    const auto tip_hash = tip->GetBlockHash();
+
+    const auto build = [&](const uint256& base, const uint256& target, bool& invalid, std::string& error) {
+        LOCK(cs_main);
+        CSimplifiedMNListDiff diff;
+        return BuildSimplifiedMNListDiff(*m_node.dmnman, chainman, *llmq_ctx.quorum_block_processor,
+                                          *llmq_ctx.qman, base, target, diff, error, false, &invalid);
+    };
+    bool invalid{true};
+    std::string error;
+    BOOST_REQUIRE(build(uint256{}, tip_hash, invalid, error));
+    BOOST_CHECK(!invalid);
+
+    CNode peer{/*id=*/0, /*sock=*/nullptr, CAddress(ip(0xa0b0c001), NODE_NETWORK),
+               /*nKeyedNetGroupIn=*/0, /*nLocalHostNonceIn=*/0, CAddress(), /*addrNameIn=*/"",
+               ConnectionType::INBOUND, /*inbound_onion=*/false};
+    connman.Handshake(peer, true, NODE_NETWORK, NODE_NETWORK, PROTOCOL_VERSION, true);
+    const std::atomic<bool> interrupt{false};
+    const auto request = [&](const uint256& base, const uint256& target) {
+        CGetSimplifiedMNListDiff cmd;
+        cmd.baseBlockHash = base;
+        cmd.blockHash = target;
+        CDataStream recv(SER_NETWORK, PROTOCOL_VERSION);
+        recv << cmd;
+        peerman.ProcessMessage(peer, NetMsgType::GETMNLISTDIFF, recv,
+                               GetTime<std::chrono::microseconds>(), interrupt);
+    };
+    const auto score = [&]() {
+        CNodeStateStats stats;
+        BOOST_CHECK(peerman.GetNodeStateStats(peer.GetId(), stats));
+        return stats.m_misbehavior_score;
+    };
+
+    // Invalid target, invalid base and reversed order retain the one-point policy.
+    request(uint256{}, uint256::ONE);
+    request(uint256::ONE, tip_hash);
+    request(tip_hash, genesis_hash);
+    BOOST_CHECK_EQUAL(score(), 3);
+
+    {
+        // Redirect only this disposable fixture's read to an absent block file.
+        struct RestoreFile {
+            CBlockIndex& index;
+            int saved;
+            ~RestoreFile() { LOCK(cs_main); index.nFile = saved; }
+        } restore{*tip, WITH_LOCK(cs_main, return tip->nFile)};
+        WITH_LOCK(cs_main, tip->nFile = std::numeric_limits<int>::max());
+        invalid = true;
+        BOOST_CHECK(!build(uint256{}, tip_hash, invalid, error));
+        BOOST_CHECK(!invalid);
+        BOOST_CHECK_EQUAL(error, strprintf("failed to read block %s from disk", tip_hash.ToString()));
+        for (int i = 0; i <= DISCOURAGEMENT_THRESHOLD; ++i) request(uint256{}, tip_hash);
+        BOOST_CHECK_EQUAL(score(), 3);
+        BOOST_CHECK(!peer.fDisconnect);
+    }
+
+    invalid = true;
+    BOOST_CHECK(build(uint256{}, tip_hash, invalid, error));
+    BOOST_CHECK(!invalid);
+    request(uint256{}, tip_hash);
+    BOOST_CHECK_EQUAL(score(), 3);
+    BOOST_CHECK(!peer.fDisconnect);
+
+    // Local failures must not consume any of the requester's discouragement budget.
+    for (int i = 3; i < DISCOURAGEMENT_THRESHOLD; ++i) request(uint256{}, uint256::ONE);
+    BOOST_CHECK_EQUAL(score(), DISCOURAGEMENT_THRESHOLD);
+    peerman.FinalizeNode(peer);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

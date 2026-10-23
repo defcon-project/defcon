@@ -331,15 +331,17 @@ CSimplifiedMNListDiff BuildSimplifiedDiff(const CDeterministicMNList& from, cons
 
 bool BuildSimplifiedMNListDiff(CDeterministicMNManager& dmnman, const ChainstateManager& chainman, const llmq::CQuorumBlockProcessor& qblockman,
                                const llmq::CQuorumManager& qman, const uint256& baseBlockHash, const uint256& blockHash,
-                               CSimplifiedMNListDiff& mnListDiffRet, std::string& errorRet, bool extended)
+                               CSimplifiedMNListDiff& mnListDiffRet, std::string& errorRet, bool extended, bool* invalidRequestRet)
 {
     AssertLockHeld(cs_main);
     mnListDiffRet = CSimplifiedMNListDiff();
+    if (invalidRequestRet) *invalidRequestRet = false;
 
     const CBlockIndex* baseBlockIndex = chainman.ActiveChain().Genesis();
     if (!baseBlockHash.IsNull()) {
         baseBlockIndex = chainman.m_blockman.LookupBlockIndex(baseBlockHash);
         if (!baseBlockIndex) {
+            if (invalidRequestRet) *invalidRequestRet = true;
             errorRet = strprintf("block %s not found", baseBlockHash.ToString());
             return false;
         }
@@ -347,15 +349,18 @@ bool BuildSimplifiedMNListDiff(CDeterministicMNManager& dmnman, const Chainstate
 
     const CBlockIndex* blockIndex = chainman.m_blockman.LookupBlockIndex(blockHash);
     if (!blockIndex) {
+        if (invalidRequestRet) *invalidRequestRet = true;
         errorRet = strprintf("block %s not found", blockHash.ToString());
         return false;
     }
 
     if (!chainman.ActiveChain().Contains(baseBlockIndex) || !chainman.ActiveChain().Contains(blockIndex)) {
+        if (invalidRequestRet) *invalidRequestRet = true;
         errorRet = strprintf("block %s and %s are not in the same chain", baseBlockHash.ToString(), blockHash.ToString());
         return false;
     }
     if (baseBlockIndex->nHeight > blockIndex->nHeight) {
+        if (invalidRequestRet) *invalidRequestRet = true;
         errorRet = strprintf("base block %s is higher then block %s", baseBlockHash.ToString(), blockHash.ToString());
         return false;
     }
