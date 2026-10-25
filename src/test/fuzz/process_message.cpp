@@ -49,17 +49,19 @@ size_t& GetNumMsgTypes()
     static size_t g_num_msg_types{0};
     return g_num_msg_types;
 }
-#define FUZZ_TARGET_MSG(msg_type)                                            \
+#define FUZZ_TARGET_MSG_WITH_INIT(msg_type, initializer, fixed_message_type) \
     struct msg_type##_Count_Before_Main {                                    \
         msg_type##_Count_Before_Main()                                       \
         {                                                                    \
             ++GetNumMsgTypes();                                              \
         }                                                                    \
     } const static g_##msg_type##_count_before_main;                         \
-    FUZZ_TARGET_INIT(process_message_##msg_type, initialize_process_message) \
+    FUZZ_TARGET_INIT(process_message_##msg_type, initializer)                \
     {                                                                        \
-        fuzz_target(buffer, #msg_type);                                      \
+        fuzz_target(buffer, #msg_type, fixed_message_type);                  \
     }
+#define FUZZ_TARGET_MSG(msg_type) FUZZ_TARGET_MSG_WITH_INIT(msg_type, initialize_process_message, false)
+#define FUZZ_TARGET_DSL_MSG(msg_type) FUZZ_TARGET_MSG_WITH_INIT(msg_type, initialize_process_message_dsl, true)
 
 void initialize_process_message()
 {
@@ -76,7 +78,24 @@ void initialize_process_message()
     SyncWithValidationInterfaceQueue();
 }
 
-void fuzz_target(FuzzBufferType buffer, const std::string& LIMIT_TO_MESSAGE_TYPE)
+void initialize_process_message_dsl()
+{
+    Assert(GetNumMsgTypes() == getAllNetMessageTypes().size());
+
+    // This fixture is used only by the four PoSe message targets. Activating
+    // DSL at height zero exercises the normal parser path on the mined regtest chain.
+    static const auto testing_setup = MakeNoLogFileContext<const TestingSetup>(
+            /*chain_name=*/CBaseChainParams::REGTEST,
+            /*extra_args=*/{"-txreconciliation", "-testactivationheight=dsl@0"});
+    g_setup = testing_setup.get();
+    Assert(g_setup->m_node.mn_metaman->LoadCache(false));
+    for (int i = 0; i < 2 * COINBASE_MATURITY; i++) {
+        MineBlock(g_setup->m_node, CScript() << OP_TRUE);
+    }
+    SyncWithValidationInterfaceQueue();
+}
+
+void fuzz_target(FuzzBufferType buffer, const std::string& LIMIT_TO_MESSAGE_TYPE, bool fixed_message_type = false)
 {
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
 
@@ -87,14 +106,21 @@ void fuzz_target(FuzzBufferType buffer, const std::string& LIMIT_TO_MESSAGE_TYPE
 
     LOCK(NetEventsInterface::g_msgproc_mutex);
 
-    const std::string random_message_type{fuzzed_data_provider.ConsumeBytesAsString(CMessageHeader::COMMAND_SIZE).c_str()};
+    const std::string random_message_type = fixed_message_type
+        ? LIMIT_TO_MESSAGE_TYPE
+        : fuzzed_data_provider.ConsumeBytesAsString(CMessageHeader::COMMAND_SIZE).c_str();
     if (!LIMIT_TO_MESSAGE_TYPE.empty() && random_message_type != LIMIT_TO_MESSAGE_TYPE) {
         return;
     }
     CNode& p2p_node = *ConsumeNodeAsUniquePtr(fuzzed_data_provider).release();
 
     connman.AddTestNode(p2p_node);
-    FillNode(fuzzed_data_provider, connman, p2p_node);
+    if (fixed_message_type) {
+        connman.Handshake(p2p_node, /*successfully_connected=*/true, NODE_NETWORK, NODE_NETWORK,
+                          PROTOCOL_VERSION, /*relay_txs=*/true);
+    } else {
+        FillNode(fuzzed_data_provider, connman, p2p_node);
+    }
 
     const auto mock_time = ConsumeTime(fuzzed_data_provider);
     SetMockTime(mock_time);
@@ -157,10 +183,10 @@ FUZZ_TARGET_MSG(mnlistdiff);
 FUZZ_TARGET_MSG(notfound);
 FUZZ_TARGET_MSG(ping);
 FUZZ_TARGET_MSG(pong);
-FUZZ_TARGET_MSG(posechal);
-FUZZ_TARGET_MSG(poseresp);
-FUZZ_TARGET_MSG(posereport);
-FUZZ_TARGET_MSG(posecommit);
+FUZZ_TARGET_DSL_MSG(posechal);
+FUZZ_TARGET_DSL_MSG(poseresp);
+FUZZ_TARGET_DSL_MSG(posereport);
+FUZZ_TARGET_DSL_MSG(posecommit);
 FUZZ_TARGET_MSG(qbsigs);
 FUZZ_TARGET_MSG(qcomplaint);
 FUZZ_TARGET_MSG(qcontrib);
