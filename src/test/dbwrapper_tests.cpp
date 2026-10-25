@@ -3,11 +3,13 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <dbwrapper.h>
+#include <txdb.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>
 #include <util/string.h>
 
 #include <memory>
+#include <stdexcept>
 
 #include <boost/test/unit_test.hpp>
 
@@ -20,6 +22,33 @@ static bool is_null_key(const std::vector<unsigned char>& key) {
 
     return isnull;
 }
+
+
+namespace {
+class CopyFaultValue
+{
+public:
+    int m_value{0};
+    static int s_copies_before_throw;
+
+    CopyFaultValue() = default;
+    explicit CopyFaultValue(int value) : m_value{value} {}
+    CopyFaultValue(const CopyFaultValue& other) : m_value{other.m_value}
+    {
+        if (s_copies_before_throw == 0) throw std::runtime_error("injected value copy failure");
+        if (s_copies_before_throw > 0) --s_copies_before_throw;
+    }
+    CopyFaultValue& operator=(const CopyFaultValue& other)
+    {
+        m_value = other.m_value;
+        return *this;
+    }
+
+    SERIALIZE_METHODS(CopyFaultValue, obj) { READWRITE(obj.m_value); }
+};
+
+int CopyFaultValue::s_copies_before_throw{-1};
+} // namespace
 
 BOOST_FIXTURE_TEST_SUITE(dbwrapper_tests, BasicTestingSetup)
 
@@ -394,6 +423,310 @@ BOOST_AUTO_TEST_CASE(unicodepath)
 
     fs::path lockPath = ph / "LOCK";
     BOOST_CHECK(fs::exists(lockPath));
+}
+
+
+BOOST_AUTO_TEST_CASE(dbwrapper_transaction_exception_safety)
+{
+    const fs::path path = m_args.GetDataDirBase() / "dbwrapper_transaction_exception_safety";
+    CDBWrapper dbw(path, (1 << 20), true, true, false);
+    CDBBatch batch(dbw);
+    using RootTransaction = CDBTransaction<CDBWrapper, CDBBatch>;
+    using CurTransaction = CDBTransaction<RootTransaction, RootTransaction>;
+
+    // A failed holder copy must not publish an empty write slot.
+    {
+        RootTransaction transaction(dbw, batch);
+        const uint8_t key{1};
+        const CopyFaultValue value{10};
+        CopyFaultValue result;
+        bool read{true};
+        const size_t usage_before = transaction.GetMemoryUsage();
+
+        CopyFaultValue::s_copies_before_throw = 0;
+        BOOST_CHECK_THROW(transaction.Write(key, value), std::runtime_error);
+        CopyFaultValue::s_copies_before_throw = -1;
+
+        BOOST_CHECK_EQUAL(transaction.GetMemoryUsage(), usage_before);
+        BOOST_CHECK(!transaction.Exists(key));
+        BOOST_CHECK_NO_THROW(read = transaction.Read(key, result));
+        BOOST_CHECK(!read);
+    }
+
+    // A failed replacement must preserve both the old value and its accounting.
+    {
+        RootTransaction transaction(dbw, batch);
+        const uint8_t key{2};
+        const CopyFaultValue original{20};
+        const CopyFaultValue replacement{21};
+        CopyFaultValue result;
+        transaction.Write(key, original);
+        const size_t usage_before = transaction.GetMemoryUsage();
+
+        CopyFaultValue::s_copies_before_throw = 0;
+        BOOST_CHECK_THROW(transaction.Write(key, replacement), std::runtime_error);
+        CopyFaultValue::s_copies_before_throw = -1;
+
+        bool read{false};
+        BOOST_CHECK_EQUAL(transaction.GetMemoryUsage(), usage_before);
+        BOOST_CHECK_NO_THROW(read = transaction.Read(key, result));
+        BOOST_CHECK(read);
+        BOOST_CHECK_EQUAL(result.m_value, original.m_value);
+    }
+
+    // A failed write after Erase must retain the tombstone, not expose the parent value.
+    {
+        const uint8_t key{3};
+        const CopyFaultValue original{30};
+        const CopyFaultValue replacement{31};
+        BOOST_REQUIRE(dbw.Write(key, original));
+        RootTransaction transaction(dbw, batch);
+        transaction.Erase(key);
+        const size_t usage_before = transaction.GetMemoryUsage();
+        BOOST_CHECK(!transaction.Exists(key));
+
+        CopyFaultValue::s_copies_before_throw = 0;
+        BOOST_CHECK_THROW(transaction.Write(key, replacement), std::runtime_error);
+        CopyFaultValue::s_copies_before_throw = -1;
+
+        CopyFaultValue result;
+        bool read{true};
+        BOOST_CHECK_EQUAL(transaction.GetMemoryUsage(), usage_before);
+        BOOST_CHECK(!transaction.Exists(key));
+        BOOST_CHECK_NO_THROW(read = transaction.Read(key, result));
+        BOOST_CHECK(!read);
+    }
+
+    // A failure at the first or a later staged write must leave both overlays
+    // unchanged; the child must remain reusable for a successful retry.
+    {
+        RootTransaction root(dbw, batch);
+        CurTransaction current(root, root);
+        const uint8_t root_tombstone_key{4};
+        const uint8_t replaced_key{5};
+        const uint8_t inserted_key_1{6};
+        const uint8_t inserted_key_2{7};
+        const uint8_t erased_key{8};
+        const uint8_t preserved_key{9};
+        const uint8_t root_tombstone_key_2{10};
+        const CopyFaultValue original{40};
+        const CopyFaultValue tombstone_replacement{42};
+        const CopyFaultValue replacement{41};
+        const CopyFaultValue inserted_1{61};
+        const CopyFaultValue inserted_2{71};
+        const CopyFaultValue erased_value{80};
+        const CopyFaultValue preserved{90};
+
+        root.Erase(root_tombstone_key);
+        root.Erase(root_tombstone_key_2);
+        root.Write(replaced_key, original);
+        root.Write(erased_key, erased_value);
+        root.Write(preserved_key, preserved);
+        current.Write(root_tombstone_key, tombstone_replacement);
+        current.Write(replaced_key, replacement);
+        current.Write(inserted_key_1, inserted_1);
+        current.Write(inserted_key_2, inserted_2);
+        current.Erase(erased_key);
+        current.Erase(root_tombstone_key_2);
+        auto replaced_iterator = root.NewIteratorUniquePtr();
+        replaced_iterator->Seek(replaced_key);
+        auto preserved_iterator = root.NewIteratorUniquePtr();
+        preserved_iterator->Seek(preserved_key);
+        const size_t root_usage_before = root.GetMemoryUsage();
+        const size_t current_usage_before = current.GetMemoryUsage();
+
+        const auto check_unmodified = [&]() {
+            CopyFaultValue result;
+            BOOST_CHECK_EQUAL(root.GetMemoryUsage(), root_usage_before);
+            BOOST_CHECK_EQUAL(current.GetMemoryUsage(), current_usage_before);
+            BOOST_CHECK(!root.Exists(root_tombstone_key));
+            BOOST_CHECK(!root.Exists(root_tombstone_key_2));
+            BOOST_CHECK(!root.Exists(inserted_key_1));
+            BOOST_CHECK(!root.Exists(inserted_key_2));
+            BOOST_CHECK(root.Read(replaced_key, result));
+            BOOST_CHECK_EQUAL(result.m_value, original.m_value);
+            BOOST_CHECK(root.Read(erased_key, result));
+            BOOST_CHECK_EQUAL(result.m_value, erased_value.m_value);
+            BOOST_CHECK(root.Read(preserved_key, result));
+            BOOST_CHECK_EQUAL(result.m_value, preserved.m_value);
+            BOOST_CHECK(current.Read(root_tombstone_key, result));
+            BOOST_CHECK_EQUAL(result.m_value, tombstone_replacement.m_value);
+            BOOST_CHECK(current.Read(replaced_key, result));
+            BOOST_CHECK_EQUAL(result.m_value, replacement.m_value);
+            BOOST_CHECK(current.Read(inserted_key_1, result));
+            BOOST_CHECK_EQUAL(result.m_value, inserted_1.m_value);
+            BOOST_CHECK(current.Read(inserted_key_2, result));
+            BOOST_CHECK_EQUAL(result.m_value, inserted_2.m_value);
+            BOOST_CHECK(!current.Exists(erased_key));
+            BOOST_CHECK(!current.Read(erased_key, result));
+            BOOST_CHECK(!current.Exists(root_tombstone_key_2));
+        };
+
+        CopyFaultValue::s_copies_before_throw = 0;
+        BOOST_CHECK_THROW(current.Commit(), std::runtime_error);
+        CopyFaultValue::s_copies_before_throw = -1;
+        check_unmodified();
+
+        // The first staged write succeeds and the second throws.
+        CopyFaultValue::s_copies_before_throw = 1;
+        BOOST_CHECK_THROW(current.Commit(), std::runtime_error);
+        CopyFaultValue::s_copies_before_throw = -1;
+        check_unmodified();
+
+        BOOST_CHECK_NO_THROW(current.Commit());
+        CopyFaultValue result;
+        BOOST_CHECK(root.Read(root_tombstone_key, result));
+        BOOST_CHECK_EQUAL(result.m_value, tombstone_replacement.m_value);
+        BOOST_CHECK(!root.Exists(root_tombstone_key_2));
+        BOOST_CHECK(root.Read(replaced_key, result));
+        BOOST_CHECK_EQUAL(result.m_value, replacement.m_value);
+        BOOST_CHECK(root.Read(inserted_key_1, result));
+        BOOST_CHECK_EQUAL(result.m_value, inserted_1.m_value);
+        BOOST_CHECK(root.Read(inserted_key_2, result));
+        BOOST_CHECK_EQUAL(result.m_value, inserted_2.m_value);
+        BOOST_CHECK(!root.Exists(erased_key));
+        BOOST_CHECK(root.Read(preserved_key, result));
+        BOOST_CHECK_EQUAL(result.m_value, preserved.m_value);
+        BOOST_CHECK_EQUAL(root.GetMemoryUsage(), sizeof(uint8_t) * 7 +
+                          ::GetSerializeSize(tombstone_replacement, CLIENT_VERSION) +
+                          ::GetSerializeSize(replacement, CLIENT_VERSION) +
+                          ::GetSerializeSize(inserted_1, CLIENT_VERSION) +
+                          ::GetSerializeSize(inserted_2, CLIENT_VERSION) +
+                          ::GetSerializeSize(preserved, CLIENT_VERSION));
+        BOOST_CHECK_EQUAL(current.GetMemoryUsage(), 0);
+
+        uint8_t iterated_key{0};
+        CopyFaultValue iterated_value;
+        BOOST_CHECK(replaced_iterator->Valid());
+        BOOST_CHECK(replaced_iterator->GetKey(iterated_key));
+        BOOST_CHECK_EQUAL(iterated_key, replaced_key);
+        BOOST_CHECK(replaced_iterator->GetValue(iterated_value));
+        BOOST_CHECK_EQUAL(iterated_value.m_value, replacement.m_value);
+        BOOST_CHECK(preserved_iterator->Valid());
+        BOOST_CHECK(preserved_iterator->GetKey(iterated_key));
+        BOOST_CHECK_EQUAL(iterated_key, preserved_key);
+        BOOST_CHECK(preserved_iterator->GetValue(iterated_value));
+        BOOST_CHECK_EQUAL(iterated_value.m_value, preserved.m_value);
+    }
+
+    // A successful child commit must preserve other parent entries and apply both writes and erases.
+    {
+        RootTransaction root(dbw, batch);
+        CurTransaction current(root, root);
+        const uint8_t overwritten_key{5};
+        const uint8_t erased_key{6};
+        const uint8_t inserted_key{7};
+        const CopyFaultValue original{50};
+        const CopyFaultValue replacement{51};
+        const CopyFaultValue preserved{60};
+        const CopyFaultValue inserted{70};
+        CopyFaultValue result;
+
+        root.Write(overwritten_key, original);
+        root.Write(erased_key, preserved);
+        current.Write(overwritten_key, replacement);
+        current.Erase(erased_key);
+        current.Write(inserted_key, inserted);
+        current.Commit();
+
+        bool read{false};
+        BOOST_CHECK_NO_THROW(read = root.Read(overwritten_key, result));
+        BOOST_CHECK(read);
+        BOOST_CHECK_EQUAL(result.m_value, replacement.m_value);
+        BOOST_CHECK(!root.Exists(erased_key));
+        BOOST_CHECK_NO_THROW(read = root.Read(inserted_key, result));
+        BOOST_CHECK(read);
+        BOOST_CHECK_EQUAL(result.m_value, inserted.m_value);
+        BOOST_CHECK_EQUAL(root.GetMemoryUsage(), sizeof(uint8_t) * 3 +
+                          ::GetSerializeSize(replacement, CLIENT_VERSION) +
+                          ::GetSerializeSize(inserted, CLIENT_VERSION));
+        BOOST_CHECK_EQUAL(current.GetMemoryUsage(), 0);
+    }
+}
+
+
+BOOST_AUTO_TEST_CASE(dbwrapper_address_index_type_boundary)
+{
+    uint160 last_hash;
+    last_hash.SetHex(std::string(40, 'f'));
+    uint256 type1_tx;
+    type1_tx.SetHex(std::string(63, '0') + '1');
+    uint256 type2_tx;
+    type2_tx.SetHex(std::string(63, '0') + '2');
+
+    // With no type-1 row for the maximum hash, the first matching hash row is type 2.
+    {
+        CBlockTreeDB db(1 << 20, true, true);
+        std::vector<CAddressIndexEntry> history{
+            {CAddressIndexKey(AddressType::P2SH, last_hash, 10, 0, type2_tx, 0, false), 200},
+        };
+        std::vector<CAddressUnspentIndexEntry> unspent{
+            {CAddressUnspentKey(AddressType::P2SH, last_hash, type2_tx, 0),
+             CAddressUnspentValue(200, CScript{}, 10)},
+        };
+        BOOST_REQUIRE(db.WriteAddressIndex(history));
+        BOOST_REQUIRE(db.UpdateAddressUnspentIndex(unspent));
+
+        std::vector<CAddressIndexEntry> type1_history;
+        BOOST_REQUIRE(db.ReadAddressIndex(last_hash, AddressType::P2PK_OR_P2PKH, type1_history));
+        BOOST_CHECK(type1_history.empty());
+        BOOST_REQUIRE(db.ReadAddressIndex(last_hash, AddressType::P2PK_OR_P2PKH, type1_history, 1, 20));
+        BOOST_CHECK(type1_history.empty());
+        std::vector<CAddressUnspentIndexEntry> type1_unspent;
+        BOOST_REQUIRE(db.ReadAddressUnspentIndex(last_hash, AddressType::P2PK_OR_P2PKH, type1_unspent));
+        BOOST_CHECK(type1_unspent.empty());
+    }
+
+    // A type-1 range at the end of its hash space must stop before type 2 of the same hash.
+    {
+        CBlockTreeDB db(1 << 20, true, true);
+        std::vector<CAddressIndexEntry> history{
+            {CAddressIndexKey(AddressType::P2PK_OR_P2PKH, last_hash, 10, 0, type1_tx, 0, false), 100},
+            {CAddressIndexKey(AddressType::P2SH, last_hash, 11, 0, type2_tx, 0, false), 200},
+        };
+        std::vector<CAddressUnspentIndexEntry> unspent{
+            {CAddressUnspentKey(AddressType::P2PK_OR_P2PKH, last_hash, type1_tx, 0),
+             CAddressUnspentValue(100, CScript{}, 10)},
+            {CAddressUnspentKey(AddressType::P2SH, last_hash, type2_tx, 0),
+             CAddressUnspentValue(200, CScript{}, 11)},
+        };
+        BOOST_REQUIRE(db.WriteAddressIndex(history));
+        BOOST_REQUIRE(db.UpdateAddressUnspentIndex(unspent));
+
+        std::vector<CAddressIndexEntry> type1_history;
+        BOOST_REQUIRE(db.ReadAddressIndex(last_hash, AddressType::P2PK_OR_P2PKH, type1_history));
+        BOOST_REQUIRE_EQUAL(type1_history.size(), 1);
+        BOOST_CHECK(type1_history[0].first.m_address_type == AddressType::P2PK_OR_P2PKH);
+        BOOST_CHECK_EQUAL(type1_history[0].second, 100);
+        type1_history.clear();
+        BOOST_REQUIRE(db.ReadAddressIndex(last_hash, AddressType::P2PK_OR_P2PKH, type1_history, 10, 11));
+        BOOST_REQUIRE_EQUAL(type1_history.size(), 1);
+        BOOST_CHECK_EQUAL(type1_history[0].second, 100);
+
+        std::vector<CAddressUnspentIndexEntry> type1_unspent;
+        BOOST_REQUIRE(db.ReadAddressUnspentIndex(last_hash, AddressType::P2PK_OR_P2PKH, type1_unspent));
+        BOOST_REQUIRE_EQUAL(type1_unspent.size(), 1);
+        BOOST_CHECK(type1_unspent[0].first.m_address_type == AddressType::P2PK_OR_P2PKH);
+        BOOST_CHECK_EQUAL(type1_unspent[0].second.m_amount, 100);
+    }
+
+    // A different-hash type-1 record still terminates a sparse scan before type 2.
+    {
+        uint160 target_hash;
+        target_hash.SetHex(std::string(39, '0') + '1');
+        uint160 next_hash;
+        next_hash.SetHex(std::string(39, '0') + '2');
+        CBlockTreeDB db(1 << 20, true, true);
+        std::vector<CAddressIndexEntry> history{
+            {CAddressIndexKey(AddressType::P2SH, target_hash, 10, 0, type2_tx, 0, false), 200},
+            {CAddressIndexKey(AddressType::P2PK_OR_P2PKH, next_hash, 11, 0, type1_tx, 0, false), 100},
+        };
+        BOOST_REQUIRE(db.WriteAddressIndex(history));
+
+        std::vector<CAddressIndexEntry> type1_history;
+        BOOST_REQUIRE(db.ReadAddressIndex(target_hash, AddressType::P2PK_OR_P2PKH, type1_history));
+        BOOST_CHECK(type1_history.empty());
+    }
 }
 
 

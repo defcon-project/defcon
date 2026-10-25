@@ -14,6 +14,7 @@
 #include <util/system.h>
 
 #include <typeindex>
+#include <type_traits>
 
 #include <leveldb/db.h>
 #include <leveldb/write_batch.h>
@@ -536,6 +537,7 @@ private:
 template<typename Parent, typename CommitTarget>
 class CDBTransaction {
     friend class CDBTransactionIterator<CDBTransaction>;
+    template <typename, typename> friend class CDBTransaction;
 
 protected:
     Parent &parent;
@@ -543,12 +545,12 @@ protected:
     ssize_t memoryUsage{0}; // signed, just in case we made an error in the calculations so that we don't get an overflow
 
     struct DataStreamCmp {
-        static bool less(const CDataStream& a, const CDataStream& b) {
+        static bool less(const CDataStream& a, const CDataStream& b) noexcept {
             return std::lexicographical_compare(
                     (const uint8_t*)a.data(), (const uint8_t*)a.data() + a.size(),
                     (const uint8_t*)b.data(), (const uint8_t*)b.data() + b.size());
         }
-        bool operator()(const CDataStream& a, const CDataStream& b) const {
+        bool operator()(const CDataStream& a, const CDataStream& b) const noexcept {
             return less(a, b);
         }
     };
@@ -566,10 +568,10 @@ protected:
         ValueHolderImpl(const V &_value, size_t _memoryUsage) : ValueHolder(_memoryUsage), value(_value) {}
 
         virtual void Write(const CDataStream& ssKey, CommitTarget &commitTarget) override {
-            // we're moving the value instead of copying it. This means that Write() can only be called once per
-            // ValueHolderImpl instance. Commit() clears the write maps, so this ok.
-            commitTarget.Write(ssKey, std::move(value));
+            // Keep this overlay value intact if staging the write throws.
+            commitTarget.Write(ssKey, value);
         }
+
         V value;
     };
 
@@ -597,17 +599,27 @@ public:
 
     template <typename V>
     void Write(const CDataStream& ssKey, const V& v) {
-        auto valueMemoryUsage = ::GetSerializeSize(v, CLIENT_VERSION);
+        const size_t valueMemoryUsage = ::GetSerializeSize(v, CLIENT_VERSION);
+        ValueHolderPtr valueHolder = std::make_unique<ValueHolderImpl<V>>(v, valueMemoryUsage);
 
-        if (deletes.erase(ssKey)) {
-            memoryUsage -= ssKey.size();
-        }
-        auto it = writes.emplace(ssKey, nullptr).first;
-        if (it->second) {
-            memoryUsage -= ssKey.size() + it->second->memoryUsage;
-        }
-        it->second = std::make_unique<ValueHolderImpl<V>>(v, valueMemoryUsage);
+        auto writeIt = writes.find(ssKey);
+        const auto deleteIt = deletes.find(ssKey);
+        const size_t oldMemoryUsage =
+            (writeIt == writes.end() ? 0 : ssKey.size() + writeIt->second->memoryUsage) +
+            (deleteIt == deletes.end() ? 0 : ssKey.size());
 
+        if (writeIt == writes.end()) {
+            const auto [it, inserted] = writes.emplace(ssKey, std::move(valueHolder));
+            assert(inserted);
+            writeIt = it;
+        } else {
+            writeIt->second.swap(valueHolder);
+        }
+        if (deleteIt != deletes.end()) {
+            deletes.erase(deleteIt);
+        }
+
+        memoryUsage -= oldMemoryUsage;
         memoryUsage += ssKey.size() + valueMemoryUsage;
     }
 
@@ -658,13 +670,14 @@ public:
     }
 
     void Erase(const CDataStream& ssKey) {
-        auto it = writes.find(ssKey);
-        if (it != writes.end()) {
-            memoryUsage -= ssKey.size() + it->second->memoryUsage;
-            writes.erase(it);
-        }
-        if (deletes.emplace(ssKey).second) {
+        auto writeIt = writes.find(ssKey);
+        const bool inserted = deletes.emplace(ssKey).second;
+        if (inserted) {
             memoryUsage += ssKey.size();
+        }
+        if (writeIt != writes.end()) {
+            memoryUsage -= ssKey.size() + writeIt->second->memoryUsage;
+            writes.erase(writeIt);
         }
     }
 
@@ -675,11 +688,80 @@ public:
     }
 
     void Commit() {
-        for (const auto &k : deletes) {
-            commitTarget.Erase(k);
-        }
-        for (auto &p : writes) {
-            p.second->Write(p.first, commitTarget);
+        // Nested transactions use their parent transaction as the commit target.
+        if constexpr (std::is_same_v<Parent, CommitTarget>) {
+            // Prepare only the child delta. Any allocation or value-copy failure
+            // leaves both live overlays untouched.
+            CommitTarget staged(commitTarget.parent, commitTarget.commitTarget);
+            for (const auto& key : deletes) {
+                staged.Erase(key);
+            }
+            for (const auto& write : writes) {
+                write.second->Write(write.first, staged);
+            }
+
+            // Apply the prepared nodes without allocating. DataStreamCmp compares
+            // serialized bytes and is non-throwing, and node-handle insertion
+            // reuses the staged nodes.
+            auto stagedDeleteIt = staged.deletes.begin();
+            while (stagedDeleteIt != staged.deletes.end()) {
+                auto currentDelete = stagedDeleteIt++;
+                const CDataStream& key = *currentDelete;
+                const size_t keySize = key.size();
+                const auto targetDeleteIt = commitTarget.deletes.find(key);
+                auto targetWriteIt = commitTarget.writes.find(key);
+                assert(targetDeleteIt == commitTarget.deletes.end() ||
+                       targetWriteIt == commitTarget.writes.end());
+
+                if (targetDeleteIt == commitTarget.deletes.end()) {
+                    auto node = staged.deletes.extract(currentDelete);
+                    const auto inserted = commitTarget.deletes.insert(std::move(node));
+                    assert(inserted.inserted);
+                    commitTarget.memoryUsage += static_cast<ssize_t>(keySize);
+                }
+                if (targetWriteIt != commitTarget.writes.end()) {
+                    commitTarget.memoryUsage -= static_cast<ssize_t>(
+                        keySize + targetWriteIt->second->memoryUsage);
+                    commitTarget.writes.erase(targetWriteIt);
+                }
+            }
+
+            auto stagedWriteIt = staged.writes.begin();
+            while (stagedWriteIt != staged.writes.end()) {
+                auto currentWrite = stagedWriteIt++;
+                const CDataStream& key = currentWrite->first;
+                const size_t keySize = key.size();
+                const ssize_t valueMemoryUsage =
+                    static_cast<ssize_t>(currentWrite->second->memoryUsage);
+                auto targetWriteIt = commitTarget.writes.find(key);
+                const auto targetDeleteIt = commitTarget.deletes.find(key);
+                assert(targetWriteIt == commitTarget.writes.end() ||
+                       targetDeleteIt == commitTarget.deletes.end());
+
+                if (targetWriteIt != commitTarget.writes.end()) {
+                    const ssize_t oldValueMemoryUsage =
+                        static_cast<ssize_t>(targetWriteIt->second->memoryUsage);
+                    targetWriteIt->second.swap(currentWrite->second);
+                    commitTarget.memoryUsage += valueMemoryUsage - oldValueMemoryUsage;
+                    staged.writes.erase(currentWrite);
+                } else {
+                    auto node = staged.writes.extract(currentWrite);
+                    const auto inserted = commitTarget.writes.insert(std::move(node));
+                    assert(inserted.inserted);
+                    commitTarget.memoryUsage += static_cast<ssize_t>(keySize) + valueMemoryUsage;
+                    if (targetDeleteIt != commitTarget.deletes.end()) {
+                        commitTarget.deletes.erase(targetDeleteIt);
+                        commitTarget.memoryUsage -= static_cast<ssize_t>(keySize);
+                    }
+                }
+            }
+        } else {
+            for (const auto &k : deletes) {
+                commitTarget.Erase(k);
+            }
+            for (auto &p : writes) {
+                p.second->Write(p.first, commitTarget);
+            }
         }
         Clear();
     }

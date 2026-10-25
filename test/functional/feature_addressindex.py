@@ -7,6 +7,7 @@
 # Test addressindex generation and fetching
 #
 
+from test_framework.address import keyhash_to_p2pkh, scripthash_to_p2sh
 from test_framework.messages import (
     COutPoint,
     CTransaction,
@@ -67,13 +68,13 @@ class AddressIndexTest(BitcoinTestFramework):
         assert_equal(self.nodes[1].getbalance(), 0)
         assert_equal(self.nodes[2].getbalance(), 0)
 
-        # Check that balances are correct
+        # Regtest pays 11,000,000 DFCN per PoW block; generated outputs mature after 25 blocks.
         balance0 = self.nodes[1].getaddressbalance("93bVhahvUKmQu8gu9g3QnPPa2cxFK98pMB")
         balance_mining = self.nodes[1].getaddressbalance(mining_address)
         assert_equal(balance0["balance"], 0)
-        assert_equal(balance_mining["balance"], 105 * 500 * COIN)
-        assert_equal(balance_mining["balance_immature"], 100 * 500 * COIN)
-        assert_equal(balance_mining["balance_spendable"], 5 * 500 * COIN)
+        assert_equal(balance_mining["balance"], 105 * 11000000 * COIN)
+        assert_equal(balance_mining["balance_immature"], 25 * 11000000 * COIN)
+        assert_equal(balance_mining["balance_spendable"], 80 * 11000000 * COIN)
 
         # Check p2pkh and p2sh address indexes
         self.log.info("Testing p2pkh and p2sh address index...")
@@ -252,17 +253,18 @@ class AddressIndexTest(BitcoinTestFramework):
         self.log.info("Testing mempool indexing...")
 
         privKey3 = "cRyrMvvqi1dmpiCmjmmATqjAwo6Wu7QTjKu1ABMYW5aFG4VXW99K"
+        # Keep this key paired with its spendable address: later mempool tests
+        # spend these outputs with privKey3.
         address3 = "yWB15aAdpeKuSaQHFVJpBDPbNSLZJSnDLA"
         addressHash3 = bytes.fromhex("6C186B3A308A77C779A9BB71C3B5A7EC28232A13")
         scriptPubKey3 = keyhash_to_p2pkh_script(addressHash3)
-        # address4 = "2N8oFVB2vThAKury4vnLquW2zVjsYjjAkYQ"
         scriptPubKey4 = scripthash_to_p2sh_script(addressHash3)
         unspent = self.nodes[2].listunspent()
 
         tx = CTransaction()
         tx.vin = [CTxIn(COutPoint(int(unspent[0]["txid"], 16), unspent[0]["vout"]))]
-        amount = int(unspent[0]["amount"] * 100000000) - tx_fee_sat
-        tx.vout = [CTxOut(amount, scriptPubKey3)]
+        amount1 = int(unspent[0]["amount"] * 100000000) - tx_fee_sat
+        tx.vout = [CTxOut(amount1, scriptPubKey3)]
         tx.rehash()
         signed_tx = self.nodes[2].signrawtransactionwithwallet(tx.serialize().hex())
         memtxid1 = self.nodes[2].sendrawtransaction(signed_tx["hex"], 0)
@@ -282,6 +284,29 @@ class AddressIndexTest(BitcoinTestFramework):
         memtxid2 = self.nodes[2].sendrawtransaction(signed_tx2["hex"], 0)
         self.bump_mocktime(2)
 
+        # Add an unspent same-hash pair at the end of the address-type range.
+        # These outputs are only queried below; privKey3 remains paired with
+        # the separate, spendable address3 fixture above.
+        max_hash = bytes.fromhex("ff" * 20)
+        max_hash_p2pkh = keyhash_to_p2pkh(max_hash)
+        max_hash_p2sh = scripthash_to_p2sh(max_hash)
+        max_hash_p2pkh_script = keyhash_to_p2pkh_script(max_hash)
+        max_hash_p2sh_script = scripthash_to_p2sh_script(max_hash)
+        boundary_tx = CTransaction()
+        boundary_tx.vin = [CTxIn(COutPoint(int(unspent[2]["txid"], 16), unspent[2]["vout"]))]
+        boundary_input_amount = int(unspent[2]["amount"] * 100000000)
+        boundary_amount = 1 * 100000000
+        boundary_change = boundary_input_amount - 2 * boundary_amount - tx_fee_sat
+        boundary_tx.vout = [
+            CTxOut(boundary_amount, max_hash_p2pkh_script),
+            CTxOut(boundary_amount, max_hash_p2sh_script),
+            CTxOut(boundary_change, scriptPubKey2),
+        ]
+        boundary_tx.rehash()
+        signed_boundary_tx = self.nodes[2].signrawtransactionwithwallet(boundary_tx.serialize().hex())
+        self.nodes[2].sendrawtransaction(signed_boundary_tx["hex"], 0)
+        self.bump_mocktime(2)
+
         mempool = self.nodes[2].getaddressmempool({"addresses": [address3]})
         assert_equal(len(mempool), 3)
         assert_equal(mempool[0]["txid"], memtxid1)
@@ -295,6 +320,37 @@ class AddressIndexTest(BitcoinTestFramework):
         self.generate(self.nodes[2], 1)
         mempool2 = self.nodes[2].getaddressmempool({"addresses": [address3]})
         assert_equal(len(mempool2), 0)
+
+        # Check the same-hash disk history, height range, UTXO and balance
+        # responses for the two distinct address types.
+        height = self.nodes[2].getblockcount()
+        p2pkh_deltas = self.nodes[2].getaddressdeltas({"addresses": [max_hash_p2pkh]})
+        p2sh_deltas = self.nodes[2].getaddressdeltas({"addresses": [max_hash_p2sh]})
+        assert_equal(len(p2pkh_deltas), 1)
+        assert_equal(len(p2sh_deltas), 1)
+        assert all(delta["address"] == max_hash_p2pkh for delta in p2pkh_deltas)
+        assert all(delta["address"] == max_hash_p2sh for delta in p2sh_deltas)
+
+        p2pkh_range = self.nodes[2].getaddressdeltas(
+            {"addresses": [max_hash_p2pkh], "start": height, "end": height})
+        assert_equal(len(p2pkh_range), 1)
+        assert all(delta["address"] == max_hash_p2pkh for delta in p2pkh_range)
+        p2sh_range = self.nodes[2].getaddressdeltas(
+            {"addresses": [max_hash_p2sh], "start": height, "end": height})
+        assert_equal(len(p2sh_range), 1)
+        assert all(delta["address"] == max_hash_p2sh for delta in p2sh_range)
+
+        p2pkh_utxos = self.nodes[2].getaddressutxos({"addresses": [max_hash_p2pkh]})
+        p2sh_utxos = self.nodes[2].getaddressutxos({"addresses": [max_hash_p2sh]})
+        assert_equal(len(p2pkh_utxos), 1)
+        assert_equal(len(p2sh_utxos), 1)
+        assert all(output["address"] == max_hash_p2pkh for output in p2pkh_utxos)
+        assert all(output["address"] == max_hash_p2sh for output in p2sh_utxos)
+
+        p2pkh_balance = self.nodes[2].getaddressbalance(max_hash_p2pkh)
+        p2sh_balance = self.nodes[2].getaddressbalance(max_hash_p2sh)
+        assert_equal(p2pkh_balance["balance"], boundary_amount)
+        assert_equal(p2sh_balance["balance"], boundary_amount)
 
         tx = CTransaction()
         tx.vin = [
