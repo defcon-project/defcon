@@ -322,7 +322,8 @@ bool CBlockTreeDB::ReadAddressUnspentIndex(const uint160& addressHash, const Add
 
     while (pcursor->Valid()) {
         std::pair<uint8_t, CAddressUnspentKey> key;
-        if (pcursor->GetKey(key) && key.first == DB_ADDRESSUNSPENTINDEX && key.second.m_address_bytes == addressHash) {
+        if (pcursor->GetKey(key) && key.first == DB_ADDRESSUNSPENTINDEX && key.second.m_address_type == type &&
+            key.second.m_address_bytes == addressHash) {
             CAddressUnspentValue nValue;
             if (pcursor->GetValue(nValue)) {
                 unspentOutputs.push_back(std::make_pair(key.second, nValue));
@@ -366,7 +367,8 @@ bool CBlockTreeDB::ReadAddressIndex(const uint160& addressHash, const AddressTyp
 
     while (pcursor->Valid()) {
         std::pair<uint8_t, CAddressIndexKey> key;
-        if (pcursor->GetKey(key) && key.first == DB_ADDRESSINDEX && key.second.m_address_bytes == addressHash) {
+        if (pcursor->GetKey(key) && key.first == DB_ADDRESSINDEX && key.second.m_address_type == type &&
+            key.second.m_address_bytes == addressHash) {
             if (end > 0 && key.second.m_block_height > end) {
                 break;
             }
