@@ -5,6 +5,7 @@
 #include <evo/pose_service.h>
 #include <evo/pose_service_sentinels.h>
 #include <streams.h>
+#include <test/fuzz/FuzzedDataProvider.h>
 #include <test/fuzz/fuzz.h>
 #include <version.h>
 
@@ -82,6 +83,38 @@ void CommitmentVersionRoundTrip(FuzzBufferType buffer, uint16_t version)
     AssertCanonicalRoundTrip(value);
 }
 
+void CheckReportPeekMatchesDeserialize(Span<const unsigned char> bytes, bool expect_valid_signature = false)
+{
+    if (bytes.size() != dsl::CPoSeServiceReport::WIRE_SIZE) return;
+
+    const auto wire = dsl::PeekReportWire(bytes);
+    assert(wire.has_value());
+
+    dsl::CPoSeServiceReport decoded;
+    CDataStream input{bytes, SER_NETWORK, PROTOCOL_VERSION};
+    try {
+        input >> decoded;
+    } catch (const std::ios_base::failure&) {
+        // Arbitrary signature bytes are usually not a valid serialized report.
+        return;
+    }
+    assert(input.empty());
+
+    assert(wire->nEpoch == decoded.nEpoch);
+    assert(wire->targetProTxHash == decoded.targetProTxHash);
+    assert(wire->sentinelProTxHash == decoded.sentinelProTxHash);
+    assert(wire->status == decoded.status);
+    assert(wire->sig.data() == bytes.data() + bytes.size() - static_cast<size_t>(BLS_CURVE_SIG_SIZE));
+    if (!decoded.sig.IsValid()) {
+        // Peek intentionally retains malformed BLS bytes; deserialization resets invalid signatures.
+        assert(!expect_valid_signature);
+        return;
+    }
+    const auto signature = decoded.sig.ToBytes(/*specificLegacyScheme=*/false);
+    assert(wire->sig.size() == signature.size());
+    assert(std::equal(signature.begin(), signature.end(), wire->sig.begin()));
+}
+
 } // namespace
 
 FUZZ_TARGET(pose_service_challenge_deserialize) {
@@ -107,4 +140,32 @@ FUZZ_TARGET(pose_service_commitment_v1_roundtrip) {
 }
 FUZZ_TARGET(pose_service_commitment_v2_roundtrip) {
     CommitmentVersionRoundTrip(buffer, CPoSeServiceCommitment::OBSERVED_VERSION);
+}
+
+FUZZ_TARGET(pose_report_wire_differential) {
+    // Keep malformed wire bytes in the fuzzer's input domain.
+    CheckReportPeekMatchesDeserialize(Span<const unsigned char>{buffer.data(), buffer.size()});
+
+    // Also generate a valid signed report from fuzzed fields. This guarantees
+    // the differential oracle exercises successful full deserialization.
+    FuzzedDataProvider provider(buffer.data(), buffer.size());
+    dsl::CPoSeServiceReport report;
+    report.nEpoch = provider.ConsumeIntegral<uint32_t>();
+    const auto target_bytes = provider.ConsumeBytes<unsigned char>(uint256::size());
+    std::copy(target_bytes.begin(), target_bytes.end(), report.targetProTxHash.begin());
+    const auto sentinel_bytes = provider.ConsumeBytes<unsigned char>(uint256::size());
+    std::copy(sentinel_bytes.begin(), sentinel_bytes.end(), report.sentinelProTxHash.begin());
+    report.status = provider.ConsumeIntegral<uint8_t>();
+
+    static const CBLSSecretKey signing_key = [] {
+        CBLSSecretKey key;
+        key.MakeNewKey();
+        return key;
+    }();
+    report.Sign(signing_key, uint256{});
+
+    CDataStream encoded{SER_NETWORK, PROTOCOL_VERSION};
+    encoded << report;
+    const std::vector<unsigned char> bytes{UCharCast(encoded.data()), UCharCast(encoded.data()) + encoded.size()};
+    CheckReportPeekMatchesDeserialize(MakeUCharSpan(bytes), /*expect_valid_signature=*/true);
 }
