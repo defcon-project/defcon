@@ -37,6 +37,19 @@ using namespace std::literals;
 
 BOOST_FIXTURE_TEST_SUITE(net_tests, RegTestingSetup)
 
+BOOST_AUTO_TEST_CASE(fixed_seeds_match_available_networks)
+{
+    const ArgsManager args;
+    const auto main_params = CreateChainParams(args, CBaseChainParams::MAIN);
+    const auto test_params = CreateChainParams(args, CBaseChainParams::TESTNET);
+
+    // Keep the three mainnet BIP155 endpoints byte-for-byte while retiring the
+    // inherited testnet endpoints until DeFCoN testnet launches.
+    BOOST_CHECK_EQUAL(HexStr(main_params->FixedSeeds()),
+                      "01049a0cf7c6200001049a0cf7d6200001049a1a9b422000");
+    BOOST_CHECK(test_params->FixedSeeds().empty());
+}
+
 BOOST_AUTO_TEST_CASE(cnode_listen_port)
 {
     // test default

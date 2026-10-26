@@ -601,9 +601,8 @@ public:
         // coinbase text and magic for testnet alone, for a network nothing has
         // joined in eight months; the reset is chosen instead, and said here.
         //
-        // Consequences: datadirs from the 2025 testnet are to be discarded,
-        // and chainparams_seed_test is a standup aid carried over, to be
-        // regenerated from live hosts before the DAO's testnet rehearsal.
+        // Consequences: datadirs from the 2025 testnet are to be discarded.
+        // Fixed seeds remain empty until the DeFCoN testnet launch.
         // Nonce 0 is the first that satisfies nBits with the current text
         // (exhaustive search from 0; the merkle root below is unchanged).
         // Same defect class as the devnet's stale genesis (#53/#54).
@@ -613,7 +612,6 @@ public:
         assert(genesis.hashMerkleRoot == uint256S("0xd33bdead03ad4b3a51a25c984ae0ea4cb278a5cb7a9f5a56f9f94ad4109bcdda"));
 
         vFixedSeeds.clear();
-        vFixedSeeds = std::vector<uint8_t>(std::begin(chainparams_seed_test), std::end(chainparams_seed_test));
 
         vSeeds.clear();
         // nodes with support for servicebits filtering should be at the top

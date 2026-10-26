@@ -1,6 +1,10 @@
 Release Process
 ====================
 
+The Guix instructions below are inherited from upstream and are not currently
+part of the DeFCoN release process. The tools in `contrib/guix` are retained for
+future reproducible releases.
+
 * [ ] Update translations, see [translation_process.md](https://github.com/dashpay/dash/blob/master/doc/translation_process.md#synchronising-translations).
 * [ ] Update manpages (after rebuilding the binaries), see [gen-manpages.py](https://github.com/bitcoin/bitcoin/blob/master/contrib/devtools/README.md#gen-manpagespy).
 
