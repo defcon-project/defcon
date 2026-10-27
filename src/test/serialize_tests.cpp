@@ -209,6 +209,35 @@ BOOST_AUTO_TEST_CASE(dynbitset_rejects_oversized_declared_length)
     BOOST_CHECK(bits.empty());
 }
 
+/** Non-byte-aligned fixed bitsets must reject set padding bits in the last byte. */
+BOOST_AUTO_TEST_CASE(fixed_bitset_rejects_out_of_range_padding_bits)
+{
+    // Cover every possible padding width in one- and two-byte encodings. These
+    // cases also pin the uint8 mask conversion used by ReadFixedBitSet.
+    for (size_t bit_count = 1; bit_count < 16; ++bit_count) {
+        const size_t rem = bit_count % 8;
+        if (rem == 0) continue;
+
+        std::vector<uint8_t> bytes((bit_count + 7) / 8, 0xff);
+        bytes.back() = static_cast<uint8_t>((1U << rem) - 1U);
+
+        CDataStream valid(SER_NETWORK, PROTOCOL_VERSION);
+        for (const uint8_t byte : bytes) valid << byte;
+
+        std::vector<bool> decoded;
+        ReadFixedBitSet(valid, decoded, bit_count);
+        BOOST_CHECK_EQUAL(decoded.size(), bit_count);
+        for (const bool bit : decoded) BOOST_CHECK(bit);
+
+        bytes.back() |= static_cast<uint8_t>(1U << rem);
+        CDataStream invalid(SER_NETWORK, PROTOCOL_VERSION);
+        for (const uint8_t byte : bytes) invalid << byte;
+
+        std::vector<bool> rejected;
+        BOOST_CHECK_THROW(ReadFixedBitSet(invalid, rejected, bit_count), std::ios_base::failure);
+    }
+}
+
 /** The largest bit count accepted by ReadCompactSize must still round-trip. */
 BOOST_AUTO_TEST_CASE(dynbitset_accepts_maximum_size)
 {

@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <vector>
 #include <future>
+#include <limits>
 #include <memory>
 
 namespace {
@@ -121,7 +122,8 @@ struct DSLActivationSetup : RegTestingSetup {
 
     void InstallList(size_t count)
     {
-        CDeterministicMNList list{base->GetBlockHash(), base->nHeight, count};
+        BOOST_REQUIRE_LE(count, std::numeric_limits<uint32_t>::max());
+        CDeterministicMNList list{base->GetBlockHash(), base->nHeight, static_cast<uint32_t>(count)};
         for (size_t i = 0; i < count; ++i) {
             if (operator_keys.size() <= i) {
                 CBLSSecretKey key;

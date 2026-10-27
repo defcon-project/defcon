@@ -49,19 +49,21 @@ size_t& GetNumMsgTypes()
     static size_t g_num_msg_types{0};
     return g_num_msg_types;
 }
-#define FUZZ_TARGET_MSG_WITH_INIT(msg_type, initializer, fixed_message_type) \
-    struct msg_type##_Count_Before_Main {                                    \
-        msg_type##_Count_Before_Main()                                       \
-        {                                                                    \
-            ++GetNumMsgTypes();                                              \
-        }                                                                    \
-    } const static g_##msg_type##_count_before_main;                         \
-    FUZZ_TARGET_INIT(process_message_##msg_type, initializer)                \
-    {                                                                        \
-        fuzz_target(buffer, #msg_type, fixed_message_type);                  \
+#define FUZZ_TARGET_MSG_WITH_INIT(msg_type, initializer, fixed_message_type, parser_permissions) \
+    struct msg_type##_Count_Before_Main {                                                       \
+        msg_type##_Count_Before_Main()                                                          \
+        {                                                                                       \
+            ++GetNumMsgTypes();                                                                 \
+        }                                                                                       \
+    } const static g_##msg_type##_count_before_main;                                            \
+    FUZZ_TARGET_INIT(process_message_##msg_type, initializer)                                   \
+    {                                                                                           \
+        fuzz_target(buffer, #msg_type, fixed_message_type, parser_permissions);                 \
     }
-#define FUZZ_TARGET_MSG(msg_type) FUZZ_TARGET_MSG_WITH_INIT(msg_type, initialize_process_message, false)
-#define FUZZ_TARGET_DSL_MSG(msg_type) FUZZ_TARGET_MSG_WITH_INIT(msg_type, initialize_process_message_dsl, true)
+#define FUZZ_TARGET_MSG(msg_type) \
+    FUZZ_TARGET_MSG_WITH_INIT(msg_type, initialize_process_message, false, NetPermissionFlags::None)
+#define FUZZ_TARGET_DSL_MSG(msg_type) \
+    FUZZ_TARGET_MSG_WITH_INIT(msg_type, initialize_process_message_dsl, true, NetPermissionFlags::NoBan)
 
 void initialize_process_message()
 {
@@ -89,13 +91,19 @@ void initialize_process_message_dsl()
             /*extra_args=*/{"-txreconciliation", "-testactivationheight=dsl@0"});
     g_setup = testing_setup.get();
     Assert(g_setup->m_node.mn_metaman->LoadCache(false));
+    // Register only during fixture mining so PeerManager observes the tip that
+    // activates DSL. The fuzz fixture does not otherwise connect validation signals.
+    RegisterValidationInterface(g_setup->m_node.peerman.get());
     for (int i = 0; i < 2 * COINBASE_MATURITY; i++) {
         MineBlock(g_setup->m_node, CScript() << OP_TRUE);
     }
     SyncWithValidationInterfaceQueue();
+    UnregisterValidationInterface(g_setup->m_node.peerman.get());
 }
 
-void fuzz_target(FuzzBufferType buffer, const std::string& LIMIT_TO_MESSAGE_TYPE, bool fixed_message_type = false)
+void fuzz_target(FuzzBufferType buffer, const std::string& LIMIT_TO_MESSAGE_TYPE,
+                 bool fixed_message_type = false,
+                 NetPermissionFlags parser_permissions = NetPermissionFlags::None)
 {
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
 
@@ -112,7 +120,10 @@ void fuzz_target(FuzzBufferType buffer, const std::string& LIMIT_TO_MESSAGE_TYPE
     if (!LIMIT_TO_MESSAGE_TYPE.empty() && random_message_type != LIMIT_TO_MESSAGE_TYPE) {
         return;
     }
-    CNode& p2p_node = *ConsumeNodeAsUniquePtr(fuzzed_data_provider).release();
+    // The four DSL parser targets use a trusted synthetic peer to reach deserialization.
+    // NoBan also grants Download and suppresses misbehavior disconnects, outside parser scope.
+    CNode& p2p_node = *ConsumeNodeAsUniquePtr(
+        fuzzed_data_provider, std::nullopt, parser_permissions).release();
 
     connman.AddTestNode(p2p_node);
     if (fixed_message_type) {
