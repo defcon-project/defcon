@@ -10,6 +10,7 @@
 #include <serialize.h>
 #include <span.h>
 #include <streams.h>
+#include <util/expected.h>
 #include <util/strencodings.h>
 #include <util/system.h>
 
@@ -304,6 +305,73 @@ public:
         return true;
     }
 
+    struct ReadFailure {
+        enum class Code {
+            DeserializationError,   //!< Key exists but value could not be deserialized.
+            DatabaseError,          //!< Unexpected internal DB error.
+        };
+
+        Code status;
+        std::string err_msg;
+    };
+
+    using ReadStatus = tl::expected<bool, ReadFailure>;
+
+    /**
+     * Read and deserialize a value from the database, with explicit error discrimination.
+     *
+     * Unlike Read(), this method distinguishes between a missing key, a deserialization
+     * failure (DeserializationError), and an internal DB error (DatabaseError),
+     * enabling callers to treat data corruption differently from an absent entry.
+     *
+     * @note Callers are expected to provide well-formed keys; key serialization
+     *       is the only operation that may throw.
+     *
+     * @param[in]  key    The key to look up.
+     * @param[out] value  Populated with the deserialized value when the returned
+     *                    expected holds true; indeterminate otherwise.
+     * @return On success, true if the key was found (value populated) or false if
+     *         the key was absent. On failure, a ReadFailure describing the error.
+     */
+    template <typename K, typename V>
+    [[nodiscard]] ReadStatus TryRead(const K& key, V& value) const
+    {
+        CDataStream ssKey(SER_DISK, CLIENT_VERSION);
+        ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
+        // Key serialization is the only operation that may throw.
+        // Callers are expected to provide well-formed keys.
+        ssKey << key;
+        return TryRead(ssKey, value);
+    }
+
+    template <typename V>
+    [[nodiscard]] ReadStatus TryRead(const CDataStream& ssKey, V& value) const
+    {
+        CDataStream ssValue(SER_DISK, CLIENT_VERSION);
+        try {
+            if (!ReadDataStream(ssKey, ssValue)) {
+                return false; // not found
+            }
+        } catch (const dbwrapper_error& e) {
+            return tl::unexpected{ReadFailure{ReadFailure::Code::DatabaseError, e.what()}};
+        }
+
+        try {
+            ssValue >> value;
+        } catch (const std::exception& e) {
+            return tl::unexpected{ReadFailure{ReadFailure::Code::DeserializationError, e.what()}};
+        }
+        return true;
+    }
+
+    /**
+     * Wrapper around TryRead() that preserves the original Read() semantics:
+     * returns true on success, false if the key is absent or deserialization
+     * fails, and throws dbwrapper_error on an internal DB error.
+     *
+     * Prefer TryRead() when the caller needs to distinguish between a missing
+     * key and a corrupt value.
+     */
     template <typename K, typename V>
     bool Read(const K& key, V& value) const
     {
@@ -316,17 +384,13 @@ public:
     template <typename V>
     bool Read(const CDataStream& ssKey, V& value) const
     {
-        CDataStream ssValue(SER_DISK, CLIENT_VERSION);
-        if (!ReadDataStream(ssKey, ssValue)) {
-            return false;
-        }
-
-        try {
-            ssValue >> value;
-        } catch (const std::exception&) {
-            return false;
-        }
-        return true;
+        const ReadStatus res = TryRead(ssKey, value);
+        if (res.has_value()) return res.value();
+        switch (res.error().status) {
+            case ReadFailure::Code::DeserializationError: return false;
+            case ReadFailure::Code::DatabaseError: throw dbwrapper_error(res.error().err_msg);
+        } // no default case, so the compiler can warn about missing cases
+        std::abort(); // unreachable
     }
 
     template <typename K, typename V>

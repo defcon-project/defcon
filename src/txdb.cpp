@@ -69,7 +69,16 @@ struct CoinEntry {
 CCoinsViewDB::CCoinsViewDB(fs::path ldb_path, size_t nCacheSize, bool fMemory, bool fWipe) :
     m_db(std::make_unique<CDBWrapper>(ldb_path, nCacheSize, fMemory, fWipe, true)),
     m_ldb_path(ldb_path),
-    m_is_memory(fMemory) { }
+    m_is_memory(fMemory),
+    m_cache_size(nCacheSize) { }
+
+CDBWrapper& CCoinsViewDB::DB() const
+{
+    if (!m_db) {
+        throw dbwrapper_error("Coin database is closed after a failed cache resize");
+    }
+    return *m_db;
+}
 
 void CCoinsViewDB::ResizeCache(size_t new_cache_size)
 {
@@ -79,36 +88,60 @@ void CCoinsViewDB::ResizeCache(size_t new_cache_size)
         // Have to do a reset first to get the original `m_db` state to release its
         // filesystem lock.
         m_db.reset();
-        m_db = std::make_unique<CDBWrapper>(
-            m_ldb_path, new_cache_size, m_is_memory, /*fWipe*/ false, /*obfuscate*/ true);
+        try {
+            m_db = std::make_unique<CDBWrapper>(
+                m_ldb_path, new_cache_size, m_is_memory, /*fWipe*/ false, /*obfuscate*/ true);
+        } catch (...) {
+            // Keep the view usable with the previous size and report the failure. If
+            // this reopen throws as well, m_db stays empty and DB() reports it.
+            m_db = std::make_unique<CDBWrapper>(
+                m_ldb_path, m_cache_size, m_is_memory, /*fWipe*/ false, /*obfuscate*/ true);
+            throw;
+        }
+        m_cache_size = new_cache_size;
     }
 }
 
 bool CCoinsViewDB::GetCoin(const COutPoint &outpoint, Coin &coin) const {
-    return m_db->Read(CoinEntry(&outpoint), coin);
+    return DB().Read(CoinEntry(&outpoint), coin);
 }
 
 bool CCoinsViewDB::HaveCoin(const COutPoint &outpoint) const {
-    return m_db->Exists(CoinEntry(&outpoint));
+    return DB().Exists(CoinEntry(&outpoint));
 }
 
 uint256 CCoinsViewDB::GetBestBlock() const {
     uint256 hashBestChain;
-    if (!m_db->Read(DB_BEST_BLOCK, hashBestChain))
+    if (!DB().Read(DB_BEST_BLOCK, hashBestChain))
         return uint256();
     return hashBestChain;
 }
 
 std::vector<uint256> CCoinsViewDB::GetHeadBlocks() const {
     std::vector<uint256> vhashHeadBlocks;
-    if (!m_db->Read(DB_HEAD_BLOCKS, vhashHeadBlocks)) {
+    const CDBWrapper::ReadStatus res = DB().TryRead(DB_HEAD_BLOCKS, vhashHeadBlocks);
+    if (!res) {
+        // A present but unreadable marker must not look like a consistent database.
+        switch (const auto& [err_code, err_msg] = res.error(); err_code) {
+            case CDBWrapper::ReadFailure::Code::DeserializationError:
+                throw dbwrapper_error{strprintf("Head blocks deserialization failure: %s", err_msg)};
+            case CDBWrapper::ReadFailure::Code::DatabaseError:
+                throw dbwrapper_error{err_msg};
+        } // no default case, so the compiler can warn about missing cases
+        std::abort(); // unreachable
+    }
+    if (!res.value()) {
         return std::vector<uint256>();
+    }
+    if (vhashHeadBlocks.empty()) {
+        // Only an absent marker means a consistent database; a written marker names two blocks.
+        throw dbwrapper_error("Head blocks marker is present but empty");
     }
     return vhashHeadBlocks;
 }
 
 bool CCoinsViewDB::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlock, bool erase) {
-    CDBBatch batch(*m_db);
+    CDBBatch batch(DB());
     size_t count = 0;
     size_t changed = 0;
     size_t batch_size = (size_t)gArgs.GetArg("-dbbatchsize", nDefaultDbBatchSize);
@@ -145,7 +178,7 @@ bool CCoinsViewDB::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlock, boo
         it = erase ? mapCoins.erase(it) : std::next(it);
         if (batch.SizeEstimate() > batch_size) {
             LogPrint(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
-            m_db->WriteBatch(batch);
+            DB().WriteBatch(batch);
             batch.Clear();
             if (crash_simulate) {
                 static FastRandomContext rng;
@@ -162,14 +195,14 @@ bool CCoinsViewDB::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlock, boo
     batch.Write(DB_BEST_BLOCK, hashBlock);
 
     LogPrint(BCLog::COINDB, "Writing final batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
-    bool ret = m_db->WriteBatch(batch);
+    bool ret = DB().WriteBatch(batch);
     LogPrint(BCLog::COINDB, "Committed %u changed transaction outputs (out of %u) to coin database...\n", (unsigned int)changed, (unsigned int)count);
     return ret;
 }
 
 size_t CCoinsViewDB::EstimateSize() const
 {
-    return m_db->EstimateSize(DB_COIN, uint8_t(DB_COIN + 1));
+    return DB().EstimateSize(DB_COIN, uint8_t(DB_COIN + 1));
 }
 
 CBlockTreeDB::CBlockTreeDB(size_t nCacheSize, bool fMemory, bool fWipe) : CDBWrapper(gArgs.GetDataDirNet() / "blocks" / "index", nCacheSize, fMemory, fWipe) {
@@ -215,26 +248,43 @@ private:
     std::unique_ptr<CDBIterator> pcursor;
     std::pair<uint8_t, COutPoint> keyTmp;
 
+    //! Cache the coin key at the current position. Throws dbwrapper_error if a
+    //! record with the coin prefix does not decode, so it is not mistaken for the end.
+    void CacheKey();
+
     friend class CCoinsViewDB;
 };
 
 std::unique_ptr<CCoinsViewCursor> CCoinsViewDB::Cursor() const
 {
     auto i = std::make_unique<CCoinsViewDBCursor>(
-        const_cast<CDBWrapper&>(*m_db).NewIterator(), GetBestBlock());
+        const_cast<CDBWrapper&>(DB()).NewIterator(), GetBestBlock());
     /* It seems that there are no "const iterators" for LevelDB.  Since we
        only need read operations on it, use a const-cast to get around
        that restriction.  */
     i->pcursor->Seek(DB_COIN);
     // Cache key of first record
-    if (i->pcursor->Valid()) {
-        CoinEntry entry(&i->keyTmp.second);
-        i->pcursor->GetKey(entry);
-        i->keyTmp.first = entry.key;
-    } else {
-        i->keyTmp.first = 0; // Make sure Valid() and GetKey() return false
-    }
+    i->CacheKey();
     return i;
+}
+
+void CCoinsViewDBCursor::CacheKey()
+{
+    keyTmp.first = 0; // Make sure Valid() and GetKey() return false unless a coin key decodes
+    if (!pcursor->Valid()) return;
+    CDataStream ssKey{pcursor->GetKey()};
+    // Coin records are contiguous; any other prefix is past the last coin.
+    if (ssKey.empty() || uint8_t(ssKey[0]) != DB_COIN) return;
+    try {
+        CoinEntry entry(&keyTmp.second);
+        ssKey >> entry;
+    } catch (const std::exception& e) {
+        throw dbwrapper_error(strprintf("Coin database key decode failure: %s", e.what()));
+    }
+    if (!ssKey.empty()) {
+        throw dbwrapper_error("Coin database key has trailing data");
+    }
+    keyTmp.first = DB_COIN;
 }
 
 bool CCoinsViewDBCursor::GetKey(COutPoint &key) const
@@ -265,12 +315,7 @@ bool CCoinsViewDBCursor::Valid() const
 void CCoinsViewDBCursor::Next()
 {
     pcursor->Next();
-    CoinEntry entry(&keyTmp.second);
-    if (!pcursor->Valid() || !pcursor->GetKey(entry)) {
-        keyTmp.first = 0; // Invalidate cached key after last record so that Valid() and GetKey() return false
-    } else {
-        keyTmp.first = entry.key;
-    }
+    CacheKey();
 }
 
 bool CBlockTreeDB::WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*> >& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo) {
@@ -544,7 +589,7 @@ public:
  * Currently implemented: from the per-tx utxo model (0.8..0.14.x) to per-txout.
  */
 bool CCoinsViewDB::Upgrade() {
-    std::unique_ptr<CDBIterator> pcursor(m_db->NewIterator());
+    std::unique_ptr<CDBIterator> pcursor(DB().NewIterator());
     pcursor->Seek(std::make_pair(DB_COINS, uint256()));
     if (!pcursor->Valid()) {
         return true;
@@ -555,7 +600,7 @@ bool CCoinsViewDB::Upgrade() {
     LogPrintf("[0%%]..."); /* Continued */
     uiInterface.ShowProgress(_("Upgrading UTXO database").translated, 0, true);
     size_t batch_size = 1 << 24;
-    CDBBatch batch(*m_db);
+    CDBBatch batch(DB());
     int reportDone = 0;
     std::pair<unsigned char, uint256> key;
     std::pair<unsigned char, uint256> prev_key = {DB_COINS, uint256()};
@@ -589,9 +634,9 @@ bool CCoinsViewDB::Upgrade() {
             }
             batch.Erase(key);
             if (batch.SizeEstimate() > batch_size) {
-                m_db->WriteBatch(batch);
+                DB().WriteBatch(batch);
                 batch.Clear();
-                m_db->CompactRange(prev_key, key);
+                DB().CompactRange(prev_key, key);
                 prev_key = key;
             }
             pcursor->Next();
@@ -599,8 +644,8 @@ bool CCoinsViewDB::Upgrade() {
             break;
         }
     }
-    m_db->WriteBatch(batch);
-    m_db->CompactRange({DB_COINS, uint256()}, key);
+    DB().WriteBatch(batch);
+    DB().CompactRange({DB_COINS, uint256()}, key);
     uiInterface.ShowProgress("", 100, false);
     LogPrintf("[%s].\n", ShutdownRequested() ? "CANCELLED" : "DONE");
     return !ShutdownRequested();

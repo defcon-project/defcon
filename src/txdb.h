@@ -54,6 +54,11 @@ protected:
     std::unique_ptr<CDBWrapper> m_db;
     fs::path m_ldb_path;
     bool m_is_memory;
+    //! Cache size of the open database, used to reopen it if a resize fails.
+    size_t m_cache_size;
+
+    //! The open database. Throws dbwrapper_error if a failed resize left it closed.
+    CDBWrapper& DB() const;
 public:
     /**
      * @param[in] ldb_path    Location in the filesystem where leveldb data will be stored.
@@ -72,8 +77,13 @@ public:
     bool Upgrade();
     size_t EstimateSize() const override;
 
-    //! Dynamically alter the underlying leveldb cache size.
+    //! Dynamically alter the underlying leveldb cache size. If reopening with the
+    //! new size fails, the database is reopened with the previous size and the
+    //! error is rethrown.
     void ResizeCache(size_t new_cache_size) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
+    //! False only after a resize and the reopen with the previous size both failed.
+    bool IsOpen() const { return m_db != nullptr; }
 };
 
 /** Access to the block database (blocks/index/) */

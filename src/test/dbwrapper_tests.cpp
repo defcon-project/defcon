@@ -2,18 +2,26 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <coins.h>
 #include <dbwrapper.h>
+#include <evo/evodb.h>
+#include <node/coinstats.h>
+#include <script/script.h>
+#include <sync.h>
 #include <txdb.h>
 #include <test/util/setup_common.h>
 #include <test/util/logging.h>
 #include <leveldb/env.h>
+#include <txmempool.h>
 #include <uint256.h>
 #include <util/string.h>
+#include <validation.h>
 
 #include <cstdarg>
 #include <cwchar>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 
 #include <boost/test/unit_test.hpp>
@@ -111,6 +119,48 @@ void LogLevelDB(leveldb::Logger& logger, const char* format, ...)
     va_start(args, format);
     logger.Logv(format, args);
     va_end(args);
+}
+
+Coin TestCoin()
+{
+    return Coin{CTxOut{1 * COIN, CScript() << OP_TRUE}, /*nHeightIn=*/1, /*fCoinBaseIn=*/false, /*fCoinStakeIn=*/false};
+}
+
+//! A coin record key as CCoinsViewDB writes it, built by hand so a test can damage it.
+CDataStream CoinKey(const uint256& hash, std::optional<uint32_t> n, bool trailing_byte = false)
+{
+    CDataStream key(SER_DISK, CLIENT_VERSION);
+    key << uint8_t{'C'} << hash;
+    if (n) {
+        uint32_t index{*n};
+        key << VARINT(index);
+    }
+    if (trailing_byte) key << uint8_t{0};
+    return key;
+}
+
+//! Write healthy coins through CCoinsViewDB, then add raw coin records with valid
+//! values, a head-blocks marker and a legacy per-tx record after the coin range.
+void WriteCoinsDB(const fs::path& path, const std::vector<COutPoint>& coins, const uint256& best,
+                  const std::vector<CDataStream>& raw_coin_keys)
+{
+    {
+        CCoinsViewDB view(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/true);
+        CCoinsMapMemoryResource resource;
+        CCoinsMap map{0, CCoinsMap::hasher{}, CCoinsMap::key_equal{}, &resource};
+        for (const auto& outpoint : coins) {
+            map.emplace(outpoint, CCoinsCacheEntry{TestCoin(), CCoinsCacheEntry::DIRTY});
+        }
+        BOOST_REQUIRE(view.BatchWrite(map, best));
+    }
+    CDBWrapper raw(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/false, /*obfuscate=*/true);
+    CDBBatch batch(raw);
+    for (const auto& key : raw_coin_keys) {
+        batch.Write(key, TestCoin());
+    }
+    batch.Write(uint8_t{'H'}, std::vector<uint256>{best, uint256()});
+    batch.Write(std::make_pair(uint8_t{'c'}, uint256{0x10}), uint8_t{0});
+    BOOST_REQUIRE(raw.WriteBatch(batch));
 }
 
 } // namespace
@@ -301,6 +351,383 @@ BOOST_AUTO_TEST_CASE(dbwrapper_logger_format_error)
     // A surrogate cannot be encoded as a multibyte character.
     LogLevelDB(*logger, "%lc", static_cast<wint_t>(0xd800));
     BOOST_CHECK(capture.lines.empty());
+}
+
+// Verify that Read() returns false (without throwing) when the stored value
+// fails to be deserialized
+BOOST_AUTO_TEST_CASE(dbwrapper_read_returns_false_on_deserialization_error)
+{
+    for (const bool obfuscate : {false, true}) {
+        const fs::path path{m_args.GetDataDirBase() / (obfuscate ? "dbwrapper_deser_obf" : "dbwrapper_deser_noobf")};
+        CDBWrapper dbw(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/true, obfuscate);
+
+        constexpr uint8_t key{'X'};
+
+        // Write a single byte. uint256 requires 32 bytes, so reading this key
+        // as uint256 must trigger a deserialization error inside Read()
+        BOOST_REQUIRE(dbw.Write(key, uint8_t{0xFF}));
+        BOOST_CHECK(dbw.Exists(key));
+
+        // Read() must catch the deserialization exception and return false,
+        // the same as if the key were absent
+        uint256 result;
+        BOOST_CHECK(!dbw.Read(key, result));
+    }
+}
+
+// Verify Read() throws dbwrapper_error due to an internal db error
+BOOST_AUTO_TEST_CASE(dbwrapper_read_throws_on_db_error)
+{
+    const fs::path path{m_args.GetDataDirBase() / "dbwrapper_db_error"};
+    constexpr uint8_t key{'Y'};
+
+    // Write a value and compact it into a table file rather than leaving it in the log.
+    {
+        CDBWrapper db(path, 1 << 20);
+        BOOST_REQUIRE(db.Write(key, InsecureRand256()));
+        db.CompactFull();
+    }
+
+    // Corrupt every table so any subsequent Read() fails
+    size_t tables{0};
+    for (const auto& entry : fs::directory_iterator(path)) {
+        const auto extension = entry.path().extension();
+        if (extension == ".ldb" || extension == ".sst") {
+            std::ofstream file(entry.path(), std::ios::binary | std::ios::trunc);
+            BOOST_REQUIRE(file.good());
+            file.put('\xff');
+            ++tables;
+        }
+    }
+    BOOST_REQUIRE(tables > 0);
+
+    // Read() should detect the issue now and throw
+    const CDBWrapper db(path, 1 << 20);
+    uint256 result;
+    BOOST_CHECK_EXCEPTION(db.Read(key, result), dbwrapper_error, HasReason("Fatal LevelDB error"));
+
+    // TryRead() must return DatabaseError (without throwing).
+    CDBWrapper::ReadStatus status = db.TryRead(key, result);
+    BOOST_REQUIRE(!status);
+    BOOST_CHECK(status.error().status == CDBWrapper::ReadFailure::Code::DatabaseError);
+    BOOST_CHECK(status.error().err_msg.find("Fatal LevelDB error") != std::string::npos);
+}
+
+// Exercise TryRead() return values directly: found, absent and DeserializationError.
+// DatabaseError is tested inside 'dbwrapper_read_throws_on_db_error' test
+BOOST_AUTO_TEST_CASE(dbwrapper_tryread)
+{
+    for (const bool obfuscate : {false, true}) {
+        const fs::path path{m_args.GetDataDirBase() / (obfuscate ? "dbwrapper_tryread_obf" : "dbwrapper_tryread_noobf")};
+        CDBWrapper dbw(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/true, obfuscate);
+
+        constexpr uint8_t key_ok{'A'};
+        constexpr uint8_t key_missing{'B'};
+        constexpr uint8_t key_bad{'C'};
+
+        uint256 written_value{InsecureRand256()};
+        BOOST_REQUIRE(dbw.Write(key_ok, written_value));
+        BOOST_REQUIRE(dbw.Write(key_bad, uint8_t{0xFF}));
+
+        // Found: key exists, value deserializes correctly
+        {
+            uint256 read_value;
+            CDBWrapper::ReadStatus status = dbw.TryRead(key_ok, read_value);
+            BOOST_REQUIRE(status);
+            BOOST_CHECK(status.value());
+            BOOST_CHECK_EQUAL(read_value, written_value);
+        }
+
+        // Absent: key does not exist
+        {
+            uint256 read_value;
+            CDBWrapper::ReadStatus status = dbw.TryRead(key_missing, read_value);
+            BOOST_REQUIRE(status);
+            BOOST_CHECK(!status.value());
+        }
+
+        // DeserializationError: key exists but stored value is too short
+        {
+            uint256 read_value;
+            CDBWrapper::ReadStatus status = dbw.TryRead(key_bad, read_value);
+            BOOST_REQUIRE(!status);
+            BOOST_CHECK(status.error().status == CDBWrapper::ReadFailure::Code::DeserializationError);
+            BOOST_CHECK(!status.error().err_msg.empty());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(coinsviewdb_head_blocks_decode)
+{
+    const fs::path path{m_args.GetDataDirBase() / "coinsviewdb_head_blocks"};
+    const std::vector<uint256> heads{InsecureRand256(), InsecureRand256()};
+    CCoinsMapMemoryResource resource;
+    CCoinsMap map{0, CCoinsMap::hasher{}, CCoinsMap::key_equal{}, &resource};
+    const auto set_marker = [&](const auto& value) {
+        CDBWrapper raw(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/false, /*obfuscate=*/true);
+        BOOST_REQUIRE(raw.Write(uint8_t{'H'}, value));
+    };
+
+    // An absent marker means a consistent database.
+    {
+        CCoinsViewDB view(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/true);
+        BOOST_CHECK(view.GetHeadBlocks().empty());
+    }
+
+    // A valid marker is returned, and the next flush to its new tip completes the transition.
+    set_marker(heads);
+    {
+        CCoinsViewDB view(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/false);
+        BOOST_CHECK(view.GetHeadBlocks() == heads);
+        BOOST_REQUIRE(view.BatchWrite(map, heads[0]));
+        BOOST_CHECK(view.GetHeadBlocks().empty());
+        BOOST_CHECK_EQUAL(view.GetBestBlock(), heads[0]);
+    }
+
+    // A present marker that does not decode, or names no block, is an error rather than
+    // an absent marker: a two-entry marker with one hash, a bare two-entry count, and an
+    // empty marker.
+    for (const int variant : {0, 1, 2}) {
+        if (variant == 0) {
+            set_marker(std::make_pair(uint8_t{2}, heads[0]));
+        } else if (variant == 1) {
+            set_marker(uint8_t{2});
+        } else {
+            set_marker(std::vector<uint256>{});
+        }
+        {
+            CDBWrapper raw(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/false, /*obfuscate=*/true);
+            BOOST_REQUIRE(raw.Erase(uint8_t{'B'}));
+        }
+        CCoinsViewDB view(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/false);
+        BOOST_CHECK_EXCEPTION(view.GetHeadBlocks(), dbwrapper_error,
+                              HasReason(variant == 2 ? "Head blocks marker is present but empty" : "Head blocks deserialization failure"));
+        // Without a best block, a flush consults the marker and must not replace it.
+        BOOST_CHECK_THROW(view.BatchWrite(map, heads[0]), dbwrapper_error);
+        BOOST_CHECK_THROW(view.GetHeadBlocks(), dbwrapper_error);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(coinsviewdb_cursor_key_decode)
+{
+    const uint256 best{InsecureRand256()};
+    const std::vector<COutPoint> healthy{{uint256{0x10}, 0}, {uint256{0x10}, 1}, {uint256{0x20}, 0}};
+    const fs::path base{m_args.GetDataDirBase()};
+
+    // Healthy coin keys, followed by records outside the coin range, end the scan normally.
+    WriteCoinsDB(base / "cursor_healthy", healthy, best, {});
+    {
+        CCoinsViewDB view(base / "cursor_healthy", 1 << 20, /*fMemory=*/false, /*fWipe=*/false);
+        auto cursor = view.Cursor();
+        std::vector<COutPoint> keys;
+        while (cursor->Valid()) {
+            COutPoint key;
+            Coin coin;
+            BOOST_REQUIRE(cursor->GetKey(key));
+            BOOST_REQUIRE(cursor->GetValue(coin));
+            keys.push_back(key);
+            cursor->Next();
+        }
+        BOOST_CHECK(keys == healthy);
+    }
+
+    // A damaged first coin key must not be returned as a coin.
+    WriteCoinsDB(base / "cursor_first", healthy, best, {CoinKey(uint256{0x01}, std::nullopt)});
+    {
+        CCoinsViewDB view(base / "cursor_first", 1 << 20, /*fMemory=*/false, /*fWipe=*/false);
+        BOOST_CHECK_EXCEPTION(view.Cursor(), dbwrapper_error, HasReason("Coin database key decode failure"));
+    }
+
+    // A damaged later coin key, or one with trailing data, must not look like the end of the coins.
+    for (const bool trailing : {false, true}) {
+        const fs::path path{base / (trailing ? "cursor_trailing" : "cursor_later")};
+        WriteCoinsDB(path, healthy, best, {trailing ? CoinKey(uint256{0xf0}, 0, /*trailing_byte=*/true) : CoinKey(uint256{0xf0}, std::nullopt)});
+        CCoinsViewDB view(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/false);
+        auto cursor = view.Cursor();
+        size_t rows{0};
+        const auto scan = [&] {
+            while (cursor->Valid()) {
+                ++rows;
+                cursor->Next();
+            }
+        };
+        BOOST_CHECK_EXCEPTION(scan(), dbwrapper_error, HasReason(trailing ? "Coin database key has trailing data" : "Coin database key decode failure"));
+        BOOST_CHECK_EQUAL(rows, healthy.size());
+        BOOST_CHECK(!cursor->Valid());
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(coinsviewdb_utxo_stats_bad_key, TestingSetup)
+{
+    // UTXO statistics must fail instead of reporting the coins before a damaged key.
+    const fs::path path{m_args.GetDataDirBase() / "utxo_stats_bad_key"};
+    const std::vector<COutPoint> healthy{{uint256{0x10}, 0}, {uint256{0x20}, 0}};
+    WriteCoinsDB(path, healthy, InsecureRand256(), {CoinKey(uint256{0xf0}, std::nullopt)});
+    CCoinsViewDB view(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/false);
+    const CBlockIndex* tip{WITH_LOCK(::cs_main, return m_node.chainman->ActiveChain().Tip())};
+    CCoinsStats stats{CoinStatsHashType::NONE};
+    stats.index_requested = false;
+    BOOST_CHECK_EXCEPTION(GetUTXOStats(&view, m_node.chainman->m_blockman, stats, [] {}, tip),
+                          dbwrapper_error, HasReason("Coin database key decode failure"));
+}
+
+BOOST_AUTO_TEST_CASE(coinsviewdb_resize_reopen_failure)
+{
+    const fs::path path{m_args.GetDataDirBase() / "coinsviewdb_resize"};
+    const COutPoint outpoint{InsecureRand256(), 0};
+    const uint256 best{InsecureRand256()};
+    WriteCoinsDB(path, {outpoint}, best, {});
+    CCoinsViewDB view(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/false);
+    LOCK(::cs_main);
+
+    // The first `failures` database opens throw after LevelDB opened, like a failed reopen.
+    int failures{0};
+    const auto fail_opens = [&failures](const std::string* line) {
+        if (line && failures > 0) {
+            --failures;
+            throw std::runtime_error("injected reopen failure");
+        }
+        return false;
+    };
+
+    // If the new size cannot be opened, the database is reopened with the previous size.
+    failures = 1;
+    {
+        DebugLogHelper fail{"Opened LevelDB successfully", fail_opens};
+        BOOST_CHECK_EXCEPTION(view.ResizeCache(1 << 21), std::runtime_error, HasReason("injected reopen failure"));
+    }
+    BOOST_CHECK_EQUAL(failures, 0);
+    Coin coin;
+    BOOST_CHECK(view.GetCoin(outpoint, coin));
+    BOOST_CHECK_EQUAL(view.GetBestBlock(), best);
+
+    // If that reopen fails as well, every access reports the closed database.
+    failures = 2;
+    {
+        DebugLogHelper fail{"Opened LevelDB successfully", fail_opens};
+        BOOST_CHECK_EXCEPTION(view.ResizeCache(1 << 21), std::runtime_error, HasReason("injected reopen failure"));
+    }
+    BOOST_CHECK_EQUAL(failures, 0);
+    const HasReason closed{"Coin database is closed after a failed cache resize"};
+    BOOST_CHECK_EXCEPTION(view.GetCoin(outpoint, coin), dbwrapper_error, closed);
+    BOOST_CHECK_EXCEPTION(view.HaveCoin(outpoint), dbwrapper_error, closed);
+    BOOST_CHECK_EXCEPTION(view.GetBestBlock(), dbwrapper_error, closed);
+    BOOST_CHECK_EXCEPTION(view.GetHeadBlocks(), dbwrapper_error, closed);
+    BOOST_CHECK_EXCEPTION(view.Cursor(), dbwrapper_error, closed);
+    BOOST_CHECK_EXCEPTION(view.EstimateSize(), dbwrapper_error, closed);
+    BOOST_CHECK_EXCEPTION(view.Upgrade(), dbwrapper_error, closed);
+    CCoinsMapMemoryResource resource;
+    CCoinsMap map{0, CCoinsMap::hasher{}, CCoinsMap::key_equal{}, &resource};
+    BOOST_CHECK_EXCEPTION(view.BatchWrite(map, best), dbwrapper_error, closed);
+
+    // A later resize reopens the database with its data intact.
+    view.ResizeCache(1 << 21);
+    BOOST_CHECK(view.GetCoin(outpoint, coin));
+    BOOST_CHECK_EQUAL(view.GetBestBlock(), best);
+}
+
+//! A failed coins DB reopen must leave the recorded cache sizes unchanged, so the
+//! same resize is attempted again instead of being reported as already applied.
+BOOST_FIXTURE_TEST_CASE(chainstate_resize_reopen_failure, TestingSetup)
+{
+    ChainstateManager manager;
+    WITH_LOCK(::cs_main, manager.m_blockman.m_block_tree_db = std::make_unique<CBlockTreeDB>(1 << 20, true));
+    CTxMemPool mempool;
+
+    CChainState& c1 = WITH_LOCK(cs_main, return manager.InitializeChainstate(&mempool, *m_node.evodb, m_node.chain_helper));
+    c1.InitCoinsDB(
+        /* cache_size_bytes */ 1 << 23, /* in_memory */ false, /* should_wipe */ true, "chainstate_resize_failure");
+    WITH_LOCK(::cs_main, c1.InitCoinsCache(1 << 23));
+    BOOST_REQUIRE(c1.LoadGenesisBlock());
+
+    LOCK(::cs_main);
+    // Set a meaningless bestblock value in the coinsview cache - otherwise we won't
+    // flush during ResizeCoinsCaches() and will subsequently hit an assertion.
+    c1.CoinsTip().SetBestBlock(InsecureRand256());
+    const size_t coinstip_size{c1.m_coinstip_cache_size_bytes};
+    const size_t coinsdb_size{c1.m_coinsdb_cache_size_bytes};
+
+    // The first `failures` database opens throw after LevelDB opened, like a failed reopen.
+    int failures{0};
+    const auto fail_opens = [&failures](const std::string* line) {
+        if (line && failures > 0) {
+            --failures;
+            throw std::runtime_error("injected reopen failure");
+        }
+        return false;
+    };
+
+    // Only the reopen with the new size fails; the previous size is restored.
+    failures = 1;
+    {
+        DebugLogHelper fail_reopen{"Opened LevelDB successfully", fail_opens};
+        BOOST_CHECK_EXCEPTION(c1.ResizeCoinsCaches(1 << 24, 1 << 22), std::runtime_error,
+                              HasReason("injected reopen failure"));
+    }
+    BOOST_REQUIRE_EQUAL(failures, 0);
+    BOOST_REQUIRE_EQUAL(c1.m_coinstip_cache_size_bytes, coinstip_size);
+    BOOST_REQUIRE_EQUAL(c1.m_coinsdb_cache_size_bytes, coinsdb_size);
+    BOOST_CHECK(c1.CoinsDB().GetHeadBlocks().empty());
+
+    // Repeating the same request reopens the database and only then records the sizes.
+    {
+        ASSERT_DEBUG_LOG("Opened LevelDB successfully");
+        BOOST_CHECK(c1.ResizeCoinsCaches(1 << 24, 1 << 22));
+    }
+    BOOST_CHECK_EQUAL(c1.m_coinstip_cache_size_bytes, size_t{1 << 24});
+    BOOST_CHECK_EQUAL(c1.m_coinsdb_cache_size_bytes, size_t{1 << 22});
+
+    // If the previous size cannot be restored either, the database stays closed and the
+    // unchanged recorded sizes must not make a request for them look already applied.
+    failures = 2;
+    {
+        DebugLogHelper fail_reopen{"Opened LevelDB successfully", fail_opens};
+        BOOST_CHECK_EXCEPTION(c1.ResizeCoinsCaches(1 << 23, 1 << 23), std::runtime_error,
+                              HasReason("injected reopen failure"));
+    }
+    BOOST_REQUIRE_EQUAL(failures, 0);
+    BOOST_CHECK_EQUAL(c1.m_coinstip_cache_size_bytes, size_t{1 << 24});
+    BOOST_CHECK_EQUAL(c1.m_coinsdb_cache_size_bytes, size_t{1 << 22});
+    BOOST_CHECK_THROW(c1.CoinsDB().GetBestBlock(), dbwrapper_error);
+    BOOST_CHECK(c1.ResizeCoinsCaches(1 << 24, 1 << 22));
+    BOOST_CHECK_NO_THROW(c1.CoinsDB().GetBestBlock());
+}
+
+//! ReplayBlocks() treats only an absent head-blocks marker as a consistent coins
+//! database; a present marker that does not decode stops it with an error.
+BOOST_FIXTURE_TEST_CASE(chainstate_replay_head_blocks, TestingSetup)
+{
+    ChainstateManager manager;
+    WITH_LOCK(::cs_main, manager.m_blockman.m_block_tree_db = std::make_unique<CBlockTreeDB>(1 << 20, true));
+    CTxMemPool mempool;
+    CChainState& c1 = WITH_LOCK(cs_main, return manager.InitializeChainstate(&mempool, *m_node.evodb, m_node.chain_helper));
+
+    // Open a fresh on-disk coins DB for the chainstate, with the marker written first.
+    const auto open_with_marker = [&](const std::string& name, const auto& marker) {
+        {
+            CDBWrapper raw(gArgs.GetDataDirNet() / name, 1 << 20, /*fMemory=*/false, /*fWipe=*/true, /*obfuscate=*/true);
+            BOOST_REQUIRE(raw.Write(uint8_t{'H'}, marker));
+        }
+        c1.InitCoinsDB(/* cache_size_bytes */ 1 << 20, /* in_memory */ false, /* should_wipe */ false, name);
+    };
+
+    c1.InitCoinsDB(/* cache_size_bytes */ 1 << 20, /* in_memory */ false, /* should_wipe */ true, "replay_absent");
+    BOOST_CHECK(c1.ReplayBlocks());
+
+    // Existing rejections of decodable markers are unchanged.
+    open_with_marker("replay_one_head", std::vector<uint256>{InsecureRand256()});
+    BOOST_CHECK(!c1.ReplayBlocks());
+    open_with_marker("replay_unknown_heads", std::vector<uint256>{InsecureRand256(), InsecureRand256()});
+    BOOST_CHECK(!c1.ReplayBlocks());
+
+    // A two-entry marker with only one hash, and a bare two-entry count.
+    open_with_marker("replay_truncated", std::make_pair(uint8_t{2}, InsecureRand256()));
+    BOOST_CHECK_EXCEPTION(c1.ReplayBlocks(), dbwrapper_error, HasReason("Head blocks deserialization failure"));
+    open_with_marker("replay_count_only", uint8_t{2});
+    BOOST_CHECK_EXCEPTION(c1.ReplayBlocks(), dbwrapper_error, HasReason("Head blocks deserialization failure"));
+    // A present marker that decodes to no block is not an absent marker either.
+    open_with_marker("replay_empty", std::vector<uint256>{});
+    BOOST_CHECK_EXCEPTION(c1.ReplayBlocks(), dbwrapper_error, HasReason("Head blocks marker is present but empty"));
 }
 
 BOOST_AUTO_TEST_CASE(dbwrapper)

@@ -5503,14 +5503,16 @@ bool CChainState::ResizeCoinsCaches(size_t coinstip_size, size_t coinsdb_size)
 {
     AssertLockHeld(::cs_main);
     if (coinstip_size == m_coinstip_cache_size_bytes &&
-            coinsdb_size == m_coinsdb_cache_size_bytes) {
+            coinsdb_size == m_coinsdb_cache_size_bytes && CoinsDB().IsOpen()) {
         // Cache sizes are unchanged, no need to continue.
         return true;
     }
     size_t old_coinstip_size = m_coinstip_cache_size_bytes;
+    // Record the new sizes only once the database has reopened with them, so a
+    // failed resize is retried instead of being treated as already applied.
+    CoinsDB().ResizeCache(coinsdb_size);
     m_coinstip_cache_size_bytes = coinstip_size;
     m_coinsdb_cache_size_bytes = coinsdb_size;
-    CoinsDB().ResizeCache(coinsdb_size);
 
     LogPrintf("[%s] resized coinsdb cache to %.1f MiB\n",
         this->ToString(), coinsdb_size * (1.0 / 1024 / 1024));
