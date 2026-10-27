@@ -4,6 +4,7 @@
 
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
+#include <dbwrapper.h>
 #include <evo/cbtx.h>
 #include <evo/evodb.h>
 #include <evo/mnhftx.h>
@@ -247,6 +248,9 @@ std::optional<CMNHFManager::Signals> CMNHFManager::ProcessBlock(const CBlock& bl
 
         AddToCache(signals, pindex);
         return signals;
+    } catch (const dbwrapper_error& e) {
+        state.Error(e.what());
+        return std::nullopt;
     } catch (const CoinbaseChainlockReadError& e) {
         state.Error(e.what());
         return std::nullopt;

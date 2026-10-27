@@ -24,50 +24,25 @@ public:
                 return;
             }
             char buffer[500];
-            for (int iter = 0; iter < 2; iter++) {
-                char* base;
-                int bufsize;
-                if (iter == 0) {
-                    bufsize = sizeof(buffer);
-                    base = buffer;
-                }
-                else {
-                    bufsize = 30000;
-                    base = new char[bufsize];
-                }
-                char* p = base;
-                char* limit = base + bufsize;
+            for (int iter = 0; iter < 2; ++iter) {
+                const int bufsize = iter == 0 ? sizeof(buffer) : 30000;
+                std::unique_ptr<char[]> heap_buffer;
+                if (iter != 0) heap_buffer = std::make_unique<char[]>(bufsize);
+                char* base = iter == 0 ? buffer : heap_buffer.get();
 
-                // Print the message
-                if (p < limit) {
-                    va_list backup_ap;
-                    va_copy(backup_ap, ap);
-                    // Do not use vsnprintf elsewhere in bitcoin source code, see above.
-                    p += vsnprintf(p, limit - p, format, backup_ap);
-                    va_end(backup_ap);
-                }
+                va_list backup_ap;
+                va_copy(backup_ap, ap);
+                // Do not use vsnprintf elsewhere in bitcoin source code, see above.
+                const int required = vsnprintf(base, bufsize, format, backup_ap);
+                va_end(backup_ap);
+                if (required < 0) return;
+                if (required >= bufsize && iter == 0) continue;
 
-                // Truncate to available space if necessary
-                if (p >= limit) {
-                    if (iter == 0) {
-                        continue;       // Try again with larger buffer
-                    }
-                    else {
-                        p = limit - 1;
-                    }
-                }
-
-                // Add newline if necessary
-                if (p == base || p[-1] != '\n') {
-                    *p++ = '\n';
-                }
-
-                assert(p <= limit);
-                base[std::min(bufsize - 1, (int)(p - base))] = '\0';
+                // Clamp the integer length before forming a pointer into the buffer.
+                char* p = base + std::min(required, bufsize - 1);
+                if (p == base || p[-1] != '\n') *p++ = '\n';
+                base[std::min(bufsize - 1, static_cast<int>(p - base))] = '\0';
                 LogPrintLevel(BCLog::LEVELDB, BCLog::Level::Debug, "%s", base);  /* Continued */
-                if (base != buffer) {
-                    delete[] base;
-                }
                 break;
             }
     }
@@ -98,14 +73,20 @@ static void SetMaxOpenFiles(leveldb::Options *options) {
              options->max_open_files, default_open_files);
 }
 
-static leveldb::Options GetOptions(size_t nCacheSize)
+std::unique_ptr<leveldb::Logger> dbwrapper_private::CreateLevelDBLogger()
+{
+    return std::make_unique<CBitcoinLevelDBLogger>();
+}
+
+static leveldb::Options GetOptions(size_t nCacheSize, leveldb::Cache* cache,
+                                  const leveldb::FilterPolicy* filter, leveldb::Logger* logger)
 {
     leveldb::Options options;
-    options.block_cache = leveldb::NewLRUCache(nCacheSize / 2);
+    options.block_cache = cache;
     options.write_buffer_size = nCacheSize / 4; // up to two write buffers may be held in memory simultaneously
-    options.filter_policy = leveldb::NewBloomFilterPolicy(10);
+    options.filter_policy = filter;
     options.compression = leveldb::kNoCompression;
-    options.info_log = new CBitcoinLevelDBLogger();
+    options.info_log = logger;
     if (leveldb::kMajorVersion > 1 || (leveldb::kMajorVersion == 1 && leveldb::kMinorVersion >= 16)) {
         // LevelDB versions before 1.16 consider short writes to be corruption. Only trigger error
         // on corruption in later versions.
@@ -116,18 +97,20 @@ static leveldb::Options GetOptions(size_t nCacheSize)
 }
 
 CDBWrapper::CDBWrapper(const fs::path& path, size_t nCacheSize, bool fMemory, bool fWipe, bool obfuscate)
-    : m_name{fs::PathToString(path.stem())}
+    : m_block_cache{leveldb::NewLRUCache(nCacheSize / 2)},
+      m_filter_policy{leveldb::NewBloomFilterPolicy(10)},
+      m_logger{dbwrapper_private::CreateLevelDBLogger()},
+      options{GetOptions(nCacheSize, m_block_cache.get(), m_filter_policy.get(), m_logger.get())},
+      m_name{fs::PathToString(path.stem())}
 {
-    penv = nullptr;
     readoptions.verify_checksums = true;
     iteroptions.verify_checksums = true;
     iteroptions.fill_cache = false;
     syncoptions.sync = true;
-    options = GetOptions(nCacheSize);
     options.create_if_missing = true;
     if (fMemory) {
-        penv = leveldb::NewMemEnv(leveldb::Env::Default());
-        options.env = penv;
+        penv.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
+        options.env = penv.get();
     } else {
         if (fWipe) {
             LogPrintf("Wiping LevelDB in %s\n", fs::PathToString(path));
@@ -141,7 +124,9 @@ CDBWrapper::CDBWrapper(const fs::path& path, size_t nCacheSize, bool fMemory, bo
     // because on POSIX leveldb passes the byte string directly to ::open(), and
     // on Windows it converts from UTF-8 to UTF-16 before calling ::CreateFileW
     // (see env_posix.cc and env_windows.cc).
-    leveldb::Status status = leveldb::DB::Open(options, fs::PathToString(path), &pdb);
+    leveldb::DB* db{nullptr};
+    leveldb::Status status = leveldb::DB::Open(options, fs::PathToString(path), &db);
+    pdb.reset(db);
     dbwrapper_private::HandleError(status);
     LogPrintf("Opened LevelDB successfully\n");
 
@@ -171,19 +156,7 @@ CDBWrapper::CDBWrapper(const fs::path& path, size_t nCacheSize, bool fMemory, bo
     LogPrintf("Using obfuscation key for %s: %s\n", fs::PathToString(path), HexStr(obfuscate_key));
 }
 
-CDBWrapper::~CDBWrapper()
-{
-    delete pdb;
-    pdb = nullptr;
-    delete options.filter_policy;
-    options.filter_policy = nullptr;
-    delete options.info_log;
-    options.info_log = nullptr;
-    delete options.block_cache;
-    options.block_cache = nullptr;
-    delete penv;
-    options.env = nullptr;
-}
+CDBWrapper::~CDBWrapper() = default;
 
 bool CDBWrapper::WriteBatch(CDBBatch& batch, bool fSync)
 {
@@ -239,10 +212,22 @@ bool CDBWrapper::IsEmpty()
     return !(it->Valid());
 }
 
-CDBIterator::~CDBIterator() { delete piter; }
-bool CDBIterator::Valid() const { return piter->Valid(); }
-void CDBIterator::SeekToFirst() { piter->SeekToFirst(); }
-void CDBIterator::Next() { piter->Next(); }
+CDBIterator::~CDBIterator() = default;
+bool CDBIterator::Valid() const
+{
+    dbwrapper_private::HandleError(piter->status());
+    return piter->Valid();
+}
+void CDBIterator::SeekToFirst()
+{
+    piter->SeekToFirst();
+    dbwrapper_private::HandleError(piter->status());
+}
+void CDBIterator::Next()
+{
+    piter->Next();
+    dbwrapper_private::HandleError(piter->status());
+}
 
 namespace dbwrapper_private {
 

@@ -7,6 +7,7 @@
 #include <chainparams.h>
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
+#include <dbwrapper.h>
 #include <evo/cbtx.h>
 #include <evo/creditpool.h>
 #include <evo/deterministicmns.h>
@@ -59,6 +60,8 @@ static bool CheckSpecialTxInner(CDeterministicMNManager& dmnman, llmq::CQuorumSn
         case TRANSACTION_ASSET_UNLOCK:
             return CheckAssetLockUnlockTx(chainman.m_blockman, qman, tx, pindexPrev, indexes, state);
         }
+    } catch (const dbwrapper_error& e) {
+        return state.Error(e.what());
     } catch (const CoinbaseChainlockReadError& e) {
         return state.Error(e.what());
     } catch (const std::exception& e) {
@@ -225,6 +228,8 @@ bool CSpecialTxProcessor::ProcessSpecialTxsInBlock(const CBlock& block, const CB
             bls::bls_legacy_scheme.store(false);
             LogPrintf("CSpecialTxProcessor::%s -- bls_legacy_scheme=%d\n", __func__, bls::bls_legacy_scheme.load());
         }
+    } catch (const dbwrapper_error& e) {
+        return state.Error(e.what());
     } catch (const CoinbaseChainlockReadError& e) {
         return state.Error(e.what());
     } catch (const std::exception& e) {
@@ -309,6 +314,8 @@ bool CSpecialTxProcessor::CheckCreditPoolDiffForBlock(const CBlock& block, const
             return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-cbtx-assetlocked-amount");
         }
 
+    } catch (const dbwrapper_error& e) {
+        return state.Error(e.what());
     } catch (const CoinbaseChainlockReadError& e) {
         return state.Error(e.what());
     } catch (const std::exception& e) {
