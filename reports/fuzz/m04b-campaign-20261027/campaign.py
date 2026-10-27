@@ -905,9 +905,11 @@ def main():
 
 
 if __name__ == "__main__":
+    # Exit outside the handler: a SystemExit(0) from a successful run must not become exit 1.
     try:
-        sys.exit(main())
+        code = main()
     except BaseException as exc:
         print(f"FATAL: {exc!r}", file=sys.stderr, flush=True)
         traceback.print_exc()
         sys.exit(1)
+    sys.exit(code)
