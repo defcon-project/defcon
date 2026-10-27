@@ -12,9 +12,13 @@ LOCK = Path("/home/stejn/.local/state/defcon-work/m04b-campaign.lock")
 NAME = "defcon-m04b-campaign-20261027"
 LABEL = "org.defcon.m04b"
 TOKEN_LABEL = LABEL + ".token-sha256"
-TARGETS = [["process_message_posechal", "process_message_posecommit"],
-           ["process_message_poseresp", "process_message_posereport"],
-           ["pose_report_wire_differential"]]
+# The CI host is shared with the dfcnbridge staging services since 2026-10-25. The user allowed
+# the campaign on 2026-10-27 with at most 2 CPUs and 6 GiB, so two fuzz processes run at a time
+# (2 x the 2300 MB RSS limit plus the 512 MB /tmp fit in 6 GiB) and each one cycles its group.
+CONTAINER_CPUS = "2"
+CONTAINER_MEMORY_GIB = 6
+TARGETS = [["process_message_posechal", "process_message_posecommit", "process_message_poseresp"],
+           ["process_message_posereport", "pose_report_wire_differential"]]
 ALL = [target for group in TARGETS for target in group]
 STOP = threading.Event()
 STOP_REASON = {"value": None}
@@ -337,9 +341,10 @@ def check_container(c, plan, token):
     if (labels.get(LABEL + ".campaign") != NAME
             or labels.get(TOKEN_LABEL) != token_fingerprint(token)):
         raise CampaignFailure("Container ownership labels mismatch")
-    if host["NetworkMode"] != "none" or host["NanoCpus"] != 3000000000:
+    if (host["NetworkMode"] != "none"
+            or host["NanoCpus"] != round(float(CONTAINER_CPUS) * 1_000_000_000)):
         raise CampaignFailure("Network/CPU limits mismatch")
-    if host["CpuShares"] != 128 or host["Memory"] != 9 * 1024**3:
+    if host["CpuShares"] != 128 or host["Memory"] != CONTAINER_MEMORY_GIB * 1024**3:
         raise CampaignFailure("CPU-share/memory limits mismatch")
     if host["MemorySwap"] != host["Memory"] or host["PidsLimit"] != 512:
         raise CampaignFailure("Swap/process limits mismatch")
@@ -446,6 +451,9 @@ def check_host_resources(root=ROOT):
         raise CampaignFailure("Campaign disk ceiling 8 GiB")
     if available < 3 * 1024**2:
         raise CampaignFailure("Host available memory floor 3 GiB")
+    if available < (CONTAINER_MEMORY_GIB + 3) * 1024**2:   # only called before a start
+        raise CampaignFailure(f"Starting needs {CONTAINER_MEMORY_GIB} GiB for the container "
+                              "plus the 3 GiB host floor available")
     return {"campaign_bytes": used, "disk_free": free,
             "mem_available_kib": available}
 
@@ -589,7 +597,7 @@ def inside():
 
     started, driver_error = utc(), None
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(TARGETS)) as pool:
             futures = [pool.submit(worker, slot, group) for slot, group in enumerate(TARGETS)]
             while not all(f.done() for f in futures):
                 with mutex:
@@ -663,8 +671,9 @@ def host_child(token):
         args = ["create", "--pull=never", "--name", NAME, "--init", "--restart=no",
             "--stop-timeout", "45", "--label", f"{LABEL}.campaign={NAME}",
             "--label", f"{TOKEN_LABEL}={token_fingerprint(token)}", "--network", "none",
-            "--cpus", "3", "--cpu-shares", "128", "--memory", "9g",
-            "--memory-swap", "9g", "--pids-limit", "512", "--read-only",
+            "--cpus", CONTAINER_CPUS, "--cpu-shares", "128",
+            "--memory", f"{CONTAINER_MEMORY_GIB}g", "--memory-swap", f"{CONTAINER_MEMORY_GIB}g",
+            "--pids-limit", "512", "--read-only",
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--oom-score-adj", "500", "--user", f"{plan['uid']}:{plan['gid']}",
             "--tmpfs", "/tmp:rw,nosuid,nodev,size=512m",
