@@ -13,6 +13,7 @@
 #include <chainparams.h>
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
+#include <dbwrapper.h>
 #include <logging.h>
 #include <node/blockstorage.h>
 #include <util/irange.h>
@@ -308,6 +309,8 @@ bool CCreditPoolDiff::ProcessLockUnlockTransaction(const BlockManager& blockman,
         default:
             return true;
         }
+    } catch (const dbwrapper_error& e) {
+        return state.Error(e.what());
     } catch (const CoinbaseChainlockReadError& e) {
         return state.Error(e.what());
     } catch (const std::exception& e) {
@@ -366,6 +369,9 @@ std::optional<CCreditPoolDiff> GetCreditPoolDiffForBlock(CCreditPoolManager& cpo
             }
         }
         return creditPoolDiff;
+    } catch (const dbwrapper_error& e) {
+        state.Error(e.what());
+        return std::nullopt;
     } catch (const CoinbaseChainlockReadError& e) {
         state.Error(e.what());
         return std::nullopt;

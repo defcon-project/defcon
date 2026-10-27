@@ -5,9 +5,14 @@
 #include <dbwrapper.h>
 #include <txdb.h>
 #include <test/util/setup_common.h>
+#include <test/util/logging.h>
+#include <leveldb/env.h>
 #include <uint256.h>
 #include <util/string.h>
 
+#include <cstdarg>
+#include <cwchar>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 
@@ -48,9 +53,255 @@ public:
 };
 
 int CopyFaultValue::s_copies_before_throw{-1};
+
+struct SerializeFault
+{
+    template <typename Stream> void Serialize(Stream& stream) const
+    {
+        stream << uint8_t{'x'};
+        throw std::runtime_error("injected serialization failure");
+    }
+};
+
+// One valid record followed by an injected storage failure, or healthy EOF.
+class FaultIterator : public leveldb::Iterator
+{
+    const leveldb::Status m_failure;
+    bool m_positioned{false};
+    bool m_at_end{false};
+    const std::string m_key{"a"};
+    const std::string m_value{"v"};
+public:
+    explicit FaultIterator(leveldb::Status failure) : m_failure(std::move(failure)) {}
+    bool Valid() const override { return m_positioned && !m_at_end; }
+    void SeekToFirst() override { m_positioned = true; m_at_end = false; }
+    void SeekToLast() override { SeekToFirst(); }
+    void Seek(const leveldb::Slice&) override { SeekToFirst(); }
+    void Next() override { m_at_end = true; }
+    void Prev() override { m_at_end = true; }
+    leveldb::Slice key() const override { return m_key; }
+    leveldb::Slice value() const override { return m_value; }
+    leveldb::Status status() const override { return m_at_end ? m_failure : leveldb::Status::OK(); }
+};
+
+class LevelDBLogCapture
+{
+    const bool m_was_enabled{LogInstance().WillLogCategory(BCLog::LEVELDB)};
+    const BCLog::Level m_level{LogInstance().LogLevel()};
+    std::list<std::function<void(const std::string&)>>::iterator m_connection;
+public:
+    std::vector<std::string> lines;
+    LevelDBLogCapture()
+    {
+        LogInstance().EnableCategory(BCLog::LEVELDB);
+        LogInstance().SetLogLevel(BCLog::Level::Debug);
+        m_connection = LogInstance().PushBackCallback([this](const std::string& line) { lines.push_back(line); });
+    }
+    ~LevelDBLogCapture()
+    {
+        LogInstance().DeleteCallback(m_connection);
+        LogInstance().SetLogLevel(m_level);
+        if (!m_was_enabled) LogInstance().DisableCategory(BCLog::LEVELDB);
+    }
+};
+
+void LogLevelDB(leveldb::Logger& logger, const char* format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    logger.Logv(format, args);
+    va_end(args);
+}
+
 } // namespace
 
 BOOST_FIXTURE_TEST_SUITE(dbwrapper_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(dbwrapper_batch_exception_reuse)
+{
+    for (const bool obfuscate : {false, true}) {
+        CDBWrapper db(m_args.GetDataDirBase() / "batch_fault", 1 << 20, true, false, obfuscate);
+        for (const bool clear : {false, true}) {
+            for (const int fault : {0, 1, 2, 3}) {
+                CDBBatch batch(db);
+                batch.Write(uint8_t{'a'}, uint32_t{1});
+                const auto before = batch.SizeEstimate();
+                if (fault == 0) BOOST_CHECK_THROW(batch.Write(SerializeFault{}, uint32_t{2}), std::runtime_error);
+                if (fault == 1) BOOST_CHECK_THROW(batch.Write(uint8_t{'b'}, SerializeFault{}), std::runtime_error);
+                if (fault == 2) BOOST_CHECK_THROW(batch.Erase(SerializeFault{}), std::runtime_error);
+                if (fault == 3) {
+                    CDataStream key(SER_DISK, CLIENT_VERSION);
+                    key << uint8_t{'b'};
+                    BOOST_CHECK_THROW(batch.Write(key, SerializeFault{}), std::runtime_error);
+                }
+                BOOST_CHECK_EQUAL(batch.SizeEstimate(), before);
+                if (clear) {
+                    batch.Clear();
+                    BOOST_CHECK_EQUAL(batch.SizeEstimate(), 0U);
+                }
+                batch.Write(uint8_t{'b'}, uint32_t{2});
+                batch.Erase(uint8_t{'c'});
+                CDBBatch fresh(db);
+                if (!clear) fresh.Write(uint8_t{'a'}, uint32_t{1});
+                fresh.Write(uint8_t{'b'}, uint32_t{2});
+                fresh.Erase(uint8_t{'c'});
+                BOOST_CHECK_EQUAL(batch.SizeEstimate(), fresh.SizeEstimate());
+                BOOST_REQUIRE(db.WriteBatch(batch));
+                uint32_t value{0};
+                BOOST_REQUIRE(db.Read(uint8_t{'b'}, value));
+                BOOST_CHECK_EQUAL(value, 2U);
+                if (!clear) {
+                    BOOST_REQUIRE(db.Read(uint8_t{'a'}, value));
+                    BOOST_CHECK_EQUAL(value, 1U);
+                }
+                BOOST_CHECK(!db.Exists(uint8_t{'c'}));
+                db.Erase(uint8_t{'a'});
+                db.Erase(uint8_t{'b'});
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(dbwrapper_iterator_storage_errors)
+{
+    CDBWrapper db(m_args.GetDataDirBase() / "iterator_fault", 1 << 20, true);
+    for (const auto& error : {leveldb::Status::IOError("injected iterator I/O failure"),
+                              leveldb::Status::Corruption("injected iterator corruption")}) {
+        CDBIterator first(db, leveldb::NewErrorIterator(error));
+        BOOST_CHECK_THROW(first.Valid(), dbwrapper_error);
+        BOOST_CHECK_THROW(first.SeekToFirst(), dbwrapper_error);
+        BOOST_CHECK_THROW(first.Seek(uint8_t{'a'}), dbwrapper_error);
+        for (const bool seek : {false, true}) {
+            CDBIterator mid(db, new FaultIterator(error));
+            if (seek) mid.Seek(uint8_t{'a'}); else mid.SeekToFirst();
+            BOOST_REQUIRE(mid.Valid());
+            uint8_t key{0};
+            BOOST_REQUIRE(mid.GetKey(key));
+            BOOST_CHECK_EQUAL(key, uint8_t{'a'});
+            BOOST_CHECK_THROW(mid.Next(), dbwrapper_error);
+            BOOST_CHECK_THROW(mid.Valid(), dbwrapper_error);
+        }
+        struct Parent {
+            CDBWrapper& db;
+            const leveldb::Status& error;
+            CDBIterator* NewIterator() { return new CDBIterator(db, leveldb::NewErrorIterator(error)); }
+        } parent{db, error};
+        CDBBatch batch(db);
+        CDBTransaction<Parent, CDBBatch> tx(parent, batch);
+        tx.Write(uint8_t{'z'}, uint32_t{1});
+        auto overlay = tx.NewIteratorUniquePtr();
+        BOOST_CHECK_THROW(overlay->SeekToFirst(), dbwrapper_error);
+        BOOST_CHECK_THROW(overlay->Valid(), dbwrapper_error);
+    }
+    CDBIterator empty(db, leveldb::NewEmptyIterator());
+    empty.SeekToFirst();
+    BOOST_CHECK(!empty.Valid());
+    CDBIterator healthy(db, new FaultIterator(leveldb::Status::OK()));
+    healthy.SeekToFirst();
+    BOOST_REQUIRE(healthy.Valid());
+    healthy.Next();
+    BOOST_CHECK(!healthy.Valid());
+    BOOST_CHECK(db.IsEmpty());
+    BOOST_REQUIRE(db.Write(uint8_t{'a'}, uint32_t{1}));
+    BOOST_CHECK(!db.IsEmpty());
+}
+
+BOOST_AUTO_TEST_CASE(dbwrapper_iterator_corrupt_table)
+{
+    const auto path = m_args.GetDataDirBase() / "corrupt_iterator";
+    {
+        CDBWrapper db(path, 1 << 20);
+        BOOST_REQUIRE(db.Write(uint8_t{'a'}, uint32_t{1}));
+        db.CompactFull();
+    }
+    size_t tables{0};
+    for (const auto& entry : fs::directory_iterator(path)) {
+        const auto extension = entry.path().extension();
+        if (extension == ".ldb" || extension == ".sst") {
+            std::ofstream file(entry.path(), std::ios::binary | std::ios::trunc);
+            BOOST_REQUIRE(file.good());
+            file.put('x');
+            ++tables;
+        }
+    }
+    BOOST_REQUIRE(tables > 0);
+    {
+        CDBWrapper db(path, 1 << 20);
+        BOOST_CHECK_THROW(db.IsEmpty(), dbwrapper_error);
+        std::unique_ptr<CDBIterator> it(db.NewIterator());
+        BOOST_CHECK_THROW(it->SeekToFirst(), dbwrapper_error);
+    }
+    // A failing emptiness check must neither install a new obfuscation key nor retain the LOCK.
+    BOOST_CHECK_THROW(CDBWrapper(path, 1 << 20, false, false, true), dbwrapper_error);
+    CDBWrapper reopened(path, 1 << 20);
+    BOOST_CHECK(is_null_key(dbwrapper_private::GetObfuscateKey(reopened)));
+    BOOST_CHECK_THROW(reopened.IsEmpty(), dbwrapper_error);
+}
+
+BOOST_AUTO_TEST_CASE(dbwrapper_constructor_rollback)
+{
+    for (const bool memory : {false, true}) {
+        const auto path = m_args.GetDataDirBase() / (memory ? "ctor_memory" : "ctor_disk");
+        if (!memory) {
+            CDBWrapper seed(path, 1 << 20);
+            BOOST_REQUIRE(seed.Write(uint8_t{'a'}, uint32_t{7}));
+        }
+        {
+            DebugLogHelper fail_after_open{"Opened LevelDB successfully", [](const std::string* line) {
+                if (line) throw std::runtime_error("injected post-open constructor failure");
+                return false;
+            }};
+            BOOST_CHECK_EXCEPTION(CDBWrapper(path, 1 << 20, memory), std::runtime_error,
+                [](const auto& e) { return std::string{e.what()} == "injected post-open constructor failure"; });
+        }
+        // A failed constructor must release the disk LOCK and all in-memory resources.
+        CDBWrapper reopened(path, 1 << 20, memory);
+        if (!memory) {
+            uint32_t persisted{0};
+            BOOST_REQUIRE(reopened.Read(uint8_t{'a'}, persisted));
+            BOOST_CHECK_EQUAL(persisted, 7U);
+        }
+        BOOST_REQUIRE(reopened.Write(uint8_t{'a'}, uint32_t{42}));
+        uint32_t value{0};
+        BOOST_REQUIRE(reopened.Read(uint8_t{'a'}, value));
+        BOOST_CHECK_EQUAL(value, 42U);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(dbwrapper_logger_boundaries)
+{
+    auto logger = dbwrapper_private::CreateLevelDBLogger();
+    LevelDBLogCapture capture;
+    for (const size_t length : {0U, 1U, 498U, 499U, 500U, 501U, 29998U, 29999U, 30000U, 30001U}) {
+        for (const bool newline : {false, true}) {
+            std::string message(length, 'x');
+            if (newline && !message.empty()) message.back() = '\n';
+            capture.lines.clear();
+            LogLevelDB(*logger, "%s", message.c_str());
+            BOOST_REQUIRE_EQUAL(capture.lines.size(), 1U);
+            const size_t capacity = length < 500 ? 500 : 30000;
+            std::string expected = message.substr(0, capacity - 1);
+            if (expected.empty() || expected.back() != '\n') expected += '\n';
+            if (expected.size() >= capacity) expected.resize(capacity - 1);
+            const auto& actual = capture.lines.front();
+            BOOST_REQUIRE(actual.size() >= expected.size());
+            BOOST_CHECK_EQUAL(actual.substr(actual.size() - expected.size()), expected);
+        }
+    }
+    capture.lines.clear();
+    LogInstance().DisableCategory(BCLog::LEVELDB);
+    LogLevelDB(*logger, "%s", "not logged");
+    BOOST_CHECK(capture.lines.empty());
+}
+
+BOOST_AUTO_TEST_CASE(dbwrapper_logger_format_error)
+{
+    auto logger = dbwrapper_private::CreateLevelDBLogger();
+    LevelDBLogCapture capture;
+    // A surrogate cannot be encoded as a multibyte character.
+    LogLevelDB(*logger, "%lc", static_cast<wint_t>(0xd800));
+    BOOST_CHECK(capture.lines.empty());
+}
 
 BOOST_AUTO_TEST_CASE(dbwrapper)
 {

@@ -13,11 +13,19 @@
 #include <util/strencodings.h>
 #include <util/system.h>
 
+#include <memory>
 #include <typeindex>
 #include <type_traits>
 
 #include <leveldb/db.h>
 #include <leveldb/write_batch.h>
+
+namespace leveldb {
+class Cache;
+class Env;
+class FilterPolicy;
+class Logger;
+} // namespace leveldb
 
 static const size_t DBWRAPPER_PREALLOC_KEY_SIZE = 64;
 static const size_t DBWRAPPER_PREALLOC_VALUE_SIZE = 1024;
@@ -44,7 +52,20 @@ void HandleError(const leveldb::Status& status);
  */
 const std::vector<unsigned char>& GetObfuscateKey(const CDBWrapper &w);
 
+// Adapted from Bitcoin Core #35156: scratch streams must be empty on every exit.
+class ScopedDataStreamUsage
+{
+    CDataStream& m_stream;
+public:
+    explicit ScopedDataStreamUsage(CDataStream& stream) : m_stream(stream) { assert(m_stream.empty()); }
+    ~ScopedDataStreamUsage() { m_stream.clear(); }
+    ScopedDataStreamUsage(const ScopedDataStreamUsage&) = delete;
+    ScopedDataStreamUsage& operator=(const ScopedDataStreamUsage&) = delete;
 };
+
+std::unique_ptr<leveldb::Logger> CreateLevelDBLogger();
+
+} // namespace dbwrapper_private
 
 /** Batch of changes queued to be written to a CDBWrapper */
 class CDBBatch
@@ -69,16 +90,18 @@ public:
     void Clear()
     {
         batch.Clear();
+        ssKey.clear();
+        ssValue.clear();
         size_estimate = 0;
     }
 
     template <typename K, typename V>
     void Write(const K& key, const V& value)
     {
+        dbwrapper_private::ScopedDataStreamUsage key_usage{ssKey};
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssKey << key;
         Write(ssKey, value);
-        ssKey.clear();
     }
 
     template <typename V>
@@ -86,6 +109,7 @@ public:
     {
         leveldb::Slice slKey((const char*)_ssKey.data(), _ssKey.size());
 
+        dbwrapper_private::ScopedDataStreamUsage value_usage{ssValue};
         ssValue.reserve(DBWRAPPER_PREALLOC_VALUE_SIZE);
         ssValue << value;
         ssValue.Xor(dbwrapper_private::GetObfuscateKey(parent));
@@ -98,16 +122,15 @@ public:
         // - byte[]: value
         // The formula below assumes the key and value are both less than 16k.
         size_estimate += 3 + (slKey.size() > 127) + slKey.size() + (slValue.size() > 127) + slValue.size();
-        ssValue.clear();
     }
 
     template <typename K>
     void Erase(const K& key)
     {
+        dbwrapper_private::ScopedDataStreamUsage key_usage{ssKey};
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssKey << key;
         Erase(ssKey);
-        ssKey.clear();
     }
 
     void Erase(const CDataStream& _ssKey) {
@@ -128,7 +151,7 @@ class CDBIterator
 {
 private:
     const CDBWrapper &parent;
-    leveldb::Iterator *piter;
+    std::unique_ptr<leveldb::Iterator> piter;
 
 public:
 
@@ -154,6 +177,7 @@ public:
     void Seek(const CDataStream& ssKey) {
         leveldb::Slice slKey((const char*)ssKey.data(), ssKey.size());
         piter->Seek(slKey);
+        dbwrapper_private::HandleError(piter->status());
     }
 
     void Next();
@@ -200,7 +224,11 @@ class CDBWrapper
     friend const std::vector<unsigned char>& dbwrapper_private::GetObfuscateKey(const CDBWrapper &w);
 private:
     //! custom environment this database is using (may be nullptr in case of default environment)
-    leveldb::Env* penv;
+    // Owners precede pdb so the database is destroyed before its dependencies.
+    std::unique_ptr<leveldb::Env> penv;
+    std::unique_ptr<leveldb::Cache> m_block_cache;
+    std::unique_ptr<const leveldb::FilterPolicy> m_filter_policy;
+    std::unique_ptr<leveldb::Logger> m_logger;
 
     //! database options used
     leveldb::Options options;
@@ -218,7 +246,7 @@ private:
     leveldb::WriteOptions syncoptions;
 
     //! the database itself
-    leveldb::DB* pdb;
+    std::unique_ptr<leveldb::DB> pdb;
 
     //! the name of this database
     std::string m_name;
@@ -441,7 +469,8 @@ public:
     }
 
     bool Valid() {
-        return transactionIt != transaction.writes.end() || parentIt->Valid();
+        const bool parent_valid = parentIt->Valid();
+        return transactionIt != transaction.writes.end() || parent_valid;
     }
 
     void Next() {

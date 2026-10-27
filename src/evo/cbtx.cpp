@@ -18,6 +18,7 @@
 #include <chainparams.h>
 #include <consensus/merkle.h>
 #include <deploymentstatus.h>
+#include <dbwrapper.h>
 #include <validation.h>
 
 
@@ -170,6 +171,8 @@ bool CalcCbTxMerkleRootMNList(const CBlock& block, const CBlockIndex* pindexPrev
         }
 
         return true;
+    } catch (const dbwrapper_error& e) {
+        return state.Error(e.what());
     } catch (const CoinbaseChainlockReadError& e) {
         return state.Error(e.what());
     } catch (const std::exception& e) {

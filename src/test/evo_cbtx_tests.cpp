@@ -35,6 +35,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <fstream>
 
 struct QuorumHistoryReadSetup : RegTestingSetup {
     QuorumHistoryReadSetup() : RegTestingSetup({"-testactivationheight=v20@1"}) {}
@@ -227,6 +228,95 @@ BOOST_AUTO_TEST_CASE(malformed_historical_chainlock_is_not_absence)
         file << previous;
     }
     BOOST_CHECK_THROW(GetNonNullCoinbaseChainlock(&index), CoinbaseChainlockReadError);
+}
+
+BOOST_FIXTURE_TEST_CASE(storage_failure_is_not_a_consensus_rejection, QuorumHistoryReadSetup)
+{
+    LOCK(cs_main);
+    const auto& consensus = Params().GetConsensus();
+    auto& ctx = *Assert(m_node.llmq_ctx);
+    CBlockIndex* previous = m_node.chainman->m_blockman.LookupBlockIndex(m_node.chainman->ActiveTip()->GetBlockHash());
+    // The synthetic ancestry only reaches the snapshot-read gates. No block or
+    // transaction-validity claim is made for this isolated failure fixture.
+    for (int height = 1; height <= 576; ++height) {
+        auto* index = m_node.chainman->m_blockman.InsertBlockIndex(GetRandHash());
+        index->pprev = previous;
+        index->nHeight = height;
+        index->BuildSkip();
+        previous = index;
+    }
+    CBlockIndex current;
+    current.nHeight = previous->nHeight + 1;
+    current.pprev = previous;
+    BOOST_REQUIRE(DeploymentActiveAt(current, consensus, Consensus::DEPLOYMENT_DIP0003));
+    BOOST_REQUIRE(DeploymentActiveAt(current, consensus, Consensus::DEPLOYMENT_DIP0008));
+    BOOST_REQUIRE(DeploymentActiveAt(current, consensus, Consensus::DEPLOYMENT_V20));
+    const auto snapshot_key = std::make_pair(std::string{"cpm_S"}, previous->GetBlockHash());
+    const auto backend_dir = m_args.GetDataDirBase() / "damaged-creditpool";
+    fs::create_directories(backend_dir);
+    const std::string original_datadir = gArgs.GetArg("-datadir", "");
+    fs::path backend_path;
+    const auto make_backend = [&](bool wipe) {
+        // Construction alone resolves the path. Restore global arguments even
+        // on failure, before using the independent database and live fixture.
+        gArgs.ForceSetArg("-datadir", fs::PathToString(backend_dir));
+        gArgs.ClearPathCache();
+        const auto restore = [&] {
+            gArgs.ForceSetArg("-datadir", original_datadir);
+            gArgs.ClearPathCache();
+        };
+        try {
+            backend_path = gArgs.GetDataDirNet() / "evodb";
+            auto db = std::make_unique<CEvoDB>(1 << 20, false, wipe);
+            restore();
+            return db;
+        } catch (...) {
+            restore();
+            throw;
+        }
+    };
+    {
+        auto seed = make_backend(true);
+        BOOST_REQUIRE(seed->GetRawDB().Write(snapshot_key, CCreditPool{}));
+        seed->GetRawDB().CompactFull();
+    }
+    size_t tables{0};
+    for (const auto& entry : fs::directory_iterator(backend_path)) {
+        const auto extension = entry.path().extension();
+        if (extension == ".ldb" || extension == ".sst") {
+            std::ofstream file(entry.path(), std::ios::binary | std::ios::trunc);
+            BOOST_REQUIRE(file.good());
+            file.put('x');
+            ++tables;
+        }
+    }
+    BOOST_REQUIRE(tables > 0);
+    auto damaged = make_backend(false);
+    CCreditPoolManager pool(*damaged);
+    // Use the real LevelDB read error type emitted by failed scans too.
+    BOOST_CHECK_THROW(pool.GetCreditPool(previous, consensus), dbwrapper_error);
+    CSpecialTxProcessor processor(pool, *m_node.dmnman, *m_node.mnhf_manager,
+        *ctx.quorum_block_processor, *ctx.qsnapman, *m_node.chainman, consensus, *ctx.clhandler, *ctx.qman);
+    const auto& view = m_node.chainman->ActiveChainstate().CoinsTip();
+    CBlock block;
+    std::optional<MNListUpdates> updates;
+    BlockValidationState process_state;
+    BOOST_CHECK(!processor.ProcessSpecialTxsInBlock(block, &current, view, true, false, process_state, updates));
+    BOOST_CHECK(process_state.IsError());
+    BOOST_CHECK(!process_state.IsInvalid());
+    BOOST_CHECK(process_state.GetRejectReason().find("Fatal LevelDB error:") == 0);
+    BlockValidationState diff_state;
+    BOOST_CHECK(!processor.CheckCreditPoolDiffForBlock(block, &current, 0, diff_state));
+    BOOST_CHECK(diff_state.IsError());
+    BOOST_CHECK(!diff_state.IsInvalid());
+    BOOST_CHECK_EQUAL(diff_state.GetRejectReason(), process_state.GetRejectReason());
+
+    // The same empty candidate remains consensus-invalid without a storage error.
+    m_node.evodb->Write(snapshot_key, CCreditPool{});
+    BlockValidationState healthy;
+    BOOST_CHECK(!m_node.chain_helper->special_tx->CheckCreditPoolDiffForBlock(block, &current, 0, healthy));
+    BOOST_CHECK(healthy.IsInvalid());
+    BOOST_CHECK_EQUAL(healthy.GetRejectReason(), "bad-missing-cbtx");
 }
 
 BOOST_FIXTURE_TEST_CASE(quorum_history_read_failure_is_local_block_error, QuorumHistoryReadSetup)

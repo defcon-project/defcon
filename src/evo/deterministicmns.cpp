@@ -17,6 +17,7 @@
 #include <chainparams.h>
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
+#include <dbwrapper.h>
 #include <script/standard.h>
 #include <validation.h>
 #include <validationinterface.h>
@@ -703,6 +704,8 @@ bool CDeterministicMNManager::ProcessBlock(const CBlock& block, gsl::not_null<co
 
         diff.nHeight = pindex->nHeight;
         mnListDiffsCache.emplace(pindex->GetBlockHash(), diff);
+    } catch (const dbwrapper_error& e) {
+        return state.Error(e.what());
     } catch (const CoinbaseChainlockReadError& e) {
         return state.Error(e.what());
     } catch (const std::exception& e) {
