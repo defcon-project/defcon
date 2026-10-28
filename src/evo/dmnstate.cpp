@@ -97,6 +97,18 @@ UniValue CDeterministicMNStateDiff::ToJson(MnType nType) const
     if (fields & Field_nPoSeBanHeight) {
         obj.pushKV("PoSeBanHeight", state.nPoSeBanHeight);
     }
+    if (fields & Field_nMissedEpochs) {
+        obj.pushKV("missedServiceEpochs", (int64_t)state.nMissedEpochs);
+    }
+    if (fields & Field_nLastServiceEpoch) {
+        obj.pushKV("lastServiceEpoch", (int64_t)state.nLastServiceEpoch);
+    }
+    if (fields & Field_fRewardSuspended) {
+        obj.pushKV("rewardSuspended", state.fRewardSuspended);
+    }
+    if (fields & Field_nDSLBanHeight) {
+        obj.pushKV("dslBanHeight", state.nDSLBanHeight);
+    }
     if (fields & Field_nRevocationReason) {
         obj.pushKV("revocationReason", state.nRevocationReason);
     }

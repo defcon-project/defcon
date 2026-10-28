@@ -10,6 +10,7 @@
 #include <clientversion.h>
 #include <streams.h>
 #include <netbase.h>
+#include <univalue.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -125,6 +126,65 @@ BOOST_AUTO_TEST_CASE(reused_listdiff_replaces_all_containers)
     BOOST_CHECK_THROW(reused.Unserialize(truncated), std::ios_base::failure);
     read_and_compare(empty);
     read_and_compare(second);
+}
+
+// protx listdiff reports each changed field under the key and with the type
+// the full state JSON uses (F-D31-DIFF-JSON-DSL-01). The four DSL fields had
+// diff bits, serialization and ApplyToState but no JSON, so a DSL-only change
+// showed up as an empty updatedMNs entry.
+BOOST_AUTO_TEST_CASE(state_diff_json_reports_dsl_fields)
+{
+    CDeterministicMNState before;
+    before.nMissedEpochs = 1;
+    before.nLastServiceEpoch = 7;
+    CDeterministicMNState after{before};
+    after.nMissedEpochs = 3;
+    after.nLastServiceEpoch = 9;
+    after.fRewardSuspended = true;
+    after.nDSLBanHeight = 1234;
+    const UniValue full = after.ToJson(MnType::Regular);
+
+    using Copy = void (*)(CDeterministicMNState&, const CDeterministicMNState&);
+    const std::vector<std::pair<std::string, Copy>> dsl_fields{
+        {"missedServiceEpochs", [](CDeterministicMNState& s, const CDeterministicMNState& v) { s.nMissedEpochs = v.nMissedEpochs; }},
+        {"lastServiceEpoch", [](CDeterministicMNState& s, const CDeterministicMNState& v) { s.nLastServiceEpoch = v.nLastServiceEpoch; }},
+        {"rewardSuspended", [](CDeterministicMNState& s, const CDeterministicMNState& v) { s.fRewardSuspended = v.fRewardSuspended; }},
+        {"dslBanHeight", [](CDeterministicMNState& s, const CDeterministicMNState& v) { s.nDSLBanHeight = v.nDSLBanHeight; }},
+    };
+    std::vector<std::string> all_keys;
+    for (const auto& field : dsl_fields) all_keys.push_back(field.first);
+
+    const auto check_matches_full = [&](const UniValue& json, const std::vector<std::string>& keys) {
+        BOOST_CHECK_EQUAL(json.size(), keys.size());
+        for (const auto& key : keys) {
+            BOOST_REQUIRE_MESSAGE(json.exists(key), key << " is missing from the diff JSON");
+            BOOST_CHECK_EQUAL(json[key].getType(), full[key].getType());
+            BOOST_CHECK_EQUAL(json[key].write(), full[key].write());
+        }
+    };
+
+    // Each field on its own.
+    for (const auto& [key, copy] : dsl_fields) {
+        CDeterministicMNState changed{before};
+        copy(changed, after);
+        check_matches_full(CDeterministicMNStateDiff(before, changed).ToJson(MnType::Regular), {key});
+    }
+
+    // All four together, also after a binary round trip.
+    const CDeterministicMNStateDiff diff(before, after);
+    check_matches_full(diff.ToJson(MnType::Regular), all_keys);
+    CDataStream encoded(SER_DISK, CLIENT_VERSION);
+    encoded << diff;
+    CDeterministicMNStateDiff decoded;
+    encoded >> decoded;
+    BOOST_CHECK(encoded.empty());
+    BOOST_CHECK_EQUAL(decoded.fields, diff.fields);
+    check_matches_full(decoded.ToJson(MnType::Regular), all_keys);
+
+    // Nothing changed, nothing reported.
+    const CDeterministicMNStateDiff unchanged(before, before);
+    BOOST_CHECK_EQUAL(unchanged.fields, 0U);
+    BOOST_CHECK(unchanged.ToJson(MnType::Regular).empty());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
