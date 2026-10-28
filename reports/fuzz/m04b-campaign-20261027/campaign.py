@@ -687,9 +687,9 @@ def host_child(token):
             "--tmpfs", "/tmp:rw,nosuid,nodev,size=512m",
             "--log-driver", "json-file", "--log-opt", "max-size=10m",
             "--log-opt", "max-file=3",
-            "--mount", f"type=bind,src={ROOT},dst=/runner,readonly,bind-recursive=readonly",
+            "--mount", f"type=bind,src={ROOT},dst=/runner,readonly,bind-recursive=readonly,bind-propagation=rprivate",
             "--mount", f"type=bind,src={DATA},dst=/work",
-            "--mount", f"type=bind,src={ROOT}/payload,dst=/payload,readonly,bind-recursive=readonly",
+            "--mount", f"type=bind,src={ROOT}/payload,dst=/payload,readonly,bind-recursive=readonly,bind-propagation=rprivate",
             "--workdir", "/work", plan["image_id"],
             "python3", "/runner/campaign.py", "--inside"]
         save(ROOT / "docker-command.json", ["sudo", "-n", "docker",
