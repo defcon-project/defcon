@@ -59,6 +59,7 @@
 #include <QTime>
 #include <QTimer>
 #include <QVariant>
+#include <QWindow>
 
 const int CONSOLE_HISTORY = 50;
 const QSize FONT_RANGE(4, 40);
@@ -495,8 +496,9 @@ RPCConsole::RPCConsole(interfaces::Node& node, QWidget* parent, Qt::WindowFlags 
 #ifdef ENABLE_WALLET
     if (WalletModel::isWalletEnabled()) {
         // RPCConsole widget is a window.
-        if (!restoreGeometry(settings.value("RPCConsoleWindowGeometry").toByteArray())) {
-            // Restore failed (perhaps missing setting), center the window
+        m_window_geometry_restored = restoreGeometry(settings.value("RPCConsoleWindowGeometry").toByteArray());
+        if (!m_window_geometry_restored && !GUIUtil::isModernTheme()) {
+            // Keep the classic startup placement unchanged.
             move(QGuiApplication::primaryScreen()->availableGeometry().center() - frameGeometry().center());
         }
         ui->splitter->restoreState(settings.value("RPCConsoleWindowPeersTabSplitterSizes").toByteArray());
@@ -631,6 +633,13 @@ RPCConsole::~RPCConsole()
 
 bool RPCConsole::eventFilter(QObject* obj, QEvent *event)
 {
+    if (obj == windowHandle()) {
+        if (event->type() == QEvent::Expose && m_fit_on_show) {
+            QTimer::singleShot(0, this, &RPCConsole::fitModernWindowGeometry);
+        }
+        // Native-window events must not enter the child line-edit key filter.
+        return QWidget::eventFilter(obj, event);
+    }
     if(event->type() == QEvent::KeyPress) // Special key handling
     {
         QKeyEvent *keyevt = static_cast<QKeyEvent*>(event);
@@ -1389,10 +1398,25 @@ void RPCConsole::resizeEvent(QResizeEvent *event)
     QWidget::resizeEvent(event);
 }
 
+void RPCConsole::fitModernWindowGeometry()
+{
+    if (!m_fit_on_show || !isWindow() || !isVisible() || !windowHandle() || !windowHandle()->isExposed()
+        || isMinimized() || isMaximized() || isFullScreen()) return;
+    if (GUIUtil::isModernTheme()) {
+        GUIUtil::fitWindowToScreen(this, m_initial_geometry_pending && !m_window_geometry_restored);
+    }
+    m_initial_geometry_pending = false;
+    m_fit_on_show = false;
+}
+
 void RPCConsole::showEvent(QShowEvent *event)
 {
     QWidget::showEvent(event);
 
+    m_fit_on_show = true;
+    // Fit each opening once, after mapping has supplied the native frame.
+    if (windowHandle()) windowHandle()->installEventFilter(this);
+    QTimer::singleShot(0, this, &RPCConsole::fitModernWindowGeometry);
     GUIUtil::updateButtonGroupShortcuts(pageButtons);
 
     if (!clientModel || !clientModel->getPeerTableModel())
@@ -1425,6 +1449,7 @@ void RPCConsole::changeEvent(QEvent* e)
     }
 
     QWidget::changeEvent(e);
+    if (e->type() == QEvent::WindowStateChange && m_initial_geometry_pending) QTimer::singleShot(0, this, &RPCConsole::fitModernWindowGeometry);
 }
 
 void RPCConsole::showPeersTableContextMenu(const QPoint& point)

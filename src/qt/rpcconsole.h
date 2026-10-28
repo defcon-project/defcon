@@ -158,6 +158,7 @@ private:
             ban_for{tr("Ban for")}, na{tr("N/A")}, unknown{tr("Unknown")};
     } const ts;
 
+    void fitModernWindowGeometry();
     void startExecutor();
     void setTrafficGraphRange(TrafficGraphData::GraphRange range);
     /** Build parameter list for restart */
@@ -180,6 +181,9 @@ private:
     interfaces::Node& m_node;
     Ui::RPCConsole* const ui;
     ClientModel *clientModel = nullptr;
+    bool m_window_geometry_restored{false};
+    bool m_initial_geometry_pending{true};
+    bool m_fit_on_show{false};
     QButtonGroup* pageButtons = nullptr;
     QStringList history;
     int historyPtr = 0;

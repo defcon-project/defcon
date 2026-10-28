@@ -10,6 +10,7 @@
 
 #include <QDialog>
 #include <QMessageBox>
+#include <QMargins>
 #include <QShowEvent>
 #include <QString>
 #include <QTimer>
@@ -27,6 +28,8 @@ namespace Ui {
 
 QT_BEGIN_NAMESPACE
 class QUrl;
+class QLabel;
+class QScrollArea;
 QT_END_NAMESPACE
 
 /** Dialog for sending bitcoins */
@@ -74,7 +77,7 @@ private:
     bool fNewRecipientAllowed;
     bool send(const QList<SendCoinsRecipient>& recipients, QString& question_string, QString& informative_text, QString& detailed_text);
     bool fFeeMinimized;
-    bool fKeepChangeAddress;
+    bool fKeepChangeAddress{false};
 
     // Process WalletModel::SendCoinsReturn and generate a pair consisting
     // of a message and message flags for use in Q_EMIT message().
@@ -89,6 +92,31 @@ private:
     void applyScrollAreaMinimum();
     //! The scroll area's minimum as the form set it, kept for the other themes.
     QSize m_inherited_scroll_minimum{-1, -1};
+    void updateThemePresentation();
+    void updatePaymentSummary();
+    QScrollArea* recipientScrollArea() const;
+    void ensureRecipientVisible(SendCoinsEntry* entry, bool validation);
+    QWidget* m_modern_header{nullptr};
+    QWidget* m_modern_body{nullptr};
+    QWidget* m_modern_summary{nullptr};
+    QScrollArea* m_modern_scroll{nullptr};
+    QLabel* m_summary_amount{nullptr};
+    QLabel* m_summary_recipients{nullptr};
+    QLabel* m_summary_fee{nullptr};
+    QLabel* m_summary_balance_name{nullptr};
+    QLabel* m_summary_balance{nullptr};
+    QMargins m_original_margins;
+    int m_original_spacing{0};
+    int m_original_scroll_stretch{0};
+    bool m_modern_layout{false};
+    bool m_presentation_ready{false};
+    bool m_updating_presentation{false};
+    bool m_coinjoin{false};
+    QSize m_original_fee_spacer;
+    QSizePolicy m_original_fee_spacer_policy;
+    QSize m_original_control_spacer;
+    QSizePolicy m_original_control_spacer_policy;
+    Qt::ScrollBarPolicy m_original_recipient_scroll_policy{Qt::ScrollBarAsNeeded};
 
 private Q_SLOTS:
     void sendButtonClicked(bool checked);

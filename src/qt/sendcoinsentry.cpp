@@ -18,6 +18,8 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QGridLayout>
+#include <QStyle>
 
 SendCoinsEntry::SendCoinsEntry(QWidget* parent) :
     QStackedWidget(parent),
@@ -49,6 +51,97 @@ SendCoinsEntry::SendCoinsEntry(QWidget* parent) :
     connect(ui->deleteButton_is, &QPushButton::clicked, this, &SendCoinsEntry::deleteClicked);
     connect(ui->deleteButton_s, &QPushButton::clicked, this, &SendCoinsEntry::deleteClicked);
     connect(ui->useAvailableBalanceButton, &QPushButton::clicked, this, &SendCoinsEntry::useAvailableBalanceClicked);
+}
+
+void SendCoinsEntry::updateThemePresentation(bool modern)
+{
+    modern = modern && GUIUtil::isModernTheme();
+    if (modern == m_modern_layout) return;
+    QWidget* focus = QApplication::focusWidget();
+    const bool active_focus = focus && isAncestorOf(focus);
+    if (!active_focus) focus = QWidget::focusWidget();
+    const bool restore_focus = focus && isAncestorOf(focus) && (active_focus || !focus->isHidden());
+    const bool message_hidden = ui->messageLabel->isHidden();
+    const bool text_hidden = ui->messageTextLabel->isHidden();
+    m_modern_layout = modern;
+    setProperty("abyssRecipientCard", modern);
+    if (!m_modern_content) {
+        m_original_subtract_stretch = ui->horizontalLayoutAmount->stretch(1);
+        ui->payAmount->setProperty("abyssOriginalMaximumWidth", ui->payAmount->maximumWidth());
+        for (QLabel* label : {ui->payToLabel, ui->labellLabel, ui->amountLabel, ui->messageLabel}) {
+            label->setProperty("abyssOriginalAlignment", static_cast<int>(label->alignment()));
+        }
+        m_modern_content = new QWidget(ui->SendCoins);
+        m_modern_content->setObjectName("abyssRecipientContent");
+        auto* grid = new QGridLayout(m_modern_content);
+        grid->setContentsMargins(6, 6, 6, 6);
+        grid->setHorizontalSpacing(12);
+        grid->setVerticalSpacing(8);
+        auto* title = new QLabel(tr("Recipient"), m_modern_content);
+        GUIUtil::setFont({title}, GUIUtil::FontWeight::Normal, 16);
+        grid->addWidget(title, 0, 0);
+    }
+    ui->payAmount->setMaximumWidth(modern ? 300 : ui->payAmount->property("abyssOriginalMaximumWidth").toInt());
+    auto* destination = modern ? qobject_cast<QGridLayout*>(m_modern_content->layout()) : ui->gridLayout;
+    for (QLabel* label : {ui->payToLabel, ui->labellLabel, ui->amountLabel, ui->messageLabel}) {
+        label->setAlignment(modern ? Qt::AlignLeft | Qt::AlignVCenter : Qt::Alignment(label->property("abyssOriginalAlignment").toInt()));
+        GUIUtil::setFont({label}, GUIUtil::FontWeight::Normal, modern ? 13 : 15);
+    }
+    // Move child layouts with their QObject ownership detached.
+    for (QLayout* child : {static_cast<QLayout*>(ui->payToLayout), static_cast<QLayout*>(ui->horizontalLayoutAmount)}) {
+        if (modern) ui->gridLayout->removeItem(child);
+        else m_modern_content->layout()->removeItem(child);
+        child->setParent(nullptr);
+    }
+    if (modern) {
+        ui->payToLayout->removeWidget(ui->deleteButton);
+        ui->horizontalLayoutAmount->removeWidget(ui->checkboxSubtractFeeFromAmount);
+        ui->horizontalLayoutAmount->removeWidget(ui->useAvailableBalanceButton);
+        destination->addWidget(ui->deleteButton, 0, 1, Qt::AlignRight);
+        destination->addWidget(ui->payToLabel, 1, 0, 1, 2);
+        destination->addLayout(ui->payToLayout, 2, 0, 1, 2);
+        destination->addWidget(ui->labellLabel, 3, 0, 1, 2);
+        destination->addWidget(ui->addAsLabel, 4, 0, 1, 2);
+        destination->addWidget(ui->amountLabel, 5, 0, 1, 2);
+        destination->addLayout(ui->horizontalLayoutAmount, 6, 0, 1, 2);
+        destination->setAlignment(ui->horizontalLayoutAmount, Qt::AlignLeft);
+        destination->addWidget(ui->checkboxSubtractFeeFromAmount, 7, 0, 1, 2);
+        destination->addWidget(ui->useAvailableBalanceButton, 8, 0, 1, 2, Qt::AlignRight);
+        destination->addWidget(ui->messageLabel, 9, 0, 1, 2);
+        destination->addWidget(ui->messageTextLabel, 10, 0, 1, 2);
+        ui->line->hide();
+        ui->gridLayout->addWidget(m_modern_content, 0, 0, 4, 2);
+        m_modern_content->show();
+    } else {
+        ui->gridLayout->removeWidget(m_modern_content);
+        m_modern_content->hide();
+        m_modern_content->layout()->removeWidget(ui->deleteButton);
+        m_modern_content->layout()->removeWidget(ui->checkboxSubtractFeeFromAmount);
+        m_modern_content->layout()->removeWidget(ui->useAvailableBalanceButton);
+        ui->payToLayout->addWidget(ui->deleteButton);
+        ui->horizontalLayoutAmount->addWidget(ui->checkboxSubtractFeeFromAmount);
+        ui->horizontalLayoutAmount->addWidget(ui->useAvailableBalanceButton);
+        ui->horizontalLayoutAmount->setStretch(1, m_original_subtract_stretch);
+        destination->addWidget(ui->payToLabel, 0, 0);
+        destination->addLayout(ui->payToLayout, 0, 1);
+        destination->addWidget(ui->labellLabel, 1, 0);
+        destination->addWidget(ui->addAsLabel, 1, 1);
+        destination->addWidget(ui->amountLabel, 2, 0);
+        destination->addLayout(ui->horizontalLayoutAmount, 2, 1);
+        destination->addWidget(ui->messageLabel, 3, 0);
+        destination->addWidget(ui->messageTextLabel, 3, 1);
+        ui->line->show();
+    }
+    // Repolish containers only; labels retain their registered GUIUtil fonts.
+    ui->messageLabel->setVisible(!message_hidden);
+    ui->messageTextLabel->setVisible(!text_hidden);
+    ui->SendCoins->style()->unpolish(ui->SendCoins);
+    ui->SendCoins->style()->polish(ui->SendCoins);
+    if (restore_focus && focus->parentWidget()->isVisibleTo(this)) {
+        // Retain hidden-page focus after the layout's queued reparent-show.
+        if (!active_focus) focus->show();
+        focus->setFocus(Qt::OtherFocusReason);
+    }
 }
 
 SendCoinsEntry::~SendCoinsEntry()
@@ -172,6 +265,21 @@ bool SendCoinsEntry::validate(interfaces::Node& node)
     return retval;
 }
 
+CAmount SendCoinsEntry::amount() const
+{
+    return ui->payAmount->value();
+}
+
+QWidget* SendCoinsEntry::addressField() const
+{
+    return ui->payTo;
+}
+
+QWidget* SendCoinsEntry::validationTarget() const
+{
+    return ui->payTo->isValid() ? static_cast<QWidget*>(ui->payAmount) : ui->payTo;
+}
+
 SendCoinsRecipient SendCoinsEntry::getValue()
 {
     // Normal payment
@@ -261,6 +369,16 @@ void SendCoinsEntry::setButtonIcons()
     GUIUtil::setIcon(ui->deleteButton, "remove", GUIUtil::ThemedColor::RED);
     GUIUtil::setIcon(ui->deleteButton_is, "remove", GUIUtil::ThemedColor::RED);
     GUIUtil::setIcon(ui->deleteButton_s, "remove", GUIUtil::ThemedColor::RED);
+    const bool modern = GUIUtil::isModernTheme();
+    const auto present = [modern](QAbstractButton* button, const char* classic, const char* glyph, GUIUtil::ThemedColor color) {
+        if (modern) GUIUtil::setThemedIcon(button, classic, glyph, button->iconSize(), color);
+        button->setAccessibleName(modern ? button->toolTip() : QString());
+    };
+    present(ui->addressBookButton, "address-book", "address-book", GUIUtil::ThemedColor::BLUE);
+    present(ui->pasteButton, "editpaste", "clipboard", GUIUtil::ThemedColor::BLUE);
+    for (auto* button : {ui->deleteButton, ui->deleteButton_is, ui->deleteButton_s}) {
+        present(button, "remove", "trash", GUIUtil::ThemedColor::RED);
+    }
 }
 
 bool SendCoinsEntry::updateLabel(const QString &address)

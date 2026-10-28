@@ -249,6 +249,8 @@ EXTRA_DIST += \
     test/functional \
     test/fuzz
 
+EXTRA_DIST += doc/assets-attribution.md
+
 EXTRA_DIST += \
     test/configure/test_configure.py \
     test/util/test_runner.py \

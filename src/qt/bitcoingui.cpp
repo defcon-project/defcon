@@ -18,6 +18,7 @@
 #include <qt/optionsmodel.h>
 #include <qt/rpcconsole.h>
 #include <qt/starfieldwidget.h>
+#include <QDialog>
 #include <qt/utilitydialog.h>
 
 #ifdef ENABLE_WALLET
@@ -94,13 +95,14 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const NetworkStyle* networkStyle,
     QMainWindow(parent),
     m_node(node),
     trayIconMenu{new QMenu()},
-    m_network_style(networkStyle)
+    m_network_style(*networkStyle)
 {
     GUIUtil::loadTheme(true);
 
     QSettings settings;
-    if (!restoreGeometry(settings.value("MainWindowGeometry").toByteArray())) {
-        // Restore failed (perhaps missing setting), center the window
+    m_window_geometry_restored = restoreGeometry(settings.value("MainWindowGeometry").toByteArray());
+    if (!m_window_geometry_restored && !GUIUtil::isModernTheme()) {
+        // Keep the classic startup placement unchanged.
         move(QGuiApplication::primaryScreen()->availableGeometry().center() - frameGeometry().center());
     }
 
@@ -109,8 +111,8 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const NetworkStyle* networkStyle,
 #ifdef ENABLE_WALLET
     enableWallet = WalletModel::isWalletEnabled();
 #endif // ENABLE_WALLET
-    QApplication::setWindowIcon(m_network_style->getTrayAndWindowIcon());
-    setWindowIcon(m_network_style->getTrayAndWindowIcon());
+    QApplication::setWindowIcon(m_network_style.getTrayAndWindowIcon());
+    setWindowIcon(m_network_style.getTrayAndWindowIcon());
     updateWindowTitle();
 
     rpcConsole = new RPCConsole(node, this, enableWallet ? Qt::Window : Qt::Widget);
@@ -173,10 +175,15 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const NetworkStyle* networkStyle,
     frameBlocksLayout->setSpacing(3);
     unitDisplayControl = new UnitDisplayStatusBarControl();
     labelStakingIcon = new QLabel();
+    labelStakingIcon->setObjectName("labelStakingIcon");
     labelWalletEncryptionIcon = new QLabel();
+    labelWalletEncryptionIcon->setObjectName("labelWalletEncryptionIcon");
     labelWalletHDStatusIcon = new QLabel();
+    labelWalletHDStatusIcon->setObjectName("labelWalletHDStatusIcon");
     labelConnectionsIcon = new GUIUtil::ClickableLabel();
+    labelConnectionsIcon->setObjectName("labelConnectionsIcon");
     labelProxyIcon = new GUIUtil::ClickableLabel();
+    labelProxyIcon->setObjectName("labelProxyIcon");
     labelBlocksIcon = new GUIUtil::ClickableLabel();
     if(enableWallet)
     {
@@ -354,7 +361,7 @@ void BitcoinGUI::startConnectingAnimation()
         } else {
             return;
         }
-        labelConnectionsIcon->setPixmap(GUIUtil::getIcon(strImage, color).pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+        GUIUtil::setThemedPixmap(labelConnectionsIcon, strImage, strImage == "connect_4" ? "antenna-bars-1" : "antenna-bars-2", QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), color);
     });
     timerConnecting->start(100);
 }
@@ -406,6 +413,7 @@ void BitcoinGUI::createActions()
     aboutQtAction->setStatusTip(tr("Show information about Qt"));
     aboutQtAction->setMenuRole(QAction::AboutQtRole);
     optionsAction = new QAction(tr("&Options…"), this);
+    optionsAction->setObjectName("optionsAction");
     optionsAction->setStatusTip(tr("Modify configuration options for %1").arg(PACKAGE_NAME));
     optionsAction->setMenuRole(QAction::PreferencesRole);
     optionsAction->setEnabled(false);
@@ -417,14 +425,17 @@ void BitcoinGUI::createActions()
     toggleStakingMenu = new QMenu(this);
 
     encryptWalletAction = new QAction(tr("&Encrypt Wallet…"), this);
+    encryptWalletAction->setObjectName("encryptWalletAction");
     encryptWalletAction->setStatusTip(tr("Encrypt the private keys that belong to your wallet"));
     backupWalletAction = new QAction(tr("&Backup Wallet…"), this);
     backupWalletAction->setStatusTip(tr("Backup wallet to another location"));
     changePassphraseAction = new QAction(tr("&Change Passphrase…"), this);
     changePassphraseAction->setStatusTip(tr("Change the passphrase used for wallet encryption"));
     unlockWalletAction = new QAction(tr("&Unlock Wallet…"), this);
+    unlockWalletAction->setObjectName("unlockWalletAction");
     unlockWalletAction->setToolTip(tr("Unlock wallet"));
     lockWalletAction = new QAction(tr("&Lock Wallet"), this);
+    lockWalletAction->setObjectName("lockWalletAction");
     multisigAction = new QAction(tr("&Multisig"), this);
     multisigAction->setStatusTip(tr("Manage multisignature addresses and partially signed transactions"));
     signMessageAction = new QAction(tr("Sign &message…"), this);
@@ -492,6 +503,7 @@ void BitcoinGUI::createActions()
     showCoinJoinHelpAction->setStatusTip(tr("Show the %1 basic information").arg(strCoinJoinName));
 
     m_mask_values_action = new QAction(tr("&Discreet mode"), this);
+    m_mask_values_action->setObjectName("m_mask_values_action");
     m_mask_values_action->setShortcut(QKeySequence(tr("Ctrl+Shift+D")));
     m_mask_values_action->setStatusTip(tr("Mask the values in the Overview tab"));
     m_mask_values_action->setCheckable(true);
@@ -625,13 +637,13 @@ namespace {
  *  started as. The colour is the theme's blue, the tint every other icon in
  *  the window carries, so the console reads as one of them rather than as a
  *  stray piece of text. */
-QIcon makeConsoleIcon()
+QIcon makeConsoleIcon(const QWidget* target)
 {
     // The glyph is laid out on a 16-unit grid and scaled to the size the
     // button shows, so a size change here never touches the geometry below.
     constexpr int kSize = 22;
     constexpr qreal kScale = kSize / 16.0;
-    const qreal dpr = qApp->devicePixelRatio();
+    const qreal dpr = GUIUtil::isModernTheme() ? target->devicePixelRatioF() : qApp->devicePixelRatio();
 
     QPixmap pm(qRound(kSize * dpr), qRound(kSize * dpr));
     pm.setDevicePixelRatio(dpr);
@@ -782,7 +794,7 @@ void BitcoinGUI::createMenuBar()
     consoleButton->setCursor(Qt::PointingHandCursor);
     consoleButton->setIconSize(QSize(22, 22));
     consoleButton->setToolTip(openRPCConsoleAction->statusTip());
-    consoleButton->setIcon(makeConsoleIcon());
+    consoleButton->setIcon(makeConsoleIcon(consoleButton));
     consoleButton->setEnabled(openRPCConsoleAction->isEnabled());
     connect(consoleButton, &QToolButton::clicked, openRPCConsoleAction, &QAction::trigger);
     connect(openRPCConsoleAction, &QAction::changed, consoleButton, [this] {
@@ -797,6 +809,104 @@ void BitcoinGUI::createMenuBar()
     help->addSeparator();
     help->addAction(aboutAction);
     help->addAction(aboutQtAction);
+
+    // Keep the original menus and QActions intact for classic themes. The
+    // Abyss menus share those actions, including their shortcuts and state.
+    classicMenus = {file, settings, window_menu, help};
+    if (walletFrame) {
+        abyssWalletMenu = new QMenu(tr("&Wallet"), this);
+        abyssWalletMenu->setObjectName("abyssWalletMenu");
+        for (QAction* action : {m_create_wallet_action, m_open_wallet_action,
+                m_close_wallet_action, m_close_all_wallets_action}) {
+            abyssWalletMenu->addAction(action);
+        }
+        abyssWalletMenu->addSeparator();
+        abyssWalletMenu->addAction(openAction);
+        abyssWalletMenu->addAction(backupWalletAction);
+        abyssWalletMenu->addAction(showBackupsAction);
+        auto* security = abyssWalletMenu->addMenu(tr("&Security"));
+        security->setObjectName("abyssSecurityMenu");
+        for (QAction* action : {encryptWalletAction, changePassphraseAction,
+                unlockWalletAction, lockWalletAction}) security->addAction(action);
+        auto* staking = abyssWalletMenu->addMenu(tr("S&taking"));
+        staking->addAction(toggleStakingAction);
+        abyssWalletMenu->addSeparator();
+        abyssWalletMenu->addAction(quitAction);
+
+        abyssToolsMenu = new QMenu(tr("&Tools"), this);
+        abyssToolsMenu->setObjectName("abyssToolsMenu");
+        for (QAction* action : {usedSendingAddressesAction, usedReceivingAddressesAction,
+                signMessageAction, verifyMessageAction}) abyssToolsMenu->addAction(action);
+        if (file->actions().contains(multisigAction)) abyssToolsMenu->addAction(multisigAction);
+        abyssToolsMenu->addAction(m_load_psbt_action);
+        abyssToolsMenu->addAction(m_load_psbt_clipboard_action);
+        abyssToolsMenu->addAction(openConfEditorAction);
+        abyssToolsMenu->addSeparator();
+        // Includes platform-specific Zoom/Main Window and every diagnostic tab.
+        for (QAction* action : window_menu->actions()) {
+            if (action != usedSendingAddressesAction && action != usedReceivingAddressesAction)
+                abyssToolsMenu->addAction(action);
+        }
+        appMenuBar->insertMenu(help->menuAction(), abyssWalletMenu);
+        appMenuBar->insertMenu(help->menuAction(), abyssToolsMenu);
+        abyssWalletMenu->menuAction()->setVisible(false);
+        abyssToolsMenu->menuAction()->setVisible(false);
+
+        // A native menu bar uses its platform's menu rendering. In-window bars
+        // use text-beside-icon buttons so QMenuBar cannot replace a label with
+        // an icon. QToolButton supplies its native popup arrow and key handling.
+        abyssMenuControls = new QWidget(this);
+        abyssMenuControls->setObjectName("abyssMenuControls");
+        auto* layout = new QHBoxLayout(abyssMenuControls);
+        layout->setContentsMargins(4, 2, 4, 2);
+        layout->setSpacing(4);
+        const auto addMenuButton = [&](QMenu* menu, const char* name, const char* glyph) {
+            auto* button = new QToolButton(abyssMenuControls);
+            button->setObjectName(name);
+            button->setText(menu->title());
+            button->setAccessibleName(menu->title().remove('&'));
+            button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+            button->setPopupMode(QToolButton::InstantPopup);
+            button->setAutoRaise(true);
+            button->setFocusPolicy(Qt::StrongFocus);
+            button->setIconSize(QSize(22, 22));
+            button->setMenu(menu);
+            button->setProperty("abyssMenuGlyph", glyph);
+            layout->addWidget(button);
+        };
+        addMenuButton(abyssWalletMenu, "abyssWalletMenuButton", "wallet");
+        addMenuButton(abyssToolsMenu, "abyssToolsMenuButton", "tools");
+        addMenuButton(help, "abyssHelpMenuButton", "help");
+        abyssMenuControls->hide();
+    }
+}
+
+void BitcoinGUI::updateAbyssMenus()
+{
+    if (!abyssMenuControls) return;
+    const bool modern = GUIUtil::isModernTheme();
+#ifdef Q_OS_MAC
+    const bool native = true;
+#else
+    const bool native = appMenuBar->isNativeMenuBar();
+#endif
+    // Close popups before switching their owners' presentation.
+    for (QMenu* menu : classicMenus) {
+        menu->close();
+        menu->menuAction()->setVisible(!modern || (native && menu == classicMenus.last()));
+    }
+    for (QMenu* menu : {abyssWalletMenu, abyssToolsMenu}) {
+        menu->close();
+        menu->menuAction()->setVisible(modern && native);
+    }
+    if (!native) {
+        if (modern) appMenuBar->setCornerWidget(abyssMenuControls, Qt::TopLeftCorner);
+        abyssMenuControls->setVisible(modern);
+    }
+    for (auto* button : abyssMenuControls->findChildren<QToolButton*>()) {
+        GUIUtil::setTintedSvgIcon(button, ":/icons/tabler/" + button->property("abyssMenuGlyph").toString() + ".svg",
+            QSize(22, 22), GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BLUE));
+    }
 }
 
 namespace {
@@ -983,6 +1093,65 @@ void BitcoinGUI::createToolBars()
 
         appToolBarLogoAction = toolbar->addWidget(logoLabel);
 
+        abyssQuickControls = new QWidget(this);
+        abyssQuickControls->setObjectName("abyssQuickControls");
+        auto* quickLayout = new QHBoxLayout(abyssQuickControls);
+        quickLayout->setContentsMargins(4, 2, 4, 2);
+        quickLayout->setSpacing(4);
+        const auto addQuickAction = [this, quickLayout](QAction* action, const char* name) {
+            auto* button = new QToolButton(abyssQuickControls);
+            button->setObjectName(name);
+            button->setAutoRaise(true);
+            button->setFocusPolicy(Qt::StrongFocus);
+            button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+            button->setIconSize(QSize(22, 22));
+            button->setCursor(Qt::PointingHandCursor);
+            // Keep the icon separate from the menu action, as for consoleButton.
+            // DefaultAction would replace it when the action's state changes.
+            const auto mirror = [this, action, button] {
+                button->setEnabled(action->isEnabled());
+                button->setCheckable(action->isCheckable());
+                button->setChecked(action->isChecked());
+                button->setToolTip(action->statusTip());
+                button->setAccessibleName(action->text().remove('&'));
+                updateQuickControls();
+            };
+            connect(button, &QToolButton::clicked, action, &QAction::trigger);
+            connect(action, &QAction::changed, button, mirror);
+            mirror();
+            quickLayout->addWidget(button);
+        };
+        addQuickAction(optionsAction, "abyssOptionsButton");
+        addQuickAction(m_mask_values_action, "abyssPrivacyButton");
+        // The existing lock is inserted before this console button by applyThemeLayout.
+        addQuickAction(openRPCConsoleAction, "abyssConsoleButton");
+        abyssQuickControls->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        abyssQuickControls->hide();
+        // Native/global menus cannot display QWidget corner controls. Keep the
+        // existing system menu intact and use an in-window top bar there.
+#ifdef Q_OS_MAC
+        const bool separateMenuBar = true; // appMenuBar is deliberately decoupled.
+#else
+        const bool separateMenuBar = appMenuBar->isNativeMenuBar();
+#endif
+        if (separateMenuBar) {
+            abyssQuickControlsBar = new QToolBar(this);
+            abyssQuickControlsBar->setObjectName("abyssQuickControlsBar");
+            abyssQuickControlsBar->setMovable(false);
+            abyssQuickControlsBar->setFloatable(false);
+            auto* spacer = new QWidget(abyssQuickControlsBar);
+            spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+            abyssQuickControlsBar->addWidget(spacer);
+            abyssQuickControlsBar->addWidget(abyssQuickControls);
+            addToolBar(Qt::TopToolBarArea, abyssQuickControlsBar);
+            abyssQuickControlsBar->hide();
+        }
+        for (QAction* action : {encryptWalletAction, lockWalletAction, unlockWalletAction}) {
+            connect(action, &QAction::changed, this, [this] {
+                if (GUIUtil::isModernTheme()) updateWalletLockButton(m_encryption_status);
+            });
+        }
+
         /** Create additional container for toolbar and walletFrame and make it the central widget.
             This is a workaround mostly for toolbar styling on Mac OS but should work fine for every other OSes too.
         */
@@ -991,7 +1160,7 @@ void BitcoinGUI::createToolBars()
         walletLayout->addWidget(walletFrame);
         walletLayout->setSpacing(0);
         walletLayout->setContentsMargins(QMargins());
-        StarfieldWidget* containerWidget = new StarfieldWidget();
+        QWidget* containerWidget = new StarfieldWidget();
         containerWidget->setObjectName("walletContainer");
         containerWidget->setLayout(walletLayout);
         setCentralWidget(containerWidget);
@@ -1001,44 +1170,27 @@ void BitcoinGUI::createToolBars()
 }
 
 namespace {
-/** A diagonal arrow the icon set does not carry: send points up-right, out of
- *  the wallet; receive points down-left, into it. Drawn in the same themed
- *  color the template icons are tinted with, and redrawn on every theme
- *  switch because applyThemeLayout re-runs. */
-QIcon makeDiagonalArrowIcon(bool up_right)
+/** A sidebar glyph from the Tabler outline set in res/icons/tabler/, in the
+ *  theme's blue, the tint every other icon in the window carries. The checked
+ *  button is itself filled with blue and turns its label white, so its glyph
+ *  turns white with it. Drawn for the screen's pixel ratio, as the console
+ *  glyph is, and redrawn on every theme switch because applyThemeLayout
+ *  re-runs. */
+void setNavigationIcon(QAbstractButton* button, const QString& name)
 {
-    constexpr int S = 64;
-    QPixmap pm(S, S);
-    pm.fill(Qt::transparent);
-    QPainter painter(&pm);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    QPen pen(GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BLUE));
-    pen.setWidthF(6.5);
-    pen.setCapStyle(Qt::RoundCap);
-    pen.setJoinStyle(Qt::RoundJoin);
-    painter.setPen(pen);
-
-    const QPointF tail = up_right ? QPointF(16, 48) : QPointF(48, 16);
-    const QPointF head = up_right ? QPointF(48, 16) : QPointF(16, 48);
-    painter.drawLine(tail, head);
-    constexpr qreal wing = 17.0;
-    if (up_right) {
-        painter.drawLine(head, head + QPointF(-wing, 0));
-        painter.drawLine(head, head + QPointF(0, wing));
-    } else {
-        painter.drawLine(head, head + QPointF(wing, 0));
-        painter.drawLine(head, head + QPointF(0, -wing));
-    }
-    return QIcon(pm);
+    GUIUtil::setTintedSvgIcon(button, ":/icons/tabler/" + name + ".svg", QSize(22, 22),
+        GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BLUE), true);
 }
 } // namespace
 
 void BitcoinGUI::applyThemeLayout()
 {
+    updateAbyssMenus();
     // Before the wallet-only work below, and outside its early return: the
     // console button exists in a build without a wallet too.
     if (consoleButton != nullptr) {
-        consoleButton->setIcon(makeConsoleIcon());
+        consoleButton->setIcon(makeConsoleIcon(consoleButton));
+        consoleButton->setVisible(!GUIUtil::isModernTheme() || !abyssQuickControls);
     }
 
 #ifdef ENABLE_WALLET
@@ -1055,15 +1207,39 @@ void BitcoinGUI::applyThemeLayout()
         sky->setAnimated(QSettings().value("fAnimateNightSky", true).toBool());
     }
 
-    // The padlock is tinted by the theme, so it is redrawn with it.
+    if (abyssQuickControls) {
+        if (abyssQuickControlsBar) {
+            abyssQuickControlsBar->setVisible(modern);
+        } else {
+            // setCornerWidget does not hide the previous widget. Hide the
+            // quick row explicitly on classic return; console visibility is
+            // restored above, and its original corner slot is restored here.
+            appMenuBar->setCornerWidget(modern ? abyssQuickControls : consoleButton, Qt::TopRightCorner);
+        }
+        abyssQuickControls->setVisible(modern);
+        auto* selector = appToolBar->findChild<QWidget*>("walletSelector");
+        if (selector && walletLockButton) {
+            if (modern) {
+                auto* row = qobject_cast<QHBoxLayout*>(abyssQuickControls->layout());
+                row->insertWidget(2, walletLockButton);
+            } else {
+                selector->layout()->addWidget(walletLockButton);
+            }
+            selector->findChild<QFrame*>("walletLockDivider")->setVisible(!modern);
+            walletLockButton->setFocusPolicy(modern ? Qt::StrongFocus : Qt::NoFocus);
+            walletLockButton->setIconSize(modern ? QSize(22, 22) : QSize(20, 20));
+        }
+        updateQuickControls();
+    }
+    // Redraw the existing padlock, without changing its wallet action.
     updateWalletLockButton(m_encryption_status);
 
     // A wallet on a test chain must say so where the eye rests. The window
     // title already carries the network suffix, but nobody reads the title
     // bar; a badge in the navigation is unmissable and cannot be mistaken
     // for mainnet. Mainnet has no suffix, so the badge never exists there.
-    if (devnetBadgeLabel == nullptr && !m_network_style->getTitleAddText().isEmpty()) {
-        devnetBadgeLabel = new QLabel(m_network_style->getTitleAddText().trimmed());
+    if (devnetBadgeLabel == nullptr && !m_network_style.getTitleAddText().isEmpty()) {
+        devnetBadgeLabel = new QLabel(m_network_style.getTitleAddText().trimmed());
         devnetBadgeLabel->setObjectName("devnetBadge");
         GUIUtil::setFont({devnetBadgeLabel}, GUIUtil::FontWeight::Bold);
         devnetBadgeLabel->setAlignment(Qt::AlignCenter);
@@ -1102,21 +1278,20 @@ void BitcoinGUI::applyThemeLayout()
     }
 
     if (modern) {
-        // Not the coin logo: it already brands the sidebar header, and a
-        // check-circle reads as "the wallet at a glance".
-        overviewButton->setIcon(GUIUtil::getIcon("synced"));
-        sendCoinsButton->setIcon(makeDiagonalArrowIcon(/*up_right=*/true));
-        receiveCoinsButton->setIcon(makeDiagonalArrowIcon(/*up_right=*/false));
-        historyButton->setIcon(GUIUtil::getIcon("transaction_locked"));
-        coinJoinCoinsButton->setIcon(GUIUtil::getIcon("eye"));
+        // One family for the whole sidebar, so no two pages share a glyph.
+        setNavigationIcon(overviewButton, "home");
+        setNavigationIcon(sendCoinsButton, "send");
+        setNavigationIcon(receiveCoinsButton, "qrcode");
+        setNavigationIcon(historyButton, "history");
+        setNavigationIcon(coinJoinCoinsButton, "arrows-shuffle");
         if (multisigButton) {
-            multisigButton->setIcon(GUIUtil::getIcon("lock_closed"));
+            setNavigationIcon(multisigButton, "key");
         }
         if (masternodeButton) {
-            masternodeButton->setIcon(GUIUtil::getIcon("connect_4"));
+            setNavigationIcon(masternodeButton, "topology-star-3");
         }
         if (governanceButton) {
-            governanceButton->setIcon(GUIUtil::getIcon("synced"));
+            setNavigationIcon(governanceButton, "gavel");
         }
         for (QAbstractButton* button : tabGroup->buttons()) {
             button->setIconSize(QSize(22, 22));
@@ -1125,6 +1300,11 @@ void BitcoinGUI::applyThemeLayout()
         if (appToolBarLogoAction && firstNavigationAction) {
             appToolBar->removeAction(appToolBarLogoAction);
             appToolBar->insertAction(firstNavigationAction, appToolBarLogoAction);
+            // A widget added to a toolbar sits at the start of its line unless
+            // its layout item says otherwise, and the wordmark is narrower than
+            // the sidebar. Re-inserting the action made a fresh item, so this
+            // is set again on every pass and never leaks into the classic bar.
+            appToolBar->layout()->setAlignment(appToolBar->widgetForAction(appToolBarLogoAction), Qt::AlignHCenter);
         }
         if (m_wallet_selector_action && firstNavigationAction) {
             appToolBar->removeAction(m_wallet_selector_action);
@@ -1168,6 +1348,23 @@ void BitcoinGUI::applyThemeLayout()
     appToolBar->updateGeometry();
     updateWidth();
 #endif // ENABLE_WALLET
+}
+
+
+void BitcoinGUI::updateQuickControls()
+{
+#ifdef ENABLE_WALLET
+    if (!abyssQuickControls) return;
+    const auto set = [this](const char* object, const char* glyph) {
+        if (auto* button = abyssQuickControls->findChild<QToolButton*>(object)) {
+            GUIUtil::setTintedSvgIcon(button, QString(":/icons/tabler/") + glyph + ".svg",
+                QSize(22, 22), button->isChecked() ? QColor(Qt::white) : GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BLUE));
+        }
+    };
+    set("abyssOptionsButton", "settings");
+    set("abyssPrivacyButton", m_mask_values_action->isChecked() ? "eye-off" : "eye");
+    set("abyssConsoleButton", "terminal-2");
+#endif
 }
 
 void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndHeaderTipInfo* tip_info)
@@ -1379,6 +1576,7 @@ void BitcoinGUI::removeAllWallets()
 
 void BitcoinGUI::setWalletActionsEnabled(bool enabled)
 {
+    m_wallet_actions_enabled = enabled;
 #ifdef ENABLE_WALLET
     if (walletFrame != nullptr) {
         // NOTE: overviewButton is always enabled
@@ -1412,6 +1610,9 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
     openAction->setEnabled(enabled);
     m_close_wallet_action->setEnabled(enabled);
     m_close_all_wallets_action->setEnabled(enabled);
+#ifdef ENABLE_WALLET
+    if (GUIUtil::isModernTheme()) updateWalletLockButton(m_encryption_status);
+#endif
 }
 
 void BitcoinGUI::createTrayIcon()
@@ -1419,8 +1620,8 @@ void BitcoinGUI::createTrayIcon()
     assert(QSystemTrayIcon::isSystemTrayAvailable());
 
     if (QSystemTrayIcon::isSystemTrayAvailable()) {
-        trayIcon = new QSystemTrayIcon(m_network_style->getTrayAndWindowIcon(), this);
-        QString toolTip = tr("%1 client").arg(PACKAGE_NAME) + " " + m_network_style->getTitleAddText();
+        trayIcon = new QSystemTrayIcon(m_network_style.getTrayAndWindowIcon(), this);
+        QString toolTip = tr("%1 client").arg(PACKAGE_NAME) + " " + m_network_style.getTitleAddText();
         trayIcon->setToolTip(toolTip);
     }
 }
@@ -1711,7 +1912,9 @@ void BitcoinGUI::updateNetworkState()
     }
     if (!fNetworkActive || count > 0) {
         stopConnectingAnimation();
-        labelConnectionsIcon->setPixmap(GUIUtil::getIcon(icon, color).pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+        const int bars = count == 0 ? 1 : icon.right(1).toInt() + 1;
+        const QString glyph = !fNetworkActive ? QStringLiteral("network-off") : QStringLiteral("antenna-bars-%1").arg(bars);
+        GUIUtil::setThemedPixmap(labelConnectionsIcon, icon, glyph, QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), color);
     }
     labelConnectionsIcon->setToolTip(tooltip);
 }
@@ -1840,7 +2043,8 @@ void BitcoinGUI::applyModernWindowMinimum()
     const QSize content = layout() != nullptr ? layout()->minimumSize() : minimumSizeHint();
     QSize limit(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
     if (const QScreen* display = screen()) {
-        limit = display->availableGeometry().size();
+        const QSize frame_extra = frameGeometry().size() - size();
+        limit = (display->availableGeometry().size() - frame_extra).expandedTo(QSize(1, 1));
     }
     const QSize wanted(std::min(content.width(), limit.width()), std::min(content.height(), limit.height()));
     if (minimumSize() != wanted) {
@@ -1851,7 +2055,15 @@ void BitcoinGUI::applyModernWindowMinimum()
 bool BitcoinGUI::event(QEvent* e)
 {
     if (e->type() == QEvent::LayoutRequest) {
+        const QSize previous_minimum = minimumSize();
         applyModernWindowMinimum();
+        if (minimumSize() != previous_minimum && !m_initial_geometry_pending && isVisible() && GUIUtil::isModernTheme()) {
+            // A wallet can finish loading after the window was first shown.
+            // Keep its enlarged layout on-screen without recentering it.
+            QTimer::singleShot(0, this, [this] {
+                if (GUIUtil::isModernTheme()) GUIUtil::fitWindowToScreen(this, false);
+            });
+        }
     }
     return QMainWindow::event(e);
 }
@@ -1867,7 +2079,24 @@ void BitcoinGUI::updateWidth()
     if (GUIUtil::isModernTheme()) {
         constexpr int modernMinimumWidth{1200};
         applyModernWindowMinimum();
-        resize(std::max({width(), minimumWidth(), modernMinimumWidth}), std::max(height(), minimumHeight()));
+        QSize wanted(std::max({width(), minimumWidth(), modernMinimumWidth}), std::max(height(), minimumHeight()));
+        // The preferred width gives way to the screen, as the minimum does in
+        // applyModernWindowMinimum. Below 1200 logical pixels -- a small display
+        // or a high scaling factor -- every call, showEvent's included, pushed
+        // the window past the screen edge.
+        if (const QScreen* display = screen()) {
+            const QSize frame_extra = frameGeometry().size() - size();
+            wanted = wanted.boundedTo(display->availableGeometry().size() - frame_extra).expandedTo(minimumSize());
+        }
+        if (wanted != size()) {
+            resize(wanted);
+            // Grown in place, the window can still cross the right or bottom edge.
+            if (!m_initial_geometry_pending && isVisible()) {
+                QTimer::singleShot(0, this, [this] {
+                    if (GUIUtil::isModernTheme()) GUIUtil::fitWindowToScreen(this, false);
+                });
+            }
+        }
         return;
     }
     int nWidthWidestButton{0};
@@ -2046,7 +2275,7 @@ void BitcoinGUI::setAdditionalDataSyncProgress(double nSyncProgress)
 
     if(m_node.masternodeSync().isSynced()) {
         stopSpinner();
-        labelBlocksIcon->setPixmap(GUIUtil::getIcon("synced", GUIUtil::ThemedColor::GREEN).pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+        GUIUtil::setThemedPixmap(labelBlocksIcon, "synced", "circle-check", QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), GUIUtil::ThemedColor::GREEN);
         uiReadyForStaking = true;
     } else {
         progressBar->setFormat(tr("Synchronizing additional data: %p%"));
@@ -2130,6 +2359,7 @@ void BitcoinGUI::message(const QString& title, QString message, unsigned int sty
 void BitcoinGUI::changeEvent(QEvent *e)
 {
     QMainWindow::changeEvent(e);
+    if (e->type() == QEvent::WindowStateChange) QTimer::singleShot(0, this, &BitcoinGUI::fitInitialWindowGeometry);
 #ifndef Q_OS_MAC // Ignored on macOS
     if(e->type() == QEvent::WindowStateChange)
     {
@@ -2155,10 +2385,17 @@ void BitcoinGUI::changeEvent(QEvent *e)
 #ifdef ENABLE_WALLET
         if (walletFrame) {
             updateWalletStatus();
+            setStakingStatus();
         }
 #endif
+        if (clientModel && GUIUtil::HasPixmap(labelProxyIcon)) {
+            // Repaint a cached icon without clearing it or changing visibility.
+            // A hidden proxy can then be enabled by the original cached path.
+            GUIUtil::setThemedPixmap(labelProxyIcon, "proxy", "plug-connected",
+                QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), GUIUtil::ThemedColor::GREEN);
+        }
         if (m_node.masternodeSync().isSynced()) {
-            labelBlocksIcon->setPixmap(GUIUtil::getIcon("synced", GUIUtil::ThemedColor::GREEN).pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+            GUIUtil::setThemedPixmap(labelBlocksIcon, "synced", "circle-check", QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), GUIUtil::ThemedColor::GREEN);
         }
     }
 }
@@ -2186,6 +2423,17 @@ void BitcoinGUI::closeEvent(QCloseEvent *event)
 #endif
 }
 
+void BitcoinGUI::fitInitialWindowGeometry()
+{
+    if (!m_initial_geometry_pending || !isVisible() || !windowHandle() || !windowHandle()->isExposed()
+        || isMinimized() || isMaximized() || isFullScreen()) return;
+    m_initial_geometry_pending = false;
+    if (GUIUtil::isModernTheme()) {
+        applyModernWindowMinimum();
+        GUIUtil::fitWindowToScreen(this, !m_window_geometry_restored);
+    }
+}
+
 void BitcoinGUI::showEvent(QShowEvent *event)
 {
     // enable the debug window when the main window shows up
@@ -2200,6 +2448,9 @@ void BitcoinGUI::showEvent(QShowEvent *event)
     if (!event->spontaneous()) {
         updateCoinJoinVisibility();
     }
+    // Show precedes native mapping. Expose supplies the final frame margins.
+    if (windowHandle()) windowHandle()->installEventFilter(this);
+    QTimer::singleShot(0, this, &BitcoinGUI::fitInitialWindowGeometry);
 }
 
 #ifdef ENABLE_WALLET
@@ -2309,6 +2560,14 @@ void BitcoinGUI::dropEvent(QDropEvent *event)
 
 bool BitcoinGUI::eventFilter(QObject *object, QEvent *event)
 {
+    if (object == windowHandle() && event->type() == QEvent::Expose && m_initial_geometry_pending) {
+        QTimer::singleShot(0, this, &BitcoinGUI::fitInitialWindowGeometry);
+    }
+    if (object == this && (event->type() == QEvent::ScreenChangeInternal ||
+        event->type() == QEvent::Show) && GUIUtil::isModernTheme() && consoleButton) {
+        consoleButton->setIcon(makeConsoleIcon(consoleButton));
+    }
+
     // Catch status tip events
     if (event->type() == QEvent::StatusTip)
     {
@@ -2335,7 +2594,7 @@ bool BitcoinGUI::handlePaymentRequest(const SendCoinsRecipient& recipient)
 void BitcoinGUI::setHDStatus(int hdEnabled)
 {
     if (hdEnabled) {
-        labelWalletHDStatusIcon->setPixmap(GUIUtil::getIcon("hd_enabled", GUIUtil::ThemedColor::GREEN).pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+        GUIUtil::setThemedPixmap(labelWalletHDStatusIcon, "hd_enabled", "key", QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), GUIUtil::ThemedColor::GREEN);
         labelWalletHDStatusIcon->setToolTip(tr("HD key generation is <b>enabled</b>"));
         labelWalletHDStatusIcon->show();
     }
@@ -2344,6 +2603,15 @@ void BitcoinGUI::setHDStatus(int hdEnabled)
 
 void BitcoinGUI::setStakingStatus()
 {
+    const auto icon = [this](const char* classic, const char* glyph, GUIUtil::ThemedColor color) {
+        const QSize size(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE);
+        if (GUIUtil::isModernTheme()) {
+            GUIUtil::setTintedSvgPixmap(labelStakingIcon, QString(":/icons/tabler/") + glyph + ".svg",
+                size, GUIUtil::getThemedQColor(color));
+        } else {
+            labelStakingIcon->setPixmap(QIcon(QString(":/icons/") + classic).pixmap(size));
+        }
+    };
     int active_wallets = ReturnActiveStakingWallets();
     if (active_wallets > 0) {
         char walletMessage[32];
@@ -2351,20 +2619,20 @@ void BitcoinGUI::setStakingStatus()
         sprintf(walletMessage, "Staking on %d wallets", active_wallets);
         if (fIsStaking && !fTryToSync) {
             labelStakingIcon->show();
-            labelStakingIcon->setPixmap(QIcon(":/icons/staking_active").pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+            icon("staking_active", "leaf", GUIUtil::ThemedColor::GREEN);
             labelStakingIcon->setToolTip(tr(walletMessage));
         } else if (!fIsStaking && fTryToSync) {
             labelStakingIcon->show();
-            labelStakingIcon->setPixmap(QIcon(":/icons/staking_stalled").pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+            icon("staking_stalled", "clock-pause", GUIUtil::ThemedColor::ORANGE);
             labelStakingIcon->setToolTip(tr("Staking is stalled"));
         } else {
             labelStakingIcon->show();
-            labelStakingIcon->setPixmap(QIcon(":/icons/staking_inactive").pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+            icon("staking_inactive", "leaf-off", GUIUtil::ThemedColor::UNCONFIRMED);
             labelStakingIcon->setToolTip(tr("Staking is inactive"));
         }
     } else {
         labelStakingIcon->show();
-        labelStakingIcon->setPixmap(QIcon(":/icons/staking_inactive").pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+        icon("staking_inactive", "leaf-off", GUIUtil::ThemedColor::UNCONFIRMED);
         labelStakingIcon->setToolTip(tr("Staking is inactive"));
     }
 }
@@ -2372,33 +2640,49 @@ void BitcoinGUI::setStakingStatus()
 void BitcoinGUI::updateWalletLockButton(int status)
 {
     if (walletLockButton == nullptr) return;
+    const bool modern = GUIUtil::isModernTheme();
+    if (modern && !m_wallet_actions_enabled) status = -1;
 
     // The icon is the state, and the tooltip is the consequence of a click.
     // The colours are the ones the status bar icon already uses, so the two
     // never disagree about what the wallet is doing.
     switch (status) {
     case WalletModel::Unencrypted:
-        walletLockButton->setIcon(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::RED));
+        GUIUtil::setThemedIcon(walletLockButton, "lock_open", "lock-open", walletLockButton->iconSize(), GUIUtil::ThemedColor::RED);
         walletLockButton->setToolTip(tr("Wallet is <b>unencrypted</b>. Click to encrypt it."));
         break;
     case WalletModel::Unlocked:
-        walletLockButton->setIcon(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::RED));
+        GUIUtil::setThemedIcon(walletLockButton, "lock_open", "lock-open", walletLockButton->iconSize(), GUIUtil::ThemedColor::RED);
         walletLockButton->setToolTip(tr("Wallet is <b>unlocked</b>. Click to lock it."));
         break;
     case WalletModel::UnlockedForMixingOnly:
-        walletLockButton->setIcon(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::ORANGE));
+        GUIUtil::setThemedIcon(walletLockButton, "lock_open", "lock-open", walletLockButton->iconSize(), GUIUtil::ThemedColor::ORANGE);
         walletLockButton->setToolTip(tr("Wallet is <b>unlocked for mixing only</b>. Click to lock it."));
         break;
     case WalletModel::Locked:
-        walletLockButton->setIcon(GUIUtil::getIcon("lock_closed", GUIUtil::ThemedColor::GREEN));
+        GUIUtil::setThemedIcon(walletLockButton, "lock_closed", "lock", walletLockButton->iconSize(), GUIUtil::ThemedColor::GREEN);
         walletLockButton->setToolTip(tr("Wallet is <b>locked</b>. Click to unlock it."));
         break;
     default:
         // No wallet has reported yet, so there is no lock state to show.
-        walletLockButton->setVisible(false);
+        if (!modern) {
+            walletLockButton->setEnabled(true);
+            walletLockButton->setAccessibleName(QString());
+            walletLockButton->setVisible(false);
+            return;
+        }
+        GUIUtil::setThemedIcon(walletLockButton, "lock_closed", "lock", walletLockButton->iconSize(), GUIUtil::ThemedColor::UNCONFIRMED);
+        walletLockButton->setToolTip(tr("No wallet loaded."));
+        walletLockButton->setAccessibleName(walletLockButton->toolTip());
+        walletLockButton->setEnabled(false);
+        walletLockButton->setVisible(modern);
         return;
     }
 
+    QAction* action = status == WalletModel::Unencrypted ? encryptWalletAction :
+                      status == WalletModel::Locked ? unlockWalletAction : lockWalletAction;
+    walletLockButton->setEnabled(modern ? action->isEnabled() : true);
+    walletLockButton->setAccessibleName(modern ? action->text().remove('&') : QString());
     walletLockButton->setVisible(true);
 }
 
@@ -2432,7 +2716,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
     {
     case WalletModel::Unencrypted:
         labelWalletEncryptionIcon->show();
-        labelWalletEncryptionIcon->setPixmap(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::RED).pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+        GUIUtil::setThemedPixmap(labelWalletEncryptionIcon, "lock_open", "lock-open", QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), GUIUtil::ThemedColor::RED);
         labelWalletEncryptionIcon->setToolTip(tr("Wallet is <b>unencrypted</b>"));
         changePassphraseAction->setEnabled(false);
         unlockWalletAction->setVisible(false);
@@ -2441,7 +2725,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
         break;
     case WalletModel::Unlocked:
         labelWalletEncryptionIcon->show();
-        labelWalletEncryptionIcon->setPixmap(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::RED).pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+        GUIUtil::setThemedPixmap(labelWalletEncryptionIcon, "lock_open", "lock-open", QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), GUIUtil::ThemedColor::RED);
         labelWalletEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>unlocked</b>"));
         changePassphraseAction->setEnabled(true);
         unlockWalletAction->setVisible(false);
@@ -2450,7 +2734,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
         break;
     case WalletModel::UnlockedForMixingOnly:
         labelWalletEncryptionIcon->show();
-        labelWalletEncryptionIcon->setPixmap(GUIUtil::getIcon("lock_open", GUIUtil::ThemedColor::ORANGE).pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+        GUIUtil::setThemedPixmap(labelWalletEncryptionIcon, "lock_open", "lock-open", QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), GUIUtil::ThemedColor::ORANGE);
         labelWalletEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>unlocked</b> for mixing only"));
         changePassphraseAction->setEnabled(true);
         unlockWalletAction->setVisible(true);
@@ -2459,7 +2743,7 @@ void BitcoinGUI::setEncryptionStatus(int status)
         break;
     case WalletModel::Locked:
         labelWalletEncryptionIcon->show();
-        labelWalletEncryptionIcon->setPixmap(GUIUtil::getIcon("lock_closed", GUIUtil::ThemedColor::GREEN).pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
+        GUIUtil::setThemedPixmap(labelWalletEncryptionIcon, "lock_closed", "lock", QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), GUIUtil::ThemedColor::GREEN);
         labelWalletEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>locked</b>"));
         changePassphraseAction->setEnabled(true);
         unlockWalletAction->setVisible(true);
@@ -2488,13 +2772,17 @@ void BitcoinGUI::updateWalletStatus()
 void BitcoinGUI::updateProxyIcon()
 {
     std::string ip_port;
-    bool proxy_enabled = clientModel->getProxyInfo(ip_port);
+    const bool enabled = clientModel->getProxyInfo(ip_port);
+    setProxyIcon(enabled, QString::fromStdString(ip_port));
+}
 
-    if (proxy_enabled) {
+void BitcoinGUI::setProxyIcon(bool enabled, const QString& endpoint)
+{
+    if (enabled) {
         if (!GUIUtil::HasPixmap(labelProxyIcon)) {
-            QString ip_port_q = QString::fromStdString(ip_port);
-            labelProxyIcon->setPixmap(GUIUtil::getIcon("proxy", GUIUtil::ThemedColor::GREEN).pixmap(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE));
-            labelProxyIcon->setToolTip(tr("Proxy is <b>enabled</b>: %1").arg(ip_port_q));
+            GUIUtil::setThemedPixmap(labelProxyIcon, "proxy", "plug-connected", QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), GUIUtil::ThemedColor::GREEN);
+            labelProxyIcon->setToolTip(tr("Proxy is <b>enabled</b>: %1").arg(endpoint));
+            if (GUIUtil::isModernTheme()) labelProxyIcon->show();
         } else {
             labelProxyIcon->show();
         }
@@ -2518,8 +2806,8 @@ void BitcoinGUI::updateWindowTitle()
         }
     }
 #endif
-    if (!m_network_style->getTitleAddText().isEmpty()) {
-        window_title += " - " + m_network_style->getTitleAddText();
+    if (!m_network_style.getTitleAddText().isEmpty()) {
+        window_title += " - " + m_network_style.getTitleAddText();
     }
     setWindowTitle(window_title);
 }

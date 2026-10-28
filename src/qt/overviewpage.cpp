@@ -17,11 +17,14 @@
 #include <qt/walletmodel.h>
 
 #include <coinjoin/options.h>
+#include <evo/deterministicmns.h>
 #include <interfaces/coinjoin.h>
+#include <interfaces/node.h>
 
 #include <QFrame>
 #include <QFontMetricsF>
 #include <QHBoxLayout>
+#include <QProgressBar>
 #include <QScreen>
 
 #include <algorithm>
@@ -198,19 +201,69 @@ OverviewPage::OverviewPage(QWidget* parent) :
     ui->topLayout->insertWidget(0, modernHeader);
 
     // The network's pulse belongs on the front page, not only in the status
-    // bar: one quiet line above the cards, fed from the client model.
+    // bar: one line above the cards, fed from the client model. The tip and
+    // its age, then how far along the node is, then the company it keeps.
     networkCard = new QFrame(this);
     networkCard->setObjectName("networkCard");
     auto* networkLayout = new QHBoxLayout(networkCard);
-    networkLayout->setContentsMargins(14, 8, 14, 8);
-    labelNetworkStatus = new QLabel(networkCard);
-    labelNetworkStatus->setObjectName("labelNetworkStatus");
-    labelNetworkStatus->setText(tr("Connecting to network…"));
-    networkLayout->addWidget(labelNetworkStatus);
+    networkLayout->setContentsMargins(16, 12, 16, 12);
+    networkLayout->setSpacing(18);
+    std::vector<QWidget*> network_words;
+    std::vector<QWidget*> network_values;
+    enum class Value { None, Before, After };
+    // Each state is its own entry with its own colors in the stylesheet, and
+    // only visibility changes: repolishing a label would drop the font GUIUtil
+    // gave it.
+    const auto entry = [&](NetworkItem& item, const char* name, const QString& text, Value value) {
+        item.widget = new QWidget(networkCard);
+        item.widget->setObjectName(name);
+        auto* layout = new QHBoxLayout(item.widget);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(6);
+        item.icon = new QLabel(item.widget);
+        item.icon->setObjectName("networkIcon");
+        item.icon->setFixedSize(18, 18);
+        layout->addWidget(item.icon);
+        item.text = new QLabel(text, item.widget);
+        item.text->setObjectName("networkText");
+        network_words.push_back(item.text);
+        if (value != Value::None) {
+            item.value = new QLabel(item.widget);
+            item.value->setObjectName("networkValue");
+            network_values.push_back(item.value);
+        }
+        layout->addWidget(value == Value::Before ? item.value : item.text);
+        if (value != Value::None) layout->addWidget(value == Value::Before ? item.text : item.value);
+        networkLayout->addWidget(item.widget);
+    };
+    entry(m_net_block, "networkBlock", tr("Block"), Value::After);
+    entry(m_net_age, "networkAge", QString(), Value::None);
+    auto* networkSeparator = new QFrame(networkCard);
+    networkSeparator->setObjectName("networkSeparator");
+    networkSeparator->setFixedSize(1, 20);
+    networkLayout->addWidget(networkSeparator);
+    entry(m_net_synced, "networkSynced", tr("Synced"), Value::None);
+    entry(m_net_chainlock, "networkChainLocked", tr("ChainLocked"), Value::None);
+    entry(m_net_syncing, "networkSyncing", QString(), Value::None);
+    m_net_progress = new QProgressBar(networkCard);
+    m_net_progress->setObjectName("networkSyncProgress");
+    m_net_progress->setRange(0, 1000);
+    m_net_progress->setTextVisible(false);
+    m_net_progress->setMinimumWidth(60);
+    m_net_progress->setMaximumWidth(165);
+    m_net_progress->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    networkLayout->addWidget(m_net_progress);
     networkLayout->addStretch();
+    entry(m_net_peers, "networkPeers", QString(), Value::Before);
+    entry(m_net_masternodes, "networkMasternodes", tr("MN"), Value::Before);
+    entry(m_net_mempool, "networkMempool", tr("tx"), Value::Before);
+    m_net_masternodes.widget->setToolTip(tr("Valid masternodes"));
+    m_net_mempool.widget->setToolTip(tr("Transactions in the memory pool"));
     ui->topLayout->insertWidget(1, networkCard);
+    setNetworkStatus({});
 
     m_total_size_policy = ui->labelTotal->sizePolicy();
+    m_total_minimum_height = ui->labelTotal->minimumHeight();
     for (QLabel* label : ui->frame->findChildren<QLabel*>()) label->installEventFilter(this);
     installEventFilter(this);
 
@@ -232,7 +285,9 @@ OverviewPage::OverviewPage(QWidget* parent) :
                      }, GUIUtil::FontWeight::Bold);
 
     GUIUtil::setFont({modernTitle}, GUIUtil::FontWeight::Bold, 18);
-    GUIUtil::setFont({modernSubtitle, labelNetworkStatus}, GUIUtil::FontWeight::Normal);
+    GUIUtil::setFont({modernSubtitle}, GUIUtil::FontWeight::Normal);
+    GUIUtil::setFont(network_words, GUIUtil::FontWeight::Normal);
+    GUIUtil::setFont(network_values, GUIUtil::FontWeight::Bold);
     updateThemePresentation();
     GUIUtil::updateFonts();
 
@@ -325,42 +380,8 @@ void OverviewPage::scheduleBalanceWidths()
 
 void OverviewPage::paintEvent(QPaintEvent* event)
 {
-    // The stylesheet paints the background; this only adds to it.
+    // The central StarfieldWidget owns the only Abyss sky.
     QWidget::paintEvent(event);
-    if (!GUIUtil::isDefconDarkTheme()) {
-        return;
-    }
-
-    // A quiet sky behind the dashboard. Deliberately not the nebula the removed
-    // galaxy theme drew: no gradients, no colour, nothing that competes with a
-    // balance for attention. If it is noticeable, it is wrong.
-    const int w = std::max(width(), 1);
-    const int h = std::max(height(), 1);
-    // Roughly one star per 22000 pixels of window, so a large window does not
-    // look empty and a small one does not look crowded.
-    const int count = std::clamp((w * h) / 22000, 24, 90);
-
-    QPainter painter(this);
-    painter.setClipRegion(event->region());
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setPen(Qt::NoPen);
-
-    for (int i = 1; i <= count; ++i) {
-        // A fixed scatter rather than a random one: the same sky on every
-        // repaint, so it does not shimmer as the window redraws, and nothing
-        // has to be remembered between paints.
-        quint32 hash = static_cast<quint32>(i) * 2654435761u;
-        hash ^= hash >> 15;
-        const int x = static_cast<int>(hash % static_cast<quint32>(w));
-        hash *= 2246822519u;
-        hash ^= hash >> 13;
-        const int y = static_cast<int>(hash % static_cast<quint32>(h));
-
-        const int alpha = 24 + static_cast<int>(hash % 46u);
-        const qreal radius = (i % 9 == 0) ? 1.3 : 0.7;
-        painter.setBrush(QColor(214, 231, 255, alpha));
-        painter.drawEllipse(QPointF(x, y), radius, radius);
-    }
 }
 
 void OverviewPage::updateThemePresentation()
@@ -371,9 +392,15 @@ void OverviewPage::updateThemePresentation()
     }
     if (networkCard) {
         networkCard->setVisible(modern);
+        if (modern) paintNetworkIcons();
     }
     ui->topLayout->setContentsMargins(11, 11, 11, 11);
     ui->topLayout->setSpacing(modern ? 12 : 6);
+    // The column holding the balances and CoinJoin cards inherits the row's
+    // spacing, which the modern theme zeroes just below, so the two cards
+    // touched. Give it the gap the network card leaves above them; -1 hands
+    // the classic themes back the inherited spacing the form leaves them with.
+    ui->verticalLayout_2->setSpacing(modern ? 12 : -1);
     ui->horizontalLayout->setSpacing(modern ? 0 : 6);
 
     for (int item = 0; item < ui->horizontalLayout->count(); ++item) {
@@ -425,10 +452,80 @@ void OverviewPage::updateThemePresentation()
 
 void OverviewPage::updateNetworkState()
 {
-    if (labelNetworkStatus == nullptr || clientModel == nullptr) return;
-    const int height = clientModel->getNumBlocks();
-    const int peers = clientModel->getNumConnections();
-    labelNetworkStatus->setText(tr("Block %1 · %2 peer(s)").arg(height).arg(peers));
+    if (networkCard == nullptr || clientModel == nullptr) return;
+    NetworkStatus status;
+    status.height = m_block_height;
+    status.block_age = std::max<qint64>(0, m_block_time.secsTo(QDateTime::currentDateTime()));
+    status.chain_synced = clientModel->masternodeSync().isBlockchainSynced();
+    status.data_synced = status.chain_synced && clientModel->masternodeSync().isSynced();
+    status.progress = status.chain_synced ? m_data_progress : m_verification_progress;
+    status.chain_locked = m_chainlock_height >= 0 && m_chainlock_height >= m_block_height;
+    status.peers = m_peer_count;
+    if (status.chain_synced) status.masternodes = m_masternode_count;
+    status.mempool = m_mempool_count;
+    setNetworkStatus(status);
+}
+
+namespace {
+//! 150628 as "150 628", grouped with the thin space the amounts use.
+QString GroupDigits(qint64 number)
+{
+    QString digits = QString::number(number);
+    for (int at = digits.size() - 3; at > (number < 0 ? 1 : 0); at -= 3) {
+        digits.insert(at, QChar(THIN_SP_CP));
+    }
+    return digits;
+}
+} // namespace
+
+void OverviewPage::setNetworkStatus(const NetworkStatus& status)
+{
+    if (networkCard == nullptr) return;
+    // Until the masternode data is in as well, the node is still catching up.
+    const bool syncing = !status.data_synced;
+    const QString age = GUIUtil::formatNiceTimeOffset(status.block_age);
+    const int percent = std::clamp(static_cast<int>(std::floor(status.progress * 100)), 0, 100);
+
+    m_net_block.value->setText(GroupDigits(status.height));
+    m_net_age.text->setText(status.chain_synced ? tr("%1 ago").arg(age) : tr("%1 behind").arg(age));
+    m_net_synced.widget->setVisible(!syncing);
+    m_net_chainlock.widget->setVisible(!syncing && status.chain_locked);
+    m_net_syncing.widget->setVisible(syncing);
+    m_net_syncing.text->setText(tr("Syncing %1%").arg(percent));
+    m_net_syncing.widget->setToolTip(status.chain_synced ? tr("Synchronizing additional data") : tr("Catching up with the blockchain"));
+    m_net_progress->setVisible(syncing);
+    m_net_progress->setValue(qRound(std::clamp(status.progress, 0.0, 1.0) * 1000));
+    m_net_peers.value->setText(QString::number(status.peers));
+    m_net_peers.text->setText(status.peers == 1 ? tr("peer") : tr("peers"));
+    m_net_masternodes.value->setText(status.masternodes ? GroupDigits(*status.masternodes) : QString(QChar(0x2013)));
+    m_net_mempool.widget->setVisible(!syncing && status.mempool.has_value());
+    m_net_mempool.value->setText(GroupDigits(status.mempool.value_or(0)));
+
+    // The card's own border turns amber while syncing. Only the card is
+    // repolished; it carries no font of its own.
+    if (networkCard->property("syncing").toBool() != syncing) {
+        networkCard->setProperty("syncing", syncing);
+        networkCard->style()->unpolish(networkCard);
+        networkCard->style()->polish(networkCard);
+        networkCard->update();
+    }
+}
+
+void OverviewPage::paintNetworkIcons()
+{
+    using GUIUtil::ThemedColor;
+    const auto paint = [](const NetworkItem& item, const char* glyph, ThemedColor color) {
+        GUIUtil::setTintedSvgPixmap(item.icon, QString(":/icons/tabler/%1.svg").arg(glyph),
+                                   item.icon->size(), GUIUtil::getThemedQColor(color));
+    };
+    paint(m_net_block, "cube", ThemedColor::BLUE);
+    paint(m_net_age, "clock", ThemedColor::UNCONFIRMED);
+    paint(m_net_synced, "circle-check", ThemedColor::GREEN);
+    paint(m_net_chainlock, "shield-check", ThemedColor::GREEN);
+    paint(m_net_syncing, "refresh", ThemedColor::ORANGE);
+    paint(m_net_peers, "plug-connected", ThemedColor::UNCONFIRMED);
+    paint(m_net_masternodes, "server", ThemedColor::UNCONFIRMED);
+    paint(m_net_mempool, "stack-2", ThemedColor::UNCONFIRMED);
 }
 
 OverviewPage::~OverviewPage()
@@ -479,6 +576,7 @@ void OverviewPage::applyBalanceWidths()
             }
             const auto restore = [&](QWidget* widget) {
                 widget->setMinimumWidth(m_form_minimum_widths.at(widget));
+                if (widget == ui->labelTotal) widget->setMinimumHeight(m_total_minimum_height);
                 widget->style()->polish(widget);
                 // Follow Qt's repolish protocol: QFrame/QLabel need StyleChange
                 // to refresh their CSS border/padding contents rectangles too.
@@ -576,6 +674,11 @@ void OverviewPage::fitTotalFont()
         if (font.pointSizeF() >= previous) break;
     }
     if (label->font() != font) label->setFont(font);
+    // CSS's small-label floor otherwise overrides the larger Abyss font's
+    // natural height in the grid. Keep the complete rendered amount visible;
+    // classic entry restores the original height before its stylesheet polish.
+    const int height = label->minimumSizeHint().height();
+    if (label->minimumHeight() != height) label->setMinimumHeight(height);
 }
 
 void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
@@ -654,14 +757,60 @@ void OverviewPage::updateWatchOnlyLabels(bool showWatchOnly)
 
 void OverviewPage::setClientModel(ClientModel *model)
 {
+    m_network_model_context.reset();
     this->clientModel = model;
     if (model) {
         // Show warning, for example if this is a prerelease version
         connect(model, &ClientModel::alertsChanged, this, &OverviewPage::updateAlerts);
         updateAlerts(model->getStatusBarWarnings());
 
-        connect(model, &ClientModel::numConnectionsChanged, this, &OverviewPage::updateNetworkState);
-        connect(model, &ClientModel::numBlocksChanged, this, &OverviewPage::updateNetworkState);
+        // What the network bar shows, kept from the model's signals. The
+        // mempool is polled every MODEL_UPDATE_DELAY, which also keeps the
+        // block's age current between blocks.
+        m_network_model_context = std::make_unique<QObject>();
+        QObject* context = m_network_model_context.get();
+        m_data_progress = 0;
+        m_chainlock_height = -1;
+        m_masternode_count.reset();
+        m_mempool_count.reset();
+        m_block_height = model->getNumBlocks();
+        m_block_time = QDateTime::fromSecsSinceEpoch(model->node().getLastBlockTime());
+        m_verification_progress = model->node().getVerificationProgress();
+        m_peer_count = model->getNumConnections();
+        const auto count_masternodes = [this, model] {
+            const CDeterministicMNList list = model->getMasternodeList().first;
+            // An empty list that was never set says nothing about the network.
+            if (!list.GetBlockHash().IsNull()) m_masternode_count = list.GetValidMNsCount();
+        };
+        count_masternodes();
+        connect(model, &ClientModel::numBlocksChanged, context, [this](int count, const QDateTime& date, const QString&, double progress, SyncType type, SynchronizationState) {
+            if (type == SyncType::BLOCK_SYNC) {
+                m_block_height = count;
+                m_block_time = date;
+                m_verification_progress = progress;
+            }
+            updateNetworkState();
+        });
+        connect(model, &ClientModel::additionalDataSyncProgressChanged, context, [this](double progress) {
+            m_data_progress = progress;
+            updateNetworkState();
+        });
+        connect(model, &ClientModel::chainLockChanged, context, [this](const QString&, int height) {
+            m_chainlock_height = height;
+            updateNetworkState();
+        });
+        connect(model, &ClientModel::numConnectionsChanged, context, [this](int count) {
+            m_peer_count = count;
+            updateNetworkState();
+        });
+        connect(model, &ClientModel::masternodeListChanged, context, [this, count_masternodes] {
+            count_masternodes();
+            updateNetworkState();
+        });
+        connect(model, &ClientModel::mempoolSizeChanged, context, [this](long count, size_t) {
+            m_mempool_count = count;
+            updateNetworkState();
+        });
         updateNetworkState();
     }
 }
@@ -895,13 +1044,10 @@ void OverviewPage::coinJoinStatus(bool fForce)
     };
 
     auto setWidgetsVisible = [&](bool fVisible) {
-        static bool fInitial{true};
-        static bool fLastVisible{false};
-        static bool fLastShowAdvanced{false};
         // Only update the widget's visibility if something changed since the last call of setWidgetsVisible
-        if (fLastShowAdvanced == fShowAdvancedCJUI && fLastVisible == fVisible) {
-            if (fInitial) {
-                fInitial = false;
+        if (m_cj_widgets_last_show_advanced == fShowAdvancedCJUI && m_cj_widgets_last_visible == fVisible) {
+            if (m_cj_widgets_initial) {
+                m_cj_widgets_initial = false;
             } else {
                 return;
             }
@@ -910,20 +1056,19 @@ void OverviewPage::coinJoinStatus(bool fForce)
         for (const auto& it : coinJoinWidgets) {
             it.first->setVisible(fVisible && (!it.second || it.second == fShowAdvancedCJUI));
         }
-        fLastVisible = fVisible;
-        fLastShowAdvanced = fShowAdvancedCJUI;
+        m_cj_widgets_last_visible = fVisible;
+        m_cj_widgets_last_show_advanced = fShowAdvancedCJUI;
     };
 
-    static int64_t nLastDSProgressBlockTime = 0;
     int nBestHeight = clientModel->node().getNumBlocks();
 
     // We are processing more than 1 block per second, we'll just leave
     bool tooFast{false};
     walletModel->withCoinJoin([&](auto& client) {
-        tooFast = nBestHeight > client.getCachedBlocks() && GetTime() - nLastDSProgressBlockTime <= 1;
+        tooFast = nBestHeight > client.getCachedBlocks() && GetTime() - m_cj_last_progress_time <= 1;
     });
     if (tooFast) return;
-    nLastDSProgressBlockTime = GetTime();
+    m_cj_last_progress_time = GetTime();
 
     QString strKeysLeftText(tr("keys left: %1").arg(walletModel->getKeysLeftSinceAutoBackup()));
     if(walletModel->getKeysLeftSinceAutoBackup() < COINJOIN_KEYS_THRESHOLD_WARNING) {
