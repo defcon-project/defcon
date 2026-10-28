@@ -19,6 +19,8 @@
 #include <deploymentstatus.h>
 #include <dbwrapper.h>
 #include <script/standard.h>
+#include <util/string.h>
+#include <util/time.h>
 #include <validation.h>
 #include <validationinterface.h>
 #include <univalue.h>
@@ -1201,6 +1203,17 @@ CDeterministicMNList CDeterministicMNManager::GetListForBlockInternal(gsl::not_n
 
         CDeterministicMNListDiff diff;
         if (!m_evoDb.Read(std::make_pair(DB_LIST_DIFF, pindex->GetBlockHash()), diff)) {
+            // Every block connected with DIP0003 active stores a diff, so only
+            // the block the list starts after -- the last one before activation,
+            // or genesis -- may have neither a snapshot nor a diff. Above it the
+            // history is missing or unreadable: an empty list invented there
+            // would drop every masternode registered below it, and the cache
+            // would keep serving it as real.
+            if (pindex->pprev != nullptr &&
+                DeploymentActiveAt(*pindex, Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0003)) {
+                throw dbwrapper_error(strprintf("Masternode list diff at height %d (%s) is missing or unreadable",
+                                                pindex->nHeight, pindex->GetBlockHash().ToString()));
+            }
             // no snapshot and no diff on disk means that it's the initial snapshot
             m_initial_snapshot_index = pindex;
             snapshot = CDeterministicMNList(pindex->GetBlockHash(), pindex->nHeight, 0);
@@ -2304,6 +2317,9 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
                     diff.nHeight = nHeight;
                     tail_list = tail_list.ApplyDiff(pIndex, diff);
                 }
+            } catch (const dbwrapper_error&) {
+                // A storage failure is not a finding about the history.
+                throw;
             } catch (const std::exception& e) {
                 result.verification_errors.push_back(strprintf(
                     "Exception applying diffs past the last snapshot at height %d: %s", tail_start->nHeight, e.what()));
@@ -2344,6 +2360,42 @@ void CDeterministicMNManager::CompleteRepair()
     if (!m_evoDb.CommitRootTransaction()) {
         LogPrintf("CDeterministicMNManager::%s -- Failed to commit to evoDB\n", __func__);
         assert(false);
+    }
+}
+
+CDeterministicMNManager::HistoryCheck CDeterministicMNManager::VerifyOrRepairDiffs(
+    ChainstateManager& chainman, BuildListFromBlockFunc build_list_func, bool repair)
+{
+    using Outcome = HistoryCheck::Outcome;
+    const CBlockIndex* start_index;
+    const CBlockIndex* stop_index;
+    {
+        LOCK(::cs_main);
+        start_index = chainman.ActiveChain()[Params().GetConsensus().DIP0003Height];
+        stop_index = chainman.ActiveChain().Tip();
+    }
+    if (!start_index || !stop_index || start_index->nHeight >= stop_index->nHeight) return {};
+
+    LogPrintf("%s masternode list diffs...\n", repair ? "Repairing" : "Verifying");
+    const auto start{SteadyClock::now()};
+    try {
+        const auto result = RecalculateAndRepairDiffs(start_index, stop_index, chainman, std::move(build_list_func), repair);
+        if (!result.verification_errors.empty()) {
+            LogPrintf("WARNING: Verification errors:\n%s\n", Join(result.verification_errors, "\n"));
+        }
+        if (!result.repair_errors.empty()) {
+            return {Outcome::REPAIR_FAILED, Join(result.repair_errors, "\n")};
+        }
+        if (!result.verification_errors.empty()) {
+            return {Outcome::UNRELIABLE, Join(result.verification_errors, "\n")};
+        }
+        CompleteRepair();
+        LogPrintf("Verified %d snapshot pair(s) in %ds\n", result.snapshots_verified,
+                  Ticks<std::chrono::seconds>(SteadyClock::now() - start));
+        return {Outcome::CLEAN, ""};
+    } catch (const std::exception& e) {
+        // Reading a snapshot or writing the repaired diffs can fail in storage.
+        return {Outcome::FAILED, e.what()};
     }
 }
 
@@ -2421,6 +2473,9 @@ bool CDeterministicMNManager::VerifySnapshotPair(
             diff.nHeight = nHeight;
             test_list = test_list.ApplyDiff(pIndex, diff);
         }
+    } catch (const dbwrapper_error&) {
+        // A storage failure is not a finding about the history.
+        throw;
     } catch (const std::exception& e) {
         result.verification_errors.push_back(strprintf("Exception during verification: %s", e.what()));
         return false;

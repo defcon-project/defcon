@@ -12,6 +12,7 @@
 #include <string>
 
 class CActiveMasternodeManager;
+class CBlockIndex;
 class CChainstateHelper;
 class CCreditPoolManager;
 class CDeterministicMNManager;
@@ -47,6 +48,8 @@ enum class ChainstateLoadingError {
     ERROR_RECONCILING_EVO_DB,
     ERROR_UPGRADING_EVO_DB,
     ERROR_UPGRADING_SIGNALS_DB,
+    ERROR_LOADING_MN_LIST,
+    ERROR_REPAIRING_MN_LIST,
     SHUTDOWN_PROBED,
 };
 
@@ -105,7 +108,15 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
                                                      bool block_tree_db_in_memory,
                                                      bool coins_db_in_memory,
                                                      std::function<bool()> shutdown_requested = nullptr,
-                                                     std::function<void()> coins_error_cb = nullptr);
+                                                     std::function<void()> coins_error_cb = nullptr,
+                                                     bool evodb_repair = false,
+                                                     bool force_evodb_repair = false);
+
+/** Build the masternode list at `tip` once. Returns false, and logs why, when the
+ *  evodb cannot produce it -- a missing or unreadable list diff -- so a damaged
+ *  database fails the load, with the usual offer to reindex, instead of the
+ *  first background reader after it. */
+bool VerifyMasternodeListAtTip(const CBlockIndex* tip, CDeterministicMNManager& dmnman);
 
 /** Initialize Dash-specific components during chainstate initialization */
 void DashChainstateSetup(ChainstateManager& chainman,

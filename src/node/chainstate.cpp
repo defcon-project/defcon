@@ -6,6 +6,7 @@
 
 #include <chainparamsbase.h>
 #include <consensus/params.h>
+#include <dbwrapper.h>
 #include <deploymentstatus.h>
 #include <node/blockstorage.h>
 #include <validation.h>
@@ -296,7 +297,9 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
                                                      bool block_tree_db_in_memory,
                                                      bool coins_db_in_memory,
                                                      std::function<bool()> shutdown_requested,
-                                                     std::function<void()> coins_error_cb)
+                                                     std::function<void()> coins_error_cb,
+                                                     bool evodb_repair,
+                                                     bool force_evodb_repair)
 {
     auto is_coinsview_empty = [&](CChainState* chainstate) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
         return fReset || fReindexChainState || chainstate->CoinsTip().GetBestBlock().IsNull();
@@ -451,7 +454,56 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
         return ChainstateLoadingError::ERROR_UPGRADING_SIGNALS_DB;
     }
 
+    // A repair asked for with -evodbrepair runs here, before anything reads the
+    // masternode list history: the block verification after the load disconnects
+    // blocks and reads the lists before them, and the import thread, the network
+    // and the end of RPC warmup come later still. Run in the background after
+    // the import, as it used to, it raced all of them.
+    if (evodb_repair && !fReset && !fReindexChainState &&
+        (!dmnman->IsRepaired() || force_evodb_repair)) {
+        using Outcome = CDeterministicMNManager::HistoryCheck::Outcome;
+        CDeterministicMNManager& mnman = *dmnman;
+        const LLMQContext& llmq = *llmq_ctx;
+        const auto rebuild = [&mnman, &llmq](const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
+                                             const CDeterministicMNList& prevList, const CCoinsViewCache& view,
+                                             bool debugLogs, BlockValidationState& state, CDeterministicMNList& mnListRet) {
+            return mnman.RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet, *llmq.qsnapman,
+                                              debugLogs);
+        };
+        const auto check = mnman.VerifyOrRepairDiffs(chainman, rebuild, /*repair=*/true);
+        if (check.outcome == Outcome::REPAIR_FAILED || check.outcome == Outcome::FAILED) {
+            LogPrintf("%s -- failed to repair the masternode list diffs:\n%s\n", __func__, check.details);
+            return ChainstateLoadingError::ERROR_REPAIRING_MN_LIST;
+        }
+        if (check.outcome == Outcome::UNRELIABLE) {
+            // As for a verification without a repair: not fatal, not marked repaired.
+            LogPrintf("%s -- masternode list diffs still do not reproduce the stored snapshots after the "
+                      "repair; run `evodb repair` or restart with -evodbrepair to try again, or -reindex to "
+                      "rebuild\n", __func__);
+        }
+    }
+
+    // After the gates above the list history must be complete. The import
+    // thread is the next reader, and a database error there would end the
+    // process instead of reaching this caller.
+    if (!VerifyMasternodeListAtTip(chainman.ActiveChain().Tip(), *dmnman)) {
+        return ChainstateLoadingError::ERROR_LOADING_MN_LIST;
+    }
+
     return std::nullopt;
+}
+
+bool VerifyMasternodeListAtTip(const CBlockIndex* tip, CDeterministicMNManager& dmnman)
+{
+    if (tip == nullptr) return true;
+    try {
+        (void)dmnman.GetListForBlock(tip);
+    } catch (const dbwrapper_error& e) {
+        LogPrintf("%s -- cannot build the masternode list at the tip (height %d): %s\n", __func__, tip->nHeight,
+                  e.what());
+        return false;
+    }
+    return true;
 }
 
 void DashChainstateSetup(ChainstateManager& chainman,

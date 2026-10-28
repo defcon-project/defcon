@@ -13,6 +13,7 @@
 #include <chainparams.h>
 #include <consensus/amount.h>
 #include <consensus/validation.h>
+#include <dbwrapper.h>
 #include <hash.h>
 #include <index/blockfilterindex.h>
 #include <validation.h>
@@ -29,6 +30,7 @@
 #include <random.h>
 #include <reverse_iterator.h>
 #include <scheduler.h>
+#include <shutdown.h>
 #include <streams.h>
 #include <unordered_lru_cache.h>
 #include <sync.h>
@@ -7176,6 +7178,18 @@ bool PeerManagerImpl::ProcessMessages(CNode* pfrom, std::atomic<bool>& interrupt
             LOCK(peer->m_getdata_requests_mutex);
             if (!peer->m_getdata_requests.empty()) fMoreWork = true;
         }
+    } catch (const dbwrapper_error& e) {
+        // Not something the peer sent: a store the message needed -- such as the
+        // masternode list history an older list or epoch is rebuilt from -- is
+        // missing or unreadable here. Logged as one more bad message, the node
+        // would keep running on the damaged database, so stop it in order and name
+        // the way out, as the block import does.
+        AbortNode(strprintf("Database error while processing %s from peer=%d: %s. Restart with -reindex to "
+                            "rebuild the databases; damaged masternode list diffs may also be recalculated "
+                            "with -evodbrepair (add -forceevodbrepair if they were repaired before).",
+                            SanitizeString(msg.m_type), pfrom->GetId(), e.what()),
+                  _("Error reading from database, shutting down."));
+        return false;
     } catch (const std::exception& e) {
         LogPrint(BCLog::NET, "%s(%s, %u bytes): Exception '%s' (%s) caught\n", __func__, SanitizeString(msg.m_type), msg.m_message_size, e.what(), typeid(e).name());
     } catch (...) {

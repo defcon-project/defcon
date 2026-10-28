@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <test/util/net.h>
 #include <test/util/setup_common.h>
 
 #include <base58.h>
@@ -9,18 +10,26 @@
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
 #include <messagesigner.h>
+#include <net.h>
+#include <net_processing.h>
 #include <netbase.h>
+#include <netmessagemaker.h>
+#include <node/chainstate.h>
 #include <policy/policy.h>
+#include <protocol.h>
 #include <script/interpreter.h>
 #include <script/sign.h>
 #include <script/signingprovider.h>
 #include <script/standard.h>
+#include <shutdown.h>
 #include <spork.h>
 #include <txmempool.h>
 #include <validation.h>
+#include <warnings.h>
 
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
+#include <evo/simplifiedmns.h>
 #include <llmq/context.h>
 #include <evo/providertx.h>
 #include <evo/specialtx.h>
@@ -1239,6 +1248,347 @@ void FuncDKGJustificationIndexBound(TestChainSetup& setup)
     }
 }
 
+// F-D31-MISSING-DIFF-BOUNDARY-01: GetListForBlockInternal took any block with
+// neither a snapshot nor a readable diff for the point the list starts from.
+// With one diff gone from the middle of the history, a manager starting cold
+// returned an empty list at that height -- the registered masternode dropped --
+// and cached it as real. Only the block before DIP0003 activation may lack
+// both; above it the read has to fail, every time, and leave the intact
+// history below the damage readable -- and a node starting on such a
+// database has to stop while loading, not in the first thread that reads it.
+void FuncMissingDiffIsNotListStart(TestChainSetup& setup)
+{
+    auto& chainman = *Assert(setup.m_node.chainman.get());
+    auto& dmnman = *Assert(setup.m_node.dmnman);
+    auto& evodb = *Assert(setup.m_node.evodb);
+
+    auto utxos = BuildSimpleUtxoMap(setup.m_coinbase_txns);
+    CKey owner_key;
+    CBLSSecretKey operator_key;
+    auto tx_reg = CreateProRegTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, 1,
+                                 GenerateRandomAddress(), setup.coinbaseKey, owner_key, operator_key);
+    const uint256 pro_tx_hash = tx_reg.GetHash();
+    setup.CreateAndProcessBlock({tx_reg}, setup.coinbaseKey);
+    const CBlockIndex* registered = WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip());
+    setup.CreateAndProcessBlock({}, setup.coinbaseKey);
+    const CBlockIndex* damaged = WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip());
+    setup.CreateAndProcessBlock({}, setup.coinbaseKey);
+    const CBlockIndex* tip = WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip());
+    dmnman.UpdatedBlockTip(tip);
+    BOOST_REQUIRE(damaged->pprev == registered && tip->pprev == damaged);
+    BOOST_REQUIRE(dmnman.GetListForBlock(damaged).HasMN(pro_tx_hash));
+
+    // The damage goes into the raw database, the layer a restarted node reads
+    // from; drain the transaction overlay first so that is what the reads hit.
+    BOOST_REQUIRE(evodb.CommitRootTransaction());
+    const auto diff_key = [](const CBlockIndex* pindex) {
+        return std::make_pair(CDeterministicMNManager::ListDiffDbKey(), pindex->GetBlockHash());
+    };
+    // A snapshot at or above a damaged height would answer before the damaged
+    // diff is ever read, and every check below would pass vacuously.
+    for (const CBlockIndex* pindex : {damaged, tip}) {
+        BOOST_REQUIRE(evodb.GetRawDB().Exists(diff_key(pindex)));
+        BOOST_REQUIRE(!evodb.GetRawDB().Exists(
+            std::make_pair(CDeterministicMNManager::ListSnapshotDbKey(), pindex->GetBlockHash())));
+    }
+
+    // What a node starting on this database runs before any other reader:
+    // LoadChainstate's check of the list at the tip, on a fresh manager.
+    const auto load_check = [&]() -> std::string {
+        CDeterministicMNManager fresh(chainman.ActiveChainstate(), evodb);
+        try {
+            return VerifyMasternodeListAtTip(tip, fresh) ? "accepted" : "refused";
+        } catch (const std::exception& e) {
+            return std::string{"threw: "} + e.what();
+        }
+    };
+
+    // Intact history: a cold manager walks back to the real start of the list.
+    {
+        CDeterministicMNManager cold(chainman.ActiveChainstate(), evodb);
+        BOOST_CHECK(cold.GetListForBlock(damaged).HasMN(pro_tx_hash));
+        BOOST_CHECK(cold.GetListForBlock(tip).HasMN(pro_tx_hash));
+    }
+    BOOST_CHECK_EQUAL(load_check(), "accepted");
+
+    // One damaged diff at a time: in the middle of the history, then at the
+    // tip -- where the list used to come back empty without any error at all.
+    for (const CBlockIndex* target : {damaged, tip}) {
+        CDeterministicMNListDiff original;
+        BOOST_REQUIRE(evodb.GetRawDB().Read(diff_key(target), original));
+        for (const bool missing : {true, false}) {
+            const std::string damage{strprintf("%s diff at height %d", missing ? "missing" : "undecodable", target->nHeight)};
+            if (missing) {
+                BOOST_REQUIRE(evodb.GetRawDB().Erase(diff_key(target)));
+                BOOST_REQUIRE(!evodb.GetRawDB().Exists(diff_key(target)));
+            } else {
+                // A record that is there but cannot be decoded reads as false
+                // too: a lone 0xfd announces a two-byte count that never follows.
+                BOOST_REQUIRE(evodb.GetRawDB().Write(diff_key(target), uint8_t{0xfd}));
+                BOOST_REQUIRE(evodb.GetRawDB().Exists(diff_key(target)));
+            }
+            CDeterministicMNManager cold(chainman.ActiveChainstate(), evodb);
+            // Twice over: a list invented by the first read would answer the
+            // second one from the cache.
+            for (int attempt = 1; attempt <= 2; ++attempt) {
+                for (const CBlockIndex* pindex : {damaged, tip}) {
+                    if (pindex->nHeight < target->nHeight) continue;
+                    try {
+                        const auto list = cold.GetListForBlock(pindex);
+                        BOOST_ERROR(damage << ": height " << pindex->nHeight << " returned a list of "
+                                    << list.GetAllMNsCount() << " masternode(s) on attempt " << attempt);
+                    } catch (const dbwrapper_error&) {
+                    } catch (const std::exception& e) {
+                        BOOST_ERROR(damage << ": height " << pindex->nHeight << " failed on attempt " << attempt
+                                    << " with something other than a database error: " << e.what());
+                    }
+                }
+            }
+            // Below the damage the history is intact and still reads.
+            BOOST_CHECK_MESSAGE(cold.GetListForBlock(target->pprev).HasMN(pro_tx_hash), damage);
+            // And the node stops at load time, where the error reaches the user.
+            const std::string loaded{load_check()};
+            BOOST_CHECK_MESSAGE(loaded == "refused", damage << ": load-time check " << loaded);
+        }
+        BOOST_REQUIRE(evodb.GetRawDB().Write(diff_key(target), original));
+    }
+    BOOST_CHECK_EQUAL(load_check(), "accepted");
+}
+
+// The recovery path for the same damage between two intact snapshots: the tip
+// still reads from the later snapshot, so the load check passes, while an
+// older list -- a quorum's work block, as the import reads for its quorum
+// connections -- fails with a database error. Verification reports it, a
+// repair that fails in storage leaves it as it was without an exception, and
+// the repair -evodbrepair asks for (VerifyOrRepairDiffs, before the import)
+// rebuilds the diff from blocks, after which that list reads exactly as before.
+void FuncRepairableDiffDamage(TestChainSetup& setup)
+{
+    auto& chainman = *Assert(setup.m_node.chainman.get());
+    auto& dmnman = *Assert(setup.m_node.dmnman);
+    auto& evodb = *Assert(setup.m_node.evodb);
+    auto& qsnapman = *Assert(setup.m_node.llmq_ctx->qsnapman);
+
+    // Keep the DIP3 activation block empty: the verifier anchors its first
+    // snapshot pair there (see FuncEvoDbDiffRoundTrip).
+    setup.CreateAndProcessBlock({}, setup.coinbaseKey);
+    auto utxos = BuildSimpleUtxoMap(setup.m_coinbase_txns);
+    CKey owner_key;
+    CBLSSecretKey operator_key;
+    auto tx_reg = CreateProRegTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, 1,
+                                 GenerateRandomAddress(), setup.coinbaseKey, owner_key, operator_key);
+    const uint256 pro_tx_hash = tx_reg.GetHash();
+    setup.CreateAndProcessBlock({tx_reg}, setup.coinbaseKey);
+    // Past the first regular snapshot (DISK_SNAPSHOT_PERIOD, 576), so the tip
+    // list starts there and never reads the damaged diff below it.
+    while (chainman.ActiveChain().Height() <= 580) {
+        setup.CreateAndProcessBlock({}, setup.coinbaseKey);
+    }
+    const CBlockIndex* tip = WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip());
+    dmnman.UpdatedBlockTip(tip);
+    const CBlockIndex* damaged = tip->GetAncestor(440);
+    const CBlockIndex* work = tip->GetAncestor(448);
+    const CBlockIndex* snapshot = tip->GetAncestor(576);
+    const auto reference = dmnman.GetListForBlock(work);
+    BOOST_REQUIRE(reference.HasMN(pro_tx_hash));
+
+    BOOST_REQUIRE(evodb.CommitRootTransaction());
+    const auto diff_key = std::make_pair(CDeterministicMNManager::ListDiffDbKey(), damaged->GetBlockHash());
+    BOOST_REQUIRE(evodb.GetRawDB().Exists(diff_key));
+    BOOST_REQUIRE(evodb.GetRawDB().Exists(
+        std::make_pair(CDeterministicMNManager::ListSnapshotDbKey(), snapshot->GetBlockHash())));
+    for (const CBlockIndex* pindex : {damaged, work}) {
+        BOOST_REQUIRE(!evodb.GetRawDB().Exists(
+            std::make_pair(CDeterministicMNManager::ListSnapshotDbKey(), pindex->GetBlockHash())));
+    }
+
+    for (const bool missing : {true, false}) {
+        const std::string damage{strprintf("%s diff at height %d", missing ? "missing" : "undecodable", damaged->nHeight)};
+        if (missing) {
+            BOOST_REQUIRE(evodb.GetRawDB().Erase(diff_key));
+        } else {
+            BOOST_REQUIRE(evodb.GetRawDB().Write(diff_key, uint8_t{0xfd}));
+        }
+        {
+            CDeterministicMNManager cold(chainman.ActiveChainstate(), evodb);
+            BOOST_CHECK_MESSAGE(VerifyMasternodeListAtTip(tip, cold), damage << ": the tip list did not load");
+            try {
+                const auto list = cold.GetListForBlock(work);
+                BOOST_ERROR(damage << ": the work block returned a list of " << list.GetAllMNsCount() << " masternode(s)");
+            } catch (const dbwrapper_error&) {
+            } catch (const std::exception& e) {
+                BOOST_ERROR(damage << ": the work block failed with something other than a database error: " << e.what());
+            }
+        }
+
+        // What startup runs: verification in the background, the repair before
+        // anything else when -evodbrepair asks for it.
+        using Outcome = CDeterministicMNManager::HistoryCheck::Outcome;
+        const auto work_still_damaged = [&]() {
+            CDeterministicMNManager cold(chainman.ActiveChainstate(), evodb);
+            try {
+                (void)cold.GetListForBlock(work);
+            } catch (const dbwrapper_error&) {
+                return true;
+            }
+            return false;
+        };
+        CDeterministicMNManager repairer(chainman.ActiveChainstate(), evodb);
+        CDeterministicMNManager::BuildListFromBlockFunc rebuild =
+            [&](const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
+                const CDeterministicMNList& prevList, const CCoinsViewCache& view,
+                bool debugLogs, BlockValidationState& state, CDeterministicMNList& mnListRet) {
+                return repairer.RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet,
+                                                     qsnapman, debugLogs);
+            };
+        // Verification alone reports the damage and writes nothing.
+        auto check = repairer.VerifyOrRepairDiffs(chainman, rebuild, /*repair=*/false);
+        BOOST_CHECK_MESSAGE(check.outcome == Outcome::UNRELIABLE, damage << ": verification outcome "
+                            << static_cast<int>(check.outcome));
+        BOOST_CHECK_MESSAGE(work_still_damaged(), damage << ": verification changed the history");
+        // A repair whose block replay fails in storage ends as an outcome the
+        // caller stops on -- not an exception, not a success -- and writes nothing.
+        CDeterministicMNManager::BuildListFromBlockFunc failing =
+            [](const CBlock&, gsl::not_null<const CBlockIndex*>, const CDeterministicMNList&, const CCoinsViewCache&,
+               bool, BlockValidationState&, CDeterministicMNList&) -> bool {
+                throw dbwrapper_error("injected replay failure");
+            };
+        try {
+            check = repairer.VerifyOrRepairDiffs(chainman, failing, /*repair=*/true);
+            BOOST_CHECK_MESSAGE(check.outcome == Outcome::REPAIR_FAILED || check.outcome == Outcome::FAILED,
+                                damage << ": failed repair outcome " << static_cast<int>(check.outcome));
+            BOOST_CHECK_MESSAGE(check.details.find("injected replay failure") != std::string::npos,
+                                damage << ": failed repair details " << check.details);
+        } catch (const std::exception& e) {
+            BOOST_ERROR(damage << ": the failed repair escaped as an exception: " << e.what());
+        }
+        BOOST_CHECK_MESSAGE(work_still_damaged(), damage << ": the failed repair changed the history");
+        // The repair -evodbrepair asks for rebuilds the diff and marks the history.
+        check = repairer.VerifyOrRepairDiffs(chainman, rebuild, /*repair=*/true);
+        BOOST_CHECK_MESSAGE(check.outcome == Outcome::CLEAN, damage << ": repair outcome "
+                            << static_cast<int>(check.outcome) << " " << check.details);
+        BOOST_CHECK(repairer.IsRepaired());
+
+        CDeterministicMNManager restarted(chainman.ActiveChainstate(), evodb);
+        BOOST_CHECK(VerifyMasternodeListAtTip(tip, restarted));
+        try {
+            const auto list = restarted.GetListForBlock(work);
+            BOOST_CHECK_MESSAGE(!reference.BuildDiff(list).HasChanges(), damage << ": the repaired list differs");
+        } catch (const std::exception& e) {
+            BOOST_ERROR(damage << ": the repaired work block still fails: " << e.what());
+        }
+    }
+}
+
+// The same damage behind the same intact snapshot, reached the way a peer
+// reaches it: a request for an older list than anything startup reads -- here a
+// list diff whose base lies between the damaged diff and the snapshot the tip
+// list starts from. The message handler logged the database error as one more
+// bad message and kept the node running on the damaged history; it has to stop
+// the node in order, as the block import does, and still answer a request the
+// intact history can serve.
+void FuncDamagedHistoryStopsMessageHandling(TestChainSetup& setup)
+{
+    auto& chainman = *Assert(setup.m_node.chainman.get());
+    auto& evodb = *Assert(setup.m_node.evodb);
+
+    setup.CreateAndProcessBlock({}, setup.coinbaseKey);
+    auto utxos = BuildSimpleUtxoMap(setup.m_coinbase_txns);
+    CKey owner_key;
+    CBLSSecretKey operator_key;
+    auto tx_reg = CreateProRegTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, 1,
+                                 GenerateRandomAddress(), setup.coinbaseKey, owner_key, operator_key);
+    setup.CreateAndProcessBlock({tx_reg}, setup.coinbaseKey);
+    while (chainman.ActiveChain().Height() <= 580) {
+        setup.CreateAndProcessBlock({}, setup.coinbaseKey);
+    }
+    const CBlockIndex* tip = WITH_LOCK(::cs_main, return chainman.ActiveChain().Tip());
+    const CBlockIndex* damaged = tip->GetAncestor(440);
+    const CBlockIndex* base = tip->GetAncestor(448);
+    const CBlockIndex* snapshot = tip->GetAncestor(576);
+
+    BOOST_REQUIRE(evodb.CommitRootTransaction());
+    const auto diff_key = std::make_pair(CDeterministicMNManager::ListDiffDbKey(), damaged->GetBlockHash());
+    BOOST_REQUIRE(evodb.GetRawDB().Exists(diff_key));
+    BOOST_REQUIRE(evodb.GetRawDB().Exists(
+        std::make_pair(CDeterministicMNManager::ListSnapshotDbKey(), snapshot->GetBlockHash())));
+    for (const CBlockIndex* pindex : {damaged, base}) {
+        BOOST_REQUIRE(!evodb.GetRawDB().Exists(
+            std::make_pair(CDeterministicMNManager::ListSnapshotDbKey(), pindex->GetBlockHash())));
+    }
+
+    // The handler reads through m_node.dmnman, whose cache holds every diff it
+    // wrote; a manager starting cold reads them from disk, as after a restart.
+    // The rest of the node still refers to the live one, which goes back
+    // however the test ends.
+    struct RestoreManager {
+        std::unique_ptr<CDeterministicMNManager>& slot;
+        std::unique_ptr<CDeterministicMNManager> live;
+        ~RestoreManager() { slot = std::move(live); }
+    } restore{setup.m_node.dmnman,
+              std::exchange(setup.m_node.dmnman,
+                            std::make_unique<CDeterministicMNManager>(chainman.ActiveChainstate(), evodb))};
+    // The abort requests a shutdown, which writes to the shutdown pipe.
+    BOOST_REQUIRE(InitShutdownState());
+
+    {
+        LOCK(NetEventsInterface::g_msgproc_mutex);
+        auto& connman = static_cast<ConnmanTestMsg&>(*setup.m_node.connman);
+        auto& peerman = *setup.m_node.peerman;
+        CNode peer{/*id=*/0,
+                   /*sock=*/nullptr,
+                   CAddress{},
+                   /*nKeyedNetGroupIn=*/0,
+                   /*nLocalHostNonceIn=*/0,
+                   CAddress{},
+                   /*addrNameIn=*/"",
+                   ConnectionType::INBOUND,
+                   /*inbound_onion=*/false};
+        connman.Handshake(peer, /*successfully_connected=*/true, ServiceFlags(NODE_NETWORK),
+                          ServiceFlags(NODE_NETWORK), PROTOCOL_VERSION, /*relay_txs=*/true);
+        BOOST_REQUIRE(!peer.fDisconnect);
+
+        // Returns whether the request was answered with a list diff.
+        const auto request_diff = [&]() {
+            connman.FlushSendBuffer(peer);
+            CGetSimplifiedMNListDiff request;
+            request.baseBlockHash = base->GetBlockHash();
+            request.blockHash = tip->GetBlockHash();
+            (void)connman.ReceiveMsgFrom(peer, CNetMsgMaker{peer.GetCommonVersion()}.Make(NetMsgType::GETMNLISTDIFF, request));
+            peer.fPauseSend = false;
+            connman.ProcessMessagesOnce(peer);
+            LOCK(peer.cs_vSend);
+            return std::any_of(peer.vSendMsg.begin(), peer.vSendMsg.end(),
+                               [](const CSerializedNetMsg& msg) { return msg.m_type == NetMsgType::MNLISTDIFF; });
+        };
+
+        BOOST_CHECK_MESSAGE(request_diff(), "the intact history did not answer the request");
+        BOOST_CHECK(!ShutdownRequested());
+
+        for (const bool missing : {true, false}) {
+            const std::string damage{strprintf("%s diff at height %d", missing ? "missing" : "undecodable", damaged->nHeight)};
+            if (missing) {
+                BOOST_REQUIRE(evodb.GetRawDB().Erase(diff_key));
+            } else {
+                BOOST_REQUIRE(evodb.GetRawDB().Write(diff_key, uint8_t{0xfd}));
+            }
+            setup.m_node.dmnman = std::make_unique<CDeterministicMNManager>(chainman.ActiveChainstate(), evodb);
+
+            BOOST_CHECK_MESSAGE(!request_diff(), damage << ": the damaged history answered the request");
+            BOOST_CHECK_MESSAGE(ShutdownRequested(), damage << ": the node kept running");
+            const std::string warning{GetWarnings(/*verbose=*/true).original};
+            BOOST_CHECK_MESSAGE(warning.find(strprintf("Masternode list diff at height %d", damaged->nHeight)) != std::string::npos,
+                                damage << ": the abort does not name the damaged diff: " << warning);
+            BOOST_CHECK_MESSAGE(warning.find("-reindex") != std::string::npos,
+                                damage << ": the abort does not name the way out: " << warning);
+            AbortShutdown();
+            SetMiscWarning(Untranslated(""));
+        }
+
+        peerman.FinalizeNode(peer);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE(evo_dip3_activation_tests)
 
 struct TestChainDIP3BeforeActivationSetup : public TestChainSetup {
@@ -1413,6 +1763,24 @@ BOOST_AUTO_TEST_CASE(dkg_justification_index_bound)
 {
     TestChainDIP3Setup setup;
     FuncDKGJustificationIndexBound(setup);
+}
+
+BOOST_AUTO_TEST_CASE(missing_diff_is_not_list_start)
+{
+    TestChainDIP3Setup setup;
+    FuncMissingDiffIsNotListStart(setup);
+}
+
+BOOST_AUTO_TEST_CASE(repairable_diff_damage)
+{
+    TestChainDIP3Setup setup;
+    FuncRepairableDiffDamage(setup);
+}
+
+BOOST_AUTO_TEST_CASE(damaged_history_stops_message_handling)
+{
+    TestChainDIP3Setup setup;
+    FuncDamagedHistoryStopsMessageHandling(setup);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

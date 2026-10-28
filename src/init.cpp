@@ -1870,7 +1870,9 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                                                   uiInterface.ThreadSafeMessageBox(
                                                       _("Error reading from database, shutting down."),
                                                       "", CClientUIInterface::MSG_ERROR);
-                                              });
+                                              },
+                                              /*evodb_repair=*/args.GetBoolArg("-evodbrepair", false),
+                                              /*force_evodb_repair=*/args.GetBoolArg("-forceevodbrepair", false));
         } catch (const std::exception& e) {
             LogPrintf("%s\n", e.what());
             maybe_load_error = ChainstateLoadingError::ERROR_GENERIC_BLOCKDB_OPEN_FAILED;
@@ -1926,6 +1928,12 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                 break;
             case ChainstateLoadingError::ERROR_UPGRADING_SIGNALS_DB:
                 strLoadError = _("Error upgrading evo database for EHF");
+                break;
+            case ChainstateLoadingError::ERROR_LOADING_MN_LIST:
+                strLoadError = _("Error reading the masternode list from the Evo database");
+                break;
+            case ChainstateLoadingError::ERROR_REPAIRING_MN_LIST:
+                strLoadError = _("Failed to repair the masternode list diffs");
                 break;
             case ChainstateLoadingError::SHUTDOWN_PROBED:
                 break;
@@ -2241,58 +2249,37 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     chainman.m_load_block = std::thread(&util::TraceThread, "loadblk", [=, &args, &chainman, &node] {
         // ThreadImport can switch fReindex from true to false, fetch its original state here to use later
         bool skip_evodb_repair_on_reindex = fReindex || fReindexChainState;
-        ThreadImport(chainman, *node.dmnman, *g_ds_notification_interface, vImportFiles, node.mn_activeman.get(), args);
+        // A database error below -- the import reads masternode lists further
+        // back than the tip the load checked, and the repair marker is read and
+        // written here -- stops the node in order rather than letting this
+        // thread end the process, and names the way out.
+        try {
+            ThreadImport(chainman, *node.dmnman, *g_ds_notification_interface, vImportFiles, node.mn_activeman.get(), args);
 
-        if (skip_evodb_repair_on_reindex) {
-            LogPrintf("Skipping evodb repair during reindex\n");
-            node.dmnman->CompleteRepair();  // Mark as repaired since we're rebuilding fresh
-        } else if (node.dmnman->IsRepaired() && !args.GetBoolArg("-forceevodbrepair", false)) {
-            LogPrintf("Masternode list diffs are already repaired\n");
-        } else {
-            const CBlockIndex* start_index;
-            const CBlockIndex* stop_index;
-            {
-                LOCK(cs_main);
-                const auto& consensus_params = Params().GetConsensus();
-                start_index = chainman.ActiveChain()[consensus_params.DIP0003Height];
-                stop_index = chainman.ActiveChain().Tip();
-            }
-
-            if (start_index && stop_index && start_index->nHeight < stop_index->nHeight) {
-                LogPrintf("Verifying masternode list diffs...\n");
-                const auto start{SteadyClock::now()};
-                // Upstream reaches this through CSpecialTxProcessor; in this tree
-                // the function lives on CDeterministicMNManager.
-                auto build_list_func = [&node](const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
-                                               const CDeterministicMNList& prevList, const CCoinsViewCache& view,
-                                               bool debugLogs, BlockValidationState& state,
-                                               CDeterministicMNList& mnListRet) -> bool {
+            if (skip_evodb_repair_on_reindex) {
+                LogPrintf("Skipping evodb repair during reindex\n");
+                node.dmnman->CompleteRepair();  // Mark as repaired since we're rebuilding fresh
+            } else if (node.dmnman->IsRepaired() && !args.GetBoolArg("-forceevodbrepair", false)) {
+                LogPrintf("Masternode list diffs are already repaired\n");
+            } else if (args.GetBoolArg("-evodbrepair", false)) {
+                // LoadChainstate ran the requested repair before anything read the lists.
+                LogPrintf("Masternode list diffs were checked by the repair at load\n");
+            } else {
+                // Verify only: a repair rewrites historical diffs, and an automatic
+                // write nobody asked for is the wrong default for an operation that
+                // can leave the database no better than it found it.
+                const auto build_list_func = [&node](const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
+                                                     const CDeterministicMNList& prevList, const CCoinsViewCache& view,
+                                                     bool debugLogs, BlockValidationState& state,
+                                                     CDeterministicMNList& mnListRet) {
+                    // Upstream reaches this through CSpecialTxProcessor; in this tree
+                    // the function lives on CDeterministicMNManager.
                     return node.dmnman->RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet,
                                                              *node.llmq_ctx->qsnapman, debugLogs);
                 };
-                // Verify by default; write only when asked. A repair rewrites historical
-                // diffs, and an automatic write nobody asked for is the wrong default for an
-                // operation that can leave the database no better than it found it.
-                const bool do_repair{args.GetBoolArg("-evodbrepair", false)};
-                auto result = node.dmnman->RecalculateAndRepairDiffs(start_index, stop_index, chainman,
-                                                                     build_list_func, do_repair);
-
-                if (!result.verification_errors.empty()) {
-                    LogPrintf("WARNING: Verification errors:\n%s\n", Join(result.verification_errors, "\n"));
-                }
-
-                if (!result.repair_errors.empty()) {
-                    // Only reachable with -evodbrepair: a repair that cannot produce diffs
-                    // reproducing the snapshots has found damage this tool cannot mend.
-                    LogPrintf("Failed to repair masternode list diffs. Database corruption detected. " /* Continued */
-                              "Please restart with -reindex to rebuild the database.\n"
-                              "Errors:\n%s\n",
-                              Join(result.repair_errors, "\n"));
-                    StartShutdown();
-                    return;
-                }
-
-                if (!result.verification_errors.empty()) {
+                using Outcome = CDeterministicMNManager::HistoryCheck::Outcome;
+                const auto check = node.dmnman->VerifyOrRepairDiffs(chainman, build_list_func, /*repair=*/false);
+                if (check.outcome == Outcome::UNRELIABLE || check.outcome == Outcome::REPAIR_FAILED) {
                     // Not fatal, and deliberately not marked repaired: the node builds its own
                     // list from blocks rather than from these diffs, so it runs correctly while
                     // they disagree. Say so once, plainly, and leave the decision to rewrite
@@ -2301,13 +2288,16 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                               "unaffected -- its list is built from blocks -- but historical diffs are "
                               "unreliable. Run `evodb repair`, or restart with -evodbrepair, to attempt "
                               "a rewrite.\n");
-                } else {
-                    node.dmnman->CompleteRepair();
-                    LogPrintf("Verified %d snapshot pair(s) in %ds\n", result.snapshots_verified,
-                              Ticks<std::chrono::seconds>(SteadyClock::now() - start));
+                } else if (check.outcome == Outcome::FAILED) {
+                    throw dbwrapper_error(strprintf("Verifying masternode list diffs failed: %s", check.details));
                 }
             }
-        }    });
+        } catch (const dbwrapper_error& e) {
+            AbortNode(strprintf("%s. Restart with -evodbrepair to recalculate the masternode list diffs "
+                                "(add -forceevodbrepair if they were repaired before), or with -reindex.", e.what()),
+                      _("Error reading from database, shutting down."));
+        }
+    });
 
     // Wait for genesis block to be processed
     {
