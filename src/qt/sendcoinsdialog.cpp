@@ -35,8 +35,12 @@
 #include <memory>
 
 #include <QFontMetrics>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QScopedValueRollback>
 #include <QScrollBar>
 #include <QSettings>
+#include <QStyle>
 #include <QTextDocument>
 
 #define SEND_CONFIRM_DELAY   3
@@ -70,6 +74,7 @@ SendCoinsDialog::SendCoinsDialog(bool _fCoinJoin, QWidget* parent) :
     fFeeMinimized(true)
 {
     ui->setupUi(this);
+    m_coinjoin = _fCoinJoin;
 
     GUIUtil::setFont({ui->labelCoinControlFeatures,
                       ui->labelCoinControlInsuffFunds,
@@ -159,6 +164,8 @@ SendCoinsDialog::SendCoinsDialog(bool _fCoinJoin, QWidget* parent) :
     m_coin_control->UseCoinJoin(_fCoinJoin);
 
     GUIUtil::ExceptionSafeConnect(ui->sendButton, &QPushButton::clicked, this, &SendCoinsDialog::sendButtonClicked);
+    m_presentation_ready = true;
+    updateThemePresentation();
 }
 
 void SendCoinsDialog::setClientModel(ClientModel *_clientModel)
@@ -218,6 +225,8 @@ void SendCoinsDialog::setModel(WalletModel *_model)
         connect(ui->groupFee, &QButtonGroup::idClicked, this, &SendCoinsDialog::coinControlUpdateLabels);
 
         connect(ui->customFee, &BitcoinAmountField::valueChanged, this, &SendCoinsDialog::coinControlUpdateLabels);
+        connect(ui->groupFee, &QButtonGroup::idClicked, this, &SendCoinsDialog::updatePaymentSummary);
+        connect(ui->customFee, &BitcoinAmountField::valueChanged, this, &SendCoinsDialog::updatePaymentSummary);
         CAmount requiredFee = model->wallet().getRequiredFee(1000);
         ui->customFee->SetMinValue(requiredFee);
         if (ui->customFee->value() < requiredFee) {
@@ -257,6 +266,9 @@ SendCoinsDialog::~SendCoinsDialog()
     settings.setValue("nConfTarget", getConfTargetForIndex(ui->confTargetSelector->currentIndex()));
     settings.setValue("nTransactionFee", (qint64)ui->customFee->value());
 
+    // removeItem leaves the preserved classic action layout parentless in Abyss.
+    // Deleting its layout items does not delete the original child widgets.
+    if (!ui->horizontalLayout->parent()) delete ui->horizontalLayout;
     delete ui;
 }
 
@@ -276,7 +288,7 @@ bool SendCoinsDialog::PrepareSendText(QString& question_string, QString& informa
             }
             else if (valid)
             {
-                ui->scrollArea->ensureWidgetVisible(entry);
+                ensureRecipientVisible(entry, true);
                 valid = false;
             }
         }
@@ -592,18 +604,27 @@ SendCoinsEntry *SendCoinsDialog::addEntry()
     connect(entry, &SendCoinsEntry::removeEntry, this, &SendCoinsDialog::removeEntry);
     connect(entry, &SendCoinsEntry::useAvailableBalance, this, &SendCoinsDialog::useAvailableBalance);
     connect(entry, &SendCoinsEntry::payAmountChanged, this, &SendCoinsDialog::coinControlUpdateLabels);
+    connect(entry, &SendCoinsEntry::payAmountChanged, this, &SendCoinsDialog::updatePaymentSummary);
     connect(entry, &SendCoinsEntry::subtractFeeFromAmountChanged, this, &SendCoinsDialog::coinControlUpdateLabels);
 
     // Focus the field, so that entry can start immediately
     entry->clear();
     entry->setFocus();
-    ui->scrollAreaWidgetContents->resize(ui->scrollAreaWidgetContents->sizeHint());
-    qApp->processEvents();
-    QScrollBar* bar = ui->scrollArea->verticalScrollBar();
-    if(bar)
-        bar->setSliderPosition(bar->maximum());
-
+    if (!m_modern_layout) {
+        // Preserve the classic event/scroll order.
+        ui->scrollAreaWidgetContents->resize(ui->scrollAreaWidgetContents->sizeHint());
+        qApp->processEvents();
+        if (QScrollBar* bar = ui->scrollArea->verticalScrollBar()) {
+            bar->setSliderPosition(bar->maximum());
+        }
+    }
+    entry->updateThemePresentation(GUIUtil::isModernTheme() && !m_coinjoin);
     updateTabsAndLabels();
+    if (m_modern_layout) {
+        qApp->processEvents();
+        ensureRecipientVisible(entry, false);
+    }
+    updatePaymentSummary();
     return entry;
 }
 
@@ -621,6 +642,246 @@ SendCoinsEntry *SendCoinsDialog::addEntry()
 //! taller, and so does switching Coin Control Features on. Nothing is clamped
 //! here -- BitcoinGUI holds the window under the screen, and a scroll area
 //! given less than it asked for degrades gracefully by doing its own job again.
+void SendCoinsDialog::updateThemePresentation()
+{
+    if (!m_presentation_ready || m_updating_presentation) return;
+    QScopedValueRollback<bool> guard(m_updating_presentation, true);
+    QWidget* focus = QApplication::focusWidget();
+    const bool active_focus = focus && isAncestorOf(focus);
+    if (!active_focus) focus = QWidget::focusWidget();
+    const bool restore_focus = focus && isAncestorOf(focus) && (active_focus || !focus->isHidden());
+    const bool modern = GUIUtil::isModernTheme() && !m_coinjoin;
+    setProperty("abyssPaymentPage", modern);
+    if (modern != m_modern_layout) {
+        if (!m_modern_header) {
+            for (QLabel* label : {ui->fallbackFeeWarningLabel, ui->labelSmartFee2, ui->labelCustomFeeWarning}) {
+                label->setProperty("abyssOriginalWordWrap", label->wordWrap());
+            }
+            m_original_margins = ui->verticalLayout->contentsMargins();
+            m_original_fee_spacer = ui->verticalSpacerFee->sizeHint();
+            m_original_fee_spacer_policy = ui->verticalSpacerFee->sizePolicy();
+            m_original_control_spacer = ui->verticalSpacerCoinControl->sizeHint();
+            m_original_control_spacer_policy = ui->verticalSpacerCoinControl->sizePolicy();
+            m_original_spacing = ui->verticalLayout->spacing();
+            m_original_recipient_scroll_policy = ui->scrollArea->verticalScrollBarPolicy();
+            m_original_scroll_stretch = ui->verticalLayout->stretch(ui->verticalLayout->indexOf(ui->scrollArea));
+            m_modern_header = GUIUtil::createPageHeader(this, tr("Send DeFCoN"), tr("Send to one or more recipients."));
+            m_modern_body = new QWidget(this);
+            auto* body = new QHBoxLayout(m_modern_body);
+            body->setContentsMargins(0, 0, 0, 0);
+            body->setSpacing(12);
+            auto* fields = new QWidget(m_modern_body);
+            fields->setObjectName("abyssSendFields");
+            auto* left = new QVBoxLayout(fields);
+            left->setContentsMargins(0, 0, 0, 0);
+            left->setSpacing(12);
+            auto* field_scroll = new QScrollArea(m_modern_body);
+            m_modern_scroll = field_scroll;
+            field_scroll->setObjectName("abyssSendFieldsScroll");
+            field_scroll->setFrameShape(QFrame::NoFrame);
+            field_scroll->setWidgetResizable(true);
+            field_scroll->setWidget(fields);
+            auto* summary = new QFrame(m_modern_body);
+            m_modern_summary = summary;
+            summary->setObjectName("abyssSendSummary");
+            summary->setMinimumWidth(200);
+            summary->setMaximumWidth(260);
+            auto* right = new QVBoxLayout(summary);
+            right->setContentsMargins(16, 16, 16, 16);
+            right->setSpacing(12);
+            auto* title = new QLabel(tr("Payment summary"), summary);
+            title->setWordWrap(true);
+            GUIUtil::setFont({title}, GUIUtil::FontWeight::Normal, 16);
+            right->addWidget(title);
+            m_summary_balance_name = new QLabel(summary);
+            m_summary_balance = new QLabel(summary);
+            m_summary_balance_name->setWordWrap(true);
+            m_summary_balance->setWordWrap(true);
+            m_summary_balance->setTextInteractionFlags(ui->labelBalance->textInteractionFlags());
+            GUIUtil::setFont({m_summary_balance_name}, GUIUtil::FontWeight::Normal, 12);
+            GUIUtil::setFont({m_summary_balance}, GUIUtil::FontWeight::Normal, 14);
+            right->addWidget(m_summary_balance_name);
+            right->addWidget(m_summary_balance);
+            const auto addValue = [&](const QString& caption, const char* name) {
+                auto* text = new QLabel(caption, summary);
+                text->setWordWrap(true);
+                text->setObjectName("abyssSummaryCaption");
+                auto* value = new QLabel(summary);
+                value->setObjectName(name);
+                value->setWordWrap(true);
+                GUIUtil::setFont({text}, GUIUtil::FontWeight::Normal, 12);
+                GUIUtil::setFont({value}, GUIUtil::FontWeight::Normal, 13);
+                right->addWidget(text);
+                right->addWidget(value);
+                return value;
+            };
+            m_summary_recipients = addValue(tr("Recipients"), "abyssRecipientCount");
+            m_summary_amount = addValue(tr("Amount entered"), "abyssEnteredAmount");
+            m_summary_fee = addValue(tr("Fee rate"), "abyssFeeRate");
+            auto* note = new QLabel(tr("The final transaction fee is shown in the confirmation dialog."), summary);
+            note->setObjectName("abyssSummaryNote");
+            note->setWordWrap(true);
+            GUIUtil::setFont({note}, GUIUtil::FontWeight::Normal, 12);
+            right->addWidget(note);
+            right->addWidget(ui->sendButton);
+            body->addWidget(field_scroll, 1);
+            body->addWidget(summary, 0, Qt::AlignTop);
+        }
+        auto* left = qobject_cast<QVBoxLayout*>(m_modern_body->findChild<QWidget*>("abyssSendFields")->layout());
+        auto* right = qobject_cast<QVBoxLayout*>(m_modern_summary->layout());
+        for (QLabel* label : {ui->fallbackFeeWarningLabel, ui->labelSmartFee2, ui->labelCustomFeeWarning}) {
+            label->setWordWrap(modern || label->property("abyssOriginalWordWrap").toBool());
+        }
+        ui->verticalSpacerFee->changeSize(modern ? 0 : m_original_fee_spacer.width(),
+            m_original_fee_spacer.height(), m_original_fee_spacer_policy.horizontalPolicy(),
+            m_original_fee_spacer_policy.verticalPolicy());
+        ui->frameFee->layout()->invalidate();
+        ui->verticalSpacerCoinControl->changeSize(modern ? 0 : m_original_control_spacer.width(),
+            m_original_control_spacer.height(), m_original_control_spacer_policy.horizontalPolicy(),
+            m_original_control_spacer_policy.verticalPolicy());
+        ui->frameCoinControl->layout()->invalidate();
+        // Recommended/custom controls stack in the narrower Abyss column.
+        for (QLayout* part : {static_cast<QLayout*>(ui->verticalLayoutFee4), static_cast<QLayout*>(ui->verticalLayoutFee3),
+                 static_cast<QLayout*>(ui->verticalLayoutFee9), static_cast<QLayout*>(ui->verticalLayoutFee8)}) {
+            ui->gridLayoutFee->removeItem(part);
+            part->setParent(nullptr);
+        }
+        if (modern) {
+            ui->gridLayoutFee->addLayout(ui->verticalLayoutFee4, 0, 0, 1, 2);
+            ui->gridLayoutFee->addLayout(ui->verticalLayoutFee3, 1, 0, 1, 2);
+            ui->gridLayoutFee->addLayout(ui->verticalLayoutFee9, 2, 0, 1, 2);
+            ui->gridLayoutFee->addLayout(ui->verticalLayoutFee8, 3, 0, 1, 2);
+        } else {
+            ui->gridLayoutFee->addLayout(ui->verticalLayoutFee4, 0, 0);
+            ui->gridLayoutFee->addLayout(ui->verticalLayoutFee3, 0, 1);
+            ui->gridLayoutFee->addLayout(ui->verticalLayoutFee9, 1, 0);
+            ui->gridLayoutFee->addLayout(ui->verticalLayoutFee8, 1, 1);
+        }
+        if (modern) {
+            // Preserve the original action layout, including its spacer/stretch.
+            ui->verticalLayout->removeItem(ui->horizontalLayout);
+            // Detached while modern; the destructor also owns this case.
+            ui->horizontalLayout->setParent(nullptr);
+            ui->horizontalLayout->removeWidget(ui->sendButton);
+            ui->horizontalLayout->removeWidget(ui->clearButton);
+            ui->horizontalLayout->removeWidget(ui->addButton);
+            qobject_cast<QHBoxLayout*>(m_modern_header->layout())->addWidget(ui->clearButton);
+            // One outer viewport owns scrolling in Abyss. Keeping the original
+            // inner viewport here clips growing recipient cards after font changes.
+            ui->scrollArea->takeWidget();
+            ui->verticalLayout->removeWidget(ui->scrollArea);
+            ui->verticalLayout->removeWidget(ui->frameFee);
+            ui->verticalLayout->removeWidget(ui->frameCoinControl);
+            ui->scrollArea->hide();
+            left->addWidget(ui->scrollAreaWidgetContents);
+            ui->scrollAreaWidgetContents->show();
+            left->addWidget(ui->addButton, 0, Qt::AlignLeft);
+            left->addWidget(ui->frameFee);
+            left->addWidget(ui->frameCoinControl);
+            ui->scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+            if (ui->sendButton->parentWidget() != m_modern_summary) right->addWidget(ui->sendButton);
+            // Mirror the formatted balance without moving the classic labels.
+            ui->labelBalanceName->hide();
+            ui->labelBalance->hide();
+            ui->verticalLayout->insertWidget(0, m_modern_header);
+            ui->verticalLayout->insertWidget(1, m_modern_body, 1);
+            ui->horizontalLayoutCoinControl3->setDirection(QBoxLayout::TopToBottom);
+            ui->horizontalLayoutCoinControl4->setDirection(QBoxLayout::TopToBottom);
+            ui->horizontalLayoutSmartFee->setDirection(QBoxLayout::TopToBottom);
+            ui->horizontalLayoutFee1->setDirection(QBoxLayout::TopToBottom);
+            ui->horizontalLayoutFee9->setDirection(QBoxLayout::TopToBottom);
+            ui->horizontalLayoutFee12->setDirection(QBoxLayout::TopToBottom);
+            ui->horizontalLayoutFee13->setDirection(QBoxLayout::TopToBottom);
+            ui->verticalLayout->setContentsMargins(16, 16, 16, 16);
+            ui->verticalLayout->setSpacing(12);
+            m_modern_header->show();
+            m_modern_body->show();
+        } else {
+            // Move the same controls back; never substitute actions or values.
+            ui->verticalLayout->removeWidget(m_modern_header);
+            ui->verticalLayout->removeWidget(m_modern_body);
+            m_modern_header->hide();
+            m_modern_body->hide();
+            left->removeWidget(ui->frameCoinControl);
+            ui->verticalLayout->insertWidget(0, ui->frameCoinControl);
+            ui->scrollArea->setVerticalScrollBarPolicy(m_original_recipient_scroll_policy);
+            ui->horizontalLayoutCoinControl3->setDirection(QBoxLayout::LeftToRight);
+            ui->horizontalLayoutCoinControl4->setDirection(QBoxLayout::LeftToRight);
+            left->removeWidget(ui->scrollAreaWidgetContents);
+            ui->scrollArea->setWidget(ui->scrollAreaWidgetContents);
+            ui->scrollArea->show();
+            left->removeWidget(ui->addButton);
+            left->removeWidget(ui->frameFee);
+            m_modern_header->layout()->removeWidget(ui->clearButton);
+            right->removeWidget(ui->sendButton);
+            ui->verticalLayout->insertWidget(1, ui->scrollArea, m_original_scroll_stretch);
+            ui->verticalLayout->insertWidget(2, ui->frameFee);
+            ui->horizontalLayout->insertWidget(0, ui->sendButton);
+            ui->horizontalLayout->insertWidget(1, ui->clearButton);
+            ui->horizontalLayout->insertWidget(2, ui->addButton);
+            ui->labelBalanceName->show();
+            ui->labelBalance->show();
+            ui->horizontalLayout->setParent(nullptr);
+            ui->verticalLayout->addLayout(ui->horizontalLayout);
+            ui->horizontalLayoutSmartFee->setDirection(QBoxLayout::LeftToRight);
+            ui->horizontalLayoutFee1->setDirection(QBoxLayout::LeftToRight);
+            ui->horizontalLayoutFee9->setDirection(QBoxLayout::LeftToRight);
+            ui->horizontalLayoutFee12->setDirection(QBoxLayout::LeftToRight);
+            ui->horizontalLayoutFee13->setDirection(QBoxLayout::LeftToRight);
+            ui->verticalLayout->setContentsMargins(m_original_margins);
+            ui->verticalLayout->setSpacing(m_original_spacing);
+        }
+        m_modern_layout = modern;
+    }
+    for (int i = 0; i < ui->entries->count(); ++i) {
+        if (auto* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(i)->widget())) {
+            entry->updateThemePresentation(modern);
+        }
+    }
+    if (modern) {
+        // Dynamic selector properties change after the stylesheet's first polish.
+        for (QWidget* part : {static_cast<QWidget*>(ui->frameFee), static_cast<QWidget*>(m_modern_scroll),
+                 m_modern_scroll->viewport(), m_modern_scroll->widget(), ui->scrollAreaWidgetContents}) {
+            part->style()->unpolish(part);
+            part->style()->polish(part);
+        }
+    }
+    setupTabChain(nullptr);
+    applyScrollAreaMinimum();
+    updatePaymentSummary();
+    if (restore_focus && !(modern && (focus == ui->labelBalance || focus == ui->labelBalanceName))
+        && focus->parentWidget()->isVisibleTo(this)) {
+        // A hidden page also remembers its last input. Resolve only that
+        // input's queued reparent-show; intentionally hidden containers stay so.
+        if (!active_focus) focus->show();
+        focus->setFocus(Qt::OtherFocusReason);
+    }
+}
+
+void SendCoinsDialog::updatePaymentSummary()
+{
+    if (!m_modern_layout || !m_summary_amount) return;
+    m_summary_balance_name->setText(ui->labelBalanceName->text());
+    m_summary_balance->setText(ui->labelBalance->text());
+    CAmount amount{0};
+    bool valid{true};
+    int count{0};
+    for (int i = 0; i < ui->entries->count(); ++i) {
+        if (auto* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(i)->widget())) {
+            if (entry->isHidden()) continue; // Removed entries await deferred deletion.
+            ++count;
+            const CAmount value = entry->amount();
+            if (!MoneyRange(value) || value > MAX_MONEY - amount) valid = false;
+            else if (valid) amount += value;
+        }
+    }
+    const int unit = model && model->getOptionsModel() ? model->getOptionsModel()->getDisplayUnit() : BitcoinUnits::DASH;
+    m_summary_recipients->setText(QString::number(count));
+    m_summary_amount->setText(valid ? BitcoinUnits::formatWithUnit(unit, amount) : QString(QChar(0x2013)));
+    m_summary_fee->setText(ui->radioSmartFee->isChecked() ? ui->labelSmartFee->text()
+        : BitcoinUnits::formatWithUnit(unit, ui->customFee->value()) + "/kB");
+}
+
 void SendCoinsDialog::applyScrollAreaMinimum()
 {
     if (ui->scrollArea == nullptr || ui->scrollAreaWidgetContents == nullptr) {
@@ -628,6 +889,11 @@ void SendCoinsDialog::applyScrollAreaMinimum()
     }
     if (!m_inherited_scroll_minimum.isValid()) {
         m_inherited_scroll_minimum = ui->scrollArea->minimumSize();
+    }
+    if (m_modern_layout) {
+        // The original contents now live directly in the outer viewport.
+        // Their layout supplies its scrollable size, including font growth.
+        return;
     }
     if (!GUIUtil::isModernTheme()) {
         ui->scrollArea->setMinimumSize(m_inherited_scroll_minimum);
@@ -637,8 +903,30 @@ void SendCoinsDialog::applyScrollAreaMinimum()
         held->invalidate();
     }
     const QSize wanted = ui->scrollAreaWidgetContents->minimumSizeHint().expandedTo(m_inherited_scroll_minimum);
+    // The right-hand actions stay visible while recipients scroll vertically.
     if (ui->scrollArea->minimumSize() != wanted) {
         ui->scrollArea->setMinimumSize(wanted);
+    }
+}
+
+QScrollArea* SendCoinsDialog::recipientScrollArea() const
+{
+    return m_modern_layout ? m_modern_scroll : ui->scrollArea;
+}
+
+void SendCoinsDialog::ensureRecipientVisible(SendCoinsEntry* entry, bool validation)
+{
+    if (m_modern_layout) {
+        // Refresh the outer viewport's range after a card changes size, before
+        // ensureWidgetVisible reads its scrollbar bounds and input geometry.
+        ui->entries->invalidate();
+        ui->scrollAreaWidgetContents->updateGeometry();
+        m_modern_scroll->widget()->layout()->invalidate();
+        QEvent request(QEvent::LayoutRequest);
+        QApplication::sendEvent(m_modern_scroll, &request);
+        recipientScrollArea()->ensureWidgetVisible(validation ? entry->validationTarget() : entry->addressField());
+    } else {
+        recipientScrollArea()->ensureWidgetVisible(entry);
     }
 }
 
@@ -646,12 +934,14 @@ void SendCoinsDialog::changeEvent(QEvent* event)
 {
     QDialog::changeEvent(event);
     if (event->type() == QEvent::StyleChange) {
+        updateThemePresentation();
         applyScrollAreaMinimum();
     }
 }
 
 void SendCoinsDialog::updateTabsAndLabels()
 {
+    updatePaymentSummary();
     setupTabChain(nullptr);
     coinControlUpdateLabels();
     // A recipient was added or removed: the form is a different height now.
@@ -754,6 +1044,7 @@ void SendCoinsDialog::setBalance(const interfaces::WalletBalances& balances)
         }
 
         ui->labelBalance->setText(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), balance));
+        updatePaymentSummary();
     }
 }
 
@@ -763,6 +1054,7 @@ void SendCoinsDialog::updateDisplayUnit()
     coinControlUpdateLabels();
     ui->customFee->setDisplayUnit(model->getOptionsModel()->getDisplayUnit());
     updateSmartFeeLabel();
+    updatePaymentSummary();
 }
 
 void SendCoinsDialog::processSendCoinsReturn(const WalletModel::SendCoinsReturn &sendCoinsReturn, const QString &msgArg)
@@ -871,6 +1163,7 @@ void SendCoinsDialog::updateFeeMinimizedLabel()
     else {
         ui->labelFeeMinimized->setText(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), ui->customFee->value()) + "/kB");
     }
+    updatePaymentSummary();
 }
 
 void SendCoinsDialog::updateCoinControlState()

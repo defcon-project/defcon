@@ -7,10 +7,12 @@
 
 #include <interfaces/wallet.h>
 
+#include <QDateTime>
 #include <QWidget>
 #include <QSizePolicy>
 #include <map>
 #include <memory>
+#include <optional>
 #include <vector>
 
 class ClientModel;
@@ -28,6 +30,7 @@ class QFrame;
 class QLabel;
 class QModelIndex;
 class QPaintEvent;
+class QProgressBar;
 class QSpacerItem;
 QT_END_NAMESPACE
 
@@ -43,6 +46,22 @@ public:
     void setClientModel(ClientModel *clientModel);
     void setWalletModel(WalletModel *walletModel);
     void showOutOfSyncWarning(bool fShow);
+
+    //! What the Abyss network bar shows. updateNetworkState() gathers it from
+    //! the client model; setNetworkStatus() only draws it, so a test can hand
+    //! it any state the node would take a long while to reach.
+    struct NetworkStatus {
+        int height{0};
+        qint64 block_age{0};            //!< seconds since the tip was made
+        bool chain_synced{false};
+        bool data_synced{false};        //!< the masternode data, after the chain
+        double progress{0};             //!< of whichever of the two still runs
+        bool chain_locked{false};       //!< the tip itself carries a ChainLock
+        int peers{0};
+        std::optional<int> masternodes; //!< valid ones; unknown until the chain is synced
+        std::optional<long> mempool;    //!< transactions; unknown until first polled
+    };
+    void setNetworkStatus(const NetworkStatus& status);
 
 public Q_SLOTS:
     void coinJoinStatus(bool fForce = false);
@@ -61,6 +80,9 @@ private:
     QTimer *timer;
     Ui::OverviewPage *ui;
     ClientModel *clientModel;
+    //! Replacing this context disconnects only the Abyss bar's old subscriptions,
+    //! including queued deliveries, without affecting other model listeners.
+    std::unique_ptr<QObject> m_network_model_context;
     WalletModel *walletModel;
     interfaces::WalletBalances m_balances;
     bool m_privacy{false};
@@ -72,7 +94,28 @@ private:
     std::unique_ptr<TransactionFilterProxy> filter;
     QWidget* modernHeader{nullptr};
     QFrame* networkCard{nullptr};
-    QLabel* labelNetworkStatus{nullptr};
+    //! One entry of the network bar: a glyph, then its words. `value`, when
+    //! the entry has one, is the bold number, before or after `text` as the
+    //! entry reads.
+    struct NetworkItem {
+        QWidget* widget{nullptr};
+        QLabel* icon{nullptr};
+        QLabel* value{nullptr};
+        QLabel* text{nullptr};
+    };
+    NetworkItem m_net_block, m_net_age, m_net_synced, m_net_chainlock, m_net_syncing,
+        m_net_peers, m_net_masternodes, m_net_mempool;
+    QProgressBar* m_net_progress{nullptr};
+    int m_block_height{0};
+    QDateTime m_block_time;
+    double m_verification_progress{0};
+    double m_data_progress{0};
+    int m_chainlock_height{-1};
+    int m_peer_count{0};
+    std::optional<int> m_masternode_count;
+    std::optional<long> m_mempool_count;
+    //! Draw the bar's glyphs in the active theme's colors.
+    void paintNetworkIcons();
     //! Keep form constraints separately from polished CSS floors. On leaving
     //! Abyss the current stylesheet must restore its own minimums, including
     //! for pages constructed while hidden or before any stylesheet was loaded.
@@ -85,6 +128,7 @@ private:
     std::map<QSpacerItem*, std::pair<QSize, QSizePolicy>> m_inherited_spacers;
     std::map<int, int> m_inherited_grid_stretch;
     QSizePolicy m_total_size_policy;
+    int m_total_minimum_height{0};
     bool m_balance_update_pending{false};
     bool m_applying_balance_widths{false};
     bool m_modern_presentation{false};

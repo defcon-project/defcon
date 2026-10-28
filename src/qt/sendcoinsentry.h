@@ -35,6 +35,11 @@ public:
     void setModel(WalletModel *model);
     bool validate(interfaces::Node& node);
     SendCoinsRecipient getValue();
+    /** Read the displayed amount without updating the recipient state. */
+    CAmount amount() const;
+    /** Presentation targets for scrolling to a new or rejected recipient. */
+    QWidget* addressField() const;
+    QWidget* validationTarget() const;
 
     /** Return whether the entry is still empty and unedited */
     bool isClear();
@@ -42,6 +47,9 @@ public:
     void setValue(const SendCoinsRecipient &value);
     void setAddress(const QString &address);
     void setAmount(const CAmount &amount);
+
+    /** Reflow the existing controls; never replace their wallet connections. */
+    void updateThemePresentation(bool modern);
 
     /** Set up the tab chain manually, as Qt messes up the tab chain by default in some cases
      *  (issue https://bugreports.qt-project.org/browse/QTBUG-10907).
@@ -75,6 +83,9 @@ private:
     SendCoinsRecipient recipient;
     Ui::SendCoinsEntry *ui;
     WalletModel *model;
+    QWidget* m_modern_content{nullptr};
+    bool m_modern_layout{false};
+    int m_original_subtract_stretch{0};
 
     /** Set required icons for buttons inside the dialog */
     void setButtonIcons();

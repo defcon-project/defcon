@@ -6,32 +6,26 @@
 #define BITCOIN_QT_STARFIELDWIDGET_H
 
 #include <QColor>
-#include <QElapsedTimer>
 #include <QPixmap>
 #include <QPointF>
+#include <QRegion>
 #include <QVector>
 #include <QWidget>
 
+class QImage;
 class QTimer;
 
 /**
- * The Abyss theme's backdrop: a still night sky in which only a handful of the
- * faintest stars breathe.
+ * Abyss-only, locally drawn sky. The caller controls theme visibility; no node,
+ * wallet, location, network request or setting is read here.
+ * Drawing the sky avoids shipping a fixed-size photograph or an animation
+ * asset; stars stay sharp at the current DPR. The stylesheet still owns the
+ * background colour, keeping the theme palette in one place.
  *
- * It is drawn rather than shipped as an image because the wallet's Qt is built
- * with -no-gif and carries no QtSvg, so PNG is the only format it can load and
- * a PNG cannot animate. Drawing also answers the questions a photograph would
- * have raised: a stylesheet background-image is tiled rather than scaled, so an
- * image has to be cropped to the window and softens on a high-DPI screen, while
- * this costs no bytes in the binary and is correct at every size.
- *
- * The colour behind the sky still belongs to the stylesheet. This widget paints
- * the themed background first and puts stars on top of it, so the theme file
- * remains the one place the palette is decided.
- *
- * The widget knows nothing about themes: the caller says whether the sky is
- * wanted. That keeps the drawing testable on its own, and it is the reason the
- * preview used to tune these constants can build without the wallet.
+ * Steady stars are cached until sidereal rotation moves them by a quarter
+ * physical pixel. Only the few twinklers and the small moving Moon need
+ * intervening regional repaints. Lunar phase is a decorative mean-cycle
+ * approximation, not an observer-specific ephemeris.
  */
 class StarfieldWidget : public QWidget
 {
@@ -40,10 +34,9 @@ class StarfieldWidget : public QWidget
 public:
     explicit StarfieldWidget(QWidget* parent = nullptr);
 
-    /** Show or hide the sky. Only the Abyss theme asks for it. */
     void setSkyVisible(bool visible);
-
-    /** Whether the few twinkling stars may move. The sky stays either way. */
+    /** Off freezes motion and settles twinkle. On resumes motion continuously;
+     *  the Moon's phase catches up to the current approximate date. */
     void setAnimated(bool animated);
 
 protected:
@@ -53,29 +46,58 @@ protected:
     void hideEvent(QHideEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
+    /** Monotonic elapsed time including sleep; deterministic tests override it. */
+    virtual qint64 clockMilliseconds() const;
+
 private:
+    friend class AbyssTests;
     struct Star {
-        QPointF pos;      //!< position in the virtual sky, not in the widget
+        QPointF pos;      //!< Pole-relative position in the deterministic virtual disk.
         qreal radius;
         QColor colour;
-        qreal amplitude;  //!< 0 for every star that holds steady
-        qreal period;     //!< seconds for one breath
-        qreal phase;      //!< radians, so no two twinklers march together
+        qreal amplitude; //!< Zero for the steady majority.
+        qreal period;    //!< Seconds per gentle twinkle, independent of sky rotation.
+        qreal phase;     //!< Offset avoids synchronized flashing.
     };
 
+    static qint64 suspendAwareClockMilliseconds();
     void buildSky();
+    void updateStarCandidates();
+    void setRotationAngle(qreal angle);
     void redrawSteadySky();
     void onTick();
     void updateTimerState();
     bool wantsAnimation() const;
+    qint64 motionMilliseconds() const;
+    qint64 phaseTimeMilliseconds() const;
+    static qreal rotationAngle(qint64 utc_ms);
+    static qreal lunarPhase(qint64 utc_ms);
+    static QImage renderMoon(qreal phase, qreal dpr);
+    QPointF pole() const;
     QPointF widgetPos(const Star& star) const;
     QRect starRect(const Star& star) const;
+    QPointF moonPosition(qint64 motion_ms) const;
+    QRect moonRect() const;
+    void invalidateImages();
 
-    QVector<Star> m_stars;      //!< the whole sky, steady stars included
-    QVector<int> m_twinklers;   //!< indices into m_stars, drawn live each frame
-    QPixmap m_steady;           //!< every star that does not move, rendered once
-    QElapsedTimer m_clock;
+    QVector<Star> m_stars;
+    QVector<int> m_candidates; //!< Stars that can reach this viewport at any rotation.
+    QVector<int> m_twinklers; //!< Indices of the few stars painted live.
+    QPixmap m_steady;        //!< Reused backing store for the steady stars.
+    QRegion m_sky_dirty;     //!< Old/new footprints pending cache repair.
+    QPixmap m_moon;
+    qint64 m_clock_reference_ms{0};
     QTimer* m_timer{nullptr};
+    qint64 m_epoch_utc_ms{0};
+    qint64 m_pause_started_ms{0};
+    qint64 m_paused_ms{0};   //!< Excluded from motion so enabling cannot jump.
+    qint64 m_frozen_utc_ms{0}; //!< Off freezes phase separately from paused motion.
+    qreal m_sky_radius{6000.0};
+    qreal m_angle{0};
+    qreal m_cos_angle{1};
+    qreal m_sin_angle{0};
+    QPointF m_moon_position;
+    int m_moon_phase_bucket{-1};
     bool m_skyVisible{false};
     bool m_animated{true};
 };

@@ -117,6 +117,45 @@ namespace GUIUtil
     QIcon getIcon(const QString& strIcon, ThemedColor color, ThemedColor colorAlternative, const QString& strIconPath = ICONS_PATH);
     QIcon getIcon(const QString& strIcon, ThemedColor color = ThemedColor::BLUE, const QString& strIconPath = ICONS_PATH);
 
+    /** An SVG resource drawn at a logical size for the screen's pixel ratio,
+     *  with only its coverage kept and filled with one color. For artwork that
+     *  strokes in currentColor, which the SVG renderer draws black, such as the
+     *  Tabler set in res/icons/tabler/. Not getIcon: that recolours each size an
+     *  icon reports, and an SVG reports none. The resource keeps its .svg
+     *  suffix so QIcon picks the SVG engine by name. */
+    QPixmap getTintedSvgPixmap(const QString& resource, const QSize& size, const QColor& color, qreal dpr = 0);
+
+    /** Abyss artwork follows its target widget across screens, without changing
+     *  action/model state. Classic assets still use the original paths. */
+    void setTintedSvgPixmap(QLabel* target, const QString& resource, const QSize& size, const QColor& color);
+    void setTintedSvgIcon(QAbstractButton* target, const QString& resource, const QSize& size, const QColor& color, bool checked_white = false);
+    void setThemedPixmap(QLabel* target, const QString& classic, const QString& abyss, const QSize& size, ThemedColor color);
+    void setThemedIcon(QAbstractButton* target, const QString& classic, const QString& abyss, const QSize& size, ThemedColor color);
+
+    /** One owned filter per Abyss icon widget. Stores presentation only. */
+    class SvgIconFilter final : public QObject
+    {
+        Q_OBJECT
+    public:
+        explicit SvgIconFilter(QWidget* target);
+        void setSource(const QString& resource, const QSize& size, const QColor& color, bool checked_white);
+    protected:
+        bool eventFilter(QObject* watched, QEvent* event) override;
+    private:
+        void refresh(bool preserve_empty);
+        QWidget* const m_target;
+        QString m_resource;
+        QSize m_size;
+        QColor m_color;
+        bool m_checked_white{false};
+        qint64 m_content_key{0}; //!< Last content written by this filter.
+        qreal m_rendered_dpr{0};
+    };
+
+    /** Opt-in Abyss glyph, with the existing classic icon/tint preserved. */
+    QPixmap getThemedPixmap(const QString& classic, const QString& abyss, const QSize& size, ThemedColor color);
+    QIcon getThemedIcon(const QString& classic, const QString& abyss, const QSize& size, ThemedColor color = ThemedColor::BLUE);
+
     /** Helper to set an icon for a button with the given color (replaces black) and colorAlternative (replaces white). */
     void setIcon(QAbstractButton* button, const QString& strIcon, ThemedColor color, ThemedColor colorAlternative, const QSize& size);
     void setIcon(QAbstractButton* button, const QString& strIcon, ThemedColor color = ThemedColor::BLUE, const QSize& size = QSize(BUTTON_ICONSIZE, BUTTON_ICONSIZE));
@@ -304,6 +343,9 @@ namespace GUIUtil
 
     /** Check if any modern DeFCon theme is active. */
     bool isModernTheme();
+
+    /** Presentation-only page heading; callers control theme visibility. */
+    QWidget* createPageHeader(QWidget* parent, const QString& title, const QString& subtitle, QWidget* action = nullptr);
 
     /** Is the active theme a dark one?
      *
@@ -533,6 +575,12 @@ namespace GUIUtil
      * In Qt 5.11 the QFontMetrics::horizontalAdvance() was introduced.
      */
     int TextWidth(const QFontMetrics& fm, const QString& text);
+
+    /** Fit a normal top-level window to its current screen after layout/frame
+     * creation. Preserve a valid user placement unless centering was requested.
+     * A minimum larger than the screen can only be aligned at its top-left.
+     */
+    void fitWindowToScreen(QWidget* window, bool center);
 
     /**
      * Writes to debug.log short info about the used Qt and the host system.

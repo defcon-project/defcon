@@ -52,6 +52,9 @@
 #include <optional>
 
 #include <QGuiApplication>
+#include <QHBoxLayout>
+#include <QIcon>
+#include <QImage>
 #include <QJsonObject>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -61,12 +64,16 @@
 #include <QLocale>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QPainter>
+#include <QPixmap>
+#include <QPixmapCache>
 #include <QPluginLoader>
 #include <QPointer>
 #include <QProgressDialog>
 #include <QRegularExpression>
 #include <QScreen>
 #include <QSettings>
+#include <QVBoxLayout>
 #include <QShortcut>
 #include <QSize>
 #include <QString>
@@ -74,9 +81,10 @@
 #include <QThread>
 #include <QTimer>
 #include <QUrlQuery>
-#include <QVBoxLayout>
 #include <QtGlobal>
+#include <QWindow>
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <fstream>
@@ -296,6 +304,155 @@ QIcon getIcon(const QString& strIcon, const ThemedColor color, const ThemedColor
 QIcon getIcon(const QString& strIcon, const ThemedColor color, const QString& strIconPath)
 {
     return getIcon(strIcon, color, ThemedColor::ICON_ALTERNATIVE_COLOR, strIconPath);
+}
+
+QWidget* createPageHeader(QWidget* parent, const QString& title, const QString& subtitle, QWidget* action)
+{
+    auto* header = new QWidget(parent);
+    header->setObjectName("abyssPageHeader");
+    auto* row = new QHBoxLayout(header);
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(12);
+    auto* text = new QVBoxLayout;
+    text->setSpacing(4);
+    auto* heading = new QLabel(title, header);
+    heading->setObjectName("abyssPageTitle");
+    heading->setWordWrap(true);
+    auto* caption = new QLabel(subtitle, header);
+    caption->setObjectName("abyssPageSubtitle");
+    caption->setWordWrap(true);
+    setFont({heading}, FontWeight::Normal, 24);
+    setFont({caption}, FontWeight::Normal, 13);
+    text->addWidget(heading);
+    text->addWidget(caption);
+    row->addLayout(text, 1);
+    if (action) row->addWidget(action, 0, Qt::AlignVCenter);
+    return header;
+}
+
+QPixmap getTintedSvgPixmap(const QString& resource, const QSize& size, const QColor& color, qreal dpr)
+{
+    if (dpr <= 0) dpr = qApp->devicePixelRatio();
+    const QString key = QStringLiteral("abyss-svg/%1/%2x%3/%4/%5")
+        .arg(resource).arg(size.width()).arg(size.height())
+        .arg(color.name(QColor::HexArgb), QString::number(dpr, 'g', 17));
+    QPixmap cached;
+    if (QPixmapCache::find(key, &cached)) return cached;
+    QImage image(size * dpr, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    QIcon(resource).paint(&painter, image.rect());
+    // Keep only the artwork's coverage, filled with the one color.
+    painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    painter.fillRect(image.rect(), color);
+    painter.end();
+    QPixmap pixmap = QPixmap::fromImage(image);
+    pixmap.setDevicePixelRatio(dpr);
+    QPixmapCache::insert(key, pixmap);
+    return pixmap;
+}
+
+SvgIconFilter::SvgIconFilter(QWidget* target) : QObject(target), m_target(target)
+{
+    target->installEventFilter(this);
+}
+
+void SvgIconFilter::setSource(const QString& resource, const QSize& size, const QColor& color, bool checked_white)
+{
+    m_resource = resource;
+    m_size = size;
+    m_color = color;
+    m_checked_white = checked_white;
+    refresh(false);
+}
+
+void SvgIconFilter::refresh(bool preserve_empty)
+{
+    if (!isModernTheme()) return;
+    const qreal dpr = m_target->devicePixelRatioF();
+    if (auto* label = qobject_cast<QLabel*>(m_target)) {
+        // A spinner or another direct writer may have replaced this artwork.
+        // Only resize content still owned by this descriptor.
+        if (preserve_empty && (!HasPixmap(label) ||
+            label->pixmap(Qt::ReturnByValue).cacheKey() != m_content_key)) return;
+        if (preserve_empty && qFuzzyCompare(dpr, m_rendered_dpr)) return;
+        const QPixmap next = getTintedSvgPixmap(m_resource, m_size, m_color, dpr);
+        if (!HasPixmap(label) || label->pixmap(Qt::ReturnByValue).cacheKey() != next.cacheKey()) {
+            label->setPixmap(next);
+        }
+        m_content_key = label->pixmap(Qt::ReturnByValue).cacheKey();
+    } else if (auto* button = qobject_cast<QAbstractButton*>(m_target)) {
+        if (preserve_empty && button->icon().cacheKey() != m_content_key) return;
+        if (preserve_empty && qFuzzyCompare(dpr, m_rendered_dpr)) return;
+        QIcon icon(getTintedSvgPixmap(m_resource, m_size, m_color, dpr));
+        if (m_checked_white) {
+            icon.addPixmap(getTintedSvgPixmap(m_resource, m_size, Qt::white, dpr), QIcon::Normal, QIcon::On);
+        }
+        button->setIcon(icon);
+        m_content_key = button->icon().cacheKey();
+    }
+    m_rendered_dpr = dpr;
+}
+
+bool SvgIconFilter::eventFilter(QObject*, QEvent* event)
+{
+    // Qt5 sends ScreenChangeInternal recursively to a window's descendants.
+    // Show/ParentChange also cover icons prepared before a native window exists.
+    if (event->type() == QEvent::ScreenChangeInternal ||
+        event->type() == QEvent::Show || event->type() == QEvent::ParentChange) {
+        refresh(true);
+    }
+    return false;
+}
+
+namespace {
+SvgIconFilter* svgIconFilter(QWidget* target)
+{
+    auto* filter = target->findChild<SvgIconFilter*>(QString(), Qt::FindDirectChildrenOnly);
+    return filter ? filter : new SvgIconFilter(target);
+}
+} // namespace
+
+void setTintedSvgPixmap(QLabel* target, const QString& resource, const QSize& size, const QColor& color)
+{
+    svgIconFilter(target)->setSource(resource, size, color, false);
+}
+
+void setTintedSvgIcon(QAbstractButton* target, const QString& resource, const QSize& size, const QColor& color, bool checked_white)
+{
+    svgIconFilter(target)->setSource(resource, size, color, checked_white);
+}
+
+void setThemedPixmap(QLabel* target, const QString& classic, const QString& abyss, const QSize& size, ThemedColor color)
+{
+    if (isModernTheme()) {
+        setTintedSvgPixmap(target, ":/icons/tabler/" + abyss + ".svg", size, getThemedQColor(color));
+    } else {
+        target->setPixmap(getIcon(classic, color).pixmap(size));
+    }
+}
+
+void setThemedIcon(QAbstractButton* target, const QString& classic, const QString& abyss, const QSize& size, ThemedColor color)
+{
+    if (isModernTheme()) {
+        setTintedSvgIcon(target, ":/icons/tabler/" + abyss + ".svg", size, getThemedQColor(color));
+    } else {
+        target->setIcon(getIcon(classic, color));
+    }
+}
+
+QPixmap getThemedPixmap(const QString& classic, const QString& abyss, const QSize& size, ThemedColor color)
+{
+    if (isModernTheme()) {
+        return getTintedSvgPixmap(":/icons/tabler/" + abyss + ".svg", size, getThemedQColor(color));
+    }
+    return getIcon(classic, color).pixmap(size);
+}
+
+QIcon getThemedIcon(const QString& classic, const QString& abyss, const QSize& size, ThemedColor color)
+{
+    if (!isModernTheme()) return getIcon(classic, color);
+    return QIcon(getThemedPixmap(classic, abyss, size, color));
 }
 
 void setIcon(QAbstractButton* button, const QString& strIcon, const ThemedColor color, const ThemedColor colorAlternative, const QSize& size)
@@ -2077,6 +2234,27 @@ void PolishProgressDialog(QProgressDialog* dialog)
 int TextWidth(const QFontMetrics& fm, const QString& text)
 {
     return fm.horizontalAdvance(text);
+}
+
+void fitWindowToScreen(QWidget* window, bool center)
+{
+    if (!window->isWindow() || !window->windowHandle() || !window->windowHandle()->isExposed()
+        || window->isMinimized() || window->isMaximized() || window->isFullScreen()) return;
+    const QScreen* display = window->screen();
+    if (!display) return;
+    if (window->layout()) window->layout()->activate();
+    const QRect available = display->availableGeometry();
+    if (available.isEmpty()) return;
+
+    // Work in logical pixels throughout, including the native title bar/borders.
+    const QSize frame_extra = window->frameGeometry().size() - window->size();
+    const QSize client_limit = (available.size() - frame_extra).expandedTo(QSize(1, 1));
+    window->resize(window->size().boundedTo(client_limit));
+    const QRect frame = window->frameGeometry();
+    QPoint position = center ? available.center() - QRect(QPoint(), frame.size()).center() : frame.topLeft();
+    position.setX(std::clamp(position.x(), available.left(), std::max(available.left(), available.right() - frame.width() + 1)));
+    position.setY(std::clamp(position.y(), available.top(), std::max(available.top(), available.bottom() - frame.height() + 1)));
+    window->move(window->pos() + position - frame.topLeft());
 }
 
 void LogQtInfo()

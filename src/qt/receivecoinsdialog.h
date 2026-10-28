@@ -48,6 +48,9 @@ public Q_SLOTS:
     void reject() override;
     void accept() override;
 
+protected:
+    void changeEvent(QEvent* event) override;
+
 private:
     Ui::ReceiveCoinsDialog *ui;
     WalletModel *model;
@@ -55,6 +58,12 @@ private:
     QAction* copyLabelAction;
     QAction* copyMessageAction;
     QAction* copyAmountAction;
+    void updateThemePresentation();
+    QWidget* m_modern_header{nullptr};
+    QWidget* m_modern_form{nullptr};
+    bool m_modern_layout{false};
+    bool m_presentation_ready{false};
+    bool m_updating_presentation{false};
 
     QModelIndex selectedRow();
     void copyColumnToClipboard(int column);

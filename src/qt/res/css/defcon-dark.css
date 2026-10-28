@@ -397,6 +397,41 @@ QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector QToolButton#wal
     background-color: #16283c;
 }
 
+
+/* These four controls belong only to Abyss. The classic selector/corner
+   console keep their original parents, sizing and keyboard behaviour. */
+QToolBar#abyssQuickControlsBar {
+    background: #07111f;
+    border: none;
+    padding: 0;
+}
+QWidget#abyssQuickControls {
+    background: transparent;
+    border: none;
+}
+QWidget#abyssQuickControls QToolButton {
+    background: transparent;
+    border: 1px solid #20344c;
+    border-radius: 8px;
+    min-width: 40px;
+    max-width: 40px;
+    min-height: 40px;
+    max-height: 40px;
+    margin: 0;
+    padding: 0;
+}
+QWidget#abyssQuickControls QToolButton:hover:enabled {
+    background: #10263e;
+    border-color: #1d3f60;
+}
+QWidget#abyssQuickControls QToolButton:focus {
+    border-color: #1297ff;
+}
+QWidget#abyssQuickControls QToolButton:checked {
+    background: #0d5da5;
+    border-color: #168fea;
+}
+
 /******************************************************
 Overview dashboard
 ******************************************************/
@@ -653,8 +688,46 @@ QWidget#OverviewPage QFrame#networkCard {
     border-radius: 10px;
 }
 
-QWidget#OverviewPage QLabel#labelNetworkStatus {
+/* Amber while the node is still catching up. */
+QWidget#OverviewPage QFrame#networkCard[syncing="true"] {
+    border-color: #5a4410;
+}
+
+QWidget#OverviewPage QFrame#networkCard QLabel#networkText {
     color: #91a5bc;
+}
+
+QWidget#OverviewPage QFrame#networkCard QLabel#networkValue {
+    color: #e6edf7;
+}
+
+/* Green and amber as ThemedColor GREEN and ORANGE, which tint the glyphs. */
+QWidget#OverviewPage QFrame#networkCard QWidget#networkSynced QLabel#networkText,
+QWidget#OverviewPage QFrame#networkCard QWidget#networkChainLocked QLabel#networkText {
+    color: #7ed321;
+}
+
+QWidget#OverviewPage QFrame#networkCard QWidget#networkSyncing QLabel#networkText {
+    color: #f5b42d;
+}
+
+QWidget#OverviewPage QFrame#networkCard QFrame#networkSeparator {
+    background-color: #20344c;
+    border: none;
+}
+
+/* A thin track, not the 18px bar QProgressBar gets elsewhere. */
+QWidget#OverviewPage QFrame#networkCard QProgressBar#networkSyncProgress {
+    background-color: #20344c;
+    border: none;
+    border-radius: 3px;
+    min-height: 6px;
+    max-height: 6px;
+}
+
+QWidget#OverviewPage QFrame#networkCard QProgressBar#networkSyncProgress::chunk {
+    background-color: #f5b42d;
+    border-radius: 3px;
 }
 
 /******************************************************
@@ -920,4 +993,62 @@ QDialog#OptionsDialog #btnAppearance:pressed,
     background-color: #10263e;
     border-color: #1297ff;
     color: #ffffff;
+}
+/* Stage 2: presentation wrappers only; classic stylesheets are unchanged. */
+QWidget#abyssPageHeader QLabel#abyssPageTitle {
+    color: #ffffff;
+    background: transparent;
+    border: none;
+}
+QWidget#abyssPageHeader QLabel#abyssPageSubtitle,
+QFrame#abyssSendSummary QLabel#abyssSummaryCaption,
+QFrame#abyssSendSummary QLabel#abyssSummaryNote {
+    color: #91a5bc;
+    background: transparent;
+    border: none;
+}
+QFrame#abyssSendSummary,
+SendCoinsDialog[abyssPaymentPage="true"] QFrame#frameFee,
+SendCoinsEntry[abyssRecipientCard="true"] QFrame#SendCoins,
+ReceiveCoinsDialog QFrame#frame2,
+ReceiveCoinsDialog QFrame#frame {
+    background: #0b1727;
+    border: 1px solid #20344c;
+    border-radius: 10px;
+}
+SendCoinsEntry[abyssRecipientCard="true"] QWidget#abyssRecipientContent {
+    background: transparent;
+    border: none;
+}
+SendCoinsEntry[abyssRecipientCard="true"] QToolButton,
+QWidget#abyssPageHeader QPushButton,
+QFrame#abyssSendSummary QPushButton,
+ReceiveCoinsDialog QPushButton {
+    min-height: 40px;
+}
+SendCoinsEntry[abyssRecipientCard="true"] QToolButton {
+    min-width: 40px;
+}
+
+SendCoinsDialog[abyssPaymentPage="true"] QWidget#abyssSendFields,
+SendCoinsDialog[abyssPaymentPage="true"] QScrollArea,
+SendCoinsDialog[abyssPaymentPage="true"] QScrollArea > QWidget,
+SendCoinsDialog[abyssPaymentPage="true"] QWidget#scrollAreaWidgetContents {
+    background: transparent;
+    border: none;
+}
+
+/* Only the Abyss menu corner uses these text-and-icon popup buttons. */
+QWidget#abyssMenuControls QToolButton {
+    color: #e6edf7;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 6px 12px 6px 8px;
+    min-height: 26px;
+}
+QWidget#abyssMenuControls QToolButton:hover,
+QWidget#abyssMenuControls QToolButton:focus {
+    background: #10263e;
+    border-color: #1d3f60;
 }

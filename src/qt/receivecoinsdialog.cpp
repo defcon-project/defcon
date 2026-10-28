@@ -14,8 +14,11 @@
 
 #include <QAction>
 #include <QCursor>
+#include <QGridLayout>
 #include <QMessageBox>
 #include <QScrollBar>
+#include <QScopedValueRollback>
+#include <QStyle>
 #include <QTextDocument>
 
 ReceiveCoinsDialog::ReceiveCoinsDialog(QWidget* parent) :
@@ -41,6 +44,87 @@ ReceiveCoinsDialog::ReceiveCoinsDialog(QWidget* parent) :
     connect(ui->recentRequestsView, &QWidget::customContextMenuRequested, this, &ReceiveCoinsDialog::showMenu);
 
     connect(ui->clearButton, &QPushButton::clicked, this, &ReceiveCoinsDialog::clear);
+    m_presentation_ready = true;
+    updateThemePresentation();
+}
+
+void ReceiveCoinsDialog::updateThemePresentation()
+{
+    if (!m_presentation_ready || m_updating_presentation) return;
+    QScopedValueRollback<bool> guard(m_updating_presentation, true);
+    const bool modern = GUIUtil::isModernTheme();
+    if (modern == m_modern_layout) return;
+    QWidget* focus = QApplication::focusWidget();
+    const bool active_focus = focus && isAncestorOf(focus);
+    if (!active_focus) focus = QWidget::focusWidget();
+    const bool restore_focus = focus && isAncestorOf(focus) && (active_focus || !focus->isHidden());
+    m_modern_layout = modern;
+    if (!m_modern_header) {
+        for (QLabel* label : {ui->label, ui->label_2, ui->label_3}) {
+            label->setProperty("abyssOriginalAlignment", static_cast<int>(label->alignment()));
+        }
+        m_modern_header = GUIUtil::createPageHeader(this, tr("Receive DeFCoN"), tr("Create a payment request."));
+        m_modern_form = new QWidget(ui->frame2);
+        auto* grid = new QGridLayout(m_modern_form);
+        grid->setContentsMargins(6, 6, 6, 6);
+        grid->setHorizontalSpacing(16);
+        grid->setVerticalSpacing(8);
+        auto* title = new QLabel(tr("Payment request"), m_modern_form);
+        GUIUtil::setFont({title}, GUIUtil::FontWeight::Normal, 16);
+        grid->addWidget(title, 0, 0, 1, 2);
+    }
+    auto* destination = modern ? qobject_cast<QGridLayout*>(m_modern_form->layout()) : ui->gridLayout;
+    for (QLabel* label : {ui->label, ui->label_2, ui->label_3}) {
+        label->setAlignment(modern ? Qt::AlignLeft | Qt::AlignVCenter : Qt::Alignment(label->property("abyssOriginalAlignment").toInt()));
+        GUIUtil::setFont({label}, GUIUtil::FontWeight::Normal, modern ? 13 : 15);
+    }
+    for (QLayout* child : {static_cast<QLayout*>(ui->horizontalLayout), static_cast<QLayout*>(ui->horizontalLayout_4)}) {
+        if (modern) ui->gridLayout->removeItem(child);
+        else m_modern_form->layout()->removeItem(child);
+        child->setParent(nullptr);
+    }
+    if (modern) {
+        destination->addWidget(ui->label_5, 1, 0, 1, 2);
+        destination->addWidget(ui->label_2, 2, 0);
+        destination->addWidget(ui->label, 2, 1);
+        destination->addWidget(ui->reqLabel, 3, 0);
+        destination->addLayout(ui->horizontalLayout_4, 3, 1);
+        destination->addWidget(ui->label_3, 4, 0, 1, 2);
+        destination->addWidget(ui->reqMessage, 5, 0, 1, 2);
+        destination->addLayout(ui->horizontalLayout, 6, 0, 1, 2);
+        ui->label_7->hide();
+        ui->gridLayout->addWidget(m_modern_form, 0, 0, 8, 3);
+        m_modern_form->show();
+        ui->verticalLayout->insertWidget(0, m_modern_header);
+        m_modern_header->show();
+    } else {
+        ui->gridLayout->removeWidget(m_modern_form);
+        m_modern_form->hide();
+        destination->addWidget(ui->label_5, 2, 2);
+        destination->addWidget(ui->label_2, 4, 0);
+        destination->addWidget(ui->reqLabel, 4, 2);
+        destination->addWidget(ui->label, 5, 0);
+        destination->addLayout(ui->horizontalLayout_4, 5, 2);
+        destination->addWidget(ui->label_3, 6, 0);
+        destination->addWidget(ui->reqMessage, 6, 2);
+        destination->addLayout(ui->horizontalLayout, 7, 2);
+        ui->label_7->show();
+        ui->verticalLayout->removeWidget(m_modern_header);
+        m_modern_header->hide();
+    }
+    ui->frame2->style()->unpolish(ui->frame2);
+    ui->frame2->style()->polish(ui->frame2);
+    if (restore_focus && focus->parentWidget()->isVisibleTo(this)) {
+        // Retain hidden-page focus after the layout's queued reparent-show.
+        if (!active_focus) focus->show();
+        focus->setFocus(Qt::OtherFocusReason);
+    }
+}
+
+void ReceiveCoinsDialog::changeEvent(QEvent* event)
+{
+    QDialog::changeEvent(event);
+    if (event->type() == QEvent::StyleChange) updateThemePresentation();
 }
 
 void ReceiveCoinsDialog::setModel(WalletModel *_model)

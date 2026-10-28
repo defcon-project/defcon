@@ -10,6 +10,7 @@
 #endif
 
 #include <qt/clientmodel.h>
+#include <qt/networkstyle.h>
 #include <qt/optionsdialog.h>
 
 #include <consensus/amount.h>
@@ -28,7 +29,6 @@
 #include <qt/macos_appnap.h>
 #endif
 
-class NetworkStyle;
 class Notificator;
 class OptionsModel;
 class RPCConsole;
@@ -70,6 +70,7 @@ class ClickableProgressBar;
 class BitcoinGUI : public QMainWindow
 {
     Q_OBJECT
+    friend class AbyssTests; // Presentation-state regression tests, no runtime test hooks.
 
 public:
     static const std::string DEFAULT_UIPLATFORM;
@@ -124,6 +125,8 @@ private:
     std::unique_ptr<interfaces::Handler> m_handler_message_box;
     std::unique_ptr<interfaces::Handler> m_handler_question;
     ClientModel* clientModel = nullptr;
+    bool m_window_geometry_restored{false};
+    bool m_initial_geometry_pending{true};
     WalletFrame* walletFrame = nullptr;
 
     UnitDisplayStatusBarControl* unitDisplayControl = nullptr;
@@ -145,10 +148,18 @@ private:
     //! and it was four clicks deep under Tools.
     QToolButton* consoleButton = nullptr;
 
-    //! The padlock beside the wallet selector: it shows the lock state and
+    //! The padlock moves between Abyss and classic. It shows the lock state and
     //! flips it. The eye is already there when it asks which wallet it is
     //! looking at, and locking used to live three levels deep in a menu.
     QToolButton* walletLockButton = nullptr;
+    QWidget* abyssQuickControls = nullptr;
+    QToolBar* abyssQuickControlsBar = nullptr;
+    QWidget* abyssMenuControls = nullptr;
+    QMenu* abyssWalletMenu = nullptr;
+    QMenu* abyssToolsMenu = nullptr;
+    QList<QMenu*> classicMenus;
+    void updateAbyssMenus();
+    bool m_wallet_actions_enabled{false};
     //! The last value handed to setEncryptionStatus, kept so a theme change can
     //! redraw the padlock in the new colours without asking the wallet again.
     int m_encryption_status{-1};
@@ -250,7 +261,8 @@ private:
 
     /** Timer to update custom css styling in -debug-ui mode periodically */
     QTimer* timerCustomCss = nullptr;
-    const NetworkStyle* const m_network_style;
+    // Theme changes can outlive the caller that provided this style.
+    const NetworkStyle m_network_style;
 
     /** Create the main UI actions. */
     void createActions();
@@ -260,6 +272,7 @@ private:
     void createToolBars();
     /** Apply the selected theme's navigation orientation and sizing. */
     void applyThemeLayout();
+    void updateQuickControls();
     /** One slow pulse of the console button, if anyone is there to see it. */
     /** Create system tray icon and notification */
     void createTrayIcon();
@@ -355,6 +368,7 @@ public Q_SLOTS:
 private:
     /** Set the proxy-enabled icon as shown in the UI. */
     void updateProxyIcon();
+    void setProxyIcon(bool enabled, const QString& endpoint);
     void updateWindowTitle();
 
 public Q_SLOTS:
@@ -439,6 +453,7 @@ public Q_SLOTS:
     void updateWidth();
     //! Take the window's minimum from what the wallet on display needs.
     void applyModernWindowMinimum();
+    void fitInitialWindowGeometry();
 };
 
 class UnitDisplayStatusBarControl : public QLabel
