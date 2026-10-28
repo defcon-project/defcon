@@ -242,10 +242,16 @@ def docker(*args, timeout=30, check=True):
     return command(["sudo", "-n", "docker", *args], timeout, check)
 
 
+def is_transient(error):
+    # Docker 29 lowercases its CLI error messages, so match without regard to case.
+    transient = ("cannot connect to the docker daemon", "error during connect",
+                 "is the docker daemon running", "context deadline exceeded",
+                 "timed out after")
+    error = error.lower()
+    return any(word in error for word in transient)
+
+
 def inspect_command(*args):
-    transient = ("Cannot connect to the Docker daemon", "error during connect",
-                 "Is the docker daemon running", "context deadline exceeded",
-                 "Timed out after")
     stopping = STOP.is_set()
     attempts = 1 if stopping else 3
     timeout = 5 if stopping else 20
@@ -256,9 +262,9 @@ def inspect_command(*args):
             result, error = None, str(exc)
         else:
             error = result.stderr
-            if result.returncode == 0 or not any(word in error for word in transient):
+            if result.returncode == 0 or not is_transient(error):
                 return result
-        if attempt + 1 == attempts or not any(word in error for word in transient):
+        if attempt + 1 == attempts or not is_transient(error):
             raise CampaignFailure(f"Docker inspect remained unavailable: {error[-1500:]!r}")
         if STOP.wait(attempt + 1):
             raise CampaignFailure(f"Stop requested during Docker inspect retry: {error[-1500:]!r}")
@@ -282,7 +288,9 @@ def inspect_name_or_absent():
         if len(rows) != 1:
             raise CampaignFailure("Container name inspection was not unique")
         return rows[0]
-    if "No such object" in result.stderr or "No such container" in result.stderr:
+    # "Error: No such object" before Docker 29, "error: no such object" from Docker 29.
+    error = result.stderr.lower()
+    if "no such object" in error or "no such container" in error:
         return None
     raise CampaignFailure(f"Cannot establish container-name state: {result.stderr[-1500:]!r}")
 
@@ -897,9 +905,11 @@ def main():
 
 
 if __name__ == "__main__":
+    # Exit outside the handler: a SystemExit(0) from a successful run must not become exit 1.
     try:
-        sys.exit(main())
+        code = main()
     except BaseException as exc:
         print(f"FATAL: {exc!r}", file=sys.stderr, flush=True)
         traceback.print_exc()
         sys.exit(1)
+    sys.exit(code)
