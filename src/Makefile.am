@@ -1034,6 +1034,11 @@ EXTRA_DIST = \
   $(IMMER_DIST)   \
   $(LIBDASHBLS_DIST)
 
+# The license of the Tabler icons in RES_ICONS. Here and not in
+# Makefile.qt.include: sources are distributed whatever is configured, but an
+# EXTRA_DIST inside "if ENABLE_QT" would be left out of a dist made without it.
+EXTRA_DIST += qt/res/icons/tabler/LICENSE
+
 config/bitcoin-config.h: config/stamp-h1
 	@$(MAKE) -C $(top_builddir) $(subdir)/$(@)
 config/stamp-h1: $(top_srcdir)/$(subdir)/config/bitcoin-config.h.in $(top_builddir)/config.status

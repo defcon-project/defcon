@@ -224,7 +224,44 @@ RES_ICONS = \
   qt/res/icons/fontsmaller.png \
   qt/res/icons/staking_active.png \
   qt/res/icons/staking_inactive.png \
-  qt/res/icons/staking_stalled.png
+  qt/res/icons/staking_stalled.png \
+  qt/res/icons/tabler/wallet.svg \
+  qt/res/icons/tabler/tools.svg \
+  qt/res/icons/tabler/help.svg \
+  qt/res/icons/tabler/arrows-shuffle.svg \
+  qt/res/icons/tabler/circle-check.svg \
+  qt/res/icons/tabler/clock.svg \
+  qt/res/icons/tabler/cube.svg \
+  qt/res/icons/tabler/gavel.svg \
+  qt/res/icons/tabler/history.svg \
+  qt/res/icons/tabler/home.svg \
+  qt/res/icons/tabler/key.svg \
+  qt/res/icons/tabler/plug-connected.svg \
+  qt/res/icons/tabler/qrcode.svg \
+  qt/res/icons/tabler/refresh.svg \
+  qt/res/icons/tabler/send.svg \
+  qt/res/icons/tabler/server.svg \
+  qt/res/icons/tabler/shield-check.svg \
+  qt/res/icons/tabler/stack-2.svg \
+  qt/res/icons/tabler/address-book.svg \
+  qt/res/icons/tabler/antenna-bars-1.svg \
+  qt/res/icons/tabler/antenna-bars-2.svg \
+  qt/res/icons/tabler/antenna-bars-3.svg \
+  qt/res/icons/tabler/antenna-bars-4.svg \
+  qt/res/icons/tabler/antenna-bars-5.svg \
+  qt/res/icons/tabler/clipboard.svg \
+  qt/res/icons/tabler/clock-pause.svg \
+  qt/res/icons/tabler/eye.svg \
+  qt/res/icons/tabler/eye-off.svg \
+  qt/res/icons/tabler/leaf.svg \
+  qt/res/icons/tabler/leaf-off.svg \
+  qt/res/icons/tabler/lock.svg \
+  qt/res/icons/tabler/lock-open.svg \
+  qt/res/icons/tabler/network-off.svg \
+  qt/res/icons/tabler/settings.svg \
+  qt/res/icons/tabler/terminal-2.svg \
+  qt/res/icons/tabler/trash.svg \
+  qt/res/icons/tabler/topology-star-3.svg
 
 BITCOIN_QT_BASE_CPP = \
   qt/appearancewidget.cpp \
