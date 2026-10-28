@@ -188,8 +188,8 @@ class SchedulingTest(unittest.TestCase):
             'feature_llmq_is_nonrotation.py', 'feature_llmq_is_nonrotated_verify.py',
             'feature_llmq_is_named_quorum_window.py', 'feature_superblock_retirement.py',
             'feature_v23_bundle_heights.py', 'feature_llmq_q60_proto_floor.py', 'feature_evodb_reconcile.py',
-            'rpc_verifychainlock.py', 'feature_evodb_reconcile_below_dip3.py', 'feature_llmq_q60_regtest.py',
-            'feature_llmq_switchover_config.py', 'p2p_headers_uncompressed.py',
+            'rpc_verifychainlock.py', 'feature_evodb_reconcile_below_dip3.py', 'feature_evodb_repair_startup.py',
+            'feature_llmq_q60_regtest.py', 'feature_llmq_switchover_config.py', 'p2p_headers_uncompressed.py',
             'feature_dsl_commit_decision_log.py',
         ], names)
         self.assertIn('--jobs=4 --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}"', functional)

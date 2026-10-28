@@ -616,6 +616,7 @@ jobs:
             feature_evodb_reconcile.py             # an evodb that stopped short of the coins tip is rebuilt at startup, with its log line
             rpc_verifychainlock.py                 # the lock-verifying RPCs
             feature_evodb_reconcile_below_dip3.py  # the same below DIP0003, where an empty evodb is current
+            feature_evodb_repair_startup.py        # -evodbrepair finishes before the import, the network and the end of RPC warmup
             feature_llmq_q60_regtest.py            # the Q60 ChainLock profile (llmq_defcon) on regtest
             feature_llmq_switchover_config.py      # the startup guards on the Q60 switchover heights, the v23@N alias
             p2p_headers_uncompressed.py            # the plain headers reader consumes what every writer writes (#220)

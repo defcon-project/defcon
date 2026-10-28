@@ -807,6 +807,18 @@ public:
     [[nodiscard]] bool IsRepaired() const;
     void CompleteRepair();
 
+    //! The startup check of the stored history, DIP0003 to the tip: verify,
+    //! or repair when asked, and mark the diffs repaired once they reproduce
+    //! every snapshot. A storage error ends in FAILED rather than an exception,
+    //! so each caller can stop the node in order.
+    struct HistoryCheck {
+        enum class Outcome { NOT_RUN, CLEAN, UNRELIABLE, REPAIR_FAILED, FAILED };
+        Outcome outcome{Outcome::NOT_RUN};
+        std::string details;
+    };
+    [[nodiscard]] HistoryCheck VerifyOrRepairDiffs(ChainstateManager& chainman, BuildListFromBlockFunc build_list_func,
+                                                   bool repair) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+
 private:
     void CleanupCache(int nHeight) EXCLUSIVE_LOCKS_REQUIRED(cs);
     CDeterministicMNList GetListForBlockInternal(gsl::not_null<const CBlockIndex*> pindex) EXCLUSIVE_LOCKS_REQUIRED(cs);

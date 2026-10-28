@@ -161,6 +161,7 @@ BASE_SCRIPTS = [
     'feature_pos_verifychain.py --descriptors',
     'feature_evodb_reconcile_below_dip3.py',
     'feature_evodb_reconcile.py', # NOTE: needs dash_hash to pass
+    'feature_evodb_repair_startup.py',
     'rpc_masternode_payments_genesis.py',
     'feature_compute_mn.py',
     'feature_asset_locks.py', # NOTE: needs dash_hash to pass
