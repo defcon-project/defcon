@@ -88,6 +88,14 @@ private:
     bool m_privacy{false};
     int nDisplayUnit;
     bool fShowAdvancedCJUI;
+    //! coinJoinStatus() state, per page: as function-local statics it was
+    //! shared by every page, so a second one (another wallet, a recreated
+    //! window) skipped its first update and kept the advanced CoinJoin widgets
+    //! as the form left them.
+    bool m_cj_widgets_initial{true};
+    bool m_cj_widgets_last_visible{false};
+    bool m_cj_widgets_last_show_advanced{false};
+    int64_t m_cj_last_progress_time{0};
     int cachedNumISLocks;
 
     TxViewDelegate *txdelegate;

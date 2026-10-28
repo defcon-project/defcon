@@ -1044,13 +1044,10 @@ void OverviewPage::coinJoinStatus(bool fForce)
     };
 
     auto setWidgetsVisible = [&](bool fVisible) {
-        static bool fInitial{true};
-        static bool fLastVisible{false};
-        static bool fLastShowAdvanced{false};
         // Only update the widget's visibility if something changed since the last call of setWidgetsVisible
-        if (fLastShowAdvanced == fShowAdvancedCJUI && fLastVisible == fVisible) {
-            if (fInitial) {
-                fInitial = false;
+        if (m_cj_widgets_last_show_advanced == fShowAdvancedCJUI && m_cj_widgets_last_visible == fVisible) {
+            if (m_cj_widgets_initial) {
+                m_cj_widgets_initial = false;
             } else {
                 return;
             }
@@ -1059,20 +1056,19 @@ void OverviewPage::coinJoinStatus(bool fForce)
         for (const auto& it : coinJoinWidgets) {
             it.first->setVisible(fVisible && (!it.second || it.second == fShowAdvancedCJUI));
         }
-        fLastVisible = fVisible;
-        fLastShowAdvanced = fShowAdvancedCJUI;
+        m_cj_widgets_last_visible = fVisible;
+        m_cj_widgets_last_show_advanced = fShowAdvancedCJUI;
     };
 
-    static int64_t nLastDSProgressBlockTime = 0;
     int nBestHeight = clientModel->node().getNumBlocks();
 
     // We are processing more than 1 block per second, we'll just leave
     bool tooFast{false};
     walletModel->withCoinJoin([&](auto& client) {
-        tooFast = nBestHeight > client.getCachedBlocks() && GetTime() - nLastDSProgressBlockTime <= 1;
+        tooFast = nBestHeight > client.getCachedBlocks() && GetTime() - m_cj_last_progress_time <= 1;
     });
     if (tooFast) return;
-    nLastDSProgressBlockTime = GetTime();
+    m_cj_last_progress_time = GetTime();
 
     QString strKeysLeftText(tr("keys left: %1").arg(walletModel->getKeysLeftSinceAutoBackup()));
     if(walletModel->getKeysLeftSinceAutoBackup() < COINJOIN_KEYS_THRESHOLD_WARNING) {

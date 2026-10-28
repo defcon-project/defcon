@@ -1697,6 +1697,43 @@ void AbyssTests::initialWindowGeometry()
     QTRY_COMPARE(window->geometry(), placed);
 }
 
+void AbyssTests::coinJoinWidgetsPerPage()
+{
+    // OverviewPage::coinJoinStatus() kept its "already applied" state in
+    // function-local statics, shared by every page in the process: a second
+    // page -- another wallet, or a recreated window -- skipped its first update
+    // and showed the advanced CoinJoin widgets with the advanced UI off. That
+    // made the second window 78 px taller in initialWindowGeometry. Two windows
+    // open at once must agree.
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    WalletFixture fixture(m_node);
+    std::vector<std::unique_ptr<BitcoinGUI>> windows;
+    const auto detach = interfaces::MakeHandler([&] {
+        for (auto& window : windows) window->setClientModel(nullptr);
+    });
+    for (int i = 0; i < 2; ++i) {
+        auto window = std::make_unique<BitcoinGUI>(m_node, style.get());
+        interfaces::BlockAndHeaderTipInfo tip{};
+        window->setClientModel(fixture.client.get(), &tip);
+        window->addWallet(fixture.model.get());
+        windows.push_back(std::move(window));
+    }
+    QVERIFY(!fixture.model->getOptionsModel()->getShowAdvancedCJUI());
+    for (size_t i = 0; i < windows.size(); ++i) {
+        auto* overview = windows[i]->findChild<OverviewPage*>();
+        QVERIFY(overview);
+        for (const char* name : {"labelCompletitionText", "coinJoinProgress", "labelSubmittedDenomText", "labelSubmittedDenom"}) {
+            auto* widget = overview->findChild<QWidget*>(name);
+            QVERIFY(widget);
+            QVERIFY2(widget->isHidden(), qPrintable(QString("window %1 shows %2 without the advanced CoinJoin UI").arg(i).arg(name)));
+        }
+    }
+}
+
 void AbyssTests::quickControls()
 {
     const bool high_dpi = QCoreApplication::testAttribute(Qt::AA_UseHighDpiPixmaps);
