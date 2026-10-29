@@ -17,6 +17,19 @@ TOKEN_LABEL = LABEL + ".token-sha256"
 # (2 x the 2300 MB RSS limit plus the 512 MB /tmp fit in 6 GiB) and each one cycles its group.
 CONTAINER_CPUS = "2"
 CONTAINER_MEMORY_GIB = 6
+# One 72-hour run was allowed on 2026-10-27. It stopped early on 2026-10-29 when a staging restart
+# replaced a protected process, and the user asked to run the full 72 hours again, so a plan may
+# end at the latest at this time.
+AUTHORIZED_UNTIL = datetime.datetime(2026, 11, 2, 21, 0, tzinfo=datetime.timezone.utc)
+# If the campaign disturbs the staging services in memory or CPU, the campaign stops, not the
+# services (user, 2026-10-27). The staging services are restarted by their operator from time to
+# time; a restart is tolerated, a service that stays away longer than the grace time is not.
+SERVICE_GRACE_SECONDS = 180
+CPU_PRESSURE_AVG300_LIMIT = 10.0
+# The staging services found on the host when the campaign was allowed (2026-10-27 preflight).
+# A plan must name each of them, and each must be running when the campaign starts.
+REQUIRED_SERVICES = ("dfcn-relayer", "minusz-web", "staging-signer-a", "staging-signer-b",
+                     "staging-signer-c", "dfcn-devnet-node")
 TARGETS = [["process_message_posechal", "process_message_posecommit", "process_message_poseresp"],
            ["process_message_posereport", "pose_report_wire_differential"]]
 ALL = [target for group in TARGETS for target in group]
@@ -310,7 +323,7 @@ def validate_plan():
     if plan.get("uid") != os.getuid() or plan.get("gid") != os.getgid():
         raise CampaignFailure("Plan UID/GID mismatch")
     remaining = plan.get("deadline_epoch", 0) - time.time()
-    hard = datetime.datetime(2026, 10, 30, 11, 55, tzinfo=datetime.timezone.utc).timestamp()
+    hard = AUTHORIZED_UNTIL.timestamp()
     if not 0 < remaining <= 259200 or plan["deadline_epoch"] > hard:
         raise CampaignFailure("Deadline is outside the authorized 72-hour window")
     if digest(ROOT / "campaign.py") != plan.get("runner_sha256"):
@@ -329,6 +342,15 @@ def validate_plan():
     pids = [item.get("pid") for item in protected]
     if len(pids) != len(set(pids)):
         raise CampaignFailure("Protected-process inventory has duplicate PIDs")
+    services = plan.get("protected_services")
+    names = services.get("names") if isinstance(services, dict) else None
+    if (not isinstance(names, list) or not names
+            or not all(isinstance(name, str) and name for name in names)
+            or len(names) != len(set(names)) or services.get("parent_pid") not in pids):
+        raise CampaignFailure("Protected-service inventory is invalid")
+    absent = [name for name in REQUIRED_SERVICES if name not in names]
+    if absent:
+        raise CampaignFailure(f"Protected-service inventory lacks: {', '.join(absent)}")
     return plan
 
 
@@ -337,6 +359,102 @@ def check_protected(plan):
         actual = proc_identity(item["pid"])
         if not actual or actual["start_ticks"] != str(item["start_ticks"]):
             raise CampaignFailure(f"Protected process changed: {item.get('name', item['pid'])}")
+
+
+def read_cpu_pressure(path=Path("/proc/pressure/cpu")):
+    try:
+        for line in path.read_text().splitlines():
+            if line.startswith("some "):
+                return float(dict(field.split("=", 1) for field in line.split()[1:])["avg300"])
+    except (OSError, ValueError, KeyError):
+        pass
+    raise CampaignFailure("Host CPU pressure is unreadable")
+
+
+def read_oom_kills(path=Path("/proc/vmstat")):
+    try:
+        for line in path.read_text().splitlines():
+            name, _, value = line.partition(" ")
+            if name == "oom_kill":
+                return int(value)
+    except (OSError, ValueError):
+        pass
+    raise CampaignFailure("Host OOM kill counter is unreadable")
+
+
+def pm2_services(parent_pid):
+    """Name -> (PID, start ticks) of the children of the pm2 daemon; pm2 passes each app its name as
+    `name`. If two children carry one name, the one started first is taken."""
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        raise CampaignFailure("Host process list is unreadable") from None
+    found = {}
+    for entry in entries:
+        identity = proc_identity(entry) if entry.isdigit() else None
+        if not identity or identity["ppid"] != parent_pid:
+            continue
+        try:
+            environ = Path(f"/proc/{entry}/environ").read_bytes().split(b"\0")
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            continue
+        name = next((item[5:].decode(errors="replace") for item in environ if item.startswith(b"name=")), None)
+        process = (identity["pid"], int(identity["start_ticks"]))
+        if name and (name not in found or process[1] < found[name][1]):
+            found[name] = process
+    return found
+
+
+def staging_clock():
+    # Absences are measured on the monotonic clock, so a wall-clock step cannot stretch them.
+    return time.monotonic()
+
+
+def staging_baseline(plan, clock=staging_clock):
+    started = clock()
+    services = pm2_services(plan["protected_services"]["parent_pid"])
+    names = plan["protected_services"]["names"]
+    missing = [name for name in names if name not in services]
+    if missing:
+        raise CampaignFailure(f"Protected services not running at start: {', '.join(missing)}")
+    return {"oom_kill": read_oom_kills(), "cpu_pressure_avg300": read_cpu_pressure(),
+            "procs": {name: services[name] for name in names},
+            "last_seen": {name: started for name in names}, "restarts": {}, "missing": []}
+
+
+def check_staging(plan, state, clock=staging_clock):
+    oom = read_oom_kills()
+    if oom > state["oom_kill"]:
+        raise CampaignFailure(f"Host OOM kills rose from {state['oom_kill']} to {oom}")
+    pressure = read_cpu_pressure()
+    if pressure >= CPU_PRESSURE_AVG300_LIMIT:
+        raise CampaignFailure(f"Host CPU pressure {pressure:.2f}% over 5 minutes")
+    # A service is seen at some moment while the process list is read. It therefore counts as last
+    # seen when its reading began, and an absence as lasting until this reading ended: an upper bound.
+    started = clock()
+    services = pm2_services(plan["protected_services"]["parent_pid"])
+    ended = clock()
+    missing = []
+    for name in plan["protected_services"]["names"]:
+        process = services.get(name)
+        away = ended - state["last_seen"][name]
+        if process is None:
+            if away > SERVICE_GRACE_SECONDS:
+                raise CampaignFailure(f"Protected service missing for up to {int(away)} s: {name}")
+            missing.append(name)
+            continue
+        # Missing in the last sample, or replaced since the sample that saw it: either way it may
+        # have been away since that sample.
+        replaced = process != state["procs"][name]
+        if (name in state["missing"] or replaced) and away > SERVICE_GRACE_SECONDS:
+            raise CampaignFailure(f"Protected service was away for up to {int(away)} s: {name}")
+        state["last_seen"][name] = started
+        if replaced:
+            state["procs"][name] = process
+            state["restarts"][name] = state["restarts"].get(name, 0) + 1
+    state["missing"] = missing
+    return {"cpu_pressure_avg300": pressure, "oom_kill": oom,
+            "restarts": dict(state["restarts"]), "missing": missing}
 
 
 def check_container(c, plan, token):
@@ -671,6 +789,9 @@ def host_child(token):
         if STOP.is_set():
             raise CampaignFailure(f"Supervisor received {STOP_REASON['value']} before resource check")
         check_protected(plan)
+        staging = staging_baseline(plan)
+        save(ROOT / "host-staging-baseline.json", {"at_utc": utc(), "oom_kill": staging["oom_kill"],
+            "cpu_pressure_avg300": staging["cpu_pressure_avg300"], "procs": staging["procs"]})
         if inspect_name_or_absent() is not None:
             raise CampaignFailure("Campaign container name exists; refusing duplicate")
         resource_check = check_host_resources()
@@ -716,7 +837,7 @@ def host_child(token):
             "container_id": cid, "started_at_utc": outcome["started_at_utc"],
             "deadline_epoch": plan["deadline_epoch"]})
 
-        reason = None
+        reason, staging_state = None, None
         while c["State"]["Running"]:
             if STOP.is_set():
                 reason = f"Supervisor received {STOP_REASON['value']}"
@@ -725,6 +846,7 @@ def host_child(token):
                 reason = "72-hour deadline reached; stopping container"
             else:
                 check_protected(plan)
+                staging_state = check_staging(plan, staging)
             free = shutil.disk_usage(ROOT).free
             used = directory_size(ROOT)
             mem = {line.split(":", 1)[0]: int(line.split(":", 1)[1].split()[0])
@@ -738,7 +860,7 @@ def host_child(token):
             save(ROOT / "host-heartbeat.json", {"state": "RUNNING", "at_utc": utc(),
                 "campaign_bytes": used, "disk_free": free,
                 "mem_available_kib": mem.get("MemAvailable", 0),
-                "limit_reason": reason, "container_id": cid})
+                "limit_reason": reason, "container_id": cid, "staging": staging_state})
             if reason:
                 raise CampaignFailure(reason)
             time.sleep(15)
