@@ -8,6 +8,7 @@
 #include <interfaces/wallet.h>
 #include <key_io.h>
 #include <qt/addressbookpage.h>
+#include <qt/addresstablemodel.h>
 #include <qt/appearancewidget.h>
 #include <qt/bitcoinunits.h>
 #include <qt/bitcoinamountfield.h>
@@ -19,6 +20,7 @@
 #include <qt/clientmodel.h>
 #include <qt/coincontroldialog.h>
 #include <qt/coincontroltreewidget.h>
+#include <qt/emptystatewidget.h>
 #include <qt/guiutil.h>
 #include <qt/openuridialog.h>
 #include <qt/optionsdialog.h>
@@ -30,6 +32,7 @@
 #include <qt/transactionview.h>
 #include <qt/masternodelist.h>
 #include <qt/receivecoinsdialog.h>
+#include <qt/recentrequeststablemodel.h>
 #include <qt/rpcconsole.h>
 #include <qt/sendcoinsdialog.h>
 #include <qt/signverifymessagedialog.h>
@@ -62,7 +65,10 @@
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QLabel>
+#include <QListView>
+#include <QMenu>
 #include <QMenuBar>
 #include <QLineEdit>
 #include <QSettings>
@@ -75,6 +81,7 @@
 #include <QStyleOptionButton>
 #include <QPainter>
 #include <QPointer>
+#include <QTableView>
 #include <QTableWidget>
 #include <QVBoxLayout>
 #include <QTest>
@@ -1269,6 +1276,313 @@ void AbyssTests::networkModelLifecycle()
     page.setClientModel(&replacement);
     replacement.numConnectionsChanged(31);
     QCOMPARE(value->text(), QString("31"));
+}
+
+void AbyssTests::emptyStates()
+{
+    RestoreAppearance restore;
+    // Pixel comparisons must not depend on a line edit's cursor blink phase.
+    const int flash = QApplication::cursorFlashTime();
+    QApplication::setCursorFlashTime(0);
+    const auto restore_flash = interfaces::MakeHandler([flash] { QApplication::setCursorFlashTime(flash); });
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    const auto capture = [&](QWidget& widget, const char* name) {
+        if (output.isEmpty()) return true;
+        return QDir().mkpath(output) && widget.grab().save(QDir(output).filePath(QString("Abyss-empty-%1.png").arg(name)));
+    };
+    WalletFixture fixture(m_node);
+    // A payment request belongs to one of the wallet's receiving addresses;
+    // a saved sending address is somebody else's.
+    const CTxDestination receiving = PKHash(fixture.chain.coinbaseKey.GetPubKey());
+    fixture.wallet->SetAddressBook(receiving, "", "receive");
+    CKey other_key;
+    other_key.MakeNewKey(true);
+    const QString address = QString::fromStdString(EncodeDestination(receiving));
+    const QString sending = QString::fromStdString(EncodeDestination(PKHash(other_key.GetPubKey())));
+    // Every line of the sentence and the whole button are inside the message.
+    const auto fits = [](EmptyStateWidget* empty) {
+        auto* text = empty->findChild<QLabel*>("emptyStateText");
+        QPushButton* button = empty->actionButton();
+        return text && text->height() >= text->heightForWidth(text->width()) &&
+               empty->rect().contains(QRect(button->mapTo(empty, QPoint()), button->size()));
+    };
+
+    // Overview: an empty list says so, or that it is still loading.
+    {
+        Theme("Abyss");
+        OverviewPage overview;
+        overview.setClientModel(fixture.client.get());
+        overview.setWalletModel(fixture.model.get());
+        overview.resize(1280, 820); overview.show(); Settle();
+        auto* empty = overview.findChild<EmptyStateWidget*>("emptyState");
+        auto* list = overview.findChild<QListView*>("listTransactions");
+        auto* chip = overview.findChild<QLabel*>("labelTransactionsStatus");
+        QVERIFY(empty && list && chip);
+        QCOMPARE(chip->text(), OverviewPage::tr("out of sync"));
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Loading);
+        QVERIFY(empty->isVisible());
+        QCOMPARE(empty->geometry(), list->viewport()->geometry());
+        QVERIFY(capture(overview, "overview-loading"));
+        overview.showOutOfSyncWarning(false); Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        QCOMPARE(empty->actionButton()->text(), OverviewPage::tr("Receive"));
+        QVERIFY(empty->actionButton()->isVisible());
+        QVERIFY(fits(empty));
+        QSignalSpy receive(&overview, &OverviewPage::receiveClicked);
+        empty->actionButton()->click();
+        QCOMPARE(receive.count(), 1);
+        QVERIFY(capture(overview, "overview"));
+        // Discreet mode hides the list, and with it whether anything is in it.
+        overview.setPrivacy(true); Settle();
+        QVERIFY(!empty->isVisible());
+        overview.setPrivacy(false); Settle();
+        QVERIFY(empty->isVisible());
+        Theme("Light"); Settle();
+        QVERIFY(!empty->isVisible());
+        QCOMPARE(chip->text(), "(" + OverviewPage::tr("out of sync") + ")");
+        Theme("Abyss"); Settle();
+        QVERIFY(empty->isVisible());
+        QCOMPARE(chip->text(), OverviewPage::tr("out of sync"));
+    }
+
+    // Transactions: nothing yet, or still loading. The header stays visible.
+    {
+        Theme("Light");
+        TransactionView view;
+        view.setModel(fixture.model.get());
+        view.resize(1280, 700); view.show(); Settle();
+        const QImage classic = view.grab().toImage();
+        auto* empty = view.findChild<EmptyStateWidget*>("emptyState");
+        auto* table = view.findChild<QTableView*>("transactionView");
+        QVERIFY(empty && table);
+        QVERIFY(!empty->isVisible());
+        Theme("Abyss"); Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        QVERIFY(empty->isVisible());
+        QVERIFY(table->horizontalHeader()->isVisible());
+        QCOMPARE(empty->geometry(), table->viewport()->geometry());
+        QVERIFY(!empty->geometry().intersects(table->horizontalHeader()->geometry()));
+        QVERIFY(fits(empty));
+        QSignalSpy receive(&view, &TransactionView::receiveClicked);
+        empty->actionButton()->click();
+        QCOMPARE(receive.count(), 1);
+        QVERIFY(capture(view, "transactions"));
+        view.setOutOfSync(true); Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Loading);
+        QVERIFY(capture(view, "transactions-loading"));
+        view.setOutOfSync(false);
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        Theme("Light"); Settle();
+        QVERIFY(!empty->isVisible());
+        QCOMPARE(view.grab().toImage(), classic);
+        // The history page is often opened long after a theme change: an
+        // unpolished page gets no StyleChange, only its first show.
+        Theme("Abyss");
+        TransactionView unshown;
+        unshown.setModel(fixture.model.get());
+        auto* unshown_empty = unshown.findChild<EmptyStateWidget*>("emptyState");
+        QVERIFY(unshown_empty);
+        QCOMPARE(unshown_empty->state(), EmptyStateWidget::State::Empty);
+        Theme("Light");
+        unshown.resize(1280, 700); unshown.show(); Settle();
+        QCOMPARE(unshown_empty->state(), EmptyStateWidget::State::Hidden);
+        QVERIFY(!unshown_empty->isVisible());
+    }
+
+    // Receive: the empty payment history points at the form beside it.
+    {
+        Theme("Abyss");
+        ReceiveCoinsDialog receive;
+        receive.setModel(fixture.model.get());
+        receive.resize(1280, 820); receive.show(); Settle();
+        auto* empty = receive.findChild<EmptyStateWidget*>("emptyState");
+        auto* label = receive.findChild<QLineEdit*>("reqLabel");
+        QVERIFY(empty && label);
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        QCOMPARE(empty->actionButton()->text(), ReceiveCoinsDialog::tr("Create a request"));
+        QVERIFY(fits(empty));
+        QVERIFY(capture(receive, "receive"));
+        empty->actionButton()->click();
+        QCOMPARE(receive.focusWidget(), label);
+        RecentRequestsTableModel* requests = fixture.model->getRecentRequestsTableModel();
+        requests->addNewRequest(SendCoinsRecipient(address, "Sample", 100000000, ""));
+        QCOMPARE(requests->rowCount({}), 1);
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Hidden);
+        QVERIFY(requests->removeRows(0, 1));
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        Theme("Light"); Settle();
+        QVERIFY(!empty->isVisible());
+    }
+
+    // Address book: Add address opens the existing dialog; a search that
+    // hides every saved address offers to clear it.
+    {
+        Theme("Light");
+        AddressBookPage book(AddressBookPage::ForEditing, AddressBookPage::SendingTab);
+        book.setModel(fixture.model->getAddressTableModel());
+        book.resize(760, 520); book.show(); Settle();
+        const QSize classic_size = book.size();
+        const QImage classic = book.grab().toImage();
+        auto* empty = book.findChild<EmptyStateWidget*>("emptyState");
+        auto* search = book.findChild<QLineEdit*>("searchLineEdit");
+        QVERIFY(empty && search);
+        QVERIFY(!empty->isVisible());
+        Theme("Abyss"); Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        QCOMPARE(empty->actionButton()->text(), AddressBookPage::tr("Add address"));
+        QVERIFY(fits(empty));
+        QVERIFY(capture(book, "addressbook"));
+        // The theme round trip alone gives the classic page back, pixel for pixel.
+        Theme("Light"); Settle();
+        QVERIFY(!empty->isVisible());
+        // Abyss's buttons can need a wider window than the classic ones (the
+        // minimal platform without fonts does), and a window keeps the width
+        // it grew to. Given its old size back, the page is the same.
+        book.resize(classic_size); Settle();
+        QCOMPARE(book.size(), classic_size);
+        QCOMPARE(book.grab().toImage(), classic);
+        Theme("Abyss"); Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        QString opened;
+        QTimer::singleShot(0, [&opened] {
+            for (QWidget* widget : QApplication::topLevelWidgets()) {
+                if (widget->inherits("EditAddressDialog") && widget->isVisible()) {
+                    opened = widget->metaObject()->className();
+                    qobject_cast<QDialog*>(widget)->reject();
+                }
+            }
+        });
+        empty->actionButton()->click();
+        QCOMPARE(opened, QString("EditAddressDialog"));
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        // An address the search hides still changes what the empty list means.
+        AddressTableModel* addresses = fixture.model->getAddressTableModel();
+        search->setText("no such address"); Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        QCOMPARE(addresses->addRow(AddressTableModel::Send, "Alice", sending), sending);
+        Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Filtered);
+        QCOMPARE(empty->actionButton()->text(), EmptyStateWidget::tr("Clear filters"));
+        QVERIFY(capture(book, "addressbook-filtered"));
+        empty->actionButton()->click(); Settle();
+        QVERIFY(search->text().isEmpty());
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Hidden);
+        search->setText("no such address"); Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Filtered);
+        // While hidden, the address turns into a receiving one (importprivkey
+        // does that) and back: only the source model says so.
+        const CTxDestination sending_dest = PKHash(other_key.GetPubKey());
+        fixture.wallet->SetAddressBook(sending_dest, "Alice", "receive");
+        Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        fixture.wallet->SetAddressBook(sending_dest, "Alice", "send");
+        Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Filtered);
+        QVERIFY(addresses->removeRows(addresses->lookupAddress(sending), 1, {}));
+        Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        search->clear(); Settle();
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        Theme("Light"); Settle();
+        QVERIFY(!empty->isVisible());
+        // A page that was never shown follows a theme change too.
+        Theme("Abyss");
+        AddressBookPage unshown(AddressBookPage::ForSelection, AddressBookPage::SendingTab);
+        unshown.setModel(fixture.model->getAddressTableModel());
+        auto* unshown_empty = unshown.findChild<EmptyStateWidget*>("emptyState");
+        QVERIFY(unshown_empty);
+        QCOMPARE(unshown_empty->state(), EmptyStateWidget::State::Empty);
+        Theme("Light");
+        unshown.show(); Settle();
+        QCOMPARE(unshown_empty->state(), EmptyStateWidget::State::Hidden);
+        QVERIFY(!unshown_empty->isVisible());
+        unshown.hide();
+        // Receiving addresses are made on the Receive page: that tab keeps its table.
+        AddressBookPage receiving(AddressBookPage::ForEditing, AddressBookPage::ReceivingTab);
+        receiving.setModel(fixture.model->getAddressTableModel());
+        QVERIFY(!receiving.findChild<EmptyStateWidget*>());
+    }
+
+    // No wallet: Abyss has no File menu, so the card opens a wallet itself.
+    {
+        Theme("Light");
+        WalletFrame frame(nullptr);
+        frame.resize(1000, 700); frame.show(); Settle();
+        const QImage classic = frame.grab().toImage();
+        auto* card = frame.findChild<EmptyStateWidget*>("emptyState");
+        QVERIFY(card && !card->isVisible());
+        Theme("Abyss"); Settle();
+        QVERIFY(card->isVisible());
+        QCOMPARE(card->state(), EmptyStateWidget::State::Empty);
+        QVERIFY(fits(card));
+        QVERIFY(!card->actionButton()->isEnabled());
+        QMenu wallets;
+        frame.setOpenWalletMenu(&wallets);
+        QVERIFY(card->actionButton()->isEnabled());
+        QCOMPARE(card->actionButton()->menu(), &wallets);
+        auto* create = card->findChild<QPushButton*>("emptyStateSecondary");
+        QVERIFY(create && create->isVisible());
+        QSignalSpy created(&frame, &WalletFrame::createWalletButtonClicked);
+        create->click();
+        QCOMPARE(created.count(), 1);
+        QVERIFY(capture(frame, "nowallet"));
+        Theme("Light"); Settle();
+        QVERIFY(!card->isVisible());
+        QCOMPARE(frame.grab().toImage(), classic);
+    }
+
+    // A history whose every row a filter hides: Clear filters shows it again.
+    {
+        Theme("Abyss");
+        {
+            auto spk_man = fixture.wallet->GetOrCreateLegacyScriptPubKeyMan();
+            const CBlockIndex* tip = WITH_LOCK(::cs_main, return fixture.chain.m_node.chainman->ActiveChain().Tip());
+            LOCK2(fixture.wallet->cs_wallet, spk_man->cs_KeyStore);
+            spk_man->AddKeyPubKey(fixture.chain.coinbaseKey, fixture.chain.coinbaseKey.GetPubKey());
+            fixture.wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+        }
+        {
+            WalletRescanReserver reserver(*fixture.wallet);
+            reserver.reserve();
+            const CWallet::ScanResult result = fixture.wallet->ScanForWalletTransactions(Params().GetConsensus().hashGenesisBlock, 0, {}, reserver, true);
+            QCOMPARE(result.status, CWallet::ScanResult::SUCCESS);
+        }
+        WalletModel seeded(interfaces::MakeWallet(fixture.wallet), *fixture.client);
+        TransactionView view;
+        view.setModel(&seeded);
+        view.resize(1280, 700); view.show(); Settle();
+        auto* empty = view.findChild<EmptyStateWidget*>("emptyState");
+        auto* table = view.findChild<QTableView*>("transactionView");
+        auto* search = view.findChild<QLineEdit*>("search_widget");
+        auto* amount = view.findChild<QLineEdit*>("amountWidget");
+        QVERIFY(empty && table && search && amount);
+        // Measure against no filter at all, which is what Clear filters restores.
+        view.chooseType(0);
+        view.chooseDate(TransactionView::All);
+        const int rows = table->model()->rowCount();
+        QVERIFY(rows > 0);
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Hidden);
+        search->setText("no such transaction");
+        view.changedSearch();
+        QCOMPARE(table->model()->rowCount(), 0);
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Filtered);
+        QCOMPARE(empty->actionButton()->text(), EmptyStateWidget::tr("Clear filters"));
+        // A filter explains an empty list better than a sync still running.
+        view.setOutOfSync(true);
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Filtered);
+        view.setOutOfSync(false);
+        Settle();
+        QVERIFY(capture(view, "transactions-filtered"));
+        amount->setText("1000000000");
+        view.changedAmount();
+        view.chooseType(3); // Sent to: none of these coinbase payments
+        view.chooseDate(TransactionView::Today);
+        empty->actionButton()->click(); Settle();
+        QVERIFY(search->text().isEmpty());
+        QVERIFY(amount->text().isEmpty());
+        QCOMPARE(table->model()->rowCount(), rows);
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Hidden);
+    }
 }
 
 void AbyssTests::screenshots()

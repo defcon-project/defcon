@@ -1052,3 +1052,64 @@ QWidget#abyssMenuControls QToolButton:focus {
     background: #10263e;
     border-color: #1d3f60;
 }
+
+/* Stage 3: empty and loading states. Only Abyss shows them. */
+QFrame#emptyState,
+QFrame#emptyState QWidget#emptyStateMessage,
+QFrame#emptyState QWidget#emptyStateSkeleton,
+QFrame#emptyState QLabel {
+    background: transparent;
+    border: none;
+}
+QFrame#emptyState QFrame#emptyStateSymbol {
+    background-color: #0d2a41;
+    border: 1px solid #1b4560;
+    border-radius: 32px;
+}
+QFrame#emptyState QLabel#emptyStateTitle {
+    color: #ffffff;
+}
+QFrame#emptyState QLabel#emptyStateText,
+QFrame#emptyState QLabel#emptyStateLoading {
+    color: #91a5bc;
+}
+QFrame#emptyState QPushButton#emptyStateAction,
+QFrame#emptyState QPushButton#emptyStateSecondary {
+    min-height: 40px;
+}
+QFrame#emptyState QPushButton#emptyStateSecondary {
+    background-color: #0d2032;
+    border-color: #243c54;
+    color: #b9cee1;
+}
+QFrame#emptyState QPushButton#emptyStateSecondary:hover {
+    background-color: #12324d;
+    border-color: #1d3f60;
+    color: #ffffff;
+}
+QFrame#emptyState QFrame#skeletonDot {
+    background-color: #183048;
+    border: none;
+    border-radius: 18px;
+}
+QFrame#emptyState QFrame#skeletonLine {
+    background-color: #183048;
+    border: none;
+    border-radius: 4px;
+}
+QFrame#emptyState QFrame#skeletonLineShort {
+    background-color: #13283b;
+    border: none;
+    border-radius: 4px;
+}
+
+/* A neutral chip where the classic themes print a red "(out of sync)". */
+QWidget#OverviewPage QFrame#frame QLabel#labelWalletStatus,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCoinJoinSyncStatus,
+QWidget#OverviewPage QFrame#frame_2 QLabel#labelTransactionsStatus {
+    color: #91a5bc;
+    background-color: #0a1929;
+    border: 1px solid #234059;
+    border-radius: 9px;
+    padding: 1px 8px;
+}

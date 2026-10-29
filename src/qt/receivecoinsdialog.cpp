@@ -6,6 +6,7 @@
 #include <qt/forms/ui_receivecoinsdialog.h>
 
 #include <qt/addresstablemodel.h>
+#include <qt/emptystatewidget.h>
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <qt/receiverequestdialog.h>
@@ -44,8 +45,28 @@ ReceiveCoinsDialog::ReceiveCoinsDialog(QWidget* parent) :
     connect(ui->recentRequestsView, &QWidget::customContextMenuRequested, this, &ReceiveCoinsDialog::showMenu);
 
     connect(ui->clearButton, &QPushButton::clicked, this, &ReceiveCoinsDialog::clear);
+
+    // Abyss points an empty payment history at the form beside it.
+    m_requests_empty = new EmptyStateWidget("qrcode", tr("No payment requests yet"),
+                                            tr("Create a payment request using the form. Your requests will appear here."),
+                                            tr("Create a request"), ui->recentRequestsView);
+    m_requests_empty->coverViewport(ui->recentRequestsView);
+    connect(m_requests_empty, &EmptyStateWidget::actionClicked, this, [this] {
+        ui->reqLabel->setFocus(Qt::OtherFocusReason);
+    });
+    connect(m_requests_empty, &EmptyStateWidget::listShown, this, &ReceiveCoinsDialog::updateEmptyState);
+
     m_presentation_ready = true;
     updateThemePresentation();
+}
+
+void ReceiveCoinsDialog::updateEmptyState()
+{
+    if (m_requests_empty == nullptr) return;
+    const int rows = model && model->getRecentRequestsTableModel() ? model->getRecentRequestsTableModel()->rowCount({}) : 0;
+    // Without a wallet there is no history to describe.
+    m_requests_empty->setState(model == nullptr ? EmptyStateWidget::State::Hidden :
+        EmptyStateWidget::stateFor(GUIUtil::isModernTheme(), rows, 0, false));
 }
 
 void ReceiveCoinsDialog::updateThemePresentation()
@@ -124,7 +145,10 @@ void ReceiveCoinsDialog::updateThemePresentation()
 void ReceiveCoinsDialog::changeEvent(QEvent* event)
 {
     QDialog::changeEvent(event);
-    if (event->type() == QEvent::StyleChange) updateThemePresentation();
+    if (event->type() == QEvent::StyleChange) {
+        updateThemePresentation();
+        updateEmptyState();
+    }
 }
 
 void ReceiveCoinsDialog::setModel(WalletModel *_model)
@@ -164,7 +188,13 @@ void ReceiveCoinsDialog::setModel(WalletModel *_model)
         connect(model, &WalletModel::canGetAddressesChanged, [this] {
             ui->receiveButton->setEnabled(model->wallet().canGetAddresses());
         });
+
+        RecentRequestsTableModel* requests = _model->getRecentRequestsTableModel();
+        connect(requests, &QAbstractItemModel::rowsInserted, this, &ReceiveCoinsDialog::updateEmptyState);
+        connect(requests, &QAbstractItemModel::rowsRemoved, this, &ReceiveCoinsDialog::updateEmptyState);
+        connect(requests, &QAbstractItemModel::modelReset, this, &ReceiveCoinsDialog::updateEmptyState);
     }
+    updateEmptyState();
 }
 
 ReceiveCoinsDialog::~ReceiveCoinsDialog()

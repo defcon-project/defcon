@@ -15,6 +15,7 @@
 #include <QPoint>
 #include <QVariant>
 
+class EmptyStateWidget;
 class WalletModel;
 
 namespace Ui {
@@ -64,6 +65,9 @@ private:
     bool m_modern_layout{false};
     bool m_presentation_ready{false};
     bool m_updating_presentation{false};
+    //! Abyss's message over the payment history while it has no request.
+    EmptyStateWidget* m_requests_empty{nullptr};
+    void updateEmptyState();
 
     QModelIndex selectedRow();
     void copyColumnToClipboard(int column);

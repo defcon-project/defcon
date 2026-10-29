@@ -7,6 +7,7 @@
 #include <fs.h>
 #include <node/interface_ui.h>
 #include <psbt.h>
+#include <qt/emptystatewidget.h>
 #include <qt/governancelist.h>
 #include <qt/guiutil.h>
 #include <qt/masternodelist.h>
@@ -43,15 +44,24 @@ WalletFrame::WalletFrame(QWidget* parent)
     no_wallet_group->setObjectName("no_wallet_group");
     QVBoxLayout* no_wallet_layout = new QVBoxLayout(no_wallet_group);
 
-    QLabel *noWallet = new QLabel(tr("No wallet has been loaded.\nGo to File > Open Wallet to load a wallet.\n- OR -"));
-    noWallet->setAlignment(Qt::AlignCenter);
-    no_wallet_layout->addWidget(noWallet, 0, Qt::AlignHCenter | Qt::AlignBottom);
+    m_no_wallet_text = new QLabel(tr("No wallet has been loaded.\nGo to File > Open Wallet to load a wallet.\n- OR -"));
+    m_no_wallet_text->setAlignment(Qt::AlignCenter);
+    no_wallet_layout->addWidget(m_no_wallet_text, 0, Qt::AlignHCenter | Qt::AlignBottom);
 
     // A button for create wallet dialog
-    QPushButton* create_wallet_button = new QPushButton(tr("Create a new wallet"), walletStack);
-    connect(create_wallet_button, &QPushButton::clicked, this, &WalletFrame::createWalletButtonClicked);
-    no_wallet_layout->addWidget(create_wallet_button, 0, Qt::AlignHCenter | Qt::AlignTop);
+    m_create_wallet_button = new QPushButton(tr("Create a new wallet"), walletStack);
+    connect(m_create_wallet_button, &QPushButton::clicked, this, &WalletFrame::createWalletButtonClicked);
+    no_wallet_layout->addWidget(m_create_wallet_button, 0, Qt::AlignHCenter | Qt::AlignTop);
+
+    // Abyss has no File menu to point at: its card lists the wallets to open
+    // itself, and keeps the same Create a new wallet button.
+    m_no_wallet_state = new EmptyStateWidget("wallet", tr("No wallet loaded"), tr("Open a wallet to view its information."),
+                                             tr("Open wallet"), no_wallet_group);
+    m_no_wallet_state->actionButton()->setEnabled(false);
+    connect(m_no_wallet_state->addSecondaryButton(tr("Create a new wallet")), &QPushButton::clicked, this, &WalletFrame::createWalletButtonClicked);
+    no_wallet_layout->addWidget(m_no_wallet_state, 1);
     no_wallet_group->setLayout(no_wallet_layout);
+    updateThemePresentation();
 
     walletStack->addWidget(no_wallet_group);
 
@@ -64,6 +74,27 @@ WalletFrame::WalletFrame(QWidget* parent)
 
 WalletFrame::~WalletFrame()
 {
+}
+
+void WalletFrame::setOpenWalletMenu(QMenu* menu)
+{
+    m_no_wallet_state->actionButton()->setMenu(menu);
+    m_no_wallet_state->actionButton()->setEnabled(menu != nullptr);
+}
+
+void WalletFrame::changeEvent(QEvent* event)
+{
+    QFrame::changeEvent(event);
+    if (event->type() == QEvent::StyleChange) updateThemePresentation();
+}
+
+void WalletFrame::updateThemePresentation()
+{
+    if (m_no_wallet_state == nullptr) return;
+    const bool modern = GUIUtil::isModernTheme();
+    m_no_wallet_text->setVisible(!modern);
+    m_create_wallet_button->setVisible(!modern);
+    m_no_wallet_state->setState(modern ? EmptyStateWidget::State::Empty : EmptyStateWidget::State::Hidden);
 }
 
 void WalletFrame::setClientModel(ClientModel *_clientModel)

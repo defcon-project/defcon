@@ -1482,6 +1482,7 @@ void BitcoinGUI::setWalletController(WalletController* wallet_controller)
     m_create_wallet_action->setEnabled(true);
     m_open_wallet_action->setEnabled(true);
     m_open_wallet_action->setMenu(m_open_wallet_menu);
+    if (walletFrame) walletFrame->setOpenWalletMenu(m_open_wallet_menu);
     toggleStakingAction->setEnabled(true);
     toggleStakingAction->setMenu(toggleStakingMenu);
 
@@ -1515,6 +1516,7 @@ void BitcoinGUI::addWallet(WalletModel* walletModel)
     connect(wallet_view, &WalletView::outOfSyncWarningClicked, this, &BitcoinGUI::showModalOverlay);
     connect(wallet_view, &WalletView::transactionClicked, this, &BitcoinGUI::gotoHistoryPage);
     connect(wallet_view, &WalletView::coinsSent, this, &BitcoinGUI::gotoHistoryPage);
+    connect(wallet_view, &WalletView::receiveClicked, this, &BitcoinGUI::gotoReceiveCoinsPage);
     connect(wallet_view, &WalletView::message, [this](const QString& title, const QString& message, unsigned int style) {
         this->message(title, message, style);
     });

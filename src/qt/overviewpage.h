@@ -16,6 +16,7 @@
 #include <vector>
 
 class ClientModel;
+class EmptyStateWidget;
 class TransactionFilterProxy;
 class TxViewDelegate;
 class WalletModel;
@@ -71,6 +72,8 @@ public Q_SLOTS:
 Q_SIGNALS:
     void transactionClicked(const QModelIndex &index);
     void outOfSyncWarningClicked();
+    //! The empty transaction list's Receive button was clicked.
+    void receiveClicked();
 
 protected:
     void changeEvent(QEvent* event) override;
@@ -100,6 +103,9 @@ private:
 
     TxViewDelegate *txdelegate;
     std::unique_ptr<TransactionFilterProxy> filter;
+    //! Abyss's message over the recent transactions while there are none.
+    EmptyStateWidget* m_transactions_empty{nullptr};
+    bool m_out_of_sync{true};
     QWidget* modernHeader{nullptr};
     QFrame* networkCard{nullptr};
     //! One entry of the network bar: a glyph, then its words. `value`, when
@@ -146,6 +152,8 @@ private:
     void SetupTransactionList(int nNumItems);
     void DisableCoinJoinCompletely();
     void updateThemePresentation();
+    void updateSyncStatusText();
+    void updateEmptyState();
     void updateNetworkState();
     //! The amount as the active theme wants it drawn.
     QString formatBalance(int unit, const CAmount& amount) const;

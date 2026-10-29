@@ -13,6 +13,7 @@
 #include <qt/addresstablemodel.h>
 #include <qt/csvmodelwriter.h>
 #include <qt/editaddressdialog.h>
+#include <qt/emptystatewidget.h>
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <qt/qrdialog.h>
@@ -124,6 +125,17 @@ AddressBookPage::AddressBookPage(Mode _mode, Tabs _tab, QWidget* parent) :
     connect(ui->tableView, &QWidget::customContextMenuRequested, this, &AddressBookPage::contextualMenu);
     connect(ui->closeButton, &QPushButton::clicked, this, &QDialog::accept);
 
+    // Abyss says what an empty list of saved addresses means. Receiving
+    // addresses are made on the Receive page, so that tab keeps its table.
+    if (tab == SendingTab) {
+        m_empty_state = new EmptyStateWidget("address-book", tr("No saved addresses"),
+                                             tr("Add an address to find it easily the next time you send."), tr("Add address"), ui->tableView);
+        m_empty_state->coverViewport(ui->tableView);
+        connect(m_empty_state, &EmptyStateWidget::actionClicked, this, &AddressBookPage::on_newAddress_clicked);
+        connect(m_empty_state, &EmptyStateWidget::clearFiltersClicked, ui->searchLineEdit, &QLineEdit::clear);
+        connect(m_empty_state, &EmptyStateWidget::listShown, this, &AddressBookPage::updateEmptyState);
+    }
+
     GUIUtil::updateFonts();
 
     GUIUtil::disableMacFocusRect(this);
@@ -161,7 +173,46 @@ void AddressBookPage::setModel(AddressTableModel *_model)
     // Select row for newly created address
     connect(_model, &AddressTableModel::rowsInserted, this, &AddressBookPage::selectNewAddress);
 
+    connect(proxyModel, &QAbstractItemModel::rowsInserted, this, &AddressBookPage::updateEmptyState);
+    connect(proxyModel, &QAbstractItemModel::rowsRemoved, this, &AddressBookPage::updateEmptyState);
+    connect(proxyModel, &QAbstractItemModel::modelReset, this, &AddressBookPage::updateEmptyState);
+    connect(proxyModel, &QAbstractItemModel::layoutChanged, this, &AddressBookPage::updateEmptyState);
+    // Addresses the search hides come and go, or turn from sending into
+    // receiving ones (importprivkey does that), without the proxy saying so,
+    // but they decide between an empty and a filtered list.
+    connect(_model, &QAbstractItemModel::rowsInserted, this, &AddressBookPage::updateEmptyState);
+    connect(_model, &QAbstractItemModel::rowsRemoved, this, &AddressBookPage::updateEmptyState);
+    connect(_model, &QAbstractItemModel::dataChanged, this, &AddressBookPage::updateEmptyState);
+    connect(_model, &QAbstractItemModel::modelReset, this, &AddressBookPage::updateEmptyState);
+    connect(ui->searchLineEdit, &QLineEdit::textChanged, this, &AddressBookPage::updateEmptyState);
+
     selectionChanged();
+    updateEmptyState();
+}
+
+void AddressBookPage::changeEvent(QEvent* event)
+{
+    QDialog::changeEvent(event);
+    if (event->type() == QEvent::StyleChange) updateEmptyState();
+}
+
+void AddressBookPage::updateEmptyState()
+{
+    if (m_empty_state == nullptr) return;
+    if (model == nullptr) {
+        m_empty_state->setState(EmptyStateWidget::State::Hidden);
+        return;
+    }
+    const int rows = proxyModel->rowCount();
+    int saved = rows;
+    if (rows == 0 && !ui->searchLineEdit->text().isEmpty()) {
+        // Only the search may hide them: count this tab's addresses without it.
+        saved = 0;
+        for (int row = 0; row < model->rowCount({}); ++row) {
+            if (model->index(row, AddressTableModel::Label, {}).data(AddressTableModel::TypeRole).toString() == AddressTableModel::Send) ++saved;
+        }
+    }
+    m_empty_state->setState(EmptyStateWidget::stateFor(GUIUtil::isModernTheme(), rows, saved, false));
 }
 
 void AddressBookPage::on_copyAddress_clicked()
