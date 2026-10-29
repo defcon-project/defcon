@@ -8,6 +8,7 @@
 #include <qt/bitcoinunits.h>
 #include <qt/csvmodelwriter.h>
 #include <qt/editaddressdialog.h>
+#include <qt/emptystatewidget.h>
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <qt/qrdialog.h>
@@ -151,6 +152,15 @@ TransactionView::TransactionView(QWidget* parent) :
 
     transactionView->setObjectName("transactionView");
 
+    // Abyss says what an empty history means: nothing yet, nothing that
+    // matches the filters, or still loading. The header stays visible above.
+    m_empty_state = new EmptyStateWidget("history", tr("No transactions yet"),
+                                         tr("Your incoming and outgoing transactions will appear here."), tr("Receive"), transactionView);
+    m_empty_state->coverViewport(transactionView);
+    connect(m_empty_state, &EmptyStateWidget::actionClicked, this, &TransactionView::receiveClicked);
+    connect(m_empty_state, &EmptyStateWidget::clearFiltersClicked, this, &TransactionView::clearFilters);
+    connect(m_empty_state, &EmptyStateWidget::listShown, this, &TransactionView::updateEmptyState);
+
     contextMenu = new QMenu(this);
     contextMenu->setObjectName("contextMenu");
     copyAddressAction = contextMenu->addAction(tr("&Copy address"), this, &TransactionView::copyAddress);
@@ -200,6 +210,16 @@ void TransactionView::setModel(WalletModel *_model)
         transactionProxyModel->setSortRole(Qt::EditRole);
 
         transactionView->setModel(transactionProxyModel);
+        // Rows the filters hide come and go without the proxy saying so, but
+        // they decide between an empty and a filtered history.
+        const auto watch_rows = [this](QAbstractItemModel* rows) {
+            connect(rows, &QAbstractItemModel::rowsInserted, this, &TransactionView::updateEmptyState);
+            connect(rows, &QAbstractItemModel::rowsRemoved, this, &TransactionView::updateEmptyState);
+            connect(rows, &QAbstractItemModel::modelReset, this, &TransactionView::updateEmptyState);
+            connect(rows, &QAbstractItemModel::layoutChanged, this, &TransactionView::updateEmptyState);
+        };
+        watch_rows(transactionProxyModel);
+        watch_rows(_model->getTransactionTableModel());
         transactionView->setAlternatingRowColors(true);
         transactionView->setSelectionBehavior(QAbstractItemView::SelectRows);
         transactionView->setSelectionMode(QAbstractItemView::ExtendedSelection);
@@ -257,6 +277,39 @@ void TransactionView::setModel(WalletModel *_model)
 
         updateCoinJoinVisibility();
     }
+    updateEmptyState();
+}
+
+void TransactionView::setOutOfSync(bool out_of_sync)
+{
+    m_out_of_sync = out_of_sync;
+    updateEmptyState();
+}
+
+void TransactionView::clearFilters()
+{
+    watchOnlyWidget->setCurrentIndex(0);
+    chooseWatchonly(0);
+    dateWidget->setCurrentIndex(0);
+    chooseDate(0);
+    typeWidget->setCurrentIndex(0);
+    chooseType(0);
+    // Apply the cleared text now rather than after the typing delay.
+    search_widget->clear();
+    changedSearch();
+    amountWidget->clear();
+    changedAmount();
+}
+
+void TransactionView::updateEmptyState()
+{
+    if (m_empty_state == nullptr) return;
+    if (!transactionProxyModel || !model) {
+        m_empty_state->setState(EmptyStateWidget::State::Hidden);
+        return;
+    }
+    m_empty_state->setState(EmptyStateWidget::stateFor(GUIUtil::isModernTheme(), transactionProxyModel->rowCount(),
+                                                      model->getTransactionTableModel()->rowCount({}), m_out_of_sync));
 }
 
 void TransactionView::chooseDate(int idx)
@@ -699,6 +752,7 @@ void TransactionView::changeEvent(QEvent* e)
     QWidget::changeEvent(e);
     if (e->type() == QEvent::StyleChange) {
         updateCalendarWidgets();
+        updateEmptyState();
     }
 }
 

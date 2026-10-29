@@ -9,6 +9,7 @@
 
 class AddressBookSortFilterProxyModel;
 class AddressTableModel;
+class EmptyStateWidget;
 
 namespace Ui {
     class AddressBookPage;
@@ -46,6 +47,9 @@ public:
 public Q_SLOTS:
     void done(int retval) override;
 
+protected:
+    void changeEvent(QEvent* event) override;
+
 private:
     Ui::AddressBookPage *ui;
     AddressTableModel *model;
@@ -55,6 +59,9 @@ private:
     AddressBookSortFilterProxyModel *proxyModel;
     QMenu *contextMenu;
     QString newAddressToSelect;
+    //! Abyss's message over an empty list of sending addresses.
+    EmptyStateWidget* m_empty_state{nullptr};
+    void updateEmptyState();
 
 private Q_SLOTS:
     /** Delete currently selected address entry */

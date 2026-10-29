@@ -8,6 +8,7 @@
 
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
+#include <qt/emptystatewidget.h>
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <qt/transactionfilterproxy.h>
@@ -300,10 +301,18 @@ OverviewPage::OverviewPage(QWidget* parent) :
 
     connect(ui->listTransactions, &TransactionOverviewWidget::clicked, this, &OverviewPage::handleTransactionClicked);
 
+    // Abyss says what an empty list means, or that it is still loading.
+    m_transactions_empty = new EmptyStateWidget("history", tr("No recent transactions"),
+                                                tr("Your recent transactions will appear here."), tr("Receive"), ui->listTransactions);
+    m_transactions_empty->coverViewport(ui->listTransactions);
+    connect(m_transactions_empty, &EmptyStateWidget::actionClicked, this, &OverviewPage::receiveClicked);
+    connect(m_transactions_empty, &EmptyStateWidget::listShown, this, [this] {
+        updateSyncStatusText();
+        updateEmptyState();
+    });
+
     // init "out of sync" warning labels
-    ui->labelWalletStatus->setText("(" + tr("out of sync") + ")");
-    ui->labelCoinJoinSyncStatus->setText("(" + tr("out of sync") + ")");
-    ui->labelTransactionsStatus->setText("(" + tr("out of sync") + ")");
+    updateSyncStatusText();
 
     QString strCoinJoinName = QString::fromStdString(gCoinJoinName);
     ui->labelCoinJoinHeader->setText(strCoinJoinName);
@@ -447,7 +456,28 @@ void OverviewPage::updateThemePresentation()
     if (walletModel != nullptr && m_balances.balance != -1) {
         setBalance(m_balances);
     }
+    updateSyncStatusText();
+    updateEmptyState();
     update();
+}
+
+void OverviewPage::updateSyncStatusText()
+{
+    // The classic themes print a red note; Abyss draws the same words as a
+    // neutral chip, so the parentheses go.
+    const QString text = GUIUtil::isModernTheme() ? tr("out of sync") : "(" + tr("out of sync") + ")";
+    for (QLabel* label : {ui->labelWalletStatus, ui->labelCoinJoinSyncStatus, ui->labelTransactionsStatus}) {
+        label->setText(text);
+    }
+}
+
+void OverviewPage::updateEmptyState()
+{
+    if (m_transactions_empty == nullptr) return;
+    // Rows the overview leaves out (inactive ones, past the limit) are not a
+    // filter the user could clear, so an empty list is only empty or loading.
+    m_transactions_empty->setState(filter == nullptr ? EmptyStateWidget::State::Hidden :
+        EmptyStateWidget::stateFor(GUIUtil::isModernTheme(), filter->rowCount(), 0, m_out_of_sync));
 }
 
 void OverviewPage::updateNetworkState()
@@ -883,6 +913,8 @@ void OverviewPage::showOutOfSyncWarning(bool fShow)
     ui->labelWalletStatus->setVisible(fShow);
     ui->labelCoinJoinSyncStatus->setVisible(fShow);
     ui->labelTransactionsStatus->setVisible(fShow);
+    m_out_of_sync = fShow;
+    updateEmptyState();
 }
 
 void OverviewPage::updateCoinJoinProgress()
@@ -1259,6 +1291,11 @@ void OverviewPage::SetupTransactionList(int nNumItems)
         filter->setShowInactive(false);
         filter->sort(TransactionTableModel::Date, Qt::DescendingOrder);
         ui->listTransactions->setModel(filter.get());
+        connect(filter.get(), &QAbstractItemModel::rowsInserted, this, &OverviewPage::updateEmptyState);
+        connect(filter.get(), &QAbstractItemModel::rowsRemoved, this, &OverviewPage::updateEmptyState);
+        connect(filter.get(), &QAbstractItemModel::modelReset, this, &OverviewPage::updateEmptyState);
+        connect(filter.get(), &QAbstractItemModel::layoutChanged, this, &OverviewPage::updateEmptyState);
+        updateEmptyState();
     }
 
     if (filter->rowCount() == nNumItems) {
@@ -1267,6 +1304,7 @@ void OverviewPage::SetupTransactionList(int nNumItems)
 
     filter->setLimit(nNumItems);
     ui->listTransactions->setMinimumHeight(nNumItems * ITEM_HEIGHT);
+    updateEmptyState();
 }
 
 void OverviewPage::DisableCoinJoinCompletely()

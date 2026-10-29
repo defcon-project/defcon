@@ -38,6 +38,7 @@ private Q_SLOTS:
     void paymentPages();
     void paymentSummaryLifecycle();
     void networkModelLifecycle();
+    void emptyStates();
     void presentationIcons();
     void iconPixelRatios();
     void skyGeometry();

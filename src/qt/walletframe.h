@@ -10,6 +10,7 @@
 #include <QMap>
 
 class ClientModel;
+class EmptyStateWidget;
 class SendCoinsRecipient;
 class WalletModel;
 class WalletView;
@@ -17,6 +18,9 @@ class MasternodeList;
 class GovernanceList;
 
 QT_BEGIN_NAMESPACE
+class QLabel;
+class QMenu;
+class QPushButton;
 class QStackedWidget;
 QT_END_NAMESPACE
 
@@ -46,7 +50,13 @@ public:
 
     void showOutOfSyncWarning(bool fShow);
 
+    //! The wallets the Abyss no-wallet card offers to open.
+    void setOpenWalletMenu(QMenu* menu);
+
     QSize sizeHint() const override { return m_size_hint; }
+
+protected:
+    void changeEvent(QEvent* event) override;
 
 Q_SIGNALS:
     void message(const QString& title, const QString& message, unsigned int style);
@@ -59,12 +69,17 @@ private:
     ClientModel *clientModel;
     QMap<WalletModel*, WalletView*> mapWalletViews;
     QGroupBox* no_wallet_group;
+    QLabel* m_no_wallet_text{nullptr};
+    QPushButton* m_create_wallet_button{nullptr};
+    EmptyStateWidget* m_no_wallet_state{nullptr};
     MasternodeList* masternodeListPage;
     GovernanceList* governanceListPage;
 
     bool bOutOfSync;
 
     const QSize m_size_hint;
+
+    void updateThemePresentation();
 
 public:
     WalletView* currentWalletView() const;

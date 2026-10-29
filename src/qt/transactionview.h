@@ -12,6 +12,7 @@
 #include <QWidget>
 #include <QKeyEvent>
 
+class EmptyStateWidget;
 class TransactionFilterProxy;
 class WalletModel;
 
@@ -37,6 +38,8 @@ public:
     explicit TransactionView(QWidget* parent = nullptr);
 
     void setModel(WalletModel *model);
+    //! While the wallet is still catching up, an empty history is loading.
+    void setOutOfSync(bool out_of_sync);
 
     // Date ranges for filter
     enum DateEnum
@@ -78,9 +81,12 @@ private:
     QAction *resendAction;
     QAction *copyAddressAction{nullptr};
     QAction *copyLabelAction{nullptr};
+    EmptyStateWidget* m_empty_state{nullptr};
+    bool m_out_of_sync{false};
 
     QWidget *createDateRangeWidget();
     void updateCalendarWidgets();
+    void updateEmptyState();
 
     void changeEvent(QEvent* e) override;
 
@@ -113,12 +119,17 @@ Q_SIGNALS:
     /** Send computed sum back to wallet-view */
     void trxAmount(QString amount);
 
+    /** The empty history's Receive button was clicked */
+    void receiveClicked();
+
 public Q_SLOTS:
     void chooseDate(int idx);
     void chooseType(int idx);
     void chooseWatchonly(int idx);
     void changedAmount();
     void changedSearch();
+    /** Show every transaction again: no date, type, watch-only, text or amount filter */
+    void clearFilters();
     void exportClicked();
     void focusTransaction(const QModelIndex&);
     void focusTransaction(const uint256& txid);
