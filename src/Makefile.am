@@ -617,7 +617,6 @@ libbitcoin_wallet_a_SOURCES = \
   coinjoin/util.cpp \
   evo/dmn_types.cpp \
   wallet/bip39.cpp \
-  wallet/blswallet.cpp \
   wallet/coincontrol.cpp \
   wallet/context.cpp \
   wallet/crypter.cpp \
@@ -817,7 +816,6 @@ libbitcoin_common_a_SOURCES = \
   script/sign.cpp \
   script/signingprovider.cpp \
   script/standard.cpp \
-  wallet/blswallet.cpp \
   warnings.cpp \
   $(BITCOIN_CORE_H)
 

@@ -16,7 +16,6 @@
 #include <util/translation.h>
 
 #include <logging.h>
-#include <wallet/blswallet.h>
 
 typedef std::vector<unsigned char> valtype;
 
@@ -51,8 +50,10 @@ bool MutableTransactionSignatureCreator::CreateSig(const SigningProvider& provid
 
 bool MutableTransactionSignatureCreator::CreateSigBLS(const SigningProvider& provider, std::vector<unsigned char>& vchSig, const CKeyID& address, const CScript& scriptCode, SigVersion sigversion) const
 {
+    // Only the given provider may supply the key, as for ECDSA: a wallet signs
+    // with its own keys, and a provider that hides secrets yields none.
     CKey key;
-    if (!GetBLSKey(address, key)) {
+    if (!provider.GetKey(address, key)) {
         return false;
     }
 

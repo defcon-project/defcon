@@ -195,8 +195,8 @@ CPubKey CKey::GetPubKey() const {
     // The previous version wrote into the result's buffer directly and never
     // set its length, so an uncompressed serialization disagreed with the
     // default length and fell through to a BLS pubkey built from a secp
-    // secret. The BLS flow never came through here -- it calls
-    // GetPubKeyForBLS() explicitly (see signingprovider.cpp).
+    // secret. The BLS flow never comes through here -- a wallet reads the
+    // BLS public key it stored with the key (see LegacyScriptPubKeyMan).
     CPubKey result{buf, buf + clen};
     assert(result.size() == clen);
     assert(result.IsValid());

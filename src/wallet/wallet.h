@@ -1640,6 +1640,8 @@ public:
     std::vector<BlsWalletEntry> GetBLSKeypairs();
     bool IsSolvableBLS(CScript& scriptPubKey);
     bool GetBLSKey(const CKeyID& keyID, CKey& key);
+    //! This wallet's own BLS signing keys; empty while an encrypted wallet is locked.
+    FlatSigningProvider GetBLSSigningProvider() const;
     bool BLSWalletInit();
     CScript GenerateNewBLSChangeAddress();
     bool ContainsExistingBLSPrivKey(std::string& rpcBlsKey);

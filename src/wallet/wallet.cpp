@@ -3132,6 +3132,18 @@ bool CWallet::SelectCoins(const std::vector<COutput>& vAvailableCoins, const CAm
     return res;
 }
 
+namespace {
+//! Whether `script` pays to a BLS public key, directly or through `redeem_script`: the only
+//! spends the wallet's own BLS keys sign. In another script, such as a multisig one, a BLS
+//! key would reach the ECDSA signing path.
+bool IsBLSSpend(const CScript& script, const CScript& redeem_script)
+{
+    if (script.IsPayToBLSPublicKey()) return true;
+    return script.IsPayToScriptHash() && redeem_script.IsPayToBLSPublicKey() &&
+           script == GetScriptForDestination(ScriptHash(redeem_script));
+}
+} // namespace
+
 bool CWallet::SignTransaction(CMutableTransaction& tx) const
 {
     AssertLockHeld(cs_wallet);
@@ -3162,8 +3174,28 @@ bool CWallet::SignTransaction(CMutableTransaction& tx, const std::map<COutPoint,
         }
     }
 
-    // At this point, one input was not fully signed otherwise we would have exited already
-    return false;
+    // At this point, one input was not fully signed otherwise we would have exited already.
+    // BLS keys belong to the wallet, not to a ScriptPubKeyMan (a descriptor wallet has no
+    // other source for them): sign the BLS spends with this wallet's own.
+    const FlatSigningProvider bls_keys = GetBLSSigningProvider();
+    if (bls_keys.keys.empty()) {
+        return false;
+    }
+    std::map<COutPoint, Coin> bls_coins;
+    for (unsigned int i = 0; i < tx.vin.size(); ++i) {
+        const auto coin = coins.find(tx.vin[i].prevout);
+        if (coin != coins.end() && !coin->second.IsSpent() &&
+            IsBLSSpend(coin->second.out.scriptPubKey, DataFromTransaction(tx, i, coin->second.out).redeem_script)) {
+            bls_coins.emplace(*coin);
+        }
+    }
+    if (bls_coins.empty()) {
+        return false;
+    }
+    std::map<int, bilingual_str> bls_errors;
+    ::SignTransaction(tx, &bls_keys, bls_coins, sighash, bls_errors);
+    // A provider without keys signs nothing: this pass only reports the state of every input.
+    return ::SignTransaction(tx, &DUMMY_SIGNING_PROVIDER, coins, sighash, input_errors);
 }
 
 TransactionError CWallet::FillPSBT(PartiallySignedTransaction& psbtx, bool& complete, int sighash_type, bool sign, bool bip32derivs, size_t * n_signed, bool finalize) const
@@ -3205,6 +3237,29 @@ TransactionError CWallet::FillPSBT(PartiallySignedTransaction& psbtx, bool& comp
 
         if (n_signed) {
             (*n_signed) += n_signed_this_spkm;
+        }
+    }
+
+    // BLS keys belong to the wallet, not to a ScriptPubKeyMan (a descriptor wallet has no
+    // other source for them): sign the BLS spends still open with this wallet's own, also
+    // under a redeem script the PSBT carries.
+    if (sign) {
+        const FlatSigningProvider bls_keys = GetBLSSigningProvider();
+        for (unsigned int i = 0; !bls_keys.keys.empty() && i < psbtx.tx->vin.size(); ++i) {
+            const CTxIn& txin = psbtx.tx->vin[i];
+            PSBTInput& input = psbtx.inputs.at(i);
+            if (PSBTInputSigned(input) || !input.non_witness_utxo ||
+                txin.prevout.n >= input.non_witness_utxo->vout.size() ||
+                !IsBLSSpend(input.non_witness_utxo->vout[txin.prevout.n].scriptPubKey, input.redeem_script)) {
+                continue;
+            }
+            if (input.sighash_type != std::nullopt && *input.sighash_type != sighash_type) {
+                return TransactionError::SIGHASH_MISMATCH;
+            }
+            SignPSBTInput(bls_keys, psbtx, i, &txdata, sighash_type, nullptr, finalize);
+            if (n_signed && PSBTInputSigned(input)) {
+                (*n_signed)++;
+            }
         }
     }
 
@@ -6225,7 +6280,6 @@ void CWallet::ClearBLSKeyCache()
         entry.pk.Reset();
     }
     blsKeyRecords.clear();
-    ClearBLSWalletCache();
 
     auto spk_man = GetLegacyScriptPubKeyMan();
     if (spk_man) {
@@ -6257,7 +6311,6 @@ bool CWallet::LoadBLSKeyToMemory(const std::string& keydata, int64_t record_id, 
 
     entry.id = record_id >= 0 ? static_cast<unsigned int>(record_id) : static_cast<unsigned int>(blsKeyRecords.size());
 
-    AddBLSRelated(entry.keyID);
     blsKeyRecords.push_back(entry);
 
     std::vector<uint8_t> pubBytes = entry.pk.ToByteVector(false);
@@ -6272,8 +6325,6 @@ bool CWallet::LoadBLSKeyToMemory(const std::string& keydata, int64_t record_id, 
     if (spk_man) {
         spk_man->AddBLSEntries(pubkey, key);
     }
-
-    AddBLSKey(entry.keyID, key);
 
     if (loaded_entry) {
         *loaded_entry = entry;
@@ -6434,8 +6485,10 @@ bool CWallet::IsSolvableBLS(CScript& scriptPubKey)
             if (spk_man && spk_man->HaveBLSKey(address)) {
                 return true;
             }
-            // Descriptor wallets do not have LegacyScriptPubKeyMan.
-            return HaveBLSKey(address);
+            // Descriptor wallets do not have LegacyScriptPubKeyMan: look in this wallet's records.
+            LOCK(cs_wallet);
+            return std::any_of(blsKeyRecords.begin(), blsKeyRecords.end(),
+                               [&](const BlsWalletEntry& entry) { return entry.keyID == address; });
         }
     }
 
@@ -6448,8 +6501,22 @@ bool CWallet::GetBLSKey(const CKeyID& keyID, CKey& key)
     if (spk_man && spk_man->GetBLSKey(keyID, key)) {
         return true;
     }
-    // Descriptor wallets do not have LegacyScriptPubKeyMan.
-    return ::GetBLSKey(keyID, key);
+    // Descriptor wallets do not have LegacyScriptPubKeyMan: use this wallet's records.
+    return GetBLSSigningProvider().GetKey(keyID, key);
+}
+
+FlatSigningProvider CWallet::GetBLSSigningProvider() const
+{
+    LOCK(cs_wallet);
+    FlatSigningProvider provider;
+    for (const auto& entry : blsKeyRecords) {
+        std::vector<uint8_t> secret = entry.sk.ToByteVector(false);
+        CKey key;
+        key.Set(secret.begin(), secret.end(), false);
+        memory_cleanse(secret.data(), secret.size());
+        provider.keys.emplace(entry.keyID, key);
+    }
+    return provider;
 }
 
 bool CWallet::BLSWalletInit()
