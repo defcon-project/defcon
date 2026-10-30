@@ -5,6 +5,8 @@
 #include <key.h>
 #include <pubkey.h>
 
+/** A BLS key held by one wallet (CWallet::blsKeyRecords). There is no
+ *  process-wide BLS key store: each wallet signs with its own keys only. */
 struct BlsWalletEntry {
     unsigned int id;
     CKeyID keyID;
@@ -17,13 +19,5 @@ struct BlsWalletEntry {
         keyID = CKeyID();
     };
 };
-
-void AddBLSRelated(const CKeyID& keyID);
-bool IsBLSRelated(const CKeyID& keyID);
-
-bool HaveBLSKey(const CKeyID &address);
-bool GetBLSKey(const CKeyID &address, CKey& key);
-bool AddBLSKey(const CKeyID &address, CKey& key);
-void ClearBLSWalletCache();
 
 #endif // WALLET_BLSWALLET_H

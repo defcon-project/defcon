@@ -70,11 +70,8 @@ bool HaveKeys(const std::vector<valtype>& pubkeys, const LegacyScriptPubKeyMan& 
 {
     for (const valtype& pubkey : pubkeys) {
         CKeyID keyID = CPubKey(pubkey).GetID();
-        if (!IsBLSRelated(keyID)) {
-            if (!keystore.HaveKey(keyID)) return false;
-        } else {
-            if (!keystore.HaveBLSKey(keyID)) return false;
-        }
+        // This wallet's BLS keys are kept apart from its other keys.
+        if (!keystore.HaveKey(keyID) && !keystore.HaveBLSKey(keyID)) return false;
     }
     return true;
 }
@@ -947,7 +944,8 @@ bool LegacyScriptPubKeyMan::GetKeyInner(const CKeyID &address, CKey& keyOut) con
 {
     LOCK(cs_KeyStore);
     if (!m_storage.HasEncryptionKeys()) {
-        return FillableSigningProvider::GetKey(address, keyOut);
+        // BLS keys are kept apart from mapKeys, as in the encrypted case below.
+        return FillableSigningProvider::GetKey(address, keyOut) || GetBLSKey(address, keyOut);
     }
 
     CryptedKeyMap::const_iterator mi = mapCryptedKeys.find(address);
@@ -968,6 +966,9 @@ bool LegacyScriptPubKeyMan::GetPubKeyInner(const CKeyID &address, CPubKey& vchPu
 {
     LOCK(cs_KeyStore);
     if (!m_storage.HasEncryptionKeys()) {
+        // Before the generic lookup, which would derive a secp256k1 key from
+        // a BLS secret: a BLS key's public key is the one stored with it.
+        if (GetBLSPubKey(address, vchPubKeyOut)) return true;
         if (!FillableSigningProvider::GetPubKey(address, vchPubKeyOut)) {
             return GetWatchPubKey(address, vchPubKeyOut);
         }
