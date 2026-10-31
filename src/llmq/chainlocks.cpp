@@ -42,16 +42,14 @@ CChainLocksHandler::CChainLocksHandler(CChainState& chainstate, CQuorumManager& 
     m_mn_sync(mn_sync),
     m_is_masternode{is_masternode},
     scheduler(std::make_unique<CScheduler>()),
-    scheduler_thread(
-        std::make_unique<std::thread>(std::thread(util::TraceThread, "cl-schdlr", [&] { scheduler->serviceQueue(); }))),
     seenChainLocks{SEEN_CHAINLOCKS_CUTOFF, MAX_SEEN_CHAINLOCKS}
 {
+    scheduler->m_service_thread = std::thread(util::TraceThread, "cl-schdlr", [&] { scheduler->serviceQueue(); });
 }
 
 CChainLocksHandler::~CChainLocksHandler()
 {
     scheduler->stop();
-    scheduler_thread->join();
 }
 
 void CChainLocksHandler::Start(const llmq::CInstantSendManager& isman)
@@ -67,6 +65,8 @@ void CChainLocksHandler::Start(const llmq::CInstantSendManager& isman)
 
 void CChainLocksHandler::Stop()
 {
+    // This also waits for a callback that is already running. It uses owners that shutdown
+    // releases later and it can take cs_main, which shutdown holds while destroying this object.
     scheduler->stop();
     sigman.UnregisterRecoveredSigsListener(this);
 }
