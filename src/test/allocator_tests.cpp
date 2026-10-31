@@ -2,11 +2,17 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <bls/bls.h>
 #include <support/allocators/mt_pooled_secure.h>
 #include <support/lockedpool.h>
+#include <test/util/setup_common.h>
+#include <uint256.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -249,6 +255,78 @@ BOOST_AUTO_TEST_CASE(mt_pooled_secure_allocator_zero_pool_count)
     *p = 0x42;
     BOOST_CHECK_EQUAL(*p, 0x42);
     allocator.deallocate(p, 1);
+}
+
+// Freeing has to cover the size_t these allocators store in front of the data. Otherwise a block of
+// some sizes is freed one pool unit short, and that last unit is neither wiped nor given back.
+BOOST_AUTO_TEST_CASE(mt_pooled_secure_allocator_frees_the_whole_block)
+{
+    constexpr size_t requested{32};
+    // The allocator adds the room for that size_t to each pool unit.
+    constexpr size_t unit{requested + sizeof(size_t)};
+    constexpr size_t prefix{sizeof(size_t)};
+    for (const size_t size : {size_t{1}, unit - prefix, unit - prefix + 1, unit, unit + 1,
+                              2 * unit - prefix, 2 * unit - prefix + 1, 2 * unit, 2 * unit + 1}) {
+        mt_pooled_secure_allocator<uint8_t> allocator{requested, /*nnext_size=*/32, /*nmax_size=*/0, /*pools_count=*/1};
+        uint8_t* p = allocator.allocate(size);
+        BOOST_REQUIRE(p != nullptr);
+        std::fill_n(p, size, uint8_t{0xA5});
+        allocator.deallocate(p, size);
+
+        // The pool writes its free list link over the start of each free unit, so the other bytes of
+        // that link can be anything. Its first byte cannot be the pattern: a link is an aligned
+        // pointer or null, and the part left out is exactly at the start of a unit.
+        size_t left{0};
+        for (size_t i{0}; i < size; ++i) {
+            const size_t offset{(i + prefix) % unit};
+            if ((offset == 0 || offset >= sizeof(void*)) && p[i] == 0xA5) ++left;
+        }
+        BOOST_CHECK_MESSAGE(left == 0, "size " << size << ": " << left << " bytes not wiped");
+
+        // Given back whole, the same block is the first that fits again.
+        uint8_t* again = allocator.allocate(size);
+        BOOST_CHECK_MESSAGE(again == p, "size " << size << " was not given back whole");
+        allocator.deallocate(again, size);
+    }
+}
+
+// Every BLS signature takes a g2_st block of an affected size from the pool. If a part of it is not
+// given back, the pool keeps growing with the number of signatures.
+BOOST_FIXTURE_TEST_CASE(bls_signing_frees_the_whole_block, BasicTestingSetup)
+{
+    CBLSSecretKey key;
+    key.MakeNewKey();
+    const uint256 hash{uint256::ONE};
+    const auto sign = [&](int count) {
+        for (int i{0}; i < count; ++i) {
+            BOOST_REQUIRE(key.Sign(hash, /*specificLegacyScheme=*/false).IsValid());
+        }
+    };
+    sign(16);
+    const size_t used{LockedPoolManager::Instance().stats().used};
+    // More blocks than the pool could still have free if it lost one with each signature.
+    sign(400);
+    BOOST_CHECK_EQUAL(LockedPoolManager::Instance().stats().used, used);
+}
+
+// The same through the BLS allocation hooks, which store the size in front of the data as well. The
+// sizes where this matters depend on the types of the BLS library, so this walks through them.
+BOOST_AUTO_TEST_CASE(bls_secure_allocation_frees_the_whole_block)
+{
+    BOOST_REQUIRE(BLSInit());
+    std::vector<size_t> sizes(2048);
+    std::iota(sizes.begin(), sizes.end(), size_t{1});
+    // The largest requests of the BLS library, in its key derivation.
+    sizes.push_back(32 * 255);
+    sizes.push_back(32 * 255 * 2);
+    for (const size_t size : sizes) {
+        auto* p = bls::Util::SecAlloc<uint8_t>(size);
+        BOOST_REQUIRE(p != nullptr);
+        bls::Util::SecFree(p);
+        auto* again = bls::Util::SecAlloc<uint8_t>(size);
+        BOOST_CHECK_MESSAGE(again == p, "size " << size << " was not given back whole");
+        bls::Util::SecFree(again);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()
