@@ -170,12 +170,22 @@ StakeSkipReport CStakeWallet::ExplainExcludedCoins(int64_t nTime, int nHeight, c
         return report;
     }
 
+    // One hold for the whole scan. COutput carries raw pointers into mapWallet,
+    // and the wallet erases entries under cs_wallet (removeprunedfunds,
+    // zapwallettxes), so the lock is what keeps every pcoin below alive and
+    // every depth measured against one wallet height. The minter's hourly scan
+    // is the caller that brings no lock of its own; GetStakingInfo already
+    // holds cs_wallet when it passes its own list in, and the mutex is
+    // recursive, so the hold nests. Taking the lock only around AvailableCoins
+    // and each depth lookup, as this used to, left pcoin->tx, CoinBlockTime and
+    // GetTxTime reading between two holds, after an erase could have run.
+    LOCK(wallet->cs_wallet);
+
     // Deliberately unfiltered, unlike the selection loop: a coin kept out by its
     // value has to reach the classifier to be counted, and AvailableCoins would
     // otherwise drop it before anything could name the reason.
     std::vector<COutput> vCoins;
     if (!coins) {
-        LOCK(wallet->cs_wallet);
         wallet->AvailableCoins(vCoins);
         coins = &vCoins;
     }
@@ -187,11 +197,7 @@ StakeSkipReport CStakeWallet::ExplainExcludedCoins(int64_t nTime, int nHeight, c
         // The shared list can be wider than AvailableCoins' default range.
         if (value < 1 || value > MAX_MONEY) continue;
 
-        int nDepth;
-        {
-            LOCK(wallet->cs_wallet);
-            nDepth = pcoin->GetDepthInMainChain();
-        }
+        const int nDepth = pcoin->GetDepthInMainChain();
 
         std::vector<valtype> vSolutions;
         const TxoutType type = Solver(pcoin->tx->vout[i].scriptPubKey, vSolutions);
@@ -215,10 +221,7 @@ StakeSkipReport CStakeWallet::ExplainExcludedCoins(int64_t nTime, int nHeight, c
     // the balance counts everything below it. stake_immature_accounting_has_no_gap
     // pins the relationship, because adding these two numbers is only correct
     // while it holds.
-    {
-        LOCK(wallet->cs_wallet);
-        report.immature += wallet->GetBalance().m_mine_immature;
-    }
+    report.immature += wallet->GetBalance().m_mine_immature;
 
     return report;
 }

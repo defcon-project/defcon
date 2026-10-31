@@ -3,14 +3,22 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chainparams.h>
+#include <coins.h>
 #include <consensus/consensus.h>
+#include <interfaces/chain.h>
+#include <interfaces/handler.h>
 #include <key.h>
+#include <policy/feerate.h>
 #include <pos/stake.h>
+#include <primitives/block.h>
 #include <script/sign.h>
 #include <script/signingprovider.h>
 #include <script/standard.h>
 #include <test/util/setup_common.h>
+#include <tinyformat.h>
+#include <univalue.h>
 #include <util/time.h>
+#include <util/translation.h>
 #include <validation.h>
 #include <wallet/ismine.h>
 #include <wallet/test/wallet_test_fixture.h>
@@ -22,6 +30,7 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <thread>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(pos_stake_rules_tests, WalletTestingSetup)
@@ -825,6 +834,185 @@ BOOST_FIXTURE_TEST_CASE(staking_info_preserves_selection_and_exclusions, TestCha
     CStakeWallet expired(nullptr, params);
     BOOST_CHECK_EQUAL(expired.GetStakingInfo(0, 0).weight, 0U);
     BOOST_CHECK_EQUAL(expired.GetStakingInfo(0, 0).excluded.Total(), 0);
+}
+
+namespace {
+/**
+ * The node's chain, with the block lookup the excluded-coin scan makes for
+ * every coin turned into a probe of cs_wallet.
+ *
+ * The probe runs on a second thread, because on the recursive cs_wallet a try
+ * from the scanning thread itself succeeds whether or not that thread holds the
+ * lock. From any other thread the try fails exactly when the scanning thread
+ * holds it. The thread is spawned and joined inside the lookup, so the probe
+ * happens at a known point of the scan and nothing is left to scheduling.
+ */
+class ProbingChain final : public interfaces::Chain
+{
+public:
+    explicit ProbingChain(interfaces::Chain& inner) : m_inner(inner) {}
+
+    //! Probe cs_wallet of `wallet` at every block lookup until Disarm().
+    void Arm(CWallet& wallet) { m_wallet = &wallet; }
+    void Disarm() { m_wallet = nullptr; }
+
+    //! Lookups made while armed, and how many of them found cs_wallet free.
+    int probes{0};
+    int lock_free{0};
+
+    bool findBlock(const uint256& hash, const interfaces::FoundBlock& block) override
+    {
+        if (m_wallet) {
+            bool taken = false;
+            std::thread([&] {
+                TRY_LOCK(m_wallet->cs_wallet, lock);
+                taken = static_cast<bool>(lock);
+            }).join();
+            ++probes;
+            if (taken) ++lock_free;
+        }
+        return m_inner.findBlock(hash, block);
+    }
+
+    std::optional<int> getHeight() override { return m_inner.getHeight(); }
+    uint256 getBlockHash(int height) override { return m_inner.getBlockHash(height); }
+    bool haveBlockOnDisk(int height) override { return m_inner.haveBlockOnDisk(height); }
+    std::optional<int> findFork(const uint256& hash, std::optional<int>* height) override { return m_inner.findFork(hash, height); }
+    CBlockLocator getTipLocator() override { return m_inner.getTipLocator(); }
+    std::optional<int> findLocatorFork(const CBlockLocator& locator) override { return m_inner.findLocatorFork(locator); }
+    bool checkFinalTx(const CTransaction& tx) override { return m_inner.checkFinalTx(tx); }
+    bool isInstantSendLockedTx(const uint256& hash) override { return m_inner.isInstantSendLockedTx(hash); }
+    bool hasChainLock(int height, const uint256& hash) override { return m_inner.hasChainLock(height, hash); }
+    std::vector<COutPoint> listMNCollaterials(const std::vector<std::pair<const CTransactionRef&, uint32_t>>& outputs) override { return m_inner.listMNCollaterials(outputs); }
+    bool findFirstBlockWithTimeAndHeight(int64_t min_time, int min_height, const interfaces::FoundBlock& block) override { return m_inner.findFirstBlockWithTimeAndHeight(min_time, min_height, block); }
+    bool findAncestorByHeight(const uint256& block_hash, int ancestor_height, const interfaces::FoundBlock& ancestor_out) override { return m_inner.findAncestorByHeight(block_hash, ancestor_height, ancestor_out); }
+    bool findAncestorByHash(const uint256& block_hash, const uint256& ancestor_hash, const interfaces::FoundBlock& ancestor_out) override { return m_inner.findAncestorByHash(block_hash, ancestor_hash, ancestor_out); }
+    bool findCommonAncestor(const uint256& block_hash1, const uint256& block_hash2, const interfaces::FoundBlock& ancestor_out, const interfaces::FoundBlock& block1_out, const interfaces::FoundBlock& block2_out) override { return m_inner.findCommonAncestor(block_hash1, block_hash2, ancestor_out, block1_out, block2_out); }
+    void findCoins(std::map<COutPoint, Coin>& coins) override { m_inner.findCoins(coins); }
+    double guessVerificationProgress(const uint256& block_hash) override { return m_inner.guessVerificationProgress(block_hash); }
+    bool hasBlocks(const uint256& block_hash, int min_height, std::optional<int> max_height) override { return m_inner.hasBlocks(block_hash, min_height, max_height); }
+    bool isInMempool(const uint256& txid) override { return m_inner.isInMempool(txid); }
+    bool hasDescendantsInMempool(const uint256& txid) override { return m_inner.hasDescendantsInMempool(txid); }
+    bool broadcastTransaction(const CTransactionRef& tx, const CAmount& max_tx_fee, bool relay, bilingual_str& err_string) override { return m_inner.broadcastTransaction(tx, max_tx_fee, relay, err_string); }
+    void getTransactionAncestry(const uint256& txid, size_t& ancestors, size_t& descendants) override { m_inner.getTransactionAncestry(txid, ancestors, descendants); }
+    void getPackageLimits(unsigned int& limit_ancestor_count, unsigned int& limit_descendant_count) override { m_inner.getPackageLimits(limit_ancestor_count, limit_descendant_count); }
+    bool checkChainLimits(const CTransactionRef& tx) override { return m_inner.checkChainLimits(tx); }
+    CFeeRate estimateSmartFee(int num_blocks, bool conservative, FeeCalculation* calc) override { return m_inner.estimateSmartFee(num_blocks, conservative, calc); }
+    unsigned int estimateMaxBlocks() override { return m_inner.estimateMaxBlocks(); }
+    CFeeRate mempoolMinFee() override { return m_inner.mempoolMinFee(); }
+    CFeeRate relayMinFee() override { return m_inner.relayMinFee(); }
+    CFeeRate relayIncrementalFee() override { return m_inner.relayIncrementalFee(); }
+    CFeeRate relayDustFee() override { return m_inner.relayDustFee(); }
+    bool havePruned() override { return m_inner.havePruned(); }
+    bool isReadyToBroadcast() override { return m_inner.isReadyToBroadcast(); }
+    bool isInitialBlockDownload() override { return m_inner.isInitialBlockDownload(); }
+    bool shutdownRequested() override { return m_inner.shutdownRequested(); }
+    void initMessage(const std::string& message) override { m_inner.initMessage(message); }
+    void initWarning(const bilingual_str& message) override { m_inner.initWarning(message); }
+    void initError(const bilingual_str& message) override { m_inner.initError(message); }
+    void showProgress(const std::string& title, int progress, bool resume_possible) override { m_inner.showProgress(title, progress, resume_possible); }
+    std::unique_ptr<interfaces::Handler> handleNotifications(std::shared_ptr<Notifications> notifications) override { return m_inner.handleNotifications(std::move(notifications)); }
+    void waitForNotificationsIfTipChanged(const uint256& old_tip) override { m_inner.waitForNotificationsIfTipChanged(old_tip); }
+    std::unique_ptr<interfaces::Handler> handleRpc(const CRPCCommand& command) override { return m_inner.handleRpc(command); }
+    bool rpcEnableDeprecated(const std::string& method) override { return m_inner.rpcEnableDeprecated(method); }
+    void rpcRunLater(const std::string& name, std::function<void()> fn, int64_t seconds) override { m_inner.rpcRunLater(name, std::move(fn), seconds); }
+    util::SettingsValue getSetting(const std::string& arg) override { return m_inner.getSetting(arg); }
+    std::vector<util::SettingsValue> getSettingsList(const std::string& arg) override { return m_inner.getSettingsList(arg); }
+    util::SettingsValue getRwSetting(const std::string& name) override { return m_inner.getRwSetting(name); }
+    bool updateRwSetting(const std::string& name, const util::SettingsValue& value, bool write) override { return m_inner.updateRwSetting(name, value, write); }
+    void requestMempoolTransactions(Notifications& notifications) override { m_inner.requestMempoolTransactions(notifications); }
+    bool hasAssumedValidChain() override { return m_inner.hasAssumedValidChain(); }
+
+private:
+    interfaces::Chain& m_inner;
+    CWallet* m_wallet{nullptr};
+};
+} // namespace
+
+/**
+ * The excluded-coin report holds cs_wallet for its whole scan.
+ *
+ * COutput carries raw pointers into mapWallet, and the wallet erases entries
+ * under cs_wallet whenever removeprunedfunds or zapwallettxes asks it to. The
+ * minter's hourly scan is the one caller that brings no lock of its own, and
+ * the report used to take the lock only around AvailableCoins and each depth
+ * lookup, so between two coins the pointers it was about to read were held by
+ * nothing.
+ *
+ * A dangling pointer is not something a unit test can observe reliably; the
+ * lock discipline that keeps the pointers alive is. The scan looks up the block
+ * of every coin through the chain interface, from the stretch that used to run
+ * without the lock, and a probing chain checks there, from a second thread,
+ * whether cs_wallet is held. One probe per coin, at a fixed point of the scan:
+ * the old code is seen with the lock free at every coin, the new code never.
+ */
+BOOST_FIXTURE_TEST_CASE(the_excluded_coin_report_holds_the_wallet_lock_for_its_whole_scan, TestChain100Setup)
+{
+    const CBlockIndex* tip = m_node.chainman->ActiveChain().Tip();
+    Consensus::Params params = Params().GetConsensus();
+    params.stakeValueRange = {10 * COIN, 50 * COIN};
+    params.regularMnCollateral = 30 * COIN;
+    params.evoMnCollateral = 40 * COIN;
+    params.stakeAgeRange = {600, 1800};
+    params.nPosKernelV2ActivationHeight = tip->nHeight + 1;
+    constexpr int TXS = 4;
+    constexpr int OUTPUTS = 10;
+    constexpr CAmount VALUE = 20 * COIN;
+    constexpr CAmount TOTAL = TXS * OUTPUTS * VALUE;
+
+    ProbingChain chain(*m_node.chain);
+    auto wallet = std::make_shared<CWallet>(&chain, m_node.coinjoin_loader.get(), "excluded-scan", CreateMockWalletDatabase());
+    wallet->LoadWallet();
+    CKey held;
+    held.MakeNewKey(true);
+    const CScript owned = GetScriptForDestination(PKHash(held.GetPubKey()));
+    {
+        auto* manager = wallet->GetOrCreateLegacyScriptPubKeyMan();
+        LOCK2(wallet->cs_wallet, manager->cs_KeyStore);
+        BOOST_REQUIRE(manager->AddKeyPubKey(held, held.GetPubKey()));
+        wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+        for (int n = 0; n < TXS; ++n) {
+            CMutableTransaction tx;
+            tx.vin.emplace_back(COutPoint(uint256S(strprintf("%x", n + 1)), 0));
+            for (int i = 0; i < OUTPUTS; ++i) tx.vout.emplace_back(VALUE, owned);
+            const auto ref = MakeTransactionRef(tx);
+            // Confirmed in the tip block: one block deep, which the staking
+            // rules call immature, while the amount, script and age are all
+            // chosen so that nothing else would exclude the coin.
+            BOOST_REQUIRE(wallet->LoadToWallet(ref->GetHash(), [&](CWalletTx& wtx, bool) {
+                wtx.tx = ref;
+                wtx.m_confirm = {CWalletTx::CONFIRMED, tip->nHeight, tip->GetBlockHash(), 0};
+                return true;
+            }));
+        }
+        // Rebuilds the spendable-output index that AvailableCoins walks; loading
+        // a transaction does not add to it.
+        wallet->AutoLockMasternodeCollaterals();
+        std::vector<COutput> coins;
+        wallet->AvailableCoins(coins);
+        BOOST_REQUIRE_EQUAL(coins.size(), static_cast<size_t>(TXS * OUTPUTS));
+    }
+    CStakeWallet staker(wallet, params);
+    const int64_t time = tip->GetBlockTime() + 1000;
+    const int height = tip->nHeight + 1;
+
+    // The minter's call: no lock of its own.
+    chain.Arm(*wallet);
+    const StakeSkipReport report = staker.ExplainExcludedCoins(time, height);
+    chain.Disarm();
+    // The scan looked up the block of every coin, and held cs_wallet each time.
+    BOOST_CHECK_EQUAL(chain.probes, TXS * OUTPUTS);
+    BOOST_CHECK_EQUAL(chain.lock_free, 0);
+    BOOST_CHECK_EQUAL(report.immature, TOTAL);
+    BOOST_CHECK_EQUAL(report.Total(), TOTAL);
+
+    // getstakinginfo's call brings its own lock, which the scan nests under.
+    chain.Arm(*wallet);
+    const StakeWalletInfo info = staker.GetStakingInfo(time, height);
+    chain.Disarm();
+    BOOST_CHECK(chain.probes >= 2 * TXS * OUTPUTS);
+    BOOST_CHECK_EQUAL(chain.lock_free, 0);
+    BOOST_CHECK_EQUAL(info.excluded.immature, TOTAL);
 }
 
 BOOST_AUTO_TEST_CASE(the_coinstake_size_bounds_hold_for_an_uncompressed_key)
