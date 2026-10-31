@@ -4,6 +4,7 @@
 
 #include <util/settings.h>
 
+#include <addrdb.h>
 #include <fs.h>
 #include <test/util/setup_common.h>
 #include <test/util/str.h>
@@ -101,6 +102,45 @@ BOOST_AUTO_TEST_CASE(ReadWrite)
     BOOST_CHECK(!util::ReadSettings(path, values, errors));
     std::vector<std::string> fail_parse = {strprintf("Unable to parse settings file %s", fs::PathToString(path))};
     BOOST_CHECK_EQUAL_COLLECTIONS(errors.begin(), errors.end(), fail_parse.begin(), fail_parse.end());
+}
+
+// A write that fails after the open succeeded. /dev/full takes the open and refuses the data: at the
+// final flush for a short file, earlier for one larger than the stream buffer.
+BOOST_AUTO_TEST_CASE(WriteFailure)
+{
+    const fs::path dev_full{"/dev/full"};
+    if (!fs::exists(dev_full)) {
+        BOOST_TEST_MESSAGE("Skipped: this platform has no /dev/full");
+        return;
+    }
+
+    const std::vector<std::string> write_error{strprintf("Error: Unable to write settings file %s", fs::PathToString(dev_full))};
+    for (const size_t size : {size_t{16}, size_t{1024 * 1024}}) {
+        const std::map<std::string, util::SettingsValue> values{{"key", std::string(size, 'x')}};
+        std::vector<std::string> errors;
+        BOOST_CHECK(!util::WriteSettings(dev_full, values, errors));
+        BOOST_CHECK_EQUAL_COLLECTIONS(errors.begin(), errors.end(), write_error.begin(), write_error.end());
+    }
+
+    // A failed ban list write is reported, so that BanMan keeps its dirty flag and tries again.
+    const fs::path banlist{m_args.GetDataDirBase() / "banlist"};
+    fs::create_symlink(dev_full, banlist + ".json");
+    BOOST_CHECK(!CBanDB{banlist}.Write({}));
+
+    // The settings file keeps its content when its temporary file cannot be written.
+    fs::path path, path_tmp;
+    BOOST_REQUIRE(m_args.GetSettingsPath(&path, /*temp=*/false));
+    BOOST_REQUIRE(m_args.GetSettingsPath(&path_tmp, /*temp=*/true));
+    WriteText(path, R"({"previous": 1})");
+    fs::create_symlink(dev_full, path_tmp);
+    std::vector<std::string> errors;
+    BOOST_CHECK(!m_args.WriteSettingsFile(&errors));
+    BOOST_CHECK_EQUAL(errors.size(), 1U);
+    // First, because reading /dev/full would never end.
+    BOOST_REQUIRE(!fs::is_symlink(path));
+    std::map<std::string, util::SettingsValue> values;
+    BOOST_CHECK(util::ReadSettings(path, values, errors));
+    BOOST_CHECK_EQUAL(values.count("previous"), 1U);
 }
 
 //! Check settings struct contents against expected json strings.
