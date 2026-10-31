@@ -219,6 +219,11 @@ class CStakeWallet
         Consensus::Params params;
 
         uint64_t GetStakeWeight(int64_t nTime, int nHeight, const std::vector<COutput>* coins) const;
+        /**
+         * Holds cs_wallet for the whole scan: `coins`, when given, and the list
+         * it collects otherwise point into mapWallet, and only the lock keeps
+         * those entries alive from the first coin to the last.
+         */
         StakeSkipReport ExplainExcludedCoins(int64_t nTime, int nHeight, const std::vector<COutput>* coins) const;
         bool SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight,
                                   std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet,
