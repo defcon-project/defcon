@@ -25,6 +25,8 @@ struct BlockAndHeaderTipInfo;
 /** Interrupt threads */
 void Interrupt(NodeContext& node);
 void Shutdown(NodeContext& node);
+/** Part of the shutdown: end the block import thread, then stop the scheduler it may be waiting for. */
+void StopBlockImportAndScheduler(NodeContext& node);
 //!Initialize the logging infrastructure
 void InitLogging(const ArgsManager& args);
 //!Parameter interaction: change current parameters depending on various rules
