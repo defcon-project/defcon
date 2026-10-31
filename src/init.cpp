@@ -226,6 +226,15 @@ void Interrupt(NodeContext& node)
     }
 }
 
+void StopBlockImportAndScheduler(NodeContext& node)
+{
+    // In this order: the import thread can be waiting in SyncWithValidationInterfaceQueue(), which
+    // ActivateBestChain calls when too many validation callbacks are pending, and it is the
+    // scheduler that runs them. The thread ends at its next ShutdownRequested() check once it runs.
+    if (node.chainman && node.chainman->m_load_block.joinable()) node.chainman->m_load_block.join();
+    if (node.scheduler) node.scheduler->stop();
+}
+
 /** Preparing steps before shutting down or restarting the wallet */
 void PrepareShutdown(NodeContext& node)
 {
@@ -266,9 +275,8 @@ void PrepareShutdown(NodeContext& node)
     StopTorControl();
 
     // After everything has been shut down, but before things get flushed, stop the
-    // CScheduler/checkqueue, threadGroup and load block thread.
-    if (node.scheduler) node.scheduler->stop();
-    if (node.chainman && node.chainman->m_load_block.joinable()) node.chainman->m_load_block.join();
+    // load block thread, CScheduler/checkqueue and threadGroup.
+    StopBlockImportAndScheduler(node);
     StopScriptCheckWorkerThreads();
 
     // After there are no more peers/RPC left to give us new data which may generate
