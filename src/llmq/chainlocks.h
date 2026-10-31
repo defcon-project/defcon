@@ -63,7 +63,6 @@ private:
 
     const bool m_is_masternode;
     std::unique_ptr<CScheduler> scheduler;
-    std::unique_ptr<std::thread> scheduler_thread;
     mutable Mutex cs_try_sign;
     mutable Mutex cs;
     std::atomic<bool> tryLockChainTipScheduled{false};

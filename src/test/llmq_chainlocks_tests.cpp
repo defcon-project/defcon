@@ -17,15 +17,18 @@
 #include <node/blockstorage.h>
 #include <primitives/block.h>
 #include <protocol.h>
+#include <scheduler.h>
 #include <sync.h>
 #include <streams.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
 #include <util/system.h>
 
+#include <atomic>
 #include <limits>
 #include <cerrno>
 #include <chrono>
+#include <future>
 #include <memory>
 #include <string>
 #include <thread>
@@ -66,6 +69,16 @@ struct ChainLocksTestAccess {
     {
         LOCK(handler.cs);
         handler.seenChainLocks.erase(hash);
+    }
+
+    static void RunOnWorker(CChainLocksHandler& handler, CScheduler::Function f)
+    {
+        handler.scheduler->scheduleFromNow(std::move(f), std::chrono::seconds{0});
+    }
+
+    static bool IsWorkerRunning(const CChainLocksHandler& handler)
+    {
+        return handler.scheduler->AreThreadsServicingQueue();
     }
 };
 } // namespace llmq
@@ -677,6 +690,53 @@ BOOST_FIXTURE_TEST_CASE(best_chainlock_is_already_have_after_seen_cache_miss, Te
     llmq::ChainLocksTestAccess::ForgetSeen(handler, hash);
     BOOST_CHECK_EQUAL(llmq::ChainLocksTestAccess::SeenCacheSize(handler), 0U);
     BOOST_CHECK(handler.AlreadyHave(CInv{MSG_CLSIG, hash}));
+}
+
+// Stop() is the last point in shutdown that can wait for a running callback: after it the owners
+// the callback borrows are released, and this handler is destroyed under cs_main, which the
+// callback takes too. So the worker has to be gone when Stop() returns.
+BOOST_FIXTURE_TEST_CASE(stop_waits_for_the_running_callback, TestingSetup)
+{
+    auto& handler = *Assert(m_node.llmq_ctx)->clhandler;
+
+    // Owned by the callback too: with a wrong Stop() it can outlive this test case.
+    struct CallbackState {
+        std::promise<void> started;
+        std::promise<void> release;
+        std::atomic<bool> done{false};
+    };
+    auto callback = std::make_shared<CallbackState>();
+    auto callback_started = callback->started.get_future();
+    llmq::ChainLocksTestAccess::RunOnWorker(handler, [callback, released = callback->release.get_future().share()] {
+        callback->started.set_value();
+        released.wait();
+        WITH_LOCK(cs_main, callback->done = true);
+    });
+    callback_started.wait();
+    BOOST_CHECK(llmq::ChainLocksTestAccess::IsWorkerRunning(handler));
+
+    std::promise<void> stop_returned;
+    auto stop_returned_future = stop_returned.get_future();
+    std::thread stopper{[&] {
+        handler.Stop();
+        stop_returned.set_value();
+    }};
+
+    // A correct Stop() cannot return while the callback runs, however long this waits. The wait
+    // only gives a wrong Stop() time to return, so a slow machine can miss the bug but cannot
+    // fail a correct build.
+    const bool returned_during_callback{stop_returned_future.wait_for(std::chrono::milliseconds{250}) ==
+                                        std::future_status::ready};
+    BOOST_CHECK(!returned_during_callback);
+    BOOST_CHECK(!callback->done);
+
+    callback->release.set_value();
+    stopper.join();
+    BOOST_CHECK(callback->done);
+    BOOST_CHECK(!llmq::ChainLocksTestAccess::IsWorkerRunning(handler));
+
+    // Nothing is left to wait for: this returns at once, and so does the destructor's stop().
+    handler.Stop();
 }
 
 BOOST_AUTO_TEST_SUITE_END()
