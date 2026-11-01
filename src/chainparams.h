@@ -238,7 +238,8 @@ void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::str
 /** Prepare the v23.1 a-d bundle at one H; UNSET is a no-op. The release
  *  heights remain UNSET until the user supplies them in December. */
 void ApplyV231ActivationBundle(Consensus::Params& consensus, int height, const std::string& network);
-/** Reject a partial v23.1 retirement/activation configuration. */
+/** Reject a partial v23.1 retirement/activation configuration. Regtest, which
+ *  registers neither retired profile, is held only to a positive height. */
 void CheckV231ActivationBundle(const Consensus::Params& consensus, const std::string& network);
 
 

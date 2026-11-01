@@ -692,4 +692,107 @@ BOOST_AUTO_TEST_CASE(v231_masternode_reward_changes_only_from_the_shared_height)
     BOOST_CHECK_EQUAL(GetMasternodePayment(576001), 5000 * COIN);
 }
 
+namespace {
+
+struct V231DevNetSetup : public BasicTestingSetup {
+    V231DevNetSetup() : BasicTestingSetup(CBaseChainParams::DEVNET, {"-devnet=v231-argument-tests", "-listen=0", "-v231activationheight=576000"}) {}
+};
+
+bool FormsNextBlock(Consensus::LLMQType type, int prev_height)
+{
+    CBlockIndex index;
+    index.nHeight = prev_height;
+    return llmq::IsQuorumTypeEnabledInternal(type, &index, /*optDIP0024IsActive=*/false, /*optHaveDIP0024Quorums=*/false);
+}
+
+} // namespace
+
+// The rehearsal's argument gives the whole bundle from one number, and what the
+// rehearsal then watches turns at that number and not a block away from it.
+BOOST_FIXTURE_TEST_CASE(v231_devnet_argument_schedules_the_whole_bundle, V231DevNetSetup)
+{
+    BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::DEVNET);
+    const auto& consensus = Params().GetConsensus();
+    BOOST_CHECK_EQUAL(consensus.nV231ActivationHeight, TEST_V231_H);
+    BOOST_CHECK_NO_THROW(CheckV231ActivationBundle(consensus, CBaseChainParams::DEVNET));
+
+    BOOST_CHECK_EQUAL(GetMasternodePayment(TEST_V231_H - 1), 10000 * COIN);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(TEST_V231_H), 5000 * COIN);
+
+    for (const auto type : {Consensus::LLMQType::LLMQ_400_60, Consensus::LLMQType::LLMQ_400_85}) {
+        BOOST_CHECK_EQUAL(llmq::GetQuorumFormationEndHeight(consensus, type), TEST_V231_H);
+        BOOST_CHECK(FormsNextBlock(type, TEST_V231_H - 2));
+        BOOST_CHECK(!FormsNextBlock(type, TEST_V231_H - 1));
+        BOOST_CHECK(!FormsNextBlock(type, TEST_V231_H));
+    }
+    BOOST_CHECK(FormsNextBlock(Consensus::LLMQType::LLMQ_DEFCON, TEST_V231_H));
+
+    // What this devnet carries already is not the argument's to change.
+    ArgsManager no_argument;
+    const auto plain = CreateChainParams(no_argument, CBaseChainParams::DEVNET);
+    BOOST_CHECK_EQUAL(plain->GetConsensus().nV231ActivationHeight, std::numeric_limits<int>::max());
+    BOOST_CHECK_EQUAL(consensus.nComputeNodeActivationHeight, plain->GetConsensus().nComputeNodeActivationHeight);
+    for (const auto type : {Consensus::LLMQType::LLMQ_50_60, Consensus::LLMQType::LLMQ_60_75}) {
+        BOOST_CHECK_EQUAL(llmq::GetQuorumFormationEndHeight(consensus, type),
+                          llmq::GetQuorumFormationEndHeight(plain->GetConsensus(), type));
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(v231_devnet_argument_refuses_what_it_cannot_schedule, DevNetSetup)
+{
+    const auto check = [](const std::string& value, const std::string& reason) {
+        ArgsManager args;
+        args.ForceSetArg("-v231activationheight", value);
+        BOOST_CHECK_EXCEPTION(CreateChainParams(args, CBaseChainParams::DEVNET), std::runtime_error, HasReason(reason));
+    };
+    for (const std::string value : {"", "0", "-576", "abc", "576000x", "2147483647", "2147483648", "4294967872"}) {
+        check(value, "Invalid value of v231activationheight (" + value + ")");
+    }
+    check("576001", "is not on its DKG grid");
+    check("8136", "is not on its DKG grid");   // on llmq_400_60's 72-block grid, not on llmq_400_85's
+    check("2880", "must follow the Q60 ChainLocks switchover");
+    check("3456", "must not precede the proof-of-stake coinbase bound");
+    check("7488", "must not precede the proof-of-stake coinbase bound");
+
+    // The lowest height it can take, and a block there cannot pay the old amount
+    // with a second output: the bound is in force from it on.
+    ArgsManager args;
+    args.ForceSetArg("-v231activationheight", "8064");
+    const auto params = CreateChainParams(args, CBaseChainParams::DEVNET);
+    const auto& consensus = params->GetConsensus();
+    BOOST_CHECK_EQUAL(consensus.nV231ActivationHeight, 8064);
+    BOOST_CHECK(!CheckPosCoinbaseValue(8064, 10000 * COIN, 5000 * COIN, consensus));
+    BOOST_CHECK(CheckPosCoinbaseValue(8064, 5000 * COIN, 5000 * COIN, consensus));
+}
+
+BOOST_AUTO_TEST_CASE(v231_argument_changes_no_other_network)
+{
+    ArgsManager args;
+    args.ForceSetArg("-v231activationheight", "576000");
+    for (const std::string& chain : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET, CBaseChainParams::REGTEST}) {
+        const auto params = CreateChainParams(args, chain);
+        BOOST_CHECK_EQUAL(params->GetConsensus().nV231ActivationHeight, std::numeric_limits<int>::max());
+        BOOST_CHECK(params->GetConsensus().llmqFormationEndHeights.empty());
+    }
+}
+
+// Regtest has its own name for the height, and only regtest escapes the check
+// that both legacy profiles end at it.
+BOOST_AUTO_TEST_CASE(v231_regtest_name_sets_only_the_height)
+{
+    ArgsManager args;
+    args.ForceSetArg("-testactivationheight", "v231@720");
+    const auto params = CreateChainParams(args, CBaseChainParams::REGTEST);
+    const auto& consensus = params->GetConsensus();
+    BOOST_CHECK_EQUAL(consensus.nV231ActivationHeight, 720);
+    BOOST_CHECK(consensus.llmqFormationEndHeights.empty());
+    BOOST_CHECK_NO_THROW(CheckV231ActivationBundle(consensus, CBaseChainParams::REGTEST));
+    for (const std::string& network : {CBaseChainParams::DEVNET, CBaseChainParams::TESTNET, CBaseChainParams::MAIN}) {
+        BOOST_CHECK_EXCEPTION(CheckV231ActivationBundle(consensus, network), std::runtime_error, HasReason("must end both legacy quorum formations"));
+    }
+
+    args.ForceSetArg("-testactivationheight", "v231@0");
+    BOOST_CHECK_EXCEPTION(CreateChainParams(args, CBaseChainParams::REGTEST), std::runtime_error, HasReason("must be positive"));
+}
+
 BOOST_AUTO_TEST_SUITE_END()
