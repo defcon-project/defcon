@@ -27,6 +27,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(llmq_formation_end_tests, BasicTestingSetup)
 
@@ -113,6 +114,73 @@ BOOST_FIXTURE_TEST_CASE(regtest_argument_sets_the_same_gate, RegTestRetiringSetu
     BOOST_CHECK(FormsNextBlock(Consensus::LLMQType::LLMQ_TEST_INSTANTSEND, 478));
     BOOST_CHECK(!FormsNextBlock(Consensus::LLMQType::LLMQ_TEST_INSTANTSEND, 479));
     BOOST_CHECK(FormsNextBlock(Consensus::LLMQType::LLMQ_TEST, 479));
+}
+
+// The next session is read only from types that form. Below the Q60 formation
+// mainnet forms llmq_400_60 and llmq_400_85; llmq_50_60, llmq_60_75 and llmq_100_67
+// are registered on shorter grids and never form there.
+BOOST_AUTO_TEST_CASE(next_dkg_counts_only_forming_types)
+{
+    BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::MAIN);
+    const auto blocks_from = [](int height) {
+        CBlockIndex tip;
+        tip.nHeight = height;
+        return llmq::GetBlocksUntilNextDKG(&tip);
+    };
+    BOOST_CHECK_EQUAL(blocks_from(71), 1);
+    BOOST_CHECK_EQUAL(blocks_from(72), 72);
+    BOOST_CHECK_EQUAL(blocks_from(73), 71);
+    BOOST_CHECK_EQUAL(blocks_from(575), 1);
+
+    // From its formation on, the 24-block grid of llmq_defcon is the shortest that
+    // forms. The heights are one past a 24-block mark, where the two grids differ.
+    const auto& consensus = Params().GetConsensus();
+    const int q60_formation = consensus.nChainLocksV2ActivationHeight - llmq::ChainLocksV2FormationLead(consensus);
+    BOOST_REQUIRE_EQUAL(q60_formation % 24, 0);
+    const int below{q60_formation - 23};
+    const int above{q60_formation + 25};
+    BOOST_REQUIRE(72 - (below % 72) != 24 - (below % 24));
+    BOOST_REQUIRE(72 - (above % 72) != 24 - (above % 24));
+    BOOST_CHECK_EQUAL(blocks_from(below), 72 - (below % 72));
+    BOOST_CHECK_EQUAL(blocks_from(above), 24 - (above % 24));
+}
+
+// A later cycle of a retired type is known not to form before its predecessor is
+// mined, and when no type forms the answer is "never".
+BOOST_AUTO_TEST_CASE(next_dkg_follows_the_formation_end)
+{
+    auto& consensus = const_cast<Consensus::Params&>(Params().GetConsensus());
+    constexpr int END{576};
+    consensus.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_400_60] = END;
+    consensus.llmqFormationEndHeights[Consensus::LLMQType::LLMQ_400_85] = END;
+
+    CBlockIndex tip;
+    tip.nHeight = END - 100;
+    BOOST_CHECK(llmq::IsQuorumCycleEnabled(Consensus::LLMQType::LLMQ_400_60, &tip, END - 72));
+    BOOST_CHECK(!llmq::IsQuorumCycleEnabled(Consensus::LLMQType::LLMQ_400_60, &tip, END));
+    BOOST_CHECK(!llmq::IsQuorumCycleEnabled(Consensus::LLMQType::LLMQ_400_85, &tip, END));
+    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&tip), 72 - (tip.nHeight % 72));
+
+    for (const int height : {END - 72, END - 5, END - 1, END, END + 3}) {
+        tip.nHeight = height;
+        BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&tip), UNSET);
+    }
+}
+
+// A rotating type counts from the first sessions of its cycle, and only if it forms.
+// No network registers a rotating type that does not form, so the test switches
+// llmq_test_dip0024 off; the tip is one block past a cycle base.
+BOOST_FIXTURE_TEST_CASE(next_dkg_counts_a_rotating_type_only_if_it_forms, RegTestRetiringSetup)
+{
+    std::vector<CBlockIndex> chain(26);
+    for (size_t i = 0; i < chain.size(); ++i) {
+        chain[i].nHeight = i;
+        chain[i].pprev = i > 0 ? &chain[i - 1] : nullptr;
+    }
+    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain.back()), 1);
+
+    const_cast<Consensus::Params&>(Params().GetConsensus()).DIP0024Height = UNSET;
+    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain.back()), 23);
 }
 
 BOOST_AUTO_TEST_CASE(regtest_argument_refuses_malformed_input)

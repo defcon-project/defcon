@@ -13,6 +13,7 @@
 #include <util/system.h>
 #include <util/underlying.h>
 
+#include <algorithm>
 #include <string>
 #include <stdexcept>
 
@@ -292,5 +293,38 @@ std::vector<std::reference_wrapper<const Consensus::LLMQParams>> GetEnabledQuoru
                  [&pindex](const auto& params){return IsQuorumTypeEnabled(params.type, pindex);});
 
     return ret;
+}
+
+bool IsQuorumCycleEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexTip, int cycle_base_height)
+{
+    const int predecessor_height{cycle_base_height - 1};
+    if (predecessor_height <= pindexTip->nHeight) {
+        const CBlockIndex* const predecessor = pindexTip->GetAncestor(predecessor_height);
+        return predecessor != nullptr && IsQuorumTypeEnabled(llmqType, predecessor);
+    }
+
+    const Consensus::Params& consensus = Params().GetConsensus();
+    if (cycle_base_height >= GetQuorumFormationEndHeight(consensus, llmqType)) {
+        return false;
+    }
+    return IsQuorumTypeEnabledInternal(llmqType, pindexTip,
+                                       /*optDIP0024IsActive=*/cycle_base_height >= consensus.DeploymentHeight(Consensus::DEPLOYMENT_DIP0024),
+                                       /*optHaveDIP0024Quorums=*/predecessor_height >= consensus.DIP0024QuorumsHeight);
+}
+
+int GetBlocksUntilNextDKG(gsl::not_null<const CBlockIndex*> pindexTip)
+{
+    int blocks{std::numeric_limits<int>::max()};
+    for (const auto& params : Params().GetConsensus().llmqs) {
+        const int stage{pindexTip->nHeight % params.dkgInterval};
+        const int cycle_base{pindexTip->nHeight - stage};
+        if (params.useRotation && stage <= params.signingActiveQuorumCount && IsQuorumCycleEnabled(params.type, pindexTip, cycle_base)) {
+            return 1;
+        }
+        if (IsQuorumCycleEnabled(params.type, pindexTip, cycle_base + params.dkgInterval)) {
+            blocks = std::min(blocks, params.dkgInterval - stage);
+        }
+    }
+    return blocks;
 }
 } // namespace llmq
