@@ -10,7 +10,9 @@ To generate that file this test uses the helper scripts available
 in contrib/linearize.
 """
 
+import glob
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -24,12 +26,16 @@ from test_framework.util import assert_equal
 class LoadblockTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
-        self.num_nodes = 2
+        self.num_nodes = 3
         self.supports_cli = False
 
     def run_test(self):
         self.nodes[1].setnetworkactive(state=False)
-        self.generate(self.nodes[0], COINBASE_MATURITY, sync_fun=self.no_op)
+        self.nodes[2].setnetworkactive(state=False)
+        self.generate(self.nodes[0], COINBASE_MATURITY // 2, sync_fun=self.no_op)
+        # The second half of the chain is in a later month, for the monthly split below.
+        self.bump_mocktime(40 * 24 * 60 * 60, update_schedulers=False)
+        self.generate(self.nodes[0], COINBASE_MATURITY // 2, sync_fun=self.no_op)
 
         # Parsing the url of our node to get settings for config file
         data_dir = self.nodes[0].datadir
@@ -77,6 +83,37 @@ class LoadblockTest(BitcoinTestFramework):
 
         assert_equal(self.nodes[1].getblockchaininfo()['blocks'], 100)
         assert_equal(self.nodes[0].getbestblockhash(), self.nodes[1].getbestblockhash())
+
+        self.log.info("Refuse a monthly split into one output file, which would keep only the last month")
+        split_cfg_file = os.path.join(data_dir, "linearize-split.cfg")
+        shutil.copy(cfg_file, split_cfg_file)
+        with open(split_cfg_file, "a", encoding="utf-8") as cfg:
+            cfg.write("split_timestamp=1\n")
+        with open(bootstrap_file, "rb") as f:
+            bootstrap_data = f.read()
+        refused = subprocess.run([sys.executable, linearize_data_file, split_cfg_file],
+                                 capture_output=True,
+                                 text=True,
+                                 check=False)
+        assert_equal(refused.returncode, 1)
+        assert "split_timestamp needs an output directory" in refused.stdout
+        with open(bootstrap_file, "rb") as f:
+            assert_equal(f.read(), bootstrap_data)
+
+        self.log.info("Split the chain into monthly files in a directory")
+        monthly_dir = os.path.join(self.options.tmpdir, "monthly")
+        os.mkdir(monthly_dir)
+        with open(split_cfg_file, "a", encoding="utf-8") as cfg:
+            cfg.write(f"output={monthly_dir}\n")
+        subprocess.run([sys.executable, linearize_data_file, split_cfg_file],
+                       check=True)
+        monthly_files = sorted(glob.glob(os.path.join(monthly_dir, "blk*.dat")))
+        assert_equal(len(monthly_files), 2)
+
+        self.log.info("Load both months on a third, unsynced node")
+        self.restart_node(2, extra_args=[f"-loadblock={file}" for file in monthly_files])
+        assert_equal(self.nodes[2].getblockcount(), 100)
+        assert_equal(self.nodes[0].getbestblockhash(), self.nodes[2].getbestblockhash())
 
 
 if __name__ == '__main__':
