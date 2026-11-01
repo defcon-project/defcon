@@ -54,6 +54,10 @@ path to `Xcode.app` (extracted in the previous stage) as the first argument.
 The generated archive should be: `Xcode-15.0-15A240d-extracted-SDK-with-libcxx-headers.tar.gz`.
 The `sha256sum` should be `c0c2e7bb92c1fee0c4e9f3a485e4530786732d6c6dd9e9f418c282aa6892f55d`.
 
+The Guix container's [`setup-sdk`](../containers/guix/scripts/setup-sdk) refuses an archive with
+any other hash, so change the hash there too when the SDK changes. It also refuses an SDK directory
+that it did not extract itself; remove that directory to extract a verified copy.
+
 ## Deterministic macOS App Notes
 
 macOS Applications are created on Linux using a recent LLVM.

@@ -279,6 +279,10 @@ jobs:
         if: needs.changes.outputs.code == 'true'
         run: python3 contrib/windeploy/test_detached_sig_create.py
 
+      - name: Check the macOS SDK helper verifies its inputs
+        if: needs.changes.outputs.code == 'true'
+        run: python3 contrib/containers/guix/test_setup_sdk.py
+
       - name: Require one successful producer transfer
         if: needs.changes.outputs.code == 'true'
         env:

@@ -13,15 +13,40 @@ SDK_SRCS="${SDK_SOURCES:-depends/sdk-sources}"
 XCODE_VERSION="${XCODE_VERSION:-15.0}"
 XCODE_RELEASE="${XCODE_RELEASE:-15A240d}"
 XCODE_ARCHIVE="Xcode-${XCODE_VERSION}-${XCODE_RELEASE}-extracted-SDK-with-libcxx-headers"
+XCODE_AR_HASH="${XCODE_AR_HASH:-c0c2e7bb92c1fee0c4e9f3a485e4530786732d6c6dd9e9f418c282aa6892f55d}"
 XCODE_AR_PATH="${SDK_SRCS}/${XCODE_ARCHIVE}.tar.gz"
+XCODE_SDK="${SDK_PATH}/${XCODE_ARCHIVE}"
+# The marker lives inside the directory, and the directory gets its final name only
+# when it is complete. A partial extraction never has that name, and a directory from
+# anywhere else has no marker, whatever happened to an earlier one.
+XCODE_MARKER_NAME=".setup-sdk.sha256"
 
-if [ ! -d "${SDK_PATH}/${XCODE_ARCHIVE}" ]; then
+if [ -d "${XCODE_SDK}" ]; then
+    if [ "$(cat "${XCODE_SDK}/${XCODE_MARKER_NAME}" 2>/dev/null)" != "${XCODE_AR_HASH}" ]; then
+        echo "ERROR: ${XCODE_SDK} does not come from the expected archive, remove it to extract a verified copy" >&2
+        exit 1
+    fi
+else
     if [ ! -f "${XCODE_AR_PATH}" ]; then
         echo "Downloading macOS SDK..."
         mkdir -p "${SDK_SRCS}"
         curl --location --fail "${SDK_URL}/${XCODE_ARCHIVE}.tar.gz" -o "${XCODE_AR_PATH}"
     fi
-    echo "Extracting macOS SDK..."
     mkdir -p "${SDK_PATH}"
-    tar -C "${SDK_PATH}" -xf "${XCODE_AR_PATH}"
+    XCODE_TMP="$(mktemp -d "${SDK_PATH}/.setup-sdk.XXXXXX")"
+    trap 'rm -rf "${XCODE_TMP}"' EXIT
+    # Check and extract the same private copy, so a parallel run cannot swap the archive in between.
+    cp -- "${XCODE_AR_PATH}" "${XCODE_TMP}/archive"
+    echo "Verifying macOS SDK..."
+    # From standard input: sha256sum marks a file name with a backslash by changing its output.
+    if [ "$(sha256sum < "${XCODE_TMP}/archive" | cut -d' ' -f1)" != "${XCODE_AR_HASH}" ]; then
+        echo "ERROR: Checksum mismatch for ${XCODE_AR_PATH}, remove it to download it again" >&2
+        exit 1
+    fi
+    echo "Extracting macOS SDK..."
+    # --force-local: the path may hold a colon, which tar would otherwise take for a remote host.
+    tar -C "${XCODE_TMP}" --force-local -xf "${XCODE_TMP}/archive"
+    echo "${XCODE_AR_HASH}" > "${XCODE_TMP}/${XCODE_ARCHIVE}/${XCODE_MARKER_NAME}"
+    # A rename, so the name appears all at once. It fails if another run has finished first.
+    mv -T "${XCODE_TMP}/${XCODE_ARCHIVE}" "${XCODE_SDK}"
 fi
