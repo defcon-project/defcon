@@ -394,6 +394,8 @@ BASE_SCRIPTS = [
     'p2p_mnauth_before_sync.py',
     'feature_llmq_formation_end.py',
     'feature_llmq_nonforming_quiet.py',
+    'feature_v231_transition.py',
+    'feature_v231_devnet_argument.py',
     'rpc_verifychainlock.py',
     'wallet_create_tx.py --legacy-wallet',
     'wallet_send.py --legacy-wallet',

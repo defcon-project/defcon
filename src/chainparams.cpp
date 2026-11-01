@@ -905,6 +905,7 @@ public:
         UpdateDevnetDSLEnforcementHeightFromArgs(args);
         UpdateDevnetDSLCommitmentV2HeightFromArgs(args);
         ApplyV231ActivationBundle(consensus, V231_DEVNET_ACTIVATION_HEIGHT, CBaseChainParams::DEVNET);
+        UpdateDevnetV231ActivationHeightFromArgs(args);
 
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
@@ -1000,6 +1001,14 @@ public:
         consensus.nDSLCommitmentV2Height = nHeight;
     }
     void UpdateDevnetDSLCommitmentV2HeightFromArgs(const ArgsManager& args);
+
+    /**
+     * Schedules the v23.1 bundle on a devnet without rebuilding the binary, so
+     * the rehearsal runs on the binary that ships. It takes the one path the
+     * release constant takes, so it sets the same fields and passes the same
+     * checks.
+     */
+    void UpdateDevnetV231ActivationHeightFromArgs(const ArgsManager& args);
 
     /**
      * Allows modifying the LLMQ type for ChainLocks.
@@ -1418,6 +1427,11 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
             consensus.nDSLEnforcementHeight = int{height};
         } else if (name == "dslcommitmentv2") {
             consensus.nDSLCommitmentV2Height = int{height};
+        } else if (name == "v231") {
+            // The height the masternode payment and the superblock ceiling read.
+            // Regtest registers neither profile the release retires at H, so a
+            // test names the profile it retires with -llmqformationendheight.
+            consensus.nV231ActivationHeight = int{height};
         } else {
             throw std::runtime_error(strprintf("Invalid name (%s) for -testactivationheight=name@height.", arg));
         }
@@ -1847,6 +1861,22 @@ void CDevNetParams::UpdateDevnetDSLCommitmentV2HeightFromArgs(const ArgsManager&
     UpdateDevnetDSLCommitmentV2Height(int(nHeight));
 }
 
+void CDevNetParams::UpdateDevnetV231ActivationHeightFromArgs(const ArgsManager& args)
+{
+    if (!args.IsArgSet("-v231activationheight")) return;
+
+    // Parsed strictly, unlike its neighbours: a whole devnet forks at this
+    // height, and the largest int would silently mean "not scheduled".
+    const std::string value{args.GetArg("-v231activationheight", "")};
+    int32_t nHeight{0};
+    if (!ParseInt32(value, &nHeight) || nHeight < 1 || nHeight == std::numeric_limits<int>::max()) {
+        throw std::runtime_error(strprintf("Invalid value of v231activationheight (%s)", value));
+    }
+
+    LogPrintf("Setting v231activationheight to %d\n", nHeight);
+    ApplyV231ActivationBundle(consensus, nHeight, CBaseChainParams::DEVNET);
+}
+
 void CDevNetParams::UpdateLLMQDevnetParametersFromArgs(const ArgsManager& args)
 {
     if (!args.IsArgSet("-llmqdevnetparams")) return;
@@ -1994,6 +2024,8 @@ void CheckV231ActivationBundle(const Consensus::Params& consensus, const std::st
     const int height = consensus.nV231ActivationHeight;
     if (height == UNSET) return;
     if (height <= 0) throw std::runtime_error("v23.1 activation height must be positive");
+    // Regtest registers neither legacy profile and sets its gates one by one.
+    if (network == CBaseChainParams::REGTEST) return;
     for (const auto type : {Consensus::LLMQType::LLMQ_400_60, Consensus::LLMQType::LLMQ_400_85}) {
         const auto end = consensus.llmqFormationEndHeights.find(type);
         if (end == consensus.llmqFormationEndHeights.end() || end->second != height) {
@@ -2003,6 +2035,11 @@ void CheckV231ActivationBundle(const Consensus::Params& consensus, const std::st
     if (consensus.nChainLocksV2ActivationHeight == UNSET || height <= consensus.nChainLocksV2ActivationHeight ||
         consensus.llmqTypeChainLocksV2 != Consensus::LLMQType::LLMQ_DEFCON) {
         throw std::runtime_error("v23.1 must follow the Q60 ChainLocks switchover");
+    }
+    // Below the coinbase bound a staked block may add outputs of its own beside
+    // the required payee, so the lower masternode payment would bind nobody.
+    if (height < consensus.nPosCoinbaseBoundActivationHeight) {
+        throw std::runtime_error("v23.1 must not precede the proof-of-stake coinbase bound");
     }
     // Retiring the EHF profile is safe only while no EHF signing is requested.
     if (consensus.V20Height != UNSET) {
@@ -2215,7 +2252,8 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-dslactivationheight=<n>", "Height from which the DSL service-commitment protocol runs, recording missed epochs without acting on them (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslenforcementheight=<n>", "Height from which a DSL verdict suspends rewards and bans, instead of only being recorded. Must not be below -dslactivationheight; the gap between them is the shadow window (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslcommitmentv2height=<n>", "Height from which DSL service commitments must carry the observed bitfield (format version 2); below it version 1 stays required, so a devnet that already carries version-1 commitments keeps its history valid. Every node must run a binary that knows the format before this height (default: 0, i.e. version 2 from the first commitment; devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-testactivationheight=name@height.", strprintf("Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, superblocksretired, chainlocksv2, instantsendv2, v23, dsl, dslenforcement, dslcommitmentv2). v23 schedules the whole mainnet bundle at one height, exactly as the release does, including the Sentinel layer's start at v23+%d; dslenforcement stays unset, as the release leaves it. (regtest-only)", V23_DSL_ACTIVATION_OFFSET), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-v231activationheight=<n>", "Height from which the v23.1 bundle applies: the masternode payment falls to 5000, llmq_400_60 and llmq_400_85 stop forming, and no superblock path skips the coinstake ceiling. Must be a multiple of 576, above the Q60 ChainLocks switchover and not below the proof-of-stake coinbase bound. Every node must run with the same value before this height, and a node without it forks off there (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-testactivationheight=name@height.", strprintf("Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, brr, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, superblocksretired, chainlocksv2, instantsendv2, v23, v231, dsl, dslenforcement, dslcommitmentv2). v23 schedules the whole mainnet bundle at one height, exactly as the release does, including the Sentinel layer's start at v23+%d; dslenforcement stays unset, as the release leaves it. v231 sets only the height the masternode payment and the superblock ceiling read. (regtest-only)", V23_DSL_ACTIVATION_OFFSET), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-vbparams=<deployment>:<start>:<end>(:min_activation_height(:<window>:<threshold/thresholdstart>(:<thresholdmin>:<falloffcoeff>:<mnactivation>)))",
                  "Use given start/end times and min_activation_height for specified version bits deployment (regtest-only). "
                  "Specifying window, threshold/thresholdstart, thresholdmin, falloffcoeff and mnactivation is optional.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
