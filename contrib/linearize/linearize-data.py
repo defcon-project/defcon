@@ -331,6 +331,12 @@ if __name__ == '__main__':
         print("Missing output file / directory")
         sys.exit(1)
 
+    # A monthly split needs a new file for each month, but "output_file" names a
+    # single file: every new month would overwrite the months before it.
+    if settings['split_timestamp'] != 0 and 'output' not in settings:
+        print("split_timestamp needs an output directory (output), output_file would keep only the last month")
+        sys.exit(1)
+
     blkindex = get_block_hashes(settings)
     blkmap = mkblockmap(blkindex)
 
