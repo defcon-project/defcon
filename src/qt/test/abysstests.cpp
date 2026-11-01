@@ -10,6 +10,7 @@
 #include <qt/addressbookpage.h>
 #include <qt/addresstablemodel.h>
 #include <qt/appearancewidget.h>
+#include <qt/askpassphrasedialog.h>
 #include <qt/bitcoinunits.h>
 #include <qt/bitcoinamountfield.h>
 #include <qt/bitcoingui.h>
@@ -60,6 +61,7 @@
 #include <QDateTimeEdit>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
 #include <QFontMetricsF>
@@ -72,6 +74,7 @@
 #include <QListView>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QLineEdit>
 #include <QSettings>
 #include <QScrollArea>
@@ -2180,6 +2183,137 @@ void AbyssTests::shortcutUnderlines()
     Theme("Light");
     QCOMPARE(qApp->style()->styleHint(QStyle::SH_UnderlineShortcut, nullptr, with), classic_hint);
     QCOMPARE(same_picture(), classic_hint == 0);
+}
+
+void AbyssTests::buttonRows()
+{
+    // A minimum height above the maximum fails quietly: the layout places a
+    // widget by its maximum and Qt then draws it at its minimum, so it hangs
+    // below its row and the parent cuts off what sticks out. That took the
+    // bottom edge off OK and Cancel in the passphrase dialog.
+    RestoreAppearance restore;
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    WalletFixture fixture(m_node);
+
+    // The dialog as reported: the buttons keep their height, inside their row,
+    // and a classic theme gets its own limits back.
+    Theme("Light");
+    AskPassphraseDialog unlock(AskPassphraseDialog::Unlock, nullptr);
+    unlock.show(); Settle();
+    auto* box = unlock.findChild<QDialogButtonBox*>("buttonBox");
+    QVERIFY(box);
+    const QList<QAbstractButton*> buttons = box->buttons();
+    QCOMPARE(buttons.size(), 2);
+    const int classic_height = buttons[0]->height();
+    Theme("Abyss"); Settle();
+    for (QAbstractButton* button : buttons) {
+        QCOMPARE(button->height(), 42); // 34 of content, 3 + 3 of padding, 1 + 1 of border.
+        QCOMPARE(button->minimumHeight(), button->maximumHeight());
+        QVERIFY(box->rect().contains(button->geometry()));
+    }
+    Theme("Light"); Settle();
+    for (QAbstractButton* button : buttons) {
+        QCOMPARE(button->height(), classic_height);
+        QVERIFY(box->rect().contains(button->geometry()));
+    }
+    unlock.hide();
+
+    // Everywhere else: every widget of each window, shown or not, and every
+    // button that is on show.
+    Theme("Abyss");
+    const auto problems = [](QWidget& window, bool check_overflow) {
+        QStringList found;
+        QList<QWidget*> widgets = window.findChildren<QWidget*>();
+        widgets.prepend(&window);
+        for (QWidget* widget : widgets) {
+            widget->ensurePolished();
+            const QString name = QString("%1#%2").arg(widget->metaObject()->className(), widget->objectName());
+            // Inherited and in every theme, not an Abyss rule: general.css gives the
+            // debug window's ban heading a 30px minimum plus a 15px margin over the
+            // form's 32px maximum. On the polish list; not this patch.
+            if (widget->objectName() == "banHeading") continue;
+            if (widget->minimumHeight() > widget->maximumHeight()) {
+                found << QString("%1 height %2 > %3").arg(name).arg(widget->minimumHeight()).arg(widget->maximumHeight());
+            }
+            if (widget->minimumWidth() > widget->maximumWidth()) {
+                found << QString("%1 width %2 > %3").arg(name).arg(widget->minimumWidth()).arg(widget->maximumWidth());
+            }
+            if (check_overflow && qobject_cast<QPushButton*>(widget) && !widget->isWindow() && widget->isVisible() &&
+                !widget->parentWidget()->rect().contains(widget->geometry())) {
+                found << QString("%1 outside its parent").arg(name);
+            }
+        }
+        return found.join("; ");
+    };
+    AskPassphraseDialog encrypt(AskPassphraseDialog::Encrypt, nullptr);
+    AskPassphraseDialog unlock_mixing(AskPassphraseDialog::UnlockMixing, nullptr);
+    AskPassphraseDialog change(AskPassphraseDialog::ChangePass, nullptr);
+    QMessageBox message(QMessageBox::Warning, "Warning", "A question.", QMessageBox::Ok | QMessageBox::Cancel);
+    // The appearance page lists the loaded family's weights and asserts
+    // without fonts (appearanceFonts skips for the same reason): on the
+    // font-less platform the sweep leaves this one dialog out.
+    std::unique_ptr<OptionsDialog> options;
+    if (GUIUtil::fontsLoaded()) {
+        options = std::make_unique<OptionsDialog>(nullptr, true);
+        options->setModel(fixture.options.get());
+    }
+    SignVerifyMessageDialog sign(nullptr);
+    sign.setModel(fixture.model.get());
+    OpenURIDialog uri(nullptr);
+    CCoinControl control;
+    CoinControlDialog coins(control, fixture.model.get());
+    HelpMessageDialog help(nullptr, HelpMessageDialog::cmdline);
+    QRDialog qr;
+    AddressBookPage addresses(AddressBookPage::ForEditing, AddressBookPage::SendingTab);
+    addresses.setModel(fixture.model->getAddressTableModel());
+    SendCoinsDialog send;
+    send.setModel(fixture.model.get());
+    ReceiveCoinsDialog receive;
+    receive.setModel(fixture.model.get());
+    TransactionView transactions;
+    transactions.setModel(fixture.model.get());
+    BitcoinGUI main_window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    main_window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&main_window] { main_window.setClientModel(nullptr); });
+    main_window.addWallet(fixture.model.get());
+    for (QWidget* page : QList<QWidget*>{&addresses, &send, &receive, &transactions, &main_window}) {
+        page->resize(1280, 850);
+    }
+    QList<QWidget*> windows{&unlock, &encrypt, &unlock_mixing, &change, &message, &sign, &uri, &coins,
+                            &help, &qr, &addresses, &send, &receive, &transactions, &main_window};
+    if (options) windows.insert(5, options.get());
+    for (QWidget* window : windows) {
+        window->show(); Settle();
+        // The main window clamps itself to the screen; on minimal's 240x320 its
+        // cards are squeezed below their content, which says nothing about a
+        // row cutting its button off (initialWindowGeometry skips for the same
+        // reason). The limits are checked regardless of size.
+        const bool squeezed = window == &main_window && window->size() != QSize(1280, 850);
+        if (squeezed) qInfo() << "main window is" << window->size() << ": its overflow check needs a larger screen";
+        const QString found = problems(*window, !squeezed);
+        QVERIFY2(found.isEmpty(), qPrintable(QString("%1: %2").arg(window->metaObject()->className(), found)));
+        window->hide();
+    }
+
+    // Opt-in pictures of what was reported and of the taller buttons.
+    if (!output.isEmpty()) {
+        QVERIFY(QDir().mkpath(output));
+        const auto capture = [&](QWidget& window, const char* name) {
+            window.show(); Settle();
+            const bool saved = window.grab().save(QDir(output).filePath(QString("Abyss-buttons-%1.png").arg(name)));
+            window.hide();
+            return saved;
+        };
+        QVERIFY(capture(unlock, "unlock"));
+        QVERIFY(capture(message, "message"));
+        QVERIFY(capture(receive, "receive"));
+        QVERIFY(capture(send, "send"));
+    }
 }
 
 void AbyssTests::coinJoinWidgetsPerPage()
