@@ -887,7 +887,7 @@ static RPCHelpMan quorum_dkginfo()
             RPCResult::Type::OBJ, "", "",
             {
                 {RPCResult::Type::NUM, "active_dkgs", "Total number of active DKG sessions this node is participating in right now"},
-                {RPCResult::Type::NUM, "next_dkg", "The number of blocks until the next potential DKG session"},
+                {RPCResult::Type::NUM, "next_dkg", "The number of blocks until the next potential DKG session of a quorum type that forms"},
                 {RPCResult::Type::STR_HEX, "proTxHash", /*optional=*/true, "The proTxHash the report below is about"},
                 {RPCResult::Type::ARR, "upcoming_dkgs", /*optional=*/true, "Upcoming DKG sessions for the given proTxHash whose work block is already mined",
                 {
@@ -922,34 +922,7 @@ static RPCHelpMan quorum_dkginfo()
     const CBlockIndex* const pindexTip = WITH_LOCK(cs_main, return chainman.ActiveChain().Tip());
     CHECK_NONFATAL(pindexTip);
     const int nTipHeight{pindexTip->nHeight};
-    auto minNextDKG = [](const Consensus::Params& consensusParams, int nTipHeight) {
-        int minDkgWindow{std::numeric_limits<int>::max()};
-        for (const auto& params: consensusParams.llmqs) {
-            if (params.useRotation && (nTipHeight % params.dkgInterval <= params.signingActiveQuorumCount)) {
-                return 1;
-            }
-            minDkgWindow = std::min(minDkgWindow, params.dkgInterval - (nTipHeight % params.dkgInterval));
-        }
-        return minDkgWindow;
-    };
-    ret.pushKV("next_dkg", minNextDKG(consensus, nTipHeight));
-
-    const auto quorum_type_known_enabled = [&](Consensus::LLMQType llmq_type, int quorum_base_height) {
-        const int quorum_base_predecessor_height{quorum_base_height - 1};
-        if (quorum_base_predecessor_height <= nTipHeight) {
-            const CBlockIndex* const pQuorumBasePredecessor = pindexTip->GetAncestor(quorum_base_predecessor_height);
-            return pQuorumBasePredecessor != nullptr && llmq::IsQuorumTypeEnabled(llmq_type, pQuorumBasePredecessor);
-        }
-
-        // The future predecessor is not mined yet, but both DIP0024 conditions are pure height
-        // checks (buried deployment); evaluate them at the future height and let pindexTip stand
-        // in for the rest.
-        return llmq::IsQuorumTypeEnabledInternal(llmq_type, pindexTip,
-                                                 /*optDIP0024IsActive=*/quorum_base_height >=
-                                                     consensus.DeploymentHeight(Consensus::DEPLOYMENT_DIP0024),
-                                                 /*optHaveDIP0024Quorums=*/quorum_base_predecessor_height >=
-                                                     consensus.DIP0024QuorumsHeight);
-    };
+    ret.pushKV("next_dkg", llmq::GetBlocksUntilNextDKG(pindexTip));
 
     uint256 proTxHash;
     if (!request.params[0].isNull() && !request.params[0].get_str().empty()) {
@@ -970,7 +943,7 @@ static RPCHelpMan quorum_dkginfo()
                     quorumHeight += llmq_params.dkgInterval;
                 }
                 const int cycleBaseHeight{quorumHeight - quorumIndex};
-                if (!quorum_type_known_enabled(llmq_params.type, cycleBaseHeight)) {
+                if (!llmq::IsQuorumCycleEnabled(llmq_params.type, pindexTip, cycleBaseHeight)) {
                     continue;
                 }
 

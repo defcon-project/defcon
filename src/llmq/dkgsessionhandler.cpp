@@ -423,6 +423,15 @@ bool CDKGSessionHandler::InitNewQuorum(const CBlockIndex* pQuorumBaseBlockIndex)
     curSession = std::make_unique<CDKGSession>(pQuorumBaseBlockIndex, params, blsWorker, m_dmnman, dkgManager,
                                                dkgDebugManager, m_mn_metaman, m_qsnapman, m_mn_activeman, m_sporkman);
 
+    // A type that does not form at this cycle -- never on this network, or past its formation
+    // end -- has no members by design, and that is not a failure. Same gate as the member list.
+    // The fresh session above still replaces the previous one, so a retired type keeps nothing.
+    if (!IsQuorumTypeEnabled(params.type, pQuorumBaseBlockIndex->pprev)) {
+        LogPrint(BCLog::LLMQ_DKG, "CDKGSessionManager::%s -- height[%d] %s qi[%d] does not form at this height\n", __func__,
+                 pQuorumBaseBlockIndex->nHeight, params.name, quorumIndex);
+        return false;
+    }
+
     if (!curSession->Init(m_mn_activeman->GetProTxHash(), quorumIndex)) {
         LogPrintf("CDKGSessionManager::%s -- height[%d] quorum initialization failed for %s qi[%d]\n", __func__,
                   pQuorumBaseBlockIndex->nHeight, curSession->params.name, quorumIndex);
@@ -793,7 +802,7 @@ void CDKGSessionHandler::HandleDKGRound(CConnman& connman, PeerManager& peerman)
     const CBlockIndex* pQuorumBaseBlockIndex = WITH_LOCK(cs_main, return m_chainstate.m_blockman.LookupBlockIndex(curQuorumHash));
 
     if (!InitNewQuorum(pQuorumBaseBlockIndex)) {
-        // should actually never happen
+        // This type does not form at this cycle, or it has too few members.
         WaitForNewQuorum(curQuorumHash);
         throw AbortPhaseException();
     }

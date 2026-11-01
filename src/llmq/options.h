@@ -100,6 +100,18 @@ bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, const CBlockIndex* pindex
 
 bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev, std::optional<bool> optDIP0024IsActive, std::optional<bool> optHaveDIP0024Quorums);
 
+/** Whether a DKG cycle based at this height forms, as far as the tip can tell. A
+ *  base whose predecessor is mined asks the ordinary gate with that predecessor. For
+ *  a later base the formation end and the DIP0024 conditions are pure height checks,
+ *  read at the base; the tip stands in for the rest, so a type whose formation opens
+ *  on a height gate first counts once the tip reaches that gate. */
+[[nodiscard]] bool IsQuorumCycleEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexTip, int cycle_base_height);
+
+/** The number of blocks from the tip to the next DKG session of a type that forms,
+ *  or the highest int (the "never" of the heights in Consensus::Params) when none
+ *  does. Registered types that do not form have no sessions and do not count. */
+[[nodiscard]] int GetBlocksUntilNextDKG(gsl::not_null<const CBlockIndex*> pindexTip);
+
 std::vector<Consensus::LLMQType> GetEnabledQuorumTypes(gsl::not_null<const CBlockIndex*> pindex);
 std::vector<std::reference_wrapper<const Consensus::LLMQParams>> GetEnabledQuorumParams(gsl::not_null<const CBlockIndex*> pindex);
 
