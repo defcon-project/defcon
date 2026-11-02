@@ -1,5 +1,5 @@
-#ifndef WALLET_BLSWALLET_H
-#define WALLET_BLSWALLET_H
+#ifndef BITCOIN_WALLET_BLSWALLET_H
+#define BITCOIN_WALLET_BLSWALLET_H
 
 #include <bls/bls.h>
 #include <key.h>
@@ -20,4 +20,4 @@ struct BlsWalletEntry {
     };
 };
 
-#endif // WALLET_BLSWALLET_H
+#endif // BITCOIN_WALLET_BLSWALLET_H

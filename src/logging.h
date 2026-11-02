@@ -134,7 +134,6 @@ namespace BCLog {
         std::atomic<uint64_t> m_categories{0};
 
         std::string LogTimestampStr(const std::string& str);
-        std::string LogThreadNameStr(const std::string &str);
 
         /** Slots that connect to the print signal */
         std::list<std::function<void(const std::string&)>> m_print_callbacks /* GUARDED_BY(m_cs) */ {};

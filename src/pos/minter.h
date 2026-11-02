@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef MINTER_H
-#define MINTER_H
+#ifndef BITCOIN_POS_MINTER_H
+#define BITCOIN_POS_MINTER_H
 
 #include <node/context.h>
 
@@ -64,5 +64,5 @@ bool CheckStake(ChainstateManager& chainman, CBlock *pblock);
 void StopStaking();
 void ThreadStakeMiner(NodeContext& node);
 
-#endif // MINTER_H
+#endif // BITCOIN_POS_MINTER_H
 

@@ -595,15 +595,6 @@ CGovernanceObject* CGovernanceManager::FindGovernanceObjectByDataHash(const uint
     return nullptr;
 }
 
-void CGovernanceManager::DeleteGovernanceObject(const uint256& nHash)
-{
-    LOCK(cs);
-
-    if (mapObjects.count(nHash)) {
-        mapObjects.erase(nHash);
-    }
-}
-
 std::vector<CGovernanceVote> CGovernanceManager::GetCurrentVotes(const uint256& nParentHash, const COutPoint& mnCollateralOutpointFilter) const
 {
     LOCK(cs);

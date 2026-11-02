@@ -921,7 +921,7 @@ private:
     // Unconfirmed coinstakes to check or retry (for example while in the mempool).
     // Confirmed history is not duplicated in this index.
     std::set<uint256> m_coinstakes_to_check GUARDED_BY(cs_wallet);
-    bool m_rescan_coinstakes{true} GUARDED_BY(cs_wallet);
+    bool m_rescan_coinstakes GUARDED_BY(cs_wallet){true};
 
     ScriptPubKeyMan* m_external_spk_managers{nullptr};
     ScriptPubKeyMan* m_internal_spk_managers{nullptr};
@@ -1053,8 +1053,6 @@ public:
 
     /** Interface for accessing CoinJoin state. */
     interfaces::CoinJoin::Loader& coinjoin_loader() { assert(m_coinjoin_loader); return *m_coinjoin_loader; }
-    /** Interface for availability status of CoinJoin. */
-    bool coinjoin_available() { return m_coinjoin_loader != nullptr; }
 
     const CWalletTx* GetWalletTx(const uint256& hash) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     bool IsTrusted(const CWalletTx& wtx, std::set<uint256>& trusted_parents) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
@@ -1634,7 +1632,6 @@ public:
     ScriptPubKeyMan* AddWalletDescriptor(WalletDescriptor& desc, const FlatSigningProvider& signing_provider, const std::string& label, bool internal);
 
     //! BLS Key Functions
-    bool ReadFromBLSWallet(const std::string& keydata);
     bool WriteToBLSWallet(const std::string& keydata);
     std::map<unsigned int, std::string> GetBLSAddresses();
     std::vector<BlsWalletEntry> GetBLSKeypairs();

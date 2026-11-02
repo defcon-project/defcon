@@ -134,9 +134,7 @@ public:
 
     const ChainTxData& TxData() const { return chainTxData; }
     void UpdateDIP3Parameters(int nActivationHeight, int nEnforcementHeight);
-    void UpdateDIP8Parameters(int nActivationHeight);
     void UpdateBudgetParameters(int nMasternodePaymentsStartBlock, int nBudgetPaymentsStartBlock, int nSuperblockStartBlock);
-    void UpdateLLMQInstantSend(Consensus::LLMQType llmqType);
     /**
      * Validate params for Masternodes EHF
      *

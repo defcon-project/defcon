@@ -415,10 +415,6 @@ public:
     {
         return m_wallet->GetAnonymizableBalance(fSkipDenominated, fSkipUnconfirmed);
     }
-    CAmount getAnonymizedBalance() override
-    {
-        return m_wallet->GetBalance().m_anonymized;
-    }
     CAmount getDenominatedBalance(bool unconfirmed) override
     {
         const auto bal = m_wallet->GetBalance();

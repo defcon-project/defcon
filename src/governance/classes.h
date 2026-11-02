@@ -106,8 +106,6 @@ public:
 
     bool IsValid(const CChain& active_chain, const CTransaction& txNew, int nBlockHeight, CAmount blockReward);
     bool IsExpired(int heightToTest) const;
-
-    std::vector<uint256> GetProposalHashes() const;
 };
 
 #endif // BITCOIN_GOVERNANCE_CLASSES_H

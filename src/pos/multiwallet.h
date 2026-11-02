@@ -1,5 +1,5 @@
-#ifndef MULTIWALLET_H
-#define MULTIWALLET_H
+#ifndef BITCOIN_POS_MULTIWALLET_H
+#define BITCOIN_POS_MULTIWALLET_H
 
 #include <chainparams.h>
 #include <consensus/params.h>
@@ -11,4 +11,4 @@ bool ToggleWalletStaking(const std::string& name);
 int ReturnActiveStakingWallets();
 bool IsWalletStaking(const std::string& name);
 
-#endif // MULTIWALLET_H
+#endif // BITCOIN_POS_MULTIWALLET_H

@@ -84,11 +84,6 @@ LLMQContext& EnsureLLMQContext(const NodeContext& node)
     return *node.llmq_ctx;
 }
 
-LLMQContext& EnsureAnyLLMQContext(const CoreContext& context)
-{
-    return EnsureLLMQContext(EnsureAnyNodeContext(context));
-}
-
 CConnman& EnsureConnman(const NodeContext& node)
 {
     if (!node.connman) {

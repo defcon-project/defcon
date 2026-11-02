@@ -26,7 +26,6 @@ ChainstateManager& EnsureAnyChainman(const CoreContext& context);
 CBlockPolicyEstimator& EnsureFeeEstimator(const NodeContext& node);
 CBlockPolicyEstimator& EnsureAnyFeeEstimator(const CoreContext& context);
 LLMQContext& EnsureLLMQContext(const NodeContext& node);
-LLMQContext& EnsureAnyLLMQContext(const CoreContext& context);
 CConnman& EnsureConnman(const NodeContext& node);
 PeerManager& EnsurePeerman(const NodeContext& node);
 

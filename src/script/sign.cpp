@@ -138,17 +138,6 @@ static bool CreateSigBLS(const BaseSignatureCreator& creator, SignatureData& sig
     return false;
 }
 
-static void PrintKey(std::vector<uint8_t>& in, std::string in2)
-{
-    char blshex[256];
-    memset(blshex, 0, sizeof(blshex));
-
-    unsigned int len = in.size();
-    for (unsigned int i = 0; i < len; i++) {
-        sprintf(blshex+(i*2), "%02hhx", in[i]);
-    }
-}
-
 /**
  * Sign scriptPubKey using signature made with creator.
  * Signatures are returned in scriptSigRet (or returns false if scriptPubKey can't be signed),

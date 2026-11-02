@@ -288,10 +288,6 @@ public:
     {
         return ::CoinJoin::IsDenominatedAmount(nAmount);
     }
-    std::array<CAmount, 5> getStandardDenominations() override
-    {
-        return ::CoinJoin::GetStandardDenominations();
-    }
 };
 
 class NodeImpl : public Node
