@@ -1086,7 +1086,8 @@ static RPCHelpMan sendmsgtopeer()
 static RPCHelpMan setmnthreadactive()
 {
     return RPCHelpMan{"setmnthreadactive",
-        "\nDisable/enable automatic masternode connections thread activity.\n",
+        "\nDisable/enable automatic masternode connections thread activity.\n"
+        "Returns after a connection attempt already under way has ended.\n",
         {
             {"state", RPCArg::Type::BOOL, RPCArg::Optional::NO, "true to enable the thread, false to disable"},
         },
