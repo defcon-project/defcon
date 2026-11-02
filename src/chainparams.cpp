@@ -1372,7 +1372,10 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
         const auto name{arg.substr(0, found)};
         const auto value{arg.substr(found + 1)};
         int32_t height;
-        if (!ParseInt32(value, &height) || height < 0 || height >= std::numeric_limits<int>::max()) {
+        // The largest value stands for never: it is what an unset gate holds,
+        // and the only way to push a gate regtest turns on by itself, such as
+        // mn_rr at 900, out of every run.
+        if (!ParseInt32(value, &height) || height < 0) {
             throw std::runtime_error(strprintf("Invalid height value (%s) for -testactivationheight=name@height.", arg));
         }
         if (name == "bip147") {
@@ -2024,6 +2027,20 @@ void CheckV231ActivationBundle(const Consensus::Params& consensus, const std::st
     const int height = consensus.nV231ActivationHeight;
     if (height == UNSET) return;
     if (height <= 0) throw std::runtime_error("v23.1 activation height must be positive");
+    // From H a staked block with no payable masternode holds only its empty
+    // first coinbase output, so no other rule may ask that coinbase for an
+    // output of its own: superblocks must be retired by then. The release
+    // networks retire them with the v23 bundle, devnet from its genesis, and
+    // a regtest that schedules H names the retirement too.
+    if (consensus.nSuperblocksRetiredHeight > height) {
+        throw std::runtime_error("v23.1 must not precede the retirement of superblocks");
+    }
+    // Nor may the platform share of mn_rr be scheduled with it: the producer
+    // adds that share even when no masternode is paid, and the credit pool
+    // counts it, so it has no place in a coinbase that must stay empty.
+    if (consensus.MN_RRHeight != UNSET) {
+        throw std::runtime_error("v23.1 cannot be scheduled together with mn_rr");
+    }
     // Regtest registers neither legacy profile and sets its gates one by one.
     if (network == CBaseChainParams::REGTEST) return;
     for (const auto type : {Consensus::LLMQType::LLMQ_400_60, Consensus::LLMQType::LLMQ_400_85}) {
