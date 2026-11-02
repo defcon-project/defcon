@@ -9,7 +9,11 @@
 #include <qt/governancelist.h>
 #include <qt/masternodelist.h>
 
+#include <QMargins>
 #include <QStackedWidget>
+
+#include <utility>
+#include <vector>
 
 class ClientModel;
 class MultisigPage;
@@ -56,6 +60,9 @@ public:
 
     void showOutOfSyncWarning(bool fShow);
 
+protected:
+    void changeEvent(QEvent* event) override;
+
 private:
     ClientModel *clientModel;
     WalletModel *walletModel;
@@ -70,6 +77,11 @@ private:
     MasternodeList* masternodeListPage{nullptr};
     GovernanceList* governanceListPage{nullptr};
     MultisigPage* multisigPage{nullptr};
+    //! The Abyss headers of the pages that have no Abyss layout of their own.
+    //! Each header with the margins its page came with.
+    std::vector<std::pair<QWidget*, QMargins>> m_page_headers;
+    void addPageHeader(QWidget* page, const QString& title, const QString& subtitle);
+    void updatePageHeaders();
 
     TransactionView *transactionView;
 

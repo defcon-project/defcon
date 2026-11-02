@@ -52,6 +52,11 @@ private Q_SLOTS:
     void shortcutUnderlines();
     void buttonRows();
     void walletGoneWhileAdding();
+    void pageHeaders();
+    void primaryButtons();
+    void overviewColumns();
+    void transactionFilters();
+    void fontsAfterDeletedWidgets();
     // Last, after the window-activation checks of paymentPages: run before
     // them, its two short-lived wallet windows were followed by occasional
     // activation failures on xcb without a window manager.

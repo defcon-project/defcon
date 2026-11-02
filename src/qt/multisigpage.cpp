@@ -64,6 +64,7 @@ MultisigPage::MultisigPage(QWidget* parent) :
 
     auto* top_buttons = new QHBoxLayout();
     m_create_button = new QPushButton(tr("Create / Add…"), this);
+    m_create_button->setObjectName("multisigCreate");
     m_create_button->setToolTip(tr("Create a new multisignature address or add an existing one to the wallet"));
     m_import_button = new QPushButton(tr("Import setup…"), this);
     m_import_button->setToolTip(tr("Import a multisig setup file received from a cosigner"));
@@ -210,6 +211,20 @@ MultisigPage::MultisigPage(QWidget* parent) :
     connect(m_show_qr_button, &QPushButton::clicked, this, &MultisigPage::showProfileQr);
 
     updateButtonStates();
+    updateThemePresentation();
+}
+
+void MultisigPage::changeEvent(QEvent* event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::StyleChange) updateThemePresentation();
+}
+
+void MultisigPage::updateThemePresentation()
+{
+    // On an empty page Abyss gives the free room to the note, so that the buttons
+    // stay under the header instead of spreading down the page.
+    static_cast<QVBoxLayout*>(layout())->setStretchFactor(m_empty_label, GUIUtil::isModernTheme() ? 1 : 0);
 }
 
 void MultisigPage::setClientModel(ClientModel* client_model)

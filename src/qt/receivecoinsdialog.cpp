@@ -117,6 +117,7 @@ void ReceiveCoinsDialog::updateThemePresentation()
         ui->gridLayout->addWidget(m_modern_form, 0, 0, 8, 3);
         m_modern_form->show();
         ui->verticalLayout->insertWidget(0, m_modern_header);
+        GUIUtil::alignPageHeader(m_modern_header);
         m_modern_header->show();
     } else {
         ui->gridLayout->removeWidget(m_modern_form);
@@ -148,6 +149,10 @@ void ReceiveCoinsDialog::changeEvent(QEvent* event)
     if (event->type() == QEvent::StyleChange) {
         updateThemePresentation();
         updateEmptyState();
+    } else if (event->type() == QEvent::ParentChange && m_modern_layout) {
+        // Built as a window, the page placed its header by a window's margins;
+        // in the wallet view it has a child's.
+        GUIUtil::alignPageHeader(m_modern_header);
     }
 }
 

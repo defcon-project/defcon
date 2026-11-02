@@ -17,6 +17,7 @@ class TransactionFilterProxy;
 class WalletModel;
 
 QT_BEGIN_NAMESPACE
+class QBoxLayout;
 class QComboBox;
 class QDateTimeEdit;
 class QFrame;
@@ -24,6 +25,7 @@ class QItemSelectionModel;
 class QLineEdit;
 class QMenu;
 class QModelIndex;
+class QSpacerItem;
 class QTableView;
 QT_END_NAMESPACE
 
@@ -87,6 +89,12 @@ private:
     QWidget *createDateRangeWidget();
     void updateCalendarWidgets();
     void updateEmptyState();
+    //! Abyss names what its two "All" lists filter and hides the scroll bar's
+    //! empty strip; the classic themes keep the original row.
+    void updateFilterPresentation();
+    QBoxLayout* m_filter_row{nullptr};
+    QSpacerItem* m_filter_scrollbar_gap{nullptr};
+    int m_filter_scrollbar_width{0};
 
     void changeEvent(QEvent* e) override;
 
