@@ -140,47 +140,6 @@ CAmount PlatformShare(const CAmount reward)
     return true;
 }
 
-[[nodiscard]] bool CMNPaymentsProcessor::IsOldBudgetBlockValueValid(const CBlock& block, const int nBlockHeight, const CAmount blockReward, std::string& strErrorRet)
-{
-    bool isBlockRewardValueMet = (block.vtx[0]->GetValueOut() <= blockReward);
-
-    if (nBlockHeight < m_consensus_params.nBudgetPaymentsStartBlock) {
-        strErrorRet = strprintf("Incorrect block %d, old budgets are not activated yet", nBlockHeight);
-        return false;
-    }
-
-    if (nBlockHeight >= m_consensus_params.nSuperblockStartBlock) {
-        strErrorRet = strprintf("Incorrect block %d, old budgets are no longer active", nBlockHeight);
-        return false;
-    }
-
-    // we are still using budgets, but we have no data about them anymore,
-    // all we know is predefined budget cycle and window
-
-    int nOffset = nBlockHeight % m_consensus_params.nBudgetPaymentsCycleBlocks;
-    if (nOffset < m_consensus_params.nBudgetPaymentsWindowBlocks) {
-        // NOTE: old budget system is disabled since 12.1
-        if(m_mn_sync.IsSynced()) {
-            // no old budget blocks should be accepted here on mainnet,
-            // testnet/devnet/regtest should produce regular blocks only
-            LogPrint(BCLog::GOBJECT, "CMNPaymentsProcessor::%s -- WARNING! Client synced but old budget system is disabled, checking block value against block reward\n", __func__);
-            if(!isBlockRewardValueMet) {
-                strErrorRet = strprintf("coinbase pays too much at height %d (actual=%d vs limit=%d), exceeded block reward, old budgets are disabled",
-                                        nBlockHeight, block.vtx[0]->GetValueOut(), blockReward);
-            }
-            return isBlockRewardValueMet;
-        }
-        // when not synced, rely on online nodes (all networks)
-        LogPrint(BCLog::GOBJECT, "CMNPaymentsProcessor::%s -- WARNING! Skipping old budget block value checks, accepting block\n", __func__);
-        return true;
-    }
-    if(!isBlockRewardValueMet) {
-        strErrorRet = strprintf("coinbase pays too much at height %d (actual=%d vs limit=%d), exceeded block reward, block is not in old budget cycle window",
-                                nBlockHeight, block.vtx[0]->GetValueOut(), blockReward);
-    }
-    return isBlockRewardValueMet;
-}
-
 /**
 * IsBlockValueValid
 *

@@ -453,23 +453,6 @@ void CKey::MakeNewBLSKey()
     fValid = true;
 }
 
-void CKey::MakeNewDeterministicBLSKey(const std::vector<uint8_t>& hash)
-{
-    uint8_t count = 0;
-    std::vector<unsigned char, secure_allocator<unsigned char>> rand;
-    rand.resize(CHash256::OUTPUT_SIZE);
-    do {
-        CHash256().Write(MakeUCharSpan(hash)).Write(Span{&count,1}).Finalize(rand);
-        count++;
-        if (count == 255) {
-            fValid = false;
-            return;
-        }
-    } while (!CheckBLS(rand));
-    Set(rand.begin(), rand.end(), true);
-    fValid = true;
-}
-
 CPubKey CKey::GetPubKeyForBLS() const
 {
     CBLSSecretKey testKey;
@@ -477,15 +460,6 @@ CPubKey CKey::GetPubKeyForBLS() const
     CBLSPublicKey pubKey = testKey.GetPublicKey();
     std::vector<uint8_t> pubBytes = pubKey.ToByteVector(false);
     return CPubKey(pubBytes.begin(), pubBytes.end());
-}
-
-CPrivKey CKey::GetBLSPrivateKey() const
-{
-    assert(fValid);
-    CPrivKey privkey(keydata.size());
-    for (size_t i = 0; i < keydata.size(); i++)
-        privkey[i] = keydata[i];
-    return privkey;
 }
 
 std::vector<unsigned char> GetKeyData(const CKey &key)

@@ -71,11 +71,6 @@ public:
         listItems.clear();
     }
 
-    void SetMaxSize(size_type nMaxSizeIn)
-    {
-        nMaxSize = nMaxSizeIn;
-    }
-
     size_type GetMaxSize() const {
         return nMaxSize;
     }

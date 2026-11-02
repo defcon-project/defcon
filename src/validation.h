@@ -1052,11 +1052,6 @@ public:
         return m_blockman.m_block_index;
     }
 
-    PrevBlockMap& PrevBlockIndex() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
-    {
-        return m_blockman.m_prev_block_index;
-    }
-
     //! @returns true if a snapshot-based chainstate is in use. Also implies
     //!          that a background validation chainstate is also in use.
     bool IsSnapshotActive() const;

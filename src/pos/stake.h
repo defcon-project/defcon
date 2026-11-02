@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef STAKE_H
-#define STAKE_H
+#ifndef BITCOIN_POS_STAKE_H
+#define BITCOIN_POS_STAKE_H
 
 #include <consensus/tx_verify.h>
 #include <index/disktxpos.h>
@@ -341,4 +341,4 @@ class CStakeWallet
         StakeAttempt SignBlock(CChainState& chain_state, CBlockTemplate* pblocktemplate, int nHeight, int64_t nSearchTime);
 };
 
-#endif // STAKE_H
+#endif // BITCOIN_POS_STAKE_H

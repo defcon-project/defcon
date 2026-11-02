@@ -32,4 +32,4 @@ private:
     std::shared_mutex m_mutex;
 };
 } // namespace dsl
-#endif
+#endif // BITCOIN_EVO_POSE_SERVICE_SIGCACHE_H

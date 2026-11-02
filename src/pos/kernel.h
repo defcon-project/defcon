@@ -2,8 +2,8 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef KERNEL_H
-#define KERNEL_H
+#ifndef BITCOIN_POS_KERNEL_H
+#define BITCOIN_POS_KERNEL_H
 
 #include <chainparams.h>
 #include <consensus/params.h>
@@ -68,11 +68,6 @@ bool CheckStakeKernelHash(const CBlockIndex *pindexPrev, const Consensus::Params
     bool fPrintProofOfStake=false);
 
 /**
- * Get kernel hash and value for blockindex and coinstake tx
- */
-bool GetKernelInfo(const CBlockIndex *blockindex, const CTransaction &tx, uint256 &hash, CAmount &value, CScript &script, uint256 &blockhash);
-
-/**
  * Check kernel hash target and coinstake signature
  * Sets hashProofOfStake on success return
  *
@@ -94,4 +89,4 @@ bool CheckProofOfStake(CChainState& chain_state, const CCoinsViewCache& view, Bl
  */
 bool CheckKernel(CChainState& chain_state, const CBlockIndex *pindexPrev, unsigned int nBits, int64_t nTime, const COutPoint &prevout, int64_t* pBlockTime = nullptr);
 
-#endif // KERNEL_H
+#endif // BITCOIN_POS_KERNEL_H

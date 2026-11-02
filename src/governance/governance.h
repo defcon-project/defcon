@@ -290,7 +290,6 @@ public:
     const CGovernanceObject* FindConstGovernanceObject(const uint256& nHash) const EXCLUSIVE_LOCKS_REQUIRED(cs);
     CGovernanceObject* FindGovernanceObject(const uint256& nHash) EXCLUSIVE_LOCKS_REQUIRED(cs);
     CGovernanceObject* FindGovernanceObjectByDataHash(const uint256& nDataHash) EXCLUSIVE_LOCKS_REQUIRED(cs);
-    void DeleteGovernanceObject(const uint256& nHash);
 
     // These commands are only used in RPC
     std::vector<CGovernanceVote> GetCurrentVotes(const uint256& nParentHash, const COutPoint& mnCollateralOutpointFilter) const;

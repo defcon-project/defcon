@@ -47,7 +47,6 @@ private:
                                       std::vector<CTxOut>& voutMasternodePaymentsRet);
     [[nodiscard]] bool IsTransactionValid(const CTransaction& txNew, const CBlockIndex* pindexPrev, const CAmount blockSubsidy,
                                           const CAmount feeReward);
-    [[nodiscard]] bool IsOldBudgetBlockValueValid(const CBlock& block, const int nBlockHeight, const CAmount blockReward, std::string& strErrorRet);
 
 public:
     explicit CMNPaymentsProcessor(CDeterministicMNManager& dmnman, CGovernanceManager& govman, const ChainstateManager& chainman,

@@ -66,4 +66,4 @@ public:
 };
 
 } // namespace dsl
-#endif
+#endif // BITCOIN_EVO_POSE_SERVICE_METRICS_H

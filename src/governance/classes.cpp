@@ -393,17 +393,6 @@ bool CSuperblock::IsExpired(int heightToTest) const
     return false;
 }
 
-std::vector<uint256> CSuperblock::GetProposalHashes() const
-{
-    std::vector<uint256> res;
-
-    for (const auto& payment : vecPayments) {
-        res.push_back(payment.proposalHash);
-    }
-
-    return res;
-}
-
 std::string CSuperblock::GetHexStrData() const
 {
     // {\"event_block_height\": 879720, \"payment_addresses\": \"yd5KMREs3GLMe6mTJYr3YrH1juwNwrFCfB\", \"payment_amounts\": \"5.00000000\", \"proposal_hashes\": \"485817fddbcab6c55c9a6856dabc8b19ed79548bda8c01712daebc9f74f287f4\", \"type\": 2}\u0000

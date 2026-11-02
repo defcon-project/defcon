@@ -818,42 +818,6 @@ void RPCResult::ToSections(Sections& sections, const OuterType outer_type, const
     NONFATAL_UNREACHABLE();
 }
 
-bool RPCResult::MatchesType(const UniValue& result) const
-{
-    switch (m_type) {
-    case Type::ELISION: {
-        return false;
-    }
-    case Type::ANY: {
-        return true;
-    }
-    case Type::NONE: {
-        return UniValue::VNULL == result.getType();
-    }
-    case Type::STR:
-    case Type::STR_HEX: {
-        return UniValue::VSTR == result.getType();
-    }
-    case Type::NUM:
-    case Type::STR_AMOUNT:
-    case Type::NUM_TIME: {
-        return UniValue::VNUM == result.getType();
-    }
-    case Type::BOOL: {
-        return UniValue::VBOOL == result.getType();
-    }
-    case Type::ARR_FIXED:
-    case Type::ARR: {
-        return UniValue::VARR == result.getType();
-    }
-    case Type::OBJ_DYN:
-    case Type::OBJ: {
-        return UniValue::VOBJ == result.getType();
-    }
-    } // no default case, so the compiler can warn about missing cases
-    NONFATAL_UNREACHABLE();
-}
-
 std::string RPCArg::ToStringObj(const bool oneline) const
 {
     std::string res;

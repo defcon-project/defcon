@@ -18,8 +18,6 @@
 
 struct bilingual_str;
 
-void SplitWalletPath(const fs::path& wallet_path, fs::path& env_directory, std::string& database_filename);
-
 /** RAII class that provides access to a WalletDatabase */
 class DatabaseBatch
 {

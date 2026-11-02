@@ -1037,44 +1037,6 @@ void CCoinJoinClientManager::AddUsedMasternode(const COutPoint& outpointMn)
     vecMasternodesUsed.push_back(outpointMn);
 }
 
-CDeterministicMNCPtr CCoinJoinClientManager::GetRandomNotUsedMasternode()
-{
-    auto mnList = m_dmnman.GetListAtChainTip();
-
-    size_t nCountEnabled = mnList.GetValidMNsCount();
-    size_t nCountNotExcluded = nCountEnabled - vecMasternodesUsed.size();
-
-    WalletCJLogPrint(m_wallet, "CCoinJoinClientManager::%s -- %d enabled masternodes, %d masternodes to choose from\n", __func__, nCountEnabled, nCountNotExcluded);
-    if (nCountNotExcluded < 1) {
-        return nullptr;
-    }
-
-    // fill a vector
-    std::vector<CDeterministicMNCPtr> vpMasternodesShuffled;
-    vpMasternodesShuffled.reserve(nCountEnabled);
-    mnList.ForEachMNShared(true, [&vpMasternodesShuffled](const CDeterministicMNCPtr& dmn) {
-        vpMasternodesShuffled.emplace_back(dmn);
-    });
-
-    // shuffle pointers
-    Shuffle(vpMasternodesShuffled.begin(), vpMasternodesShuffled.end(), FastRandomContext());
-
-    std::set<COutPoint> excludeSet(vecMasternodesUsed.begin(), vecMasternodesUsed.end());
-
-    // loop through
-    for (const auto& dmn : vpMasternodesShuffled) {
-        if (excludeSet.count(dmn->collateralOutpoint)) {
-            continue;
-        }
-
-        WalletCJLogPrint(m_wallet, "CCoinJoinClientManager::%s -- found, masternode=%s\n", __func__, dmn->collateralOutpoint.ToStringShort());
-        return dmn;
-    }
-
-    WalletCJLogPrint(m_wallet, "CCoinJoinClientManager::%s -- failed\n", __func__);
-    return nullptr;
-}
-
 static int WinnersToSkip()
 {
     return 1;

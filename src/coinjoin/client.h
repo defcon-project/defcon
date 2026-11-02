@@ -352,7 +352,6 @@ public:
     void ProcessPendingDsaRequest(CConnman& connman) EXCLUSIVE_LOCKS_REQUIRED(!cs_deqsessions);
 
     void AddUsedMasternode(const COutPoint& outpointMn);
-    CDeterministicMNCPtr GetRandomNotUsedMasternode();
     CDeterministicMNCPtr GetRandomUsedMasternode();
 
     void UpdatedSuccessBlock();

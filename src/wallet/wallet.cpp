@@ -6332,12 +6332,6 @@ bool CWallet::LoadBLSKeyToMemory(const std::string& keydata, int64_t record_id, 
     return true;
 }
 
-bool CWallet::ReadFromBLSWallet(const std::string& keydata)
-{
-    LOCK(cs_wallet);
-    return LoadBLSKeyToMemory(keydata);
-}
-
 bool CWallet::EncryptBLSKeyRecords(const CKeyingMaterial& master_key, WalletBatch& batch)
 {
     LOCK(cs_wallet);

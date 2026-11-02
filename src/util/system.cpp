@@ -867,11 +867,6 @@ fs::path GetDefaultDataDir()
 #endif
 }
 
-fs::path GetBackupsDir()
-{
-    return gArgs.GetBackupsDirPath();
-}
-
 bool CheckDataDirOption()
 {
     const fs::path datadir{gArgs.GetPathArg("-datadir")};
