@@ -217,9 +217,7 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
         // forces its first output empty -- so past the gate its value may not
         // exceed the sum of what the rules expect of it. The expected outputs
         // come from the same function that builds and verifies them, so the
-        // bound cannot drift from the payout rule. If the payee cannot be
-        // resolved the existing code declines to verify rather than reject,
-        // and this follows it.
+        // bound cannot drift from the payout rule.
         //
         // The expected sum has no term for superblock payments: the reward
         // schedule has no governance share (GetBlockSubsidyHelper), so
@@ -231,6 +229,22 @@ bool CMNPaymentsProcessor::IsBlockValueValid(const CBlock& block, const CBlockIn
             if (!CheckPosCoinbaseValue(nBlockHeight, block.vtx[0]->GetValueOut(), expected, m_consensus_params)) {
                 strErrorRet = strprintf("coinbase pays too much at height %d (actual=%d vs expected=%d), proof-of-stake coinbase may carry only the required payouts",
                                         nBlockHeight, block.vtx[0]->GetValueOut(), expected);
+                return false;
+            }
+        } else if (m_consensus_params.nV231ActivationHeight != std::numeric_limits<int>::max() &&
+                   nBlockHeight >= m_consensus_params.nV231ActivationHeight) {
+            // Masternodes registered, none payable -- every one banned or
+            // suspended -- leaves no payee, and the producer then adds nothing
+            // to the coinbase (GetBlockTxOuts). Below the v23.1 height nothing
+            // looked at such a block, so a producer running modified software
+            // could pay itself whatever it liked there. From the height its
+            // coinbase is exactly the empty first output CheckBlock requires.
+            // Nothing else may ask that coinbase for an output of its own: the
+            // height cannot be scheduled before superblocks retire, nor
+            // together with the platform share (CheckV231ActivationBundle).
+            if (block.vtx[0]->vout.size() != 1) {
+                strErrorRet = strprintf("coinbase differs from the required payouts at height %d (outputs=%u), a block with no payable masternode may carry only the empty first output",
+                                        nBlockHeight, block.vtx[0]->vout.size());
                 return false;
             }
         }

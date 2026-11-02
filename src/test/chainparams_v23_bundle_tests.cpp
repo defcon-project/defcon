@@ -602,6 +602,56 @@ BOOST_AUTO_TEST_CASE(v231_bundle_uses_one_height_for_both_retirements_and_testne
     BOOST_CHECK_THROW(CheckV23ActivationBundle(dormant_testnet, CBaseChainParams::TESTNET), std::runtime_error);
 }
 
+// From H a staked block with no payable masternode holds only its empty first
+// coinbase output, so nothing else may ask that coinbase for an output of its
+// own: superblocks must be retired by H, and the platform share of mn_rr may
+// not be scheduled at all -- on every network, regtest included.
+BOOST_AUTO_TEST_CASE(v231_refuses_superblocks_past_the_height_and_mn_rr)
+{
+    constexpr int UNSET = std::numeric_limits<int>::max();
+    for (const auto& network : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
+        const auto params = CreateChainParams(gArgs, network);
+        Consensus::Params consensus = params->GetConsensus();
+        if (network == CBaseChainParams::TESTNET) ApplyV23ActivationBundle(consensus, 288000);
+        Consensus::Params scheduled = consensus;
+        BOOST_CHECK_NO_THROW(ApplyV231ActivationBundle(scheduled, TEST_V231_H, network));
+        BOOST_CHECK(scheduled.nSuperblocksRetiredHeight <= TEST_V231_H);
+        BOOST_CHECK(scheduled.MN_RRHeight == UNSET);
+        Consensus::Params late_superblocks = consensus;
+        late_superblocks.nSuperblocksRetiredHeight = TEST_V231_H + 1;
+        BOOST_CHECK_EXCEPTION(ApplyV231ActivationBundle(late_superblocks, TEST_V231_H, network), std::runtime_error, HasReason("retirement of superblocks"));
+        Consensus::Params with_mn_rr = consensus;
+        with_mn_rr.MN_RRHeight = TEST_V231_H;
+        BOOST_CHECK_EXCEPTION(ApplyV231ActivationBundle(with_mn_rr, TEST_V231_H, network), std::runtime_error, HasReason("together with mn_rr"));
+    }
+    {
+        // Regtest sets its gates one by one, and runs mn_rr from 900 unless told otherwise.
+        Consensus::Params consensus = CreateChainParams(gArgs, CBaseChainParams::REGTEST)->GetConsensus();
+        BOOST_REQUIRE(consensus.nSuperblocksRetiredHeight == UNSET);
+        BOOST_REQUIRE(consensus.MN_RRHeight != UNSET);
+        BOOST_CHECK_EXCEPTION(ApplyV231ActivationBundle(consensus, TEST_V231_H, CBaseChainParams::REGTEST), std::runtime_error, HasReason("retirement of superblocks"));
+        consensus.nSuperblocksRetiredHeight = TEST_V231_H;
+        BOOST_CHECK_EXCEPTION(ApplyV231ActivationBundle(consensus, TEST_V231_H, CBaseChainParams::REGTEST), std::runtime_error, HasReason("together with mn_rr"));
+        consensus.MN_RRHeight = UNSET;
+        BOOST_CHECK_NO_THROW(ApplyV231ActivationBundle(consensus, TEST_V231_H, CBaseChainParams::REGTEST));
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(v231_refuses_superblocks_past_the_height_and_mn_rr_on_devnet, DevNetSetup)
+{
+    Consensus::Params consensus = Params().GetConsensus();
+    BOOST_REQUIRE_EQUAL(consensus.nSuperblocksRetiredHeight, 0);
+    BOOST_REQUIRE(consensus.MN_RRHeight == std::numeric_limits<int>::max());
+    Consensus::Params scheduled = consensus;
+    BOOST_CHECK_NO_THROW(ApplyV231ActivationBundle(scheduled, TEST_V231_H, CBaseChainParams::DEVNET));
+    Consensus::Params late_superblocks = consensus;
+    late_superblocks.nSuperblocksRetiredHeight = TEST_V231_H + 1;
+    BOOST_CHECK_EXCEPTION(ApplyV231ActivationBundle(late_superblocks, TEST_V231_H, CBaseChainParams::DEVNET), std::runtime_error, HasReason("retirement of superblocks"));
+    Consensus::Params with_mn_rr = consensus;
+    with_mn_rr.MN_RRHeight = TEST_V231_H;
+    BOOST_CHECK_EXCEPTION(ApplyV231ActivationBundle(with_mn_rr, TEST_V231_H, CBaseChainParams::DEVNET), std::runtime_error, HasReason("together with mn_rr"));
+}
+
 BOOST_AUTO_TEST_CASE(v231_mnhf_retirement_startup_guard)
 {
     for (const auto& network : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
@@ -781,18 +831,41 @@ BOOST_AUTO_TEST_CASE(v231_argument_changes_no_other_network)
 BOOST_AUTO_TEST_CASE(v231_regtest_name_sets_only_the_height)
 {
     ArgsManager args;
-    args.ForceSetArg("-testactivationheight", "v231@720");
+    args.AddArg("-testactivationheight", "", ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
+    {
+        // The height, the retirement of superblocks it may not precede, and
+        // mn_rr, which regtest runs from 900 otherwise, pushed to never.
+        const char* argv[] = {"test", "-testactivationheight=v231@720", "-testactivationheight=superblocksretired@720", "-testactivationheight=mn_rr@2147483647"};
+        std::string error;
+        BOOST_REQUIRE_MESSAGE(args.ParseParameters(4, argv, error), error);
+    }
     const auto params = CreateChainParams(args, CBaseChainParams::REGTEST);
     const auto& consensus = params->GetConsensus();
     BOOST_CHECK_EQUAL(consensus.nV231ActivationHeight, 720);
+    BOOST_CHECK(consensus.MN_RRHeight == std::numeric_limits<int>::max());
     BOOST_CHECK(consensus.llmqFormationEndHeights.empty());
     BOOST_CHECK_NO_THROW(CheckV231ActivationBundle(consensus, CBaseChainParams::REGTEST));
     for (const std::string& network : {CBaseChainParams::DEVNET, CBaseChainParams::TESTNET, CBaseChainParams::MAIN}) {
         BOOST_CHECK_EXCEPTION(CheckV231ActivationBundle(consensus, network), std::runtime_error, HasReason("must end both legacy quorum formations"));
     }
 
-    args.ForceSetArg("-testactivationheight", "v231@0");
-    BOOST_CHECK_EXCEPTION(CreateChainParams(args, CBaseChainParams::REGTEST), std::runtime_error, HasReason("must be positive"));
+    // The height with the retirement but mn_rr left at 900 is refused at startup.
+    {
+        ArgsManager with_mn_rr;
+        with_mn_rr.AddArg("-testactivationheight", "", ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
+        const char* argv[] = {"test", "-testactivationheight=v231@720", "-testactivationheight=superblocksretired@720"};
+        std::string error;
+        BOOST_REQUIRE_MESSAGE(with_mn_rr.ParseParameters(3, argv, error), error);
+        BOOST_CHECK_EXCEPTION(CreateChainParams(with_mn_rr, CBaseChainParams::REGTEST), std::runtime_error, HasReason("together with mn_rr"));
+    }
+
+    // The height alone, with superblocks never retired, is refused at startup.
+    ArgsManager alone;
+    alone.ForceSetArg("-testactivationheight", "v231@720");
+    BOOST_CHECK_EXCEPTION(CreateChainParams(alone, CBaseChainParams::REGTEST), std::runtime_error, HasReason("retirement of superblocks"));
+
+    alone.ForceSetArg("-testactivationheight", "v231@0");
+    BOOST_CHECK_EXCEPTION(CreateChainParams(alone, CBaseChainParams::REGTEST), std::runtime_error, HasReason("must be positive"));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

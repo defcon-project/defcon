@@ -53,6 +53,7 @@ FORMS_ON = "llmq_test"
 # Regtest turns these on at 900 and no release network does; mn_rr would take a
 # platform share out of the very payment this reads.
 NOT_IN_THIS_RUN = 6000000
+NEVER = 2**31 - 1              # the largest height stands for never, as an unset gate holds it
 
 MINE_CHUNK = 200
 SYNC_TIMEOUT = 300
@@ -69,11 +70,12 @@ class V231TransitionTest(DashTestFramework):
     def set_test_params(self):
         rules = ["-vbparams=testdummy:0:999999999999:0:10:8:6:5:0",
                  "-testactivationheight=v20@%d" % NOT_IN_THIS_RUN,
-                 "-testactivationheight=mn_rr@%d" % NOT_IN_THIS_RUN,
+                 "-testactivationheight=mn_rr@%d" % NEVER,
                  # ShouldRunInactivityChecks reads the mock clock, which moves by hours here.
                  "-peertimeout=999999999",
                  "-staking=0"]
         height = ["-testactivationheight=v231@%d" % H,
+                  "-testactivationheight=superblocksretired@%d" % H,
                   "-llmqformationendheight=%s:%d" % (RETIRED, H)]
         self.set_dash_test_params(3, 1, extra_args=[
             rules + height + ["-staking=1", "-txindex=1", "-debug=pos"],

@@ -9,6 +9,7 @@
 #include <chainparams.h>
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
+#include <key_io.h>
 #include <messagesigner.h>
 #include <net.h>
 #include <net_processing.h>
@@ -27,8 +28,11 @@
 #include <validation.h>
 #include <warnings.h>
 
+#include <evo/chainhelper.h>
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
+#include <governance/classes.h>
+#include <masternode/payments.h>
 #include <evo/simplifiedmns.h>
 #include <llmq/context.h>
 #include <evo/providertx.h>
@@ -1589,6 +1593,186 @@ void FuncDamagedHistoryStopsMessageHandling(TestChainSetup& setup)
     }
 }
 
+//! A block shaped like a staked block past CheckBlock: a coinbase at vtx[0] with the
+//! empty first output and whatever the case adds behind it, and an empty-first-output
+//! coinstake at vtx[1].
+static CBlock StakeShapedBlock(CAmount coinstake_out, const std::vector<CTxOut>& coinbase_added)
+{
+    CBlock block;
+    CMutableTransaction coinbase;
+    coinbase.vin.resize(1);
+    coinbase.vin[0].prevout.SetNull();
+    coinbase.vout.resize(1);
+    coinbase.vout[0].SetEmpty();
+    coinbase.vout.insert(coinbase.vout.end(), coinbase_added.begin(), coinbase_added.end());
+    CMutableTransaction coinstake;
+    coinstake.vin.resize(1);
+    coinstake.vin[0].prevout = COutPoint(uint256S("0x01"), 0);
+    coinstake.vout.resize(2);
+    coinstake.vout[0].SetEmpty();
+    coinstake.vout[1].nValue = coinstake_out;
+    coinstake.vout[1].scriptPubKey = CScript() << OP_TRUE;
+    block.vtx.push_back(MakeTransactionRef(std::move(coinbase)));
+    block.vtx.push_back(MakeTransactionRef(std::move(coinstake)));
+    return block;
+}
+
+// A masternode registered and then revoked leaves a list with a member and no
+// payee. Below the v23.1 height nothing looks at a staked block in that state, so
+// its coinbase may hold anything; from the height it holds the empty first output
+// and nothing else. No network may schedule the height before superblocks retire or
+// together with mn_rr (CheckV231ActivationBundle), so neither can ask for an output
+// there. Both are forced here all the same, to show that the rule does not bend for
+// them.
+void FuncUnresolvedPayeeBound(TestChainSetup& setup)
+{
+    auto& chainman = *Assert(setup.m_node.chainman.get());
+    auto& dmnman = *Assert(setup.m_node.dmnman);
+    auto& payments = *Assert(Assert(setup.m_node.chain_helper.get())->mn_payments);
+    auto& params = const_cast<Consensus::Params&>(Params().GetConsensus());
+    auto utxos = BuildSimpleUtxoMap(setup.m_coinbase_txns);
+
+    CKey ownerKey;
+    CBLSSecretKey operatorKey;
+    auto tx_reg = CreateProRegTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, 1, GenerateRandomAddress(), setup.coinbaseKey, ownerKey, operatorKey);
+    setup.CreateAndProcessBlock({tx_reg}, setup.coinbaseKey);
+    dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+    const int saved_enforcement = params.DIP0003EnforcementHeight;
+    params.DIP0003EnforcementHeight = chainman.ActiveChain().Height() + 1;
+    auto tx_rev = CreateProUpRevTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, tx_reg.GetHash(), operatorKey, setup.coinbaseKey);
+    setup.CreateAndProcessBlock({tx_rev}, setup.coinbaseKey);
+    dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+
+    const CBlockIndex* tip{WITH_LOCK(cs_main, return chainman.ActiveChain().Tip())};
+    const auto list = dmnman.GetListAtChainTip();
+    BOOST_REQUIRE_EQUAL(list.GetAllMNsCount(), 1U);
+    BOOST_REQUIRE_EQUAL(list.GetValidMNsCount(), 0U);
+    BOOST_REQUIRE(list.GetMNPayee(tip) == nullptr);
+
+    const int height{tip->nHeight + 1};
+    const CAmount subsidy{500 * COIN};
+    const CAmount fees{0};
+    const CAmount staked{12345 * COIN};
+    const CAmount extra{5000 * COIN};
+    const CScript mine{CScript() << OP_TRUE};
+    const CScript data{CScript() << OP_RETURN << std::vector<unsigned char>{0x01}};
+    const int saved_last_pow = params.lastPowBlock;
+    const int saved_bound = params.nPosCoinbaseBoundActivationHeight;
+    const int saved_v231 = params.nV231ActivationHeight;
+    params.lastPowBlock = tip->nHeight - 1;
+    params.nPosCoinbaseBoundActivationHeight = 0;
+
+    // What the honest producer adds to the coinbase at this block.
+    const auto honest_outputs = [&]() {
+        CMutableTransaction coinbase;
+        coinbase.vout.resize(1);
+        coinbase.vout[0].SetEmpty();
+        std::vector<CTxOut> masternode_outputs;
+        std::vector<CTxOut> superblock_outputs;
+        payments.FillBlockPayments(coinbase, tip, subsidy, fees, masternode_outputs, superblock_outputs);
+        BOOST_REQUIRE(superblock_outputs.empty());
+        BOOST_REQUIRE_EQUAL(coinbase.vout.size(), masternode_outputs.size() + 1);
+        return masternode_outputs;
+    };
+    const auto check = [&](const std::vector<CTxOut>& honest, const std::vector<std::vector<CTxOut>>& forged) {
+        std::string err;
+        const CBlock honest_block = StakeShapedBlock(staked + subsidy, honest);
+        // The gap: with the height unset, or one block above this one, anything passes.
+        for (const int v231 : {std::numeric_limits<int>::max(), height + 1}) {
+            params.nV231ActivationHeight = v231;
+            BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(honest_block, tip, subsidy, fees, staked, err, /*check_superblock=*/true), err);
+            for (const auto& added : forged) {
+                const CBlock block = StakeShapedBlock(staked + subsidy, added);
+                BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(block, tip, subsidy, fees, staked, err, /*check_superblock=*/true), err);
+                BOOST_CHECK(payments.IsBlockPayeeValid(*block.vtx[0], tip, subsidy, fees, /*check_superblock=*/true));
+            }
+        }
+        // From the height: the empty first output, and nothing else. The payee check
+        // stands aside as it always has; the value check does the refusing.
+        for (const int v231 : {height, height - 1}) {
+            params.nV231ActivationHeight = v231;
+            BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(honest_block, tip, subsidy, fees, staked, err, /*check_superblock=*/true), err);
+            BOOST_CHECK(payments.IsBlockPayeeValid(*honest_block.vtx[0], tip, subsidy, fees, /*check_superblock=*/true));
+            for (const auto& added : forged) {
+                const CBlock block = StakeShapedBlock(staked + subsidy, added);
+                BOOST_CHECK(!payments.IsBlockValueValid(block, tip, subsidy, fees, staked, err, /*check_superblock=*/true));
+                BOOST_CHECK_MESSAGE(err.find("a block with no payable masternode may carry only") != std::string::npos, err);
+                BOOST_CHECK(payments.IsBlockPayeeValid(*block.vtx[0], tip, subsidy, fees, /*check_superblock=*/true));
+            }
+        }
+    };
+
+    BOOST_REQUIRE(honest_outputs().empty());
+    check({}, {{CTxOut(extra, mine)}, {CTxOut(0, data)}});
+
+    // A superblock's height, superblocks still running: the rule does not care.
+    // No network can set this up with the height scheduled
+    // (CheckV231ActivationBundle); the consensus fields are written directly.
+    CKey spork_key;
+    spork_key.MakeNewKey(false);
+    CSporkManager& sporkman = *Assert(setup.m_node.sporkman.get());
+    BOOST_REQUIRE(sporkman.SetSporkAddress(EncodeDestination(PKHash(spork_key.GetPubKey()))));
+    BOOST_REQUIRE(sporkman.SetMinSporkKeys(1));
+    BOOST_REQUIRE(sporkman.SetPrivKey(EncodeSecret(spork_key)));
+    BOOST_REQUIRE(sporkman.UpdateSpork(*Assert(setup.m_node.peerman.get()), SPORK_9_SUPERBLOCKS_ENABLED, 0));
+    BOOST_REQUIRE(sporkman.IsSporkActive(SPORK_9_SUPERBLOCKS_ENABLED));
+    const int saved_start = params.nSuperblockStartBlock;
+    const int saved_cycle = params.nSuperblockCycle;
+    const int saved_retired = params.nSuperblocksRetiredHeight;
+    params.nV231ActivationHeight = height;
+    params.nSuperblockStartBlock = height;
+    params.nSuperblockCycle = height;
+    params.nSuperblocksRetiredHeight = height + 1;
+    BOOST_REQUIRE(CSuperblock::IsValidBlockHeight(height));
+    const CBlock zero_output = StakeShapedBlock(staked + subsidy, {CTxOut(0, data)});
+    std::string sb_err;
+    BOOST_CHECK(!payments.IsBlockValueValid(zero_output, tip, subsidy, fees, staked, sb_err, /*check_superblock=*/true));
+    BOOST_CHECK_MESSAGE(sb_err.find("a block with no payable masternode may carry only") != std::string::npos, sb_err);
+    params.nSuperblockStartBlock = saved_start;
+    params.nSuperblockCycle = saved_cycle;
+    params.nSuperblocksRetiredHeight = saved_retired;
+
+    // The platform share of mn_rr, forced on, which no network may do with the
+    // height scheduled (CheckV231ActivationBundle). The producer adds the share
+    // with no payee, as it always has, at every height, and from the height the
+    // rule refuses the producer's own coinbase for it: that is why the two may
+    // not be scheduled together.
+    const int saved_mn_rr = params.MN_RRHeight;
+    params.MN_RRHeight = height;
+    for (const int v231 : {std::numeric_limits<int>::max(), height + 1, height, height - 1}) {
+        params.nV231ActivationHeight = v231;
+        BOOST_REQUIRE_EQUAL(honest_outputs().size(), 1U);
+    }
+    const CTxOut share = honest_outputs()[0];
+    BOOST_REQUIRE(share.nValue > 0);
+    BOOST_REQUIRE(share.scriptPubKey == CScript() << OP_RETURN);
+    check({}, {{share},
+               {CTxOut(share.nValue - 1, share.scriptPubKey)},
+               {CTxOut(share.nValue, mine)},
+               {share, CTxOut(0, data)},
+               {CTxOut(extra, mine)}});
+
+    // A proof-of-work block is not the rule's business, whatever the height: it needs
+    // no platform output with no payee resolved, as it never has.
+    params.nV231ActivationHeight = height;
+    CBlock mined;
+    mined.nNonce = 1;
+    CMutableTransaction mined_coinbase;
+    mined_coinbase.vin.resize(1);
+    mined_coinbase.vin[0].prevout.SetNull();
+    mined_coinbase.vout.emplace_back(subsidy, mine);
+    mined.vtx.push_back(MakeTransactionRef(std::move(mined_coinbase)));
+    std::string mined_err;
+    BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(mined, tip, subsidy, fees, /*stakeValueIn=*/0, mined_err, /*check_superblock=*/true), mined_err);
+    BOOST_CHECK(payments.IsBlockPayeeValid(*mined.vtx[0], tip, subsidy, fees, /*check_superblock=*/true));
+
+    params.MN_RRHeight = saved_mn_rr;
+    params.nV231ActivationHeight = saved_v231;
+    params.nPosCoinbaseBoundActivationHeight = saved_bound;
+    params.lastPowBlock = saved_last_pow;
+    params.DIP0003EnforcementHeight = saved_enforcement;
+}
+
 BOOST_AUTO_TEST_SUITE(evo_dip3_activation_tests)
 
 struct TestChainDIP3BeforeActivationSetup : public TestChainSetup {
@@ -1702,6 +1886,18 @@ BOOST_AUTO_TEST_CASE(dip3_protx_basic)
 {
     TestChainV19Setup setup;
     FuncDIP3Protx(setup);
+}
+
+BOOST_AUTO_TEST_CASE(v231_unresolved_payee_coinbase_bound_legacy)
+{
+    TestChainDIP3Setup setup;
+    FuncUnresolvedPayeeBound(setup);
+}
+
+BOOST_AUTO_TEST_CASE(v231_unresolved_payee_coinbase_bound_basic)
+{
+    TestChainV19Setup setup;
+    FuncUnresolvedPayeeBound(setup);
 }
 
 BOOST_AUTO_TEST_CASE(test_mempool_reorg_legacy)
