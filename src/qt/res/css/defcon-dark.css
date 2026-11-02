@@ -181,7 +181,11 @@ QPushButton {
     border: 1px solid #1297ff;
     border-radius: 8px;
     color: #ffffff;
+    /* general.css caps every button at 26px. A maximum below the minimum hangs
+       the button below its row and its parent cuts the bottom off, so a rule
+       that raises the minimum has to raise the maximum with it. */
     min-height: 34px;
+    max-height: 34px;
     padding: 3px 16px;
 }
 
@@ -352,6 +356,10 @@ QToolBar#navigationToolBar[modern="true"] QLabel#lblToolbarLogo {
     padding: 0;
     min-width: 194px;
     max-width: 194px;
+    /* general.css gives the label `height: 2.5em`, which the limits below did
+       not override: Qt took the larger of the two for the minimum and the
+       smaller for the maximum, so with fonts the label hung below its slot. */
+    height: 44px;
     min-height: 44px;
     max-height: 44px;
 }
@@ -1026,6 +1034,11 @@ QFrame#abyssSendSummary QPushButton,
 ReceiveCoinsDialog QPushButton {
     min-height: 40px;
 }
+QWidget#abyssPageHeader QPushButton,
+QFrame#abyssSendSummary QPushButton,
+ReceiveCoinsDialog QPushButton {
+    max-height: 40px;
+}
 SendCoinsEntry[abyssRecipientCard="true"] QToolButton {
     min-width: 40px;
 }
@@ -1076,6 +1089,7 @@ QFrame#emptyState QLabel#emptyStateLoading {
 QFrame#emptyState QPushButton#emptyStateAction,
 QFrame#emptyState QPushButton#emptyStateSecondary {
     min-height: 40px;
+    max-height: 40px;
 }
 QFrame#emptyState QPushButton#emptyStateSecondary {
     background-color: #0d2032;
