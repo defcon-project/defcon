@@ -318,7 +318,9 @@ int GetBlocksUntilNextDKG(gsl::not_null<const CBlockIndex*> pindexTip)
     for (const auto& params : Params().GetConsensus().llmqs) {
         const int stage{pindexTip->nHeight % params.dkgInterval};
         const int cycle_base{pindexTip->nHeight - stage};
-        if (params.useRotation && stage <= params.signingActiveQuorumCount && IsQuorumCycleEnabled(params.type, pindexTip, cycle_base)) {
+        // Sessions start on the cycle's first blocks, one per active quorum. After the
+        // last of them the next start is on the next cycle's base block, counted below.
+        if (params.useRotation && stage + 1 < params.signingActiveQuorumCount && IsQuorumCycleEnabled(params.type, pindexTip, cycle_base)) {
             return 1;
         }
         if (IsQuorumCycleEnabled(params.type, pindexTip, cycle_base + params.dkgInterval)) {
