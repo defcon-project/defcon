@@ -71,6 +71,7 @@
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <QPainter>
+#include <QPointer>
 #include <QToolBar>
 #include <QToolButton>
 #include <QUrlQuery>
@@ -1493,8 +1494,12 @@ void BitcoinGUI::setWalletController(WalletController* wallet_controller)
     GUIUtil::ExceptionSafeConnect(wallet_controller, &WalletController::walletAdded, this, &BitcoinGUI::addWallet);
     connect(wallet_controller, &WalletController::walletRemoved, this, &BitcoinGUI::removeWallet);
 
-    for (WalletModel* wallet_model : m_wallet_controller->getOpenWallets()) {
-        addWallet(wallet_model);
+    // Building a view can deliver a queued unload of any of these wallets (see
+    // addWallet), so a model further down the list may be gone by its turn.
+    const std::vector<WalletModel*> open_wallets = m_wallet_controller->getOpenWallets();
+    const std::vector<QPointer<WalletModel>> wallet_models(open_wallets.begin(), open_wallets.end());
+    for (const QPointer<WalletModel>& wallet_model : wallet_models) {
+        if (wallet_model) addWallet(wallet_model);
     }
 }
 
@@ -1507,7 +1512,17 @@ void BitcoinGUI::addWallet(WalletModel* walletModel)
 {
     if (!walletFrame) return;
 
+    // Building the view spins the event loop (SendCoinsDialog::addEntry calls
+    // processEvents), which can deliver a queued unload of this very wallet:
+    // the controller then deletes the model while its view is still being
+    // built, and the view below would be given a dead model. A model gone by
+    // the time the view is ready gets no view.
+    const QPointer<WalletModel> model_alive(walletModel);
     WalletView* wallet_view = new WalletView(walletFrame);
+    if (model_alive.isNull()) {
+        delete wallet_view;
+        return;
+    }
     if (!walletFrame->addWallet(walletModel, wallet_view)) return;
 
     rpcConsole->addWallet(walletModel);
