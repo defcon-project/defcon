@@ -21,6 +21,7 @@
 #include <QMetaObject>
 #include <QObject>
 #include <QProgressBar>
+#include <QProxyStyle>
 #include <QString>
 #include <QTableView>
 
@@ -343,6 +344,22 @@ namespace GUIUtil
 
     /** Check if any modern DeFCon theme is active. */
     bool isModernTheme();
+
+    /** The application style with Abyss's answers in front of the platform
+     *  style: no shortcut underlines in button, label and menu text while
+     *  Abyss is active. Everything else, and the classic themes, get the base
+     *  style's own answer. */
+    class ThemeStyle : public QProxyStyle
+    {
+        Q_OBJECT
+    public:
+        explicit ThemeStyle(const QString& base_key) : QProxyStyle(base_key) {}
+        int styleHint(StyleHint hint, const QStyleOption* option = nullptr, const QWidget* widget = nullptr,
+                      QStyleHintReturn* data = nullptr) const override;
+    };
+
+    /** Put ThemeStyle in front of the application's current style. */
+    void installThemeStyle();
 
     /** Presentation-only page heading; callers control theme visibility. */
     QWidget* createPageHeader(QWidget* parent, const QString& title, const QString& subtitle, QWidget* action = nullptr);

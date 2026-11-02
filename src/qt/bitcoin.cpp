@@ -233,6 +233,7 @@ BitcoinApplication::BitcoinApplication():
     RegisterMetaTypes();
     // Qt runs setlocale(LC_ALL, "") on initialization.
     setQuitOnLastWindowClosed(false);
+    GUIUtil::installThemeStyle();
 }
 
 BitcoinApplication::~BitcoinApplication()

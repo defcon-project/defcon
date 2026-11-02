@@ -51,6 +51,7 @@
 #include <QSignalSpy>
 #include <QToolButton>
 #include <QToolBar>
+#include <QTranslator>
 #include <QWindow>
 #if defined(Q_OS_LINUX)
 #include <time.h>
@@ -66,6 +67,7 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QKeySequence>
 #include <QLabel>
 #include <QListView>
 #include <QMenu>
@@ -78,7 +80,9 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QStyle>
 #include <QStyleOptionButton>
+#include <QStatusBar>
 #include <QPainter>
 #include <QPointer>
 #include <QTableView>
@@ -91,6 +95,7 @@
 #include <QTimer>
 #include <QtMath>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <map>
 #include <utility>
@@ -157,6 +162,36 @@ QRect OnPage(QWidget& page, QWidget* child)
 {
     return {child->mapTo(&page, {}), child->size()};
 }
+// A translation with three plural forms, as Russian has them: 1 and 21 take
+// the first, 2 to 4 the second, 5 to 20 the third. Only the network bar's age
+// strings are translated; everything else falls through untranslated.
+class RussianPlurals : public QTranslator
+{
+public:
+    using QTranslator::QTranslator;
+    static int form(int n)
+    {
+        if (n % 10 == 1 && n % 100 != 11) return 0;
+        if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 1;
+        return 2;
+    }
+    QString translate(const char* context, const char* source, const char* disambiguation, int n) const override
+    {
+        Q_UNUSED(disambiguation);
+        if (qstrcmp(context, "OverviewPage") != 0) return QString();
+        static const std::map<QByteArray, std::array<const char*, 3>> plurals{
+            {"%n minutes", {"%n минута", "%n минуты", "%n минут"}},
+            {"%n hours", {"%n час", "%n часа", "%n часов"}},
+            {"%n days", {"%n день", "%n дня", "%n дней"}},
+        };
+        if (qstrcmp(source, "1 minute") == 0) return QString::fromUtf8("1 минута");
+        if (qstrcmp(source, "%1 ago") == 0) return QString::fromUtf8("%1 назад");
+        const auto it = plurals.find(source);
+        if (it == plurals.end() || n < 0) return QString();
+        return QString::fromUtf8(it->second[form(n)]);
+    }
+    bool isEmpty() const override { return false; }
+};
 // Minimal has no window-system mouse. Exercise the actual QSS paint path with
 // explicit QStyle states instead of pretending a synthetic enter moved a cursor.
 class StateButton : public QPushButton {
@@ -914,11 +949,50 @@ void AbyssTests::networkBar()
                     "networkMasternodes", "networkMempool"}), QString());
     QVERIFY(!progress->isVisible());
     QCOMPARE(part("networkBlock", "networkValue")->text(), QString("150") + QChar(0x2009) + "628");
-    QCOMPARE(part("networkAge", "networkText")->text(), OverviewPage::tr("%1 ago").arg(GUIUtil::formatNiceTimeOffset(2 * 60)));
+    QCOMPARE(part("networkAge", "networkText")->text(), OverviewPage::tr("%1 ago").arg(OverviewPage::tr("%n minutes", "", 2)));
     QCOMPARE(part("networkPeers", "networkValue")->text(), QString("20"));
     QCOMPARE(part("networkPeers", "networkText")->text(), OverviewPage::tr("peers"));
     QCOMPARE(part("networkMasternodes", "networkValue")->text(), QString("312"));
     QCOMPARE(part("networkMempool", "networkValue")->text(), QString("14"));
+    // Every entry explains itself; the syncing entry's tooltip is set by state below.
+    for (const QString& name : names) {
+        if (name != "networkSyncing") QVERIFY2(!entry(name.toUtf8().constData())->toolTip().isEmpty(), qPrintable(name));
+    }
+    // The age in one unit and plain words, singular when it is one.
+    const auto age_text = [&](qint64 secs) {
+        OverviewPage::NetworkStatus aged = synced;
+        aged.block_age = secs;
+        page.setNetworkStatus(aged);
+        return part("networkAge", "networkText")->text();
+    };
+    const auto ago = [](const QString& words) { return OverviewPage::tr("%1 ago").arg(words); };
+    QCOMPARE(age_text(59), ago(OverviewPage::tr("under a minute")));
+    QCOMPARE(age_text(60), ago(OverviewPage::tr("1 minute")));
+    QCOMPARE(age_text(119 * 60), ago(OverviewPage::tr("%n minutes", "", 119)));
+    QCOMPARE(age_text(119 * 60), ago(QString("119 minutes")));
+    QCOMPARE(age_text(2 * 60 * 60), ago(OverviewPage::tr("%n hours", "", 2)));
+    QCOMPARE(age_text(47 * 60 * 60), ago(OverviewPage::tr("%n hours", "", 47)));
+    QCOMPARE(age_text(2 * 24 * 60 * 60), ago(OverviewPage::tr("%n days", "", 2)));
+    QCOMPARE(age_text(14 * 24 * 60 * 60), ago(OverviewPage::tr("%n weeks", "", 2)));
+    QCOMPARE(age_text(31556952), ago(OverviewPage::tr("1 year")));
+    QCOMPARE(age_text(7 * 31556952), ago(OverviewPage::tr("%n years", "", 7)));
+    // Through a translation with three plural forms the bar picks the form by
+    // the number (GPT-Terra r1 R2 / r2 R1): 21 and 1 share one, 2 and 5 differ.
+    {
+        RussianPlurals russian;
+        QVERIFY(qApp->installTranslator(&russian));
+        const auto remove = interfaces::MakeHandler([&russian] { qApp->removeTranslator(&russian); });
+        const auto ru = [](const char* words) { return QString::fromUtf8("%1 назад").arg(QString::fromUtf8(words)); };
+        QCOMPARE(age_text(60), ru("1 минута"));
+        QCOMPARE(age_text(2 * 60), ru("2 минуты"));
+        QCOMPARE(age_text(5 * 60), ru("5 минут"));
+        QCOMPARE(age_text(21 * 60), ru("21 минута"));
+        QCOMPARE(age_text(112 * 60), ru("112 минут"));
+        QCOMPARE(age_text(3 * 60 * 60), ru("3 часа"));
+        QCOMPARE(age_text(11 * 24 * 60 * 60), ru("11 дней"));
+    }
+    QCOMPARE(age_text(21 * 60), ago(OverviewPage::tr("%n minutes", "", 21)));
+    page.setNetworkStatus(synced); Settle();
     QCOMPARE(card->property("syncing").toBool(), false);
     QCOMPARE(border(), QColor("#20344c"));
     // Every glyph is its Tabler artwork's coverage in a theme color, drawn for
@@ -964,7 +1038,7 @@ void AbyssTests::networkBar()
     QVERIFY(progress->isVisible());
     QCOMPARE(progress->value(), 873);
     QCOMPARE(progress->height(), 6);
-    QCOMPARE(part("networkAge", "networkText")->text(), OverviewPage::tr("%1 behind").arg(GUIUtil::formatNiceTimeOffset(3 * 24 * 60 * 60)));
+    QCOMPARE(part("networkAge", "networkText")->text(), OverviewPage::tr("%1 behind").arg(OverviewPage::tr("%n days", "", 3)));
     QCOMPARE(part("networkSyncing", "networkText")->text(), OverviewPage::tr("Syncing %1%").arg(87));
     QCOMPARE(part("networkMasternodes", "networkValue")->text(), QString(QChar(0x2013)));
     QCOMPARE(card->property("syncing").toBool(), true);
@@ -984,8 +1058,10 @@ void AbyssTests::networkBar()
     data.progress = 0.4;
     page.setNetworkStatus(data); Settle();
     QCOMPARE(shown({"networkBlock", "networkAge", "networkSyncing", "networkPeers", "networkMasternodes"}), QString());
-    QCOMPARE(part("networkSyncing", "networkText")->text(), OverviewPage::tr("Syncing %1%").arg(40));
-    QCOMPARE(part("networkAge", "networkText")->text(), OverviewPage::tr("%1 ago").arg(GUIUtil::formatNiceTimeOffset(2 * 60)));
+    // No percentage next to a current tip, and no track: "Syncing 100%" read as stuck.
+    QCOMPARE(part("networkSyncing", "networkText")->text(), OverviewPage::tr("Syncing data…"));
+    QVERIFY(!progress->isVisible());
+    QCOMPARE(part("networkAge", "networkText")->text(), OverviewPage::tr("%1 ago").arg(OverviewPage::tr("%n minutes", "", 2)));
     QCOMPARE(part("networkMasternodes", "networkValue")->text(), QString("312"));
 
     // Back in sync, the card and every label are as they were: only the card
@@ -1800,7 +1876,7 @@ void AbyssTests::presentationIcons()
     // connection/staking states. Resource presence alone is insufficient.
     for (const char* glyph : {"settings", "eye", "eye-off", "lock", "lock-open", "terminal-2", "address-book", "clipboard", "trash",
                              "antenna-bars-1", "antenna-bars-2", "antenna-bars-3", "antenna-bars-4", "antenna-bars-5",
-                             "network-off", "leaf", "leaf-off", "clock-pause"}) {
+                             "network-off", "leaf", "leaf-off", "clock-pause", "signature"}) {
         const QPixmap px = GUIUtil::getTintedSvgPixmap(QString(":/icons/tabler/") + glyph + ".svg", QSize(22, 22), QColor("#1297ff"));
         int ink = 0;
         const QImage image = px.toImage();
@@ -2009,6 +2085,101 @@ void AbyssTests::initialWindowGeometry()
     QVERIFY(window->isMinimized());
     window->showNormal(); Settle();
     QTRY_COMPARE(window->geometry(), placed);
+}
+
+void AbyssTests::statusBarOnce()
+{
+    // Abyss says the sync state once, in the Overview's network bar, and has
+    // the wallet lock in its quick row: the status bar's own sync text,
+    // progress bar and lock stay with the classic themes.
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    WalletFixture fixture(m_node);
+    Theme("Light");
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.addWallet(fixture.model.get());
+    window.resize(1280, 850); window.show(); Settle();
+    auto* text = window.findChild<QLabel*>("lblStatusBarProgress");
+    auto* bar = window.statusBar()->findChild<QProgressBar*>();
+    auto* lock = window.findChild<QLabel*>("labelWalletEncryptionIcon");
+    QVERIFY(text && bar && lock);
+    // What the classic status bar shows follows the node: the text while the
+    // network is on and the node is catching up or alone, the bar only with peers.
+    const bool classic_text = m_node.getNetworkActive() && (!m_node.masternodeSync().isSynced() || fixture.client->getNumConnections() == 0);
+    const bool classic_bar = m_node.getNetworkActive() && !m_node.masternodeSync().isSynced() && fixture.client->getNumConnections() > 0;
+    QCOMPARE(text->isVisible(), classic_text);
+    QCOMPARE(bar->isVisible(), classic_bar);
+    QVERIFY(lock->isVisible());
+    if (!classic_text) QSKIP("The test node shows no sync text that Abyss could hide");
+    Theme("Abyss"); Settle();
+    QVERIFY(!text->isVisible());
+    QVERIFY(!bar->isVisible());
+    QVERIFY(!lock->isVisible());
+    QVERIFY(window.findChild<QToolButton*>("walletLockButton")->isVisible());
+    QVERIFY(window.findChild<QFrame*>("networkCard")->isVisible());
+    // The detailed sync window still opens from the block icon's slot after the
+    // user closed it: with the status bar's progress bar hidden, the gate is
+    // the node's state (GPT-Terra r1 R1). The test node is not synced.
+    auto* overlay = window.findChild<ModalOverlay*>();
+    QVERIFY(overlay && m_node.getNetworkActive() && !m_node.masternodeSync().isSynced());
+    if (overlay->isLayerVisible()) overlay->closeClicked();
+    Settle();
+    QVERIFY(!overlay->isLayerVisible());
+    window.showModalOverlay(); Settle();
+    QVERIFY(overlay->isLayerVisible());
+    overlay->closeClicked(); Settle();
+    QVERIFY(!overlay->isLayerVisible());
+    // A later wallet state update keeps them hidden.
+    QMetaObject::invokeMethod(&window, "updateWalletStatus", Qt::DirectConnection); Settle();
+    QVERIFY(!lock->isVisible());
+    Theme("Light"); Settle();
+    QCOMPARE(text->isVisible(), classic_text);
+    QCOMPARE(bar->isVisible(), classic_bar);
+    QVERIFY(lock->isVisible());
+    // The classic gate is the progress bar, as before: without peers it stays closed.
+    window.showModalOverlay(); Settle();
+    QCOMPARE(overlay->isLayerVisible(), classic_bar);
+}
+
+void AbyssTests::shortcutUnderlines()
+{
+    // Abyss hides the Alt-key underlines in button and label text; a classic
+    // theme gets the platform style's own answer back. The keys still work.
+    RestoreAppearance restore;
+    Theme("Light");
+    QWidget host;
+    auto* layout = new QHBoxLayout(&host);
+    auto* with = new QToolButton(&host);
+    with->setText("&Send");
+    with->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    auto* without = new QToolButton(&host);
+    without->setText("Send");
+    without->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    auto* label = new QLabel("&Label:", &host);
+    for (QWidget* widget : {static_cast<QWidget*>(with), static_cast<QWidget*>(without), static_cast<QWidget*>(label)}) layout->addWidget(widget);
+    host.show(); QApplication::setActiveWindow(&host); Settle();
+    const int classic_hint = qApp->style()->styleHint(QStyle::SH_UnderlineShortcut, nullptr, with);
+    const auto same_picture = [&] { Settle(); return with->grab().toImage() == without->grab().toImage(); };
+    QCOMPARE(with->size(), without->size());
+    QCOMPARE(same_picture(), classic_hint == 0);
+    Theme("Abyss");
+    QCOMPARE(qApp->style()->styleHint(QStyle::SH_UnderlineShortcut, nullptr, with), 0);
+    QCOMPARE(qApp->style()->styleHint(QStyle::SH_UnderlineShortcut, nullptr, label), 0);
+    QVERIFY(same_picture());
+    // The mnemonic is still registered: hiding the underline changes nothing
+    // about the shortcut (minimal delivers no Alt+S to the shortcut map, so
+    // the registration is what can be checked here).
+    QCOMPARE(with->shortcut(), QKeySequence::mnemonic("&Send"));
+    QVERIFY(without->shortcut().isEmpty());
+    Theme("Light");
+    QCOMPARE(qApp->style()->styleHint(QStyle::SH_UnderlineShortcut, nullptr, with), classic_hint);
+    QCOMPARE(same_picture(), classic_hint == 0);
 }
 
 void AbyssTests::coinJoinWidgetsPerPage()

@@ -258,6 +258,11 @@ OverviewPage::OverviewPage(QWidget* parent) :
     entry(m_net_peers, "networkPeers", QString(), Value::Before);
     entry(m_net_masternodes, "networkMasternodes", tr("MN"), Value::Before);
     entry(m_net_mempool, "networkMempool", tr("tx"), Value::Before);
+    m_net_block.widget->setToolTip(tr("The newest block this wallet knows of"));
+    m_net_age.widget->setToolTip(tr("How long ago that block was made"));
+    m_net_synced.widget->setToolTip(tr("The blockchain and the masternode data are up to date"));
+    m_net_chainlock.widget->setToolTip(tr("Masternodes have locked the newest block: it cannot be replaced"));
+    m_net_peers.widget->setToolTip(tr("Connected peers"));
     m_net_masternodes.widget->setToolTip(tr("Valid masternodes"));
     m_net_mempool.widget->setToolTip(tr("Transactions in the memory pool"));
     ui->topLayout->insertWidget(1, networkCard);
@@ -506,6 +511,23 @@ QString GroupDigits(qint64 number)
     }
     return digits;
 }
+
+//! The block's age in one unit and plain words: the bar reads "2 minutes ago",
+//! not the shared formatter's "2 minute(s)". The plural strings carry %n, so a
+//! translation chooses its own forms (Russian has three); English, which has
+//! no translation file, says "1 minute" through its own string. The unit
+//! changes where GUIUtil::formatNiceTimeOffset changes it.
+QString AgeWords(qint64 secs)
+{
+    constexpr qint64 HOUR = 60 * 60, DAY = 24 * HOUR, WEEK = 7 * DAY, YEAR = 31556952;
+    if (secs < 60) return OverviewPage::tr("under a minute");
+    if (secs < 2 * HOUR) { const int n = secs / 60; return n == 1 ? OverviewPage::tr("1 minute") : OverviewPage::tr("%n minutes", "", n); }
+    if (secs < 2 * DAY) { const int n = secs / HOUR; return n == 1 ? OverviewPage::tr("1 hour") : OverviewPage::tr("%n hours", "", n); }
+    if (secs < 2 * WEEK) { const int n = secs / DAY; return n == 1 ? OverviewPage::tr("1 day") : OverviewPage::tr("%n days", "", n); }
+    if (secs < YEAR) { const int n = secs / WEEK; return n == 1 ? OverviewPage::tr("1 week") : OverviewPage::tr("%n weeks", "", n); }
+    const int n = secs / YEAR;
+    return n == 1 ? OverviewPage::tr("1 year") : OverviewPage::tr("%n years", "", n);
+}
 } // namespace
 
 void OverviewPage::setNetworkStatus(const NetworkStatus& status)
@@ -513,7 +535,7 @@ void OverviewPage::setNetworkStatus(const NetworkStatus& status)
     if (networkCard == nullptr) return;
     // Until the masternode data is in as well, the node is still catching up.
     const bool syncing = !status.data_synced;
-    const QString age = GUIUtil::formatNiceTimeOffset(status.block_age);
+    const QString age = AgeWords(status.block_age);
     const int percent = std::clamp(static_cast<int>(std::floor(status.progress * 100)), 0, 100);
 
     m_net_block.value->setText(GroupDigits(status.height));
@@ -521,9 +543,11 @@ void OverviewPage::setNetworkStatus(const NetworkStatus& status)
     m_net_synced.widget->setVisible(!syncing);
     m_net_chainlock.widget->setVisible(!syncing && status.chain_locked);
     m_net_syncing.widget->setVisible(syncing);
-    m_net_syncing.text->setText(tr("Syncing %1%").arg(percent));
+    // With the chain in, the remaining masternode data has no honest
+    // percentage to show next to a current tip: "Syncing 100%" read as stuck.
+    m_net_syncing.text->setText(status.chain_synced ? tr("Syncing data…") : tr("Syncing %1%").arg(percent));
     m_net_syncing.widget->setToolTip(status.chain_synced ? tr("Synchronizing additional data") : tr("Catching up with the blockchain"));
-    m_net_progress->setVisible(syncing);
+    m_net_progress->setVisible(!status.chain_synced);
     m_net_progress->setValue(qRound(std::clamp(status.progress, 0.0, 1.0) * 1000));
     m_net_peers.value->setText(QString::number(status.peers));
     m_net_peers.text->setText(status.peers == 1 ? tr("peer") : tr("peers"));
