@@ -40,11 +40,14 @@
 #include <qt/utilitydialog.h>
 #include <qt/walletmodel.h>
 #include <qt/walletframe.h>
+#include <qt/walletcontroller.h>
+#include <qt/walletview.h>
 #include <test/util/setup_common.h>
 #include <util/settings.h>
 #include <util/system.h>
 #include <univalue.h>
 #include <validation.h>
+#include <util/check.h>
 #include <wallet/coincontrol.h>
 #include <wallet/wallet.h>
 #include <QApplication>
@@ -2313,6 +2316,70 @@ void AbyssTests::buttonRows()
         QVERIFY(capture(message, "message"));
         QVERIFY(capture(receive, "receive"));
         QVERIFY(capture(send, "send"));
+    }
+}
+
+void AbyssTests::walletGoneWhileAdding()
+{
+    // Building a wallet's view spins the event loop (SendCoinsDialog::addEntry),
+    // and that can deliver a queued unload: createwallet followed at once by
+    // unloadwallet deleted the model under a view still being built, and the view
+    // then crashed on it. The unload here is the real one, queued to the real
+    // controller before the window starts building views.
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    WalletFixture fixture(m_node);
+    NodeContext& context = *m_node.context();
+    const auto loader = interfaces::MakeWalletLoader(*context.chain, context.coinjoin_loader, *Assert(context.args));
+    context.wallet_loader = loader.get();
+    auto second = std::make_shared<CWallet>(context.chain.get(), context.coinjoin_loader.get(), "second", CreateMockWalletDatabase());
+    AddWallet(second);
+    second->LoadWallet();
+    second->GetOrCreateLegacyScriptPubKeyMan();
+    // Before the loader goes: it would wait for the release of the wallets still
+    // registered with it, and this test holds on to both.
+    const auto forget = interfaces::MakeHandler([&] {
+        context.wallet_loader = nullptr;
+        RemoveWallet(second, std::nullopt);
+        RemoveWallet(fixture.wallet, std::nullopt);
+    });
+
+    for (const char* theme : {"Abyss", "Light"}) {
+        Theme(theme);
+        // The wallet whose view is being built, and the next one in line.
+        for (const size_t doomed : {size_t{0}, size_t{1}}) {
+            BitcoinGUI window(m_node, style.get());
+            interfaces::BlockAndHeaderTipInfo tip{};
+            window.setClientModel(fixture.client.get(), &tip);
+            WalletController controller(*fixture.client, nullptr);
+            const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+            int removed = 0;
+            QObject::connect(&controller, &WalletController::walletRemoved, [&removed] { ++removed; });
+            const std::vector<WalletModel*> models = controller.getOpenWallets();
+            QCOMPARE(models.size(), size_t{2});
+            WalletModel* const survivor = models[1 - doomed];
+
+            Q_EMIT models[doomed]->unload();
+            QCOMPARE(removed, 0);
+            window.setWalletController(&controller);
+            // Nothing here spun the loop: only the building of a view delivered it.
+            QCOMPARE(removed, 1);
+            QVERIFY(controller.getOpenWallets() == std::vector<WalletModel*>{survivor});
+            QList<WalletView*> views = window.findChildren<WalletView*>();
+            QCOMPARE(views.size(), 1);
+            QCOMPARE(views[0]->getWalletModel(), survivor);
+            Settle();
+
+            // The one left behaves as ever: its own unload takes its view with it.
+            Q_EMIT survivor->unload();
+            Settle();
+            QCOMPARE(removed, 2);
+            QVERIFY(controller.getOpenWallets().empty());
+            QVERIFY(window.findChildren<WalletView*>().isEmpty());
+        }
     }
 }
 
