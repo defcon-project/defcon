@@ -1282,7 +1282,13 @@ public:
     bool GetUseAddrmanOutgoing() const { return m_use_addrman_outgoing; };
     void SetNetworkActive(bool active, CMasternodeSync* const mn_sync);
     bool GetMasternodeThreadActive() const { return m_masternode_thread_active; };
-    void SetMasternodeThreadActive(bool active) { m_masternode_thread_active = active; };
+    //! Returns after a pass of the thread already under way has ended, so no masternode
+    //! connection starts once this has turned the thread off.
+    void SetMasternodeThreadActive(bool active) EXCLUSIVE_LOCKS_REQUIRED(!m_masternode_thread_mutex)
+    {
+        LOCK(m_masternode_thread_mutex);
+        m_masternode_thread_active = active;
+    };
     SocketEventsMode GetSocketEventsMode() const { return socketEventsMode; }
 
     enum class MasternodeConn {
@@ -1719,7 +1725,8 @@ private:
     void ThreadDNSAddressSeed() EXCLUSIVE_LOCKS_REQUIRED(!m_addr_fetches_mutex, !m_nodes_mutex);
     void ThreadOpenMasternodeConnections(CDeterministicMNManager& dmnman, CMasternodeMetaMan& mn_metaman,
                                          CMasternodeSync& mn_sync)
-        EXCLUSIVE_LOCKS_REQUIRED(!m_addr_fetches_mutex, !m_nodes_mutex, !m_unused_i2p_sessions_mutex, !mutexMsgProc);
+        EXCLUSIVE_LOCKS_REQUIRED(!m_addr_fetches_mutex, !m_nodes_mutex, !m_unused_i2p_sessions_mutex, !mutexMsgProc,
+                                 !m_masternode_thread_mutex);
 
     uint64_t CalculateKeyedNetGroup(const CAddress& ad) const;
 
@@ -1801,6 +1808,7 @@ private:
 
     std::vector<ListenSocket> vhListenSocket;
     std::atomic<bool> fNetworkActive{true};
+    Mutex m_masternode_thread_mutex;
     std::atomic<bool> m_masternode_thread_active{true};
     bool fAddressesInitialized{false};
     AddrMan& addrman;

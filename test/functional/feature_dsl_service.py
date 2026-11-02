@@ -46,9 +46,16 @@ class DSLServiceTest(DashTestFramework):
         status = node.dslstatus()
         return status["epoch"] == epoch and status["respondedcount"] == count
 
-    def wait_for_signature(self, node, epoch, alive):
+    def wait_for_producer(self, epoch, alive):
+        """Wait until a running node holds the recovered signature and return
+        it. Not always the observer: with a masternode down, it may have nobody
+        left to hear the signature from."""
+        producer = None
+
         def recovered():
-            if self.has_signature(node, epoch):
+            nonlocal producer
+            producer = next((n for n in alive if self.has_signature(n, epoch)), None)
+            if producer is not None:
                 return True
             # Share requests, connection retries and recovery-member fallback
             # use the mockable node clock. Keep it moving while height stays
@@ -57,6 +64,7 @@ class DSLServiceTest(DashTestFramework):
             return False
 
         self.wait_until(recovered, timeout=60, sleep=1)
+        return producer
 
     def run_test(self):
         node = self.nodes[0]
@@ -148,8 +156,9 @@ class DSLServiceTest(DashTestFramework):
             self.bump_mocktime(10, nodes=alive)
             # The last signing tick must finish before mining the boundary.
             self.generate(node, 1, sync_fun=lambda: self.sync_blocks(alive))
-            self.wait_for_signature(node, epoch, alive)
-            self.generate(node, 1, sync_fun=lambda: self.sync_blocks(alive))
+            producer = self.wait_for_producer(epoch, alive)
+            self.log.info("Node %d holds the signature and mines the boundary block", producer.index)
+            self.generate(producer, 1, sync_fun=lambda: self.sync_blocks(alive))
             block = node.getblock(node.getbestblockhash(), 2)
             dsl_txs = [tx for tx in block["tx"] if tx.get("type") == 10]
             if dsl_txs:

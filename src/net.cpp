@@ -3736,6 +3736,8 @@ void CConnman::ThreadOpenMasternodeConnections(CDeterministicMNManager& dmnman, 
 
         didConnect = false;
 
+        // Held to the end of the pass: SetMasternodeThreadActive waits for it.
+        LOCK(m_masternode_thread_mutex);
         if (!fNetworkActive || !m_masternode_thread_active || !mn_sync.IsBlockchainSynced()) continue;
 
         std::unordered_set<CService, CServiceHash> connectedNodes;

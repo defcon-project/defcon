@@ -1177,14 +1177,25 @@ class DashTestFramework(BitcoinTestFramework):
             # controller node is the only node that has an extra option allowing it to submit sporks
             append_config(self.nodes[0].datadir, ["sporkkey=cP4EKFyJsHT39LDqgdcB43Y3YXjNyjb5Fuas1GQSeAtjnZWmZEQK"])
 
+    def set_mn_threads_active(self, active):
+        # Every node runs this thread, not only the masternodes: with -watchquorums,
+        # on by default, a node outside a quorum connects to one of its members.
+        for node in self.nodes:
+            if node.running:
+                node.setmnthreadactive(active)
+
     def connect_nodes(self, a, b, *, peer_advertises_v2=None):
-        for mn2 in self.mninfo:
-            if mn2.node is not None:
-                mn2.node.setmnthreadactive(False)
+        self.set_mn_threads_active(False)
         super().connect_nodes(a, b, peer_advertises_v2=peer_advertises_v2)
-        for mn2 in self.mninfo:
-            if mn2.node is not None:
-                mn2.node.setmnthreadactive(True)
+        self.set_mn_threads_active(True)
+
+    def reconnect_isolated_node(self, a, b):
+        # Threads first, network second. A thread that reaches the isolated node
+        # before the test does leaves it with a masternode connection, which relays
+        # no blocks or transactions, and mnauth then drops the test's own connection
+        # as a duplicate. setmnthreadactive waits for a connection attempt under way.
+        self.set_mn_threads_active(False)
+        super().reconnect_isolated_node(a, b)
 
     def set_dash_test_params(self, num_nodes, masterodes_count, extra_args=None):
         self.mn_count = masterodes_count
