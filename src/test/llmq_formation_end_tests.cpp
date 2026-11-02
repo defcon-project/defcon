@@ -167,20 +167,22 @@ BOOST_AUTO_TEST_CASE(next_dkg_follows_the_formation_end)
     }
 }
 
-// A rotating type counts from the first sessions of its cycle, and only if it forms.
-// No network registers a rotating type that does not form, so the test switches
-// llmq_test_dip0024 off; the tip is one block past a cycle base.
+// A rotating type counts until the last session of its cycle has started, and only if
+// it forms. llmq_test_dip0024 has two, on the cycle base and the block after it. No
+// network registers a rotating type that does not form, so the test switches it off.
 BOOST_FIXTURE_TEST_CASE(next_dkg_counts_a_rotating_type_only_if_it_forms, RegTestRetiringSetup)
 {
-    std::vector<CBlockIndex> chain(26);
+    std::vector<CBlockIndex> chain(27);
     for (size_t i = 0; i < chain.size(); ++i) {
         chain[i].nHeight = i;
         chain[i].pprev = i > 0 ? &chain[i - 1] : nullptr;
     }
-    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain.back()), 1);
+    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain[24]), 1);
+    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain[25]), 23);
+    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain[26]), 22);
 
     const_cast<Consensus::Params&>(Params().GetConsensus()).DIP0024Height = UNSET;
-    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain.back()), 23);
+    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain[24]), 24);
 }
 
 BOOST_AUTO_TEST_CASE(regtest_argument_refuses_malformed_input)
