@@ -263,6 +263,7 @@ RES_ICONS = \
   qt/res/icons/tabler/settings.svg \
   qt/res/icons/tabler/terminal-2.svg \
   qt/res/icons/tabler/trash.svg \
+  qt/res/icons/tabler/signature.svg \
   qt/res/icons/tabler/topology-star-3.svg
 
 BITCOIN_QT_BASE_CPP = \

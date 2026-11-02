@@ -1186,6 +1186,7 @@ void setNavigationIcon(QAbstractButton* button, const QString& name)
 void BitcoinGUI::applyThemeLayout()
 {
     updateAbyssMenus();
+    updateProgressBarVisibility();
     // Before the wallet-only work below, and outside its early return: the
     // console button exists in a build without a wallet too.
     if (consoleButton != nullptr) {
@@ -1194,6 +1195,8 @@ void BitcoinGUI::applyThemeLayout()
     }
 
 #ifdef ENABLE_WALLET
+    // The status bar's lock follows the theme too (see setEncryptionStatus).
+    if (walletFrame && walletFrame->currentWalletView()) updateWalletStatus();
     if (!appToolBar || !walletLayout || !tabGroup) {
         return;
     }
@@ -1285,7 +1288,8 @@ void BitcoinGUI::applyThemeLayout()
         setNavigationIcon(historyButton, "history");
         setNavigationIcon(coinJoinCoinsButton, "arrows-shuffle");
         if (multisigButton) {
-            setNavigationIcon(multisigButton, "key");
+            // A pen signing, not the key the status bar uses for HD wallets.
+            setNavigationIcon(multisigButton, "signature");
         }
         if (masternodeButton) {
             setNavigationIcon(masternodeButton, "topology-star-3");
@@ -1989,8 +1993,11 @@ void BitcoinGUI::updateProgressBarVisibility()
     // which gives an info text about the connecting phase there is no reason to show the progress bar if we don't have connections
     // since it will not get any updates in this case.
     bool fShowProgressBar = m_node.getNetworkActive() && !m_node.masternodeSync().isSynced() && clientModel->getNumConnections() > 0;
-    progressBarLabel->setVisible(fShowProgressBarLabel);
-    progressBar->setVisible(fShowProgressBar);
+    // Abyss says this once, in the Overview's network bar. The status bar keeps
+    // only the block icon, which opens the detailed sync window on a click.
+    const bool classic = !GUIUtil::isModernTheme();
+    progressBarLabel->setVisible(classic && fShowProgressBarLabel);
+    progressBar->setVisible(classic && fShowProgressBar);
 }
 
 void BitcoinGUI::updateCoinJoinVisibility()
@@ -2753,6 +2760,8 @@ void BitcoinGUI::setEncryptionStatus(int status)
         encryptWalletAction->setEnabled(false);
         break;
     }
+    // Abyss has this lock in its quick row, with the same state and action.
+    if (GUIUtil::isModernTheme()) labelWalletEncryptionIcon->hide();
 
     updateWalletLockButton(status);
 }
@@ -2862,7 +2871,14 @@ void BitcoinGUI::showProgress(const QString &title, int nProgress)
 
 void BitcoinGUI::showModalOverlay()
 {
-    if (modalOverlay && (progressBar->isVisible() || modalOverlay->isLayerVisible()))
+    if (!modalOverlay) return;
+    // Abyss hides the status bar's progress bar, so there the gate is the sync
+    // state itself: while the node has not caught up, the block icon and the
+    // wallet's warning open the window. The classic themes keep their gate.
+    const bool catching_up = GUIUtil::isModernTheme()
+        ? (clientModel != nullptr && m_node.getNetworkActive() && !m_node.masternodeSync().isSynced())
+        : progressBar->isVisible();
+    if (catching_up || modalOverlay->isLayerVisible())
         modalOverlay->toggleVisibility();
 }
 

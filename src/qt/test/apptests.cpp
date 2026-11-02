@@ -116,7 +116,7 @@ void TestAbyssSidebar(BitcoinGUI* window)
     // In the order createToolBars adds the pages; the last three are optional.
     QStringList expected{"home", "send", "qrcode", "history", "arrows-shuffle"};
     QSettings settings;
-    if (settings.value("fShowMultisigTab", false).toBool()) expected << "key";
+    if (settings.value("fShowMultisigTab", false).toBool()) expected << "signature";
     if (settings.value("fShowMasternodesTab").toBool()) expected << "topology-star-3";
     if (settings.value("fShowGovernanceTab").toBool()) expected << "gavel";
     QCOMPARE(buttons.size(), expected.size());

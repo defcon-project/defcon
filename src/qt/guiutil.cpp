@@ -27,6 +27,7 @@
 #include <util/system.h>
 #include <util/time.h>
 
+#include <atomic>
 #include <cmath>
 
 #ifdef WIN32
@@ -1146,6 +1147,22 @@ bool isModernTheme()
     return isDefconDarkTheme();
 }
 
+// Read on every paint of every button and label, so it is a flag that
+// loadStyleSheet() sets, not a settings lookup.
+static std::atomic<bool> g_underline_shortcuts{true};
+
+int ThemeStyle::styleHint(StyleHint hint, const QStyleOption* option, const QWidget* widget, QStyleHintReturn* data) const
+{
+    if (hint == QStyle::SH_UnderlineShortcut && !g_underline_shortcuts.load()) return 0;
+    return QProxyStyle::styleHint(hint, option, widget, data);
+}
+
+void installThemeStyle()
+{
+    if (qobject_cast<ThemeStyle*>(QApplication::style())) return;
+    QApplication::setStyle(new ThemeStyle(QApplication::style()->objectName()));
+}
+
 void loadStyleSheet(bool fForceUpdate)
 {
     AssertLockNotHeld(cs_css);
@@ -1242,6 +1259,7 @@ void loadStyleSheet(bool fForceUpdate)
         fStyleSheetChanged = loadFiles(vecFiles);
     }
 
+    g_underline_shortcuts = !isModernTheme();
     bool fUpdateStyleSheet = fForceUpdate || (fDebugCustomStyleSheets && fStyleSheetChanged);
 
     if (fUpdateStyleSheet && stylesheet != nullptr) {

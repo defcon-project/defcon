@@ -70,6 +70,7 @@
         <file alias="settings.svg">res/icons/tabler/settings.svg</file>
         <file alias="terminal-2.svg">res/icons/tabler/terminal-2.svg</file>
         <file alias="trash.svg">res/icons/tabler/trash.svg</file>
+        <file alias="signature.svg">res/icons/tabler/signature.svg</file>
     </qresource>
     <qresource prefix="/css">
         <file alias="general">res/css/general.css</file>

@@ -9,6 +9,7 @@
 
 #include <interfaces/node.h>
 #include <qt/bitcoin.h>
+#include <qt/guiutil.h>
 #include <qt/initexecutor.h>
 #include <qt/test/apptests.h>
 #include <qt/test/guiutiltests.h>
@@ -108,6 +109,7 @@ int main(int argc, char* argv[])
     BitcoinApplication app;
     app.setNode(*node);
     app.setApplicationName("Dash-Qt-test");
+    GUIUtil::installThemeStyle(); // As the wallet runs.
 
     app.node().context()->args = &gArgs;     // Make gArgs available in the NodeContext
     AppTests app_tests(app);
