@@ -13,6 +13,7 @@
 
 #include <qt/guiutil.h>
 
+#include <chainparams.h>
 #include <clientversion.h>
 #include <init.h>
 #include <util/system.h>
@@ -111,37 +112,40 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, HelpMode helpMode) :
 
         ui->aboutMessage->setTextFormat(Qt::RichText);
         ui->scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-        ui->aboutMessage->setText(tr("\
-<h3>%1 Basics</h3> \
-%1 gives you true financial privacy by obscuring the origins of your funds. \
-All the Dash in your wallet is comprised of different \"inputs\" which you can think of as separate, discrete coins.<br> \
-%1 uses an innovative process to mix your inputs with the inputs of two or more other people, without having your coins ever leave your wallet. \
-You retain control of your money at all times.<hr> \
-<b>The %1 process works like this:</b>\
-<ol type=\"1\"> \
-<li>%1 begins by breaking your transaction inputs down into standard denominations. \
-These denominations are 0.001 DASH, 0.01 DASH, 0.1 DASH, 1 DASH and 10 DASH -- sort of like the paper money you use every day.</li> \
-<li>Your wallet then sends requests to specially configured software nodes on the network, called \"masternodes.\" \
-These masternodes are informed then that you are interested in mixing a certain denomination. \
-No identifiable information is sent to the masternodes, so they never know \"who\" you are.</li> \
-<li>When two or more other people send similar messages, indicating that they wish to mix the same denomination, a mixing session begins. \
-The masternode mixes up the inputs and instructs all three users' wallets to pay the now-transformed input back to themselves. \
-Your wallet pays that denomination directly to itself, but in a different address (called a change address).</li> \
-<li>In order to fully obscure your funds, your wallet must repeat this process a number of times with each denomination. \
-Each time the process is completed, it's called a \"round.\" Each round of %1 makes it exponentially more difficult to determine where your funds originated.</li> \
-<li>This mixing process happens in the background without any intervention on your part. When you wish to make a transaction, \
-your funds will already be mixed. No additional waiting is required.</li> \
-</ol> <hr>\
-<b>IMPORTANT:</b> Your wallet only contains 1000 of these \"change addresses.\" Every time a mixing event happens, up to 9 of your addresses are used up. \
-This means those 1000 addresses last for about 100 mixing events. When 900 of them are used, your wallet must create more addresses. \
-It can only do this, however, if you have automatic backups enabled.<br> \
-Consequently, users who have backups disabled will also have %1 disabled. <hr>\
-For more information, see the <a style=\"%2\" href=\"%3\">%1 documentation</a>."
-        )
-        .arg(strCoinJoinName)
-        .arg(GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_COMMAND))
-        .arg("https://docs.dash.org/en/stable/wallets/dashcore/coinjoin-instantsend.html")
-        );
+        ui->aboutMessage->setText(tr(
+            "<h3>%1 basics</h3>"
+            "<p>%1 makes it much harder to trace where your DFCN came from. "
+            "It mixes your coins with the coins of other DeFCoN users in shared transactions. "
+            "Your coins never leave your wallet, and only you can spend them.</p><hr>"
+            "<b>How it works</b>"
+            "<ol type=\"1\">"
+            "<li>Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, "
+            "for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.</li>"
+            "<li>For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, "
+            "or asks a randomly chosen masternode to start a new one.</li>"
+            "<li>When at least %2 participants have joined, the masternode combines their coins into one transaction. "
+            "Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.</li>"
+            "<li>Each completed session is one round. Your wallet repeats this several times. "
+            "You can set the number of rounds and the target balance in Options.</li>"
+            "<li>Mixing runs in the background while the wallet is open. "
+            "When you send from your %1 balance, your coins are already mixed.</li>"
+            "</ol><hr>"
+            "<b>Good to know</b>"
+            "<ul>"
+            "<li><b>Staking:</b> on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards. "
+            "The target balance in Options sets roughly how much is mixed.</li>"
+            "<li><b>Fees:</b> mixing transactions are free. Creating the standard amounts costs a normal small network fee. "
+            "Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.</li>"
+            "<li><b>Privacy:</b> the masternode running a session sees which coins take part in it, "
+            "and the other participants are not guaranteed to be different people. "
+            "More rounds make your coins harder to follow. "
+            "Sending many mixed coins together in one payment can link them again.</li>"
+            "<li><b>Encrypted wallet:</b> if the wallet is locked when you start mixing, it asks for your passphrase "
+            "and unlocks for mixing only, so sending still needs the passphrase.</li>"
+            "<li><b>Backups:</b> each round uses up to 9 new addresses. "
+            "%1 needs automatic wallet backups to be switched on; they are on by default.</li>"
+            "</ul>"
+        ).arg(strCoinJoinName).arg(Params().PoolMinParticipants()));
         ui->aboutMessage->setWordWrap(true);
         ui->helpMessage->setVisible(false);
     }

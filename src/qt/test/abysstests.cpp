@@ -6,6 +6,7 @@
 #include <qt/test/abysstests.h>
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
+#include <chainparams.h>
 #include <key_io.h>
 #include <qt/addressbookpage.h>
 #include <qt/addresstablemodel.h>
@@ -4171,4 +4172,43 @@ void AbyssTests::skyOverviewBackground()
         }
     }
     QVERIFY2(star_pixels > 0, "The tested Overview gap must contain actual sky pixels");
+}
+
+void AbyssTests::coinJoinHelp()
+{
+    // The CoinJoin help came from the chain this one forked from: Dash coins, a
+    // link to the Dash documentation, and a promise that masternodes never learn
+    // who mixes. The text is the same in every theme; check it in each one and
+    // save a picture of the dialog for review.
+    RestoreAppearance restore;
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    const QString participants = QString("at least %1 participants").arg(Params().PoolMinParticipants());
+    QString first;
+    for (const char* theme : {"Abyss", "Light", "Dark", "Traditional"}) {
+        Theme(theme);
+        HelpMessageDialog help(nullptr, HelpMessageDialog::pshelp);
+        help.show();
+        Settle();
+        // The picture first, so a run on the old text still leaves one to compare.
+        if (!output.isEmpty()) {
+            QVERIFY(QDir().mkpath(output));
+            QVERIFY(help.grab().save(QDir(output).filePath(QString("%1-coinjoin-help.png").arg(theme))));
+        }
+        auto* message = help.findChild<QLabel*>("aboutMessage");
+        QVERIFY(message);
+        const QString text = message->text();
+        QCOMPARE(help.windowTitle(), QString("CoinJoin information"));
+        QVERIFY2(!text.contains("dash", Qt::CaseInsensitive), qPrintable(text));
+        QVERIFY2(!text.contains("href", Qt::CaseInsensitive), qPrintable(text));
+        QVERIFY2(!text.contains("never know"), qPrintable(text));
+        QVERIFY2(!text.contains("%1") && !text.contains("%2"), qPrintable(text));
+        QVERIFY2(text.contains(participants), qPrintable(participants));
+        for (const char* expected : {"<h3>CoinJoin basics</h3>", "slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN",
+                                     "10.0001 DFCN", "on the main network, mixed coins are smaller than the minimum stake",
+                                     "not guaranteed to be different people",
+                                     "if the wallet is locked", "unlocks for mixing only", "automatic wallet backups"}) {
+            QVERIFY2(text.contains(expected), expected);
+        }
+        if (first.isEmpty()) first = text; else QCOMPARE(text, first);
+    }
 }
