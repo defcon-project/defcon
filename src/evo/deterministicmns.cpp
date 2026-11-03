@@ -19,6 +19,7 @@
 #include <deploymentstatus.h>
 #include <dbwrapper.h>
 #include <script/standard.h>
+#include <shutdown.h>
 #include <util/string.h>
 #include <util/time.h>
 #include <validation.h>
@@ -2193,7 +2194,7 @@ void CDeterministicMNManager::DoMaintenance() {
 
 CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateAndRepairDiffs(
     const CBlockIndex* start_index, const CBlockIndex* stop_index, ChainstateManager& chainman,
-    BuildListFromBlockFunc build_list_func, bool repair)
+    BuildListFromBlockFunc build_list_func, bool repair, bool stop_at_shutdown)
 {
     RecalcDiffsResult result;
     result.start_height = start_index->nHeight;
@@ -2236,6 +2237,12 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
 
     // Process each pair of consecutive snapshots
     for (size_t i = 0; i < snapshot_blocks.size() - 1; ++i) {
+        // A shutdown waits for the thread this runs on, and the whole history can take a while.
+        if (stop_at_shutdown && ShutdownRequested()) {
+            result.interrupted = true;
+            return result;
+        }
+
         const CBlockIndex* from_index = snapshot_blocks[i];
         const CBlockIndex* to_index = snapshot_blocks[i + 1];
 
@@ -2339,7 +2346,8 @@ CDeterministicMNManager::RecalcDiffsResult CDeterministicMNManager::RecalculateA
             // the database after the repair, pairs and tail alike.
             LogPrintf("CDeterministicMNManager::%s -- Re-verifying after repair...\n", __func__);
             RecalcDiffsResult recheck =
-                RecalculateAndRepairDiffs(start_index, stop_index, chainman, build_list_func, /*repair=*/false);
+                RecalculateAndRepairDiffs(start_index, stop_index, chainman, build_list_func, /*repair=*/false,
+                                          /*stop_at_shutdown=*/false);
             recheck.diffs_recalculated = result.diffs_recalculated;
             recheck.repair_errors = result.repair_errors;
             return recheck;
@@ -2380,6 +2388,10 @@ CDeterministicMNManager::HistoryCheck CDeterministicMNManager::VerifyOrRepairDif
     const auto start{SteadyClock::now()};
     try {
         const auto result = RecalculateAndRepairDiffs(start_index, stop_index, chainman, std::move(build_list_func), repair);
+        if (result.interrupted) {
+            LogPrintf("Stopped checking masternode list diffs: the node is shutting down\n");
+            return {};
+        }
         if (!result.verification_errors.empty()) {
             LogPrintf("WARNING: Verification errors:\n%s\n", Join(result.verification_errors, "\n"));
         }

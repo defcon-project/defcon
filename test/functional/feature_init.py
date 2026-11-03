@@ -101,7 +101,8 @@ class InitStressTest(BitcoinTestFramework):
         }
 
         files_to_perturb = {
-            'blocks/index/*.ldb': 'Error loading block database.',
+            # Which of the two depends on where the perturbation lands.
+            'blocks/index/*.ldb': 'Error (loading|opening) block database.',
             'chainstate/*.ldb': 'Error opening block database.',
             'blocks/blk*.dat': 'Corrupted block database detected.',
         }

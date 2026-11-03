@@ -786,6 +786,8 @@ public:
         int verified_through_height{0};
         int diffs_recalculated{0};
         int snapshots_verified{0};
+        //! A shutdown stopped the check: no verdict, and no diff was written.
+        bool interrupted{false};
         std::vector<std::string> verification_errors;
         std::vector<std::string> repair_errors;
     };
@@ -800,17 +802,21 @@ public:
         BlockValidationState& state,
         CDeterministicMNList& mnListRet)>;
 
+    //! Looks for a shutdown before each pair of snapshots when stop_at_shutdown is true, and
+    //! when it finds one returns before any diff is written. The re-check after a repair's
+    //! writes passes false: a shutdown does not stop it.
     [[nodiscard]] RecalcDiffsResult RecalculateAndRepairDiffs(
         const CBlockIndex* start_index, const CBlockIndex* stop_index,
         ChainstateManager& chainman, BuildListFromBlockFunc build_list_func,
-        bool repair) EXCLUSIVE_LOCKS_REQUIRED(!cs);
+        bool repair, bool stop_at_shutdown = true) EXCLUSIVE_LOCKS_REQUIRED(!cs);
     [[nodiscard]] bool IsRepaired() const;
     void CompleteRepair();
 
     //! The startup check of the stored history, DIP0003 to the tip: verify,
     //! or repair when asked, and mark the diffs repaired once they reproduce
     //! every snapshot. A storage error ends in FAILED rather than an exception,
-    //! so each caller can stop the node in order.
+    //! so each caller can stop the node in order. A shutdown that stops it ends it in NOT_RUN:
+    //! no diff written, and the mark left alone.
     struct HistoryCheck {
         enum class Outcome { NOT_RUN, CLEAN, UNRELIABLE, REPAIR_FAILED, FAILED };
         Outcome outcome{Outcome::NOT_RUN};

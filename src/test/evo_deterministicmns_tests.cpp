@@ -1408,11 +1408,14 @@ void FuncRepairableDiffDamage(TestChainSetup& setup)
 
     for (const bool missing : {true, false}) {
         const std::string damage{strprintf("%s diff at height %d", missing ? "missing" : "undecodable", damaged->nHeight)};
-        if (missing) {
-            BOOST_REQUIRE(evodb.GetRawDB().Erase(diff_key));
-        } else {
-            BOOST_REQUIRE(evodb.GetRawDB().Write(diff_key, uint8_t{0xfd}));
-        }
+        const auto damage_the_diff = [&]() {
+            if (missing) {
+                BOOST_REQUIRE(evodb.GetRawDB().Erase(diff_key));
+            } else {
+                BOOST_REQUIRE(evodb.GetRawDB().Write(diff_key, uint8_t{0xfd}));
+            }
+        };
+        damage_the_diff();
         {
             CDeterministicMNManager cold(chainman.ActiveChainstate(), evodb);
             BOOST_CHECK_MESSAGE(VerifyMasternodeListAtTip(tip, cold), damage << ": the tip list did not load");
@@ -1445,6 +1448,49 @@ void FuncRepairableDiffDamage(TestChainSetup& setup)
                 return repairer.RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet,
                                                      qsnapman, debugLogs);
             };
+        // A shutdown before any diff is written ends the check without a verdict. The diffs and the
+        // mark, set or unset, stay as they were. Both for the startup check and for the call
+        // evodb verify and evodb repair make.
+        BOOST_REQUIRE(InitShutdownState());
+        for (const bool marked : {false, true}) {
+            for (const bool repair : {false, true}) {
+                if (marked) repairer.CompleteRepair();
+                const bool mark_before{repairer.IsRepaired()};
+                StartShutdown();
+                const bool interrupted{repairer.RecalculateAndRepairDiffs(chainman.ActiveChain().Genesis(), tip, chainman, rebuild, repair).interrupted};
+                const auto stopped = repairer.VerifyOrRepairDiffs(chainman, rebuild, repair);
+                AbortShutdown();
+                BOOST_CHECK(interrupted);
+                BOOST_CHECK_MESSAGE(stopped.outcome == Outcome::NOT_RUN, damage << ": outcome under shutdown, repair " << repair
+                                    << ": " << static_cast<int>(stopped.outcome));
+                BOOST_CHECK_EQUAL(repairer.IsRepaired(), mark_before);
+                BOOST_CHECK_MESSAGE(work_still_damaged(), damage << ": the stopped check changed the history, repair " << repair);
+            }
+        }
+        // A shutdown during the last pair of a repair comes too late to stop it: the writes happen,
+        // and the re-check after them runs to its end and gives a verdict on them.
+        CDeterministicMNManager::BuildListFromBlockFunc stopping =
+            [&](const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
+                const CDeterministicMNList& prevList, const CCoinsViewCache& view,
+                bool debugLogs, BlockValidationState& state, CDeterministicMNList& mnListRet) {
+                StartShutdown();
+                return rebuild(block, pindexPrev, prevList, view, debugLogs, state, mnListRet);
+            };
+        for (const bool direct : {false, true}) {
+            if (direct) {
+                const auto finished = repairer.RecalculateAndRepairDiffs(chainman.ActiveChain().Genesis(), tip, chainman, stopping, /*repair=*/true);
+                BOOST_CHECK_MESSAGE(!finished.interrupted, damage << ": the re-check stopped after the writes");
+                BOOST_CHECK_MESSAGE(finished.diffs_recalculated > 0 && finished.verification_errors.empty() && finished.repair_errors.empty(),
+                                    damage << ": the repair gave no clean verdict on its writes");
+            } else {
+                const auto finished = repairer.VerifyOrRepairDiffs(chainman, stopping, /*repair=*/true);
+                BOOST_CHECK_MESSAGE(finished.outcome == Outcome::CLEAN, damage << ": outcome with a shutdown during the writes: "
+                                    << static_cast<int>(finished.outcome) << " " << finished.details);
+            }
+            AbortShutdown();
+            BOOST_CHECK_MESSAGE(!work_still_damaged(), damage << ": the repair did not write, direct " << direct);
+            damage_the_diff();
+        }
         // Verification alone reports the damage and writes nothing.
         auto check = repairer.VerifyOrRepairDiffs(chainman, rebuild, /*repair=*/false);
         BOOST_CHECK_MESSAGE(check.outcome == Outcome::UNRELIABLE, damage << ": verification outcome "
