@@ -40,7 +40,8 @@ MAX_BLOCK_SIGOPS = 40000
 # Genesis block time (regtest)
 TIME_GENESIS_BLOCK = 1417713337
 
-MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60
+# DeFCoN accepts a block at most three minutes ahead (MAX_FUTURE_BLOCK_TIME in src/chain.h), not Bitcoin's two hours
+MAX_FUTURE_BLOCK_TIME = 3 * 60
 
 # Coinbase transaction outputs can only be spent after this number of new blocks (network rule)
 COINBASE_MATURITY = 100

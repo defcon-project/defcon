@@ -84,6 +84,8 @@ class LLMQChainLocksTest(DashTestFramework):
         assert_equal(cbtx["instantlock"], False)
         assert_equal(cbtx["instantlock_internal"], False)
         assert_equal(cbtx["chainlock"], False)
+        self.log.info("getblockchaininfo: ChainLocks are on, but there is no lock yet")
+        assert_equal(self.nodes[0].getblockchaininfo()["chainlock"], {"enabled": True})
 
 
         self.nodes[0].sporkupdate("SPORK_17_QUORUM_DKG_ENABLED", 0)
@@ -91,6 +93,8 @@ class LLMQChainLocksTest(DashTestFramework):
 
         self.mine_cycle_quorum()
         self.wait_for_chainlocked_block_all_nodes(self.nodes[0].getbestblockhash())
+        self.log.info("getblockchaininfo: the tip is locked")
+        self.check_chainlock_info(self.nodes[0], self.nodes[0].getbestblockhash(), expected_age=0)
 
         self.log.info("Mine single block, ensure it includes latest chainlock")
         self.generate(self.nodes[0], 1, sync_fun=self.sync_blocks)
@@ -166,12 +170,16 @@ class LLMQChainLocksTest(DashTestFramework):
         self.sync_all()
 
         self.log.info("Isolate node, mine on both parts of the network, and reconnect")
+        locked_tip = self.nodes[0].getbestblockhash()
+        self.check_chainlock_info(self.nodes[0], locked_tip, expected_age=0)
         self.isolate_node(0)
         bad_tip = self.generate(self.nodes[0], 5, sync_fun=self.no_op)[-1]
         self.generatetoaddress(self.nodes[1], 1, node0_mining_addr, sync_fun=self.no_op)
         good_tip = self.nodes[1].getbestblockhash()
         self.wait_for_chainlocked_block(self.nodes[1], good_tip)
         assert not self.nodes[0].getblock(self.nodes[0].getbestblockhash())["chainlock"]
+        self.log.info("getblockchaininfo: the five blocks mined alone lie above the lock")
+        self.check_chainlock_info(self.nodes[0], locked_tip, expected_age=5)
         self.reconnect_isolated_node(0, 1)
         self.generatetoaddress(self.nodes[1], 1, node0_mining_addr, sync_fun=self.no_op)
         self.wait_for_chainlocked_block_all_nodes(self.nodes[1].getbestblockhash())
@@ -285,6 +293,9 @@ class LLMQChainLocksTest(DashTestFramework):
             tip_1 = self.nodes[0].getblock(self.nodes[0].getbestblockhash(), 2)
             assert_equal(tip_1['cbTx']['bestCLSignature'], tip_0['cbTx']['bestCLSignature'])
             assert_equal(tip_1['cbTx']['bestCLHeightDiff'], tip_0['cbTx']['bestCLHeightDiff'] + 1)
+            if i == 0:
+                self.log.info("getblockchaininfo: ChainLocks are off, so no lock is shown")
+                self.wait_until(lambda: self.nodes[0].getblockchaininfo()["chainlock"] == {"enabled": False})
 
         self.log.info("Test bestCLHeightDiff restrictions")
         self.test_bestCLHeightDiff()
@@ -314,6 +325,17 @@ class LLMQChainLocksTest(DashTestFramework):
         assert_equal(node.getblock(tip, 2)["cbTx"], cbtx)
         self.test_coinbase_best_cl(node)
         self.log.info("Coinbase ChainLock reindex preserved height, tip, payload and valid signature")
+
+    def check_chainlock_info(self, node, locked_hash, expected_age):
+        block = node.getblock(locked_hash)
+        assert_equal(node.getblockchaininfo()["chainlock"], {
+            "enabled": True,
+            "height": block["height"],
+            "blockhash": locked_hash,
+            "time": block["time"],
+            "age_blocks": expected_age,
+        })
+        assert_equal(node.getbestchainlock()["blockhash"], locked_hash)
 
     def create_chained_txs(self, node, amount):
         txid = node.sendtoaddress(node.getnewaddress(), amount)
