@@ -45,6 +45,7 @@ from test_framework.util import (
 from test_framework.wallet_util import bytes_to_wif
 
 llmq_type_test = 106 # LLMQType::LLMQ_TEST_PLATFORM
+MNEHF_SIGNAL_TX_TYPE = 7 # TRANSACTION_MNHF_SIGNAL
 tiny_amount = int(Decimal("0.0007") * COIN)
 blocks_in_one_day = 100
 HEIGHT_DIFF_EXPIRING = 48
@@ -149,9 +150,13 @@ class AssetLocksTest(DashTestFramework):
         return expected
 
     def check_mempool_size(self):
+        # Masternodes submit the MnEHF signal transaction on their own as soon as a quorum
+        # able to sign it exists, so it is not part of what this test puts in the mempool.
         self.sync_mempools()
         for node in self.nodes:
-            assert_equal(node.getmempoolinfo()['size'], self.mempool_size)
+            own = [txid for txid in node.getrawmempool()
+                   if node.getrawtransaction(txid, 1)['type'] != MNEHF_SIGNAL_TX_TYPE]
+            assert_equal(len(own), self.mempool_size)
 
     def check_mempool_result(self, result_expected, tx):
         """Wrapper to check result of testmempoolaccept on node_0's mempool"""
@@ -227,14 +232,14 @@ class AssetLocksTest(DashTestFramework):
         except JSONRPCException as e:
             assert expected_error in e.error['message']
 
-    def generate_batch(self, count):
+    def generate_batch(self, count, sync_fun=None):
         self.log.info(f"Generate {count} blocks")
         while count > 0:
             self.log.info(f"Generating batch of blocks {count} left")
             batch = min(50, count)
             count -= batch
             self.bump_mocktime(10 * 60 + 1)
-            self.generate(self.nodes[1], batch)
+            self.generate(self.nodes[1], batch, sync_fun=sync_fun)
 
     # This functional test intentionally setup only 2 MN and only 2 Evo nodes
     # to ensure that corner case of quorum with minimum amount of nodes as possible
@@ -320,8 +325,17 @@ class AssetLocksTest(DashTestFramework):
         extra_lock_tx = self.create_assetlock(coin, COIN, pubkey)
         self.create_and_check_block([extra_lock_tx], expected_error = 'bad-cbtx-assetlocked-amount')
 
-        self.log.info("Mine a quorum...")
-        self.mine_quorum_2_nodes()
+        self.log.info("Mine IS quorum")
+        if len(self.nodes[0].quorum('list')['llmq_test_instantsend']) == 0:
+            self.mine_quorum(llmq_type_name='llmq_test_instantsend', expected_members=2, expected_connections=1, expected_contributions=2, expected_commitments=2, llmq_type=104)
+        else:
+            self.log.info("IS quorum exist")
+
+        self.log.info("Mine a platform quorum")
+        if len(self.nodes[0].quorum('list')['llmq_test_platform']) == 0:
+            self.mine_quorum_2_nodes()
+        else:
+            self.log.info("Platform quorum exist")
 
         self.validate_credit_pool_balance(locked_1)
 
@@ -369,6 +383,7 @@ class AssetLocksTest(DashTestFramework):
         txid = self.send_tx(asset_unlock_tx)
         assert_equal(node.getmempoolentry(txid)['fees']['base'], Decimal("0.0007"))
         is_id = node_wallet.sendtoaddress(node_wallet.getnewaddress(), 1)
+        self.bump_mocktime(30)
         for node in self.nodes:
             self.wait_for_instantlock(is_id, node)
 
@@ -443,7 +458,10 @@ class AssetLocksTest(DashTestFramework):
         for inode in self.nodes:
             inode.invalidateblock(block_asset_unlock)
         self.validate_credit_pool_balance(locked)
-        self.generate_batch(50)
+        # This goes back further than the ten blocks whose transactions an invalidation returns to the mempool.
+        # Node 0's wallet may resubmit its own when the mock time moves on, and its peers, which have seen them,
+        # are not told again; the mempools agree once the original chain is back.
+        self.generate_batch(50, sync_fun=lambda: self.sync_blocks())
         self.validate_credit_pool_balance(locked)
         for inode in self.nodes:
             inode.reconsiderblock(block_to_reconsider)
@@ -631,9 +649,11 @@ class AssetLocksTest(DashTestFramework):
         owner_reward = bt['masternode'][1]['amount']
         operator_reward = bt['masternode'][2]['amount'] if len(bt['masternode']) == 3 else 0
         all_mn_rewards = platform_reward + owner_reward + operator_reward
-        assert_equal(all_mn_rewards, bt['coinbasevalue'] * 3 // 4)  # 75/25 mn/miner reward split
+        # DeFCoN pays a masternode a fixed amount, not a share of the block: 10000 until the v23.1 height,
+        # which this test leaves unset (GetMasternodePayment)
+        assert_equal(all_mn_rewards, 10000 * COIN)
         assert_equal(platform_reward, all_mn_rewards * 375 // 1000)  # 0.375 platform share
-        assert_equal(platform_reward, 57741807)
+        assert_equal(platform_reward, 3750 * COIN)
         assert_equal(locked, self.get_credit_pool_balance())
         self.generate(node, 1)
         locked += platform_reward

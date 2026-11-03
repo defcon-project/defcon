@@ -69,8 +69,17 @@ class DIP3V19Test(DashTestFramework):
 
         self.mine_quorum(llmq_type_name='llmq_test', llmq_type=100)
 
+        # A node reads a recovered signature under the BLS scheme it is on when the signature arrives. One signed
+        # under the legacy scheme that arrives after the node switched to the basic scheme at v19 does not parse,
+        # and the node drops the peer that relayed it. ChainLocks are signed for every block, so their signatures
+        # cross the switch; keep them off until every node has switched. ChainLocks are checked again at the end.
+        self.wait_for_chainlocked_block_all_nodes(self.nodes[0].getbestblockhash())
+        self.set_chainlocks(False)
         self.activate_by_name('v19', expected_activation_height=200)
         self.log.info("Activated v19 at height:" + str(self.nodes[0].getblockcount()))
+        self.sync_blocks()
+        self.set_chainlocks(True)
+        self.wait_for_chainlocked_block_all_nodes(self.nodes[0].getbestblockhash())
 
         mn_list_after = self.nodes[0].masternodelist()
         pubkeyoperator_list_after = set([mn_list_after[e]["pubkeyoperator"] for e in mn_list_after])
@@ -101,6 +110,11 @@ class DIP3V19Test(DashTestFramework):
             assert prev_quorum != quorum
 
         self.wait_for_chainlocked_block_all_nodes(self.nodes[0].getbestblockhash())
+
+    def set_chainlocks(self, enabled):
+        self.bump_mocktime(1)
+        self.nodes[0].sporkupdate("SPORK_19_CHAINLOCKS_ENABLED", 0 if enabled else 4070908800)
+        self.wait_for_sporks_same()
 
     def test_revoke_protx(self, node_idx, revoke_protx, revoke_keyoperator):
         funds_address = self.nodes[0].getnewaddress()
