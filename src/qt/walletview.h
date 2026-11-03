@@ -50,6 +50,8 @@ public:
     */
     void setClientModel(ClientModel *clientModel);
     WalletModel *getWalletModel() { return walletModel; }
+    /** The sky level the Overview page asks for */
+    int skyTier() const;
     /** Set the wallet model.
         The wallet model represents a bitcoin wallet, and offers access to the list of transactions, address book and sending
         functionality.
@@ -151,6 +153,8 @@ Q_SIGNALS:
     void outOfSyncWarningClicked();
     /** An empty transaction list's Receive button was clicked */
     void receiveClicked();
+    /** The Overview page's sky level changed */
+    void skyTierChanged(int tier);
 };
 
 #endif // BITCOIN_QT_WALLETVIEW_H

@@ -765,6 +765,17 @@ QWidget#OverviewPage QFrame#networkCard QProgressBar#networkSyncProgress::chunk 
     border-radius: 3px;
 }
 
+/* The sky's level: a pill lit by the same blue as the glyphs. */
+QWidget#OverviewPage QFrame#networkCard QWidget#networkSky {
+    background-color: #10263e;
+    border: 1px solid #1d3f60;
+    border-radius: 11px;
+}
+
+QWidget#OverviewPage QFrame#networkCard QWidget#networkSky QLabel#networkText {
+    color: #cfe6ff;
+}
+
 /******************************************************
 Devnet badge
 ******************************************************/

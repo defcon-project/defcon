@@ -113,6 +113,7 @@ WalletView::WalletView(QWidget* parent) :
     connect(overviewPage, &OverviewPage::transactionClicked, transactionView, qOverload<const QModelIndex&>(&TransactionView::focusTransaction));
     connect(overviewPage, &OverviewPage::outOfSyncWarningClicked, this, &WalletView::outOfSyncWarningClicked);
     connect(overviewPage, &OverviewPage::receiveClicked, this, &WalletView::receiveClicked);
+    connect(overviewPage, &OverviewPage::skyTierChanged, this, &WalletView::skyTierChanged);
     connect(transactionView, &TransactionView::receiveClicked, this, &WalletView::receiveClicked);
 
     connect(sendCoinsPage, &SendCoinsDialog::coinsSent, this, &WalletView::coinsSent);
@@ -479,4 +480,9 @@ void WalletView::showProgress(const QString &title, int nProgress)
 void WalletView::trxAmount(QString amount)
 {
     transactionSum->setText(amount);
+}
+
+int WalletView::skyTier() const
+{
+    return overviewPage->skyTier();
 }

@@ -27,6 +27,7 @@
 #include <qt/optionsdialog.h>
 #include <qt/optionsmodel.h>
 #include <qt/overviewpage.h>
+#include <qt/skycatalogue.h>
 #include <qt/starfieldwidget.h>
 #include <qt/qrimagewidget.h>
 #include <qt/qrdialog.h>
@@ -50,7 +51,15 @@
 #include <util/check.h>
 #include <wallet/coincontrol.h>
 #include <wallet/wallet.h>
+
+#ifndef WIN32
+#include <sys/resource.h>
+#endif
 #include <QApplication>
+#include <QElapsedTimer>
+#include <QEventLoop>
+#include <QSet>
+#include <QStringList>
 #include <QAction>
 #include <QSignalSpy>
 #include <QToolButton>
@@ -1864,8 +1873,18 @@ class ControlledSky : public StarfieldWidget
 {
 public:
     qint64 elapsed{0};
+    qint64 m_epoch_utc_ms{0}; //!< The system clock at elapsed 0.
+    qint64 wall_step{0};      //!< A correction of the system clock alone.
+    mutable int utc_reads{0}; //!< How often the sky read the system clock.
+    int slot_turns_after{-1}; //!< After this many reads the clock is turn_ms further on.
+    qint64 turn_ms{600000};   //!< One ten-minute slot, or a small step across a turn.
 protected:
     qint64 clockMilliseconds() const override { return elapsed; }
+    qint64 utcMilliseconds() const override
+    {
+        ++utc_reads;
+        return m_epoch_utc_ms + elapsed + wall_step + (slot_turns_after >= 0 && utc_reads > slot_turns_after ? turn_ms : 0);
+    }
 };
 } // namespace
 
@@ -1873,42 +1892,72 @@ protected:
 void AbyssTests::skySuspendClock()
 {
     StarfieldWidget live;
+    QVERIFY(live.clockMilliseconds() < 100);
+    QVERIFY(live.clockMilliseconds() >= 0);
 #if defined(Q_OS_LINUX) && defined(CLOCK_BOOTTIME)
-    // Check the actual production provider, not only a fake elapsed timer.
     timespec boot{};
-    QVERIFY(clock_gettime(CLOCK_BOOTTIME, &boot) == 0);
+    QCOMPARE(clock_gettime(CLOCK_BOOTTIME, &boot), 0);
     const qint64 boot_ms = static_cast<qint64>(boot.tv_sec) * 1000 + boot.tv_nsec / 1000000;
     QVERIFY(std::abs(StarfieldWidget::suspendAwareClockMilliseconds() - boot_ms) < 100);
 #endif
-    const qint64 before = live.clockMilliseconds();
-    QTest::qWait(50);
-    QVERIFY(live.clockMilliseconds() - before >= 20);
-    // A sleep-aware clock advances while GUI timers are stopped. Simulate an
-    // eight-hour suspend, without suspending the shared test machine.
+    QVERIFY(live.m_stars.isEmpty());
+    QVERIFY(live.m_steady.isNull() && live.m_moon.isNull());
+
+    // The real sky and the Moon follow the system clock: a sleep moves them on,
+    // and so does a corrected clock, at the next tick. Motion keeps the
+    // suspend-aware clock and never jumps with the system clock.
     ControlledSky sky;
     sky.m_epoch_utc_ms = 1792173600000LL;
     sky.resize(1280, 720);
     sky.setSkyVisible(true);
+    sky.setSkyTier(1);
     sky.show();
     QApplication::setActiveWindow(&sky);
-    Settle();
+    QApplication::processEvents();
     sky.redrawSteadySky();
     sky.onTick();
-    const qreal angle = sky.m_angle;
+    QCOMPARE(sky.phaseTimeMilliseconds(), sky.m_epoch_utc_ms + sky.elapsed);
     sky.elapsed += 8 * 3600000LL;
     sky.onTick();
-    constexpr qreal tau = 6.283185307179586;
-    QVERIFY(std::abs(std::remainder(sky.m_angle - angle, tau) - tau * 8 * 3600 / 86164.09) < 1e-10);
+    sky.grab();
     QCOMPARE(sky.phaseTimeMilliseconds(), sky.m_epoch_utc_ms + sky.elapsed);
+    QCOMPARE(sky.motionMilliseconds(), sky.elapsed);
+    const qint64 bucket = sky.m_sky_bucket;
+    QCOMPARE(bucket, (sky.m_epoch_utc_ms + sky.elapsed) / 600000);
+    const int redraws = sky.m_steady_redraws;
+    sky.wall_step = 3600000LL; // The system clock is put an hour forward.
+    sky.onTick();
+    sky.grab();
+    QCOMPARE(sky.phaseTimeMilliseconds(), sky.m_epoch_utc_ms + sky.elapsed + sky.wall_step);
+    QCOMPARE(sky.m_sky_bucket, bucket + 6);
+    QCOMPARE(sky.m_steady_redraws, redraws + 1);
+    QCOMPARE(sky.motionMilliseconds(), sky.elapsed);
+    // Off with a cache of the current slot keeps the picture as it is.
     sky.setAnimated(false);
+    sky.grab();
+    QCOMPARE(sky.m_steady_redraws, redraws + 1);
     const qint64 frozen = sky.motionMilliseconds();
     const qint64 phase = sky.phaseTimeMilliseconds();
     sky.elapsed += 8 * 3600000LL;
+    sky.wall_step -= 600000LL;
     QCOMPARE(sky.motionMilliseconds(), frozen);
     QCOMPARE(sky.phaseTimeMilliseconds(), phase);
     sky.setAnimated(true);
     QCOMPARE(sky.motionMilliseconds(), frozen);
-    QCOMPARE(sky.phaseTimeMilliseconds(), sky.m_epoch_utc_ms + sky.elapsed);
+    QCOMPARE(sky.phaseTimeMilliseconds(), sky.m_epoch_utc_ms + sky.elapsed + sky.wall_step);
+    // Off again before any tick, as from the settings dialog while the main
+    // window is inactive: the cache still shows the slot of eight hours ago,
+    // so it is drawn once for the time it stops at, and then stays.
+    QVERIFY(sky.m_sky_bucket != sky.skyBucket());
+    sky.setAnimated(false);
+    sky.grab();
+    QCOMPARE(sky.m_sky_bucket, sky.m_frozen_utc_ms / 600000);
+    QCOMPARE(sky.m_steady_redraws, redraws + 2);
+    sky.elapsed += 3600000LL;
+    sky.wall_step += 3600000LL;
+    sky.onTick();
+    sky.grab();
+    QCOMPARE(sky.m_steady_redraws, redraws + 2);
 }
 
 void AbyssTests::presentationIcons()
@@ -2915,6 +2964,525 @@ void AbyssTests::fontsAfterDeletedWidgets()
     QCOMPARE(int(missed), 0);
 }
 
+void AbyssTests::skyTiers()
+{
+    using namespace SkyTiers;
+    QCOMPARE(COUNT, 11);
+    QCOMPARE(threshold(0), CAmount(0));
+    QCOMPARE(threshold(1), 100000 * COIN);
+    QCOMPARE(threshold(2), 200000 * COIN);
+    QCOMPARE(threshold(3), 500000 * COIN);
+    QCOMPARE(threshold(4), 1000000 * COIN);
+    QCOMPARE(threshold(10), 25000000 * COIN);
+    QCOMPARE(threshold(11), threshold(10));
+    QCOMPARE(threshold(-1), threshold(0));
+    for (int tier = 1; tier < COUNT; ++tier) QVERIFY(threshold(tier) > threshold(tier - 1));
+    QCOMPARE(tierForBalance(0, 0), 0);
+    QCOMPARE(tierForBalance(100000 * COIN - 1, 0), 0);
+    QCOMPARE(tierForBalance(100000 * COIN, 0), 1);
+    QCOMPARE(tierForBalance(25000000 * COIN, 0), 10);
+    QCOMPARE(tierForBalance(MAX_MONEY, 0), 10);
+    // Up at once; down only below 97% of the level's threshold.
+    QCOMPARE(tierForBalance(1000000 * COIN, 3), 4);
+    QCOMPARE(tierForBalance(970000 * COIN, 4), 4);
+    QCOMPARE(tierForBalance(970000 * COIN - 1, 4), 3);
+    QCOMPARE(tierForBalance(970000 * COIN, 0), 3); // The same balance from below is level 3.
+    QCOMPARE(tierForBalance(0, 10), 0);
+    QCOMPARE(tierForBalance(-1, 4), 0);
+    QCOMPARE(tierForBalance(500000 * COIN, 99), 3); // An out-of-range level is clamped.
+    QSet<QString> names;
+    for (int tier = 0; tier < COUNT; ++tier) {
+        QVERIFY(!name(tier).isEmpty());
+        names.insert(name(tier));
+    }
+    QCOMPARE(names.size(), COUNT);
+    QCOMPARE(name(10), QString("DeFCoN Universe"));
+    QCOMPARE(name(11), name(10));
+}
+
+void AbyssTests::skyScenes()
+{
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    RestoreAppearance restore;
+    Theme("Abyss"); // The stylesheet's backdrop, behind which every lit pixel is the sky's.
+    const QColor backdrop("#04070d");
+    for (const qreal dpr : {1.0, 2.0}) {
+        DpiWidget<ControlledSky> sky;
+        sky.setObjectName("walletContainer");
+        sky.ratio = dpr;
+        sky.m_epoch_utc_ms = 1792173600000LL;
+        sky.resize(1280, 850);
+        sky.setSkyVisible(true);
+        sky.setAnimated(false); // A fixed date and no motion: every scene is reproducible.
+        sky.show();
+        QApplication::setActiveWindow(&sky);
+        QApplication::processEvents();
+        const auto lit = [&](const QImage& image, const QRectF& logical) {
+            const QRect pixels(QPoint(qRound(logical.left() * dpr), qRound(logical.top() * dpr)),
+                               QSize(qRound(logical.width() * dpr), qRound(logical.height() * dpr)));
+            int count = 0;
+            for (int y = std::max(0, pixels.top()); y <= std::min(image.height() - 1, pixels.bottom()); ++y) {
+                for (int x = std::max(0, pixels.left()); x <= std::min(image.width() - 1, pixels.right()); ++x) {
+                    if (image.pixelColor(x, y) != backdrop) ++count;
+                }
+            }
+            return count;
+        };
+        QVector<QImage> scenes;
+        for (int tier = 0; tier < SkyTiers::COUNT; ++tier) {
+            sky.setSkyTier(tier);
+            // The first level is the one the sky was shown with; every other one rebuilds the cache itself.
+            if (tier == 0) sky.invalidateImages();
+            QCOMPARE(sky.skyTier(), tier);
+            const int redraws = sky.m_steady_redraws;
+            const QImage image = sky.grab().toImage();
+            QCOMPARE(image.size(), QSize(1280 * dpr, 850 * dpr));
+            QCOMPARE(sky.m_steady_redraws, redraws + 1);
+            sky.grab();
+            QCOMPARE(sky.m_steady_redraws, redraws + 1); // The cache held for a second paint.
+            if (!output.isEmpty()) QVERIFY(image.save(QDir(output).filePath(QString("Abyss-sky-tier-%1-dpr%2.png").arg(tier).arg(dpr))));
+            // The Moon is drawn on the two levels the user chose, and from Saturn up the scene takes its place.
+            const bool moon = tier == 2 || tier == 3;
+            QVERIFY2(sky.m_moon.isNull() != moon, qPrintable(QString("tier %1 moon drawn %2").arg(tier).arg(!sky.m_moon.isNull())));
+            const QRectF moon_disk(sky.m_moon_position - QPointF(25, 25), QSizeF(50, 50));
+            const QRectF hero(sky.heroPosition() - QPointF(50, 50), QSizeF(100, 100));
+            if (moon) QVERIFY2(lit(image, moon_disk) > 1500 * dpr * dpr, qPrintable(QString("tier %1 moon").arg(tier)));
+            if (tier >= 4) QVERIFY2(lit(image, hero) > 400 * dpr * dpr, qPrintable(QString("tier %1 scene").arg(tier)));
+            for (const QImage& earlier : scenes) QVERIFY2(image != earlier, qPrintable(QString("tier %1 repeats a scene").arg(tier)));
+            scenes.append(image);
+        }
+        QCOMPARE(scenes.size(), SkyTiers::COUNT);
+        // The level is kept but nothing is allocated while the sky is off (classic themes).
+        sky.setSkyTier(5);
+        sky.setSkyVisible(false);
+        QVERIFY(sky.m_stars.isEmpty() && sky.m_steady.isNull() && sky.m_moon.isNull() && sky.m_nebula.isNull());
+        sky.setSkyTier(7);
+        QCOMPARE(sky.skyTier(), 7);
+        QVERIFY(sky.m_stars.isEmpty() && sky.m_steady.isNull());
+        sky.setSkyVisible(true);
+        sky.grab();
+        QVERIFY(!sky.m_nebula.isNull());
+        QCOMPARE(sky.grab().toImage(), scenes.at(7));
+    }
+}
+
+void AbyssTests::skyCatalogue()
+{
+    constexpr qreal degree = 3.141592653589793 / 180;
+    // Polaris stands at the observer's latitude at any hour, north up; the
+    // far south never rises.
+    for (const qreal lst : {0.0, 6.0, 12.0, 18.0}) {
+        const StarfieldWidget::Projection projection(QSize(1280, 850), lst);
+        QPointF at;
+        qreal altitude = 0;
+        QVERIFY(projection.place(2.530, 89.264, at, altitude));
+        QVERIFY(std::abs(altitude / degree - 47) < 1.0);
+        QVERIFY(std::abs(at.x() - 640) < 12);
+        QVERIFY(at.y() < 425);
+        QVERIFY(!projection.place(12.443, -63.099, at, altitude)); // Acrux
+    }
+    // Sidereal time: the J2000 value, the rate, and the longitude.
+    const qint64 j2000 = 946728000000LL;
+    QVERIFY(std::abs(StarfieldWidget::siderealHours(j2000, 0) - 18.697374558) < 1e-6);
+    QVERIFY(std::abs(StarfieldWidget::siderealHours(j2000 + 3600000, 0) - 18.697374558 - 1.00273790935) < 1e-6);
+    QVERIFY(std::abs(StarfieldWidget::siderealHours(j2000, 15) - 19.697374558) < 1e-6);
+    QVERIFY(std::abs(StarfieldWidget::siderealHours(j2000 + 24 * 3600000LL, 0) - 18.763097) < 1e-4);
+    const qreal longitude = StarfieldWidget::longitudeGuess(j2000);
+    QVERIFY(longitude >= -180 && longitude <= 180);
+    // Every line joins two different catalogue stars, and the table is sane.
+    QVERIFY(SkyCatalogue::STAR_COUNT >= 300);
+    QVERIFY(SkyCatalogue::LINE_COUNT >= 100);
+    for (const auto& line : SkyCatalogue::LINES) {
+        QVERIFY(line.from < SkyCatalogue::STAR_COUNT && line.to < SkyCatalogue::STAR_COUNT);
+        QVERIFY(line.from != line.to);
+    }
+    for (const auto& star : SkyCatalogue::STARS) {
+        QVERIFY(star.ra_hours >= 0 && star.ra_hours < 24);
+        QVERIFY(std::abs(star.dec_degrees) <= 90);
+        QVERIFY(star.magnitude > -2 && star.magnitude < 6);
+    }
+    // The real sky is projected again after ten minutes, never while frozen,
+    // and the plain field of level 0 has nothing to refresh.
+    ControlledSky sky;
+    sky.m_epoch_utc_ms = 1792173600000LL;
+    sky.resize(1280, 850);
+    sky.setSkyVisible(true);
+    sky.setSkyTier(1);
+    sky.show();
+    QApplication::setActiveWindow(&sky);
+    QApplication::processEvents();
+    sky.grab();
+    const int redraws = sky.m_steady_redraws;
+    sky.elapsed = 5 * 60000;
+    sky.onTick();
+    sky.grab();
+    QCOMPARE(sky.m_steady_redraws, redraws);
+    sky.elapsed = 10 * 60000;
+    sky.onTick();
+    QVERIFY(sky.m_steady.isNull());
+    sky.grab();
+    QCOMPARE(sky.m_steady_redraws, redraws + 1);
+    sky.setAnimated(false);
+    sky.elapsed += 3600000;
+    sky.onTick();
+    sky.grab();
+    QCOMPARE(sky.m_steady_redraws, redraws + 1);
+    sky.setAnimated(true);
+    sky.setSkyTier(0);
+    sky.grab();
+    const int plain = sky.m_steady_redraws;
+    sky.elapsed += 3600000;
+    sky.onTick();
+    sky.grab();
+    QCOMPARE(sky.m_steady_redraws, plain);
+    // A visible but inactive window gets no frames, but its real sky is still
+    // redrawn once when the slot turns; still, hidden or plain, it waits.
+    sky.setSkyTier(1);
+    sky.grab();
+    const int active = sky.m_steady_redraws;
+    QApplication::setActiveWindow(nullptr);
+    QApplication::processEvents();
+    sky.updateTimerState();
+    QVERIFY(!sky.m_timer->isActive());
+    QVERIFY(sky.m_refresh->isActive());
+    QVERIFY(sky.m_refresh->interval() > 0 && sky.m_refresh->interval() <= 601000);
+    sky.elapsed += 600000;
+    sky.onRefresh(); // What the single shot runs.
+    QVERIFY(sky.m_steady.isNull());
+    sky.grab();
+    QCOMPARE(sky.m_steady_redraws, active + 1);
+    QVERIFY(sky.m_refresh->isActive());
+    sky.onRefresh(); // The same slot: nothing to redraw.
+    sky.grab();
+    QCOMPARE(sky.m_steady_redraws, active + 1);
+    // The slot turns while the picture is drawn, between the rebuild's first
+    // look at the clock and the timer's: the paint keeps the picture it just
+    // drew, and the redraw for the new slot waits for the event loop.
+    sky.m_steady = QPixmap();
+    sky.slot_turns_after = sky.utc_reads + 1;
+    sky.grab();
+    QVERIFY(sky.utc_reads > sky.slot_turns_after); // The clock really turned during the rebuild.
+    QVERIFY(!sky.m_steady.isNull()); // The paint kept, and showed, the picture it drew.
+    QCOMPARE(sky.m_steady_redraws, active + 2);
+    QVERIFY(sky.m_refresh->isActive());
+    QCOMPARE(sky.m_refresh->interval(), 0);
+    sky.onRefresh();
+    QVERIFY(sky.m_steady.isNull());
+    sky.grab();
+    QCOMPARE(sky.m_sky_bucket, sky.skyBucket());
+    QCOMPARE(sky.m_steady_redraws, active + 3);
+    QVERIFY(sky.m_refresh->interval() > 0);
+    sky.slot_turns_after = -1;
+    sky.elapsed += 600000; // The extra slot becomes ordinary elapsed time: the clock does not go back.
+    // A millisecond before the turn the timer is armed, and a second look at
+    // the clock would already be past it: one reading decides both, so the
+    // refresh comes a second past the turn, not a whole slot later.
+    sky.elapsed += 600000 - (sky.m_epoch_utc_ms + sky.elapsed + sky.wall_step) % 600000 - 1;
+    QCOMPARE(sky.m_sky_bucket, sky.skyBucket());
+    sky.turn_ms = 2;
+    sky.slot_turns_after = sky.utc_reads + 1;
+    sky.updateRefreshTimer();
+    QVERIFY(sky.m_refresh->isActive());
+    QVERIFY2(sky.m_refresh->interval() <= 1001, qPrintable(QString::number(sky.m_refresh->interval())));
+    sky.slot_turns_after = -1;
+    sky.turn_ms = 600000;
+    sky.elapsed += 1001; // Past the turn, and past the 2 ms the clock already showed.
+    sky.onRefresh();
+    QVERIFY(sky.m_steady.isNull());
+    sky.grab();
+    QCOMPARE(sky.m_sky_bucket, sky.skyBucket());
+    QCOMPARE(sky.m_steady_redraws, active + 4);
+    sky.setAnimated(false);
+    QVERIFY(!sky.m_refresh->isActive());
+    sky.setAnimated(true);
+    QVERIFY(sky.m_refresh->isActive());
+    sky.setSkyTier(0);
+    QVERIFY(!sky.m_refresh->isActive());
+    sky.setSkyTier(1);
+    QVERIFY(sky.m_refresh->isActive());
+    sky.hide();
+    QVERIFY(!sky.m_refresh->isActive());
+}
+
+void AbyssTests::skyBadge()
+{
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    OverviewPage page;
+    page.setWalletModel(fixture.model.get());
+    // Wide enough for the badge with or without fonts: without them the bar's words are wider.
+    page.resize(1600, 850);
+    page.show(); Settle();
+    auto* card = page.findChild<QFrame*>("networkCard");
+    QVERIFY(card);
+    auto* badge = card->findChild<QWidget*>("networkSky");
+    QVERIFY(badge);
+    auto* text = badge->findChild<QLabel*>("networkText");
+    QVERIFY(text);
+    QSignalSpy changed(&page, &OverviewPage::skyTierChanged);
+    QVERIFY(badge->isHidden());
+    QCOMPARE(page.skyTier(), 0);
+    // What the bar holds, for a failure message.
+    const auto describe = [&] {
+        QStringList parts{QString("card %1 layout hint %2").arg(card->width()).arg(card->layout()->sizeHint().width()),
+                          QString("badge hint %1 at %2+%3 hidden %4").arg(badge->sizeHint().width()).arg(badge->x()).arg(badge->width()).arg(badge->isHidden())};
+        for (QWidget* other : card->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+            if (other != badge && !other->isHidden()) parts << QString("%1 %2+%3").arg(other->objectName()).arg(other->x()).arg(other->width());
+        }
+        return parts.join("; ");
+    };
+
+    interfaces::WalletBalances balances;
+    balances.balance = 1000000 * COIN;
+    page.setBalance(balances); Settle();
+    QCOMPARE(page.skyTier(), 4);
+    QVERIFY2(badge->isVisible(), qPrintable(describe()));
+    QCOMPARE(text->text(), SkyTiers::name(4));
+    QCOMPARE(changed.count(), 1);
+    QCOMPARE(changed.last().at(0).toInt(), 4);
+    QVERIFY(badge->toolTip().contains(SkyTiers::name(4)));
+    QVERIFY(badge->toolTip().contains(SkyTiers::name(5)));
+    QVERIFY(badge->toolTip().contains(BitcoinUnits::formatWithUnit(fixture.options->getDisplayUnit(), 2000000 * COIN, false, BitcoinUnits::SeparatorStyle::ALWAYS)));
+    // Pending and immature count towards the level; watch-only amounts do not.
+    balances.balance = 0;
+    balances.unconfirmed_balance = 600000 * COIN;
+    balances.immature_balance = 400000 * COIN;
+    page.setBalance(balances);
+    QCOMPARE(page.skyTier(), 4);
+    balances = {};
+    balances.watch_only_balance = 25000000 * COIN;
+    page.setBalance(balances);
+    QCOMPARE(page.skyTier(), 0);
+    QVERIFY(badge->isHidden());
+    QCOMPARE(changed.last().at(0).toInt(), 0);
+    // Nor does a wallet without private keys: a descriptor wallet reports
+    // what it only watches as its own balance, so the page leaves the sky at 0.
+    fixture.wallet->SetWalletFlag(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    QVERIFY(fixture.model->wallet().privateKeysDisabled());
+    const int changes_before_keyless = changed.count();
+    balances = {};
+    balances.balance = 25000000 * COIN;
+    page.setBalance(balances);
+    QCOMPARE(page.skyTier(), 0);
+    QVERIFY(badge->isHidden());
+    QCOMPARE(changed.count(), changes_before_keyless);
+    fixture.wallet->UnsetWalletFlag(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    QVERIFY(!fixture.model->wallet().privateKeysDisabled());
+    // Hysteresis through the page: a dip of three percent keeps the level.
+    balances = {};
+    balances.balance = 1000000 * COIN;
+    page.setBalance(balances);
+    QCOMPARE(page.skyTier(), 4);
+    balances.balance = 975000 * COIN;
+    page.setBalance(balances);
+    QCOMPARE(page.skyTier(), 4);
+    balances.balance = 960000 * COIN;
+    page.setBalance(balances);
+    QCOMPARE(page.skyTier(), 3);
+    QCOMPARE(text->text(), SkyTiers::name(3));
+    // Discreet mode hides the level and the badge, and brings them back.
+    const int before = changed.count();
+    page.setPrivacy(true); Settle();
+    QCOMPARE(page.skyTier(), 0);
+    QVERIFY(badge->isHidden());
+    QCOMPARE(changed.count(), before + 1);
+    QCOMPARE(changed.last().at(0).toInt(), 0);
+    page.setPrivacy(false); Settle();
+    QCOMPARE(page.skyTier(), 3);
+    QVERIFY(badge->isVisible());
+    QCOMPARE(changed.last().at(0).toInt(), 3);
+    // The top level says so instead of naming a next one.
+    balances.balance = 25000000 * COIN;
+    // The longer name can turn the words short; the badge takes its place once the bar is laid out again.
+    page.setBalance(balances); Settle();
+    QCOMPARE(page.skyTier(), 10);
+    QCOMPARE(text->text(), SkyTiers::name(10));
+    QVERIFY(badge->toolTip().contains(OverviewPage::tr("The highest level.")));
+    // The badge sits in the bar's free middle, over no other entry, at its full
+    // size; where it does not fit it steps aside, and the long words give way
+    // to it first. It never makes the page wider than it already shrinks to.
+    const auto clear_of_entries = [&] {
+        if (badge->isHidden()) return true;
+        if (!card->rect().contains(badge->geometry()) || badge->width() < badge->sizeHint().width()) return false;
+        for (QWidget* other : card->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+            if (other != badge && !other->isHidden() && other->geometry().intersects(badge->geometry())) return false;
+        }
+        return true;
+    };
+    auto* masternode_words = card->findChild<QWidget*>("networkMasternodes")->findChild<QLabel*>("networkText");
+    QVERIFY(masternode_words);
+    QVERIFY2(badge->isVisible(), qPrintable(describe()));
+    QVERIFY2(clear_of_entries(), qPrintable(describe()));
+    const int bar_minimum_with_badge = card->minimumSizeHint().width();
+    bool stepped_aside = false;
+    bool long_with_badge = false;
+    for (int width = 1800; width >= std::max(page.minimumWidth(), 600); width -= 10) {
+        page.resize(width, 850); Settle();
+        QVERIFY2(clear_of_entries(), qPrintable(QString("badge over an entry at %1: %2").arg(width).arg(describe())));
+        const bool long_words = masternode_words->text() == QString("masternodes");
+        QVERIFY2(!long_words || badge->isVisible(), qPrintable(QString("long words without the badge at %1: %2").arg(width).arg(describe())));
+        stepped_aside |= badge->isHidden();
+        long_with_badge |= long_words && badge->isVisible();
+    }
+    QVERIFY(stepped_aside);
+    QVERIFY(long_with_badge);
+    page.resize(1600, 850); Settle();
+    QVERIFY2(badge->isVisible(), qPrintable(describe()));
+    balances.balance = 0;
+    page.setBalance(balances); Settle();
+    QCOMPARE(page.skyTier(), 0);
+    QVERIFY(badge->isHidden());
+    // The bar asks for no more room with the badge than without it.
+    QCOMPARE(card->minimumSizeHint().width(), bar_minimum_with_badge);
+
+    // Pictures for the evidence: the sky behind the Overview page at every level, as the preview showed it.
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    if (!output.isEmpty()) {
+        ControlledSky sky;
+        sky.setObjectName("walletContainer");
+        sky.m_epoch_utc_ms = 1792173600000LL;
+        sky.resize(1280, 850);
+        sky.setSkyVisible(true);
+        sky.setAnimated(false);
+        auto* layout = new QVBoxLayout(&sky);
+        layout->setContentsMargins(0, 0, 0, 0);
+        auto* composed = new OverviewPage(&sky);
+        composed->setWalletModel(fixture.model.get());
+        layout->addWidget(composed);
+        sky.show(); Settle();
+        for (int tier = 0; tier < SkyTiers::COUNT; ++tier) {
+            interfaces::WalletBalances level;
+            level.balance = SkyTiers::threshold(tier) + (tier > 0 ? 50000 * COIN : 0);
+            composed->setBalance(level); Settle();
+            QCOMPARE(composed->skyTier(), tier);
+            sky.setSkyTier(composed->skyTier());
+            QVERIFY(sky.grab().save(QDir(output).filePath(QString("Abyss-sky-overview-tier-%1.png").arg(tier))));
+        }
+    }
+
+    // A classic theme keeps the level as data and never shows the pill.
+    Theme("Light");
+    OverviewPage classic;
+    classic.setWalletModel(fixture.model.get());
+    classic.resize(1280, 850);
+    classic.show(); Settle();
+    QSignalSpy classic_changed(&classic, &OverviewPage::skyTierChanged);
+    auto* classic_badge = classic.findChild<QWidget*>("networkSky");
+    QVERIFY(classic_badge);
+    balances.balance = 1000000 * COIN;
+    classic.setBalance(balances); Settle();
+    QCOMPARE(classic.skyTier(), 4);
+    QVERIFY(classic_badge->isHidden());
+    QCOMPARE(classic_changed.count(), 1);
+}
+
+void AbyssTests::skyWindowTier()
+{
+    if (!GUIUtil::fontsLoaded()) QSKIP("Window geometry requires minimal:enable_fonts or a native platform");
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name); // Keep this test's isolated QSettings scope.
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.resize(1280, 850);
+    window.show(); Settle();
+    auto* sky = qobject_cast<StarfieldWidget*>(window.centralWidget());
+    QVERIFY(sky);
+    QVERIFY(sky->m_skyVisible);
+    QCOMPARE(sky->skyTier(), 0);
+    auto* privacy_action = window.findChild<QAction*>("m_mask_values_action");
+    QVERIFY(privacy_action);
+    const bool initial_privacy = privacy_action->isChecked();
+    const auto restore_privacy = interfaces::MakeHandler([privacy_action, initial_privacy] { privacy_action->setChecked(initial_privacy); });
+    privacy_action->setChecked(false);
+    window.addWallet(fixture.model.get()); Settle();
+    QCOMPARE(sky->skyTier(), 0); // An empty wallet: the plain field.
+    auto* page = window.findChild<OverviewPage*>();
+    QVERIFY(page);
+    interfaces::WalletBalances balances;
+    for (int tier = 0; tier < SkyTiers::COUNT; ++tier) {
+        balances.balance = SkyTiers::threshold(tier);
+        page->setBalance(balances); Settle();
+        QCOMPARE(sky->skyTier(), tier);
+        QCOMPARE(page->skyTier(), tier);
+    }
+    // The badge names the level. Whether it fits the bar is skyBadge's case: on
+    // the minimal platform this window is held to the 240x320 screen.
+    auto* badge = window.findChild<QWidget*>("networkSky");
+    QVERIFY(badge);
+    QCOMPARE(badge->findChild<QLabel*>("networkText")->text(), SkyTiers::name(10));
+    // Discreet mode through the window's own action takes the sky to the plain field and back.
+    privacy_action->setChecked(true); Settle();
+    QCOMPARE(sky->skyTier(), 0);
+    QVERIFY(badge->isHidden());
+    privacy_action->setChecked(false); Settle();
+    QCOMPARE(sky->skyTier(), 10);
+    // A classic theme keeps the level but draws no sky; Abyss returns with it.
+    Theme("Light"); Settle();
+    QVERIFY(!sky->m_skyVisible);
+    QVERIFY(sky->m_stars.isEmpty());
+    QCOMPARE(sky->skyTier(), 10);
+    Theme("Abyss"); Settle();
+    QVERIFY(sky->m_skyVisible);
+    QCOMPARE(sky->skyTier(), 10);
+    // Without the wallet the plain field returns.
+    window.removeWallet(fixture.model.get()); Settle();
+    QCOMPARE(sky->skyTier(), 0);
+}
+
+void AbyssTests::skyCpu()
+{
+    // Opt-in measurement, not a check: process CPU per level while the sky
+    // runs on its own clock, logged for the evidence folder.
+    const int seconds = qEnvironmentVariableIntValue("DEFCON_QT_SKY_CPU_SECONDS");
+    if (seconds <= 0) QSKIP("Set DEFCON_QT_SKY_CPU_SECONDS to measure idle CPU per level");
+#ifdef WIN32
+    QSKIP("CPU time is sampled through getrusage");
+#else
+    const auto cpu_ms = [] {
+        rusage usage{};
+        getrusage(RUSAGE_SELF, &usage);
+        return (usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) * 1000.0 + (usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1000.0;
+    };
+    // A real idle wait: the event loop sleeps until the sky's own timer or the
+    // end of the interval wakes it, as in the running wallet.
+    const auto spin = [](int ms) {
+        QEventLoop loop;
+        QTimer::singleShot(ms, &loop, &QEventLoop::quit);
+        loop.exec();
+    };
+    for (const qreal dpr : {1.0, 2.0}) {
+        DpiWidget<StarfieldWidget> sky;
+        sky.ratio = dpr;
+        sky.resize(dpr > 1 ? QSize(2560, 1440) : QSize(1280, 850));
+        sky.setSkyVisible(true);
+        sky.show();
+        QApplication::setActiveWindow(&sky);
+        QApplication::processEvents();
+        for (int tier = 0; tier < SkyTiers::COUNT; ++tier) {
+            sky.setSkyTier(tier);
+            spin(1000); // Warm the caches of this level.
+            QVERIFY(sky.wantsAnimation());
+            const double cpu_before = cpu_ms();
+            QElapsedTimer wall;
+            wall.start();
+            spin(seconds * 1000);
+            const double cpu = cpu_ms() - cpu_before;
+            qInfo() << "SKY_CPU" << "tier" << tier << "dpr" << dpr << "size" << sky.size() << "cpu_ms" << cpu
+                    << "wall_ms" << wall.elapsed() << "percent" << 100.0 * cpu / wall.elapsed()
+                    << "redraws" << sky.m_steady_redraws << "interval_ms" << sky.m_timer->interval();
+        }
+    }
+#endif
+}
+
 void AbyssTests::coinJoinWidgetsPerPage()
 {
     // OverviewPage::coinJoinStatus() kept its "already applied" state in
@@ -3303,18 +3871,13 @@ void AbyssTests::topMenus()
 
 void AbyssTests::skyGeometry()
 {
-    constexpr qreal tau = 6.283185307179586;
-    const qint64 epoch = 1792173600000LL;
-    const qreal angle = StarfieldWidget::rotationAngle(epoch);
-    const qreal minute = std::remainder(StarfieldWidget::rotationAngle(epoch + 60000) - angle, tau);
-    QVERIFY(std::abs(minute - tau * 60 / 86164.09) < 1e-10);
-    QVERIFY(std::abs(minute * 180 / (tau / 2) - 0.2506844789) < 1e-8);
     ControlledSky sky;
-    sky.m_epoch_utc_ms = epoch;
+    sky.m_epoch_utc_ms = 1792173600000LL;
     sky.resize(1280, 720);
     QVERIFY(sky.m_stars.isEmpty()); // A classic theme starts without a catalogue.
     sky.setSkyVisible(true);
     const auto catalogue = sky.m_stars;
+    QVERIFY(!catalogue.isEmpty());
     sky.setSkyVisible(false);
     QVERIFY(sky.m_stars.isEmpty());
     QVERIFY(sky.m_steady.isNull() && sky.m_moon.isNull());
@@ -3324,37 +3887,34 @@ void AbyssTests::skyGeometry()
         QCOMPARE(sky.m_stars[i].pos, catalogue[i].pos);
         QCOMPARE(sky.m_stars[i].colour, catalogue[i].colour);
     }
-    for (const QSize size : {QSize(958, 600), QSize(1280, 720), QSize(5120, 2880), QSize(7680, 4320)}) {
+    // The sky stands still on a fixed plane: a larger window shows more of the
+    // same stars, never different ones, and every quadrant has its share.
+    QVector<int> smaller;
+    for (const QSize size : {QSize(958, 600), QSize(1280, 720), QSize(1920, 1080), QSize(5120, 2880), QSize(7680, 4320)}) {
         sky.resize(size);
         // Hidden widgets may receive their resize event only when shown.
-        sky.buildSky();
-        QVERIFY(sky.pole().y() < 0);
-        for (int turn = 0; turn < 12; ++turn) {
-            sky.setRotationAngle(tau * turn / 12);
-            int quadrants[4]{};
-            for (const auto& star : sky.m_stars) {
-                const QPointF p = sky.widgetPos(star);
-                if (sky.rect().contains(p.toPoint())) ++quadrants[(p.x() >= size.width() / 2 ? 1 : 0) + (p.y() >= size.height() / 2 ? 2 : 0)];
-            }
-            for (int count : quadrants) QVERIFY(count >= 5);
+        sky.updateVisibleStars();
+        int quadrants[4]{};
+        int inside = 0;
+        for (const int index : sky.m_visible) {
+            const QPointF p = sky.m_stars.at(index).pos;
+            if (!sky.rect().contains(p.toPoint())) continue;
+            ++inside;
+            ++quadrants[(p.x() >= size.width() / 2 ? 1 : 0) + (p.y() >= size.height() / 2 ? 2 : 0)];
         }
+        for (int count : quadrants) QVERIFY(count >= 5);
+        QVERIFY(inside >= size.width() * size.height() / 5200 * 0.8 * 0.6);
+        for (const int index : smaller) QVERIFY(sky.m_visible.contains(index));
+        smaller = sky.m_visible;
     }
     sky.resize(1280, 720);
-    sky.setRotationAngle(0);
-    StarfieldWidget::Star star{};
-    star.pos = QPointF(100, 0);
-    QCOMPARE(sky.widgetPos(star), sky.pole() + QPointF(100, 0));
-    sky.setRotationAngle(minute);
-    const QPointF p = sky.widgetPos(star) - sky.pole();
-    QVERIFY(p.y() < 0); // Counterclockwise in the downward-pointing screen axis.
-    QVERIFY(std::abs(std::hypot(p.x(), p.y()) - 100) < 1e-10);
-    const QPointF moon = sky.moonPosition(0);
-    QCOMPARE(moon, QPointF(1280 * 0.78, 720 * 0.09));
-    sky.m_moon_position = moon;
-    QVERIFY(sky.moonRect().contains((moon + QPointF(95, 0)).toPoint()));
-    QVERIFY(sky.moonRect().contains((moon - QPointF(95, 0)).toPoint()));
+    QCOMPARE(sky.moonPosition(), QPointF(1280 * 0.78, 720 * 0.09));
+    sky.m_moon_position = sky.moonPosition();
+    QVERIFY(sky.moonRect().contains((sky.m_moon_position + QPointF(95, 0)).toPoint()));
+    QVERIFY(sky.moonRect().contains((sky.m_moon_position - QPointF(95, 0)).toPoint()));
     sky.resize(2560, 1440);
-    QCOMPARE(sky.moonPosition(0).y(), qreal(70)); // Tall windows keep the Moon in the header.
+    QCOMPARE(sky.moonPosition().y(), qreal(70)); // Tall windows keep the Moon in the header.
+    QCOMPARE(sky.heroPosition(), QPointF(2560 * 0.78, 58)); // A level's scene takes the Moon's place.
 }
 
 void AbyssTests::skyCulling()
@@ -3368,37 +3928,38 @@ void AbyssTests::skyCulling()
     QApplication::processEvents();
 
     // Grow then shrink without regenerating the catalogue. Pruning must never
-    // remove a visible star or halo, at any rotation or physical-pixel scale.
+    // remove a visible star or halo, at any level or physical-pixel scale.
     const auto catalogue = sky.m_stars;
     for (const QSize size : {QSize(1280, 720), QSize(1920, 1080), QSize(958, 600)}) {
         sky.resize(size);
         QApplication::processEvents();
         QCOMPARE(sky.m_stars.size(), catalogue.size());
-        const auto candidates = sky.m_candidates;
+        const auto visible = sky.m_visible;
         const auto twinklers = sky.m_twinklers;
-        QVERIFY(!candidates.isEmpty());
-        QVERIFY(candidates.size() < sky.m_stars.size() / 4);
-        for (const qint64 elapsed : {0LL, 21541022LL, 43082045LL, 64623067LL}) {
-            sky.elapsed = elapsed;
+        QVERIFY(!visible.isEmpty());
+        QVERIFY(visible.size() < sky.m_stars.size() / 4);
+        for (const int tier : {0, 1, 5}) {
+            sky.setSkyTier(tier);
+            sky.elapsed = 21541022LL * tier;
             sky.invalidateImages();
             const QImage culled = sky.grab().toImage();
 
-            // Oracle: render every original star, with no radial pruning.
-            sky.m_candidates.clear();
+            // Oracle: render every original star, with no pruning.
+            sky.m_visible.clear();
             sky.m_twinklers.clear();
             for (int i = 0; i < sky.m_stars.size(); ++i) {
-                sky.m_candidates.append(i);
+                sky.m_visible.append(i);
                 if (sky.m_stars.at(i).amplitude > 0) sky.m_twinklers.append(i);
             }
             sky.invalidateImages();
             const QImage unculled = sky.grab().toImage();
-            sky.m_candidates = candidates;
+            sky.m_visible = visible;
             sky.m_twinklers = twinklers;
             QCOMPARE(culled, unculled);
         }
     }
     sky.setSkyVisible(false);
-    QVERIFY(sky.m_candidates.isEmpty() && sky.m_twinklers.isEmpty());
+    QVERIFY(sky.m_visible.isEmpty() && sky.m_twinklers.isEmpty());
 }
 
 void AbyssTests::skyMoon()
@@ -3479,19 +4040,97 @@ void AbyssTests::skyRegionalRepaint()
     sky.m_epoch_utc_ms = 1792173600000LL;
     sky.resize(1280, 720);
     sky.setSkyVisible(true);
+    sky.setSkyTier(6); // The comet is the one scene element that moves.
     sky.show();
     QApplication::setActiveWindow(&sky);
     QApplication::processEvents();
     sky.grab();
+    const int redraws = sky.m_steady_redraws;
     sky.elapsed = 10000;
     sky.onTick();
-    QVERIFY(!sky.m_steady.isNull()); // Rotation must retain the large backing store.
-    QVERIFY(!sky.m_sky_dirty.isEmpty());
-    const QImage regional = sky.grab().toImage();
-    QVERIFY(sky.m_sky_dirty.isEmpty());
+    QVERIFY(!sky.m_steady.isNull()); // A tick never drops the cache.
+    QCOMPARE(sky.m_steady_redraws, redraws);
+    // What the cache and the live elements compose is what a fresh paint gives.
+    const QImage cached = sky.grab().toImage();
+    QCOMPARE(sky.m_steady_redraws, redraws);
     sky.m_steady = QPixmap();
     const QImage full = sky.grab().toImage();
-    QCOMPARE(regional, full); // Old star/halo footprints were fully erased.
+    QCOMPARE(cached, full);
+
+    // The comet knows its footprint, and a tick repaints where it was drawn as
+    // well as where it is now: after a long pause its old place is erased.
+    const auto inside = [&](const QRect& r) { return r.intersected(sky.rect()); };
+    const QRect comet = sky.cometRect(sky.m_live_motion_ms);
+    QVERIFY(!comet.isEmpty());
+    QVERIFY(sky.rect().adjusted(-200, -200, 200, 200).contains(comet));
+    sky.grab();
+    QVERIFY(sky.m_live_drawn.contains(inside(comet)));
+    const qint64 later = sky.elapsed + 120000;
+    const QRegion after_pause = sky.tickRegion(later);
+    QVERIFY(!sky.cometRect(later).intersects(comet)); // It really moved, so the next check is not vacuous.
+    QVERIFY(after_pause.contains(inside(comet)));
+    QVERIFY(after_pause.contains(inside(sky.cometRect(later))));
+
+    // A shooting star leaves no trail: every frame's streak is erased by the next tick.
+    sky.setSkyTier(1);
+    const qint64 t0 = later + 1000;
+    QVERIFY(sky.shootingRect(t0).isEmpty());
+    sky.startShootingStar(t0);
+    QVERIFY(sky.m_next_shooting_ms >= t0 + 600 + 20000); // At most one a minute, never two in twenty seconds.
+    QVERIFY(sky.m_next_shooting_ms <= t0 + 600 + 60000);
+    sky.tickRegion(t0 + 1);
+    sky.grab();
+    const QRect first = sky.shootingRect(t0 + 1);
+    QVERIFY(!first.isEmpty());
+    // The head starts inside the sky; the faint tail may reach past the top edge.
+    QVERIFY(!inside(first).isEmpty());
+    QVERIFY(sky.m_live_drawn.contains(inside(first)));
+    const QRegion next = sky.tickRegion(t0 + 300);
+    const QRect middle = sky.shootingRect(t0 + 300);
+    QVERIFY(!QRegion(middle).contains(inside(first))); // It really moved.
+    QVERIFY(next.contains(inside(first)));
+    QVERIFY(next.contains(inside(middle)));
+    sky.grab();
+    const QRegion over = sky.tickRegion(t0 + 700);
+    QCOMPARE(sky.m_shooting_started_ms, qint64(-1)); // Over after 0.6 s.
+    QVERIFY(sky.shootingRect(t0 + 700).isEmpty());
+    QVERIFY(over.contains(inside(middle)));
+    // One starts when it is due, but not in deep space, which looks past the atmosphere.
+    sky.tickRegion(sky.m_next_shooting_ms);
+    QVERIFY(sky.m_shooting_started_ms >= 0);
+    sky.setSkyTier(9);
+    QCOMPARE(sky.m_shooting_started_ms, qint64(-1));
+    sky.tickRegion(sky.m_next_shooting_ms + 1);
+    QCOMPARE(sky.m_shooting_started_ms, qint64(-1));
+    // Without a twinkler in view the sky ticks slowly; a streak in flight takes
+    // the fast frames, and its landing gives them back. (The field decides where
+    // the twinklers are; here none is in view.)
+    sky.setSkyTier(1);
+    sky.m_twinklers.clear();
+    sky.updateTimerState();
+    QVERIFY(sky.m_timer->isActive());
+    QCOMPARE(sky.m_timer->interval(), 500);
+    const qint64 due = sky.m_next_shooting_ms;
+    sky.tickRegion(due);
+    QVERIFY(sky.m_shooting_started_ms >= 0);
+    QCOMPARE(sky.m_timer->interval(), 80);
+    sky.tickRegion(due + 300);
+    QCOMPARE(sky.m_timer->interval(), 80);
+    sky.tickRegion(due + 600);
+    QCOMPARE(sky.m_shooting_started_ms, qint64(-1));
+    QCOMPARE(sky.m_timer->interval(), 500);
+    // A streak in flight is erased when the window stops animating.
+    sky.setSkyTier(1);
+    sky.startShootingStar(sky.m_next_shooting_ms + 2);
+    sky.tickRegion(sky.m_shooting_started_ms + 1);
+    sky.grab();
+    QVERIFY(!sky.m_live_drawn.isEmpty());
+    QApplication::setActiveWindow(nullptr);
+    QApplication::processEvents();
+    sky.updateTimerState();
+    QCOMPARE(sky.m_shooting_started_ms, qint64(-1));
+    QVERIFY(sky.m_live_drawn.isEmpty());
+    QVERIFY(!sky.m_timer->isActive());
 }
 
 void AbyssTests::skyOverviewBackground()

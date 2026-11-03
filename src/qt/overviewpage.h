@@ -63,6 +63,9 @@ public:
         std::optional<long> mempool;    //!< transactions; unknown until first polled
     };
     void setNetworkStatus(const NetworkStatus& status);
+    //! The sky level this page asks for: its spendable total's level, or
+    //! 0 in discreet mode or without a wallet.
+    int skyTier() const;
 
 public Q_SLOTS:
     void coinJoinStatus(bool fForce = false);
@@ -74,6 +77,8 @@ Q_SIGNALS:
     void outOfSyncWarningClicked();
     //! The empty transaction list's Receive button was clicked.
     void receiveClicked();
+    //! The level in skyTier() changed; the window hands it to the sky.
+    void skyTierChanged(int tier);
 
 protected:
     void changeEvent(QEvent* event) override;
@@ -119,6 +124,14 @@ private:
     };
     NetworkItem m_net_block, m_net_age, m_net_synced, m_net_chainlock, m_net_syncing,
         m_net_peers, m_net_masternodes, m_net_mempool;
+    //! The sky's level as a pill, outside the bar's layout: see placeSkyBadge().
+    NetworkItem m_net_sky;
+    int m_sky_tier{0};        //!< The balance's own level, with hysteresis.
+    int m_sky_tier_shown{-1}; //!< What skyTierChanged() last announced.
+    bool m_sky_badge_wanted{false}; //!< A level above 0, in Abyss, out of discreet mode.
+    void updateSkyBadge();
+    //! Put the badge in the free middle of the bar, or hide it if it does not fit there.
+    void placeSkyBadge();
     QProgressBar* m_net_progress{nullptr};
     int m_block_height{0};
     QDateTime m_block_time;

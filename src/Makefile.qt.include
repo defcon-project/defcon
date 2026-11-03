@@ -173,6 +173,7 @@ BITCOIN_QT_H = \
   qt/sendcoinsentry.h \
   qt/sendcoinsrecipient.h \
   qt/signverifymessagedialog.h \
+  qt/skycatalogue.h \
   qt/splashscreen.h \
   qt/starfieldwidget.h \
   qt/trafficgraphdata.h \

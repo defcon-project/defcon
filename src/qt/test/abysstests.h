@@ -47,6 +47,12 @@ private Q_SLOTS:
     void skyLifecycle();
     void skyRegionalRepaint();
     void skyOverviewBackground();
+    void skyTiers();
+    void skyScenes();
+    void skyCatalogue();
+    void skyBadge();
+    void skyWindowTier();
+    void skyCpu();
     void screenshots();
     void statusBarOnce();
     void shortcutUnderlines();

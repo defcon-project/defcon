@@ -1542,9 +1542,11 @@ void BitcoinGUI::addWallet(WalletModel* walletModel)
     connect(wallet_view, &WalletView::encryptionStatusChanged, this, &BitcoinGUI::updateWalletStatus);
     connect(wallet_view, &WalletView::incomingTransaction, this, &BitcoinGUI::incomingTransaction);
     connect(this, &BitcoinGUI::setPrivacy, wallet_view, &WalletView::setPrivacy);
+    connect(wallet_view, &WalletView::skyTierChanged, this, &BitcoinGUI::updateSkyTier);
     wallet_view->setPrivacy(isPrivacyModeActivated());
     const QString display_name = walletModel->getDisplayName();
     m_wallet_selector->addItem(display_name, QVariant::fromValue(walletModel));
+    updateSkyTier();
 }
 
 void BitcoinGUI::removeWallet(WalletModel* walletModel)
@@ -1564,6 +1566,7 @@ void BitcoinGUI::removeWallet(WalletModel* walletModel)
     }
     rpcConsole->removeWallet(walletModel);
     walletFrame->removeWallet(walletModel);
+    updateSkyTier();
     updateWindowTitle();
 }
 
@@ -1571,6 +1574,7 @@ void BitcoinGUI::setCurrentWallet(WalletModel* wallet_model)
 {
     if (!walletFrame) return;
     walletFrame->setCurrentWallet(wallet_model);
+    updateSkyTier();
     for (int index = 0; index < m_wallet_selector->count(); ++index) {
         if (m_wallet_selector->itemData(index).value<WalletModel*>() == wallet_model) {
             m_wallet_selector->setCurrentIndex(index);
@@ -1592,6 +1596,17 @@ void BitcoinGUI::removeAllWallets()
         return;
     setWalletActionsEnabled(false);
     walletFrame->removeAllWallets();
+    updateSkyTier();
+}
+
+void BitcoinGUI::updateSkyTier()
+{
+    // The sky shows the level of the wallet on screen. Another wallet's
+    // level is not its business, and no wallet means the plain field.
+    auto* sky = qobject_cast<StarfieldWidget*>(centralWidget());
+    if (sky == nullptr) return;
+    const WalletView* view = walletFrame ? walletFrame->currentWalletView() : nullptr;
+    sky->setSkyTier(view ? view->skyTier() : 0);
 }
 #endif // ENABLE_WALLET
 

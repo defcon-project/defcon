@@ -370,6 +370,8 @@ private:
     void updateProxyIcon();
     void setProxyIcon(bool enabled, const QString& endpoint);
     void updateWindowTitle();
+    /** Hand the sky the level of the wallet on screen, or 0 without one. */
+    void updateSkyTier();
 
 public Q_SLOTS:
 #ifdef ENABLE_WALLET

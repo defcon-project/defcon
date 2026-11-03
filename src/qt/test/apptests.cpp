@@ -209,7 +209,11 @@ void TestAbyssSidebar(BitcoinGUI* window)
     // Exercise the actual BitcoinGUI theme route, not only the sky setter.
     auto* sky = qobject_cast<StarfieldWidget*>(window->centralWidget());
     QVERIFY(sky);
-    const auto sky_timers = sky->findChildren<QTimer*>(QString(), Qt::FindDirectChildrenOnly);
+    // The frame timer; the other one is the single shot that redraws an inactive window's real sky.
+    QList<QTimer*> sky_timers;
+    for (QTimer* timer : sky->findChildren<QTimer*>(QString(), Qt::FindDirectChildrenOnly)) {
+        if (!timer->isSingleShot()) sky_timers << timer;
+    }
     QCOMPARE(sky_timers.size(), 1);
     QApplication::setActiveWindow(window);
     QApplication::processEvents();
