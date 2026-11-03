@@ -151,6 +151,8 @@ BASE_SCRIPTS = [
     'feature_dsl_message_budget.py',
     'feature_pos_staking.py --descriptors',
     'feature_pos_staking.py --legacy-wallet',
+    'feature_pos_header_only.py --descriptors',
+    'feature_pos_header_only.py --legacy-wallet',
     'feature_pos_stake_combine.py --descriptors',
     'feature_pos_stake_combine.py --legacy-wallet',
     'feature_pos_stake_combine.py --legacy-wallet --key-only',
