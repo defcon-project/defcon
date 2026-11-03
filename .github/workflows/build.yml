@@ -407,7 +407,7 @@ jobs:
       # green.
       #
       # So the gate is inverted. A suite added tomorrow is gated the day it
-      # lands, and dropping one takes a line here that says why. The seventeen
+      # lands, and dropping one takes a line here that says why. The ones
       # below still fail, each for a reason visible for the first time now that
       # they run at all:
       #
@@ -434,12 +434,15 @@ jobs:
       # other planted its corruption under a database key a format migration had
       # renamed, so it corrupted nothing and then reported the verifier for
       # missing it. Neither was a defect in the code they accused.
+      #
+      # validation_chainstatemanager_tests came off once the regtest assumeutxo
+      # value for height 110 stopped being Dash's: a correct snapshot of this
+      # chain was being refused.
       #   still to triage:                       bip324_tests, bip39_tests,
       #                                          denialofservice_tests, evo_utils_tests,
       #                                          governance_validators_tests, rpc_tests,
       #                                          transaction_tests, util_tests,
       #                                          validation_chainstate_tests,
-      #                                          validation_chainstatemanager_tests,
       #                                          wallet_tests
       - name: Unit suites (all but the named exceptions)
         if: needs.changes.outputs.code == 'true' && matrix.lane == 'runtime'
@@ -451,7 +454,7 @@ jobs:
           cd "build-ci/DeFCoN-${{ matrix.build_target }}"
           make -j"$(nproc)" -C src test/test_defcon
           ./src/test/test_defcon \
-            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:!rpc_tests:!transaction_tests:!util_tests:!validation_chainstate_tests:!validation_chainstatemanager_tests:!wallet_tests' \
+            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:!rpc_tests:!transaction_tests:!util_tests:!validation_chainstate_tests:!wallet_tests' \
             --catch_system_errors=no -l test_suite
         shell: bash
 

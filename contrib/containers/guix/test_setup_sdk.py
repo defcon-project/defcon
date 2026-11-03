@@ -20,6 +20,7 @@ import unittest
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / 'scripts' / 'setup-sdk'
+START = HERE / 'scripts' / 'guix-start'
 TOP = HERE.parents[2]
 NAME = 'Xcode-1.0-TEST-extracted-SDK-with-libcxx-headers'
 SETTINGS = 'SDKSettings.json'
@@ -252,6 +253,39 @@ class SetupSdkTest(unittest.TestCase):
         readme = (TOP / 'contrib' / 'macdeploy' / 'README.md').read_text(encoding='utf-8')
         self.assertIn(f"`Xcode-{default['XCODE_VERSION']}-{default['XCODE_RELEASE']}-extracted-SDK-with-libcxx-headers.tar.gz`", readme)
         self.assertIn(f"The `sha256sum` should be `{default['XCODE_AR_HASH']}`", readme)
+
+
+class GuixStartTest(unittest.TestCase):
+    """What guix-start hands to the helper, in a workspace where the helper only reports it and the build does nothing."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='defcon-sdk-test-')
+        self.addCleanup(temp.cleanup)
+        self.workspace = Path(temp.name).resolve()
+        self.report = self.workspace / 'report'
+        helper = self.workspace / 'contrib' / 'containers' / 'guix' / 'scripts' / 'setup-sdk'
+        build = self.workspace / 'contrib' / 'guix' / 'guix-build'
+        for path, body in ((helper, f'printf "%s\\n%s\\n" "$SDK_PATH" "$SDK_SOURCES" > "{self.report}"\n'), (build, '')):
+            path.parent.mkdir(parents=True)
+            path.write_text(f'#!/usr/bin/env bash\n{body}', encoding='utf-8')
+            path.chmod(0o755)
+        subprocess.run(['git', 'init', '-q', str(self.workspace)], check=True)
+
+    def handed_over(self, **variables):
+        env = {k: v for k, v in os.environ.items() if k not in ('SDK_PATH', 'SDK_SOURCES', 'SDK_SRCS') and not k.startswith('GIT_')}
+        result = subprocess.run(['bash', str(START)], env=dict(env, **variables), cwd=self.workspace,
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return self.report.read_text(encoding='utf-8').splitlines()
+
+    def test_defaults_are_in_the_workspace(self):
+        self.assertEqual(self.handed_over(), [f'{self.workspace}/depends/SDKs', f'{self.workspace}/depends/sdk-sources'])
+
+    def test_each_path_reaches_the_helper(self):
+        self.assertEqual(self.handed_over(SDK_PATH='/sdks', SDK_SOURCES='/sources'), ['/sdks', '/sources'])
+
+    def test_sdk_path_does_not_become_the_sources(self):
+        self.assertEqual(self.handed_over(SDK_PATH='/sdks'), ['/sdks', f'{self.workspace}/depends/sdk-sources'])
 
 
 if __name__ == '__main__':

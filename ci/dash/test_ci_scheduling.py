@@ -174,7 +174,7 @@ class SchedulingTest(unittest.TestCase):
                          '!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:'
                          '!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:'
                          '!rpc_tests:!transaction_tests:!util_tests:!validation_chainstate_tests:'
-                         '!validation_chainstatemanager_tests:!wallet_tests', selection)
+                         '!wallet_tests', selection)
 
     def test_original_functional_gate_jobs_and_timeout_are_preserved(self):
         functional = run_script(step_text(self.checks, 'Functional tests (named gate)'))

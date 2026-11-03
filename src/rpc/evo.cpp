@@ -1725,6 +1725,9 @@ static UniValue evodb_verify_or_repair_impl(const JSONRPCRequest& request, bool 
 
     // Call the dmnman method to do the work
     auto recalc_result = dmnman.RecalculateAndRepairDiffs(start_index, stop_index, chainman, build_list_func, repair);
+    if (recalc_result.interrupted) {
+        throw JSONRPCError(RPC_MISC_ERROR, "The node is shutting down: the check stopped without a verdict and wrote no diffs");
+    }
 
     // Convert result to UniValue
     UniValue result(UniValue::VOBJ);
