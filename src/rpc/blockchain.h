@@ -39,6 +39,13 @@ double GetDifficulty(const CBlockIndex* blockindex);
 /** Callback for when block tip changed. */
 void RPCNotifyBlockChange(const CBlockIndex*);
 
+/**
+ * How many blocks of the chain lie above the newest one that a ChainLock on `locked` covers: the
+ * blocks a reorg can still replace. The lock covers its block and every ancestor of it, so the
+ * newest covered block in the chain is `locked` itself, or where the chain leaves its branch.
+ */
+int ChainLockAge(const CChain& chain, const CBlockIndex& locked);
+
 /** Block description to JSON */
 UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIndex* tip, const CBlockIndex* blockindex, const llmq::CChainLocksHandler& clhandler, const llmq::CInstantSendManager& isman, bool txDetails = false) LOCKS_EXCLUDED(cs_main);
 

@@ -103,6 +103,12 @@ CChainLockSig CChainLocksHandler::GetBestChainLock() const
     return bestChainLock;
 }
 
+const CBlockIndex* CChainLocksHandler::GetBestChainLockBlockIndex() const
+{
+    LOCK(cs);
+    return isEnabled ? bestChainLockBlockIndex : nullptr;
+}
+
 bool ChainLockSupersedesBest(int candidate_height, const CChainLockSig& current_best,
                              const CBlockIndex* pindex)
 {

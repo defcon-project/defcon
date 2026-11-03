@@ -74,4 +74,28 @@ BOOST_AUTO_TEST_CASE(get_difficulty_for_very_high_target)
     TestDifficulty(0x12345678, 5913134931067755359633408.0);
 }
 
+BOOST_AUTO_TEST_CASE(chainlock_age)
+{
+    // Blocks 0-4 make the chain; the other block at height 3 branches off block 2.
+    std::vector<CBlockIndex> blocks(5);
+    for (int i = 0; i < 5; ++i) {
+        blocks[i].nHeight = i;
+        blocks[i].pprev = i > 0 ? &blocks[i - 1] : nullptr;
+        blocks[i].BuildSkip();
+    }
+    CBlockIndex branch;
+    branch.nHeight = 3;
+    branch.pprev = &blocks[2];
+    branch.BuildSkip();
+
+    CChain chain;
+    chain.SetTip(&blocks[4]);
+    BOOST_CHECK_EQUAL(ChainLockAge(chain, blocks[4]), 0); // the tip itself is locked
+    BOOST_CHECK_EQUAL(ChainLockAge(chain, blocks[1]), 3); // blocks 2-4 lie above the lock
+    BOOST_CHECK_EQUAL(ChainLockAge(chain, branch), 2);    // the lock covers blocks 0-2 here, not 3 and 4
+
+    chain.SetTip(&blocks[2]);
+    BOOST_CHECK_EQUAL(ChainLockAge(chain, blocks[4]), 0); // a lock above the tip covers all of the chain
+}
+
 BOOST_AUTO_TEST_SUITE_END()

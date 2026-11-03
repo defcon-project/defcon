@@ -33,7 +33,6 @@ from test_framework.blocktools import (
     create_block,
     create_coinbase,
 )
-from test_framework.governance import EXPECTED_STDERR_NO_GOV_PRUNE
 from test_framework.messages import (
     CBlockHeader,
     from_hex,
@@ -44,7 +43,6 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
-    assert_greater_than_or_equal,
     assert_raises,
     assert_raises_rpc_error,
     assert_is_hex_string,
@@ -76,8 +74,6 @@ class BlockchainTest(BitcoinTestFramework):
             extra_args=[
                 "-stopatheight=207",
                 "-checkblocks=-1",  # Check all blocks
-                "-prune=1",  # Set pruning after rescan is complete
-                '-txindex=0',
             ],
         )
 
@@ -122,11 +118,14 @@ class BlockchainTest(BitcoinTestFramework):
             'bestblockhash',
             'blocks',
             'chain',
+            'chainlock',
             'chainwork',
             'difficulty',
             'headers',
             'initialblockdownload',
             'mediantime',
+            'mint',
+            'moneysupply',
             'pruned',
             'size_on_disk',
             'softforks',
@@ -138,35 +137,14 @@ class BlockchainTest(BitcoinTestFramework):
 
         assert_equal(res['time'], TIME_RANGE_END - TIME_RANGE_STEP)
         assert_equal(res['mediantime'], TIME_RANGE_MTP)
+        # ChainLocks are off by default (SPORK_19), so no lock is shown
+        assert_equal(res['chainlock'], {'enabled': False})
 
-        # result should have these additional pruning keys if manual pruning is enabled
-        assert_equal(sorted(res.keys()), sorted(['pruneheight', 'automatic_pruning'] + keys))
+        # DeFCoN cannot prune, so the pruning keys never appear: should have exact keys
+        assert_equal(sorted(res.keys()), keys)
+        assert not res['pruned']
 
         # size_on_disk should be > 0
-        assert_greater_than(res['size_on_disk'], 0)
-
-        # pruneheight should be greater or equal to 0
-        assert_greater_than_or_equal(res['pruneheight'], 0)
-
-        # check other pruning fields given that prune=1
-        assert res['pruned']
-        assert not res['automatic_pruning']
-
-        self.restart_node(0, ['-stopatheight=207', '-txindex=0'], expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
-        res = self.nodes[0].getblockchaininfo()
-        # should have exact keys
-        assert_equal(sorted(res.keys()), keys)
-
-        self.restart_node(0, ['-stopatheight=207', '-prune=550', '-txindex=0'])
-        res = self.nodes[0].getblockchaininfo()
-        # result should have these additional pruning keys if prune=550
-        assert_equal(sorted(res.keys()), sorted(['pruneheight', 'automatic_pruning', 'prune_target_size'] + keys))
-
-        # check related fields
-        assert res['pruned']
-        assert_equal(res['pruneheight'], 0)
-        assert res['automatic_pruning']
-        assert_equal(res['prune_target_size'], 576716800)
         assert_greater_than(res['size_on_disk'], 0)
         assert_equal(res['softforks'], {
             'bip34': {'type': 'buried', 'active': True, 'height': 1},

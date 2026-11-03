@@ -1420,6 +1420,11 @@ static void SoftForkDescPushBack(const CBlockIndex* active_chain_tip, const std:
     softforks.pushKV(DeploymentName(id), rv);
 }
 
+int ChainLockAge(const CChain& chain, const CBlockIndex& locked)
+{
+    return chain.Height() - CHECK_NONFATAL(chain.FindFork(&locked))->nHeight;
+}
+
 RPCHelpMan getblockchaininfo()
 {
     return RPCHelpMan{"getblockchaininfo",
@@ -1433,6 +1438,8 @@ RPCHelpMan getblockchaininfo()
                 {RPCResult::Type::NUM, "blocks", "the height of the most-work fully-validated chain. The genesis block has height 0"},
                 {RPCResult::Type::NUM, "headers", "the current number of headers we have validated"},
                 {RPCResult::Type::STR, "bestblockhash", "the hash of the currently best block"},
+                {RPCResult::Type::STR_AMOUNT, "mint", "the amount the best block created"},
+                {RPCResult::Type::STR_AMOUNT, "moneysupply", "the total amount in existence after the best block"},
                 {RPCResult::Type::NUM, "difficulty", "the current difficulty"},
                 {RPCResult::Type::NUM_TIME, "time", "The block time expressed in " + UNIX_EPOCH_TIME},
                 {RPCResult::Type::NUM_TIME, "mediantime", "The median block time expressed in " + UNIX_EPOCH_TIME},
@@ -1444,6 +1451,14 @@ RPCHelpMan getblockchaininfo()
                 {RPCResult::Type::NUM, "pruneheight", "lowest-height complete block stored (only present if pruning is enabled)"},
                 {RPCResult::Type::BOOL, "automatic_pruning", "whether automatic pruning is enabled (only present if pruning is enabled)"},
                 {RPCResult::Type::NUM, "prune_target_size", "the target size used by pruning (only present if automatic pruning is enabled)"},
+                {RPCResult::Type::OBJ, "chainlock", "the newest ChainLock this node enforces",
+                {
+                    {RPCResult::Type::BOOL, "enabled", "whether ChainLocks are switched on; the other fields are only present if they are and a ChainLock names a block this node knows"},
+                    {RPCResult::Type::NUM, "height", /* optional */ true, "height of the locked block"},
+                    {RPCResult::Type::STR_HEX, "blockhash", /* optional */ true, "hash of the locked block"},
+                    {RPCResult::Type::NUM_TIME, "time", /* optional */ true, "The locked block's time expressed in " + UNIX_EPOCH_TIME},
+                    {RPCResult::Type::NUM, "age_blocks", /* optional */ true, "blocks of the active chain above the newest block a ChainLock covers, which a reorg can still replace (0 while the tip is locked)"},
+                }},
                 {RPCResult::Type::OBJ, "softforks", "status of softforks in progress",
                 {
                     {RPCResult::Type::STR, "type", "one of \"buried\", \"bip9\""},
@@ -1520,6 +1535,20 @@ RPCHelpMan getblockchaininfo()
             obj.pushKV("prune_target_size",  nPruneTarget);
         }
     }
+
+    // Without a ChainLock quorum the chain goes on as plain proof of stake and
+    // nothing else in the node's output says so: age_blocks then keeps growing.
+    const llmq::CChainLocksHandler& clhandler{*EnsureLLMQContext(node).clhandler};
+    const bool chainlocks_enabled{clhandler.IsEnabled()};
+    UniValue chainlock(UniValue::VOBJ);
+    chainlock.pushKV("enabled", chainlocks_enabled);
+    if (const CBlockIndex* locked{chainlocks_enabled ? clhandler.GetBestChainLockBlockIndex() : nullptr}) {
+        chainlock.pushKV("height", locked->nHeight);
+        chainlock.pushKV("blockhash", locked->GetBlockHash().GetHex());
+        chainlock.pushKV("time", locked->GetBlockTime());
+        chainlock.pushKV("age_blocks", ChainLockAge(active_chainstate.m_chain, *locked));
+    }
+    obj.pushKV("chainlock", chainlock);
 
     const Consensus::Params& consensusParams = Params().GetConsensus();
     UniValue softforks(UniValue::VOBJ);

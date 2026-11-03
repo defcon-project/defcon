@@ -114,6 +114,10 @@ public:
     bool AlreadyHave(const CInv& inv) const EXCLUSIVE_LOCKS_REQUIRED(!cs);
     bool GetChainLockByHash(const uint256& hash, CChainLockSig& ret) const EXCLUSIVE_LOCKS_REQUIRED(!cs);
     CChainLockSig GetBestChainLock() const EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    // The block of the newest ChainLock this node enforces, the one HasChainLock answers from;
+    // nullptr while ChainLocks are off or no lock names a block this node knows yet.
+    const CBlockIndex* GetBestChainLockBlockIndex() const EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    bool IsEnabled() const { return isEnabled; }
 
     [[nodiscard]] MessageProcessingResult ProcessNewChainLock(NodeId from, const CChainLockSig& clsig,
                                                               const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(!cs);
