@@ -11,6 +11,7 @@
 #include <qt/emptystatewidget.h>
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
+#include <qt/starfieldwidget.h>
 #include <qt/transactionfilterproxy.h>
 #include <qt/transactionoverviewwidget.h>
 #include <qt/transactiontablemodel.h>
@@ -41,6 +42,8 @@
 #include <QLabel>
 #include <QPaintEvent>
 #include <QPainter>
+#include <QPixmap>
+#include <QRadialGradient>
 #include <QSettings>
 #include <QStatusTipEvent>
 #include <QStyle>
@@ -267,6 +270,25 @@ OverviewPage::OverviewPage(QWidget* parent) :
     m_net_peers.widget->setToolTip(tr("Connected peers"));
     m_net_masternodes.widget->setToolTip(tr("Valid masternodes"));
     m_net_mempool.widget->setToolTip(tr("Transactions in the memory pool"));
+    // The sky's level, a pill with a glowing dot, from the first level up.
+    // It is not in the bar's layout: it takes the bar's free middle when it
+    // fits there, so it can never make the window wider than it shrinks to
+    // now. Never in discreet mode: the level would give the balance away.
+    m_net_sky.widget = new QWidget(networkCard);
+    m_net_sky.widget->setObjectName("networkSky");
+    m_net_sky.widget->setAttribute(Qt::WA_StyledBackground, true);
+    auto* skyLayout = new QHBoxLayout(m_net_sky.widget);
+    skyLayout->setContentsMargins(8, 2, 10, 2);
+    skyLayout->setSpacing(6);
+    m_net_sky.icon = new QLabel(m_net_sky.widget);
+    m_net_sky.icon->setObjectName("networkIcon");
+    m_net_sky.icon->setFixedSize(18, 18);
+    skyLayout->addWidget(m_net_sky.icon);
+    m_net_sky.text = new QLabel(m_net_sky.widget);
+    m_net_sky.text->setObjectName("networkText");
+    skyLayout->addWidget(m_net_sky.text);
+    network_words.push_back(m_net_sky.text);
+    m_net_sky.widget->hide();
     ui->topLayout->insertWidget(1, networkCard);
     networkCard->installEventFilter(this);
     m_net_masternodes.text->installEventFilter(this);
@@ -349,6 +371,7 @@ void OverviewPage::handleTransactionClicked(const QModelIndex &index)
 void OverviewPage::setPrivacy(bool privacy)
 {
     m_privacy = privacy;
+    updateSkyBadge();
     if (m_balances.balance != -1) {
         setBalance(m_balances);
         coinJoinStatus(true);
@@ -375,6 +398,9 @@ void OverviewPage::changeEvent(QEvent* event)
 
 bool OverviewPage::eventFilter(QObject* watched, QEvent* event)
 {
+    // The bar's own layout has placed its entries by now (a layout sees its
+    // widget's events before the filters do); the badge takes the room left.
+    if (watched == networkCard && (event->type() == QEvent::LayoutRequest || event->type() == QEvent::Resize)) placeSkyBadge();
     switch (event->type()) {
     case QEvent::FontChange:
     case QEvent::StyleChange:
@@ -413,6 +439,7 @@ void OverviewPage::updateThemePresentation()
     if (networkCard) {
         networkCard->setVisible(modern);
         if (modern) paintNetworkIcons();
+        updateSkyBadge();
     }
     ui->topLayout->setContentsMargins(11, 11, 11, 11);
     ui->topLayout->setSpacing(modern ? 12 : 6);
@@ -593,11 +620,19 @@ void OverviewPage::fitNetworkWords()
                        advance(m_net_masternodes, m_net_masternodes.text->text()) -
                        advance(m_net_mempool, m_net_mempool.text->text());
     constexpr int ROUNDING{4};
-    const bool room = networkCard->width() >= others + advance(m_net_masternodes, masternodes) + advance(m_net_mempool, mempool) + ROUNDING;
+    // The level's badge comes first: it takes the bar's free middle, so the
+    // words are long only where both fit. While syncing, the expanding
+    // progress track takes some of that middle as well, up to its maximum.
+    const int track_growth = m_net_progress->isHidden() ? 0 : std::max(0, m_net_progress->maximumWidth() - m_net_progress->sizeHint().width());
+    const int badge = m_sky_badge_wanted ? m_net_sky.widget->sizeHint().width() + track_growth : 0;
+    const bool room = networkCard->width() >= others + advance(m_net_masternodes, masternodes) + advance(m_net_mempool, mempool) + badge + ROUNDING;
     m_net_masternodes.text->setMinimumWidth(QFontMetrics(m_net_masternodes.text->font()).horizontalAdvance(short_masternodes));
     m_net_mempool.text->setMinimumWidth(QFontMetrics(m_net_mempool.text->font()).horizontalAdvance(short_mempool));
     m_net_masternodes.text->setText(room ? masternodes : short_masternodes);
     m_net_mempool.text->setText(room ? mempool : short_mempool);
+    // A resize placed the badge before the words were chosen; place it again
+    // now. Changed words re-run the layout, and the badge is placed once more.
+    placeSkyBadge();
 }
 
 void OverviewPage::paintNetworkIcons()
@@ -615,6 +650,79 @@ void OverviewPage::paintNetworkIcons()
     paint(m_net_peers, "plug-connected", ThemedColor::UNCONFIRMED);
     paint(m_net_masternodes, "server", ThemedColor::UNCONFIRMED);
     paint(m_net_mempool, "stack-2", ThemedColor::UNCONFIRMED);
+    // The level's glyph is drawn, not shipped: a dot in the theme's blue
+    // with a soft glow, at the label's pixel ratio like the glyphs.
+    const qreal dpr = m_net_sky.icon->devicePixelRatioF();
+    QPixmap dot(m_net_sky.icon->size() * dpr);
+    dot.setDevicePixelRatio(dpr);
+    dot.fill(Qt::transparent);
+    {
+        QPainter painter(&dot);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        const QColor blue = GUIUtil::getThemedQColor(ThemedColor::BLUE);
+        const QPointF centre(m_net_sky.icon->width() / 2.0, m_net_sky.icon->height() / 2.0);
+        QColor glow = blue;
+        glow.setAlphaF(0.45);
+        QColor edge = blue;
+        edge.setAlpha(0);
+        QRadialGradient halo(centre, 8);
+        halo.setColorAt(0, glow);
+        halo.setColorAt(1, edge);
+        painter.setBrush(halo);
+        painter.drawEllipse(centre, 8, 8);
+        painter.setBrush(blue);
+        painter.drawEllipse(centre, 3.5, 3.5);
+    }
+    m_net_sky.icon->setPixmap(dot);
+}
+
+int OverviewPage::skyTier() const
+{
+    return (m_privacy || walletModel == nullptr) ? 0 : m_sky_tier;
+}
+
+void OverviewPage::placeSkyBadge()
+{
+    if (networkCard == nullptr || m_net_sky.widget == nullptr) return;
+    QWidget* badge = m_net_sky.widget;
+    int left = 0;
+    for (const QWidget* entry : {m_net_block.widget, m_net_age.widget, m_net_synced.widget, m_net_chainlock.widget,
+                                 m_net_syncing.widget, static_cast<QWidget*>(m_net_progress)}) {
+        if (!entry->isHidden()) left = std::max(left, entry->geometry().right() + 1);
+    }
+    const int right = m_net_peers.widget->geometry().left();
+    const int spacing = networkCard->layout()->spacing();
+    const QSize size = badge->sizeHint();
+    // The bar's own spacing on both sides where there is room, a little less at a pinch.
+    const int margin = std::min(spacing, (right - left - size.width()) / 2);
+    const bool fits = m_sky_badge_wanted && networkCard->isVisible() && margin >= 6;
+    if (fits) badge->setGeometry(right - margin - size.width(), (networkCard->height() - size.height()) / 2, size.width(), size.height());
+    if (badge->isHidden() == fits) badge->setVisible(fits);
+}
+
+void OverviewPage::updateSkyBadge()
+{
+    const int tier = skyTier();
+    if (m_net_sky.widget != nullptr) {
+        m_sky_badge_wanted = tier > 0 && GUIUtil::isModernTheme();
+        m_net_sky.text->setText(SkyTiers::name(tier));
+        QString tip = tr("Night sky level: %1").arg(SkyTiers::name(tier));
+        if (tier == SkyTiers::COUNT - 1) {
+            tip += QLatin1Char('\n') + tr("The highest level.");
+        } else if (tier > 0 && walletModel != nullptr && walletModel->getOptionsModel() != nullptr) {
+            const int unit = walletModel->getOptionsModel()->getDisplayUnit();
+            tip += QLatin1Char('\n') + tr("Next: %1 from %2").arg(SkyTiers::name(tier + 1),
+                BitcoinUnits::formatWithUnit(unit, SkyTiers::threshold(tier + 1), false, BitcoinUnits::SeparatorStyle::ALWAYS));
+        }
+        m_net_sky.widget->setToolTip(tip);
+        fitNetworkWords();
+        placeSkyBadge();
+    }
+    if (tier != m_sky_tier_shown) {
+        m_sky_tier_shown = tier;
+        Q_EMIT skyTierChanged(tier);
+    }
 }
 
 OverviewPage::~OverviewPage()
@@ -801,6 +909,12 @@ void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
 {
     int unit = walletModel->getOptionsModel()->getDisplayUnit();
     m_balances = balances;
+    // The sky's level follows the spendable total; watch-only amounts do not
+    // count, and neither does a wallet without private keys: its descriptors
+    // report what they only watch as the wallet's own balance.
+    const bool keyless = walletModel->wallet().privateKeysDisabled();
+    m_sky_tier = SkyTiers::tierForBalance(keyless ? 0 : balances.balance + balances.unconfirmed_balance + balances.immature_balance, m_sky_tier);
+    updateSkyBadge();
     if (walletModel->wallet().isLegacy()) {
         if (walletModel->wallet().privateKeysDisabled()) {
             ui->labelBalance->setText(formatBalance(unit, balances.watch_only_balance));
@@ -934,6 +1048,10 @@ void OverviewPage::setClientModel(ClientModel *model)
 void OverviewPage::setWalletModel(WalletModel *model)
 {
     this->walletModel = model;
+    if (model == nullptr) {
+        m_sky_tier = 0;
+        updateSkyBadge();
+    }
     if(model && model->getOptionsModel())
     {
         // update the display unit, to not use the default ("DASH")
