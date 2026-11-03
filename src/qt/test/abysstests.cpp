@@ -68,6 +68,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFontMetricsF>
+#include <QFormLayout>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -189,7 +190,9 @@ public:
             {"%n minutes", {"%n минута", "%n минуты", "%n минут"}},
             {"%n hours", {"%n час", "%n часа", "%n часов"}},
             {"%n days", {"%n день", "%n дня", "%n дней"}},
+            {"masternodes", {"мастернода", "мастерноды", "мастернод"}},
         };
+        if (qstrcmp(source, "masternode") == 0) return QString::fromUtf8("мастернода");
         if (qstrcmp(source, "1 minute") == 0) return QString::fromUtf8("1 минута");
         if (qstrcmp(source, "%1 ago") == 0) return QString::fromUtf8("%1 назад");
         const auto it = plurals.find(source);
@@ -960,6 +963,16 @@ void AbyssTests::networkBar()
     QCOMPARE(part("networkPeers", "networkText")->text(), OverviewPage::tr("peers"));
     QCOMPARE(part("networkMasternodes", "networkValue")->text(), QString("312"));
     QCOMPARE(part("networkMempool", "networkValue")->text(), QString("14"));
+    // In words, where the bar has the room for them.
+    QCOMPARE(part("networkMasternodes", "networkText")->text(), QString("masternodes"));
+    QCOMPARE(part("networkMempool", "networkText")->text(), QString("in mempool"));
+    {
+        OverviewPage::NetworkStatus one = synced;
+        one.masternodes = 1;
+        page.setNetworkStatus(one);
+        QCOMPARE(part("networkMasternodes", "networkText")->text(), QString("masternode"));
+        page.setNetworkStatus(synced);
+    }
     // Every entry explains itself; the syncing entry's tooltip is set by state below.
     for (const QString& name : names) {
         if (name != "networkSyncing") QVERIFY2(!entry(name.toUtf8().constData())->toolTip().isEmpty(), qPrintable(name));
@@ -988,6 +1001,14 @@ void AbyssTests::networkBar()
         RussianPlurals russian;
         QVERIFY(qApp->installTranslator(&russian));
         const auto remove = interfaces::MakeHandler([&russian] { qApp->removeTranslator(&russian); });
+        page.resize(2560, 850); Settle();
+        OverviewPage::NetworkStatus counted = synced;
+        for (const auto& [count, word] : std::vector<std::pair<int, const char*>>{
+                 {1, "мастернода"}, {2, "мастерноды"}, {5, "мастернод"}, {21, "мастернода"}}) {
+            counted.masternodes = count;
+            page.setNetworkStatus(counted);
+            QCOMPARE(part("networkMasternodes", "networkText")->text(), QString::fromUtf8(word));
+        }
         const auto ru = [](const char* words) { return QString::fromUtf8("%1 назад").arg(QString::fromUtf8(words)); };
         QCOMPARE(age_text(60), ru("1 минута"));
         QCOMPARE(age_text(2 * 60), ru("2 минуты"));
@@ -998,6 +1019,7 @@ void AbyssTests::networkBar()
         QCOMPARE(age_text(11 * 24 * 60 * 60), ru("11 дней"));
     }
     QCOMPARE(age_text(21 * 60), ago(OverviewPage::tr("%n minutes", "", 21)));
+    page.resize(1280, 850);
     page.setNetworkStatus(synced); Settle();
     QCOMPARE(card->property("syncing").toBool(), false);
     QCOMPARE(border(), QColor("#20344c"));
@@ -1090,6 +1112,49 @@ void AbyssTests::networkBar()
                 QVERIFY2(widget->width() >= widget->sizeHint().width(), qPrintable(name));
             }
         }
+        // The words do not set the page's minimum: it is the same whichever are
+        // up, or the window could never get narrow enough for the short ones.
+        page.setNetworkStatus(synced);
+        page.resize(1280, 850); Settle();
+        QCOMPARE(part("networkMasternodes", "networkText")->text(), QString("masternodes"));
+        const int roomy_minimum = page.minimumSizeHint().width();
+        page.resize(page.minimumWidth(), 850); Settle();
+        qInfo() << "NETWORK_WORDS" << card->width() << card->minimumSizeHint().width() << card->sizeHint().width()
+                << part("networkMasternodes", "networkText")->text() << page.minimumWidth() << roomy_minimum;
+        QCOMPARE(page.minimumSizeHint().width(), roomy_minimum);
+        // Where they do not fit, the short forms, and the bar is still whole. The
+        // form's placeholder amounts hold this page wide; a wallet's ordinary ones
+        // leave it narrow enough.
+        OverviewPage narrow;
+        for (const char* name : {"labelBalance", "labelUnconfirmed", "labelImmature", "labelTotal"}) {
+            narrow.findChild<QLabel*>(name)->setText("1.00 DFCN");
+        }
+        for (const char* name : {"labelSpendable", "labelWatchonly", "labelWatchAvailable", "labelWatchPending",
+                                 "labelWatchImmature", "labelWatchTotal", "lineWatchBalance"}) {
+            narrow.findChild<QWidget*>(name)->hide();
+        }
+        narrow.setNetworkStatus(synced);
+        narrow.show(); Settle();
+        auto* narrow_card = narrow.findChild<QFrame*>("networkCard");
+        const auto words = [&] {
+            return QStringList{narrow_card->findChild<QWidget*>("networkMasternodes")->findChild<QLabel*>("networkText")->text(),
+                               narrow_card->findChild<QWidget*>("networkMempool")->findChild<QLabel*>("networkText")->text()};
+        };
+        narrow.resize(narrow.minimumWidth(), 850); Settle();
+        qInfo() << "NETWORK_WORDS_NARROW" << narrow_card->width() << narrow_card->minimumSizeHint().width() << narrow_card->sizeHint().width()
+                << words() << narrow.minimumWidth();
+        GUIUtil::setFontScale(50);
+        GUIUtil::updateFonts(); Settle();
+        narrow.resize(narrow.minimumWidth(), 850); Settle();
+        qInfo() << "NETWORK_WORDS_LARGE" << narrow_card->width() << narrow_card->minimumSizeHint().width() << narrow_card->sizeHint().width()
+                << words() << narrow.minimumWidth();
+        QCOMPARE(words(), (QStringList{"MN", "tx"}));
+        QVERIFY(narrow_card->minimumSizeHint().width() <= narrow_card->width());
+        const int short_minimum = narrow.minimumSizeHint().width();
+        narrow.resize(2560, 850); Settle();
+        QCOMPARE(words(), (QStringList{"masternodes", "in mempool"}));
+        QCOMPARE(narrow.minimumSizeHint().width(), short_minimum);
+        narrow.hide();
     }
 
     // The classic themes keep their pages as they were: no bar.
@@ -2381,6 +2446,473 @@ void AbyssTests::walletGoneWhileAdding()
             QVERIFY(window.findChildren<WalletView*>().isEmpty());
         }
     }
+}
+
+//! A page as the window shows it: Abyss pages leave their background to the sky behind them.
+static QPixmap PageImage(QWidget& page)
+{
+    QPixmap picture = page.grab();
+    if (!GUIUtil::isModernTheme()) return picture;
+    picture.fill(QColor("#050d1a"));
+    page.render(&picture, QPoint(), QRegion(), QWidget::DrawChildren);
+    return picture;
+}
+
+void AbyssTests::pageHeaders()
+{
+    // Every page says where you are the same way: its name and what it is for,
+    // at the same place and in the same type, so that nothing jumps when moving
+    // between pages. The classic themes have no such header.
+    RestoreAppearance restore;
+    QSettings settings;
+    const QStringList tabs{"fShowMultisigTab", "fShowMasternodesTab", "fShowGovernanceTab"};
+    std::map<QString, QVariant> saved_tabs;
+    for (const QString& tab : tabs) {
+        saved_tabs.emplace(tab, settings.value(tab));
+        settings.setValue(tab, true);
+    }
+    const auto restore_tabs = interfaces::MakeHandler([saved_tabs] {
+        QSettings settings;
+        for (const auto& [tab, value] : saved_tabs) {
+            if (value.isValid()) settings.setValue(tab, value); else settings.remove(tab);
+        }
+    });
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    const auto save = [&output](QWidget* page, const QString& name) {
+        return output.isEmpty() || (QDir().mkpath(output) && PageImage(*page).save(QDir(output).filePath(name + ".png")));
+    };
+    const auto named = [](QWidget* page, const char* a, const char* b) -> QLabel* {
+        for (QLabel* label : page->findChildren<QLabel*>()) {
+            if (label->objectName() == a || label->objectName() == b) return label;
+        }
+        return nullptr;
+    };
+    const auto title_of = [&named](QWidget* page) { return named(page, "abyssPageTitle", "modernOverviewTitle"); };
+    const auto subtitle_of = [&named](QWidget* page) { return named(page, "abyssPageSubtitle", "modernOverviewSubtitle"); };
+
+    Theme("Light");
+    WalletView view(nullptr);
+    // Larger than any page's minimum in any theme, with or without fonts, so that
+    // the view never changes size: a table's stretched last column keeps its width
+    // when a view narrows in one go, whatever the theme.
+    const QSize view_size{1800, 1000};
+    view.resize(view_size);
+    view.show(); Settle();
+    // A wallet with CoinJoin has this card; without a wallet model it stays hidden.
+    view.widget(0)->findChild<QFrame*>("frameCoinJoin")->setVisible(true);
+    const QStringList titles{"Overview", "Transactions", "Receive DeFCoN", "Send DeFCoN", "CoinJoin", "Multisig", "Masternodes", "Governance"};
+    QCOMPARE(view.count(), titles.size());
+    // Which field has the keyboard depends on the way through the pages, not on
+    // the theme, and a field with the keyboard looks different.
+    const auto open = [&view](QWidget* page) {
+        view.setCurrentWidget(page); Settle();
+        if (QWidget* focus = QApplication::focusWidget()) focus->clearFocus();
+        Settle();
+    };
+    // In a classic theme the pages keep the margins they have on their own, and
+    // the empty Multisig page's note takes no free room.
+    MasternodeList own_masternodes;
+    GovernanceList own_governance;
+    const auto classic_layouts = [&] {
+        QCOMPARE(view.widget(6)->layout()->contentsMargins(), own_masternodes.layout()->contentsMargins());
+        QCOMPARE(view.widget(7)->layout()->contentsMargins(), own_governance.layout()->contentsMargins());
+        auto* multisig_box = qobject_cast<QBoxLayout*>(view.widget(5)->layout());
+        QVERIFY(multisig_box);
+        for (QLabel* label : view.widget(5)->findChildren<QLabel*>()) {
+            const int item = multisig_box->indexOf(label);
+            if (item >= 0) QCOMPARE(multisig_box->stretch(item), 0);
+        }
+    };
+    classic_layouts();
+    std::vector<QImage> classic;
+    for (int i = 0; i < view.count(); ++i) {
+        QWidget* page = view.widget(i);
+        open(page);
+        QLabel* title = title_of(page);
+        QVERIFY2(!title || !title->isVisible(), qPrintable(titles[i]));
+        QVERIFY(save(page, QString("Light-page-%1").arg(i)));
+        classic.push_back(page->grab().toImage());
+    }
+
+    Theme("Abyss"); Settle();
+    std::optional<QPoint> corner;
+    std::optional<QFont> title_font, subtitle_font;
+    for (int i = 0; i < view.count(); ++i) {
+        QWidget* page = view.widget(i);
+        open(page);
+        QLabel* title = title_of(page);
+        QLabel* subtitle = subtitle_of(page);
+        QVERIFY2(title && subtitle, qPrintable(titles[i]));
+        QVERIFY2(title->isVisible() && subtitle->isVisible(), qPrintable(titles[i]));
+        QCOMPARE(title->text(), titles[i]);
+        QVERIFY2(subtitle->text().endsWith('.'), qPrintable(subtitle->text()));
+        QVERIFY(save(page, QString("Abyss-page-%1").arg(i)));
+        const QPoint position = OnPage(*page, title).topLeft();
+        qInfo() << "PAGE_HEADER" << titles[i] << position << OnPage(*page, subtitle) << title->font().toString() << subtitle->font().toString();
+        if (!corner) {
+            corner = position;
+            title_font = title->font();
+            subtitle_font = subtitle->font();
+        }
+        QCOMPARE(position, *corner);
+        QVERIFY2(title->font() == *title_font, qPrintable(titles[i] + ": " + title->font().toString() + " vs " + title_font->toString()));
+        QVERIFY2(subtitle->font() == *subtitle_font, qPrintable(titles[i] + ": " + subtitle->font().toString() + " vs " + subtitle_font->toString()));
+        // The header keeps together, however much room the page has to spare.
+        QVERIFY2(OnPage(*page, subtitle).top() - OnPage(*page, title).bottom() <= 10, qPrintable(titles[i]));
+    }
+    // An empty Multisig page keeps its buttons under the header.
+    QWidget* multisig = view.widget(5);
+    open(multisig);
+    QVERIFY(OnPage(*multisig, multisig->findChild<QPushButton*>("multisigCreate")).top() < multisig->height() / 3);
+
+    // The same in a wallet that starts in Abyss: a page built before it joins the
+    // view gets a window's margins from the style, not a child's.
+    {
+        WalletView started(nullptr);
+        started.resize(view_size);
+        started.show(); Settle();
+        for (int i = 0; i < started.count(); ++i) {
+            QWidget* page = started.widget(i);
+            started.setCurrentWidget(page); Settle();
+            QVERIFY2(OnPage(*page, title_of(page)).topLeft() == *corner, qPrintable(titles[i]));
+        }
+    }
+
+    // Back in a classic theme: every page as it was, to the pixel.
+    Theme("Light"); Settle();
+    QCOMPARE(view.size(), view_size);
+    classic_layouts();
+    QStringList differing;
+    for (int i = 0; i < view.count(); ++i) {
+        QWidget* page = view.widget(i);
+        open(page);
+        QLabel* title = title_of(page);
+        QVERIFY2(!title || !title->isVisible(), qPrintable(titles[i]));
+        if (page->grab().toImage() != classic[i]) differing << titles[i];
+    }
+    QVERIFY2(differing.isEmpty(), qPrintable(differing.join(", ")));
+}
+
+void AbyssTests::primaryButtons()
+{
+    // One blue button to a page at most, so that the page says what it is for.
+    // The rest take the dark secondary style.
+    RestoreAppearance restore;
+    QSettings settings;
+    const QVariant multisig_tab = settings.value("fShowMultisigTab");
+    settings.setValue("fShowMultisigTab", true);
+    const auto restore_tab = interfaces::MakeHandler([multisig_tab] {
+        QSettings settings;
+        if (multisig_tab.isValid()) settings.setValue("fShowMultisigTab", multisig_tab); else settings.remove("fShowMultisigTab");
+    });
+    WalletFixture fixture(m_node);
+    Theme("Abyss");
+    WalletView view(nullptr);
+    view.setClientModel(fixture.client.get());
+    view.setWalletModel(fixture.model.get());
+    view.showOutOfSyncWarning(false);
+    view.resize(1042, 850);
+    view.show(); Settle();
+    auto* coinjoin = view.widget(0)->findChild<QFrame*>("frameCoinJoin");
+    auto* toggle = view.widget(0)->findChild<QPushButton*>("toggleCoinJoin");
+    QVERIFY(coinjoin && toggle);
+    coinjoin->setEnabled(true);
+    coinjoin->show();
+    toggle->setEnabled(true);
+    const QColor primary("#0f75d6");
+    const auto blue = [&primary](QWidget* page) {
+        QStringList found;
+        for (QPushButton* button : page->findChildren<QPushButton*>()) {
+            if (!button->isVisible() || !button->isEnabled()) continue;
+            const QImage image = button->grab().toImage();
+            // Inside the border, left of the text.
+            if (image.pixelColor(6, image.height() / 2) == primary) found << button->objectName();
+        }
+        return found;
+    };
+    const std::vector<std::pair<const char*, QStringList>> expected{
+        {"Overview", {"emptyStateAction"}},
+        {"Transactions", {"emptyStateAction"}},
+        {"Receive", {"receiveButton"}},
+        {"Send", {"sendButton"}},
+        {"CoinJoin", {"sendButton"}},
+        {"Multisig", {"multisigCreate"}},
+    };
+    QCOMPARE(view.count(), int(expected.size()));
+    for (int i = 0; i < view.count(); ++i) {
+        view.setCurrentWidget(view.widget(i)); Settle();
+        const QStringList found = blue(view.widget(i));
+        QVERIFY2(found == expected[size_t(i)].second, qPrintable(QString("%1: %2").arg(expected[size_t(i)].first, found.join(','))));
+    }
+    view.setCurrentWidget(view.widget(0)); Settle();
+    QVERIFY(toggle->isVisible() && toggle->isEnabled());
+    // Also those a page shows only now and then. Each still reads as disabled:
+    // the secondary rules outrank the general one for that state, so each has its
+    // own, and its text goes dim. The text is the brightest thing inside the border.
+    const auto brightest = [](const QImage& image) {
+        int lightness = 0;
+        for (int y = image.height() / 4; y < image.height() * 3 / 4; ++y) {
+            for (int x = 8; x < image.width() - 8; ++x) lightness = std::max(lightness, image.pixelColor(x, y).lightness());
+        }
+        return lightness;
+    };
+    constexpr int DIM_TEXT{140};
+    std::vector<QPushButton*> secondary{toggle, view.widget(1)->findChild<QPushButton*>("exportButton")};
+    for (const char* name : {"pushButtonCoinControl", "buttonChooseFee", "buttonMinimizeFee", "useAvailableBalanceButton"}) {
+        secondary.push_back(view.widget(3)->findChild<QPushButton*>(name));
+    }
+    for (QPushButton* button : secondary) {
+        QVERIFY(button);
+        button->setEnabled(true);
+        const QImage enabled = button->grab().toImage();
+        QVERIFY2(enabled.pixelColor(6, enabled.height() / 2) == QColor("#0b1727"), qPrintable(button->objectName()));
+        if (GUIUtil::fontsLoaded()) QVERIFY2(brightest(enabled) > DIM_TEXT, qPrintable(button->objectName()));
+        button->setEnabled(false);
+        const QImage disabled = button->grab().toImage();
+        QVERIFY2(disabled != enabled, qPrintable(button->objectName()));
+        QVERIFY2(brightest(disabled) < DIM_TEXT, qPrintable(button->objectName()));
+        button->setEnabled(true);
+    }
+    // The dark button of the Receive page's empty card answers a press like the
+    // other secondary buttons do, with the primary blue border.
+    {
+        view.setCurrentWidget(view.widget(2)); Settle();
+        auto* action = view.widget(2)->findChild<QPushButton*>("emptyStateAction");
+        QVERIFY(action && action->isVisible());
+        const QImage up = action->grab().toImage();
+        action->setDown(true);
+        const QImage down = action->grab().toImage();
+        action->setDown(false);
+        QVERIFY(down != up);
+        QCOMPARE(down.pixelColor(6, down.height() / 2), QColor("#10263e"));
+    }
+    // The dialogs a page opens keep their own blue OK: the page's rule stops at the page.
+    auto* multisig = view.widget(5);
+    QDialog dialog(multisig);
+    QPushButton inside_dialog("OK", &dialog);
+    dialog.show(); Settle();
+    QCOMPARE(inside_dialog.grab().toImage().pixelColor(6, inside_dialog.height() / 2), primary);
+    dialog.hide();
+    // The two pages without buttons of their own stay without them.
+    MasternodeList masternodes;
+    GovernanceList governance;
+    for (QWidget* page : {static_cast<QWidget*>(&masternodes), static_cast<QWidget*>(&governance)}) {
+        page->resize(1042, 850);
+        page->show(); Settle();
+        QVERIFY(blue(page).isEmpty());
+        page->hide();
+    }
+}
+
+void AbyssTests::overviewColumns()
+{
+    // The balances and CoinJoin cards read as one table: the labels start at the
+    // card's edge, in a column of the same width, the amounts under each other.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Text positions require a font-capable platform; run minimal:enable_fonts");
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    OverviewPage page;
+    page.setClientModel(fixture.client.get());
+    page.setWalletModel(fixture.model.get());
+    auto* coinjoin = page.findChild<QFrame*>("frameCoinJoin");
+    QVERIFY(coinjoin);
+    coinjoin->show();
+    const QStringList labels{"labelBalanceText", "labelPendingText", "labelImmatureText", "labelTotalText", "labelCoinJoinEnabledText",
+                             "labelCompletitionText", "labelAnonymizedText", "labelAmountAndRoundsText", "labelSubmittedDenomText"};
+    const QStringList amounts{"labelBalance", "labelUnconfirmed", "labelImmature", "labelTotal", "labelCoinJoinEnabled",
+                              "labelAnonymized", "labelAmountRounds", "labelSubmittedDenom"};
+    // A row with nothing in it hides itself, also on a theme change; the checks want them all.
+    const auto show_all = [&] {
+        for (const QString& name : labels + amounts + QStringList{"labelSpendable"}) {
+            auto* label = page.findChild<QLabel*>(name);
+            QVERIFY2(label, qPrintable(name));
+            label->show();
+        }
+    };
+    show_all();
+    // Where the text starts: a label's margin can indent it inside a rectangle that
+    // lines up. Two pixels are left for the shapes of the first letters.
+    const auto text_left = [&](const QString& name) {
+        auto* label = page.findChild<QLabel*>(name);
+        const QImage image = label->grab().toImage().convertToFormat(QImage::Format_ARGB32);
+        for (int x = 0; x < image.width(); ++x) {
+            for (int y = 0; y < image.height(); ++y) {
+                if (image.pixel(x, y) != image.pixel(0, 0)) return OnPage(page, label).left() + int(x / image.devicePixelRatio());
+            }
+        }
+        return -1;
+    };
+    const auto problems = [&] {
+        QStringList found;
+        const int left = OnPage(page, page.findChild<QLabel*>(labels[0])).left();
+        const int width = page.findChild<QLabel*>(labels[0])->width();
+        const int amount_left = OnPage(page, page.findChild<QLabel*>(amounts[0])).left();
+        for (const QString& name : labels) {
+            auto* label = page.findChild<QLabel*>(name);
+            if (OnPage(page, label).left() != left) found << name + " left";
+            if (label->width() != width) found << QString("%1 width %2 not %3").arg(name).arg(label->width()).arg(width);
+            if (!(label->alignment() & Qt::AlignLeft)) found << name + " alignment";
+        }
+        for (const QString& name : amounts) {
+            if (OnPage(page, page.findChild<QLabel*>(name)).left() != amount_left) {
+                found << QString("%1 at %2 not %3").arg(name).arg(OnPage(page, page.findChild<QLabel*>(name)).left()).arg(amount_left);
+            }
+        }
+        // The card titles start where the labels do.
+        for (const char* name : {"label_5", "labelCoinJoinHeader"}) {
+            if (qAbs(text_left(name) - text_left(labels[0])) > 2) found << QString("%1 text at %2 not %3").arg(name).arg(text_left(name)).arg(text_left(labels[0]));
+        }
+        if (qAbs(text_left("labelSpendable") - text_left(amounts[0])) > 2) found << QString("labelSpendable text at %1 not %2").arg(text_left("labelSpendable")).arg(text_left(amounts[0]));
+        return found.join("; ");
+    };
+    page.resize(1280, 850);
+    page.show(); Settle();
+    QCOMPARE(problems(), QString());
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    if (!output.isEmpty()) QVERIFY(QDir().mkpath(output) && PageImage(page).save(QDir(output).filePath("Abyss-overview-columns.png")));
+    // A larger font widens the column on both cards together.
+    const int column = page.findChild<QLabel*>(labels[0])->width();
+    const auto font_scale = [](int scale) {
+        GUIUtil::setFontScale(scale);
+        GUIUtil::updateFonts(); Settle();
+    };
+    // Back to the normal size. A layout can ask for the labels' size hints before
+    // the page gets to lower their minimums, and the column has to come back anyway.
+    const auto font_back = [&] {
+        GUIUtil::setFontScale(0);
+        GUIUtil::updateFonts();
+        for (const QString& name : labels) page.findChild<QLabel*>(name)->sizeHint();
+        Settle();
+    };
+    // The classic themes keep their own columns: the page back from Abyss is a
+    // fresh page's equal, at whatever font size the user keeps. Read before the
+    // fresh page is built, whose constructor updates every font.
+    const auto classic_columns = [&] {
+        std::map<QString, std::pair<int, Qt::Alignment>> back;
+        for (const QString& name : labels) {
+            auto* label = page.findChild<QLabel*>(name);
+            back.emplace(name, std::make_pair(label->minimumWidth(), label->alignment()));
+        }
+        const int back_spacing = page.findChild<QFormLayout*>("coinJoinFormLayout")->horizontalSpacing();
+        OverviewPage fresh;
+        fresh.resize(1280, 850);
+        fresh.show(); Settle();
+        for (const QString& name : labels) {
+            auto* original = fresh.findChild<QLabel*>(name);
+            const auto& [minimum, alignment] = back.at(name);
+            QVERIFY2(minimum == original->minimumWidth(), qPrintable(QString("%1 %2 %3").arg(name).arg(minimum).arg(original->minimumWidth())));
+            QVERIFY2(alignment == original->alignment(), qPrintable(name));
+        }
+        QCOMPARE(back_spacing, fresh.findChild<QFormLayout*>("coinJoinFormLayout")->horizontalSpacing());
+    };
+    font_scale(50);
+    QCOMPARE(problems(), QString());
+    QVERIFY(page.findChild<QLabel*>(labels[0])->width() > column);
+    font_back();
+    QCOMPARE(problems(), QString());
+    QCOMPARE(page.findChild<QLabel*>(labels[0])->width(), column);
+    Theme("Light"); Settle();
+    classic_columns();
+    // Again with the larger font kept across the change of theme.
+    Theme("Abyss"); Settle();
+    show_all(); Settle();
+    QCOMPARE(problems(), QString());
+    font_scale(50);
+    QCOMPARE(problems(), QString());
+    Theme("Light"); Settle();
+    classic_columns();
+    // And back once more: the column still shrinks to what it was.
+    Theme("Abyss"); Settle();
+    show_all(); Settle();
+    font_back();
+    QCOMPARE(problems(), QString());
+    QCOMPARE(page.findChild<QLabel*>(labels[0])->width(), column);
+}
+
+void AbyssTests::transactionFilters()
+{
+    // Abyss says what its filters filter, instead of two lists reading "All",
+    // and has no empty scroll bar strip beside a list with nothing to scroll.
+    RestoreAppearance restore;
+    Theme("Light");
+    WalletFixture fixture(m_node);
+    TransactionView view(nullptr);
+    view.setModel(fixture.model.get());
+    view.resize(1042, 600);
+    view.show(); Settle();
+    QComboBox* date = nullptr;
+    QComboBox* type = nullptr;
+    for (QComboBox* combo : view.findChildren<QComboBox*>()) {
+        if (combo->findText(TransactionView::tr("Today")) >= 0) date = combo;
+        if (combo->findText(TransactionView::tr("Most Common")) >= 0) type = combo;
+    }
+    auto* amount = view.findChild<QLineEdit*>("amountWidget");
+    auto* table = view.findChild<QTableView*>("transactionView");
+    QVERIFY(date && type && amount && table);
+    const QVariant date_all = date->itemData(0);
+    const QVariant type_all = type->itemData(0);
+    const int classic_gap = view.width() - (amount->x() + amount->width());
+    const auto classic_state = [&] {
+        QCOMPARE(date->itemText(0), TransactionView::tr("All"));
+        QCOMPARE(type->itemText(0), TransactionView::tr("All"));
+        QVERIFY(date->toolTip().isEmpty() && type->toolTip().isEmpty() && amount->toolTip().isEmpty());
+#ifndef Q_OS_MAC
+        QCOMPARE(table->verticalScrollBarPolicy(), Qt::ScrollBarAlwaysOn);
+        QVERIFY(classic_gap > 0);
+#endif
+        QCOMPARE(view.width() - (amount->x() + amount->width()), classic_gap);
+    };
+    classic_state();
+
+    Theme("Abyss"); Settle();
+    QCOMPARE(date->itemText(0), TransactionView::tr("Any date"));
+    QCOMPARE(type->itemText(0), TransactionView::tr("Any type"));
+    QVERIFY(!date->toolTip().isEmpty() && !type->toolTip().isEmpty() && !amount->toolTip().isEmpty());
+    // Only the words: the filters mean what they meant.
+    QCOMPARE(date->itemData(0), date_all);
+    QCOMPARE(type->itemData(0), type_all);
+    QCOMPARE(date->currentIndex(), 0);
+#ifndef Q_OS_MAC
+    QCOMPARE(table->verticalScrollBarPolicy(), Qt::ScrollBarAsNeeded);
+    QVERIFY(!table->verticalScrollBar()->isVisible());
+    // The filter row reaches the list's right edge.
+    QCOMPARE(amount->x() + amount->width(), table->x() + table->width());
+#endif
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    if (!output.isEmpty()) QVERIFY(QDir().mkpath(output) && PageImage(view).save(QDir(output).filePath("Abyss-transaction-filters.png")));
+
+    Theme("Light"); Settle();
+    classic_state();
+}
+
+void AbyssTests::fontsAfterDeletedWidgets()
+{
+    // GUIUtil files its font requests in a map sorted by widget, and a deleted
+    // widget's entry turns null where it stands. A request filed while one was
+    // there could land where updateFonts() never finds it, and the new widget
+    // kept the default size.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Font sizes require minimal:enable_fonts or a native platform");
+    RestoreAppearance restore;
+    Theme("Abyss");
+    GUIUtil::updateFonts();
+    QWidget parent;
+    const auto requested = [&parent] {
+        auto* label = new QLabel("x", &parent);
+        GUIUtil::setFont({label}, GUIUtil::FontWeight::Normal, 37);
+        return label;
+    };
+    std::vector<QLabel*> before;
+    for (int i = 0; i < 256; ++i) before.push_back(requested());
+    GUIUtil::updateFonts();
+    const QFont wanted = before.front()->font();
+    QVERIFY(wanted.pointSize() > 30);
+    for (size_t i = 0; i < before.size(); i += 2) delete before[i];
+    std::vector<QLabel*> after;
+    for (int i = 0; i < 256; ++i) after.push_back(requested());
+    GUIUtil::updateFonts();
+    const auto missed = std::count_if(after.begin(), after.end(), [&wanted](QLabel* label) { return label->font() != wanted; });
+    QCOMPARE(int(missed), 0);
 }
 
 void AbyssTests::coinJoinWidgetsPerPage()

@@ -41,6 +41,7 @@ public:
     void setWalletModel(WalletModel* wallet_model);
 
 protected:
+    void changeEvent(QEvent* event) override;
     void showEvent(QShowEvent* event) override;
 
 private Q_SLOTS:
@@ -57,6 +58,8 @@ private Q_SLOTS:
     void showProfileQr();
 
 private:
+    void updateThemePresentation();
+
     ClientModel* m_client_model{nullptr};
     WalletModel* m_wallet_model{nullptr};
 

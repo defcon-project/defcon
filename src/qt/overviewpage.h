@@ -130,6 +130,11 @@ private:
     std::optional<long> m_mempool_count;
     //! Draw the bar's glyphs in the active theme's colors.
     void paintNetworkIcons();
+    //! The masternode and mempool entries in words where the bar has the room,
+    //! short where it has not. The page's minimum width stays that of the short forms.
+    void fitNetworkWords();
+    std::optional<int> m_shown_masternodes;
+    int m_coinjoin_form_spacing{0};
     //! Keep form constraints separately from polished CSS floors. On leaving
     //! Abyss the current stylesheet must restore its own minimums, including
     //! for pages constructed while hidden or before any stylesheet was loaded.

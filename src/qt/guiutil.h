@@ -363,6 +363,11 @@ namespace GUIUtil
 
     /** Presentation-only page heading; callers control theme visibility. */
     QWidget* createPageHeader(QWidget* parent, const QString& title, const QString& subtitle, QWidget* action = nullptr);
+    //! Put a page header at the same distance from the corner on every page,
+    //! whatever margins the page's own layout starts with.
+    void alignPageHeader(QWidget* header, int bottom = 0);
+    //! How far from the page's corner a header's title starts.
+    static constexpr int PAGE_HEADER_INSET{16};
 
     /** Is the active theme a dark one?
      *

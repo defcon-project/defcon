@@ -26,8 +26,11 @@
 #include <node/interface_ui.h>
 #include <util/strencodings.h>
 
+#include <algorithm>
+
 #include <QAction>
 #include <QActionGroup>
+#include <QEvent>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -50,6 +53,7 @@ WalletView::WalletView(QWidget* parent) :
     transactionView = new TransactionView(this);
     vbox->addWidget(transactionView);
     QPushButton *exportButton = new QPushButton(tr("&Export"), this);
+    exportButton->setObjectName("exportButton");
     exportButton->setToolTip(tr("Export the data in the current tab to a file"));
     hbox_buttons->addStretch();
 
@@ -132,11 +136,60 @@ WalletView::WalletView(QWidget* parent) :
 
     connect(this, &WalletView::setPrivacy, overviewPage, &OverviewPage::setPrivacy);
 
+    // Abyss opens every page with its name and what it is for. Overview, Send
+    // and Receive build theirs together with their Abyss layouts.
+    addPageHeader(transactionsPage, tr("Transactions"), tr("Your incoming and outgoing payments."));
+    addPageHeader(coinJoinCoinsPage, tr("CoinJoin"), tr("Send coins that have been mixed, for more privacy."));
+    if (multisigPage != nullptr) {
+        addPageHeader(multisigPage, tr("Multisig"), tr("Addresses that need several signatures to spend."));
+    }
+    if (masternodeListPage != nullptr) {
+        addPageHeader(masternodeListPage, tr("Masternodes"), tr("The masternodes of the network, and your own."));
+    }
+    if (governanceListPage != nullptr) {
+        addPageHeader(governanceListPage, tr("Governance"), tr("Proposals on the network and how the votes stand."));
+    }
+    GUIUtil::updateFonts();
+    updatePageHeaders();
+
     GUIUtil::disableMacFocusRect(this);
 }
 
 WalletView::~WalletView()
 {
+}
+
+void WalletView::addPageHeader(QWidget* page, const QString& title, const QString& subtitle)
+{
+    auto* layout = qobject_cast<QBoxLayout*>(page->layout());
+    assert(layout);
+    QWidget* header = GUIUtil::createPageHeader(page, title, subtitle);
+    layout->insertWidget(0, header);
+    m_page_headers.emplace_back(header, layout->contentsMargins());
+}
+
+void WalletView::updatePageHeaders()
+{
+    const bool modern = GUIUtil::isModernTheme();
+    for (const auto& [header, margins] : m_page_headers) {
+        // A page set further in than the corner comes out to it, or the title
+        // would jump as the pages change.
+        QMargins page = margins;
+        if (modern) {
+            page.setLeft(std::min(page.left(), GUIUtil::PAGE_HEADER_INSET));
+            page.setRight(std::min(page.right(), GUIUtil::PAGE_HEADER_INSET));
+        }
+        QLayout* layout = header->parentWidget()->layout();
+        if (layout->contentsMargins() != page) layout->setContentsMargins(page);
+        GUIUtil::alignPageHeader(header, 8);
+        header->setVisible(modern);
+    }
+}
+
+void WalletView::changeEvent(QEvent* event)
+{
+    QStackedWidget::changeEvent(event);
+    if (event->type() == QEvent::StyleChange) updatePageHeaders();
 }
 
 void WalletView::setClientModel(ClientModel *_clientModel)

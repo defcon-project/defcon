@@ -506,6 +506,33 @@ QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelSubmittedDenomText {
     color: #91a5bc;
 }
 
+/* The two cards read as one table: every label starts at the card's edge, in a
+   column of the same width, so that the amounts stand under each other.
+   general.css gives each of these labels its own margin and minimum. */
+QWidget#OverviewPage QFrame#frame QLabel#labelBalanceText,
+QWidget#OverviewPage QFrame#frame QLabel#labelPendingText,
+QWidget#OverviewPage QFrame#frame QLabel#labelImmatureText,
+QWidget#OverviewPage QFrame#frame QLabel#labelTotalText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCoinJoinEnabledText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCompletitionText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelAnonymizedText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelAmountAndRoundsText,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelSubmittedDenomText {
+    qproperty-alignment: 'AlignVCenter | AlignLeft';
+    min-width: 160px;
+    margin: 0px;
+    padding: 0px;
+}
+
+/* The card titles and the first column's head start with them: any margin of
+   general.css also indents a label's text by half an "x". */
+QWidget#OverviewPage QFrame#frame QLabel#label_5,
+QWidget#OverviewPage QFrame#frame QLabel#labelSpendable,
+QWidget#OverviewPage QFrame#frameCoinJoin QLabel#labelCoinJoinHeader {
+    margin-left: 0px;
+    margin-right: 0px;
+}
+
 QWidget#OverviewPage QFrame#frame_2 QListView {
     background-color: transparent;
     border: none;
@@ -754,6 +781,10 @@ QLabel#devnetBadge {
 /******************************************************
 Explicit overrides of inherited Dark ID selectors
 ******************************************************/
+QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin,
+QPushButton#exportButton,
+MultisigPage > QPushButton,
+MultisigPage > QGroupBox QPushButton,
 QWidget#AddressBookPage QPushButton#newAddress,
 QWidget#AddressBookPage QPushButton#copyAddress,
 QWidget#AddressBookPage QPushButton#showAddressQRCode,
@@ -762,6 +793,10 @@ QDialog#OpenURIDialog QPushButton#selectFileButton,
 QDialog#OptionsDialog QPushButton#resetButton,
 QDialog#SendCoinsDialog .QPushButton#addButton,
 QDialog#SendCoinsDialog .QPushButton#clearButton,
+QDialog#SendCoinsDialog .QPushButton#pushButtonCoinControl,
+QDialog#SendCoinsDialog .QPushButton#buttonChooseFee,
+QDialog#SendCoinsDialog .QPushButton#buttonMinimizeFee,
+QDialog#SendCoinsDialog .QPushButton#useAvailableBalanceButton,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton,
 QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton,
@@ -772,6 +807,10 @@ QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM {
     color: #e6edf7;
 }
 
+QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin:hover,
+QPushButton#exportButton:hover,
+MultisigPage > QPushButton:hover,
+MultisigPage > QGroupBox QPushButton:hover,
 QWidget#AddressBookPage QPushButton#newAddress:hover,
 QWidget#AddressBookPage QPushButton#copyAddress:hover,
 QWidget#AddressBookPage QPushButton#showAddressQRCode:hover,
@@ -780,6 +819,10 @@ QDialog#OpenURIDialog QPushButton#selectFileButton:hover,
 QDialog#OptionsDialog QPushButton#resetButton:hover,
 QDialog#SendCoinsDialog .QPushButton#addButton:hover,
 QDialog#SendCoinsDialog .QPushButton#clearButton:hover,
+QDialog#SendCoinsDialog .QPushButton#pushButtonCoinControl:hover,
+QDialog#SendCoinsDialog .QPushButton#buttonChooseFee:hover,
+QDialog#SendCoinsDialog .QPushButton#buttonMinimizeFee:hover,
+QDialog#SendCoinsDialog .QPushButton#useAvailableBalanceButton:hover,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton:hover,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:hover,
 QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton:hover,
@@ -790,6 +833,10 @@ QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:hover {
     color: #e6edf7;
 }
 
+QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin:pressed,
+QPushButton#exportButton:pressed,
+MultisigPage > QPushButton:pressed,
+MultisigPage > QGroupBox QPushButton:pressed,
 QWidget#AddressBookPage QPushButton#newAddress:pressed,
 QWidget#AddressBookPage QPushButton#copyAddress:pressed,
 QWidget#AddressBookPage QPushButton#showAddressQRCode:pressed,
@@ -798,6 +845,10 @@ QDialog#OpenURIDialog QPushButton#selectFileButton:pressed,
 QDialog#OptionsDialog QPushButton#resetButton:pressed,
 QDialog#SendCoinsDialog .QPushButton#addButton:pressed,
 QDialog#SendCoinsDialog .QPushButton#clearButton:pressed,
+QDialog#SendCoinsDialog .QPushButton#pushButtonCoinControl:pressed,
+QDialog#SendCoinsDialog .QPushButton#buttonChooseFee:pressed,
+QDialog#SendCoinsDialog .QPushButton#buttonMinimizeFee:pressed,
+QDialog#SendCoinsDialog .QPushButton#useAvailableBalanceButton:pressed,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton:pressed,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:pressed,
 QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton:pressed,
@@ -808,6 +859,11 @@ QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:pressed {
     color: #ffffff;
 }
 
+QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin:disabled,
+QPushButton#exportButton:disabled,
+MultisigPage > QPushButton:disabled,
+MultisigPage > QPushButton#multisigCreate:disabled,
+MultisigPage > QGroupBox QPushButton:disabled,
 QWidget#AddressBookPage QPushButton#newAddress:disabled,
 QWidget#AddressBookPage QPushButton#copyAddress:disabled,
 QWidget#AddressBookPage QPushButton#showAddressQRCode:disabled,
@@ -816,6 +872,10 @@ QDialog#OpenURIDialog QPushButton#selectFileButton:disabled,
 QDialog#OptionsDialog QPushButton#resetButton:disabled,
 QDialog#SendCoinsDialog .QPushButton#addButton:disabled,
 QDialog#SendCoinsDialog .QPushButton#clearButton:disabled,
+QDialog#SendCoinsDialog .QPushButton#pushButtonCoinControl:disabled,
+QDialog#SendCoinsDialog .QPushButton#buttonChooseFee:disabled,
+QDialog#SendCoinsDialog .QPushButton#buttonMinimizeFee:disabled,
+QDialog#SendCoinsDialog .QPushButton#useAvailableBalanceButton:disabled,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton:disabled,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:disabled,
 QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton:disabled,
@@ -1002,6 +1062,20 @@ QDialog#OptionsDialog #btnAppearance:pressed,
     border-color: #1297ff;
     color: #ffffff;
 }
+/* The Multisig page's one primary button. */
+MultisigPage > QPushButton#multisigCreate {
+    background-color: #0f75d6;
+    border: 1px solid #1297ff;
+    color: #ffffff;
+}
+MultisigPage > QPushButton#multisigCreate:hover {
+    background-color: #1488ec;
+    border-color: #42aaff;
+    color: #ffffff;
+}
+MultisigPage > QPushButton#multisigCreate:pressed {
+    background-color: #0b65bb;
+}
 /* Stage 2: presentation wrappers only; classic stylesheets are unchanged. */
 QWidget#abyssPageHeader QLabel#abyssPageTitle {
     color: #ffffff;
@@ -1091,14 +1165,22 @@ QFrame#emptyState QPushButton#emptyStateSecondary {
     min-height: 40px;
     max-height: 40px;
 }
+ReceiveCoinsDialog QFrame#emptyState QPushButton#emptyStateAction,
 QFrame#emptyState QPushButton#emptyStateSecondary {
     background-color: #0d2032;
     border-color: #243c54;
     color: #b9cee1;
 }
+ReceiveCoinsDialog QFrame#emptyState QPushButton#emptyStateAction:hover,
 QFrame#emptyState QPushButton#emptyStateSecondary:hover {
     background-color: #12324d;
     border-color: #1d3f60;
+    color: #ffffff;
+}
+ReceiveCoinsDialog QFrame#emptyState QPushButton#emptyStateAction:pressed,
+QFrame#emptyState QPushButton#emptyStateSecondary:pressed {
+    background-color: #10263e;
+    border-color: #1297ff;
     color: #ffffff;
 }
 QFrame#emptyState QFrame#skeletonDot {

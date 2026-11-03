@@ -331,6 +331,13 @@ QWidget* createPageHeader(QWidget* parent, const QString& title, const QString& 
     return header;
 }
 
+void alignPageHeader(QWidget* header, int bottom)
+{
+    const QWidget* page = header->parentWidget();
+    const QMargins margins = page && page->layout() ? page->layout()->contentsMargins() : QMargins();
+    header->setContentsMargins(std::max(0, PAGE_HEADER_INSET - margins.left()), std::max(0, PAGE_HEADER_INSET - margins.top()), 0, bottom);
+}
+
 QPixmap getTintedSvgPixmap(const QString& resource, const QSize& size, const QColor& color, qreal dpr)
 {
     if (dpr <= 0) dpr = qApp->devicePixelRatio();
@@ -1626,6 +1633,11 @@ void setApplicationFont()
 
 void setFont(const std::vector<QWidget*>& vecWidgets, FontWeight weight, int nPointSize, bool fItalic, bool preserve_point_size)
 {
+    // A deleted widget's key has turned null where it stands, out of order. A new
+    // key that meets one on its way in can land where updateFonts() never finds it.
+    for (auto it = mapFontUpdates.begin(); it != mapFontUpdates.end();) {
+        it = it->first.isNull() ? mapFontUpdates.erase(it) : std::next(it);
+    }
     for (auto it : vecWidgets) {
         auto fontAttributes = std::make_tuple(weight, fItalic, nPointSize, preserve_point_size);
         auto itFontUpdate = mapFontUpdates.emplace(std::make_pair(it, fontAttributes));

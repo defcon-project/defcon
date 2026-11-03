@@ -29,6 +29,7 @@
 #include <QScreen>
 
 #include <algorithm>
+#include <array>
 #include <map>
 #include <cmath>
 
@@ -191,11 +192,12 @@ OverviewPage::OverviewPage(QWidget* parent) :
     modernHeader = new QWidget(this);
     modernHeader->setObjectName("modernOverviewHeader");
     auto* modernHeaderLayout = new QVBoxLayout(modernHeader);
-    modernHeaderLayout->setContentsMargins(4, 4, 4, 10);
-    modernHeaderLayout->setSpacing(2);
+    // With the page's 11px margin: the 16px every page's header stands off the corner.
+    modernHeaderLayout->setContentsMargins(5, 5, 4, 10);
+    modernHeaderLayout->setSpacing(4);
     auto* modernTitle = new QLabel(tr("Overview"), modernHeader);
     modernTitle->setObjectName("modernOverviewTitle");
-    auto* modernSubtitle = new QLabel(tr("Wallet overview and recent activity"), modernHeader);
+    auto* modernSubtitle = new QLabel(tr("Wallet overview and recent activity."), modernHeader);
     modernSubtitle->setObjectName("modernOverviewSubtitle");
     modernHeaderLayout->addWidget(modernTitle);
     modernHeaderLayout->addWidget(modernSubtitle);
@@ -266,10 +268,13 @@ OverviewPage::OverviewPage(QWidget* parent) :
     m_net_masternodes.widget->setToolTip(tr("Valid masternodes"));
     m_net_mempool.widget->setToolTip(tr("Transactions in the memory pool"));
     ui->topLayout->insertWidget(1, networkCard);
+    networkCard->installEventFilter(this);
+    m_net_masternodes.text->installEventFilter(this);
     setNetworkStatus({});
 
     m_total_size_policy = ui->labelTotal->sizePolicy();
     m_total_minimum_height = ui->labelTotal->minimumHeight();
+    m_coinjoin_form_spacing = ui->coinJoinFormLayout->horizontalSpacing();
     for (QLabel* label : ui->frame->findChildren<QLabel*>()) label->installEventFilter(this);
     installEventFilter(this);
 
@@ -290,8 +295,9 @@ OverviewPage::OverviewPage(QWidget* parent) :
                       ui->labelSpendable
                      }, GUIUtil::FontWeight::Bold);
 
-    GUIUtil::setFont({modernTitle}, GUIUtil::FontWeight::Bold, 18);
-    GUIUtil::setFont({modernSubtitle}, GUIUtil::FontWeight::Normal);
+    // As GUIUtil::createPageHeader sets them on the other pages.
+    GUIUtil::setFont({modernTitle}, GUIUtil::FontWeight::Normal, 24);
+    GUIUtil::setFont({modernSubtitle}, GUIUtil::FontWeight::Normal, 13);
     GUIUtil::setFont(network_words, GUIUtil::FontWeight::Normal);
     GUIUtil::setFont(network_values, GUIUtil::FontWeight::Bold);
     updateThemePresentation();
@@ -416,6 +422,8 @@ void OverviewPage::updateThemePresentation()
     // the classic themes back the inherited spacing the form leaves them with.
     ui->verticalLayout_2->setSpacing(modern ? 12 : -1);
     ui->horizontalLayout->setSpacing(modern ? 0 : 6);
+    // The same gap as the balances grid, so that the amounts line up across the cards.
+    ui->coinJoinFormLayout->setHorizontalSpacing(modern ? ui->gridLayout->horizontalSpacing() : m_coinjoin_form_spacing);
 
     for (int item = 0; item < ui->horizontalLayout->count(); ++item) {
         const int inherited = m_inherited_stretch.emplace(item, ui->horizontalLayout->stretch(item)).first->second;
@@ -554,6 +562,8 @@ void OverviewPage::setNetworkStatus(const NetworkStatus& status)
     m_net_masternodes.value->setText(status.masternodes ? GroupDigits(*status.masternodes) : QString(QChar(0x2013)));
     m_net_mempool.widget->setVisible(!syncing && status.mempool.has_value());
     m_net_mempool.value->setText(GroupDigits(status.mempool.value_or(0)));
+    m_shown_masternodes = status.masternodes;
+    fitNetworkWords();
 
     // The card's own border turns amber while syncing. Only the card is
     // repolished; it carries no font of its own.
@@ -563,6 +573,31 @@ void OverviewPage::setNetworkStatus(const NetworkStatus& status)
         networkCard->style()->polish(networkCard);
         networkCard->update();
     }
+}
+
+void OverviewPage::fitNetworkWords()
+{
+    const auto advance = [](const NetworkItem& item, const QString& text) {
+        return item.widget->isHidden() ? 0 : QFontMetrics(item.text->font()).horizontalAdvance(text);
+    };
+    const int count = m_shown_masternodes.value_or(2);
+    const QString masternodes = count == 1 ? tr("masternode") : tr("masternodes", "", count);
+    const QString mempool = tr("in mempool");
+    const QString short_masternodes = tr("MN");
+    const QString short_mempool = tr("tx");
+    // What the bar asks for without these two words, whichever are up now. An
+    // explicit minimum outranks the label's own size hint: without it the longer
+    // words would hold the window at their width, and it could never get narrow
+    // enough to fall back on the short ones.
+    const int others = networkCard->layout()->sizeHint().width() -
+                       advance(m_net_masternodes, m_net_masternodes.text->text()) -
+                       advance(m_net_mempool, m_net_mempool.text->text());
+    constexpr int ROUNDING{4};
+    const bool room = networkCard->width() >= others + advance(m_net_masternodes, masternodes) + advance(m_net_mempool, mempool) + ROUNDING;
+    m_net_masternodes.text->setMinimumWidth(QFontMetrics(m_net_masternodes.text->font()).horizontalAdvance(short_masternodes));
+    m_net_mempool.text->setMinimumWidth(QFontMetrics(m_net_mempool.text->font()).horizontalAdvance(short_mempool));
+    m_net_masternodes.text->setText(room ? masternodes : short_masternodes);
+    m_net_mempool.text->setText(room ? mempool : short_mempool);
 }
 
 void OverviewPage::paintNetworkIcons()
@@ -675,6 +710,30 @@ void OverviewPage::applyBalanceWidths()
     auto inherited = [&](QWidget* widget) {
         return m_inherited_minimum_widths.emplace(widget, widget->minimumWidth()).first->second;
     };
+    // The labels of both cards share one column, the stylesheet's width or what
+    // a larger font needs, so that the amounts stand under each other.
+    const std::array<QLabel*, 4> balance_column{ui->labelBalanceText, ui->labelPendingText, ui->labelImmatureText, ui->labelTotalText};
+    const std::array<QLabel*, 5> coinjoin_column{ui->labelCoinJoinEnabledText, ui->labelCompletitionText, ui->labelAnonymizedText,
+                                                 ui->labelAmountAndRoundsText, ui->labelSubmittedDenomText};
+    int column = 0;
+    const auto measure = [&](QLabel* label) {
+        label->ensurePolished();
+        // Not the size hint: it includes the label's minimum, so a column raised
+        // for a larger font would never come back.
+        column = std::max({column, inherited(label), QFontMetrics(label->font()).horizontalAdvance(label->text()) + 2});
+    };
+    std::for_each(balance_column.begin(), balance_column.end(), measure);
+    std::for_each(coinjoin_column.begin(), coinjoin_column.end(), measure);
+    // A label caches its size hint with the minimum it had then, and lowering the
+    // minimum does not clear that: the layouts would keep the old, wider column.
+    const auto set_column = [column](QLabel* label) {
+        if (label->minimumWidth() == column) return;
+        label->setMinimumWidth(column);
+        QEvent font_change(QEvent::FontChange);
+        QApplication::sendEvent(label, &font_change);
+    };
+    std::for_each(balance_column.begin(), balance_column.end(), set_column);
+    std::for_each(coinjoin_column.begin(), coinjoin_column.end(), set_column);
     for (QLabel* label : ui->frame->findChildren<QLabel*>()) {
         label->ensurePolished();
         const int original = inherited(label);
@@ -686,11 +745,14 @@ void OverviewPage::applyBalanceWidths()
             const int padding = label->contentsMargins().left() + label->contentsMargins().right() +
                                 2 * label->margin() + std::max(0, label->indent());
             wanted = std::max(original, int(std::ceil(QFontMetricsF(font).horizontalAdvance(label->text()))) + padding + 2);
+        } else if (std::find(balance_column.begin(), balance_column.end(), label) != balance_column.end()) {
+            wanted = column;
         } else {
             wanted = std::max(original, label->sizeHint().width());
         }
         if (label->minimumWidth() != wanted) label->setMinimumWidth(wanted);
     }
+    fitNetworkWords();
     // Invalidate bottom up before reading cached layout minimums. Otherwise a
     // card can repeat its width from before the amount labels were remeasured.
     for (QWidget* widget : {static_cast<QWidget*>(ui->frame), static_cast<QWidget*>(this)}) {

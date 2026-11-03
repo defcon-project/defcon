@@ -142,6 +142,9 @@ TransactionView::TransactionView(QWidget* parent) :
     int width = transactionView->verticalScrollBar()->sizeHint().width();
     // Cover scroll bar width with spacing
     hlayout->addSpacing(width);
+    m_filter_row = hlayout;
+    m_filter_scrollbar_gap = hlayout->itemAt(hlayout->count() - 1)->spacerItem();
+    m_filter_scrollbar_width = width;
     // Always show scroll bar
     transactionView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
 #endif
@@ -193,6 +196,8 @@ TransactionView::TransactionView(QWidget* parent) :
 
     // Double-clicking on a transaction on the transaction history page shows details
     connect(this, &TransactionView::doubleClicked, this, &TransactionView::showDetails);
+
+    updateFilterPresentation();
 }
 
 void TransactionView::setModel(WalletModel *_model)
@@ -747,12 +752,28 @@ void TransactionView::focusTransaction(const uint256& txid)
     }
 }
 
+void TransactionView::updateFilterPresentation()
+{
+    const bool modern = GUIUtil::isModernTheme();
+    dateWidget->setItemText(0, modern ? tr("Any date") : tr("All"));
+    typeWidget->setItemText(0, modern ? tr("Any type") : tr("All"));
+    dateWidget->setToolTip(modern ? tr("Show only transactions from this period") : QString());
+    typeWidget->setToolTip(modern ? tr("Show only transactions of this type") : QString());
+    amountWidget->setToolTip(modern ? tr("Show only transactions of at least this amount") : QString());
+#ifndef Q_OS_MAC
+    transactionView->setVerticalScrollBarPolicy(modern ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOn);
+    m_filter_scrollbar_gap->changeSize(modern ? 0 : m_filter_scrollbar_width, 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
+    m_filter_row->invalidate();
+#endif
+}
+
 void TransactionView::changeEvent(QEvent* e)
 {
     QWidget::changeEvent(e);
     if (e->type() == QEvent::StyleChange) {
         updateCalendarWidgets();
         updateEmptyState();
+        updateFilterPresentation();
     }
 }
 
