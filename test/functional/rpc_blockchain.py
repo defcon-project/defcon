@@ -129,6 +129,7 @@ class BlockchainTest(BitcoinTestFramework):
             'pruned',
             'size_on_disk',
             'softforks',
+            'stake_double_signs',
             'time',
             'verificationprogress',
             'warnings',
@@ -139,6 +140,8 @@ class BlockchainTest(BitcoinTestFramework):
         assert_equal(res['mediantime'], TIME_RANGE_MTP)
         # ChainLocks are off by default (SPORK_19), so no lock is shown
         assert_equal(res['chainlock'], {'enabled': False})
+        # a proof-of-work chain has no stake to sign twice
+        assert_equal(res['stake_double_signs'], {'count': 0})
 
         # DeFCoN cannot prune, so the pruning keys never appear: should have exact keys
         assert_equal(sorted(res.keys()), keys)

@@ -8,6 +8,7 @@ legacy and descriptor variants. --key-only checks the privacy-preserving scope;
 --observer-binary can use an unchanged validator from the previous build."""
 
 import os
+import re
 import time
 from decimal import Decimal
 
@@ -29,6 +30,9 @@ REGULAR_MN_COLLATERAL = Decimal("1000")
 MIN_STAKE_TARGET = Decimal("20000")
 MAX_STAKE_COMBINE_INPUTS = 20
 POS_REWARD = Decimal("500")
+# pos/stake.h: STAKE_COMBINE_REST_BUDGET_BPS, also read back from getstakinginfo
+REST_BUDGET_BPS = 500
+SATS = 100000000
 # the kernel's depth rule, in the wallet's terms (ClassifyForStaking)
 COINBASE_MATURITY = 25
 KERNEL_DEPTH = COINBASE_MATURITY + 2
@@ -251,7 +255,9 @@ class PosStakeCombineTest(BitcoinTestFramework):
         self.log.info("Phase 1: with -stakecombine=0 a win spends only its kernel")
         info = self.staking_info(staker, "off")
         assert_equal(info["stake_combine"], False)
-        blocks = self.stake_until(staker, "off", lambda b: True, max_blocks=3)
+        # each win says that consolidation is off rather than counting reasons
+        with staker.assert_debug_log(["scope=wallet combine=off (not yet accepted)"]):
+            blocks = self.stake_until(staker, "off", lambda b: True, max_blocks=3)
         for block in blocks:
             coinstake = self.check_coinstake(staker, block)
             assert_equal(len(coinstake["vin"]), 1)
@@ -288,12 +294,43 @@ class PosStakeCombineTest(BitcoinTestFramework):
         # key's: the locked output is not available to spend, so not counted
         assert_equal(info["stake_outputs"], SAME_KEY_PIECES + 3)
 
+        # What is left of the 5% budget, from the same answer: the eligible
+        # weight plus what already rests, in parts per ten thousand, less the resting.
+        assert_equal(info["stake_combine_rest_budget_bps"], REST_BUDGET_BPS)
+        resting = sum(int(Decimal(str(info.get("excluded", {}).get(k, 0))) * SATS) for k in ("immature", "too_young"))
+        pool = info["weight"] + resting
+        budget = pool // 10000 * REST_BUDGET_BPS + pool % 10000 * REST_BUDGET_BPS // 10000
+        assert_equal(Decimal(str(info["stake_combine_rest_allowance"])), Decimal(max(0, budget - resting)) / SATS)
+        assert_greater_than(Decimal(str(info["stake_combine_rest_allowance"])), 0)
+
         never = {locked, collateral, young}
 
         def combines(block):
             return len(block["tx"][1]["vin"]) > 1
 
-        blocks = self.stake_until(staker, "combine", combines, max_blocks=4)
+        # each win's plan line counts, by reason, the outputs it left out (K01)
+        candidates_before = [u for u in w_comb.listunspent()
+                             if u["confirmations"] >= KERNEL_DEPTH and u["amount"] != REGULAR_MN_COLLATERAL
+                             and u["amount"] <= target]
+        log_from = staker.debug_log_path.stat().st_size
+        with staker.assert_debug_log(["coinstake plan inputs=", " room=", " skipped budget=", " size=", " split=", " signature="]):
+            blocks = self.stake_until(staker, "combine", combines, max_blocks=4)
+        with open(staker.debug_log_path, "rb") as log:
+            log.seek(log_from)
+            plans = re.findall(r"wallet 'combine': coinstake plan inputs=(\d+) .*? room=(\d+) skipped budget=(\d+) "
+                               r"size=(\d+) split=(\d+) signature=(\d+)", log.read().decode("utf-8", "replace"))
+        # The first win of the phase: every output consolidation could take is
+        # either spent with the kernel or counted under one reason, once.
+        first = blocks[0]["tx"][1]
+        kernel_op = self.outpoint(first["vin"][0])
+        kernel_address = next(u["address"] for u in candidates_before if (u["txid"], u["vout"]) == kernel_op)
+        candidates = [u for u in candidates_before if (u["txid"], u["vout"]) != kernel_op
+                      and (not self.options.key_only or u["address"] == kernel_address)]
+        inputs, room, budget, size, split, signature = (int(x) for x in plans[0])
+        assert_equal(inputs, len(first["vin"]))
+        assert_equal(inputs - 1 + budget + size + split + signature, len(candidates))
+        self.log.info("first win: %d inputs, room %d; left out: budget %d, size %d, split %d, signature %d of %d candidates",
+                      inputs, room, budget, size, split, signature, len(candidates))
         combined_blocks = 0
         all_spent = set()
         for block in blocks:

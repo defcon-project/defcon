@@ -629,6 +629,7 @@ jobs:
             feature_llmq_switchover_config.py      # the startup guards on the Q60 switchover heights, the v23@N alias
             p2p_headers_uncompressed.py            # the plain headers reader consumes what every writer writes (#220)
             feature_dsl_commit_decision_log.py     # the producer's Sentinel commit decision without a commitment (F-2026-140)
+            feature_pos_double_sign.py             # a stake signed twice is counted once and changes nothing else
           )
           python3 - "${GATE[@]}" <<'PY' || exit 1
           import sys

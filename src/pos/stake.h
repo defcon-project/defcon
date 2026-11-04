@@ -51,11 +51,38 @@ static constexpr int64_t STAKE_REST_BUDGET_BPS{100};
  * pool is resting. The winning kernel is never rejected for this policy. */
 static constexpr int64_t STAKE_COMBINE_REST_BUDGET_BPS{500};
 
+/**
+ * Why optional consolidation left outputs out of a win, by count.
+ *
+ * Only outputs consolidation would otherwise take are counted: the wallet's
+ * own, mature, of a signable type and in scope, not a collateral amount and
+ * not already a full-size stake. Which of the brakes holds on a given wallet
+ * was visible nowhere; this is what the K01 tuning is decided from.
+ */
+struct CombineSkips
+{
+    size_t budget{0};    //!< over what may still be spent, or over the resting-value budget
+    size_t size{0};      //!< over the inputs the block or the coinstake has room for
+    size_t split{0};     //!< taking it would not reduce the wallet's outputs
+    size_t signature{0}; //!< no key to sign it, or its signature failed
+
+    size_t Total() const { return budget + size + split + signature; }
+    CombineSkips& operator+=(const CombineSkips& other)
+    {
+        budget += other.budget;
+        size += other.size;
+        split += other.split;
+        signature += other.signature;
+        return *this;
+    }
+};
+
 struct CoinstakePlan
 {
     std::vector<size_t> extra_inputs;
     std::vector<CAmount> output_values;
     CAmount extra_resting_value{0};
+    CombineSkips skipped;
     int UtxoDelta() const { return static_cast<int>(output_values.size()) - 1 - static_cast<int>(extra_inputs.size()); }
 };
 
@@ -331,6 +358,20 @@ class CStakeWallet
 
         uint64_t GetStakeWeight(int64_t nTime, int nHeight) const;
         bool SelectCoinsForStaking(CAmount nTargetValue, int64_t nTime, int nHeight, std::set<std::pair<const CWalletTx*, unsigned int>>& setCoinsRet, CAmount& nValueRet) const;
+        /** What optional consolidation takes for a win, and why it leaves the rest out. */
+        struct CombineChoice {
+            CoinstakePlan plan; //!< plan.extra_inputs index refs
+            std::vector<std::pair<const CWalletTx*, unsigned int>> refs;
+        };
+        /**
+         * Scan `wallet` for the outputs a win could combine with its kernel and
+         * lay out the coinstake (PlanCoinstake). `max_extra` is how many more
+         * inputs the block has room for; the scan runs whatever it is, so a full
+         * block's size brake is counted. The kernel itself is never a candidate.
+         */
+        CombineChoice PlanCombine(CWallet& wallet, const COutPoint& kernel_outpoint, const CPubKey& kernel_key,
+                                  CAmount kernel_value, CAmount reward, CAmount target, size_t max_extra,
+                                  CAmount allowance, CAmount rest_allowance) const EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet);
         /**
          * `max_coinstake_bytes` is the room left in the block being signed. A
          * coinstake that combines outputs grows by an input each, and the block

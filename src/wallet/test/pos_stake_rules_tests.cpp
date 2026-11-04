@@ -618,6 +618,76 @@ BOOST_FIXTURE_TEST_CASE(a_watch_only_output_is_never_offered_as_a_kernel, TestCh
     BOOST_CHECK_EQUAL(chosen.count({wtx, 1}), 0U);
 }
 
+BOOST_FIXTURE_TEST_CASE(a_full_block_counts_every_combine_candidate_under_size, TestChain100Setup)
+{
+    // Five equal outputs to one held key, mined and buried past the kernel's
+    // depth rule; the first plays the kernel, the other four are what a win
+    // could combine with it.
+    Consensus::Params params = Params().GetConsensus();
+    CKey held;
+    held.MakeNewKey(true);
+    const CScript to_held = GetScriptForDestination(PKHash(held.GetPubKey()));
+    // Under the target and off the regtest collateral amount (1000).
+    const CAmount piece = 2000 * COIN;
+    BOOST_REQUIRE(m_coinbase_txns[0]->vout[0].nValue >= 5 * piece);
+    CMutableTransaction funding;
+    funding.vin.emplace_back(COutPoint(m_coinbase_txns[0]->GetHash(), 0));
+    for (int i = 0; i < 5; ++i) funding.vout.emplace_back(piece, to_held);
+    {
+        FillableSigningProvider keystore;
+        keystore.AddKey(coinbaseKey);
+        BOOST_REQUIRE(SignSignature(keystore, *m_coinbase_txns[0], funding, 0, SIGHASH_ALL));
+    }
+    const uint256 funding_txid = funding.GetHash();
+    CreateAndProcessBlock({funding}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+    for (int i = 0; i < COINBASE_MATURITY + 5; ++i) {
+        CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+    }
+    auto wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "", CreateMockWalletDatabase());
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+    }
+    wallet->LoadWallet();
+    {
+        auto* spk_man = wallet->GetOrCreateLegacyScriptPubKeyMan();
+        LOCK2(wallet->cs_wallet, spk_man->cs_KeyStore);
+        BOOST_REQUIRE(spk_man->AddKeyPubKey(held, held.GetPubKey()));
+    }
+    {
+        WalletRescanReserver reserver(*wallet);
+        reserver.reserve();
+        const CWallet::ScanResult result = wallet->ScanForWalletTransactions(
+            m_node.chainman->ActiveChain().Genesis()->GetBlockHash(), /*start_height=*/0, /*max_height=*/{}, reserver, /*fUpdate=*/true);
+        BOOST_REQUIRE_EQUAL(result.status, CWallet::ScanResult::SUCCESS);
+    }
+    CStakeWallet staker(wallet, params);
+    const COutPoint kernel{funding_txid, 0};
+    LOCK(wallet->cs_wallet);
+
+    // No room in the block: nothing is taken, and each of the four is counted under size.
+    const auto none = staker.PlanCombine(*wallet, kernel, held.GetPubKey(), piece, COIN, MIN_STAKE_TARGET,
+                                         /*max_extra=*/0, MAX_MONEY, MAX_MONEY);
+    BOOST_CHECK(none.plan.extra_inputs.empty());
+    BOOST_CHECK(!none.plan.output_values.empty());
+    BOOST_CHECK_EQUAL(none.refs.size(), 4u);
+    BOOST_CHECK_EQUAL(none.plan.skipped.size, 4u);
+    BOOST_CHECK_EQUAL(none.plan.skipped.Total(), 4u);
+    // Room for two: two are taken and two left out for size; the kernel is never a candidate.
+    const auto two = staker.PlanCombine(*wallet, kernel, held.GetPubKey(), piece, COIN, MIN_STAKE_TARGET,
+                                        /*max_extra=*/2, MAX_MONEY, MAX_MONEY);
+    BOOST_CHECK_EQUAL(two.plan.extra_inputs.size(), 2u);
+    BOOST_CHECK_EQUAL(two.plan.skipped.size, 2u);
+    BOOST_CHECK_EQUAL(two.plan.skipped.Total(), 2u);
+    for (const auto& [wtx, n] : two.refs) BOOST_CHECK(COutPoint(wtx->GetHash(), n) != kernel);
+    // Nothing left to spend beside the kernel: the scan counts all four under budget.
+    const auto broke = staker.PlanCombine(*wallet, kernel, held.GetPubKey(), piece, COIN, MIN_STAKE_TARGET,
+                                          /*max_extra=*/19, /*allowance=*/0, MAX_MONEY);
+    BOOST_CHECK(broke.plan.extra_inputs.empty());
+    BOOST_CHECK_EQUAL(broke.plan.skipped.budget, 4u);
+    BOOST_CHECK_EQUAL(broke.plan.skipped.Total(), 4u);
+}
+
 static CTransactionRef CleanupTx(uint32_t id, bool coinstake = true)
 {
     CMutableTransaction tx;
@@ -1174,6 +1244,46 @@ BOOST_AUTO_TEST_CASE(continuous_consolidation_plans_inputs_and_outputs_together)
     BOOST_CHECK(plan.extra_inputs.empty());
     BOOST_CHECK(staker.PlanCoinstake(MAX_MONEY, COIN, {}, base, 0, 0, 0).output_values.empty());
     BOOST_CHECK(staker.PlanCoinstake(base, -1, {}, base, 0, 0, 0).output_values.empty());
+}
+
+BOOST_AUTO_TEST_CASE(continuous_consolidation_counts_why_it_left_candidates_out)
+{
+    auto params = MainnetLikeLimits();
+    CStakeWallet staker(nullptr, params);
+    const CAmount base = 250000 * COIN;
+    const auto check = [](const CoinstakePlan& plan, size_t taken, size_t budget, size_t size, size_t split) {
+        BOOST_CHECK_EQUAL(plan.extra_inputs.size(), taken);
+        BOOST_CHECK_EQUAL(plan.skipped.budget, budget);
+        BOOST_CHECK_EQUAL(plan.skipped.size, size);
+        BOOST_CHECK_EQUAL(plan.skipped.split, split);
+        // Signing is checked by the caller, which owns the wallet.
+        BOOST_CHECK_EQUAL(plan.skipped.signature, 0u);
+    };
+
+    // One base target may rest per win: the third piece is over that budget.
+    check(staker.PlanCoinstake(200000 * COIN, 500 * COIN, {50000 * COIN, 100000 * COIN, 150000 * COIN},
+                               base, 19, MAX_MONEY, MAX_MONEY), 2, 1, 0, 0);
+    // A coinstake takes at most 19 more inputs, and none if there is no room.
+    const std::vector<CAmount> dust(100, COIN);
+    check(staker.PlanCoinstake(base, 500 * COIN, dust, base, 100, MAX_MONEY, 0), 19, 0, 81, 0);
+    check(staker.PlanCoinstake(base, 500 * COIN, dust, base, 0, MAX_MONEY, MAX_MONEY), 0, 0, 100, 0);
+    // What may still be spent: two coins, so two of the hundred.
+    check(staker.PlanCoinstake(base, 500 * COIN, dust, base, 19, 2 * COIN, MAX_MONEY), 2, 98, 0, 0);
+    check(staker.PlanCoinstake(base, 500 * COIN, dust, base, 19, 0, MAX_MONEY), 0, 100, 0, 0);
+    // Taking it would push the credit over the split boundary (three base
+    // targets) and leave as many outputs as it removes.
+    check(staker.PlanCoinstake(749000 * COIN, 500 * COIN, {5000 * COIN}, base, 19, MAX_MONEY, MAX_MONEY), 0, 0, 0, 1);
+    // Amounts no stake can take are not candidates at all.
+    const auto none = staker.PlanCoinstake(base, 500 * COIN,
+        {0, -1, params.regularMnCollateral, params.evoMnCollateral, MAX_MONEY}, base, 19, MAX_MONEY, MAX_MONEY);
+    BOOST_CHECK_EQUAL(none.skipped.Total(), 0u);
+    // Every candidate is either taken or counted, once.
+    for (const CAmount allowance : {CAmount{0}, 3 * COIN, MAX_MONEY}) {
+        for (const size_t room : {size_t{0}, size_t{5}, size_t{100}}) {
+            const auto plan = staker.PlanCoinstake(base, 500 * COIN, dust, base, room, allowance, MAX_MONEY);
+            BOOST_CHECK_EQUAL(plan.extra_inputs.size() + plan.skipped.Total(), dust.size());
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE(continuous_consolidation_preserves_amounts_and_stakeability)

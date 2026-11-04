@@ -59,6 +59,8 @@
 #include <llmq/options.h>
 #include <llmq/instantsend.h>
 
+#include <pos/doublesign.h>
+
 #include <stdint.h>
 
 #include <atomic>
@@ -1459,6 +1461,16 @@ RPCHelpMan getblockchaininfo()
                     {RPCResult::Type::NUM_TIME, "time", /* optional */ true, "The locked block's time expressed in " + UNIX_EPOCH_TIME},
                     {RPCResult::Type::NUM, "age_blocks", /* optional */ true, "blocks of the active chain above the newest block a ChainLock covers, which a reorg can still replace (0 while the tip is locked)"},
                 }},
+                {RPCResult::Type::OBJ, "stake_double_signs", "stakes this node has seen signed twice since it started: two different blocks at one height that spend the same kernel and are both signed by that kernel's owner (the key its output pays). Blocks signed by any other key never count. Observation only; nothing is refused or penalised. Limits: a second block is seen only if this node accepts it; the record is in memory, covers the last 100 blocks below the tip and at most 10000 height and kernel pairs; a kernel whose output cannot be read when its first block is seen, and a kernel paying neither a public key nor its hash, are not tracked",
+                {
+                    {RPCResult::Type::NUM, "count", "height and kernel pairs seen signed twice"},
+                    {RPCResult::Type::NUM, "last_height", /* optional */ true, "height of the latest one"},
+                    {RPCResult::Type::STR, "last_kernel", /* optional */ true, "its kernel, as txid:vout"},
+                    {RPCResult::Type::ARR, "last_blocks", /* optional */ true, "its two blocks, the one seen first first",
+                    {
+                        {RPCResult::Type::STR_HEX, "", "block hash"},
+                    }},
+                }},
                 {RPCResult::Type::OBJ, "softforks", "status of softforks in progress",
                 {
                     {RPCResult::Type::STR, "type", "one of \"buried\", \"bip9\""},
@@ -1549,6 +1561,19 @@ RPCHelpMan getblockchaininfo()
         chainlock.pushKV("age_blocks", ChainLockAge(active_chainstate.m_chain, *locked));
     }
     obj.pushKV("chainlock", chainlock);
+
+    const StakeDoubleSignMonitor::Summary double_signs{GetStakeDoubleSignMonitor().GetSummary()};
+    UniValue stake_double_signs(UniValue::VOBJ);
+    stake_double_signs.pushKV("count", double_signs.count);
+    if (double_signs.last) {
+        stake_double_signs.pushKV("last_height", double_signs.last->height);
+        stake_double_signs.pushKV("last_kernel", strprintf("%s:%u", double_signs.last->kernel.hash.GetHex(), double_signs.last->kernel.n));
+        UniValue blocks(UniValue::VARR);
+        blocks.push_back(double_signs.last->first.GetHex());
+        blocks.push_back(double_signs.last->second.GetHex());
+        stake_double_signs.pushKV("last_blocks", blocks);
+    }
+    obj.pushKV("stake_double_signs", stake_double_signs);
 
     const Consensus::Params& consensusParams = Params().GetConsensus();
     UniValue softforks(UniValue::VOBJ);
