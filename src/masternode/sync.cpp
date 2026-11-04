@@ -16,11 +16,12 @@
 
 class CMasternodeSync;
 
-CMasternodeSync::CMasternodeSync(CConnman& _connman, CNetFulfilledRequestManager& netfulfilledman) :
+CMasternodeSync::CMasternodeSync(CConnman& _connman, CNetFulfilledRequestManager& netfulfilledman, const ChainstateManager& chainman) :
     nTimeAssetSyncStarted(GetTime()),
     nTimeLastBumped(GetTime()),
     connman(_connman),
-    m_netfulfilledman(netfulfilledman)
+    m_netfulfilledman(netfulfilledman),
+    m_chainman(chainman)
 {
 }
 
@@ -188,7 +189,7 @@ void CMasternodeSync::ProcessTick(const PeerManager& peerman, const CGovernanceM
 
             if (nCurrentAsset == MASTERNODE_SYNC_BLOCKCHAIN) {
                 int64_t nTimeSyncTimeout = snap.Nodes().size() > 3 ? MASTERNODE_SYNC_TICK_SECONDS : MASTERNODE_SYNC_TIMEOUT_SECONDS;
-                if (fReachedBestHeader && (GetTime() - nTimeLastBumped > nTimeSyncTimeout)) {
+                if (TryEndBlockchainStage(nTimeSyncTimeout)) {
                     // At this point we know that:
                     // a) there are peers (because we are looping on at least one of them);
                     // b) we waited for at least MASTERNODE_SYNC_TICK_SECONDS/MASTERNODE_SYNC_TIMEOUT_SECONDS
@@ -197,8 +198,8 @@ void CMasternodeSync::ProcessTick(const PeerManager& peerman, const CGovernanceM
                     // c) there were no blocks (UpdatedBlockTip, NotifyHeaderTip) or headers (AcceptedBlockHeader)
                     //    for at least MASTERNODE_SYNC_TICK_SECONDS/MASTERNODE_SYNC_TIMEOUT_SECONDS (depending on
                     //    the number of connected peers).
-                    // We must be at the tip already, let's move to the next asset.
-                    SwitchToNextAsset();
+                    // Or, in place of b) and c): our active tip is recent (IsBlockchainStageDone).
+                    // We must be at the tip already; TryEndBlockchainStage has moved to the next asset.
                     uiInterface.NotifyAdditionalDataSyncProgressChanged(nSyncProgress);
 
                     if (gArgs.GetBoolArg("-syncmempool", DEFAULT_SYNC_MEMPOOL)) {
@@ -300,6 +301,41 @@ void CMasternodeSync::SendGovernanceSyncRequest(CNode* pnode) const
     CBloomFilter filter;
 
     connman.PushMessage(pnode, msgMaker.Make(NetMsgType::MNGOVERNANCESYNC, uint256(), filter));
+}
+
+bool CMasternodeSync::IsBlockchainStageDone(int64_t nTimeSyncTimeout) const
+{
+    AssertLockHeld(::cs_main);
+    // Since Dash: the best header is reached, and nothing -- block or header -- arrived for the timeout.
+    if (fReachedBestHeader && (GetTime() - nTimeLastBumped > nTimeSyncTimeout)) return true;
+    // Besides: the active tip is recent. Above the last proof-of-work block a header is accepted without any
+    // proof, so anyone can put one above our tip that no block will ever follow, and then the best header is
+    // never reached. The tip is read here, under cs_main, where validation changes it, and not kept from a
+    // notification: nothing kept can fall behind the chain (a queued notification, a Reset(), or blocks that
+    // InvalidateBlock() disconnects one by one, notifying only at the end).
+    const CBlockIndex* tip{m_chainman.ActiveChain().Tip()};
+    return tip != nullptr && !m_chainman.ActiveChainstate().IsInitialBlockDownload() &&
+           GetTime() - tip->GetBlockTime() < MASTERNODE_SYNC_RECENT_TIP_SECONDS;
+}
+
+bool CMasternodeSync::TryEndBlockchainStage(int64_t nTimeSyncTimeout)
+{
+    {
+        // Decided and switched under cs_main, which validation holds while it changes the active tip. The switch
+        // is one compare-and-swap out of the blockchain stage: if `mnsync next` moved the stage meanwhile,
+        // nothing happens here, and the next stage's work (it takes network locks) never runs under cs_main.
+        LOCK(::cs_main);
+        if (nCurrentAsset != MASTERNODE_SYNC_BLOCKCHAIN || !IsBlockchainStageDone(nTimeSyncTimeout)) return false;
+        int expected{MASTERNODE_SYNC_BLOCKCHAIN};
+        if (!nCurrentAsset.compare_exchange_strong(expected, MASTERNODE_SYNC_GOVERNANCE)) return false;
+    }
+    // What SwitchToNextAsset does when leaving the blockchain stage, after the lock.
+    LogPrintf("CMasternodeSync::SwitchToNextAsset -- Completed %s in %llds\n", "MASTERNODE_SYNC_BLOCKCHAIN", GetTime() - nTimeAssetSyncStarted);
+    LogPrintf("CMasternodeSync::SwitchToNextAsset -- Starting %s\n", "MASTERNODE_SYNC_GOVERNANCE");
+    nTriedPeerCount = 0;
+    nTimeAssetSyncStarted = GetTime();
+    BumpAssetLastTime("CMasternodeSync::SwitchToNextAsset");
+    return true;
 }
 
 void CMasternodeSync::AcceptedBlockHeader(const CBlockIndex *pindexNew)
