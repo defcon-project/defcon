@@ -31,6 +31,7 @@
 #include <node/utxo_snapshot.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
+#include <pos/doublesign.h>
 #include <pos/kernel.h>
 #include <pow.h>
 #include <primitives/block.h>
@@ -4440,6 +4441,18 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
         }
         return error("%s: %s", __func__, state.ToString());
     }
+
+    // Observation only (pos/doublesign.h): CheckBlock above verified the block
+    // signature. The kernel's own output says who owns it; the UTXO set still
+    // holds it unless a block that spent it is already connected, and the
+    // monitor keeps it from the first block it saw on that kernel.
+    ObserveStakeDoubleSign(block, pindex->nHeight, pindex->GetBlockHash(), m_chain.Height(),
+                           [&](const COutPoint& kernel) -> std::optional<CScript> {
+                               AssertLockHeld(cs_main);
+                               Coin coin;
+                               if (!CoinsTip().GetCoin(kernel, coin)) return std::nullopt;
+                               return coin.out.scriptPubKey;
+                           });
 
     // Header is valid/has work, merkle tree is good...RELAY NOW
     // (but if it does not build on our best tip, let the SendMessages loop relay it)

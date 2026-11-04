@@ -300,6 +300,7 @@ BITCOIN_CORE_H = \
   policy/packages.h \
   policy/policy.h \
   policy/settings.h \
+  pos/doublesign.h \
   pos/minter.h \
   pos/kernel.h \
   pos/multiwallet.h \
@@ -548,6 +549,7 @@ libbitcoin_server_a_SOURCES = \
   policy/packages.cpp \
   policy/policy.cpp \
   policy/settings.cpp \
+  pos/doublesign.cpp \
   pos/kernel.cpp \
   pow.cpp \
   rest.cpp \

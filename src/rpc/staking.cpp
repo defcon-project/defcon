@@ -54,6 +54,7 @@ static RPCHelpMan getstakinginfo()
                         {RPCResult::Type::STR_AMOUNT, "stake_compact_target", "Target piece size when consolidation is enabled"},
                         {RPCResult::Type::STR_AMOUNT, "stake_split_threshold", "Splitting boundary when consolidation is enabled; collateral avoidance and stake limits take precedence"},
                         {RPCResult::Type::NUM, "stake_combine_rest_budget_bps", "Optional consolidation pauses when the wallet resting-value budget is exhausted; 100 basis points is one percent"},
+                        {RPCResult::Type::STR_AMOUNT, "stake_combine_rest_allowance", "What is left of that budget now: the stakeable value optional consolidation may still set resting, after the value already resting (immature and too_young). A win first takes its own coin off this and rests at most stake_target more; 0 means only outputs under the minimum stakeable amount are still combined"},
                         {RPCResult::Type::NUM, "stake_outputs", "Spendable outputs, including outputs that are not eligible to stake; this is not a count of combined outputs"},
                         {RPCResult::Type::OBJ, "excluded", /*optional=*/true, "Coins the staking rules keep out, by reason. Absent when none are.",
                         {
@@ -198,6 +199,10 @@ static RPCHelpMan getstakinginfo()
         obj2.pushKV("stake_compact_target", ValueFromAmount(wallets_snapshot[y].CompactStakeTarget(base_target)));
         obj2.pushKV("stake_split_threshold", ValueFromAmount(wallets_snapshot[y].CompactSplitThreshold(base_target)));
         obj2.pushKV("stake_combine_rest_budget_bps", STAKE_COMBINE_REST_BUDGET_BPS);
+        // The same budget a win computes (CreateCoinStake), before the winning
+        // coin is known: the kernel's own value comes off it at the win.
+        obj2.pushKV("stake_combine_rest_allowance", ValueFromAmount(CStakeWallet::CombineRestAllowance(
+            info.weight, info.excluded.immature + info.excluded.too_young, 0)));
         obj2.pushKV("stake_outputs", info.spendable_outputs);
 
         // A full balance next to a weight of zero used to have no explanation
