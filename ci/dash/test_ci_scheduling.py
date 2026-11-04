@@ -182,7 +182,8 @@ class SchedulingTest(unittest.TestCase):
         names = [line.split('#', 1)[0].strip() for line in gate.splitlines()]
         self.assertEqual([
             'feature_llmq_chainlocks.py', 'feature_pos_staking.py', 'feature_pos_stake_combine.py',
-            'feature_pos_verifychain.py', 'feature_dsl_sign_wait.py', 'feature_dsl_commitment_v2.py',
+            'feature_pos_verifychain.py', 'feature_pos_header_only.py',
+            'feature_dsl_sign_wait.py', 'feature_dsl_commitment_v2.py',
             'feature_addressindex_coinstake.py', 'p2p_instantsend.py', 'rpc_verifyislock.py', 'rpc_bls.py',
             'feature_dsl_service.py', 'feature_dsl_perf.py', 'feature_dsl_perf_burst.py',
             'feature_llmq_is_nonrotation.py', 'feature_llmq_is_nonrotated_verify.py',

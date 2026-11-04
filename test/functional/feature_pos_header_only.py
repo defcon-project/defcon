@@ -16,11 +16,18 @@ bad-pos-time / bad-diffbits / bad-version). None of this names a transaction,
 so the header can be built without a block behind it.
 
 This defensive regression test adds a few such headers on top of a staking
-node's tip, without ever sending the matching block. It checks whether they
-remain the best header after restart, hold masternode sync in its blockchain
-stage, and prevent the minter from producing blocks. A clean restart before
-the headers is the control: with a peer present, sync passes the blockchain
-stage and the same wallet stakes again.
+node's tip, without ever sending the matching block. They stay the best header
+after a restart, yet masternode sync must still pass its blockchain stage --
+also while one more such header arrives every ten seconds, and again after a
+live reset with no block after it -- then finish on its own, and the minter
+must go on staking on the real tip. Only a recent active tip ends the stage
+this way, as it is when the stage is decided: once the tip is older than half
+an hour, the old rule alone applies, and here, where the tip never reached the
+best header, the header-only branch holds the blockchain stage, as it always
+did. Where an older tip is at the best header, a header that arrives still
+postpones the stage, as it always did. A clean restart before the headers is
+the control: with a peer present, sync passes the blockchain stage and the
+same wallet stakes again.
 """
 
 import time
@@ -36,8 +43,19 @@ STAKE_MIN_AGE = 10 * 60
 STAKE_CLOCK_STEP = 64
 STAKE_TIMEOUT = 300
 SYNC_CONTROL_TIMEOUT = 60
-SYNC_STALL_SECONDS = 20
-STAKE_STALL_SECONDS = 20
+# The sync wait with headers arriving: one header per step. A step is longer
+# than the sync's tick (MASTERNODE_SYNC_TICK_SECONDS, 6 s) and well inside its
+# 30 s timeout, so on a node that let headers postpone that timeout it would
+# never run out. Twelve steps stay below the block download timeout (one block
+# interval, 150 s), after which the node drops a peer that never sends blocks.
+SYNC_HEADER_STEP = 10
+SYNC_HEADER_STEPS = 12
+# masternode/sync.h, MASTERNODE_SYNC_RECENT_TIP_SECONDS
+RECENT_TIP_SECONDS = 30 * 60
+RECENT_TIP_MARGIN = 30
+# masternode/sync.h, MASTERNODE_SYNC_TIMEOUT_SECONDS: the stage timeout with fewer than four peers
+SYNC_TIMEOUT_SECONDS = 30
+FULL_SYNC_STEPS = 18
 HEIGHT_QUIET_SECONDS = 4
 HEIGHT_SETTLE_TIMEOUT = 60
 POS_TARGET_SPACING = 150
@@ -160,14 +178,51 @@ class PosHeaderOnlyTest(BitcoinTestFramework):
         raise AssertionError("clean control restart did not pass blockchain sync: %s"
                              % node.mnsync("status"))
 
-    def assert_sync_stays_pending(self, node):
-        """Give the sync ticker several chances to pass; a best-header gap must hold it."""
-        for _ in range(SYNC_STALL_SECONDS):
-            self.advance_clock(STAKE_CLOCK_STEP)
+    def wait_for_sync_despite_headers(self, node, peer, branch):
+        """Drive the sync ticker while one more unbacked header arrives on every
+        step; neither the best-header gap nor the stream of headers may hold the
+        blockchain stage."""
+        for _ in range(SYNC_HEADER_STEPS):
+            self.advance_clock(SYNC_HEADER_STEP)
+            peer.send_and_ping(msg_headers(self.extend_branch(branch, 1)))
             time.sleep(1)
             status = node.mnsync("status")
-            assert_equal(status["IsBlockchainSynced"], False)
-            assert_equal(status["IsSynced"], False)
+            if status["IsBlockchainSynced"]:
+                return status
+        raise AssertionError("headers without blocks held blockchain sync: %s" % node.mnsync("status"))
+
+    def wait_for_full_sync(self, node):
+        """Drive the sync ticker until the whole sync has finished on its own."""
+        for _ in range(FULL_SYNC_STEPS):
+            self.advance_clock(SYNC_HEADER_STEP)
+            time.sleep(1)
+            status = node.mnsync("status")
+            if status["IsSynced"]:
+                return status
+        raise AssertionError("sync did not finish on its own: %s" % node.mnsync("status"))
+
+    def new_branch(self, node, block_hash):
+        chain_tail = self.recent_chain(node, block_hash)
+        return {"tail": chain_tail, "version": node.getblockheader(block_hash)["version"],
+                "prev_hash": int(block_hash, 16), "prev_time": chain_tail[-1][0]}
+
+    def extend_branch(self, branch, count):
+        """`count` more headers on the header-only branch, each with the nBits
+        the difficulty rule gives and no block behind it."""
+        headers = []
+        for _ in range(count):
+            header = CBlockHeader()
+            header.nVersion = branch["version"]
+            header.hashPrevBlock = branch["prev_hash"]
+            header.hashMerkleRoot = 0
+            header.nTime = branch["prev_time"] + 1
+            header.nBits = next_pos_bits(branch["tail"])
+            header.nNonce = 0
+            header.rehash()
+            headers.append(header)
+            branch["tail"] = (branch["tail"] + [(header.nTime, header.nBits)])[-(LWMA_N + 1):]
+            branch["prev_hash"], branch["prev_time"] = header.sha256, header.nTime
+        return headers
 
     def recent_chain(self, node, block_hash):
         """(time, nBits) of block_hash and the LWMA_N blocks before it, oldest
@@ -231,24 +286,10 @@ class PosHeaderOnlyTest(BitcoinTestFramework):
         assert_equal(blocks_before, headers_before)
 
         self.log.info("Sending %d headers above the tip, with no block behind any of them", HEADER_COUNT)
-        chain_tail = self.recent_chain(node, tip)
-        version = node.getblockheader(tip)["version"]
-        prev_hash, prev_time = int(tip, 16), chain_tail[-1][0]
-        headers = []
-        for _ in range(HEADER_COUNT):
-            header = CBlockHeader()
-            header.nVersion = version
-            header.hashPrevBlock = prev_hash
-            header.hashMerkleRoot = 0
-            header.nTime = prev_time + 1
-            header.nBits = next_pos_bits(chain_tail)
-            header.nNonce = 0
-            header.rehash()
-            headers.append(header)
-            chain_tail = (chain_tail + [(header.nTime, header.nBits)])[-(LWMA_N + 1):]
-            prev_hash, prev_time = header.sha256, header.nTime
-
-        control_peer.send_and_ping(msg_headers(headers))
+        branch = self.new_branch(node, tip)
+        first_headers = self.extend_branch(branch, HEADER_COUNT)
+        fake_root = first_headers[0].hash
+        control_peer.send_and_ping(msg_headers(first_headers))
 
         info = node.getblockchaininfo()
         self.log.info("blocks=%d headers=%d (before: blocks=%d headers=%d)",
@@ -274,26 +315,117 @@ class PosHeaderOnlyTest(BitcoinTestFramework):
         header_sync_peer = node.add_p2p_connection(P2PInterface())
         sync_status = node.mnsync("status")
         assert_equal(sync_status["AssetName"], "MASTERNODE_SYNC_BLOCKCHAIN")
-        self.assert_sync_stays_pending(node)
-        sync_status = node.mnsync("status")
-        self.log.info("Header observation: active height=%d, best header=%d; sync remains %s, IsSynced=%s",
-                      info_after_restart["blocks"], info_after_restart["headers"],
-                      sync_status["AssetName"], sync_status["IsSynced"])
-        assert_equal(sync_status["IsBlockchainSynced"], False)
-        assert_equal(sync_status["IsSynced"], False)
+        sync_status = self.wait_for_sync_despite_headers(node, header_sync_peer, branch)
+        info_synced = node.getblockchaininfo()
+        self.log.info("Header observation: active height=%d, best header=%d; sync passed the blockchain stage: %s",
+                      info_synced["blocks"], info_synced["headers"], sync_status["AssetName"])
+        assert_equal(info_synced["blocks"], blocks_before)
+        assert_greater_than(info_synced["headers"], headers_before + HEADER_COUNT)
+
+        self.log.info("A live reset with no block after it: the recent tip still ends the blockchain stage")
+        # A fresh peer, so that its block download timeout starts with its first header.
+        node.disconnect_p2ps()
+        self.wait_until(lambda: len(node.getpeerinfo()) == 0, timeout=30)
+        reset_peer = node.add_p2p_connection(P2PInterface())
+        node.mnsync("reset")
+        assert_equal(node.mnsync("status")["AssetName"], "MASTERNODE_SYNC_BLOCKCHAIN")
+        sync_status = self.wait_for_sync_despite_headers(node, reset_peer, branch)
+        self.log.info("After the reset: active height=%d, best header=%d; sync passed the blockchain stage: %s",
+                      node.getblockcount(), node.getblockchaininfo()["headers"], sync_status["AssetName"])
+        assert_equal(node.getblockcount(), blocks_before)
+
+        self.log.info("The rest of the sync finishes on its own")
+        # The node keeps asking the header peer for blocks it will never send,
+        # and the download timeout would drop it at an arbitrary point. A peer
+        # that announces nothing is asked for none; the governance stage needs
+        # a peer to run its own timeout with.
+        node.disconnect_p2ps()
+        self.wait_until(lambda: len(node.getpeerinfo()) == 0, timeout=30)
+        node.add_p2p_connection(P2PInterface())
+        sync_status = self.wait_for_full_sync(node)
+        self.log.info("Sync finished on its own: %s; best header=%d above active height=%d",
+                      sync_status["AssetName"], node.getblockchaininfo()["headers"], node.getblockcount())
 
         wallet_id = self.enable_staking(node)
-        assert_equal(self.staking_info(node, wallet_id)["staking"], True)
-        assert_equal(self.staking_info(node, wallet_id)["minter_running"], True)
-        blocked_height = node.getblockcount()
-        self.log.info("Staking observation: wallet enabled; checking that no block is produced")
-        for _ in range(STAKE_STALL_SECONDS):
-            self.advance_clock(STAKE_CLOCK_STEP)
-            time.sleep(1)
-            assert_equal(node.getblockcount(), blocked_height)
-            assert_equal(node.mnsync("status")["IsSynced"], False)
-        self.log.info("Staking stayed blocked at height %d while masternode sync was unfinished", blocked_height)
+        tip_time = node.getblockheader(tip)["time"]
+        self.mocktime = max(self.mocktime, tip_time + STAKE_MIN_AGE + STAKE_CLOCK_STEP)
+        set_node_times(self.nodes, self.mocktime)
+        staked_height = blocks_before + 1
+        self.log.info("Staking observation: the wallet stakes height %d on the real tip", staked_height)
+        assert_equal(self.stake_one_block(node), staked_height)
         self.disable_staking(node, wallet_id)
+        assert_equal(node.getblockheader(node.getblockhash(staked_height))["previousblockhash"], tip)
+        assert_equal(node.mnsync("status")["IsSynced"], True)
+        assert_greater_than(node.getblockchaininfo()["headers"], node.getblockcount())
+        self.log.info("Staking went on at height %d while the header-only branch stayed the best header", staked_height)
+
+        self.log.info("A tip older than %d minutes: the header-only branch holds the blockchain stage again",
+                      RECENT_TIP_SECONDS // 60)
+        # Restart with the tip just inside the window, so that it is recent at
+        # start-up, then let it grow old before any peer can let the sync move on:
+        # the tip counts as it is when the stage is decided, not as it was.
+        old_tip_time = node.getblockheader(node.getbestblockhash())["time"]
+        start_time = old_tip_time + RECENT_TIP_SECONDS - RECENT_TIP_MARGIN
+        assert self.mocktime <= start_time
+        self.mocktime = start_time
+        set_node_times(self.nodes, self.mocktime)
+        self.restart_node(0)
+        set_node_times(self.nodes, self.mocktime)
+        info_old = node.getblockchaininfo()
+        assert_greater_than(info_old["headers"], info_old["blocks"])
+        self.advance_clock(2 * RECENT_TIP_MARGIN)
+        # A peer that announces nothing: the node asks it for no block, so no
+        # download timeout drops it, and the sync has a peer to move on with.
+        node.add_p2p_connection(P2PInterface())
+        for _ in range(SYNC_HEADER_STEPS):
+            self.advance_clock(SYNC_HEADER_STEP)
+            time.sleep(1)
+            status = node.mnsync("status")
+            assert_equal(status["IsBlockchainSynced"], False)
+        assert_equal(len(node.getpeerinfo()), 1)
+        self.log.info("Tip %d s old, best header=%d above active height=%d; sync remains %s",
+                      self.mocktime - old_tip_time, info_old["headers"], info_old["blocks"], status["AssetName"])
+
+        self.log.info("An older tip at the best header: a header arriving postpones the stage, as it always did")
+        # One more real block first: the tip whose age this step sets. The sync is
+        # held by the old tip, which is the case just shown; it is forced here only
+        # to let the wallet stake.
+        force_finish_mnsync(node)
+        wallet_id = self.enable_staking(node)
+        late_height = node.getblockcount() + 1
+        assert_equal(self.stake_one_block(node), late_height)
+        self.disable_staking(node, wallet_id)
+        self.settled_height(node)
+        late_tip = node.getbestblockhash()
+        # The header-only branch forks below this tip, so once marked invalid it
+        # stays so (a branch that descended from the tip would be reconsidered):
+        # the tip is the best header again.
+        node.invalidateblock(fake_root)
+        assert_equal(node.getblockchaininfo()["headers"], node.getblockcount())
+        # Restart once the tip has left the window, so that only the rule from
+        # Dash can end the stage; the start-up notification finds the tip at the
+        # best header. 10 s later an unbacked header opens a gap. That header
+        # postpones the stage's timeout as any header always has, so the stage
+        # must not end before the timeout has run out from it.
+        start_time = node.getblockheader(late_tip)["time"] + RECENT_TIP_SECONDS + SYNC_HEADER_STEP
+        assert self.mocktime <= start_time
+        node.disconnect_p2ps()
+        self.mocktime = start_time
+        set_node_times(self.nodes, self.mocktime)
+        self.restart_node(0)
+        set_node_times(self.nodes, self.mocktime)
+        assert_equal(node.getblockchaininfo()["headers"], node.getblockcount())
+        late_peer = node.add_p2p_connection(P2PInterface())
+        self.advance_clock(SYNC_HEADER_STEP)
+        late_peer.send_and_ping(msg_headers(self.extend_branch(self.new_branch(node, late_tip), 1)))
+        assert_equal(node.getblockchaininfo()["headers"], node.getblockcount() + 1)
+        for _ in range(SYNC_TIMEOUT_SECONDS // SYNC_HEADER_STEP):
+            self.advance_clock(SYNC_HEADER_STEP)
+            time.sleep(1)
+            assert_equal(node.mnsync("status")["IsBlockchainSynced"], False)
+        self.log.info("Tip %d s old, the header %d s ago: sync remains %s",
+                      self.mocktime - node.getblockheader(late_tip)["time"], SYNC_TIMEOUT_SECONDS,
+                      node.mnsync("status")["AssetName"])
 
 
 if __name__ == '__main__':

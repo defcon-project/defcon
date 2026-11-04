@@ -147,6 +147,7 @@ BITCOIN_TESTS =\
   test/governance_vote_sync_tests.cpp \
   test/governance_request_tests.cpp \
   test/governance_vote_wire_tests.cpp \
+  test/masternode_sync_tests.cpp \
   test/coinjoin_inouts_tests.cpp \
   test/hash_tests.cpp \
   test/i2p_tests.cpp \
