@@ -612,6 +612,7 @@ jobs:
             p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
             rpc_verifyislock.py                    # the lock-verifying RPCs
             rpc_bls.py                             # BLS key persistence and the empty staking registry, both wallet formats
+            feature_pos_mixingonly_unlock.py       # a wallet unlocked for mixing only stakes, and still refuses to send or export keys
             feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
             feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
             feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff

@@ -3205,6 +3205,12 @@ TransactionError CWallet::FillPSBT(PartiallySignedTransaction& psbtx, bool& comp
     }
     const PrecomputedTransactionData txdata = PrecomputePSBTData(psbtx);
     LOCK(cs_wallet);
+    // A wallet unlocked for mixing (and staking) only holds its keys, but must not sign a spend. Checked
+    // here, for every caller, and under cs_wallet, which unlocking takes too: the wallet cannot be unlocked
+    // between this check and the signing below. The transaction is filled in, unsigned.
+    if (sign && IsLocked() && !IsLocked(/*fForMixing=*/true)) {
+        sign = false;
+    }
     // Get all of the previous transactions
     for (unsigned int i = 0; i < psbtx.tx->vin.size(); ++i) {
         const CTxIn& txin = psbtx.tx->vin[i];
@@ -5803,9 +5809,11 @@ bool CWallet::IsLocked(bool fForMixing) const
     if (!IsCrypted())
         return false;
 
-    if(!fForMixing && fOnlyMixingAllowed) return true;
-
+    // The mode and the key are read together, under the lock that locking and unlocking change them
+    // under: read apart, a lock and an unlock for mixing only in between could make a wallet that is
+    // unlocked for mixing only look fully unlocked.
     LOCK(cs_wallet);
+    if(!fForMixing && fOnlyMixingAllowed) return true;
     return vMasterKey.empty();
 }
 
@@ -5814,16 +5822,20 @@ bool CWallet::Lock(bool fAllowMixing)
     if (!IsCrypted())
         return false;
 
-    if(!fAllowMixing) {
+    {
         LOCK(cs_wallet);
-        if (!vMasterKey.empty()) {
-            memory_cleanse(vMasterKey.data(), vMasterKey.size() * sizeof(decltype(vMasterKey)::value_type));
-            vMasterKey.clear();
+        if(!fAllowMixing) {
+            if (!vMasterKey.empty()) {
+                memory_cleanse(vMasterKey.data(), vMasterKey.size() * sizeof(decltype(vMasterKey)::value_type));
+                vMasterKey.clear();
+            }
+            ClearBLSKeyCache();
         }
-        ClearBLSKeyCache();
+        // Under the same lock as the key. Written after it was released, an unlock for mixing only
+        // that completed in between kept its key but lost its restriction: the wallet was then fully
+        // unlocked, which neither call asked for.
+        fOnlyMixingAllowed = fAllowMixing;
     }
-
-    fOnlyMixingAllowed = fAllowMixing;
     NotifyStatusChanged(this);
     return true;
 }

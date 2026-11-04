@@ -323,7 +323,9 @@ void PoSMiner(NodeContext& node)
                         continue;
                     }
 
-                    wallet_locked = this_wallet->IsLocked();
+                    // Unlocked for mixing only is enough: the coinstake and the block
+                    // signature need the keys, sending and key export stay refused.
+                    wallet_locked = this_wallet->IsLocked(/*fForMixing=*/true);
                     if (wallet_locked) {
                         this_wallet->m_is_staking = NOT_STAKING_LOCKED;
                     }

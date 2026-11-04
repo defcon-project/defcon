@@ -2029,13 +2029,13 @@ static RPCHelpMan walletpassphrase()
         {
             {"passphrase", RPCArg::Type::STR, RPCArg::Optional::NO, "The wallet passphrase"},
             {"timeout", RPCArg::Type::NUM, RPCArg::Optional::NO, "The time to keep the decryption key in seconds; capped at 100000000 (~3 years)."},
-            {"mixingonly", RPCArg::Type::BOOL, RPCArg::Default{false}, "If is true sending functions are disabled."},
+            {"mixingonly", RPCArg::Type::BOOL, RPCArg::Default{false}, "If true, the wallet can only mix and stake: sending, signing and exporting keys stay disabled."},
         },
         RPCResult{RPCResult::Type::NONE, "", ""},
         RPCExamples{
     "\nUnlock the wallet for 60 seconds\n"
     + HelpExampleCli("walletpassphrase", "\"my pass phrase\" 60") +
-    "\nUnlock the wallet for 60 seconds but allow CoinJoin only\n"
+    "\nUnlock the wallet for 60 seconds but allow CoinJoin and staking only\n"
     + HelpExampleCli("walletpassphrase", "\"my pass phrase\" 60 true") +
     "\nLock the wallet again (before 60 seconds)\n"
     + HelpExampleCli("walletlock", "") +

@@ -2083,11 +2083,13 @@ RPCHelpMan listdescriptors()
     }
 
     const bool priv = !request.params[0].isNull() && request.params[0].get_bool();
+
+    LOCK(wallet->cs_wallet);
+    // Under the lock, as in dumpprivkey and dumpwallet: the wallet cannot be locked, or unlocked for
+    // mixing only, between this check and the export below.
     if (priv) {
         EnsureWalletIsUnlocked(*wallet);
     }
-
-    LOCK(wallet->cs_wallet);
 
     UniValue descriptors(UniValue::VARR);
     const auto active_spk_mans = wallet->GetActiveScriptPubKeyMans();
