@@ -781,8 +781,10 @@ class CWallet final : public WalletStorage, public interfaces::Chain::Notificati
 private:
     CKeyingMaterial vMasterKey GUARDED_BY(cs_wallet);
 
-    //! if fOnlyMixingAllowed is true, only mixing should be allowed in unlocked wallet
-    bool fOnlyMixingAllowed;
+    //! if fOnlyMixingAllowed is true, only mixing should be allowed in unlocked wallet. It changes
+    //! together with vMasterKey, under cs_wallet: a lock and an unlock cannot interleave into a state
+    //! neither of them asked for.
+    bool fOnlyMixingAllowed GUARDED_BY(cs_wallet);
 
     bool Unlock(const CKeyingMaterial& vMasterKeyIn, bool fForMixingOnly = false, bool accept_no_keys = false);
 

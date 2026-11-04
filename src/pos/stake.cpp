@@ -624,19 +624,6 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
         return false;
     }
 
-    // Locked, and encrypted: DescriptorScriptPubKeyMan::GetKeys() returns an
-    // empty map in that state, so every private descriptor below fails to
-    // render and the loop finds nothing to mirror. Reporting success then is
-    // the worst of both -- staking is enabled with no pk() twin registered,
-    // which is precisely the state this function exists to prevent, and
-    // unlocking afterwards does not repair it because ToggleWalletStaking is
-    // the only caller and runs on the off->on edge alone. Refuse, and say what
-    // to do about it.
-    if (wallet.IsLocked()) {
-        LogPrint(BCLog::POS, "%s: wallet is locked; unlock it before enabling staking\n", __func__);
-        return false;
-    }
-
     struct Wanted {
         std::string expression;
         int32_t range_start;
@@ -646,6 +633,21 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
 
     {
         LOCK(wallet.cs_wallet);
+        // Locked, and encrypted: DescriptorScriptPubKeyMan::GetKeys() returns an
+        // empty map in that state, so every private descriptor below fails to
+        // render and the loop finds nothing to mirror. Reporting success then is
+        // the worst of both -- staking is enabled with no pk() twin registered,
+        // which is precisely the state this function exists to prevent, and
+        // unlocking afterwards does not repair it because ToggleWalletStaking is
+        // the only caller and runs on the off->on edge alone. Refuse, and say what
+        // to do about it. Checked under the lock that locking the wallet takes
+        // too, so it cannot lock between the check and the loop. Unlocked for
+        // mixing only, the keys are there and the descriptors render, so that
+        // unlock is enough to stake.
+        if (wallet.IsLocked(/*fForMixing=*/true)) {
+            LogPrint(BCLog::POS, "%s: wallet is locked; unlock it before enabling staking\n", __func__);
+            return false;
+        }
         for (ScriptPubKeyMan* spk_man : wallet.GetAllScriptPubKeyMans()) {
             auto* desc_man = dynamic_cast<DescriptorScriptPubKeyMan*>(spk_man);
             if (desc_man == nullptr) continue;

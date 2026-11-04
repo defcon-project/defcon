@@ -4,10 +4,15 @@
 
 #include <chainparams.h>
 #include <context.h>
+#include <interfaces/wallet.h>
 #include <pos/minter.h>
 #include <pos/stake.h>
 #include <pos/multiwallet.h>
+#include <psbt.h>
 #include <rpc/server.h>
+#include <script/standard.h>
+#include <univalue.h>
+#include <util/translation.h>
 #include <wallet/test/wallet_test_fixture.h>
 #include <wallet/wallet.h>
 #include <wallet/walletdb.h>
@@ -15,11 +20,14 @@
 #include <boost/test/unit_test.hpp>
 
 #include <chrono>
+#include <functional>
 #include <future>
 #include <memory>
 #include <thread>
 
 extern RecursiveMutex stakable_mutex;
+
+RPCHelpMan listdescriptors();
 
 namespace {
 UniValue CallStakingRPC(NodeContext& node, const char* method)
@@ -47,6 +55,81 @@ public:
         m_locked.get_future().wait();
     }
     ~BusyWallet() { m_release.set_value(); m_thread.wait(); }
+};
+
+constexpr const char* PASSPHRASE{"pos-mixingonly-test"};
+
+// An encrypted descriptor wallet, locked, and an unsigned spend of a coin it owns, as a PSBT that
+// carries the coin.
+struct EncryptedWalletWithCoin {
+    std::shared_ptr<CWallet> wallet;
+    PartiallySignedTransaction psbt;
+};
+
+EncryptedWalletWithCoin MakeEncryptedWalletWithCoin(NodeContext& node, const std::string& name)
+{
+    auto wallet = std::make_shared<CWallet>(node.chain.get(), node.coinjoin_loader.get(), name, CreateDummyWalletDatabase());
+    wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->SetupDescriptorScriptPubKeyMans();
+    }
+    CTxDestination dest;
+    bilingual_str error;
+    BOOST_REQUIRE(wallet->GetNewDestination("", dest, error));
+    BOOST_REQUIRE(wallet->EncryptWallet(PASSPHRASE));
+    BOOST_REQUIRE(wallet->Lock());
+
+    CMutableTransaction funding;
+    funding.vin.emplace_back(COutPoint(uint256::ONE, 0));
+    funding.vout.emplace_back(COIN, GetScriptForDestination(dest));
+    const CTransactionRef funding_tx = MakeTransactionRef(funding);
+
+    CMutableTransaction spend;
+    spend.vin.emplace_back(COutPoint(funding_tx->GetHash(), 0));
+    spend.vout.emplace_back(COIN / 2, GetScriptForDestination(dest));
+    PartiallySignedTransaction psbt(spend);
+    psbt.inputs[0].non_witness_utxo = funding_tx;
+    return {wallet, psbt};
+}
+
+bool Signed(const PartiallySignedTransaction& psbt)
+{
+    return !psbt.inputs[0].final_script_sig.empty() || !psbt.inputs[0].partial_sigs.empty();
+}
+
+// Takes the wallet lock on a thread of its own, waits until the test has started a call that needs
+// that lock, changes the wallet's lock mode while still holding it, then lets go: the waiting call
+// sees the wallet only after the change. The pause gives that call time to reach the lock; on the
+// fixed code the outcome does not depend on it. No Boost check runs off the test thread.
+class ChangeWhileHeld {
+    std::promise<void> m_locked;
+    std::promise<void> m_go;
+    std::future<bool> m_thread;
+public:
+    ChangeWhileHeld(CWallet& wallet, std::function<bool()> change)
+        : m_thread(std::async(std::launch::async, [this, &wallet, change] {
+              LOCK(wallet.cs_wallet);
+              m_locked.set_value();
+              m_go.get_future().wait();
+              return change();
+          }))
+    {
+        m_locked.get_future().wait();
+    }
+    bool Go()
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds{300});
+        m_go.set_value();
+        return m_thread.get();
+    }
+    ~ChangeWhileHeld()
+    {
+        if (m_thread.valid()) {
+            m_go.set_value();
+            m_thread.wait();
+        }
+    }
 };
 } // namespace
 
@@ -339,6 +422,145 @@ BOOST_AUTO_TEST_CASE(coinstake_descriptors_refuse_a_wallet_that_cannot_provide_t
         BOOST_REQUIRE(wallet->Unlock("pos-descriptor-test"));
         BOOST_CHECK(EnsureCoinstakeDescriptors(*wallet));
     }
+
+    // Unlocked for mixing only, the wallet still counts as locked for sending,
+    // but its keys are there and its private descriptors render. That is the
+    // unlock a staking wallet is meant to run under, so it must be served.
+    {
+        std::shared_ptr<CWallet> wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(),
+                                                                    "pos-mixingonly-test", CreateDummyWalletDatabase());
+        wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+        {
+            LOCK(wallet->cs_wallet);
+            wallet->SetupDescriptorScriptPubKeyMans();
+        }
+        BOOST_REQUIRE(wallet->EncryptWallet("pos-descriptor-test"));
+        BOOST_REQUIRE(wallet->Lock());
+        BOOST_REQUIRE(wallet->Unlock("pos-descriptor-test", /*fForMixingOnly=*/true));
+        BOOST_REQUIRE(wallet->IsLocked());
+        BOOST_REQUIRE(!wallet->IsLocked(/*fForMixing=*/true));
+
+        BOOST_CHECK(EnsureCoinstakeDescriptors(*wallet));
+    }
+}
+
+// A wallet unlocked for mixing only holds its keys, so whatever asks it to sign a spend -- the send
+// RPC, walletprocesspsbt, the desktop wallet's PSBT and multisig windows after their unlock prompt
+// was cancelled -- gets the transaction back filled in but unsigned. The windows sign through
+// interfaces::Wallet::fillPSBT, as here.
+BOOST_AUTO_TEST_CASE(mixing_only_unlock_signs_no_psbt)
+{
+    const EncryptedWalletWithCoin setup = MakeEncryptedWalletWithCoin(m_node, "pos-fillpsbt-test");
+    CWallet& wallet = *setup.wallet;
+    const std::unique_ptr<interfaces::Wallet> iwallet = interfaces::MakeWallet(setup.wallet);
+    const auto fill_and_sign = [&] {
+        PartiallySignedTransaction psbt{setup.psbt};
+        bool complete{true};
+        BOOST_CHECK(iwallet->fillPSBT(SIGHASH_ALL, /*sign=*/true, /*bip32derivs=*/false, /*n_signed=*/nullptr, psbt, complete) == TransactionError::OK);
+        BOOST_CHECK_EQUAL(complete, Signed(psbt));
+        return Signed(psbt);
+    };
+
+    BOOST_CHECK(!fill_and_sign()); // locked
+
+    BOOST_REQUIRE(wallet.Unlock(PASSPHRASE, /*fForMixingOnly=*/true));
+    BOOST_CHECK(!fill_and_sign()); // unlocked for mixing only
+
+    BOOST_REQUIRE(wallet.Lock());
+    BOOST_REQUIRE(wallet.Unlock(PASSPHRASE));
+    BOOST_CHECK(fill_and_sign()); // fully unlocked: signed, so the checks above can tell
+}
+
+// The signing guard reads the mode under the wallet lock, which unlocking takes too. The wallet is
+// locked when the call starts and is unlocked for mixing only while the call waits for that lock:
+// the call signs nothing.
+BOOST_AUTO_TEST_CASE(fillpsbt_reads_the_mode_under_the_wallet_lock)
+{
+    const EncryptedWalletWithCoin setup = MakeEncryptedWalletWithCoin(m_node, "pos-fillpsbt-race-test");
+    CWallet& wallet = *setup.wallet;
+
+    ChangeWhileHeld change(wallet, [&] { return wallet.Unlock(PASSPHRASE, /*fForMixingOnly=*/true); });
+    auto call = std::async(std::launch::async, [&] {
+        PartiallySignedTransaction psbt{setup.psbt};
+        bool complete{true};
+        const TransactionError err = wallet.FillPSBT(psbt, complete, SIGHASH_ALL, /*sign=*/true, /*bip32derivs=*/false);
+        return err == TransactionError::OK && !complete && !Signed(psbt);
+    });
+    BOOST_REQUIRE(change.Go());
+    BOOST_CHECK(call.get());
+    BOOST_CHECK(wallet.IsLocked());
+    BOOST_CHECK(!wallet.IsLocked(/*fForMixing=*/true));
+}
+
+// The strict lock check reads the mode and the key together, under the wallet lock. The wallet is
+// fully unlocked when the check starts, and is locked and unlocked for mixing only while the check
+// waits for that lock: it reports the wallet locked. Read apart, it saw the old mode and the new key,
+// and called a wallet unlocked for mixing only fully unlocked.
+BOOST_AUTO_TEST_CASE(strict_lock_check_reads_mode_and_key_together)
+{
+    const EncryptedWalletWithCoin setup = MakeEncryptedWalletWithCoin(m_node, "pos-strict-check-race-test");
+    CWallet& wallet = *setup.wallet;
+    BOOST_REQUIRE(wallet.Unlock(PASSPHRASE));
+    BOOST_REQUIRE(!wallet.IsLocked());
+
+    ChangeWhileHeld change(wallet, [&] { return wallet.Lock() && wallet.Unlock(PASSPHRASE, /*fForMixingOnly=*/true); });
+    auto check = std::async(std::launch::async, [&] { return wallet.IsLocked(); });
+    BOOST_REQUIRE(change.Go());
+    BOOST_CHECK(check.get());
+    BOOST_CHECK(!wallet.IsLocked(/*fForMixing=*/true));
+}
+
+// A strict lock check reads the mode and the key together, under the wallet lock, and the private
+// export it guards runs under the same lock. The wallet is fully unlocked when listdescriptors
+// starts, and is locked and unlocked for mixing only while the call waits for that lock: the call
+// refuses. Read apart, the check saw the old mode and the new key, and the keys went out.
+BOOST_AUTO_TEST_CASE(private_descriptor_export_reads_the_mode_under_the_wallet_lock)
+{
+    const EncryptedWalletWithCoin setup = MakeEncryptedWalletWithCoin(m_node, "pos-listdescriptors-race-test");
+    CWallet& wallet = *setup.wallet;
+    BOOST_REQUIRE(wallet.Unlock(PASSPHRASE));
+    AddWallet(setup.wallet);
+
+    JSONRPCRequest request;
+    request.context = CoreContext{m_node};
+    request.URI = "/wallet/" + wallet.GetName();
+    request.params.setArray();
+    request.params.push_back(true);
+
+    {
+        ChangeWhileHeld change(wallet, [&] { return wallet.Lock() && wallet.Unlock(PASSPHRASE, /*fForMixingOnly=*/true); });
+        auto call = std::async(std::launch::async, [&]() -> std::string {
+            try {
+                ::listdescriptors().HandleRequest(request);
+                return "exported";
+            } catch (const UniValue& error) {
+                return find_value(error, "message").get_str();
+            }
+        });
+        BOOST_REQUIRE(change.Go());
+        BOOST_CHECK_EQUAL(call.get(), "Error: Please enter the wallet passphrase with walletpassphrase first.");
+    }
+    BOOST_CHECK(wallet.IsLocked());
+    BOOST_CHECK(!wallet.IsLocked(/*fForMixing=*/true));
+    RemoveWallet(setup.wallet, std::nullopt);
+}
+
+// The coinstake descriptors are collected under the wallet lock the locked check reads under. The
+// wallet is unlocked for mixing only when the call starts and is fully locked while the call waits
+// for that lock: the call refuses and registers nothing, rather than reporting success with no
+// descriptor registered.
+BOOST_AUTO_TEST_CASE(coinstake_descriptors_read_the_lock_under_the_wallet_lock)
+{
+    const EncryptedWalletWithCoin setup = MakeEncryptedWalletWithCoin(m_node, "pos-descriptor-race-test");
+    CWallet& wallet = *setup.wallet;
+    BOOST_REQUIRE(wallet.Unlock(PASSPHRASE, /*fForMixingOnly=*/true));
+    const size_t managers{WITH_LOCK(wallet.cs_wallet, return wallet.GetAllScriptPubKeyMans().size())};
+
+    ChangeWhileHeld change(wallet, [&] { return wallet.Lock(); });
+    auto call = std::async(std::launch::async, [&] { return EnsureCoinstakeDescriptors(wallet); });
+    BOOST_REQUIRE(change.Go());
+    BOOST_CHECK(!call.get());
+    BOOST_CHECK_EQUAL(WITH_LOCK(wallet.cs_wallet, return wallet.GetAllScriptPubKeyMans().size()), managers);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

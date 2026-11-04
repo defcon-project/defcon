@@ -185,6 +185,7 @@ class SchedulingTest(unittest.TestCase):
             'feature_pos_verifychain.py', 'feature_pos_header_only.py',
             'feature_dsl_sign_wait.py', 'feature_dsl_commitment_v2.py',
             'feature_addressindex_coinstake.py', 'p2p_instantsend.py', 'rpc_verifyislock.py', 'rpc_bls.py',
+            'feature_pos_mixingonly_unlock.py',
             'feature_dsl_service.py', 'feature_dsl_perf.py', 'feature_dsl_perf_burst.py',
             'feature_llmq_is_nonrotation.py', 'feature_llmq_is_nonrotated_verify.py',
             'feature_llmq_is_named_quorum_window.py', 'feature_superblock_retirement.py',
