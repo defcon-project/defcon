@@ -195,9 +195,11 @@ bool Intro::showIfNeeded(bool& did_show_intro, int64_t& prune_MiB)
 
     if(!fs::exists(GUIUtil::QStringToPath(dataDir)) || gArgs.GetBoolArg("-choosedatadir", DEFAULT_CHOOSE_DATADIR) || dataDirDefaultCurrent != dataDirDefaultSettings || settings.value("fReset", false).toBool() || gArgs.GetBoolArg("-resetguisettings", false))
     {
-        /* Use selectParams here to guarantee Params() can be used by node interface */
+        /* Use selectParams here to guarantee Params() can be used by node interface. Provisional: the configuration,
+           read after this dialog, may still choose another network, and the one finally chosen is checked then
+           (SelectParams in bitcoin.cpp). */
         try {
-            SelectParams(gArgs.GetChainName());
+            SelectProvisionalParams(gArgs.GetChainName());
         } catch (const std::exception&) {
             return false;
         }
