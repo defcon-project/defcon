@@ -34,6 +34,11 @@ shows neither the quorum type nor the Sentinel height. So the first and the
 third observation come from the bundle's name and not from regtest's defaults.
 feature_superblock_retirement.py keeps the single name's own test; this one
 does not replace it.
+
+node1 is the one peer node0 has, so node0 trusts it (-whitelist=noban): the
+masternode sync restarts as blocks come in, and every new sync must lift its
+restrictions for a trusted peer again, or the mark of the sync before has node0
+disconnect it as recently synced and the chain stops reaching node1.
 """
 import time
 
@@ -47,15 +52,18 @@ DSL_EPOCH = 24
 UNREACHABLE = 2147483647
 SPORK_KEY = "cP4EKFyJsHT39LDqgdcB43Y3YXjNyjb5Fuas1GQSeAtjnZWmZEQK"
 
+MNSYNC_TICK = 6             # MASTERNODE_SYNC_TICK_SECONDS, on the mock clock
+
 BUNDLE = ["-testactivationheight=v23@%d" % H]
 SINGLE = ["-testactivationheight=superblocksretired@%d" % H]
+TRUSTED = ["-whitelist=noban@127.0.0.1"]
 
 
 class V23BundleHeightsTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2  # getblocktemplate refuses a node with no peer
         self.setup_clean_chain = True
-        self.extra_args = [BUNDLE, BUNDLE]
+        self.extra_args = [BUNDLE + TRUSTED, BUNDLE]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -124,14 +132,20 @@ class V23BundleHeightsTest(BitcoinTestFramework):
         self.mine_to(H - 1)
         # getblocktemplate asks whether superblocks are enabled before it builds
         # a template too, and that question only matters on a node whose
-        # masternode sync has not finished. Put the node there.
-        node.mnsync("reset")
-        assert_equal(node.mnsync("status")["IsSynced"], False)
-        at = self.template()
-        assert_equal(at["height"], H)
-        assert_equal(at["superblocks_enabled"], False)
-        assert "llmq_defcon" in self.quorum_types(node)
-        assert_equal(node.dslstatus()["active"], False)
+        # masternode sync has not finished. Put the node there. The new sync
+        # lifts the restrictions for the trusted peer once more, at its next
+        # tick.
+        with node.assert_debug_log(["skipping mnsync restrictions for peer="], timeout=30):
+            node.mnsync("reset")
+            assert_equal(node.mnsync("status")["IsSynced"], False)
+            at = self.template()
+            assert_equal(at["height"], H)
+            assert_equal(at["superblocks_enabled"], False)
+            assert "llmq_defcon" in self.quorum_types(node)
+            assert_equal(node.dslstatus()["active"], False)
+            self.now += MNSYNC_TICK
+            for n in self.nodes:
+                n.setmocktime(self.now)
 
         self.log.info("H + 576: the Sentinel layer's start is reached, and not a block earlier")
         self.mine_to(H + DSL_OFFSET - 1)
