@@ -45,6 +45,13 @@ bool CNetFulfilledRequestManager::HasFulfilledRequest(const CService& addr, cons
             it->second[strRequest] > GetTime();
 }
 
+void CNetFulfilledRequestManager::RemoveFulfilledRequest(const CService& addr, const std::string& strRequest)
+{
+    LOCK(cs_mapFulfilledRequests);
+    const auto it{mapFulfilledRequests.find(addr)};
+    if (it != mapFulfilledRequests.end()) it->second.erase(strRequest);
+}
+
 void CNetFulfilledRequestManager::RemoveAllFulfilledRequests(const CService& addr)
 {
     LOCK(cs_mapFulfilledRequests);

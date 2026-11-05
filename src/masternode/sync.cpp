@@ -17,6 +17,7 @@
 class CMasternodeSync;
 
 CMasternodeSync::CMasternodeSync(CConnman& _connman, CNetFulfilledRequestManager& netfulfilledman, const ChainstateManager& chainman) :
+    m_sync_start(GetTimeMillis()),
     nTimeAssetSyncStarted(GetTime()),
     nTimeLastBumped(GetTime()),
     connman(_connman),
@@ -33,12 +34,18 @@ void CMasternodeSync::Reset(bool fForce, bool fNotifyReset)
             return;
         }
     }
-    nCurrentAsset = MASTERNODE_SYNC_BLOCKCHAIN;
-    nTriedPeerCount = 0;
-    nTimeAssetSyncStarted = GetTime();
-    nTimeLastBumped = GetTime();
-    nTimeLastUpdateBlockTip = 0;
-    fReachedBestHeader = false;
+    {
+        // Under the stage lock: a switch decided before this cannot be made after it.
+        LOCK(m_stage_mutex);
+        nCurrentAsset = MASTERNODE_SYNC_BLOCKCHAIN;
+        ++m_stage_generation;
+        ++m_sync_generation;
+        nTriedPeerCount = 0;
+        nTimeAssetSyncStarted = GetTime();
+        nTimeLastBumped = GetTime();
+        nTimeLastUpdateBlockTip = 0;
+        fReachedBestHeader = false;
+    }
     if (fNotifyReset) {
         uiInterface.NotifyAdditionalDataSyncProgressChanged(-1);
     }
@@ -62,32 +69,179 @@ std::string CMasternodeSync::GetAssetName() const
     }
 }
 
+int CMasternodeSync::SwitchLocked(int from)
+{
+    AssertLockHeld(m_stage_mutex);
+    int left{0};
+    switch (from) {
+        case MASTERNODE_SYNC_BLOCKCHAIN:
+            nCurrentAsset = MASTERNODE_SYNC_GOVERNANCE;
+            left = from;
+            break;
+        case MASTERNODE_SYNC_GOVERNANCE:
+            nCurrentAsset = MASTERNODE_SYNC_FINISHED;
+            left = from;
+            break;
+    }
+    if (left != 0) ++m_stage_generation;
+    nTriedPeerCount = 0;
+    nTimeAssetSyncStarted = GetTime();
+    // BumpAssetLastTime, here under the lock so that the new stage's timeout starts with it
+    if (!IsSynced()) nTimeLastBumped = GetTime();
+    return left;
+}
+
+void CMasternodeSync::AfterSwitch(int from, int64_t started, uint64_t sync_generation)
+{
+    switch (from) {
+        case MASTERNODE_SYNC_BLOCKCHAIN:
+            LogPrintf("CMasternodeSync::SwitchToNextAsset -- Completed %s in %llds\n", "MASTERNODE_SYNC_BLOCKCHAIN", GetTime() - started);
+            LogPrintf("CMasternodeSync::SwitchToNextAsset -- Starting %s\n", "MASTERNODE_SYNC_GOVERNANCE");
+            break;
+        case MASTERNODE_SYNC_GOVERNANCE: {
+            LogPrintf("CMasternodeSync::SwitchToNextAsset -- Completed %s in %llds\n", "MASTERNODE_SYNC_GOVERNANCE", GetTime() - started);
+            uiInterface.NotifyAdditionalDataSyncProgressChanged(1);
+
+            // The peers taken first, outside the stage lock (the network's locks never under it).
+            std::vector<CService> peers;
+            connman.ForEachNode(CConnman::AllNodes, [&peers](const CNode* pnode) { peers.push_back(pnode->addr); });
+            if (const auto hook{WITH_LOCK(m_stage_mutex, return m_test_hook_after_switch)}) hook();
+            {
+                // Marked as synced from under the stage lock, and only if no Reset() has started another sync since
+                // the switch: that sync may have exempted its trusted peers already (LiftRestrictions, under the
+                // same lock), and this mark would then have them disconnected as recently synced.
+                LOCK(m_stage_mutex);
+                if (m_sync_generation == sync_generation) {
+                    for (const CService& addr : peers) m_netfulfilledman.AddFulfilledRequest(addr, "full-sync");
+                }
+            }
+            LogPrintf("CMasternodeSync::SwitchToNextAsset -- Sync has finished\n");
+            break;
+        }
+    }
+    if (!IsSynced()) LogPrint(BCLog::MNSYNC, "CMasternodeSync::BumpAssetLastTime -- %s\n", "CMasternodeSync::SwitchToNextAsset");
+}
+
+CMasternodeSync::Stage CMasternodeSync::GetStage() const
+{
+    LOCK(m_stage_mutex);
+    return Stage{nCurrentAsset, m_stage_generation};
+}
+
 void CMasternodeSync::SwitchToNextAsset()
 {
     assert(m_netfulfilledman.IsValid());
-
-    switch(nCurrentAsset)
+    int left;
+    int64_t started;
+    uint64_t sync_generation;
     {
-        case(MASTERNODE_SYNC_BLOCKCHAIN):
-            LogPrintf("CMasternodeSync::SwitchToNextAsset -- Completed %s in %llds\n", GetAssetName(), GetTime() - nTimeAssetSyncStarted);
-            nCurrentAsset = MASTERNODE_SYNC_GOVERNANCE;
-            LogPrintf("CMasternodeSync::SwitchToNextAsset -- Starting %s\n", GetAssetName());
-            break;
-        case(MASTERNODE_SYNC_GOVERNANCE):
-            LogPrintf("CMasternodeSync::SwitchToNextAsset -- Completed %s in %llds\n", GetAssetName(), GetTime() - nTimeAssetSyncStarted);
-            nCurrentAsset = MASTERNODE_SYNC_FINISHED;
-            uiInterface.NotifyAdditionalDataSyncProgressChanged(1);
-
-            connman.ForEachNode(CConnman::AllNodes, [this](const CNode* pnode) {
-                m_netfulfilledman.AddFulfilledRequest(pnode->addr, "full-sync");
-            });
-            LogPrintf("CMasternodeSync::SwitchToNextAsset -- Sync has finished\n");
-
-            break;
+        LOCK(m_stage_mutex);
+        started = nTimeAssetSyncStarted;
+        sync_generation = m_sync_generation;
+        left = SwitchLocked(nCurrentAsset);
     }
-    nTriedPeerCount = 0;
-    nTimeAssetSyncStarted = GetTime();
-    BumpAssetLastTime("CMasternodeSync::SwitchToNextAsset");
+    AfterSwitch(left, started, sync_generation);
+}
+
+bool CMasternodeSync::SwitchFrom(const Stage& seen)
+{
+    assert(m_netfulfilledman.IsValid());
+    int64_t started;
+    uint64_t sync_generation;
+    {
+        LOCK(m_stage_mutex);
+        if (nCurrentAsset != seen.asset || m_stage_generation != seen.generation) return false;
+        started = nTimeAssetSyncStarted;
+        sync_generation = m_sync_generation;
+        if (SwitchLocked(seen.asset) == 0) return false;
+    }
+    AfterSwitch(seen.asset, started, sync_generation);
+    return true;
+}
+
+bool CMasternodeSync::VoteSyncDone(const Stage& seen, int tick, int votes)
+{
+    // The wait belongs to one governance stage: a stage started anew (a Reset() and back) waits anew. It used to
+    // live in function statics that nothing reset.
+    if (m_votes_generation != seen.generation) {
+        m_votes_generation = seen.generation;
+        m_votes_wait_start = 0;
+        m_votes_last_tick = 0;
+        m_votes_last_count = 0;
+    }
+    if (m_votes_wait_start == 0) {
+        // asked all objects for votes for the first time
+        m_votes_wait_start = GetTime();
+    }
+    // make sure the condition below is checked only once per tick
+    if (m_votes_last_tick == tick) return false;
+    if (GetTime() - m_votes_wait_start > MASTERNODE_SYNC_TIMEOUT_SECONDS &&
+        votes - m_votes_last_count < std::max(int(0.0001 * m_votes_last_count), MASTERNODE_SYNC_TICK_SECONDS)) {
+        // We already asked for all objects, waited for MASTERNODE_SYNC_TIMEOUT_SECONDS
+        // after that and less then 0.01% or MASTERNODE_SYNC_TICK_SECONDS
+        // (i.e. 1 per second) votes were received during the last tick.
+        // We can be pretty sure that we are done syncing.
+        m_votes_wait_start = 0;
+        return true;
+    }
+    m_votes_last_tick = tick;
+    m_votes_last_count = votes;
+    return false;
+}
+
+bool CMasternodeSync::IsTrusted(const CNode& node)
+{
+    return node.HasPermission(NetPermissionFlags::NoBan) || node.IsManualConn();
+}
+
+bool CMasternodeSync::DisconnectsAsRecentlySynced(const CNode& node)
+{
+    // A trusted peer never: it is exempt from the sync's restrictions, and a sync finishing around a Reset() can
+    // leave its mark on it in more than one order (the finish, the next sync's exemption and this decision run on
+    // different threads). The next sync's exemption lifts the mark, and the peer is asked again.
+    return !IsTrusted(node) && m_netfulfilledman.HasFulfilledRequest(node.addr, "full-sync");
+}
+
+bool CMasternodeSync::LiftRestrictions(const CNode& node)
+{
+    if (!IsTrusted(node)) return false;
+    bool lifted{false};
+    // Everything fulfilled for the peer is forgotten as before: once in this process, and again whenever the mark
+    // has expired (FulfilledRequestExpireTime), as often as the peer itself lets us ask it for the whole governance
+    // list (asked again sooner, it scores us as misbehaving).
+    const std::string process_mark{strprintf("allow-sync-%lld", m_sync_start)};
+    if (!m_netfulfilledman.HasFulfilledRequest(node.addr, process_mark)) {
+        m_netfulfilledman.RemoveAllFulfilledRequests(node.addr);
+        m_netfulfilledman.AddFulfilledRequest(node.addr, process_mark);
+        lifted = true;
+    }
+    // And once in each sync, after every Reset() too, that the last sync finished with it: else the trusted peer is
+    // disconnected as recently synced. This used to happen once per process only (a function static mark), so
+    // after a Reset() the "full-sync" mark of the sync before stayed. Under the stage lock, as the finish marks its
+    // peers (AfterSwitch): a finish of the sync before marks either before this, or not at all.
+    {
+        LOCK(m_stage_mutex);
+        const std::string sync_mark{strprintf("%s-%llu", process_mark, m_sync_generation)};
+        if (!m_netfulfilledman.HasFulfilledRequest(node.addr, sync_mark)) {
+            m_netfulfilledman.RemoveFulfilledRequest(node.addr, "full-sync");
+            m_netfulfilledman.AddFulfilledRequest(node.addr, sync_mark);
+            lifted = true;
+        }
+    }
+    if (lifted) LogPrintf("CMasternodeSync::ProcessTick -- skipping mnsync restrictions for peer=%d\n", node.GetId());
+    return lifted;
+}
+
+void CMasternodeSync::SetTestHookBeforeSwitch(std::function<void()> hook)
+{
+    LOCK(m_stage_mutex);
+    m_test_hook_before_switch = std::move(hook);
+}
+
+void CMasternodeSync::SetTestHookAfterSwitch(std::function<void()> hook)
+{
+    LOCK(m_stage_mutex);
+    m_test_hook_after_switch = std::move(hook);
 }
 
 std::string CMasternodeSync::GetSyncStatus() const
@@ -121,9 +275,6 @@ void CMasternodeSync::ProcessTick(const PeerManager& peerman, const CGovernanceM
 
     static int nTick = 0;
     nTick++;
-
-    const static int64_t nSyncStart = GetTimeMillis();
-    const static std::string strAllow = strprintf("allow-sync-%lld", nSyncStart);
 
     // reset the sync process if the last call to this function was more than 60 minutes ago (client was in sleep mode)
     static int64_t nTimeLastProcess = GetTime();
@@ -163,17 +314,16 @@ void CMasternodeSync::ProcessTick(const PeerManager& peerman, const CGovernanceM
         if (!pnode->CanRelay() || (fMasternodeMode && pnode->IsInboundConn())) continue;
 
         {
-            if ((pnode->HasPermission(NetPermissionFlags::NoBan) || pnode->IsManualConn()) && !m_netfulfilledman.HasFulfilledRequest(pnode->addr, strAllow)) {
-                m_netfulfilledman.RemoveAllFulfilledRequests(pnode->addr);
-                m_netfulfilledman.AddFulfilledRequest(pnode->addr, strAllow);
-                LogPrintf("CMasternodeSync::ProcessTick -- skipping mnsync restrictions for peer=%d\n", pnode->GetId());
-            }
+            LiftRestrictions(*pnode);
 
             if(m_netfulfilledman.HasFulfilledRequest(pnode->addr, "full-sync")) {
-                // We already fully synced from this node recently,
-                // disconnect to free this connection slot for another peer.
-                pnode->fDisconnect = true;
-                LogPrintf("CMasternodeSync::ProcessTick -- disconnecting from recently synced peer=%d\n", pnode->GetId());
+                // We already fully synced from this node recently: disconnect to free this connection slot for
+                // another peer, unless it is trusted (DisconnectsAsRecentlySynced). Either way nothing is asked of
+                // it now.
+                if (DisconnectsAsRecentlySynced(*pnode)) {
+                    pnode->fDisconnect = true;
+                    LogPrintf("CMasternodeSync::ProcessTick -- disconnecting from recently synced peer=%d\n", pnode->GetId());
+                }
                 continue;
             }
 
@@ -218,9 +368,12 @@ void CMasternodeSync::ProcessTick(const PeerManager& peerman, const CGovernanceM
 
             // GOVOBJ : SYNC GOVERNANCE ITEMS FROM OUR PEERS
 
-            if(nCurrentAsset == MASTERNODE_SYNC_GOVERNANCE) {
+            // Decided on the stage and its generation as read here: a Reset() since then (`mnsync reset`, a
+            // block notification) restarts the blockchain stage, and the switch leaves that alone.
+            const Stage gov_seen{GetStage()};
+            if (gov_seen.asset == MASTERNODE_SYNC_GOVERNANCE) {
                 if (!govman.IsValid()) {
-                    SwitchToNextAsset();
+                    SwitchFrom(gov_seen);
                     return;
                 }
                 LogPrint(BCLog::GOBJECT, "CMasternodeSync::ProcessTick -- nTick %d nCurrentAsset %d nTimeLastBumped %lld GetTime() %lld diff %lld\n", nTick, nCurrentAsset, nTimeLastBumped, GetTime(), GetTime() - nTimeLastBumped);
@@ -232,7 +385,7 @@ void CMasternodeSync::ProcessTick(const PeerManager& peerman, const CGovernanceM
                         LogPrintf("CMasternodeSync::ProcessTick -- WARNING: failed to sync %s\n", GetAssetName());
                         // it's kind of ok to skip this for now, hopefully we'll catch up later?
                     }
-                    SwitchToNextAsset();
+                    SwitchFrom(gov_seen);
                     return;
                 }
 
@@ -254,7 +407,8 @@ void CMasternodeSync::ProcessTick(const PeerManager& peerman, const CGovernanceM
     }
 
 
-    if (nCurrentAsset != MASTERNODE_SYNC_GOVERNANCE) {
+    const Stage votes_seen{GetStage()};
+    if (votes_seen.asset != MASTERNODE_SYNC_GOVERNANCE) {
         // looped through all nodes and not syncing governance yet/already, release them
         return;
     }
@@ -266,30 +420,10 @@ void CMasternodeSync::ProcessTick(const PeerManager& peerman, const CGovernanceM
         }
         int nObjsLeftToAsk = govman.RequestGovernanceObjectVotes(*pnode, connman, peerman);
         // check for data
-        if(nObjsLeftToAsk == 0) {
-            static int64_t nTimeNoObjectsLeft = 0;
-            static int nLastTick = 0;
-            static int nLastVotes = 0;
-            if(nTimeNoObjectsLeft == 0) {
-                // asked all objects for votes for the first time
-                nTimeNoObjectsLeft = GetTime();
-            }
-            // make sure the condition below is checked only once per tick
-            if(nLastTick == nTick) continue;
-            if (GetTime() - nTimeNoObjectsLeft > MASTERNODE_SYNC_TIMEOUT_SECONDS &&
-                govman.GetVoteCount() - nLastVotes < std::max(int(0.0001 * nLastVotes), MASTERNODE_SYNC_TICK_SECONDS)) {
-                // We already asked for all objects, waited for MASTERNODE_SYNC_TIMEOUT_SECONDS
-                // after that and less then 0.01% or MASTERNODE_SYNC_TICK_SECONDS
-                // (i.e. 1 per second) votes were received during the last tick.
-                // We can be pretty sure that we are done syncing.
-                LogPrintf("CMasternodeSync::ProcessTick -- nTick %d nCurrentAsset %d -- asked for all objects, nothing to do\n", nTick, MASTERNODE_SYNC_GOVERNANCE);
-                // reset nTimeNoObjectsLeft to be able to use the same condition on resync
-                nTimeNoObjectsLeft = 0;
-                SwitchToNextAsset();
-                return;
-            }
-            nLastTick = nTick;
-            nLastVotes = govman.GetVoteCount();
+        if (nObjsLeftToAsk == 0 && VoteSyncDone(votes_seen, nTick, govman.GetVoteCount())) {
+            LogPrintf("CMasternodeSync::ProcessTick -- nTick %d nCurrentAsset %d -- asked for all objects, nothing to do\n", nTick, MASTERNODE_SYNC_GOVERNANCE);
+            SwitchFrom(votes_seen);
+            return;
         }
     }
 }
@@ -320,21 +454,21 @@ bool CMasternodeSync::IsBlockchainStageDone(int64_t nTimeSyncTimeout) const
 
 bool CMasternodeSync::TryEndBlockchainStage(int64_t nTimeSyncTimeout)
 {
+    int64_t started;
+    uint64_t sync_generation;
     {
-        // Decided and switched under cs_main, which validation holds while it changes the active tip. The switch
-        // is one compare-and-swap out of the blockchain stage: if `mnsync next` moved the stage meanwhile,
-        // nothing happens here, and the next stage's work (it takes network locks) never runs under cs_main.
-        LOCK(::cs_main);
+        // Decided and switched under cs_main, which validation holds while it changes the active tip, and under
+        // the stage lock, which Reset() takes: a Reset() lands before the decision or after the switch, never
+        // between them. If `mnsync next` moved the stage already, nothing happens here; the next stage's work
+        // (it takes network locks) runs after both locks.
+        LOCK2(::cs_main, m_stage_mutex);
         if (nCurrentAsset != MASTERNODE_SYNC_BLOCKCHAIN || !IsBlockchainStageDone(nTimeSyncTimeout)) return false;
-        int expected{MASTERNODE_SYNC_BLOCKCHAIN};
-        if (!nCurrentAsset.compare_exchange_strong(expected, MASTERNODE_SYNC_GOVERNANCE)) return false;
+        if (m_test_hook_before_switch) m_test_hook_before_switch();
+        started = nTimeAssetSyncStarted;
+        sync_generation = m_sync_generation;
+        SwitchLocked(MASTERNODE_SYNC_BLOCKCHAIN);
     }
-    // What SwitchToNextAsset does when leaving the blockchain stage, after the lock.
-    LogPrintf("CMasternodeSync::SwitchToNextAsset -- Completed %s in %llds\n", "MASTERNODE_SYNC_BLOCKCHAIN", GetTime() - nTimeAssetSyncStarted);
-    LogPrintf("CMasternodeSync::SwitchToNextAsset -- Starting %s\n", "MASTERNODE_SYNC_GOVERNANCE");
-    nTriedPeerCount = 0;
-    nTimeAssetSyncStarted = GetTime();
-    BumpAssetLastTime("CMasternodeSync::SwitchToNextAsset");
+    AfterSwitch(MASTERNODE_SYNC_BLOCKCHAIN, started, sync_generation);
     return true;
 }
 
