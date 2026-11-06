@@ -2208,6 +2208,29 @@ void CheckV23ActivationBundle(const Consensus::Params& consensus, const std::str
     }
 }
 
+void CheckNeverActivatedDashRules(const Consensus::Params& consensus, const std::string& network)
+{
+    // Regtest switches them on for the tests inherited from Dash, one by one.
+    if (network == CBaseChainParams::REGTEST) return;
+    constexpr int UNSET = std::numeric_limits<int>::max();
+    const struct { const char* name; int height; } rules[] = {
+        {"BRRHeight", consensus.BRRHeight},
+        {"DIP0020Height", consensus.DIP0020Height},
+        {"DIP0024Height", consensus.DIP0024Height},
+        {"DIP0024QuorumsHeight", consensus.DIP0024QuorumsHeight},
+        {"V19Height", consensus.V19Height},
+        {"V20Height", consensus.V20Height},
+        {"MN_RRHeight", consensus.MN_RRHeight},
+    };
+    for (const auto& rule : rules) {
+        if (rule.height != UNSET) {
+            throw std::runtime_error(strprintf(
+                "%s: %s is %d on %s; DeFCoN never activates this Dash rule package, so it must stay unset outside regtest",
+                __func__, rule.name, rule.height, network));
+        }
+    }
+}
+
 std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, const std::string& chain)
 {
     std::unique_ptr<const CChainParams> params = [&]() -> std::unique_ptr<const CChainParams> {
@@ -2231,6 +2254,18 @@ std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager& args, c
 }
 
 void SelectParams(const std::string& network)
+{
+    SelectBaseParams(network);
+    auto params = CreateChainParams(gArgs, network);
+    // Only on the network chosen, and not in CreateChainParams: the help text builds mainnet's, testnet's and
+    // regtest's parameters before the command line has chosen a network, and the GUI's data directory dialog selects
+    // one before the configuration is read (SelectProvisionalParams); a refusal there would stop the node on its way
+    // to another network. Every caller of SelectParams turns the exception into a startup error.
+    CheckNeverActivatedDashRules(params->GetConsensus(), params->NetworkIDString());
+    globalChainParams = std::move(params);
+}
+
+void SelectProvisionalParams(const std::string& network)
 {
     SelectBaseParams(network);
     globalChainParams = CreateChainParams(gArgs, network);

@@ -239,6 +239,17 @@ void ApplyV231ActivationBundle(Consensus::Params& consensus, int height, const s
 /** Reject a partial v23.1 retirement/activation configuration. Regtest, which
  *  registers neither retired profile, is held only to a positive height. */
 void CheckV231ActivationBundle(const Consensus::Params& consensus, const std::string& network);
+/**
+ * Refuse, on every network but regtest, a height for one of the Dash rule
+ * packages DeFCoN never activates: BRR, DIP0020, DIP0024 (rotation and its
+ * first quorum), V19, V20 and MN_RR. They served the Dash Platform and Dash's
+ * reward reallocations; DeFCoN has no Platform and schedules its own upgrades
+ * by height, so any one of them switched on would run code no DeFCoN network
+ * has run. Regtest keeps them for the inherited tests. Throws
+ * std::runtime_error naming the first height that is set. SelectParams runs
+ * it on the network chosen, once it is chosen.
+ */
+void CheckNeverActivatedDashRules(const Consensus::Params& consensus, const std::string& network);
 
 
 /**
@@ -248,10 +259,22 @@ void CheckV231ActivationBundle(const Consensus::Params& consensus, const std::st
 const CChainParams &Params();
 
 /**
- * Sets the params returned by Params() to those for the given chain name.
- * @throws std::runtime_error when the chain is not supported.
+ * Sets the params returned by Params() to those for the given chain name: the
+ * network the node runs on, chosen by the command line and the configuration.
+ * @throws std::runtime_error when the chain is not supported, or its
+ * parameters are refused (CheckNeverActivatedDashRules among others).
  */
 void SelectParams(const std::string& chain);
+
+/**
+ * The same, without CheckNeverActivatedDashRules, for a selection made before
+ * the configuration has chosen the network: the GUI's data directory dialog
+ * reads its sizes from the network the command line names, and a refusal there
+ * would stop the GUI on its way to another network. The network finally
+ * chosen goes through SelectParams.
+ * @throws std::runtime_error when the chain is not supported.
+ */
+void SelectProvisionalParams(const std::string& chain);
 
 /**
  *Set the arguments for chainparams
