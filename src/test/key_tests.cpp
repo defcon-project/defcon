@@ -14,6 +14,7 @@
 #include <util/string.h>
 #include <util/system.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -492,6 +493,119 @@ BOOST_AUTO_TEST_CASE(validsize_checks_the_header_byte)
     // Wrong lengths, and empty, are rejected.
     BOOST_CHECK(!CPubKey::ValidSize(std::vector<unsigned char>(20, 0x02)));
     BOOST_CHECK(!CPubKey::ValidSize(std::vector<unsigned char>{}));
+}
+
+namespace {
+//! A WIF for these 32 bytes, with this chain's version byte.
+std::string WifFor(const std::vector<unsigned char>& secret, bool compressed)
+{
+    std::vector<unsigned char> data = Params().Base58Prefix(CChainParams::SECRET_KEY);
+    data.insert(data.end(), secret.begin(), secret.end());
+    if (compressed) data.push_back(1);
+    return EncodeBase58Check(data);
+}
+} // namespace
+
+/**
+ * A private key is valid only if its 32 bytes are a secp256k1 secret.
+ *
+ * The BLS wallet change dropped the check from CKey::Set, so zero, the curve
+ * order and anything above it came back as valid keys, and the first
+ * GetPubKey() or Sign() on one hit an assert: a bad private key given to a
+ * signing RPC or a descriptor stopped the node. Every way in is checked at the
+ * boundaries -- Set() with either flag, the byte constructor, DecodeSecret
+ * (the RPCs' path), and a valid key overwritten by an invalid one -- and the
+ * BLS secrets the wallet keeps in a CKey must still pass.
+ */
+BOOST_AUTO_TEST_CASE(ckey_set_rejects_an_invalid_secret)
+{
+    // n, the secp256k1 group order, big-endian.
+    const std::vector<unsigned char> order = ParseHex("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
+    std::vector<unsigned char> order_minus_one = order;
+    order_minus_one.back() = 0x40;
+    std::vector<unsigned char> order_plus_one = order;
+    order_plus_one.back() = 0x42;
+    std::vector<unsigned char> one(32, 0x00);
+    one.back() = 0x01;
+    const std::vector<unsigned char> zero(32, 0x00);
+    const std::vector<unsigned char> all_ff(32, 0xff);
+
+    for (const auto& secret : {zero, order, order_plus_one, all_ff}) {
+        for (const bool compressed : {true, false}) {
+            CKey key;
+            key.Set(secret.begin(), secret.end(), compressed);
+            BOOST_CHECK(!key.IsValid());
+            BOOST_CHECK_EQUAL(key.size(), 0U);
+
+            BOOST_CHECK(!DecodeSecret(WifFor(secret, compressed)).IsValid());
+
+            CKey reused;
+            reused.MakeNewKey(compressed);
+            BOOST_REQUIRE(reused.IsValid());
+            reused.Set(secret.begin(), secret.end(), compressed);
+            BOOST_CHECK(!reused.IsValid());
+        }
+        BOOST_CHECK(!CKey(secret.begin(), secret.end()).IsValid());
+    }
+
+    // A wrong length is not a key either, on both ways in.
+    const std::vector<unsigned char> short_secret(31, 0x01);
+    CKey short_key;
+    short_key.Set(short_secret.begin(), short_secret.end(), true);
+    BOOST_CHECK(!short_key.IsValid());
+    BOOST_CHECK(!CKey(short_secret.begin(), short_secret.end()).IsValid());
+
+    // The two ends of the valid range are keys, and work as keys.
+    for (const auto& secret : {one, order_minus_one}) {
+        for (const bool compressed : {true, false}) {
+            CKey key;
+            key.Set(secret.begin(), secret.end(), compressed);
+            BOOST_REQUIRE(key.IsValid());
+            BOOST_CHECK_EQUAL(key.IsCompressed(), compressed);
+            BOOST_CHECK(key.VerifyPubKey(key.GetPubKey()));
+            BOOST_CHECK(DecodeSecret(WifFor(secret, compressed)) == key);
+            BOOST_CHECK(DecodeSecret(EncodeSecret(key)) == key);
+        }
+        const CKey constructed(secret.begin(), secret.end());
+        BOOST_REQUIRE(constructed.IsValid());
+        BOOST_CHECK(constructed.IsCompressed());
+    }
+    // 1 is the generator G, and n - 1 is -G: the same x, the other parity.
+    CKey key_one, key_last;
+    key_one.Set(one.begin(), one.end(), true);
+    key_last.Set(order_minus_one.begin(), order_minus_one.end(), true);
+    BOOST_CHECK_EQUAL(HexStr(key_one.GetPubKey()), "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
+    BOOST_CHECK_EQUAL(HexStr(key_last.GetPubKey()), "0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
+
+    // BLS: dashbls accepts a secret up to the BLS12-381 group order r, and r
+    // is below n, so every BLS secret is also in range for the check above.
+    const std::vector<unsigned char> bls_order = ParseHex("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001");
+    BOOST_CHECK(std::lexicographical_compare(bls_order.begin(), bls_order.end(), order.begin(), order.end()));
+    std::vector<unsigned char> bls_last = bls_order;
+    bls_last.back() = 0x00;
+    for (const auto& bytes : {bls_last, bls_order}) {
+        CBLSSecretKey sk;
+        sk.SetBytes(bytes, /*specificLegacyScheme=*/false);
+        if (bytes == bls_last) BOOST_REQUIRE(sk.IsValid());
+        if (!sk.IsValid()) continue;
+        // As the BLS wallet stores its secrets in a CKey.
+        const std::vector<uint8_t> stored = sk.ToByteVector(/*specificLegacyScheme=*/false);
+        CKey key;
+        key.Set(stored.begin(), stored.end(), false);
+        BOOST_CHECK(key.IsValid());
+    }
+    // And a fresh BLS key copied through Set() still signs.
+    for (int i = 0; i < 16; ++i) {
+        CKey bls_key;
+        bls_key.MakeNewBLSKey();
+        CKey copy;
+        copy.Set(bls_key.begin(), bls_key.end(), false);
+        BOOST_REQUIRE(copy.IsValid());
+        const uint256 hash = InsecureRand256();
+        std::vector<uint8_t> sig;
+        BOOST_REQUIRE(copy.SignBLS(hash, sig));
+        BOOST_CHECK(bls_key.GetPubKeyForBLS().VerifyBLS(hash, sig));
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

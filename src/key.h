@@ -68,12 +68,14 @@ public:
         keydata.resize(32);
     }
 
+    //! Construct from byte data, with a compressed public key. Valid only if
+    //! Set() accepts the bytes: it used to mark any input valid, even one of
+    //! the wrong length, which left the key without its 32 bytes.
     template <typename T>
-    CKey(const T pbegin, const T pend)
+    CKey(const T pbegin, const T pend) : fValid(false), fCompressed(false)
     {
-        Set(pbegin, pend, false);
-        fValid = true;
-        fCompressed = true;
+        keydata.resize(32);
+        Set(pbegin, pend, true);
     }
 
     friend bool operator==(const CKey& a, const CKey& b)
@@ -83,24 +85,37 @@ public:
             memcmp(a.keydata.data(), b.keydata.data(), a.size()) == 0;
     }
 
-    //! Initialize using begin and end iterators to byte data.
+    //! Initialize using begin and end iterators to byte data. The key is valid
+    //! only if the 32 bytes are a secp256k1 secret: not zero, and below the
+    //! curve order. Anything else leaves the key invalid.
     template <typename T>
     void Set(const T pbegin, const T pend, bool fCompressedIn)
     {
+        // The BLS wallet change (2025-12) dropped the Check() here, so any 32
+        // bytes -- zero, the curve order, or above it -- became a valid key,
+        // and the first GetPubKey() or Sign() on it hit an assert in key.cpp:
+        // a bad private key given to signrawtransactionwithkey,
+        // signmessagewithprivkey or a descriptor stopped the node. BLS keys
+        // need no exemption: every secret dashbls accepts is nonzero and at
+        // most the BLS12-381 group order, which is below the secp256k1 order,
+        // so it passes the same check.
         if (size_t(pend - pbegin) != keydata.size()) {
             fValid = false;
-            return;
+        } else if (Check(&pbegin[0])) {
+            memcpy(keydata.data(), (unsigned char*)&pbegin[0], keydata.size());
+            fValid = true;
+            // The BLS wallet change hardcoded true here, overriding what every
+            // caller asked for: DecodeSecret of an uncompressed WIF answered a
+            // compressed key, which derives a different address than the one
+            // the WIF's funds were sent to, and the crypter's decrypt path lost
+            // the stored form the same way. The BLS caller passes its flag
+            // explicitly and never reads it back through secp derivation, so
+            // honouring the parameter is what every caller -- including that
+            // one -- expects.
+            fCompressed = fCompressedIn;
+        } else {
+            fValid = false;
         }
-        memcpy(keydata.data(), (unsigned char*)&pbegin[0], keydata.size());
-        fValid = true;
-        // The BLS wallet change hardcoded true here, overriding what every
-        // caller asked for: DecodeSecret of an uncompressed WIF answered a
-        // compressed key, which derives a different address than the one the
-        // WIF's funds were sent to, and the crypter's decrypt path lost the
-        // stored form the same way. The BLS caller passes its flag explicitly
-        // and never reads it back through secp derivation, so honouring the
-        // parameter is what every caller -- including that one -- expects.
-        fCompressed = fCompressedIn;
     }
 
     //! Simple read-only vector-like interface.

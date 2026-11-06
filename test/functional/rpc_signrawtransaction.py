@@ -4,11 +4,13 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test transaction signing using the signrawtransaction* RPCs."""
 
+from test_framework.key import ORDER
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
 )
+from test_framework.wallet_util import bytes_to_wif
 
 
 class SignRawTransactionsTest(BitcoinTestFramework):
@@ -47,6 +49,18 @@ class SignRawTransactionsTest(BitcoinTestFramework):
 
         # 2) No script verification error occurred
         assert 'errors' not in rawTxSigned
+
+    def invalid_private_key_test(self):
+        """A well-formed WIF whose 32 bytes are not a secp256k1 secret is refused; it used to stop the node."""
+        self.log.info("Test that a private key outside the curve order is refused")
+        inputs = [{'txid': '9b907ef1e3c26fc71fe4a4b3580bc75264112f95050014157059c736f0202e71', 'vout': 0,
+                   'scriptPubKey': '76a91460baa0f494b38ce3c940dea67f3804dc52d1fb9488ac'}]
+        rawTx = self.nodes[0].createrawtransaction(inputs, {'ycwedq2f3sz2Yf9JqZsBCQPxp18WU3Hp4J': 0.1})
+        for secret in (bytes(32), ORDER.to_bytes(32, 'big'), b'\xff' * 32):
+            for compressed in (True, False):
+                assert_raises_rpc_error(-5, "Invalid private key", self.nodes[0].signrawtransactionwithkey,
+                                        rawTx, [bytes_to_wif(secret, compressed)], inputs)
+        assert self.nodes[0].getblockcount() >= 0
 
     def test_with_lock_outputs(self):
         self.log.info("Test correct error reporting when trying to sign a locked output")
@@ -123,6 +137,7 @@ class SignRawTransactionsTest(BitcoinTestFramework):
 
     def run_test(self):
         self.successful_signing_test()
+        self.invalid_private_key_test()
         self.script_verification_error_test()
         self.test_with_lock_outputs()
 

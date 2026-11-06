@@ -5,12 +5,15 @@
 """Test getdescriptorinfo RPC.
 """
 
+from test_framework.address import byte_to_base58
+from test_framework.key import ORDER
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.descriptors import descsum_create
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
 )
+from test_framework.wallet_util import bytes_to_wif
 
 
 class DescriptorTest(BitcoinTestFramework):
@@ -31,6 +34,17 @@ class DescriptorTest(BitcoinTestFramework):
         assert_raises_rpc_error(-1, 'getdescriptorinfo', self.nodes[0].getdescriptorinfo)
         assert_raises_rpc_error(-3, 'Expected type string', self.nodes[0].getdescriptorinfo, 1)
         assert_raises_rpc_error(-5, 'is not a valid descriptor function', self.nodes[0].getdescriptorinfo, '')
+
+        # A private key whose 32 bytes are not a secp256k1 secret (zero, the curve order, above it) is not a key,
+        # as a WIF or inside an extended private key (regtest tprv, depth 0); it used to stop the node.
+        for secret in (bytes(32), ORDER.to_bytes(32, 'big'), b'\xff' * 32):
+            for compressed in (True, False):
+                assert_raises_rpc_error(-5, 'is not valid', self.nodes[0].getdescriptorinfo,
+                                        f'pkh({bytes_to_wif(secret, compressed)})')
+            xprv = bytes.fromhex('04358394') + bytes(9) + b'\x01' * 32 + b'\x00' + secret
+            assert_raises_rpc_error(-5, 'is not valid', self.nodes[0].getdescriptorinfo,
+                                    f'pkh({byte_to_base58(xprv[1:], xprv[0])})')
+        assert self.nodes[0].getblockcount() >= 0
 
         # P2PK output with the specified public key.
         self.test_desc('pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)', isrange=False, issolvable=True, hasprivatekeys=False)
