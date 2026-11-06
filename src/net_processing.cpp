@@ -48,7 +48,9 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <deque>
 #include <future>
+#include <limits>
 #include <list>
 #include <memory>
 #include <optional>
@@ -162,6 +164,33 @@ static constexpr double BLOCK_DOWNLOAD_TIMEOUT_PER_PEER = 0.5;
 static const unsigned int MAX_BLOCKS_TO_ANNOUNCE = 8;
 /** Maximum number of unconnecting headers announcements before DoS score */
 static const int MAX_UNCONNECTING_HEADERS = 10;
+/** A proof-of-stake header that comes without its block costs nothing to make: a header carries no kernel and no
+ *  block signature, only a time after its parent's and the expected nBits. Each new one is a block index entry for
+ *  good (it is also written to disk). So a header without its block is taken only up to this many heights above
+ *  the active tip (or the last proof-of-work block, if that is higher), plus UNBACKED_HEADER_AHEAD_PER_SPACING for
+ *  every block interval the tip's time lies behind: a node that has fallen behind still takes the real chain ahead
+ *  of it. */
+static constexpr int UNBACKED_HEADER_AHEAD{24};
+static constexpr int UNBACKED_HEADER_AHEAD_PER_SPACING{4};
+/** A header without its block is not taken if it branches off the active chain more than this many blocks below
+ *  the tip: a node on the real chain is not reorganised that deep (with ChainLocks it cannot be), and a branch
+ *  can then hold at most this many plus the height limit's worth of entries. */
+static constexpr int MAX_UNBACKED_FORK_DEPTH{100};
+/** Of the new branches a peer opened within UNBACKED_FORK_WINDOW -- a header without its block, or a block it was
+ *  not asked for, on a block that already has a child, at a proof-of-stake height -- at most this many may be on a
+ *  block never connected; past it the peer's further new branches are not taken until the window has moved on.
+ *  Nothing else happens to the peer: a real block that loses here (one of the tip's work that comes second) is, until
+ *  it is connected, no different from one made for nothing, and it never is connected. A branch not taken from such a
+ *  peer is taken from another peer, or from it once the window has moved on. A branch whose first block
+ *  has been connected (its stake checked) no longer counts: anyone can put a header on a new tip before its real
+ *  child is announced, and the peer announcing the real block must not pay for that. Having the block is not
+ *  enough: a block that does not become the tip is kept unchecked (one of the tip's work is even fetched, and one
+ *  sent unasked is stored), and its signature is its own coinstake key's. Whether a branch is the best one does not
+ *  matter either: anyone can make a branch the best header for nothing. This bounds a rate, not the life of a
+ *  connection: the entries stay, and a window later the peer may open as many again (a bound would need headers
+ *  that prove their stake). */
+static constexpr size_t MAX_UNBACKED_FORKS_PER_PEER{32};
+static constexpr auto UNBACKED_FORK_WINDOW{24h};
 /** Minimum blocks required to signal NODE_NETWORK_LIMITED */
 static const unsigned int NODE_NETWORK_LIMITED_MIN_BLOCKS = 288;
 /** Average delay between local address broadcasts */
@@ -551,6 +580,19 @@ struct CNodeState {
     const CBlockIndex* pindexBestHeaderSent{nullptr};
     //! Length of current-streak of unconnecting headers announcements
     int nUnconnectingHeaders{0};
+    //! The new branches this peer opened within UNBACKED_FORK_WINDOW (headers without blocks, or blocks not asked
+    //! for), when, and their first entry; dropped once that has been connected (see MAX_UNBACKED_FORKS_PER_PEER), so
+    //! at most that many. Entries are never freed.
+    std::deque<std::pair<std::chrono::seconds, const CBlockIndex*>> m_unbacked_forks;
+    //! Headers from this peer above the height taken without blocks were dropped: the last one taken, or the block
+    //! the dropped ones build on if none was. Asked on from there once the limit has moved past it (see
+    //! MaxUnbackedHeaderHeight).
+    const CBlockIndex* m_headers_cut_at{nullptr};
+    //! When the limits on headers without blocks last dropped, cut or refused something from this peer: a header, a
+    //! compact block, a block not asked for, or such a block that validation dropped before indexing it. For
+    //! UNBACKED_FORK_WINDOW after it, the peer's headers that do not connect here are not counted as non-connecting
+    //! headers (see HandleFewUnconnectingHeaders): they may build on anything dropped from it, on any of its branches.
+    std::chrono::seconds m_unbacked_dropped_at{0};
     //! Whether we've started headers synchronization with this peer.
     bool fSyncStarted{false};
     //! When to potentially disconnect peer for stalling headers download
@@ -891,6 +933,19 @@ private:
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, g_msgproc_mutex);
     /** Return true if the headers connect to each other, false otherwise */
     bool CheckHeadersAreContinuous(const std::vector<CBlockHeader>& headers) const;
+    /** The highest height a header without its block is taken at now (see UNBACKED_HEADER_AHEAD) */
+    int MaxUnbackedHeaderHeight() const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /** Of a header without its block about to be taken: whether it branches off too deep to take, and whether it
+     *  opens a new branch (its parent already has a child), at a proof-of-stake height */
+    void ClassifyUnbackedHeader(const CBlockIndex& parent, bool& too_deep, bool& opens_branch) const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /** Whether this peer may open another new branch now: fewer than MAX_UNBACKED_FORKS_PER_PEER of the branches it
+     *  opened within UNBACKED_FORK_WINDOW are on a block never connected (the others are forgotten here) */
+    bool UnbackedForkRoom(NodeId nodeid) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /** Notes that this peer opened a new branch with `hash`, if that is now an index entry never connected */
+    void NoteUnbackedFork(NodeId nodeid, const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /** Notes that the limits on headers without blocks (or validation, for a block not asked for) dropped something
+     *  from this peer now (see CNodeState::m_unbacked_dropped_at) */
+    void NoteUnbackedDrop(NodeId nodeid) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     /** Request further headers from this peer with a given locator.
      * We don't issue a getheaders message if we have a recent one outstanding.
      * This returns true if a getheaders is actually sent, and false otherwise.
@@ -3355,7 +3410,13 @@ void PeerManagerImpl::HandleFewUnconnectingHeaders(CNode& pfrom, Peer& peer,
     LOCK(cs_main);
     CNodeState *nodestate = State(pfrom.GetId());
 
-    nodestate->nUnconnectingHeaders++;
+    // From a peer that the limits on headers without blocks dropped something from within the window, headers that do
+    // not connect may build on any of it (on any of its branches, in any order) and cannot connect here, through no
+    // fault of the peer, however many come before it answers: not counted. The request below still goes out, so
+    // that a branch is taken once the limits allow. From a peer nothing was dropped from, they count as before.
+    const bool after_drop{nodestate->m_unbacked_dropped_at.count() != 0 &&
+                          GetTime<std::chrono::seconds>() < nodestate->m_unbacked_dropped_at + UNBACKED_FORK_WINDOW};
+    if (!after_drop) nodestate->nUnconnectingHeaders++;
     // Try to fill in the missing headers.
     std::string msg_type = UsesCompressedHeaders(peer) ? NetMsgType::GETHEADERS2 : NetMsgType::GETHEADERS;
     if (MaybeSendGetHeaders(pfrom, msg_type, GetLocator(m_chainman.m_best_header), peer)) {
@@ -3373,7 +3434,7 @@ void PeerManagerImpl::HandleFewUnconnectingHeaders(CNode& pfrom, Peer& peer,
 
     // The peer may just be broken, so periodically assign DoS points if this
     // condition persists.
-    if (nodestate->nUnconnectingHeaders % MAX_UNCONNECTING_HEADERS == 0) {
+    if (!after_drop && nodestate->nUnconnectingHeaders % MAX_UNCONNECTING_HEADERS == 0) {
         Misbehaving(pfrom.GetId(), 20, strprintf("%d non-connecting headers", nodestate->nUnconnectingHeaders));
     }
 }
@@ -3388,6 +3449,65 @@ bool PeerManagerImpl::CheckHeadersAreContinuous(const std::vector<CBlockHeader>&
         hashLastBlock = header.GetHash();
     }
     return true;
+}
+
+int PeerManagerImpl::MaxUnbackedHeaderHeight() const
+{
+    AssertLockHeld(cs_main);
+    const Consensus::Params& consensus{m_chainparams.GetConsensus()};
+    const CBlockIndex* tip{m_chainman.ActiveChain().Tip()};
+    const int64_t behind{std::max<int64_t>(0, GetAdjustedTime() - tip->GetBlockTime())};
+    const int64_t ahead{UNBACKED_HEADER_AHEAD + UNBACKED_HEADER_AHEAD_PER_SPACING * (behind / consensus.posTargetSpacing)};
+    // Up to the last proof-of-work block a header carries its own proof of work: no limit there, and the margin
+    // counts from there for a tip below it (a node syncing from the start).
+    const int64_t highest{std::max<int64_t>(consensus.lastPowBlock, tip->nHeight) + ahead};
+    return static_cast<int>(std::min<int64_t>(highest, std::numeric_limits<int>::max()));
+}
+
+void PeerManagerImpl::ClassifyUnbackedHeader(const CBlockIndex& parent, bool& too_deep, bool& opens_branch) const
+{
+    AssertLockHeld(cs_main);
+    too_deep = opens_branch = false;
+    // Up to the last proof-of-work block a header carries its own proof of work.
+    if (parent.nHeight + 1 <= m_chainparams.GetConsensus().lastPowBlock) return;
+    const CChain& active{m_chainman.ActiveChain()};
+    const CBlockIndex* fork{active.FindFork(&parent)};
+    too_deep = fork != nullptr && active.Height() - fork->nHeight > MAX_UNBACKED_FORK_DEPTH;
+    opens_branch = m_chainman.m_blockman.m_prev_block_index.count(parent.GetBlockHash()) != 0;
+}
+
+bool PeerManagerImpl::UnbackedForkRoom(NodeId nodeid)
+{
+    AssertLockHeld(cs_main);
+    CNodeState* state{State(nodeid)};
+    if (state == nullptr) return true;
+    const auto now{GetTime<std::chrono::seconds>()};
+    auto& forks{state->m_unbacked_forks};
+    for (auto it{forks.begin()}; it != forks.end();) {
+        if (it->first + UNBACKED_FORK_WINDOW <= now || it->second->IsValid(BLOCK_VALID_SCRIPTS)) {
+            it = forks.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    return forks.size() < MAX_UNBACKED_FORKS_PER_PEER;
+}
+
+void PeerManagerImpl::NoteUnbackedFork(NodeId nodeid, const uint256& hash)
+{
+    AssertLockHeld(cs_main);
+    CNodeState* state{State(nodeid)};
+    if (state == nullptr) return;
+    const CBlockIndex* pindex{m_chainman.m_blockman.LookupBlockIndex(hash)};
+    // Nothing kept (refused, e.g. as invalid or conflicting with a ChainLock), or kept and connected: no cost.
+    if (pindex == nullptr || pindex->IsValid(BLOCK_VALID_SCRIPTS)) return;
+    state->m_unbacked_forks.emplace_back(GetTime<std::chrono::seconds>(), pindex);
+}
+
+void PeerManagerImpl::NoteUnbackedDrop(NodeId nodeid)
+{
+    AssertLockHeld(cs_main);
+    if (CNodeState* state{State(nodeid)}) state->m_unbacked_dropped_at = GetTime<std::chrono::seconds>();
 }
 
 bool PeerManagerImpl::MaybeSendGetHeaders(CNode& pfrom, const std::string& msg_type, const CBlockLocator& locator, Peer& peer)
@@ -3568,30 +3688,122 @@ void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
         return;
     }
 
-    // If we don't have the last header, then this peer will have given us
-    // something new (if these headers are valid).
-    bool received_new_header{WITH_LOCK(::cs_main, return m_chainman.m_blockman.LookupBlockIndex(headers.back().GetHash()) == nullptr)};
-
-    BlockValidationState state;
-    if (!m_chainman.ProcessNewBlockHeaders(headers, state, m_chainparams, &pindexLast)) {
-        if (state.IsInvalid()) {
-            MaybePunishNodeForBlock(pfrom.GetId(), state, via_compact_block, "invalid header received");
+    // Headers without their blocks (see UNBACKED_HEADER_AHEAD): taken only so far above the active tip, the rest
+    // asked for again once the limit has moved (m_headers_cut_at); not taken at all if they branch off the active
+    // chain too deep (MAX_UNBACKED_FORK_DEPTH) or open a new branch past the peer's count (MAX_UNBACKED_FORKS_PER_PEER);
+    // and a header opening a new branch counts against the peer, whatever becomes of the rest of the message.
+    std::vector<CBlockHeader> taken{headers};
+    uint256 opened; // the header new to the index that opens a new branch, if any
+    bool cut{false};
+    bool received_new_header{false};
+    {
+        LOCK(cs_main);
+        const CBlockIndex* prev{m_chainman.m_blockman.LookupBlockIndex(headers[0].hashPrevBlock)};
+        assert(prev); // checked above, and the block index never drops an entry
+        // Below the minimum chain work no block is downloaded until a header chain reaches it, so there the height
+        // limit would hold the node back for as long as the clock takes to move it (its tip could not): headers on
+        // a parent below it are taken whatever their height. The depth limit and the branch count still apply.
+        size_t below_min_work{0};
+        for (arith_uint256 work{prev->nChainWork}; below_min_work < taken.size() && work < nMinimumChainWork; ++below_min_work) {
+            work += GetBlockProof(CBlockIndex{taken[below_min_work]});
+        }
+        const int max_height{MaxUnbackedHeaderHeight()};
+        const size_t room{std::max(static_cast<size_t>(std::max(0, max_height - prev->nHeight)), below_min_work)};
+        if (taken.size() > room) {
+            LogPrint(BCLog::NET, "peer=%d: %u headers without blocks above height %d (the tip is %d), dropped\n",
+                     pfrom.GetId(), taken.size() - room, max_height, m_chainman.ActiveChain().Height());
+            taken.resize(room);
+            cut = true;
+        }
+        // The first header new to the index, and the block it builds on (the headers are one chain, so the
+        // ones after it are new too, each on the one before).
+        const CBlockIndex* parent{prev};
+        size_t first_new{taken.size()};
+        for (size_t i = 0; i < taken.size(); ++i) {
+            const CBlockIndex* known{m_chainman.m_blockman.LookupBlockIndex(taken[i].GetHash())};
+            if (known == nullptr) {
+                first_new = i;
+                break;
+            }
+            parent = known;
+        }
+        if (first_new < taken.size()) {
+            bool too_deep, opens_branch;
+            ClassifyUnbackedHeader(*parent, too_deep, opens_branch);
+            bool refused{false}; // the new headers are not taken: nothing to ask on for
+            if (too_deep) {
+                LogPrint(BCLog::NET, "peer=%d: headers without blocks branching off at height %d, more than %d below the tip, dropped\n",
+                         pfrom.GetId(), parent->nHeight, MAX_UNBACKED_FORK_DEPTH);
+                refused = true;
+            } else if (opens_branch && !UnbackedForkRoom(pfrom.GetId())) {
+                LogPrint(BCLog::NET, "peer=%d: headers without blocks opening a new branch at height %d, past %u such branches within %d s, dropped\n",
+                         pfrom.GetId(), parent->nHeight + 1, MAX_UNBACKED_FORKS_PER_PEER, count_seconds(UNBACKED_FORK_WINDOW));
+                refused = true;
+            }
+            if (refused) {
+                taken.resize(first_new);
+                cut = false;
+            } else {
+                if (opens_branch) opened = taken[first_new].GetHash();
+                received_new_header = true;
+            }
+        }
+        if (cut && taken.empty()) {
+            // All of it above the limit (another peer may have given us the headers up to it): asked on from the
+            // block they build on, which this peer has, so its blocks can be fetched from it meanwhile.
+            if (CNodeState* nodestate{State(pfrom.GetId())}) nodestate->m_headers_cut_at = prev;
+            UpdateBlockAvailability(pfrom.GetId(), prev->GetBlockHash());
+        }
+        if (taken.size() < headers.size()) {
+            // Some dropped (cut at the height limit, or refused): the peer's next announcements may build on them.
+            NoteUnbackedDrop(pfrom.GetId());
+        }
+        if (taken.empty()) {
+            // Nothing taken, but the headers connect: the count of non-connecting headers starts again, as for any
+            // reply that connects (UpdatePeerStateForReceivedHeaders, which is not reached from here).
+            if (CNodeState* nodestate{State(pfrom.GetId())}) nodestate->nUnconnectingHeaders = 0;
             return;
         }
     }
 
+    BlockValidationState state;
+    const bool processed{m_chainman.ProcessNewBlockHeaders(taken, state, m_chainparams, &pindexLast)};
+    // Noted first: an invalid header after the new branch must not undo its count.
+    if (!opened.IsNull()) WITH_LOCK(cs_main, NoteUnbackedFork(pfrom.GetId(), opened));
+    if (!processed && state.GetResult() == BlockValidationResult::BLOCK_CHAINLOCK) {
+        // Refused for a ChainLock, without an entry: a peer that has not seen the lock yet may announce more on
+        // top of it, which cannot connect here, as after any header dropped above.
+        WITH_LOCK(cs_main, NoteUnbackedDrop(pfrom.GetId()));
+    }
+    if (!processed && state.IsInvalid()) {
+        MaybePunishNodeForBlock(pfrom.GetId(), state, via_compact_block, "invalid header received");
+        return;
+    }
+    if (cut) {
+        // Asked on from the last header taken once the limit has moved past it, also when all of them were known
+        // already (another peer gave them first), not from this peer's best known block (another branch, maybe).
+        LOCK(cs_main);
+        const CBlockIndex* last{m_chainman.m_blockman.LookupBlockIndex(taken.back().GetHash())};
+        CNodeState* nodestate{State(pfrom.GetId())};
+        if (nodestate != nullptr && last != nullptr) nodestate->m_headers_cut_at = last;
+    }
+    if (pindexLast == nullptr) return; // only known headers, nothing new to update the peer with
+
     // Consider fetching more headers.
     const bool uses_compressed = UsesCompressedHeaders(peer);
     const std::string msg_type = uses_compressed ? NetMsgType::GETHEADERS2 : NetMsgType::GETHEADERS;
-    if (nCount == GetHeadersLimit(pfrom, uses_compressed)) {
-        // Headers message had its maximum size; the peer may have more headers.
+    // Cut short here, the peer may have more headers: also for the peer state below, so that it is not taken
+    // for a peer whose chain has too little work.
+    const bool may_have_more{cut || nCount == GetHeadersLimit(pfrom, uses_compressed)};
+    if (may_have_more) {
+        // Headers message had its maximum size (or was cut short); the peer may have more headers.
         if (MaybeSendGetHeaders(pfrom, msg_type, GetLocator(pindexLast), peer)) {
             LogPrint(BCLog::NET, "more %s (%d) to end to peer=%d (startheight:%d)\n",
                     msg_type, pindexLast->nHeight, pfrom.GetId(), peer.m_starting_height);
         }
     }
 
-    UpdatePeerStateForReceivedHeaders(pfrom, pindexLast, received_new_header, nCount == GetHeadersLimit(pfrom, uses_compressed));
+    UpdatePeerStateForReceivedHeaders(pfrom, pindexLast, received_new_header, may_have_more);
 
     // Consider immediately downloading blocks.
     HeadersDirectFetchBlocks(pfrom, peer, pindexLast);
@@ -5176,12 +5388,14 @@ void PeerManagerImpl::ProcessMessage(
         vRecv >> cmpctblock;
 
         bool received_new_header = false;
+        bool opens_branch{false};
         const auto blockhash = cmpctblock.header.GetHash();
 
         {
         LOCK(cs_main);
 
-        if (!m_chainman.m_blockman.LookupBlockIndex(cmpctblock.header.hashPrevBlock)) {
+        const CBlockIndex* prev{m_chainman.m_blockman.LookupBlockIndex(cmpctblock.header.hashPrevBlock)};
+        if (!prev) {
             // Doesn't connect (or is genesis), instead of DoSing in AcceptBlockHeader, request deeper headers
             if (!m_chainman.ActiveChainstate().IsInitialBlockDownload()) {
                 std::string ret_val = UsesCompressedHeaders(*peer) ? NetMsgType::GETHEADERS2 : NetMsgType::GETHEADERS;
@@ -5192,12 +5406,35 @@ void PeerManagerImpl::ProcessMessage(
 
         if (!m_chainman.m_blockman.LookupBlockIndex(blockhash)) {
             received_new_header = true;
+            // Until the block is rebuilt this is a header without its block: the same limits as for headers.
+            bool too_deep;
+            ClassifyUnbackedHeader(*prev, too_deep, opens_branch);
+            // As for headers: no height limit on a parent below the minimum chain work.
+            const bool above{prev->nHeight + 1 > MaxUnbackedHeaderHeight() && prev->nChainWork >= nMinimumChainWork};
+            const bool past_count{!too_deep && opens_branch && !UnbackedForkRoom(pfrom.GetId())};
+            if (above || too_deep || past_count) {
+                LogPrint(BCLog::NET, "peer=%d: cmpctblock %s at height %d is above the height taken without blocks, branches off too deep, or opens a new branch past the peer's count, dropped\n",
+                         pfrom.GetId(), blockhash.ToString(), prev->nHeight + 1);
+                NoteUnbackedDrop(pfrom.GetId());
+                if (!too_deep && !past_count) {
+                    // As for a cut headers reply: asked on from the block it builds on once the limit has moved.
+                    if (CNodeState* nodestate{State(pfrom.GetId())}) nodestate->m_headers_cut_at = prev;
+                    UpdateBlockAvailability(pfrom.GetId(), prev->GetBlockHash());
+                }
+                return;
+            }
         }
         }
 
         const CBlockIndex *pindex = nullptr;
         BlockValidationState state;
-        if (!m_chainman.ProcessNewBlockHeaders({cmpctblock.header}, state, m_chainparams, &pindex)) {
+        const bool processed{m_chainman.ProcessNewBlockHeaders({cmpctblock.header}, state, m_chainparams, &pindex)};
+        if (opens_branch) WITH_LOCK(cs_main, NoteUnbackedFork(pfrom.GetId(), blockhash));
+        if (!processed) {
+            if (state.GetResult() == BlockValidationResult::BLOCK_CHAINLOCK) {
+                // As for headers: refused for a ChainLock without an entry, more may come on top of it.
+                WITH_LOCK(cs_main, NoteUnbackedDrop(pfrom.GetId()));
+            }
             if (state.IsInvalid()) {
                 MaybePunishNodeForBlock(pfrom.GetId(), state, /*via_compact_block=*/true, "invalid header via cmpctblock");
                 return;
@@ -5480,6 +5717,7 @@ void PeerManagerImpl::ProcessMessage(
         }
 
         bool forceProcessing = false;
+        bool opens_branch{false};
         const uint256 hash(pblock->GetHash());
         {
             LOCK(cs_main);
@@ -5487,12 +5725,40 @@ void PeerManagerImpl::ProcessMessage(
             // need it even when it's not a candidate for a new best tip.
             forceProcessing = IsBlockRequested(hash);
             RemoveBlockRequest(hash, pfrom.GetId());
+            // A block not asked for, new to the index, is stored even if it never becomes the tip (one of the tip's
+            // work is), and its stake is checked only when it is connected: until then it is as cheap to make as a
+            // header without its block. One that opens a new branch counts against the peer as such a header does
+            // (MAX_UNBACKED_FORKS_PER_PEER), and past the count it is not taken. A requested block's header was
+            // counted when it came.
+            if (!forceProcessing && m_chainman.m_blockman.LookupBlockIndex(hash) == nullptr) {
+                if (const CBlockIndex* prev{m_chainman.m_blockman.LookupBlockIndex(pblock->hashPrevBlock)}) {
+                    bool too_deep; // not applied: a block not asked for is kept only with at least the tip's work (AcceptBlock)
+                    ClassifyUnbackedHeader(*prev, too_deep, opens_branch);
+                    if (opens_branch && !UnbackedForkRoom(pfrom.GetId())) {
+                        LogPrint(BCLog::NET, "peer=%d: block %s not asked for opens a new branch at height %d, past %u such branches within %d s, dropped\n",
+                                 pfrom.GetId(), hash.ToString(), prev->nHeight + 1, MAX_UNBACKED_FORKS_PER_PEER, count_seconds(UNBACKED_FORK_WINDOW));
+                        NoteUnbackedDrop(pfrom.GetId());
+                        return;
+                    }
+                }
+            }
             // mapBlockSource is only used for punishing peers and setting
             // which peers send us compact blocks, so the race between here and
             // cs_main in ProcessNewBlock is fine.
             mapBlockSource.emplace(hash, std::make_pair(pfrom.GetId(), true));
         }
         ProcessBlock(pfrom, pblock, forceProcessing);
+        if (opens_branch) WITH_LOCK(cs_main, NoteUnbackedFork(pfrom.GetId(), hash));
+        if (!forceProcessing) {
+            LOCK(cs_main);
+            // A block not asked for, on a known block, that validation dropped before indexing it (AcceptBlock: less
+            // work than the tip, too far ahead, below the minimum chain work): the peer's next announcements may
+            // build on it and cannot connect here either.
+            if (m_chainman.m_blockman.LookupBlockIndex(hash) == nullptr &&
+                m_chainman.m_blockman.LookupBlockIndex(pblock->hashPrevBlock) != nullptr) {
+                NoteUnbackedDrop(pfrom.GetId());
+            }
+        }
         return;
     }
 
@@ -7661,6 +7927,18 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                         );
                     nSyncStarted++;
                 }
+            }
+        }
+
+        // Headers this peer sent above the height taken without blocks were dropped (MaxUnbackedHeaderHeight).
+        // Once the limit has moved past where the cut reply left off (the tip has moved on, or time has passed),
+        // ask again from there; a reply that comes too early is cut again and keeps this pending.
+        if (state.m_headers_cut_at != nullptr && MaxUnbackedHeaderHeight() > state.m_headers_cut_at->nHeight) {
+            const std::string msg_type = UsesCompressedHeaders(*peer) ? NetMsgType::GETHEADERS2 : NetMsgType::GETHEADERS;
+            if (MaybeSendGetHeaders(*pto, msg_type, GetLocator(state.m_headers_cut_at), *peer)) {
+                LogPrint(BCLog::NET, "more %s (%d) to peer=%d, after headers above the height taken without blocks\n",
+                         msg_type, state.m_headers_cut_at->nHeight, pto->GetId());
+                state.m_headers_cut_at = nullptr;
             }
         }
 

@@ -962,12 +962,15 @@ private:
     /**
      * If a block header hasn't already been seen, call CheckBlockHeader on it, ensure
      * that it doesn't descend from an invalid block, and then add it to m_block_index.
+     * `header_only`: the header came without its block (ProcessNewBlockHeaders). Such a header that
+     * conflicts with a ChainLock is refused without an index entry; a block's header is still recorded.
      */
     bool AcceptBlockHeader(
         const CBlockHeader& block,
         BlockValidationState& state,
         const CChainParams& chainparams,
-        CBlockIndex** ppindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+        CBlockIndex** ppindex,
+        bool header_only) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     friend CChainState;
 
 public:

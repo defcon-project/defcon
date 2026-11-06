@@ -606,6 +606,7 @@ jobs:
             feature_pos_stake_combine.py           # continuous consolidation, both wallets and key-only scope
             feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates
             feature_pos_header_only.py             # headers with no block behind them hold neither masternode sync nor staking
+            p2p_unbacked_pos_headers.py            # how many headers without their blocks a node takes, from one peer and above its tip
             feature_dsl_sign_wait.py               # wait for late Sentinel reports, with a signing deadline
             feature_dsl_commitment_v2.py           # the Sentinel commitment's second bitfield: who the pool judged at all (#231)
             feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)

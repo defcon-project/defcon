@@ -4231,7 +4231,7 @@ static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& stat
     return true;
 }
 
-bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValidationState& state, const CChainParams& chainparams, CBlockIndex** ppindex)
+bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValidationState& state, const CChainParams& chainparams, CBlockIndex** ppindex, bool header_only)
 {
     AssertLockHeld(cs_main);
     // Check for duplicate
@@ -4333,7 +4333,10 @@ bool ChainstateManager::AcceptBlockHeader(const CBlockHeader& block, BlockValida
         }
 
         if (ActiveChainstate().m_chain_helper->HasConflictingChainLock(pindexPrev->nHeight + 1, hash)) {
-            if (miSelf == m_blockman.m_block_index.end()) {
+            // A header that came without its block is refused without an entry: above the last
+            // proof-of-work block it costs nothing to make, so recording each one would let anyone grow
+            // the block index (and its disk copy) at no cost. A block's header is still recorded.
+            if (!header_only && miSelf == m_blockman.m_block_index.end()) {
                 m_blockman.AddToBlockIndex(block, hash, m_best_header, BLOCK_CONFLICT_CHAINLOCK);
             }
             LogPrintf("ERROR: %s: header %s conflicts with chainlock\n", __func__, hash.ToString());
@@ -4359,7 +4362,7 @@ bool ChainstateManager::ProcessNewBlockHeaders(const std::vector<CBlockHeader>& 
         LOCK(cs_main);
         for (const CBlockHeader& header : headers) {
             CBlockIndex *pindex = nullptr; // Use a temp pindex instead of ppindex to avoid a const_cast
-            bool accepted{AcceptBlockHeader(header, state, chainparams, &pindex)};
+            bool accepted{AcceptBlockHeader(header, state, chainparams, &pindex, /*header_only=*/true)};
             ActiveChainstate().CheckBlockIndex();
 
             if (!accepted) {
@@ -4394,7 +4397,23 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
     CBlockIndex *pindexDummy = nullptr;
     CBlockIndex *&pindex = ppindex ? *ppindex : pindexDummy;
 
-    bool accepted_header{m_chainman.AcceptBlockHeader(block, state, m_params, &pindex)};
+    // An unrequested block that would be dropped below anyway (less work than the tip, too far ahead, below the
+    // minimum chain work) is dropped before its header is indexed. Above the last proof-of-work block nothing
+    // checked so far shows that real stake is behind it (the block signature is the coinstake's own key's), and
+    // the index entry would stay for good.
+    if (!fRequested && m_chain.Tip() != nullptr && m_blockman.LookupBlockIndex(block.GetHash()) == nullptr) {
+        const CBlockIndex* prev{m_blockman.LookupBlockIndex(block.hashPrevBlock)};
+        if (prev != nullptr && prev->nHeight + 1 > m_params.GetConsensus().lastPowBlock) {
+            const CBlockIndex header_only{block};
+            const arith_uint256 work{prev->nChainWork + GetBlockProof(header_only)};
+            if (work < m_chain.Tip()->nChainWork || prev->nHeight + 1 > m_chain.Height() + int(MIN_BLOCKS_TO_KEEP) ||
+                work < nMinimumChainWork) {
+                return true;
+            }
+        }
+    }
+
+    bool accepted_header{m_chainman.AcceptBlockHeader(block, state, m_params, &pindex, /*header_only=*/false)};
     CheckBlockIndex();
 
     if (!accepted_header)
