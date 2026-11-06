@@ -7,7 +7,6 @@
 #include <bls/bls.h>
 #include <chainparams.h>
 
-#include <limits>
 #include <consensus/validation.h>
 #include <deploymentstatus.h>
 #include <messagesigner.h>
@@ -37,11 +36,15 @@ struct TestChainBRRBeforeActivationSetup : public TestChainSetup
 {
     // Force fast DIP3 activation
     TestChainBRRBeforeActivationSetup() :
-        TestChainSetup(497, {"-dip3params=30:50", "-testactivationheight=brr@1000", "-testactivationheight=v20@1200",
-                             "-testactivationheight=mn_rr@2200"})
+        TestChainSetup(497, {"-dip3params=30:50", "-testactivationheight=v20@1200", "-testactivationheight=mn_rr@2200"})
     {
     }
 };
+
+// The height the inherited test gave the BRR deployment (-testactivationheight=brr@1000). The deployment decided
+// nothing in this chain's reward code before it was removed either; the test still walks past this height and checks
+// that the payment does not change.
+constexpr int FORMER_BRR_HEIGHT{1000};
 
 static SimpleUTXOMap BuildSimpleUtxoMap(const std::vector<CTransactionRef>& txs)
 {
@@ -169,7 +172,7 @@ BOOST_FIXTURE_TEST_CASE(block_reward_reallocation, TestChainBRRBeforeActivationS
         BOOST_REQUIRE(dmnman.GetListAtChainTip().HasMN(tx.GetHash()));
 
         BOOST_CHECK_EQUAL(tip->nHeight, 498);
-        BOOST_CHECK(tip->nHeight < Params().GetConsensus().BRRHeight);
+        BOOST_CHECK(tip->nHeight < FORMER_BRR_HEIGHT);
     }
 
     CreateAndProcessBlock({}, coinbaseKey);
@@ -180,7 +183,7 @@ BOOST_FIXTURE_TEST_CASE(block_reward_reallocation, TestChainBRRBeforeActivationS
         BOOST_CHECK_EQUAL(tip->nHeight, 499);
         dmnman.UpdatedBlockTip(tip);
         BOOST_REQUIRE(dmnman.GetListAtChainTip().HasMN(tx.GetHash()));
-        BOOST_CHECK(tip->nHeight < Params().GetConsensus().BRRHeight);
+        BOOST_CHECK(tip->nHeight < FORMER_BRR_HEIGHT);
         // Creating blocks by different ways
         const auto pblocktemplate = BlockAssembler(m_node.chainman->ActiveChainstate(), m_node, *m_node.mempool, Params()).CreateNewBlock(coinbasePubKey);
     }
@@ -189,22 +192,20 @@ BOOST_FIXTURE_TEST_CASE(block_reward_reallocation, TestChainBRRBeforeActivationS
         LOCK(cs_main);
         dmnman.UpdatedBlockTip(m_node.chainman->ActiveChain().Tip());
     }
-    BOOST_CHECK(m_node.chainman->ActiveChain().Height() < Params().GetConsensus().BRRHeight);
+    BOOST_CHECK(m_node.chainman->ActiveChain().Height() < FORMER_BRR_HEIGHT);
     CreateAndProcessBlock({}, coinbaseKey);
 
     {
-        // Advance to ACTIVE at height = (BRRHeight - 1)
+        // Advance to the height just below it
         LOCK(cs_main);
         const CBlockIndex* const tip{m_node.chainman->ActiveChain().Tip()};
-        BOOST_CHECK_EQUAL(tip->nHeight, Params().GetConsensus().BRRHeight - 1);
+        BOOST_CHECK_EQUAL(tip->nHeight, FORMER_BRR_HEIGHT - 1);
         dmnman.UpdatedBlockTip(tip);
         BOOST_REQUIRE(dmnman.GetListAtChainTip().HasMN(tx.GetHash()));
     }
 
     {
-        // Reward split should stay ~50/50 before the first superblock after activation.
-        // This applies even if reallocation was activated right at superblock height like it does here.
-        // next block should be signaling by default
+        // The payment of the next block, the one at FORMER_BRR_HEIGHT.
         LOCK(cs_main);
         const CBlockIndex* const tip{m_node.chainman->ActiveChain().Tip()};
         const bool isV20Active{DeploymentActiveAfter(tip, consensus_params, Consensus::DEPLOYMENT_V20)};
@@ -255,7 +256,7 @@ BOOST_FIXTURE_TEST_CASE(block_reward_reallocation, TestChainBRRBeforeActivationS
     {
         LOCK(cs_main);
         const CBlockIndex* const tip{m_node.chainman->ActiveChain().Tip()};
-        BOOST_CHECK(tip->nHeight > consensus_params.BRRHeight);
+        BOOST_CHECK(tip->nHeight > FORMER_BRR_HEIGHT);
         const bool isV20Active{DeploymentActiveAfter(tip, consensus_params, Consensus::DEPLOYMENT_V20)};
         const CAmount block_subsidy = GetBlockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, isV20Active);
         const CAmount block_subsidy_sb = GetSuperblockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, isV20Active);
@@ -273,26 +274,6 @@ BOOST_FIXTURE_TEST_CASE(block_reward_reallocation, TestChainBRRBeforeActivationS
         BOOST_CHECK_EQUAL(GetBlockSubsidyInner(tip->nBits, tip->nHeight, consensus_params, !isV20Active), block_subsidy);
         BOOST_CHECK_EQUAL(GetMasternodePayment(tip->nHeight, block_subsidy, !isV20Active), masternode_payment);
     }
-}
-
-/**
- * No real network can reach the reallocation height at all.
- *
- * Regtest sets BRRHeight to 1 so the case above can cross it; main, testnet and
- * devnet leave it at the largest int, which is the fork's way of saying the
- * feature is off. Pinned because a height set here by accident would change
- * what every block pays.
- */
-BOOST_FIXTURE_TEST_CASE(reallocation_is_unreachable_on_every_real_network, BasicTestingSetup)
-{
-    for (const std::string& net : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
-        const auto params = CreateChainParams(*m_node.args, net);
-        BOOST_CHECK_EQUAL(params->GetConsensus().BRRHeight, std::numeric_limits<int>::max());
-    }
-    gArgs.SoftSetBoolArg("-devnet", true);
-    BOOST_CHECK_EQUAL(CreateChainParams(*m_node.args, CBaseChainParams::DEVNET)->GetConsensus().BRRHeight,
-                      std::numeric_limits<int>::max());
-    gArgs.ForceRemoveArg("devnet");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

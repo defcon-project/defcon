@@ -257,7 +257,11 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
             return DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_TESTDUMMY);
         }
         case Consensus::LLMQType::LLMQ_100_67:
-            return DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_DIP0020);
+            // Dash's platform profile, which the DIP0020 deployment enabled. Mainnet,
+            // testnet and devnet register it and never reached that deployment's
+            // height; regtest set the height to 1 but does not register this profile.
+            // With the deployment gone it never forms.
+            return false;
 
         case Consensus::LLMQType::LLMQ_DEVNET_DIP0024:
         case Consensus::LLMQType::LLMQ_TEST_DIP0024: {
