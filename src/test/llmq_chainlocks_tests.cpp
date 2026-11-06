@@ -2,10 +2,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <blockencodings.h>
 #include <chain.h>
 #include <chainparams.h>
 #include <chainparamsbase.h>
+#include <consensus/merkle.h>
 #include <consensus/params.h>
+#include <consensus/validation.h>
 #include <evo/cbtx.h>
 #include <evo/specialtx.h>
 #include <crypto/common.h>
@@ -14,12 +17,17 @@
 #include <llmq/context.h>
 #include <llmq/options.h>
 #include <llmq/params.h>
+#include <net.h>
+#include <net_processing.h>
 #include <node/blockstorage.h>
+#include <pow.h>
 #include <primitives/block.h>
 #include <protocol.h>
+#include <script/script.h>
 #include <scheduler.h>
 #include <sync.h>
 #include <streams.h>
+#include <test/util/net.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
 #include <util/system.h>
@@ -51,6 +59,17 @@ struct ChainLocksTestAccess {
         LOCK(handler.cs);
         handler.bestChainLockHash = hash;
         handler.bestChainLock = clsig;
+    }
+
+    //! A validated ChainLock on `pindex`, enabled: what HasConflictingChainLock() reads
+    static void LockAt(CChainLocksHandler& handler, const CBlockIndex* pindex)
+    {
+        const CChainLockSig clsig{pindex->nHeight, pindex->GetBlockHash(), CBLSSignature{}};
+        LOCK(handler.cs);
+        handler.isEnabled = true;
+        handler.bestChainLock = clsig;
+        handler.bestChainLockWithKnownBlock = clsig;
+        handler.bestChainLockBlockIndex = pindex;
     }
 
     static size_t SeenCacheSize(const CChainLocksHandler& handler)
@@ -737,6 +756,113 @@ BOOST_FIXTURE_TEST_CASE(stop_waits_for_the_running_callback, TestingSetup)
 
     // Nothing is left to wait for: this returns at once, and so does the destructor's stop().
     handler.Stop();
+}
+
+namespace {
+//! A sibling of `tip`: the same block with another coinbase script, so another hash, with valid proof of work.
+CBlock SiblingOf(const CBlockIndex* tip)
+{
+    CBlock sibling;
+    BOOST_REQUIRE(ReadBlockFromDisk(sibling, tip, Params().GetConsensus()));
+    CMutableTransaction coinbase{*sibling.vtx[0]};
+    coinbase.vin[0].scriptSig << OP_TRUE;
+    sibling.vtx[0] = MakeTransactionRef(coinbase);
+    sibling.hashMerkleRoot = BlockMerkleRoot(sibling);
+    while (!CheckProofOfWork(sibling.GetHash(), sibling.nBits, Params().GetConsensus())) ++sibling.nNonce;
+    BOOST_REQUIRE(sibling.GetHash() != tip->GetBlockHash());
+    return sibling;
+}
+
+//! One headers message from `peer`, as on the wire: each header followed by a transaction count of zero.
+void SendHeaders(PeerManager& peerman, CNode& peer, const std::vector<CBlockHeader>& headers)
+    EXCLUSIVE_LOCKS_REQUIRED(NetEventsInterface::g_msgproc_mutex)
+{
+    CDataStream payload{SER_NETWORK, PROTOCOL_VERSION};
+    WriteCompactSize(payload, headers.size());
+    for (const auto& header : headers) {
+        payload << header;
+        WriteCompactSize(payload, 0);
+    }
+    SendMessage(peerman, peer, NetMsgType::HEADERS, std::move(payload));
+}
+} // namespace
+
+// A header that comes without its block and conflicts with a ChainLock is refused without a block index entry:
+// above the last proof-of-work block such a header costs nothing to make, and each entry would stay for good.
+// A block's header is still recorded as conflicting, as before.
+BOOST_FIXTURE_TEST_CASE(conflicting_header_without_its_block_leaves_no_entry, TestChain100Setup)
+{
+    auto& handler = *Assert(m_node.llmq_ctx)->clhandler;
+    auto& chainman = *Assert(m_node.chainman);
+    const CBlockIndex* tip{WITH_LOCK(cs_main, return chainman.ActiveChain().Tip())};
+    llmq::ChainLocksTestAccess::LockAt(handler, tip);
+
+    // A sibling of the locked tip.
+    const CBlock sibling{SiblingOf(tip)};
+    const uint256 hash{sibling.GetHash()};
+
+    // The header alone: refused as conflicting, and no entry.
+    BlockValidationState state;
+    BOOST_CHECK(!chainman.ProcessNewBlockHeaders({sibling.GetBlockHeader()}, state, Params()));
+    BOOST_CHECK(state.GetResult() == BlockValidationResult::BLOCK_CHAINLOCK);
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(hash)) == nullptr);
+
+    // The block: refused, and recorded as conflicting, as before.
+    chainman.ProcessNewBlock(Params(), std::make_shared<const CBlock>(sibling), /*force_processing=*/true, /*new_block=*/nullptr);
+    const CBlockIndex* entry{WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(hash))};
+    BOOST_REQUIRE(entry != nullptr);
+    BOOST_CHECK(entry->nStatus & BLOCK_CONFLICT_CHAINLOCK);
+    BOOST_CHECK_EQUAL(WITH_LOCK(cs_main, return chainman.ActiveChain().Tip()), tip);
+}
+
+// The same header from a peer, by a headers message or a compact block: refused for the ChainLock without an entry,
+// so what that peer, not having seen the lock yet, announces on top of it cannot connect here. Those announcements
+// are not held against it for the window, as after any header the limits on headers without blocks drop. A peer
+// that sent no such header still pays for the same announcements: fifty of them reach the disconnection threshold.
+BOOST_FIXTURE_TEST_CASE(announcements_on_a_header_refused_for_a_chainlock_are_not_held_against_the_peer, TestChain100Setup)
+{
+    auto& handler = *Assert(m_node.llmq_ctx)->clhandler;
+    auto& chainman = *Assert(m_node.chainman);
+    auto& peerman = *Assert(m_node.peerman);
+    const CBlockIndex* tip{WITH_LOCK(cs_main, return chainman.ActiveChain().Tip())};
+    llmq::ChainLocksTestAccess::LockAt(handler, tip);
+    const CBlock sibling{SiblingOf(tip)};
+
+    // Fifty headers, each on the one before, the first on the refused sibling: none of them can connect here.
+    std::vector<CBlockHeader> on_top;
+    uint256 prev{sibling.GetHash()};
+    for (int i = 0; i < 50; ++i) {
+        CBlockHeader header{sibling.GetBlockHeader()};
+        header.hashPrevBlock = prev;
+        header.nTime = sibling.nTime + 1 + i;
+        on_top.push_back(header);
+        prev = header.GetHash();
+    }
+
+    LOCK(NetEventsInterface::g_msgproc_mutex);
+    auto by_headers{MakeTestPeer(101)};
+    auto by_compact{MakeTestPeer(102)};
+    auto fresh{MakeTestPeer(103)};
+    const std::vector<CNode*> peers{by_headers.get(), by_compact.get(), fresh.get()};
+    for (CNode* peer : peers) peerman.InitializeNode(*peer, NODE_NETWORK);
+
+    SendHeaders(peerman, *by_headers, {sibling.GetBlockHeader()});
+    CDataStream compact{SER_NETWORK, PROTOCOL_VERSION};
+    compact << CBlockHeaderAndShortTxIDs{sibling};
+    SendMessage(peerman, *by_compact, NetMsgType::CMPCTBLOCK, std::move(compact));
+    // The conflict itself costs what it did before, and leaves no entry either way.
+    BOOST_CHECK_EQUAL(MisbehaviorScore(peerman, *by_headers), 10);
+    BOOST_CHECK_EQUAL(MisbehaviorScore(peerman, *by_compact), 10);
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainman.m_blockman.LookupBlockIndex(sibling.GetHash())) == nullptr);
+
+    for (const auto& header : on_top) {
+        for (CNode* peer : peers) SendHeaders(peerman, *peer, {header});
+    }
+    BOOST_CHECK_EQUAL(MisbehaviorScore(peerman, *by_headers), 10);
+    BOOST_CHECK_EQUAL(MisbehaviorScore(peerman, *by_compact), 10);
+    BOOST_CHECK_EQUAL(MisbehaviorScore(peerman, *fresh), 100);
+
+    for (CNode* peer : peers) peerman.FinalizeNode(*peer);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
