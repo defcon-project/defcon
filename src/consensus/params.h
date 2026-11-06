@@ -31,9 +31,7 @@ enum BuriedDeployment : int16_t {
     DEPLOYMENT_DIP0001,
     DEPLOYMENT_DIP0003,
     DEPLOYMENT_DIP0008,
-    DEPLOYMENT_DIP0020,
     DEPLOYMENT_DIP0024,
-    DEPLOYMENT_BRR,
     DEPLOYMENT_V19,
     DEPLOYMENT_V20,
     DEPLOYMENT_MN_RR,
@@ -136,10 +134,6 @@ struct Params {
     uint256 DIP0003EnforcementHash;
     /** Block height at which DIP0008 becomes active */
     int DIP0008Height;
-    /** Block height at which BRR (Block Reward Reallocation) becomes active */
-    int BRRHeight;
-    /** Block height at which DIP0020, DIP0021 and LLMQ_100_67 quorums become active */
-    int DIP0020Height;
     /** Block height at which DIP0024 (Quorum Rotation) and decreased governance proposal fee becomes active */
     int DIP0024Height;
     /** Block height at which the first DIP0024 quorum was mined */
@@ -394,12 +388,8 @@ struct Params {
             return DIP0003Height;
         case DEPLOYMENT_DIP0008:
             return DIP0008Height;
-        case DEPLOYMENT_DIP0020:
-            return DIP0020Height;
         case DEPLOYMENT_DIP0024:
             return DIP0024Height;
-        case DEPLOYMENT_BRR:
-            return BRRHeight;
         case DEPLOYMENT_V19:
             return V19Height;
         case DEPLOYMENT_V20:

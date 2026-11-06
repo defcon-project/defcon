@@ -2,18 +2,21 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-//! The Dash rule packages DeFCoN never activates: BRR, DIP0020, DIP0024 (rotation and its first quorum), V19, V20
-//! and MN_RR. Mainnet, testnet and devnet leave all seven heights unset, and selecting one of those networks refuses
+//! The Dash rule packages DeFCoN's public networks never activate: DIP0024 (rotation and its first quorum), V19, V20
+//! and MN_RR. Mainnet, testnet and devnet leave all five heights unset, and selecting one of those networks refuses
 //! any of them set, whatever its value. Regtest keeps them, switched on for the tests inherited from Dash.
+//! (The BRR and DIP0020 deployments are gone; llmq_100_67, which the DIP0020 deployment enabled, never forms.)
 //!
 //! The check runs in SelectParams, on the network chosen, and not where every network's parameters are built: the
 //! help text builds mainnet's, testnet's and regtest's before the command line has chosen, and a refusal there would
 //! stop every network. That a refused height actually stops the node, and only on that network, is measured on the
 //! binary with a source variant (no command line reaches these heights outside regtest).
 
+#include <chain.h>
 #include <chainparams.h>
 #include <chainparamsbase.h>
 #include <consensus/params.h>
+#include <llmq/options.h>
 #include <tinyformat.h>
 #include <util/system.h>
 
@@ -34,12 +37,10 @@ constexpr int UNSET = std::numeric_limits<int>::max();
 
 using Field = std::function<int&(Consensus::Params&)>;
 
-//! The seven heights, by name, so a failure names the field.
+//! The five heights, by name, so a failure names the field.
 std::vector<std::pair<std::string, Field>> DashRuleHeights()
 {
     return {
-        {"BRRHeight", [](Consensus::Params& c) -> int& { return c.BRRHeight; }},
-        {"DIP0020Height", [](Consensus::Params& c) -> int& { return c.DIP0020Height; }},
         {"DIP0024Height", [](Consensus::Params& c) -> int& { return c.DIP0024Height; }},
         {"DIP0024QuorumsHeight", [](Consensus::Params& c) -> int& { return c.DIP0024QuorumsHeight; }},
         {"V19Height", [](Consensus::Params& c) -> int& { return c.V19Height; }},
@@ -48,7 +49,7 @@ std::vector<std::pair<std::string, Field>> DashRuleHeights()
     };
 }
 
-//! A network as it starts: all seven heights unset, and the check passes.
+//! A network as it starts: all five heights unset, and the check passes.
 void ExpectNoneSet(const Consensus::Params& consensus, const std::string& network)
 {
     for (const auto& [name, field] : DashRuleHeights()) {
@@ -79,6 +80,21 @@ void ExpectSelected(const std::string& chain, const std::string& restore)
     BOOST_CHECK_EQUAL(Params().NetworkIDString(), chain);
     if (chain != CBaseChainParams::REGTEST) ExpectNoneSet(Params().GetConsensus(), chain);
     SelectParams(restore);
+}
+
+//! llmq_100_67, Dash's platform profile, which mainnet, testnet and devnet register: the DIP0020 deployment enabled
+//! it, and with that deployment gone it forms at no height (as before: on these three networks the deployment's
+//! height was unreachable). Reads the selected network.
+void ExpectPlatformProfileNeverForms(const std::string& network)
+{
+    BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), network);
+    BOOST_REQUIRE(Params().GetLLMQ(Consensus::LLMQType::LLMQ_100_67).has_value());
+    for (const int prev_height : {0, 1, 100000, UNSET - 2}) {
+        CBlockIndex index;
+        index.nHeight = prev_height;
+        BOOST_CHECK_MESSAGE(!llmq::IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_100_67, &index, false, false),
+                            strprintf("%s: llmq_100_67 forms after height %d", network, prev_height));
+    }
 }
 
 struct DashRulesDevNetSetup : public BasicTestingSetup {
@@ -140,6 +156,21 @@ BOOST_FIXTURE_TEST_CASE(only_the_final_selection_is_checked, DashRulesRegTestSet
     SelectParams(CBaseChainParams::REGTEST);
 }
 
+BOOST_AUTO_TEST_CASE(platform_profile_never_forms_on_mainnet_or_testnet)
+{
+    const std::string fixture{Params().NetworkIDString()};
+    for (const auto& chain : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
+        SelectParams(chain);
+        ExpectPlatformProfileNeverForms(chain);
+    }
+    SelectParams(fixture);
+}
+
+BOOST_FIXTURE_TEST_CASE(platform_profile_never_forms_on_devnet, DashRulesDevNetSetup)
+{
+    ExpectPlatformProfileNeverForms(CBaseChainParams::DEVNET);
+}
+
 BOOST_FIXTURE_TEST_CASE(devnet_leaves_them_unset_and_refuses_each, DashRulesDevNetSetup)
 {
     // The fixture selected devnet (SelectParams, the check included); this selects it once more, by name.
@@ -174,6 +205,13 @@ BOOST_AUTO_TEST_CASE(regtest_keeps_them)
         args.ForceSetArg("-testactivationheight", "dip0024@150");
         const auto params = CreateChainParams(args, CBaseChainParams::REGTEST);
         BOOST_CHECK_EQUAL(params->GetConsensus().DIP0024QuorumsHeight, 150);
+    }
+    {
+        // The BRR deployment is gone: its name is refused like any unknown one.
+        ArgsManager args;
+        args.ForceSetArg("-testactivationheight", "brr@1000");
+        BOOST_CHECK_EXCEPTION(CreateChainParams(args, CBaseChainParams::REGTEST), std::runtime_error,
+                              HasReason("Invalid name (brr@1000) for -testactivationheight=name@height."));
     }
 }
 

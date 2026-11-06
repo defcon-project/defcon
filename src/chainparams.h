@@ -241,7 +241,7 @@ void ApplyV231ActivationBundle(Consensus::Params& consensus, int height, const s
 void CheckV231ActivationBundle(const Consensus::Params& consensus, const std::string& network);
 /**
  * Refuse, on every network but regtest, a height for one of the Dash rule
- * packages DeFCoN never activates: BRR, DIP0020, DIP0024 (rotation and its
+ * packages DeFCoN's public networks never activate: DIP0024 (rotation and its
  * first quorum), V19, V20 and MN_RR. They served the Dash Platform and Dash's
  * reward reallocations; DeFCoN has no Platform and schedules its own upgrades
  * by height, so any one of them switched on would run code no DeFCoN network
