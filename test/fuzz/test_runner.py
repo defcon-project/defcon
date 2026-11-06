@@ -285,12 +285,13 @@ def run_once(*, fuzz_pool, corpus, test_list, src_dir, build_dir, use_valgrind):
                 universal_newlines=True,
             )
             output += result.stderr
-            return output, result
+            return t, output, result
 
         jobs.append(fuzz_pool.submit(job, t, args))
 
     for future in as_completed(jobs):
-        output, result = future.result()
+        # The target of this job: `t` and `args` above are the last ones the loop submitted.
+        target, output, result = future.result()
         logging.debug(output)
         try:
             result.check_returncode()
@@ -299,7 +300,7 @@ def run_once(*, fuzz_pool, corpus, test_list, src_dir, build_dir, use_valgrind):
                 logging.info(e.stdout)
             if e.stderr:
                 logging.info(e.stderr)
-            logging.info("Target \"{}\" failed with exit code {}: {}".format(t, e.returncode, " ".join(args)))
+            logging.info("Target \"{}\" failed with exit code {}: {}".format(target, e.returncode, " ".join(result.args)))
             sys.exit(1)
         except subprocess.CalledProcessError as e:
             if e.stdout:

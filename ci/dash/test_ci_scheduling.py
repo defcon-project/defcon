@@ -199,6 +199,85 @@ class SchedulingTest(unittest.TestCase):
         self.assertIn('--jobs=4 --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}"', functional)
         self.assertNotIn('--failfast', functional)
 
+    def test_fuzz_regression_runs_for_code_and_does_not_hold_the_required_check(self):
+        fuzz = job_text(self.workflow, 'fuzz')
+        self.assertIn('    needs: changes\n', fuzz)
+        self.assertIn("    if: needs.changes.outputs.code == 'true'\n", fuzz)
+        # Informational for its first weeks: its failure shows as a failed job (no continue-on-error, which would
+        # report it as a success), and the required check neither waits for it nor reads it.
+        self.assertNotIn('continue-on-error', fuzz)
+        required = re.search(r'^    needs: \[(.*)\]$', self.build, re.MULTILINE).group(1)
+        self.assertNotIn('fuzz', required)
+        self.assertNotIn("'fuzz'", self.gate)
+        for step, command in (('Build the fuzz binary', 'ci/dash/fuzz_regression.sh build\n'),
+                              ('Fetch the seed corpus', 'ci/dash/fuzz_regression.sh corpus "$RUNNER_TEMP/fuzz-corpus"\n'),
+                              ('Run every fuzz target once', 'ci/dash/fuzz_regression.sh run "$RUNNER_TEMP/fuzz-corpus"\n')):
+            with self.subTest(step=step):
+                self.assertIn('        run: ' + command, step_text(fuzz, step))
+
+    def test_fuzz_regression_script_is_valid_and_pins_its_corpus(self):
+        script_path = ROOT / 'ci/dash/fuzz_regression.sh'
+        self.assertTrue(os.access(script_path, os.X_OK))
+        result = subprocess.run(['bash', '-n', str(script_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        script = script_path.read_text()
+        self.assertRegex(script, r'(?m)^QA_ASSETS_COMMIT=[0-9a-f]{40}$')
+        # set -e does not see a failure inside a process substitution: every listing goes through a file.
+        self.assertNotIn('<(', script)
+        self.assertIn('"$(git -C "$fetched" rev-parse HEAD)" == "$QA_ASSETS_COMMIT"', script)
+        self.assertIn('--with-sanitizers=fuzzer,address,undefined,integer', script)
+
+    def test_fuzz_regression_skips_only_the_tracked_failures(self):
+        # A target leaves this list with the fix of its tracked cause; none joins it unnoticed.
+        script = (ROOT / 'ci/dash/fuzz_regression.sh').read_text()
+        listed = re.search(r'(?ms)^EXCLUDED_TARGETS=\((.*?)^\)$', script).group(1).split()
+        self.assertEqual(sorted(listed), sorted([
+            'rpc',  # its RPC command lists know none of the Dash and DeFCoN commands
+        ]))
+        self.assertIn('--exclude "$excluded"', script)
+
+    def test_fuzz_regression_lets_no_saved_input_miss_its_target(self):
+        # A qa-assets directory is a target here or a named Dash-only one. The run derives what the corpus must hold
+        # (the pinned Dash inputs) and trusts nothing the corpus step left in it.
+        expected = set((ROOT / 'ci/dash/fuzz_targets.txt').read_text().splitlines())
+        dash_only = (ROOT / 'ci/dash/fuzz_qa_assets_dash_only.txt').read_text().splitlines()
+        self.assertTrue(dash_only)
+        self.assertEqual(dash_only, sorted(set(dash_only)))
+        self.assertNotIn('', dash_only)
+        self.assertEqual(set(), set(dash_only) & expected)
+        script = (ROOT / 'ci/dash/fuzz_regression.sh').read_text()
+        self.assertRegex(script, r'(?m)^QA_ASSETS_DASH_ONLY=ci/dash/fuzz_qa_assets_dash_only\.txt$')
+        self.assertRegex(script, r'(?m)^QA_ASSETS_USED_INPUTS=[1-9][0-9]*$')
+        self.assertRegex(script, r'(?m)^QA_ASSETS_USED_SHA256=[0-9a-f]{64}$')
+        self.assertIn('dash_sha256=$(sha256sum < "$work/all" | cut -d\' \' -f1)', script)
+        # No own corpus yet (where it will live is open): nothing reads one.
+        self.assertNotIn('OWN_CORPUS', script)
+        self.assertNotIn('test/fuzz/corpus', script)
+        # Anything but a regular file or a directory (a symbolic link, say) fails rather than being left out, and so
+        # does a checked directory that is itself a link: find would not look into it, cd and the runner would.
+        self.assertIn("find \"$1\" -mindepth 1 ! -type f ! -type d -print -quit", script)
+        self.assertIn('not_a_link() { [[ ! -L "$1" ]] || fail "$1 is a symbolic link"; }', script)
+        self.assertEqual(2, script.count('  not_a_link "$1"\n'))
+        # Both steps use the path exactly as given and refuse any spelling that is not plain: nothing rewrites it.
+        self.assertIn('plain_path() {', script)
+        # Only a plain absolute path, as the job gives it: never looked up in CDPATH, never read as an option.
+        self.assertIn('[[ "$p" == /?* && ', script)
+        self.assertIn('    dest=$2\n    plain_path "$dest"\n', script)
+        self.assertIn('    corpus=$2\n    plain_path "$corpus"\n', script)
+        self.assertNotIn('realpath', script)
+
+    def test_fuzz_regression_expects_a_reviewed_target_list(self):
+        # The binary lists only what it was built with: the run first compares that with this reviewed list.
+        expected = (ROOT / 'ci/dash/fuzz_targets.txt').read_text().splitlines()
+        self.assertTrue(expected)
+        self.assertEqual(expected, sorted(set(expected)))
+        self.assertNotIn('', expected)
+        script = (ROOT / 'ci/dash/fuzz_regression.sh').read_text()
+        self.assertRegex(script, r'(?m)^EXPECTED_TARGETS=ci/dash/fuzz_targets\.txt$')
+        self.assertIn('diff -u "$EXPECTED_TARGETS"', script)
+        excluded = re.search(r'(?ms)^EXCLUDED_TARGETS=\((.*?)^\)$', script).group(1).split()
+        self.assertEqual([], sorted(set(excluded) - set(expected)))
+
     def test_every_multiline_shell_block_has_valid_bash_syntax(self):
         blocks = re.findall(r'^        run: \|\n((?:          [^\n]*\n|\n)*)',
                             self.workflow, re.MULTILINE)
