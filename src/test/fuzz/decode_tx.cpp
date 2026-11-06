@@ -16,6 +16,8 @@ FUZZ_TARGET(decode_tx)
 {
     const std::string tx_hex = HexStr(std::string{buffer.begin(), buffer.end()});
     CMutableTransaction mtx;
-    const bool result_none = DecodeHexTx(mtx, tx_hex);
-    assert(!result_none);
+    // Any input, decoded or refused, must not crash. (Bitcoin asserted that DecodeHexTx(..., false, false), which
+    // tries neither encoding, fails; the two arguments are gone here, and so is the reason for that assert: a seed
+    // that is a valid transaction tripped it.)
+    (void)DecodeHexTx(mtx, tx_hex);
 }

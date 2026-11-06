@@ -673,6 +673,40 @@ jobs:
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
+  # Every fuzz target runs once over its saved inputs (ci/dash/fuzz_regression.sh). Only for
+  # code changes. Informational for its first weeks: a failure fails this job and shows on the
+  # pull request, but the required check below neither waits for it nor reads it, and the
+  # branch requires only that one. No compiler cache: the repository's cache space is already
+  # full, and a sanitizer build would evict the main build's.
+  fuzz:
+    name: Fuzz regression (linux64_fuzz)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install the fuzz build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-18 libclang-rt-18-dev llvm-18 autoconf automake libtool pkg-config bsdmainutils \
+            libevent-dev libgmp-dev libboost-dev libboost-system-dev libboost-filesystem-dev \
+            libboost-thread-dev libboost-test-dev
+
+      - name: Build the fuzz binary
+        run: ci/dash/fuzz_regression.sh build
+
+      - name: Fetch the seed corpus
+        run: ci/dash/fuzz_regression.sh corpus "$RUNNER_TEMP/fuzz-corpus"
+
+      - name: Run every fuzz target once
+        run: ci/dash/fuzz_regression.sh run "$RUNNER_TEMP/fuzz-corpus"
+
   # Keep the existing required check name. A successful runtime lane alone
   # cannot authorize a merge when build-options failed, skipped or cancelled.
   build:
