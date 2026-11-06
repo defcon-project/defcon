@@ -4,11 +4,13 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test RPC commands for signing and verifying messages."""
 
+from test_framework.key import ORDER
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
 )
+from test_framework.wallet_util import bytes_to_wif
 
 class SignMessagesTest(BitcoinTestFramework):
     def set_test_params(self):
@@ -52,6 +54,13 @@ class SignMessagesTest(BitcoinTestFramework):
             assert_raises_rpc_error(-1, "verifymessage", self.nodes[0].verifymessage, *param_list)
         # invalid key or address provided
         assert_raises_rpc_error(-5, "Invalid private key", self.nodes[0].signmessagewithprivkey, "invalid_key", message)
+        # A well-formed WIF whose 32 bytes are not a secp256k1 secret (zero, the curve order, above it) is an
+        # invalid key too; it used to stop the node.
+        for secret in (bytes(32), ORDER.to_bytes(32, 'big'), b'\xff' * 32):
+            for compressed in (True, False):
+                assert_raises_rpc_error(-5, "Invalid private key", self.nodes[0].signmessagewithprivkey,
+                                        bytes_to_wif(secret, compressed), message)
+        assert self.nodes[0].getblockcount() >= 0
         assert_raises_rpc_error(-5, "Invalid address", self.nodes[0].signmessage, "invalid_addr", message)
         assert_raises_rpc_error(-5, "Invalid address", self.nodes[0].verifymessage, "invalid_addr", signature, message)
         # malformed signature provided
