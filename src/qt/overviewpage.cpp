@@ -365,6 +365,8 @@ OverviewPage::OverviewPage(QWidget* parent) :
     stakingButtonRow->addWidget(m_staking_button);
     stakingButtonRow->addStretch();
     stakingLayout->addLayout(stakingButtonRow);
+    // Stretched down to the right card's bottom, the content stays at the top.
+    stakingLayout->setAlignment(Qt::AlignTop);
     m_staking_card->hide();
     ui->verticalLayout_2->insertWidget(1, m_staking_card);
     connect(m_staking_button, &QPushButton::clicked, this, [this] {
@@ -395,7 +397,9 @@ OverviewPage::OverviewPage(QWidget* parent) :
     coinJoinRowLayout->addWidget(coinJoinShow);
     coinJoinRowLayout->addStretch();
     m_coinjoin_row->hide();
-    ui->verticalLayout_2->insertWidget(3, m_coinjoin_row);
+    // Under both columns, not in the left one: the left column's last card then
+    // ends where the right card does (updateColumnStretch).
+    ui->topLayout->insertWidget(ui->topLayout->indexOf(ui->horizontalLayout) + 1, m_coinjoin_row);
     connect(coinJoinShow, &QPushButton::clicked, this, [this] {
         m_coinjoin_card_pinned = true;
         updateCoinJoinCard();
@@ -406,6 +410,8 @@ OverviewPage::OverviewPage(QWidget* parent) :
     m_coinjoin_form_spacing = ui->coinJoinFormLayout->horizontalSpacing();
     for (QLabel* label : ui->frame->findChildren<QLabel*>()) label->installEventFilter(this);
     installEventFilter(this);
+    ui->frameCoinJoin->installEventFilter(this);
+    m_staking_card->installEventFilter(this);
 
     GUIUtil::setFont({ui->label_4,
                       ui->label_5,
@@ -514,6 +520,11 @@ bool OverviewPage::eventFilter(QObject* watched, QEvent* event)
     // The bar's own layout has placed its entries by now (a layout sees its
     // widget's events before the filters do); the badge takes the room left.
     if (watched == networkCard && (event->type() == QEvent::LayoutRequest || event->type() == QEvent::Resize)) placeSkyBadge();
+    // Which card of the left column is the last one shown decides which one stretches.
+    if ((watched == ui->frameCoinJoin || watched == m_staking_card) &&
+        (event->type() == QEvent::ShowToParent || event->type() == QEvent::HideToParent)) {
+        updateColumnStretch();
+    }
     switch (event->type()) {
     case QEvent::FontChange:
     case QEvent::StyleChange:
@@ -559,6 +570,7 @@ void OverviewPage::updateThemePresentation()
         updateStakingCard();
         updateNextLevel();
         updateCoinJoinCard();
+        updateColumnStretch();
     }
     ui->topLayout->setContentsMargins(11, 11, 11, 11);
     ui->topLayout->setSpacing(modern ? 12 : 6);
@@ -982,6 +994,35 @@ void OverviewPage::updateStakingCard()
     }
     const bool banner = modern && state == StakingState::Locked;
     if (m_staking_banner->isHidden() == banner) m_staking_banner->setVisible(banner);
+}
+
+void OverviewPage::updateColumnStretch()
+{
+    if (m_staking_card == nullptr) return;
+    const bool modern = GUIUtil::isModernTheme();
+    // The left column's cards, top down. In Abyss none goes below its natural
+    // height: where the page is short of room, its minimum grows, and so does
+    // the window's (BitcoinGUI::applyModernWindowMinimum, up to the screen).
+    // A locked wallet's banner used to squeeze the balances card instead. The
+    // last card shown takes the room down to the right card's bottom.
+    const std::array<QWidget*, 3> cards{ui->frame, m_staking_card, ui->frameCoinJoin};
+    QWidget* last = nullptr;
+    for (QWidget* card : cards) {
+        if (!card->isHidden()) last = card;
+    }
+    for (QWidget* card : cards) {
+        const QSizePolicy original = m_inherited_card_policies.emplace(card, card->sizePolicy()).first->second;
+        QSizePolicy policy = original;
+        if (modern) policy.setVerticalPolicy(card == last ? QSizePolicy::MinimumExpanding : QSizePolicy::Minimum);
+        if (card->sizePolicy() != policy) card->setSizePolicy(policy);
+    }
+    // The column's closing spacer would take that room instead.
+    QSpacerItem* spacer = ui->verticalSpacer;
+    const auto& original = m_inherited_spacers.emplace(spacer, std::make_pair(spacer->sizeHint(), spacer->sizePolicy())).first->second;
+    spacer->changeSize(modern ? 0 : original.first.width(), modern ? 0 : original.first.height(),
+                       modern ? QSizePolicy::Fixed : original.second.horizontalPolicy(),
+                       modern ? QSizePolicy::Fixed : original.second.verticalPolicy());
+    ui->verticalLayout_2->invalidate();
 }
 
 void OverviewPage::updateCoinJoinCard()
