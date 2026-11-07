@@ -198,6 +198,18 @@ jobs:
             depends/sources
           key: depends-sources-v2-${{ runner.os }}-${{ hashFiles('depends/packages/*') }}
 
+      - name: Identify the depends tree and image for cache reuse
+        if: needs.changes.outputs.code == 'true'
+        id: reuse
+        env:
+          IMAGE_REF: ${{ needs.build-image.outputs.image-ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_REF" =~ @sha256:[0-9a-f]{64}$ ]]
+          tree="$(git rev-parse --verify HEAD:depends)"
+          echo "key=$(printf '%s\n%s\n' "$IMAGE_REF" "$tree" | sha256sum | cut -c1-32)" >> "$GITHUB_OUTPUT"
+
       - name: Cache depends
         if: needs.changes.outputs.code == 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -205,7 +217,16 @@ jobs:
           path: |
             depends/built
             depends/${{ matrix.host }}
-          key: depends-v2-${{ runner.os }}-${{ matrix.host }}-${{ steps.identity.outputs.input_sha256 }}
+          # The exact key binds the cache to every input the producer checks.
+          # The fallback reuses an entry for the same depends tree and image
+          # made under another workflow or CI script, which would otherwise cost
+          # a full depends rebuild: make -C depends keeps each package under its
+          # own build id (recipe, dependencies, compilers) and rebuilds the
+          # prefix whenever any package differs, so a reused entry is checked by
+          # make itself, and with nothing changed the make is a no-op.
+          key: depends-v3-${{ runner.os }}-${{ matrix.host }}-${{ steps.reuse.outputs.key }}-${{ steps.identity.outputs.input_sha256 }}
+          restore-keys: |
+            depends-v3-${{ runner.os }}-${{ matrix.host }}-${{ steps.reuse.outputs.key }}-
 
       - name: Build depends
         if: needs.changes.outputs.code == 'true'
@@ -228,6 +249,10 @@ jobs:
           compression-level: 0
           retention-days: 7
 
+  # Three lanes on three runners. runtime builds and runs the unit and Qt
+  # suites; functional builds the same tree and runs the functional gate, the
+  # longest part, without waiting behind the unit suites; build-options checks
+  # the other configurations.
   checks:
     name: Checks
     needs: [changes, build-image, build-depends]
@@ -240,6 +265,10 @@ jobs:
             host: x86_64-pc-linux-gnu
             depends_on: linux64
             lane: runtime
+          - build_target: linux64
+            host: x86_64-pc-linux-gnu
+            depends_on: linux64
+            lane: functional
           - build_target: linux64
             host: x86_64-pc-linux-gnu
             depends_on: linux64
@@ -318,18 +347,38 @@ jobs:
           echo "PR_BASE_SHA=${{ github.event.pull_request.base.sha || '' }}" >> "$GITHUB_OUTPUT"
 
       - name: CCache
-        if: needs.changes.outputs.code == 'true'
+        if: needs.changes.outputs.code == 'true' && matrix.lane != 'functional'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             /cache
           # Separate writers: the no-wallet cache must not evict or overwrite
           # the runtime lane's entries. The input identity includes the image.
+          # The last fallback crosses identities: ccache looks objects up by the
+          # compiler, its arguments and the preprocessed source, so an entry made
+          # under another workflow, image or depends prefix is a miss, never a
+          # wrong object, and a change to this file no longer rebuilds everything.
           key: ccache-v2-${{ runner.os }}-${{ matrix.build_target }}-${{ matrix.lane }}-${{ steps.identity.outputs.input_sha256 }}-${{ github.sha }}
           restore-keys: |
             ccache-v2-${{ runner.os }}-${{ matrix.build_target }}-${{ matrix.lane }}-${{ steps.identity.outputs.input_sha256 }}-${{ steps.vars.outputs.PR_BASE_SHA }}
             ccache-v2-${{ runner.os }}-${{ matrix.build_target }}-${{ matrix.lane }}-${{ steps.identity.outputs.input_sha256 }}-
+            ccache-v2-${{ runner.os }}-${{ matrix.build_target }}-${{ matrix.lane }}-
             ${{ matrix.lane == 'runtime' && format('{0}-{1}-', runner.os, matrix.build_target) || 'no-legacy-build-options-cache-' }}
+
+      # The functional lane compiles exactly what the runtime lane compiles, so
+      # it reads that lane's cache and saves none of its own: one writer per
+      # build, and no new entries in a cache space that is already full.
+      - name: Restore the runtime lane's compiler cache
+        if: needs.changes.outputs.code == 'true' && matrix.lane == 'functional'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            /cache
+          key: ccache-v2-${{ runner.os }}-${{ matrix.build_target }}-runtime-${{ steps.identity.outputs.input_sha256 }}-${{ github.sha }}
+          restore-keys: |
+            ccache-v2-${{ runner.os }}-${{ matrix.build_target }}-runtime-${{ steps.identity.outputs.input_sha256 }}-${{ steps.vars.outputs.PR_BASE_SHA }}
+            ccache-v2-${{ runner.os }}-${{ matrix.build_target }}-runtime-${{ steps.identity.outputs.input_sha256 }}-
+            ccache-v2-${{ runner.os }}-${{ matrix.build_target }}-runtime-
 
       - name: Prepare the compiler cache
         if: needs.changes.outputs.code == 'true'
@@ -342,7 +391,7 @@ jobs:
         run: ./autogen.sh
 
       - name: Build source and run tests
-        if: needs.changes.outputs.code == 'true' && matrix.lane == 'runtime'
+        if: needs.changes.outputs.code == 'true' && (matrix.lane == 'runtime' || matrix.lane == 'functional')
         run: |
           git config --global --add advice.detachedHead false
           git config --global --add safe.directory "$PWD"
@@ -519,134 +568,50 @@ jobs:
           fi
         shell: bash
 
-      # Functional tests: a named gate, not the whole runner.
+      # Functional tests: a named gate, not the whole runner. The list, what
+      # each entry guards and why the other registered tests stay out are in
+      # ci/dash/functional_gate.txt.
       #
-      # Until this step existed the workflow ran zero functional tests: the
-      # inherited integration runner was never wired into this workflow.
-      # Every regression that only test/functional covers --
-      # proof-of-stake, the evodb recovery, the Q60 switchover, the Sentinel
-      # layer, the peer protocol -- was guarded by hand. Two defects lived
-      # under a green CI because of it: feature_llmq_chainlocks.py failed
-      # with a TypeError on the tip for months (#226), and a new log category
-      # aborted the node at its first line (#228).
-      #
-      # The list is explicit and every entry says what it guards, so dropping
-      # one takes a line here that says why. It is ordered longest first, the
-      # way test_runner.py orders its own list, so that the five-minute
-      # chainlocks run is not the last one to start. Registered tests that
-      # stay out, each with the measured reason (this binary, four CPUs,
-      # --jobs=4):
-      #   feature_llmq_q60_switchover.py, feature_llmq_q60_dkg.py and
-      #   feature_dsl_enforcement_scale.py run 66 daemons each, raise
-      #   TEST_RUNNER_MAX_NODES themselves and would collide with the port
-      #   stride of a parallel runner -- which is also why they are kept out
-      #   of test_runner.py's lists;
-      #   feature_dsl_scenarios.py: 261 s, seven masternodes and a quorum
-      #   under injected faults, on its own nearly another chainlocks run;
-      #   feature_dsl_enforcement.py: 83 s, seven masternodes, the punishing
-      #   branch behind -testactivationheight=dslenforcement;
-      #   feature_dsl_faults.py: 71 s, seven masternodes with faults injected
-      #   into a running node;
-      #   feature_dsl_fault_injection.py: 9 s and two daemons, kept out
-      #   because it tests the fault injector itself, a lab instrument the
-      #   node refuses to start with outside regtest and devnet;
-      #   rpc_getblockstats.py: an inherited failure, its fixture assumes
-      #   Dash's subsidy;
-      # From the same Sentinel layer the gate carries feature_dsl_service.py
-      # (38 s; the test that caught #228), feature_dsl_commit_decision_log.py
-      # and feature_dsl_commitment_v2.py: the probe, the producer's decision
-      # and the second bitfield, all live on the devnet.
-      #
-      # feature_dsl_commitment_v2.py was measured out of this gate once, and
-      # the measurement was right at the time: alone it passed three runs out
-      # of three, and in this company (--jobs=4 beside the chainlocks and
-      # staking runs) it failed three out of three. What it was failing on was
-      # not the runner but the node -- a receiver dropped an announcement that
-      # arrived more than one block ahead of the epoch base, which under load
-      # is where the announcements are -- and that is now fixed (#235). Two
-      # halves of one lesson: a red gate on a timing race teaches people to
-      # ignore red, and a test that only fails under load can be reporting a
-      # defect that only appears under load. Re-measured on the fix, same four
-      # CPUs and the same list: three runs out of three green, the test itself
-      # 88/80/81 s, the whole gate 344/328/327 s wall.
+      # ci/dash/functional_gate.py checks the list before anything runs. A name
+      # the runner cannot resolve is only a WARNING there, and the step would
+      # stay green while that test silently stopped running -- the very failure
+      # mode feature_llmq_q60_proto_floor.py lived in until the gate registered
+      # it. The check applies the runner's own rule (a prefix match against
+      # ALL_SCRIPTS) rather than a grep of the file, so it cannot drift from what
+      # the runner does; its failure ends the step explicitly, not only through
+      # the shell's -e. It then prints the tests longest first by their recorded
+      # seconds, the order test_runner.py starts them in.
       #
       # --ci is not passed: it turns the runner's "script not in any list"
-      # warning into exit 1, and the three scale tests above are kept out of
-      # the lists on purpose. The runner exits non-zero when any listed test
-      # fails, so the job fails with it. A bare name runs every registered
-      # variant of it (feature_pos_staking.py is --descriptors and
-      # --legacy-wallet), --combinedlogslen prints a failing test's combined
-      # node log into this job's output, the only place it can be read from
-      # afterwards, and the timeout factor is the house value from
-      # ci/test/00_setup_env.sh. No retries and no --failfast: a flaky entry
-      # has to be seen, and one red run should name every failing test.
-      #
-      # The gate checks its own list before running it. A name the runner
-      # cannot resolve is only a WARNING there, and the step would stay green
-      # while that test silently stopped running -- the very failure mode
-      # feature_llmq_q60_proto_floor.py lived in until this gate registered
-      # it. The check applies the runner's own rule (a prefix match against
-      # ALL_SCRIPTS) rather than a grep of the file, so it cannot drift from
-      # what the runner does; its failure ends the step explicitly, not
-      # only through the shell's -e.
+      # warning into exit 1, and the three scale tests the list names are kept
+      # out of the runner's lists on purpose. The runner exits non-zero when any
+      # listed test fails, so the job fails with it. --combinedlogslen prints a
+      # failing test's combined node log into this job's output, the only place
+      # it can be read from afterwards, and the timeout factor is the house value
+      # from ci/test/00_setup_env.sh. No retries and no --failfast: a flaky entry
+      # has to be seen, and one red run should name every failing test. The
+      # seconds each test took go to the run summary next to the recorded ones;
+      # that report cannot change the step's result.
       - name: Functional tests (named gate)
         id: functional
-        if: needs.changes.outputs.code == 'true' && matrix.lane == 'runtime'
+        if: needs.changes.outputs.code == 'true' && matrix.lane == 'functional'
         run: |
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
           source ./ci/dash/matrix.sh
           export LD_LIBRARY_PATH="$DEPENDS_DIR/$HOST/lib"
+          gate="$RUNNER_TEMP/functional-gate.txt"
+          python3 ci/dash/functional_gate.py order > "$gate" || exit 1
+          mapfile -t GATE < "$gate"
+          echo "gate: ${#GATE[@]} tests, longest first: ${GATE[*]}"
+          log="$RUNNER_TEMP/functional-gate.log"
           cd "build-ci/DeFCoN-${BUILD_TARGET}"
           nproc
           python3 --version
-          GATE=(
-            feature_llmq_chainlocks.py             # ChainLocks, with a masternode added dynamically
-            feature_pos_staking.py                 # real proof-of-stake blocks on regtest; descriptor and legacy wallet
-            feature_pos_stake_combine.py           # continuous consolidation, both wallets and key-only scope
-            feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates
-            feature_pos_header_only.py             # headers with no block behind them hold neither masternode sync nor staking
-            p2p_unbacked_pos_headers.py            # how many headers without their blocks a node takes, from one peer and above its tip
-            feature_dsl_sign_wait.py               # wait for late Sentinel reports, with a signing deadline
-            feature_dsl_commitment_v2.py           # the Sentinel commitment's second bitfield: who the pool judged at all (#231)
-            feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
-            feature_addressindex.py                # the address index end to end, and the same hash as P2PKH and as P2SH among other P2SH outputs (#328)
-            feature_addressindex_type_boundary.py  # the same pair on a sparse index, where the two records are neighbours on disk (#328)
-            p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
-            rpc_verifyislock.py                    # the lock-verifying RPCs
-            rpc_bls.py                             # BLS key persistence and the empty staking registry, both wallet formats
-            feature_pos_mixingonly_unlock.py       # a wallet unlocked for mixing only stakes, and still refuses to send or export keys
-            feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
-            feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
-            feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
-            feature_llmq_is_nonrotation.py         # an InstantSend lock on a quorum that does not rotate
-            feature_llmq_is_nonrotated_verify.py   # the receiving side of the same: a non-masternode accepts a lock signed by a quorum older than one cycle (#238)
-            feature_llmq_is_named_quorum_window.py # and one signed by the quorum that has just left the signing-active set, right after a new commitment
-            feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
-            feature_superblock_retirement.py       # a test chain with the superblock spork on: getblocktemplate at the retirement height, and the regtest alias
-            feature_v23_bundle_heights.py          # the v23 bundle's own regtest name on a running chain: three of its heights observed where the one number puts them
-            feature_v231_no_payee.py               # from the v23.1 height a staked block with no payable masternode carries no payout at all (#354)
-            feature_llmq_q60_proto_floor.py        # the peer protocol floor from the formation lead, against the real predecessor version
-            feature_evodb_reconcile.py             # an evodb that stopped short of the coins tip is rebuilt at startup, with its log line
-            rpc_verifychainlock.py                 # the lock-verifying RPCs
-            feature_evodb_reconcile_below_dip3.py  # the same below DIP0003, where an empty evodb is current
-            feature_evodb_repair_startup.py        # -evodbrepair finishes before the import, the network and the end of RPC warmup
-            feature_llmq_q60_regtest.py            # the Q60 ChainLock profile (llmq_defcon) on regtest
-            feature_llmq_switchover_config.py      # the startup guards on the Q60 switchover heights, the v23@N alias
-            p2p_headers_uncompressed.py            # the plain headers reader consumes what every writer writes (#220)
-            feature_dsl_commit_decision_log.py     # the producer's Sentinel commit decision without a commitment (F-2026-140)
-            feature_pos_double_sign.py             # a stake signed twice is counted once and changes nothing else
-          )
-          python3 - "${GATE[@]}" <<'PY' || exit 1
-          import sys
-          sys.path.insert(0, 'test/functional')
-          import test_runner
-          missing = [t for t in sys.argv[1:] if not any(s.startswith(t) for s in test_runner.ALL_SCRIPTS)]
-          if missing:
-              sys.exit("gate entries not registered in test_runner.py: " + ", ".join(missing))
-          print("gate: every entry is registered in test_runner.py (%d names)" % len(sys.argv[1:]))
-          PY
-          python3 test/functional/test_runner.py --jobs=4 --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}" --combinedlogslen=4000 --tmpdirprefix="$RUNNER_TEMP/functional-tests" "${GATE[@]}"
+          status=0
+          python3 test/functional/test_runner.py --jobs=4 --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}" --combinedlogslen=4000 --tmpdirprefix="$RUNNER_TEMP/functional-tests" "${GATE[@]}" 2>&1 | tee "$log" || status=$?
+          python3 "$GITHUB_WORKSPACE/ci/dash/functional_gate.py" report "$log" >> "$GITHUB_STEP_SUMMARY" || echo "::warning::the functional gate duration report failed"
+          exit "$status"
         shell: bash
 
       - name: Upload failed functional test directories

@@ -10,24 +10,43 @@ entry point.
 
 ### GitHub Actions lanes
 
-After the image and dependency prefix are ready, two jobs run on separate
+After the image and dependency prefix are ready, three jobs run on separate
 GitHub-hosted machines. The `runtime` lane builds the regular binaries and
-runs the existing unit, Qt/LSan and functional gates. The `build-options` lane
-runs the configure checks and the wallet-disabled build and regressions.
-Neither lane removes tests or changes their concurrency or timeout settings.
+runs the unit and Qt/LSan gates. The `functional` lane builds the same tree the
+same way and runs the functional gate, so the longest part of a run no longer
+waits behind the unit suites. The `build-options` lane runs the configure
+checks and the wallet-disabled build and regressions. No lane removes tests or
+changes their concurrency or timeout settings.
+
+The functional gate is the list in `ci/dash/functional_gate.txt`: each test
+with the seconds all of its variants took on the hosted runner, and what it
+guards. `ci/dash/functional_gate.py order` checks that the runner knows every
+entry and starts them longest first, so a long test cannot end up starting
+last however the list grows. Adding a test to the gate needs no change to the
+workflow and leaves the dependency and compiler cache input identity as it was
+(only the per-commit part of the compiler cache key changes, as with any
+commit). The summary of every run that executes the gate shows the measured
+seconds next to the recorded ones.
 
 The required check remains `Build (linux64, x86_64-pc-linux-gnu, linux64)`.
-It waits for both lanes and rejects failed, cancelled, skipped or missing
+It waits for every lane and rejects failed, cancelled, skipped or missing
 prerequisites. Documentation-only changes still receive that check. No branch
 protection setting needs to be changed.
 
-Each lane persists its own compiler cache, bound to the dependency/image
-identity, in `/cache/ccache`. The directory is set at job scope so later shell
-steps, including the no-wallet build, use the restored cache too. The no-wallet
-build has a stable path inside each fresh job; build outputs and test results
-are not reused. Cache statistics appear in the job summary even after failure.
-The runtime lane can also seed its cache from the previous cache-key format;
-the no-wallet lane starts with an empty cache on its first run.
+The runtime and build-options lanes each persist their own compiler cache,
+bound to the dependency/image identity, in `/cache/ccache`; the functional lane
+compiles what the runtime lane compiles, so it only restores the runtime cache
+and saves none. The directory is set at job scope so later shell steps,
+including the no-wallet build, use the restored cache too. The no-wallet build
+has a stable path inside each fresh job; build outputs and test results are not
+reused. Cache statistics appear in the job summary even after failure. When no
+cache matches the identity, a lane restores its own most recent cache made
+under another identity: ccache finds objects by compiler, arguments and
+preprocessed source, so such an entry is at worst a miss, never a wrong object.
+The runtime lane can also seed its cache from the previous cache-key format.
+The dependency build likewise reuses a cache made for the same depends tree and
+image under another workflow; `make -C depends` checks every package by its
+build id and rebuilds what differs.
 
 Run the no-build scheduling and required-check regressions with:
 
