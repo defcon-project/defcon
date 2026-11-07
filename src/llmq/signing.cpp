@@ -745,6 +745,15 @@ void CSigningManager::UnregisterRecoveredSigsListener(CRecoveredSigsListener* l)
 bool CSigningManager::AsyncSignIfMember(Consensus::LLMQType llmqType, CSigSharesManager& shareman, const uint256& id,
                                         const uint256& msgHash, const uint256& quorumHash, bool allowReSign,
                                         bool allowDiffMsgHashSigning)
+{
+    return TryAsyncSignIfMember(llmqType, shareman, id, msgHash, quorumHash, allowReSign, allowDiffMsgHashSigning)
+        .value_or(false);
+}
+
+std::optional<bool> CSigningManager::TryAsyncSignIfMember(Consensus::LLMQType llmqType, CSigSharesManager& shareman,
+                                                          const uint256& id, const uint256& msgHash,
+                                                          const uint256& quorumHash, bool allowReSign,
+                                                          bool allowDiffMsgHashSigning)
 try
 {
     if (m_mn_activeman == nullptr) return false;
@@ -816,8 +825,9 @@ try
 
     return true;
 } catch (const CoinbaseChainlockReadError& e) {
+    // Only the quorum lookup above reads the history, so nothing was voted or signed.
     LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
-    return false;
+    return std::nullopt;
 }
 
 bool CSigningManager::HasRecoveredSig(Consensus::LLMQType llmqType, const uint256& id, const uint256& msgHash) const

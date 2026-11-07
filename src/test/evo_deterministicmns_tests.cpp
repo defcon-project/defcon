@@ -779,14 +779,16 @@ void FuncTestMempoolProTxKeyChangedConflictChain(TestChainSetup& setup)
     // snapshot is an ordered set, so this makes the parent get removed first, taking the child
     // with it, and only then is the child's now-stale txid revisited. Only the output value has to
     // change -- inputsHash covers the inputs alone, so the payload and its BLS signature stay put,
-    // and re-signing replaces the scriptSig outright.
+    // and re-signing replaces the scriptSig outright. The child's txid is as good as random, so a
+    // try succeeds with the probability that the parent's txid is below it, and a fixed number of
+    // tries fails on an unlucky parent (1000 tries: about once in a thousand runs). Keep trying:
+    // the loop ends with probability 1, in practice within a few tries.
     bool parent_sorts_first{false};
-    for (CAmount fee = 1000; fee < 2000 && !parent_sorts_first; ++fee) {
+    for (CAmount fee = 1000; !parent_sorts_first; ++fee) {
         tx_child.vout[0].nValue = tx_parent.vout[0].nValue - fee;
         BOOST_REQUIRE(SignSignature(keystore, CTransaction(tx_parent), tx_child, 0, SIGHASH_ALL));
         parent_sorts_first = tx_parent.GetHash() < tx_child.GetHash();
     }
-    BOOST_REQUIRE(parent_sorts_first);
 
     // The revocation that invalidates both pending ProUpServ transactions.
     auto tx_revoke = CreateProUpRevTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, proTxHash, operatorKey,
@@ -1818,6 +1820,43 @@ void FuncUnresolvedPayeeBound(TestChainSetup& setup)
     params.DIP0003EnforcementHeight = saved_enforcement;
 }
 
+// Disconnecting a block whose stored list diff is missing must stop as damaged local history, not
+// pass as a block without masternode changes: taken as the latter, the disconnect reported no
+// change and erased the caches as if the list were known. A block that really had no changes has
+// an empty diff on disk and still undoes quietly.
+void FuncUndoBlockMissingDiffStops(TestChainSetup& setup)
+{
+    auto& chainman = *Assert(setup.m_node.chainman.get());
+    auto& dmnman = *Assert(setup.m_node.dmnman);
+    auto utxos = BuildSimpleUtxoMap(setup.m_coinbase_txns);
+
+    setup.CreateAndProcessBlock({}, setup.coinbaseKey);
+    CKey owner_key;
+    CBLSSecretKey operator_key;
+    auto tx_reg = CreateProRegTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, 1,
+                                 GenerateRandomAddress(), setup.coinbaseKey, owner_key, operator_key);
+    auto block = std::make_shared<CBlock>(setup.CreateBlock({tx_reg}, setup.coinbaseKey, chainman.ActiveChainstate()));
+    BOOST_REQUIRE(chainman.ProcessNewBlock(Params(), block, true, nullptr));
+    dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+    const CBlockIndex* reg_tip = chainman.ActiveChain().Tip();
+    BOOST_REQUIRE(dmnman.GetListAtChainTip().HasMN(tx_reg.GetHash()));
+
+    // The damage goes into the raw database, as in FuncEvoDbDiffRoundTrip.
+    BOOST_REQUIRE(setup.m_node.evodb->CommitRootTransaction());
+    const auto diff_key = std::make_pair(CDeterministicMNManager::ListDiffDbKey(), reg_tip->GetBlockHash());
+    BOOST_REQUIRE(setup.m_node.evodb->GetRawDB().Exists(diff_key));
+    BOOST_REQUIRE(setup.m_node.evodb->GetRawDB().Erase(diff_key));
+
+    std::optional<MNListUpdates> updates;
+    BOOST_CHECK_THROW(dmnman.UndoBlock(reg_tip, updates), dbwrapper_error);
+    BOOST_CHECK(!updates.has_value());
+
+    // An empty diff is a block without changes: undone without an error and without updates.
+    BOOST_REQUIRE(setup.m_node.evodb->GetRawDB().Write(diff_key, CDeterministicMNListDiff{}));
+    BOOST_CHECK(dmnman.UndoBlock(reg_tip, updates));
+    BOOST_CHECK(!updates.has_value());
+}
+
 BOOST_AUTO_TEST_SUITE(evo_dip3_activation_tests)
 
 struct TestChainDIP3BeforeActivationSetup : public TestChainSetup {
@@ -2022,6 +2061,12 @@ BOOST_AUTO_TEST_CASE(damaged_history_stops_message_handling)
 {
     TestChainDIP3Setup setup;
     FuncDamagedHistoryStopsMessageHandling(setup);
+}
+
+BOOST_AUTO_TEST_CASE(undo_block_missing_diff_stops)
+{
+    TestChainDIP3Setup setup;
+    FuncUndoBlockMissingDiffStops(setup);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -166,6 +166,15 @@ BOOST_AUTO_TEST_CASE(a_wallet_signs_bls_inputs_with_its_own_keys_only)
         BOOST_CHECK(!descriptor->SignTransaction(spend.tx, spend.coins, SIGHASH_ALL, input_errors));
         BOOST_CHECK(spend.tx.vin[0].scriptSig == (CScript() << OP_0 << OP_0));
     }
+    // The same for an unencrypted legacy wallet, whose generic key lookup does reach its BLS secrets:
+    // the ECDSA path must still not sign with one (an ECDSA signature from a BLS secret is invalid).
+    {
+        const CScript multisig = CScript() << OP_1 << BLSPubKey(held) << OP_1 << OP_CHECKMULTISIG;
+        BLSSpend spend = MakeSpend(multisig);
+        std::map<int, bilingual_str> input_errors;
+        BOOST_CHECK(!holder->SignTransaction(spend.tx, spend.coins, SIGHASH_ALL, input_errors));
+        BOOST_CHECK(spend.tx.vin[0].scriptSig == (CScript() << OP_0 << OP_0));
+    }
 }
 
 BOOST_AUTO_TEST_CASE(mixed_inputs_keep_other_signatures_and_report_each_input)

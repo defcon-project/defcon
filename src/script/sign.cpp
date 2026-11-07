@@ -106,6 +106,13 @@ static bool CreateSig(const BaseSignatureCreator& creator, SignatureData& sigdat
         sig_out = it->second.second;
         return true;
     }
+    if (pubkey.IsBLS()) {
+        // This is the ECDSA path (a multisig script may name any key). A provider that holds the BLS
+        // secret for this key would hand it out through the generic lookup, and an ECDSA signature made
+        // from a BLS secret is invalid. Only pay-to-BLS-pubkey outputs sign with BLS keys (CreateSigBLS).
+        sigdata.missing_sigs.push_back(keyid);
+        return false;
+    }
     KeyOriginInfo info;
     if (provider.GetKeyOrigin(keyid, info)) {
         sigdata.misc_pubkeys.emplace(keyid, std::make_pair(pubkey, std::move(info)));

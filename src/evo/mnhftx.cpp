@@ -248,9 +248,12 @@ std::optional<CMNHFManager::Signals> CMNHFManager::ProcessBlock(const CBlock& bl
 
         AddToCache(signals, pindex);
         return signals;
-    } catch (const dbwrapper_error& e) {
-        state.Error(e.what());
-        return std::nullopt;
+    } catch (const dbwrapper_error&) {
+        // Damaged local storage: the masternode list history the quorum lookup reads, or a block of the
+        // replay below. Not a consensus failure and not a ChainLock history error, so it passes through
+        // as itself (the generic handler below would make it a consensus rejection): the validation
+        // path (specialtxman) reports a local error, a thread or callback boundary stops the node in order.
+        throw;
     } catch (const CoinbaseChainlockReadError& e) {
         state.Error(e.what());
         return std::nullopt;
@@ -305,9 +308,15 @@ CMNHFManager::Signals CMNHFManager::GetForBlock(const CBlockIndex* pindex)
         }
         CBlock block;
         if (!ReadBlockFromDisk(block, pindex_top, consensusParams)) {
-            throw std::runtime_error("failed-getehfforblock-read");
+            // A block this node has connected cannot be read back: damaged local storage, not a
+            // consensus matter.
+            throw dbwrapper_error(strprintf("failed-getehfforblock-read: block %s at height %d",
+                                            pindex_top->GetBlockHash().ToString(), pindex_top->nHeight));
         }
         BlockValidationState state;
+        // A dbwrapper_error (the masternode list history this replay reads from is missing or unreadable)
+        // passes through ProcessBlock as itself, so that the thread or callback boundary above stops the
+        // node in order instead of skipping the round.
         signalsTmp = ProcessBlock(block, pindex_top, false, state);
         if (!signalsTmp.has_value()) {
             LogPrintf("%s: process block failed due to %s\n", __func__, state.ToString());

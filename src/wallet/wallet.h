@@ -791,6 +791,11 @@ private:
     std::atomic<bool> fAbortRescan{false}; // reset by WalletRescanReserver::reserve()
     std::atomic<bool> fScanningWallet{false}; // controlled by WalletRescanReserver
     std::atomic<bool> m_attaching_chain{false};
+    //! Set once a block notification (blockConnected, blockDisconnected) left by exception: this wallet did not
+    //! finish that block, so the best block it records on disk (chainStateFlushed) must not move past it, and
+    //! the next start rescans from the recorded one. Never cleared: an exception that leaves a notification ends
+    //! the node (a storage error after an orderly shutdown, anything else at the thread boundary).
+    std::atomic<bool> m_block_processing_failed{false};
     //! Transient CoinJoin state; stopping from NewKeyPool must not lock the client map.
     std::atomic<bool> m_mixing{false};
     std::atomic<int64_t> m_scanning_start{0};

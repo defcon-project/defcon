@@ -22,6 +22,7 @@
 #include <masternode/sync.h>
 #include <net.h>
 #include <netmessagemaker.h>
+#include <node/storage_error.h>
 #include <univalue.h>
 #include <util/irange.h>
 #include <util/time.h>
@@ -1019,13 +1020,19 @@ void CQuorumManager::StartCachePopulatorThread(const CQuorumCPtr pQuorum) const
 
     // when then later some other thread tries to get keys, it will be much faster
     workerPool.push([pQuorum, t, this](int threadId) {
-        for (const auto i : irange::range(pQuorum->members.size())) {
-            if (quorumThreadInterrupt) {
-                break;
+        try {
+            for (const auto i : irange::range(pQuorum->members.size())) {
+                if (quorumThreadInterrupt) {
+                    break;
+                }
+                if (pQuorum->qc->validMembers[i]) {
+                    pQuorum->GetPubKeyShare(i);
+                }
             }
-            if (pQuorum->qc->validMembers[i]) {
-                pQuorum->GetPubKeyShare(i);
-            }
+        } catch (const dbwrapper_error&) {
+            // See StartCleanupOldQuorumDataThread: the pool would lose the error.
+            HandleStorageError(std::current_exception(), "the quorum key cache populator");
+            return;
         }
         LogPrint(BCLog::LLMQ, "CQuorumManager::StartCachePopulatorThread -- type=%d height=%d hash=%s done. time=%d\n",
                 ToUnderlying(pQuorum->params.type),
@@ -1047,114 +1054,120 @@ void CQuorumManager::StartQuorumDataRecoveryThread(CConnman& connman, const CQuo
     pQuorum->fQuorumDataRecoveryThreadRunning = true;
 
     workerPool.push([&connman, pQuorum, pIndex, nDataMaskIn, this](int threadId) {
-        size_t nTries{0};
-        uint16_t nDataMask{nDataMaskIn};
-        int64_t nTimeLastSuccess{0};
-        uint256* pCurrentMemberHash{nullptr};
-        std::vector<uint256> vecMemberHashes;
-        const size_t nMyStartOffset{GetQuorumRecoveryStartOffset(pQuorum, pIndex)};
-        const int64_t nRequestTimeout{10};
+        try {
+            size_t nTries{0};
+            uint16_t nDataMask{nDataMaskIn};
+            int64_t nTimeLastSuccess{0};
+            uint256* pCurrentMemberHash{nullptr};
+            std::vector<uint256> vecMemberHashes;
+            const size_t nMyStartOffset{GetQuorumRecoveryStartOffset(pQuorum, pIndex)};
+            const int64_t nRequestTimeout{10};
 
-        auto printLog = [&](const std::string& strMessage) {
-            const std::string strMember{pCurrentMemberHash == nullptr ? "nullptr" : pCurrentMemberHash->ToString()};
-            LogPrint(BCLog::LLMQ, "CQuorumManager::StartQuorumDataRecoveryThread -- %s - for llmqType %d, quorumHash %s, nDataMask (%d/%d), pCurrentMemberHash %s, nTries %d\n",
-                strMessage, ToUnderlying(pQuorum->qc->llmqType), pQuorum->qc->quorumHash.ToString(), nDataMask, nDataMaskIn, strMember, nTries);
-        };
-        printLog("Start");
+            auto printLog = [&](const std::string& strMessage) {
+                const std::string strMember{pCurrentMemberHash == nullptr ? "nullptr" : pCurrentMemberHash->ToString()};
+                LogPrint(BCLog::LLMQ, "CQuorumManager::StartQuorumDataRecoveryThread -- %s - for llmqType %d, quorumHash %s, nDataMask (%d/%d), pCurrentMemberHash %s, nTries %d\n",
+                    strMessage, ToUnderlying(pQuorum->qc->llmqType), pQuorum->qc->quorumHash.ToString(), nDataMask, nDataMaskIn, strMember, nTries);
+            };
+            printLog("Start");
 
-        while (!m_mn_sync.IsBlockchainSynced() && !quorumThreadInterrupt) {
-            quorumThreadInterrupt.sleep_for(std::chrono::seconds(nRequestTimeout));
-        }
-
-        if (quorumThreadInterrupt) {
-            printLog("Aborted");
-            return;
-        }
-
-        vecMemberHashes.reserve(pQuorum->qc->validMembers.size());
-        for (auto& member : pQuorum->members) {
-            if (pQuorum->IsValidMember(member->proTxHash) && member->proTxHash != m_mn_activeman->GetProTxHash()) {
-                vecMemberHashes.push_back(member->proTxHash);
-            }
-        }
-        std::sort(vecMemberHashes.begin(), vecMemberHashes.end());
-
-        printLog("Try to request");
-
-        while (nDataMask > 0 && !quorumThreadInterrupt) {
-            if (nDataMask & llmq::CQuorumDataRequest::QUORUM_VERIFICATION_VECTOR &&
-                pQuorum->HasVerificationVector()) {
-                nDataMask &= ~llmq::CQuorumDataRequest::QUORUM_VERIFICATION_VECTOR;
-                printLog("Received quorumVvec");
+            while (!m_mn_sync.IsBlockchainSynced() && !quorumThreadInterrupt) {
+                quorumThreadInterrupt.sleep_for(std::chrono::seconds(nRequestTimeout));
             }
 
-            if (nDataMask & llmq::CQuorumDataRequest::ENCRYPTED_CONTRIBUTIONS && pQuorum->GetSkShare().IsValid()) {
-                nDataMask &= ~llmq::CQuorumDataRequest::ENCRYPTED_CONTRIBUTIONS;
-                printLog("Received skShare");
+            if (quorumThreadInterrupt) {
+                printLog("Aborted");
+                return;
             }
 
-            if (nDataMask == 0) {
-                printLog("Success");
-                break;
+            vecMemberHashes.reserve(pQuorum->qc->validMembers.size());
+            for (auto& member : pQuorum->members) {
+                if (pQuorum->IsValidMember(member->proTxHash) && member->proTxHash != m_mn_activeman->GetProTxHash()) {
+                    vecMemberHashes.push_back(member->proTxHash);
+                }
             }
+            std::sort(vecMemberHashes.begin(), vecMemberHashes.end());
 
-            if ((GetTime<std::chrono::seconds>().count() - nTimeLastSuccess) > nRequestTimeout) {
-                if (nTries >= vecMemberHashes.size()) {
-                    printLog("All tried but failed");
+            printLog("Try to request");
+
+            while (nDataMask > 0 && !quorumThreadInterrupt) {
+                if (nDataMask & llmq::CQuorumDataRequest::QUORUM_VERIFICATION_VECTOR &&
+                    pQuorum->HasVerificationVector()) {
+                    nDataMask &= ~llmq::CQuorumDataRequest::QUORUM_VERIFICATION_VECTOR;
+                    printLog("Received quorumVvec");
+                }
+
+                if (nDataMask & llmq::CQuorumDataRequest::ENCRYPTED_CONTRIBUTIONS && pQuorum->GetSkShare().IsValid()) {
+                    nDataMask &= ~llmq::CQuorumDataRequest::ENCRYPTED_CONTRIBUTIONS;
+                    printLog("Received skShare");
+                }
+
+                if (nDataMask == 0) {
+                    printLog("Success");
                     break;
                 }
-                // Access the member list of the quorum with the calculated offset applied to balance the load equally
-                pCurrentMemberHash = &vecMemberHashes[(nMyStartOffset + nTries++) % vecMemberHashes.size()];
-                {
-                    LOCK(cs_data_requests);
-                    const CQuorumDataRequestKey key(*pCurrentMemberHash, true, pQuorum->qc->quorumHash, pQuorum->qc->llmqType);
-                    auto it = mapQuorumDataRequests.find(key);
-                    if (it != mapQuorumDataRequests.end() && !it->second.IsExpired(/*add_bias=*/true)) {
-                        printLog("Already asked");
-                        continue;
+
+                if ((GetTime<std::chrono::seconds>().count() - nTimeLastSuccess) > nRequestTimeout) {
+                    if (nTries >= vecMemberHashes.size()) {
+                        printLog("All tried but failed");
+                        break;
                     }
-                }
-                // Sleep a bit depending on the start offset to balance out multiple requests to same masternode
-                quorumThreadInterrupt.sleep_for(std::chrono::milliseconds(nMyStartOffset * 100));
-                nTimeLastSuccess = GetTime<std::chrono::seconds>().count();
-                connman.AddPendingMasternode(*pCurrentMemberHash);
-                printLog("Connect");
-            }
-
-            auto proTxHash = m_mn_activeman->GetProTxHash();
-            connman.ForEachNode([&](CNode* pNode) {
-                auto verifiedProRegTxHash = pNode->GetVerifiedProRegTxHash();
-                if (pCurrentMemberHash == nullptr || verifiedProRegTxHash != *pCurrentMemberHash) {
-                    return;
-                }
-
-                if (RequestQuorumData(pNode, connman, pQuorum, nDataMask, proTxHash)) {
+                    // Access the member list of the quorum with the calculated offset applied to balance the load equally
+                    pCurrentMemberHash = &vecMemberHashes[(nMyStartOffset + nTries++) % vecMemberHashes.size()];
+                    {
+                        LOCK(cs_data_requests);
+                        const CQuorumDataRequestKey key(*pCurrentMemberHash, true, pQuorum->qc->quorumHash, pQuorum->qc->llmqType);
+                        auto it = mapQuorumDataRequests.find(key);
+                        if (it != mapQuorumDataRequests.end() && !it->second.IsExpired(/*add_bias=*/true)) {
+                            printLog("Already asked");
+                            continue;
+                        }
+                    }
+                    // Sleep a bit depending on the start offset to balance out multiple requests to same masternode
+                    quorumThreadInterrupt.sleep_for(std::chrono::milliseconds(nMyStartOffset * 100));
                     nTimeLastSuccess = GetTime<std::chrono::seconds>().count();
-                    printLog("Requested");
-                } else {
-                    LOCK(cs_data_requests);
-                    const CQuorumDataRequestKey key(*pCurrentMemberHash, true, pQuorum->qc->quorumHash, pQuorum->qc->llmqType);
-                    auto it = mapQuorumDataRequests.find(key);
-                    if (it == mapQuorumDataRequests.end()) {
-                        printLog("Failed");
-                        pNode->fDisconnect = true;
-                        pCurrentMemberHash = nullptr;
-                        return;
-                    } else if (it->second.IsProcessed()) {
-                        printLog("Processed");
-                        pNode->fDisconnect = true;
-                        pCurrentMemberHash = nullptr;
-                        return;
-                    } else {
-                        printLog("Waiting");
+                    connman.AddPendingMasternode(*pCurrentMemberHash);
+                    printLog("Connect");
+                }
+
+                auto proTxHash = m_mn_activeman->GetProTxHash();
+                connman.ForEachNode([&](CNode* pNode) {
+                    auto verifiedProRegTxHash = pNode->GetVerifiedProRegTxHash();
+                    if (pCurrentMemberHash == nullptr || verifiedProRegTxHash != *pCurrentMemberHash) {
                         return;
                     }
-                }
-            });
-            quorumThreadInterrupt.sleep_for(std::chrono::seconds(1));
+
+                    if (RequestQuorumData(pNode, connman, pQuorum, nDataMask, proTxHash)) {
+                        nTimeLastSuccess = GetTime<std::chrono::seconds>().count();
+                        printLog("Requested");
+                    } else {
+                        LOCK(cs_data_requests);
+                        const CQuorumDataRequestKey key(*pCurrentMemberHash, true, pQuorum->qc->quorumHash, pQuorum->qc->llmqType);
+                        auto it = mapQuorumDataRequests.find(key);
+                        if (it == mapQuorumDataRequests.end()) {
+                            printLog("Failed");
+                            pNode->fDisconnect = true;
+                            pCurrentMemberHash = nullptr;
+                            return;
+                        } else if (it->second.IsProcessed()) {
+                            printLog("Processed");
+                            pNode->fDisconnect = true;
+                            pCurrentMemberHash = nullptr;
+                            return;
+                        } else {
+                            printLog("Waiting");
+                            return;
+                        }
+                    }
+                });
+                quorumThreadInterrupt.sleep_for(std::chrono::seconds(1));
+            }
+            pQuorum->fQuorumDataRecoveryThreadRunning = false;
+            printLog("Done");
+        } catch (const dbwrapper_error&) {
+            // See StartCleanupOldQuorumDataThread: the pool would lose the error.
+            pQuorum->fQuorumDataRecoveryThreadRunning = false;
+            HandleStorageError(std::current_exception(), "the quorum data recovery");
         }
-        pQuorum->fQuorumDataRecoveryThreadRunning = false;
-        printLog("Done");
     });
 }
 
@@ -1260,6 +1273,10 @@ void CQuorumManager::StartCleanupOldQuorumDataThread(const CBlockIndex* pIndex) 
             LogPrint(BCLog::LLMQ, "CQuorumManager::StartCleanupOldQuorumDataThread -- done. time=%d\n", t.count());
         } catch (const CoinbaseChainlockReadError& e) {
             LogPrintf("Quorum cleanup skipped: local ChainLock history unavailable: %s\n", e.what());
+        } catch (const dbwrapper_error&) {
+            // The pool keeps a task's exception in a future nobody reads, so the error would be lost
+            // and the node would run on with the damaged database. Stop it in order instead.
+            HandleStorageError(std::current_exception(), "the quorum data cleanup");
         }
     });
 }

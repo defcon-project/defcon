@@ -539,10 +539,17 @@ BOOST_AUTO_TEST_CASE(recognising_a_held_report_is_safe_beside_changes_to_the_sto
     const auto bytes = WireOf(report);
     BOOST_REQUIRE(store.AddReport(report, fx.list, fx.epoch, params));
 
+    // The askers and the modifier must overlap for the test to mean anything, and no scheduler
+    // guarantees that on its own: the modifier could finish before an asker's first loop, or the
+    // askers could do all their asking before the first modification. So each modification round
+    // waits until at least kAskers more asks have happened since the previous round, and the
+    // askers stop only after the last round.
+    constexpr int kAskers{4};
+    constexpr int kRounds{100};
     std::atomic<bool> stop{false};
     std::atomic<uint64_t> asked{0};
     std::vector<std::thread> askers;
-    for (int i = 0; i < 4; ++i) askers.emplace_back([&] {
+    for (int i = 0; i < kAskers; ++i) askers.emplace_back([&] {
         const auto wire = dsl::PeekReportWire(MakeUCharSpan(bytes));
         while (!stop.load()) {
             (void)store.HaveIdenticalReport(*wire);
@@ -550,7 +557,10 @@ BOOST_AUTO_TEST_CASE(recognising_a_held_report_is_safe_beside_changes_to_the_sto
         }
     });
     bool all_added{true};
-    for (int round = 0; round < 100; ++round) {
+    uint64_t asked_before_round{0};
+    for (int round = 0; round < kRounds; ++round) {
+        while (asked.load() < asked_before_round + kAskers) std::this_thread::yield();
+        asked_before_round = asked.load();
         store.DropEpoch(500);
         all_added = store.AddReport(report, fx.list, fx.epoch, params) && all_added;
         store.SetCurrentEpoch(499); // the window moves under the askers, and back
@@ -559,7 +569,7 @@ BOOST_AUTO_TEST_CASE(recognising_a_held_report_is_safe_beside_changes_to_the_sto
     stop = true;
     for (auto& asker : askers) asker.join();
     BOOST_CHECK(all_added);
-    BOOST_CHECK_GT(asked.load(), 0u);
+    BOOST_CHECK_GE(asked.load(), static_cast<uint64_t>(kAskers) * kRounds);
     BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
     BOOST_CHECK_EQUAL(store.Size(), 1u);
 }

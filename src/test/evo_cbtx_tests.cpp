@@ -8,6 +8,7 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <consensus/validation.h>
+#include <dbwrapper.h>
 #include <deploymentstatus.h>
 #include <evo/cbtx.h>
 #include <evo/chainhelper.h>
@@ -451,6 +452,37 @@ BOOST_FIXTURE_TEST_CASE(mnhf_replay_preserves_local_chainlock_error, QuorumHisto
     BOOST_CHECK(replay.IsError());
     BOOST_CHECK(!replay.IsInvalid());
     BOOST_CHECK_EQUAL(replay.GetRejectReason(), direct.GetRejectReason());
+}
+
+// A block of the MNHF replay that cannot be read back is damaged local storage (dbwrapper_error). ProcessBlock
+// must let it through as itself: not a consensus rejection (its generic handler would have made it one) and not
+// a local ChainLock error, so that the validation path reports a local error and a background boundary stops
+// the node in order.
+BOOST_FIXTURE_TEST_CASE(mnhf_replay_storage_error_passes_through, QuorumHistoryReadSetup)
+{
+    LOCK(cs_main);
+    auto& manager = *m_node.mnhf_manager;
+    CBlockIndex* tip = m_node.chainman->ActiveTip();
+    // The replay starts above the last block with known signals.
+    m_node.evodb->Write(std::make_pair(std::string{"mnhf_s2"}, tip->GetBlockHash()), CMNHFManager::Signals{});
+    // An ancestor marked as having its data, in a block file that does not exist.
+    CBlockIndex* unreadable = m_node.chainman->m_blockman.InsertBlockIndex(GetRandHash());
+    unreadable->pprev = tip;
+    unreadable->nHeight = tip->nHeight + 1;
+    unreadable->nStatus = BLOCK_HAVE_DATA;
+    unreadable->nFile = 998;
+    unreadable->nDataPos = 0;
+    unreadable->BuildSkip();
+    BOOST_CHECK_THROW(manager.GetSignalsStage(unreadable), dbwrapper_error);
+
+    // A candidate above it, with no MNHF transaction of its own, replays the ancestor.
+    CBlockIndex current;
+    current.pprev = unreadable;
+    current.nHeight = unreadable->nHeight + 1;
+    BlockValidationState state;
+    BOOST_CHECK_THROW(manager.ProcessBlock(CBlock{}, &current, true, state), dbwrapper_error);
+    BOOST_CHECK(!state.IsInvalid());
+    BOOST_CHECK(!state.IsError());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

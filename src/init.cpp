@@ -43,6 +43,7 @@
 #include <node/chainstate.h>
 #include <node/context.h>
 #include <node/interface_ui.h>
+#include <node/storage_error.h>
 #include <node/txreconciliation.h>
 #include <policy/feerate.h>
 #include <policy/fees.h>
@@ -280,8 +281,10 @@ void PrepareShutdown(NodeContext& node)
     StopScriptCheckWorkerThreads();
 
     // After there are no more peers/RPC left to give us new data which may generate
-    // CValidationInterface callbacks, flush them...
-    GetMainSignals().FlushBackgroundCallbacks();
+    // CValidationInterface callbacks, flush them... A storage error in a drained callback (the same
+    // damaged database that may have started this shutdown) is handled here, outside any thread
+    // boundary, and the draining goes on.
+    RunHandlingStorageErrors([] { GetMainSignals().FlushBackgroundCallbacks(); }, "the shutdown's callback drain");
 
     // After the threads that potentially access these pointers have been stopped,
     // destruct and reset all to nullptr.
@@ -310,8 +313,10 @@ void PrepareShutdown(NodeContext& node)
     }
 
     // After there are no more peers/RPC left to give us new data which may generate
-    // CValidationInterface callbacks, flush them...
-    GetMainSignals().FlushBackgroundCallbacks();
+    // CValidationInterface callbacks, flush them... A storage error in a drained callback (the same
+    // damaged database that may have started this shutdown) is handled here, outside any thread
+    // boundary, and the draining goes on.
+    RunHandlingStorageErrors([] { GetMainSignals().FlushBackgroundCallbacks(); }, "the shutdown's callback drain");
 
     // After all scheduled tasks have been flushed, destroy pointers
     // and reset all to nullptr.
@@ -1494,8 +1499,17 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     assert(!node.scheduler);
     node.scheduler = std::make_unique<CScheduler>();
 
-    // Start the lightweight task scheduler thread
-    node.scheduler->m_service_thread = std::thread(util::TraceThread, "scheduler", [&] { node.scheduler->serviceQueue(); });
+    // A local database error on any thread started from here (the scheduler and its callbacks, the
+    // network, the LLMQ workers, the staking thread) stops the node in order with the repair hint,
+    // instead of ending the process at the thread boundary.
+    util::SetThreadExceptionHandler(HandleStorageErrorOnThread);
+
+    // Start the lightweight task scheduler thread. A storage error in a scheduled task stops the node in
+    // order but must not end this thread: validation waits on its queue (SyncWithValidationInterfaceQueue)
+    // and the shutdown drains it, so the queue is served until stop().
+    node.scheduler->m_service_thread = std::thread(util::TraceThread, "scheduler", [&] {
+        RunHandlingStorageErrors([&] { node.scheduler->serviceQueue(); }, "the scheduler");
+    });
 
     // Gather some entropy once per minute.
     node.scheduler->scheduleEvery([]{

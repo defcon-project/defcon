@@ -222,6 +222,7 @@ BITCOIN_TESTS =\
   test/superblock_retirement_tests.cpp \
   test/sync_tests.cpp \
   test/system_tests.cpp \
+  test/util_thread_tests.cpp \
   test/util_threadnames_tests.cpp \
   test/timedata_tests.cpp \
   test/torcontrol_tests.cpp \
@@ -251,6 +252,7 @@ BITCOIN_TESTS += \
   wallet/test/wallet_tests.cpp \
   wallet/test/walletdb_tests.cpp \
   wallet/test/wallet_crypto_tests.cpp \
+  wallet/test/wallet_storage_error_tests.cpp \
   wallet/test/coinselector_tests.cpp \
   wallet/test/init_tests.cpp \
   wallet/test/ismine_tests.cpp \

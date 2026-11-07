@@ -5,6 +5,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <base58.h>
+#include <bls/bls.h>
 #include <chain.h>
 #include <chainparams.h>
 #include <coins.h>
@@ -1014,6 +1015,14 @@ static RPCHelpMan signrawtransactionwithkey()
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid private key");
         }
         keystore.AddKey(key);
+        // A pay-to-BLS-pubkey output names its key by the BLS public key. A given key that is also a valid BLS
+        // secret is therefore kept under that id too, as the wallet keeps its own BLS keys; BLS signing takes keys
+        // only from this provider.
+        CBLSSecretKey bls_secret;
+        bls_secret.SetBytes(Span{key.begin(), key.size()}, /*specificLegacyScheme=*/false);
+        if (bls_secret.IsValid()) {
+            keystore.AddKeyPubKey(key, key.GetPubKeyForBLS());
+        }
     }
 
     // Fetch previous transactions (inputs):

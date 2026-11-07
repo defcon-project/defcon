@@ -8,20 +8,38 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <consensus/validation.h>
+#include <dbwrapper.h>
 #include <governance/common.h>
 #include <logging.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <scheduler.h>
+#include <util/system.h>
 #include <evo/deterministicmns.h>
 #include <evo/pose_service_metrics.h>
 #include <governance/vote.h>
 #include <llmq/clsig.h>
 #include <llmq/signing.h>
 
+#include <exception>
 #include <future>
 #include <unordered_map>
 #include <utility>
+
+namespace {
+//! Whether `exception` is a local storage error (dbwrapper_error): the one kind of exception the caller of a
+//! validation callback handles (node/storage_error.h) instead of letting it end the node.
+bool IsStorageError(const std::exception_ptr& exception)
+{
+    try {
+        std::rethrow_exception(exception);
+    } catch (const dbwrapper_error&) {
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+} // namespace
 
 //! The MainSignalsInstance manages a list of shared_ptr<CValidationInterface>
 //! callbacks.
@@ -83,14 +101,39 @@ public:
     template<typename F> void Iterate(F&& f) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex)
     {
         WAIT_LOCK(m_mutex, lock);
+        // A callback that leaves by exception (a storage error that the caller handles while the node stops in
+        // order) must not cost the subscribers after it the event: the wallet is registered after the masternode
+        // and InstantSend managers, and had it missed a BlockConnected while still receiving the ChainStateFlushed
+        // of the shutdown's forced flush, it would record a locator past a block it never processed, and the next
+        // start would not rescan it. So every subscriber is called, and one exception is rethrown once the list
+        // has been walked (which one: see the catch below; the others are logged). The entry's execution count is
+        // given back under the lock on the exception path too: otherwise a subscriber that unregisters meanwhile
+        // would stay in the list with count 1, and a later Iterate would call an object that may already be destroyed.
+        std::exception_ptr first_error;
         for (auto it = m_list.begin(); it != m_list.end();) {
             ++it->count;
             {
                 REVERSE_LOCK(lock);
-                f(*it->callbacks);
+                try {
+                    f(*it->callbacks);
+                } catch (...) {
+                    // The exception rethrown below: the first one, unless it is a storage error and a later one is
+                    // not. The caller handles a storage error and goes on, which must not swallow an error nobody
+                    // handles (that one ends the node at the thread boundary, as before). The others are logged.
+                    std::exception_ptr error{std::current_exception()};
+                    if (!first_error) {
+                        first_error = std::move(error);
+                    } else if (IsStorageError(first_error) && !IsStorageError(error)) {
+                        PrintExceptionContinue(first_error, "a validation interface callback");
+                        first_error = std::move(error);
+                    } else {
+                        PrintExceptionContinue(error, "a validation interface callback");
+                    }
+                }
             }
             it = --it->count ? std::next(it) : m_list.erase(it);
         }
+        if (first_error) std::rethrow_exception(first_error);
     }
 };
 

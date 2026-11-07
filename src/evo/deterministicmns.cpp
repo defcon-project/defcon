@@ -748,7 +748,15 @@ bool CDeterministicMNManager::UndoBlock(gsl::not_null<const CBlockIndex*> pindex
     CDeterministicMNListDiff diff;
     {
         LOCK(cs);
-        m_evoDb.Read(std::make_pair(DB_LIST_DIFF, blockHash), diff);
+        if (!m_evoDb.Read(std::make_pair(DB_LIST_DIFF, blockHash), diff) && pindex->pprev != nullptr &&
+            DeploymentActiveAt(*pindex, Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0003)) {
+            // Every block connected with DIP0003 active stored a diff (see GetListForBlockInternal), so a
+            // missing or unreadable one is damaged local history, not a block without changes: taken as
+            // the latter, the disconnect would report no masternode change and erase the caches as if the
+            // list were known. Stop before touching anything.
+            throw dbwrapper_error(strprintf("Masternode list diff at height %d (%s) is missing or unreadable",
+                                            nHeight, blockHash.ToString()));
+        }
 
         if (diff.HasChanges()) {
             // need to call this before erasing

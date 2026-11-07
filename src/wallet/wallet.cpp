@@ -503,6 +503,11 @@ void CWallet::chainStateFlushed(const CBlockLocator& loc)
     if (m_attaching_chain) {
         return;
     }
+    // A block since the recorded best block was not processed to the end (blockConnected, blockDisconnected):
+    // the record stays where it is, and the next start rescans from there.
+    if (m_block_processing_failed) {
+        return;
+    }
     WalletBatch batch(GetDatabase());
     batch.WriteBestBlock(loc);
 }
@@ -1381,10 +1386,18 @@ void CWallet::blockConnected(const CBlock& block, int height)
 
     m_last_block_processed_height = height;
     m_last_block_processed = block_hash;
-    WalletBatch batch(GetDatabase());
-    for (size_t index = 0; index < block.vtx.size(); index++) {
-        SyncTransaction(block.vtx[index], {CWalletTx::Status::CONFIRMED, height, block_hash, (int)index}, batch);
-        transactionRemovedFromMempool(block.vtx[index], MemPoolRemovalReason::BLOCK, 0 /* mempool_sequence */);
+    try {
+        WalletBatch batch(GetDatabase());
+        for (size_t index = 0; index < block.vtx.size(); index++) {
+            SyncTransaction(block.vtx[index], {CWalletTx::Status::CONFIRMED, height, block_hash, (int)index}, batch);
+            transactionRemovedFromMempool(block.vtx[index], MemPoolRemovalReason::BLOCK, 0 /* mempool_sequence */);
+        }
+    } catch (...) {
+        // This wallet did not finish the block (a storage error in the masternode list history that the
+        // collateral check reads, say, which the node handles by stopping in order): the best block recorded on
+        // disk must stay before it, so that the next start rescans it. See chainStateFlushed.
+        m_block_processing_failed = true;
+        throw;
     }
 
     // reset cache to make sure no longer immature coins are included
@@ -1403,9 +1416,15 @@ void CWallet::blockDisconnected(const CBlock& block, int height)
     // future with a stickier abandoned state or even removing abandontransaction call.
     m_last_block_processed_height = height - 1;
     m_last_block_processed = block.hashPrevBlock;
-    WalletBatch batch(GetDatabase());
-    for (const CTransactionRef& ptx : block.vtx) {
-        SyncTransaction(ptx, {CWalletTx::Status::UNCONFIRMED, /* block height */ 0, /* block hash */ {}, /* index */ 0}, batch);
+    try {
+        WalletBatch batch(GetDatabase());
+        for (const CTransactionRef& ptx : block.vtx) {
+            SyncTransaction(ptx, {CWalletTx::Status::UNCONFIRMED, /* block height */ 0, /* block hash */ {}, /* index */ 0}, batch);
+        }
+    } catch (...) {
+        // As in blockConnected: the block was not undone to the end, the recorded best block stays.
+        m_block_processing_failed = true;
+        throw;
     }
 
     // reset cache to make sure no longer mature coins are excluded

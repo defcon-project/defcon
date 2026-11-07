@@ -288,6 +288,7 @@ BITCOIN_CORE_H = \
   node/miner.h \
   node/minisketchwrapper.h \
   node/psbt.h \
+  node/storage_error.h \
   node/transaction.h \
   node/txreconciliation.h \
   node/interface_ui.h \
@@ -539,6 +540,7 @@ libbitcoin_server_a_SOURCES = \
   node/miner.cpp \
   node/minisketchwrapper.cpp \
   node/psbt.cpp \
+  node/storage_error.cpp \
   node/transaction.cpp \
   node/txreconciliation.cpp \
   node/interface_ui.cpp \
