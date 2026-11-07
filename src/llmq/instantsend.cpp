@@ -902,6 +902,13 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
 {
     CBLSBatchVerifier<NodeId, uint256> batchVerifier(false, true, 8);
     std::unordered_map<uint256, CRecoveredSig, StaticSaltedHasher> recSigs;
+    // The locks this node has checked: handed to the verifier below, or whose request id and txid a recovered sig
+    // this node has already verified covers. Only these may be processed. A lock skipped on the way -- an unreadable
+    // signature or an unknown cycle block -- never reaches the verifier, so it cannot show up among its bad messages
+    // either; those alone do not tell which locks were checked. Such a lock marks its source bad, but the source's
+    // other locks are still judged one by one: one of them may be a lock verified before, back from the no-tx queue
+    // under the peer it came from.
+    std::unordered_set<uint256, StaticSaltedHasher> checked;
 
     size_t verifyCount = 0;
     size_t alreadyVerified = 0;
@@ -909,10 +916,6 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
         const auto& hash = p.first;
         auto nodeId = p.second.first;
         const auto& islock = p.second.second;
-
-        if (batchVerifier.badSources.count(nodeId)) {
-            continue;
-        }
 
         if (!islock->sig.Get().IsValid()) {
             batchVerifier.badSources.emplace(nodeId);
@@ -924,6 +927,7 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
         // no need to verify an ISLOCK if we already have verified the recovered sig that belongs to it
         if (sigman.HasRecoveredSig(llmq_params.type, id, islock->txid)) {
             alreadyVerified++;
+            checked.emplace(hash);
             continue;
         }
 
@@ -989,6 +993,7 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
         }
         uint256 signHash = BuildSignHash(llmq_params.type, quorum->qc->quorumHash, id, islock->txid);
         batchVerifier.PushMessage(nodeId, hash, signHash, islock->sig.Get(), quorum->qc->quorumPublicKey);
+        checked.emplace(hash);
         verifyCount++;
 
         // We can reconstruct the CRecoveredSig objects from the islock and pass it to the signing manager, which
@@ -1020,6 +1025,14 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
         const auto& hash = p.first;
         auto nodeId = p.second.first;
         const auto& islock = p.second.second;
+
+        if (!checked.count(hash)) {
+            // Never verified (see `checked`), so dropped. Unlike a bad signature it is not retried against the older
+            // quorum set, the only pass that scores sources.
+            LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s, islock=%s: not verified, dropping islock, peer=%d\n", __func__,
+                     islock->txid.ToString(), hash.ToString(), nodeId);
+            continue;
+        }
 
         if (batchVerifier.badMessages.count(hash)) {
             LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s, islock=%s: invalid sig in islock, peer=%d\n", __func__,
