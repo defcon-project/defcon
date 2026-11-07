@@ -14,6 +14,7 @@ from decimal import Decimal
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    FAST_STAKING_ARG,
     assert_equal,
     assert_greater_than,
     force_finish_mnsync,
@@ -55,8 +56,10 @@ STAKE_TIMEOUT = 300
 class PosStakeCombineTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
+        # Only the staking node runs at the fast pace; the observer may be an older binary that does not know the
+        # argument (--observer-binary).
         self.extra_args = [
-            ["-staking=1", "-txindex=1", "-debug=pos", "-stakecombine=0"],
+            ["-staking=1", "-txindex=1", "-debug=pos", "-stakecombine=0", FAST_STAKING_ARG],
             ["-staking=0"],
         ]
 
@@ -268,7 +271,7 @@ class PosStakeCombineTest(BitcoinTestFramework):
 
         # ---- restart with combining on (the default) -------------------------
         self.log.info("Restarting the staking node with the defaults")
-        self.restart_node(0, extra_args=["-staking=1", "-txindex=1", "-debug=pos"] + (["-stakecombinescope=key"] if self.options.key_only else []))
+        self.restart_node(0, extra_args=["-staking=1", "-txindex=1", "-debug=pos", FAST_STAKING_ARG] + (["-stakecombinescope=key"] if self.options.key_only else []))
         for name in ("combine", "split"):
             if name not in staker.listwallets():
                 staker.loadwallet(name)

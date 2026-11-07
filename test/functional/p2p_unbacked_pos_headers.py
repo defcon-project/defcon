@@ -63,7 +63,8 @@ from test_framework.messages import (CBlock, CBlockHeader, HeaderAndShortIDs, fr
 from test_framework.p2p import P2PInterface, p2p_lock
 from test_framework.script import CScript, OP_CHECKSIG
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal, assert_greater_than, assert_raises_rpc_error, force_finish_mnsync, set_node_times
+from test_framework.util import (FAST_STAKING_ARG, assert_equal, assert_greater_than, assert_raises_rpc_error,
+                                 force_finish_mnsync, set_node_times)
 
 # chainparams.cpp, CRegTestParams
 LAST_POW_BLOCK = 5000
@@ -88,8 +89,10 @@ LWMA_N = 36
 STAKE_MIN_AGE = 10 * 60
 POW_CHUNK = 500
 POW_CHUNK_CLOCK_STEP = 100
-# pos/minter.cpp: the minter tries one search time per round, and a round takes 2.5 s (5 s after a block); the
-# search time is the clock with posTimestampMask (5) cleared, so a step of 8 s always opens a new one.
+# pos/minter.cpp: the minter tries one search time per round; a round takes 2.5 s (5 s after a block) at the
+# production pace and 0.1 s (0.2 s) under FAST_STAKING_ARG, which the staking node runs with. The search time is the
+# clock with posTimestampMask (5) cleared, so a step of 8 s always opens a new one, and a block takes one step at most:
+# stake_to moves the clock only after the block for the previous step came, or after STAKE_POLL without one.
 FAST_STEP = 8
 STAKE_POLL = 6
 SECONDS_PER_BLOCK = 15
@@ -136,7 +139,7 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 3
         self.setup_clean_chain = True
-        self.extra_args = [["-staking=1", "-debug=net"], ["-debug=net"], []]
+        self.extra_args = [["-staking=1", "-debug=net", FAST_STAKING_ARG], ["-debug=net"], []]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -283,24 +286,32 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
         while node.getblockcount() < LAST_POW_BLOCK:
             self.advance_clock(POW_CHUNK_CLOCK_STEP)
             # the second node holds every block before the clock moves on: one still being downloaded when the
-            # clock jumps (here or by STAKE_MIN_AGE below) times out and the node drops the peer serving it
+            # clock jumps (here, or by STAKE_MIN_AGE in the first staking step) times out and the node drops the
+            # peer serving it
             self.generatetoaddress(node, min(POW_CHUNK, LAST_POW_BLOCK - node.getblockcount()), address,
                                    sync_fun=lambda: self.sync_blocks([node, behind_node]))
         force_finish_mnsync(node)
-        self.advance_clock(STAKE_MIN_AGE)
+        # The clock stays where the proof-of-work blocks left it, not past the tip's time, so nothing can be staked
+        # before the first step below moves it: at the fast pace the minter would otherwise stake the first block
+        # before its header is in place.
+        assert node.getblockheader(node.getbestblockhash())["time"] >= self.mocktime
         wallet_id = int(next(iter(node.liststakingwallets())))
         assert_equal(node.setstaking(wallet_id), True)  # a toggle: True is "now on"
         away_from = TIP - AWAY_BLOCKS
         self.log.info("0. Staking to %d a block interval apart; before each block a peer puts a header without its "
                       "block on the second node's tip, so the real block opens a new branch there", away_from)
         steps = 0
+        step = STAKE_MIN_AGE  # the first step also passes the stake minimum age; the later ones are a block interval
         while node.getblockcount() < away_from:
-            self.sync_blocks([node, behind_node])
+            # A short poll: with the fast pace the block is staked in a fraction of a second, so the default 1 s
+            # wait would now be most of each round.
+            self.sync_blocks([node, behind_node], wait=0.1)
             front = behind_node.add_p2p_connection(P2PInterface())
             front.send_and_ping(msg_headers(self.branch(behind_node, behind_node.getbestblockhash(), 1, tag=0x500 + node.getblockcount())))
             front.peer_disconnect()
             front.wait_for_disconnect()
-            steps += self.stake_to(node, node.getblockcount() + 1, POS_TARGET_SPACING)
+            steps += self.stake_to(node, node.getblockcount() + 1, step)
+            step = POS_TARGET_SPACING
         self.sync_blocks([node, behind_node])
         served = [p for p in behind_node.getpeerinfo() if not p["inbound"]]
         self.log.info("%d blocks in %d steps, each after a header put on the tip; the peer serving them is still "

@@ -308,6 +308,15 @@ def random_bytes(n):
     """Return a random bytes object of length n."""
     return random.randbytes(n)
 
+# A node argument for test chains only (regtest and devnet, src/pos/stakingpace.h):
+# the staking thread looks again every 100 ms instead of every 2.5 s, so a test
+# that needs staked blocks, but not the production cadence, waits a fraction of a
+# second per block instead of about five. At 100 ms the minter's pause after a
+# block (two rounds) is 0.2 s, no longer than the polling of the test loops that
+# wait for staked blocks, so a shorter pace would gain little. A test that checks
+# the cadence itself, or counts on the minter being slow, leaves it out.
+FAST_STAKING_ARG = "-stakingpollms=100"
+
 # RPC/P2P connection constants and functions
 ############################################
 

@@ -181,7 +181,8 @@ std::string DescribePermanentExclusions(const StakeSkipReport& report);
  *
  * Near `stakeAgeRange[0]` the two disagree about which coins qualify, and every
  * coin the wallet offers that the kernel then refuses is an attempt spent for
- * nothing, in a loop that runs every 2.5 seconds. Nothing reports it either: a
+ * nothing, in a loop that runs every round (2.5 seconds at the production pace).
+ * Nothing reports it either: a
  * refused input looks exactly like one that did not win.
  *
  * `wallet_time` is used only when the coin has no block time to read. Such a

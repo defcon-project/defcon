@@ -305,6 +305,7 @@ BITCOIN_CORE_H = \
   pos/kernel.h \
   pos/multiwallet.h \
   pos/stake.h \
+  pos/stakingpace.h \
   pow.h \
   protocol.h \
   psbt.h \
@@ -551,6 +552,7 @@ libbitcoin_server_a_SOURCES = \
   policy/settings.cpp \
   pos/doublesign.cpp \
   pos/kernel.cpp \
+  pos/stakingpace.cpp \
   pow.cpp \
   rest.cpp \
   rpc/blockchain.cpp \
