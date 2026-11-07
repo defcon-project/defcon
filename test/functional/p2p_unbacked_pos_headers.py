@@ -101,8 +101,10 @@ LONG_BRANCH = 200
 LATER = 3 * POS_TARGET_SPACING
 # step 11: the clock moves a day in hops shorter than the node's inactivity timeout (20 minutes)
 CLOCK_HOP = 10 * 60
-# step 12: more blocks than the height limit lets a node take at once while they come FAST_STEP apart
-MIN_WORK_BLOCKS = 80
+# step 12: more blocks than the height limit lets a node take at once while they come FAST_STEP apart. The limit
+# grows UNBACKED_HEADER_AHEAD_PER_SPACING heights per POS_TARGET_SPACING of the tip's age, so 48 blocks staked 8 s
+# apart end about 16 heights above it; the step asserts that margin before it relies on it.
+MIN_WORK_BLOCKS = 48
 
 
 def compact_from_uint256(value):

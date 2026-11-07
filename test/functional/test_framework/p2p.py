@@ -622,7 +622,13 @@ class P2PInterface(P2PConnection):
                 assert self.is_connected
             return test_function_in()
 
-        wait_until_helper(test_function, timeout=timeout, lock=p2p_lock, timeout_factor=self.timeout_factor)
+        # Poll every 0.05 s, as upstream Bitcoin Core does. The usual predicates (a pong, a
+        # message, the connection state) only read this connection's own state under
+        # p2p_lock, so frequent polls cost next to nothing, while the 0.5 s default added up
+        # to half a second to every ping round trip and every wait for a message: minutes in
+        # a test that makes a thousand round trips. The few that ask the node over RPC, such
+        # as send_blocks_and_test's best-block check, now poll it this often as well.
+        wait_until_helper(test_function, timeout=timeout, lock=p2p_lock, timeout_factor=self.timeout_factor, sleep=0.05)
 
     def wait_for_connect(self, timeout=60):
         test_function = lambda: self.is_connected
