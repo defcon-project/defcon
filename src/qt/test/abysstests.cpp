@@ -4981,3 +4981,112 @@ void AbyssTests::stakingTipTime()
     fixture.client->m_test_hook_fill = nullptr;
     Settle();
 }
+
+void AbyssTests::overviewColumnsAligned()
+{
+    // The two columns end on one line at every size: the left column's last
+    // card shown stretches down to the right card's bottom, the CoinJoin row
+    // stands under both, the stretched card keeps its content at the top, and
+    // no card is squeezed below its natural height. Where the page is short,
+    // its minimum grows instead, which the window follows (up to the screen);
+    // the page is measured at its minimum too, as the window would hold it.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Card heights require a font-capable platform; run minimal:enable_fonts");
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    OverviewPage page;
+    page.setClientModel(fixture.client.get());
+    page.setWalletModel(fixture.model.get());
+    page.resize(1280, 850);
+    page.show(); Settle();
+    page.coinJoinStatus(true); Settle();
+    auto* balances = page.findChild<QFrame*>("frame");
+    auto* staking = page.findChild<QFrame*>("frameStaking");
+    auto* coinjoin = page.findChild<QFrame*>("frameCoinJoin");
+    auto* right = page.findChild<QFrame*>("frame_2");
+    auto* row = page.findChild<QWidget*>("coinJoinRow");
+    auto* banner = page.findChild<QFrame*>("stakingBanner");
+    auto* staking_button = page.findChild<QPushButton*>("stakingButton");
+    auto* coinjoin_button = page.findChild<QPushButton*>("toggleCoinJoin");
+    auto* show = page.findChild<QPushButton*>("coinJoinRowShow");
+    QVERIFY(balances && staking && coinjoin && right && row && banner && staking_button && coinjoin_button && show);
+    QVERIFY(coinjoin->isHidden());
+    QVERIFY(row->isVisible());
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    QStringList found;
+    std::map<QString, int> minimum_height;
+    const auto check = [&](const QString& state) {
+        QWidget* last = coinjoin->isHidden() ? static_cast<QWidget*>(staking) : static_cast<QWidget*>(coinjoin);
+        QPushButton* content = last == staking ? staking_button : coinjoin_button;
+        std::optional<int> content_offset;
+        minimum_height[state] = page.minimumSizeHint().height();
+        // No card of the column may be shrunk by its layout below its size hint
+        // (no ShrinkFlag). On this platform the balances card's minimum equals
+        // its size hint anyway; natively (the #378 trial at 175%) it was smaller,
+        // and the window's minimum let the card go down to it.
+        for (QWidget* card : {static_cast<QWidget*>(balances), static_cast<QWidget*>(staking), static_cast<QWidget*>(coinjoin)}) {
+            if (card->isHidden()) continue;
+            qInfo().noquote() << "OVERVIEW_COLUMNS_CARD" << state << card->objectName() << "hint" << card->sizeHint().height()
+                              << "minimum" << card->minimumSizeHint().height() << "policy" << int(card->sizePolicy().verticalPolicy());
+            if (card->sizePolicy().verticalPolicy() & QSizePolicy::ShrinkFlag) {
+                found << QString("%1: %2 may be shrunk below its natural height (vertical policy %3)")
+                             .arg(state, card->objectName()).arg(int(card->sizePolicy().verticalPolicy()));
+            }
+        }
+        for (int width : {0, 1280, 1920, 2560}) {
+            for (int height : {0, 850, 1100}) {
+                page.resize(std::max(width, page.minimumWidth()), std::max(height, page.minimumSizeHint().height()));
+                Settle();
+                const QString at = QString("%1 at %2x%3").arg(state).arg(page.width()).arg(page.height());
+                const int left_bottom = OnPage(page, last).bottom();
+                const int right_bottom = OnPage(page, right).bottom();
+                if (qAbs(left_bottom - right_bottom) > 1) {
+                    found << QString("%1: the left column ends at %2, the right card at %3").arg(at).arg(left_bottom).arg(right_bottom);
+                }
+                // The last card may only grow; every other one keeps exactly its natural height,
+                // which for a card with wrapping text (the staking card's line) is its height at
+                // its width, not the size hint's guess at a narrower one.
+                for (QWidget* card : {static_cast<QWidget*>(balances), static_cast<QWidget*>(staking), static_cast<QWidget*>(coinjoin)}) {
+                    if (card->isHidden()) continue;
+                    const int natural = card->hasHeightForWidth() ? card->heightForWidth(card->width()) : card->sizeHint().height();
+                    if (card->height() < natural) {
+                        found << QString("%1: %2 squeezed to %3 of %4").arg(at, card->objectName()).arg(card->height()).arg(natural);
+                    } else if (card != last && card->height() != natural) {
+                        found << QString("%1: %2 stretched to %3 of %4, not the last card").arg(at, card->objectName()).arg(card->height()).arg(natural);
+                    }
+                }
+                if (row->isVisible() && OnPage(page, row).top() <= std::max(left_bottom, right_bottom)) {
+                    found << QString("%1: the CoinJoin row at %2 is not under the columns (%3)").arg(at).arg(OnPage(page, row).top()).arg(right_bottom);
+                }
+                const int offset = content->mapTo(last, QPoint()).y();
+                if (!content_offset) content_offset = offset;
+                if (offset != *content_offset) {
+                    found << QString("%1: %2 moved inside the stretched card, %3 not %4").arg(at, content->objectName()).arg(offset).arg(*content_offset);
+                }
+                if (!output.isEmpty() && (width == 1280 || width == 2560) && height != 1100) {
+                    QVERIFY(QDir().mkpath(output));
+                    QVERIFY(PageImage(page).save(QDir(output).filePath(QString("Abyss-columns-%1-%2x%3.png").arg(state).arg(width).arg(height ? height : 0))));
+                }
+            }
+        }
+    };
+    page.setStakingStatus(StakingCase("off")); Settle();
+    QVERIFY(banner->isHidden());
+    check("staking-unlocked");
+    page.setStakingStatus(StakingCase("locked")); Settle();
+    QVERIFY(banner->isVisible());
+    check("staking-locked");
+    // The banner's room comes out of the page's minimum, not out of a card.
+    if (minimum_height["staking-locked"] <= minimum_height["staking-unlocked"]) {
+        found << QString("the locked page's minimum %1 is not above the unlocked one's %2")
+                     .arg(minimum_height["staking-locked"]).arg(minimum_height["staking-unlocked"]);
+    }
+    show->click(); Settle();
+    QVERIFY(coinjoin->isVisible());
+    QVERIFY(row->isHidden());
+    check("coinjoin-locked");
+    page.setStakingStatus(StakingCase("off")); Settle();
+    check("coinjoin-unlocked");
+    for (const QString& line : found) qInfo().noquote() << "OVERVIEW_COLUMNS" << line;
+    QCOMPARE(found.join("\n"), QString());
+}

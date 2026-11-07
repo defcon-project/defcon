@@ -239,6 +239,11 @@ private:
     std::map<int, int> m_inherited_stretch;
     std::map<QSpacerItem*, std::pair<QSize, QSizePolicy>> m_inherited_spacers;
     std::map<int, int> m_inherited_grid_stretch;
+    //! The left column's cards in Abyss: none below its natural height (the
+    //! window's minimum grows instead), and the last one shown stretches down
+    //! to the right card's bottom, so that both columns end on one line.
+    void updateColumnStretch();
+    std::map<QWidget*, QSizePolicy> m_inherited_card_policies;
     QSizePolicy m_total_size_policy;
     int m_total_minimum_height{0};
     bool m_balance_update_pending{false};
