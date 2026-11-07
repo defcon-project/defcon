@@ -8,6 +8,7 @@
 #include <consensus/amount.h>
 #include <qt/governancelist.h>
 #include <qt/masternodelist.h>
+#include <qt/overviewpage.h>
 
 #include <QMargins>
 #include <QStackedWidget>
@@ -17,7 +18,6 @@
 
 class ClientModel;
 class MultisigPage;
-class OverviewPage;
 class ReceiveCoinsDialog;
 class SendCoinsDialog;
 class SendCoinsRecipient;
@@ -90,7 +90,18 @@ private:
     QProgressDialog* progressDialog{nullptr};
     QLabel *transactionSum;
 
+    //! The node's part of the staking state, as the window last gave it.
+    OverviewPage::StakingStatus m_node_staking;
+    //! Add this wallet's part to it and hand the whole to the Overview page.
+    void refreshStakingStatus();
+    //! The Overview's staking button: this wallet's switch into the position offered.
+    void toggleStaking(bool enable);
+    //! The Overview's unlock button: unlock for staking, then switch on if off.
+    void unlockForStaking();
+
 public Q_SLOTS:
+    /** The node's staking state, from the window's timer */
+    void setStakingStatus(const OverviewPage::StakingStatus& node_status);
     /** Switch to governance page */
     void gotoGovernancePage();
     /** Switch to overview (home) page */

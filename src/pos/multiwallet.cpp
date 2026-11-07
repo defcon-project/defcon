@@ -74,12 +74,24 @@ void MultiwalletMaintenance()
 
 bool ToggleWalletStaking(const std::string& name)
 {
+    // Read and flip under the one lock: a toggle that read the switch outside
+    // it could race another caller into the position neither asked for.
+    LOCK(stakable_mutex);
+    for (int y = 0; y < stakable_sz; y++) {
+        if (name == stakable_wallets[y].GetName()) return SetWalletStaking(name, !stakable_wallets[y].CanStake());
+    }
+    return false;
+}
+
+bool SetWalletStaking(const std::string& name, bool enable)
+{
     LOCK(stakable_mutex);
 
     for (int y = 0; y < stakable_sz; y++)
     {
         if (name == stakable_wallets[y].GetName()) {
-            if (!stakable_wallets[y].CanStake()) {
+            if (stakable_wallets[y].CanStake() == enable) return enable;
+            if (enable) {
                 // Every enable ends up here, so this is where the wallet gets
                 // its coinstake descriptors: a descriptor wallet otherwise
                 // pays its own coinstake to a script it does not track, and

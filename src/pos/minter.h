@@ -27,6 +27,9 @@ class CBlock;
  */
 static constexpr bool DEFAULT_STAKING{true};
 
+/** On the main network the miner does not stake with fewer peers than this; the GUI's staking card reads it too. */
+static constexpr int STAKING_MIN_PEERS_MAINNET{3};
+
 extern std::atomic<bool> fTryToSync;
 extern std::atomic<bool> fIsStaking;
 

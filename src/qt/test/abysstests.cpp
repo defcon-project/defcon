@@ -6,6 +6,7 @@
 #include <qt/test/abysstests.h>
 #include <interfaces/node.h>
 #include <interfaces/wallet.h>
+#include <node/interface_ui.h>
 #include <chainparams.h>
 #include <key_io.h>
 #include <qt/addressbookpage.h>
@@ -44,7 +45,10 @@
 #include <qt/walletframe.h>
 #include <qt/walletcontroller.h>
 #include <qt/walletview.h>
+#include <pos/minter.h>
+#include <pos/multiwallet.h>
 #include <test/util/setup_common.h>
+#include <timedata.h>
 #include <util/settings.h>
 #include <util/system.h>
 #include <univalue.h>
@@ -114,6 +118,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <map>
 #include <utility>
 #include <vector>
@@ -132,12 +137,17 @@ struct WalletFixture {
     std::unique_ptr<OptionsModel> options;
     std::unique_ptr<ClientModel> client;
     std::unique_ptr<WalletModel> model;
-    explicit WalletFixture(interfaces::Node& n) : node(n), previous(n.context())
+    //! The mock Berkeley database cannot be encrypted (its rewrite reloads an
+    //! environment with no path); a wallet that will be, takes the dummy one.
+    explicit WalletFixture(interfaces::Node& n, bool dummy_database = false) : node(n), previous(n.context())
     {
         node.setContext(&chain.m_node);
-        wallet = std::make_shared<CWallet>(node.context()->chain.get(), node.context()->coinjoin_loader.get(), "", CreateMockWalletDatabase());
+        wallet = std::make_shared<CWallet>(node.context()->chain.get(), node.context()->coinjoin_loader.get(), "",
+                                           dummy_database ? CreateDummyWalletDatabase() : CreateMockWalletDatabase());
         AddWallet(wallet);
-        wallet->LoadWallet();
+        // The dummy database's cursor never reports its end: LoadWallet() would
+        // not return. There is nothing in it to load.
+        if (!dummy_database) wallet->LoadWallet();
         wallet->GetOrCreateLegacyScriptPubKeyMan();
         options = std::make_unique<OptionsModel>();
         options->setNode(node);
@@ -383,6 +393,8 @@ void AbyssTests::overviewTotalHeight()
     auto* total = page.findChild<QLabel*>("labelTotal");
     auto* coinjoin = page.findChild<QFrame*>("frameCoinJoin");
     QVERIFY(total && coinjoin);
+    // Abyss keeps the CoinJoin card away until mixing; the row's link pins it open past the status timer.
+    if (coinjoin_visible) page.findChild<QPushButton*>("coinJoinRowShow")->click();
     coinjoin->setVisible(coinjoin_visible);
     page.resize(1100, height);
     page.show(); Settle();
@@ -465,14 +477,19 @@ void AbyssTests::overviewResponsive()
             }
         }
     }
-    // With CoinJoin on, its card sits under the balances one with the same gap
-    // the network card leaves above them.
+    // The staking card sits under the balances one with the same gap the
+    // network card leaves above them, and with CoinJoin opened, its card under
+    // the staking card with that gap again.
+    auto* staking = page.findChild<QFrame*>("frameStaking");
     auto* coinjoin = page.findChild<QFrame*>("frameCoinJoin");
-    QVERIFY(coinjoin);
-    coinjoin->show();
+    auto* open_coinjoin = page.findChild<QPushButton*>("coinJoinRowShow");
+    QVERIFY(staking && coinjoin && open_coinjoin);
+    open_coinjoin->click();
     Settle();
-    QCOMPARE(OnPage(page, coinjoin).top() - OnPage(page, left).bottom() - 1,
-             OnPage(page, left).top() - OnPage(page, network).bottom() - 1);
+    QVERIFY(coinjoin->isVisible());
+    const int gap = OnPage(page, left).top() - OnPage(page, network).bottom() - 1;
+    QCOMPARE(OnPage(page, staking).top() - OnPage(page, left).bottom() - 1, gap);
+    QCOMPARE(OnPage(page, coinjoin).top() - OnPage(page, staking).bottom() - 1, gap);
     // The balance never changes here: scale, family and bold-weight changes
     // must remeasure/refit the total without another setBalance() call.
     page.setPrivacy(false);
@@ -2667,6 +2684,7 @@ void AbyssTests::primaryButtons()
     auto* toggle = view.widget(0)->findChild<QPushButton*>("toggleCoinJoin");
     QVERIFY(coinjoin && toggle);
     coinjoin->setEnabled(true);
+    view.widget(0)->findChild<QPushButton*>("coinJoinRowShow")->click(); // Keeps it open across the status timer.
     coinjoin->show();
     toggle->setEnabled(true);
     const QColor primary("#0f75d6");
@@ -2681,7 +2699,7 @@ void AbyssTests::primaryButtons()
         return found;
     };
     const std::vector<std::pair<const char*, QStringList>> expected{
-        {"Overview", {"emptyStateAction"}},
+        {"Overview", {"stakingButton"}},
         {"Transactions", {"emptyStateAction"}},
         {"Receive", {"receiveButton"}},
         {"Send", {"sendButton"}},
@@ -2767,6 +2785,8 @@ void AbyssTests::overviewColumns()
     page.setWalletModel(fixture.model.get());
     auto* coinjoin = page.findChild<QFrame*>("frameCoinJoin");
     QVERIFY(coinjoin);
+    // Abyss keeps the card out of the way until mixing; the row's link opens it for good.
+    page.findChild<QPushButton*>("coinJoinRowShow")->click();
     coinjoin->show();
     const QStringList labels{"labelBalanceText", "labelPendingText", "labelImmatureText", "labelTotalText", "labelCoinJoinEnabledText",
                              "labelCompletitionText", "labelAnonymizedText", "labelAmountAndRoundsText", "labelSubmittedDenomText"};
@@ -4211,4 +4231,753 @@ void AbyssTests::coinJoinHelp()
         }
         if (first.isEmpty()) first = text; else QCOMPARE(text, first);
     }
+}
+
+namespace {
+//! The staking states the card can be handed, by name.
+OverviewPage::StakingStatus StakingCase(const char* name)
+{
+    OverviewPage::StakingStatus status;
+    const QString which(name);
+    status.enabled = which != "off";
+    if (which == "locked") status.locked = true;
+    if (which == "syncing") status.syncing = true;
+    if (which == "ready") status.wallet_state = NOT_STAKING_BALANCE;
+    if (which == "depth") status.wallet_state = NOT_STAKING_DEPTH;
+    if (which == "staking") status.wallet_state = IS_STAKING;
+    if (which == "keyless") { status.keyless = true; status.wallet_state = IS_STAKING; }
+    if (which == "disabled") { status.minter = false; status.configured = false; }
+    if (which == "stopped") status.minter = false;
+    return status;
+}
+//! The color at the centre of the card's dot.
+QRgb DotColor(const QLabel* icon)
+{
+    const QImage image = icon->pixmap(Qt::ReturnByValue).toImage();
+    return image.pixelColor(image.width() / 2, image.height() / 2).rgb();
+}
+} // namespace
+
+void AbyssTests::stakingCard()
+{
+    // One word for the state, one line about it, one button; the states in
+    // the order the thread itself gives up, so the card never says "Staking"
+    // about a wallet that cannot sign.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    OverviewPage page;
+    page.setWalletModel(fixture.model.get());
+    page.resize(1280, 850);
+    page.show(); Settle();
+    auto* card = page.findChild<QFrame*>("frameStaking");
+    auto* balances = page.findChild<QFrame*>("frame");
+    auto* state = page.findChild<QLabel*>("stakingState");
+    auto* detail = page.findChild<QLabel*>("stakingDetail");
+    auto* button = page.findChild<QPushButton*>("stakingButton");
+    auto* icon = page.findChild<QLabel*>("stakingIcon");
+    auto* banner = page.findChild<QFrame*>("stakingBanner");
+    QVERIFY(card && balances && state && detail && button && icon && banner);
+    QVERIFY(card->isVisible());
+    QVERIFY(OnPage(page, card).top() > OnPage(page, balances).bottom()); // Under the balances.
+    QSignalSpy toggles(&page, &OverviewPage::stakingToggleRequested);
+    QSignalSpy unlocks(&page, &OverviewPage::stakingUnlockRequested);
+    using State = OverviewPage::StakingState;
+    using Color = GUIUtil::ThemedColor;
+    struct Case { const char* name; State state; const char* word; const char* button; Color color; };
+    const std::vector<Case> cases{
+        {"off", State::Off, "Off", "Start staking", Color::UNCONFIRMED},
+        {"locked", State::Locked, "Paused: wallet locked", "Unlock for staking", Color::ORANGE},
+        {"syncing", State::Syncing, "Waiting for sync", "Pause staking", Color::ORANGE},
+        {"ready", State::Ready, "Ready", "Pause staking", Color::BLUE},
+        {"depth", State::Ready, "Ready", "Pause staking", Color::BLUE},
+        {"staking", State::Staking, "Staking", "Pause staking", Color::GREEN},
+        {"keyless", State::Unavailable, "Not available", "", Color::UNCONFIRMED},
+        {"disabled", State::Disabled, "Off", "", Color::UNCONFIRMED},
+        {"stopped", State::Disabled, "Off", "", Color::UNCONFIRMED},
+    };
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    int widest = 0;
+    for (const Case& which : cases) {
+        page.setStakingStatus(StakingCase(which.name)); Settle();
+        QVERIFY2(page.stakingState() == which.state, which.name);
+        QVERIFY2(state->text() == QString(which.word), qPrintable(QString("%1: %2").arg(which.name, state->text())));
+        QVERIFY2(!detail->text().isEmpty(), which.name);
+        QVERIFY2(button->isHidden() == QString(which.button).isEmpty(), which.name);
+        if (!button->isHidden()) {
+            QCOMPARE(button->text(), QString(which.button));
+            QCOMPARE(button->accessibleName(), button->text());
+            QVERIFY2(button->height() >= 40, qPrintable(QString("%1: button %2 px").arg(which.name).arg(button->height())));
+        }
+        QVERIFY2(DotColor(icon) == GUIUtil::getThemedQColor(which.color).rgb(), which.name);
+        QVERIFY2(banner->isVisible() == (which.state == State::Locked), which.name);
+        // The thread's coarse reasons are not promised as waits that end by themselves,
+        // and a thread that is down is not blamed on a setting it may not have.
+        if (QString(which.name) == "depth") {
+            QVERIFY2(!detail->text().contains("mature") && detail->text().contains("None of the coins"), qPrintable(detail->text()));
+            QVERIFY(detail->toolTip().contains("collateral"));
+        }
+        if (QString(which.name) == "disabled") QVERIFY2(detail->text().contains("-staking=0"), qPrintable(detail->text()));
+        if (QString(which.name) == "stopped") QVERIFY2(!detail->text().contains("-staking") && detail->text().contains("not running"), qPrintable(detail->text()));
+        widest = std::max(widest, card->minimumSizeHint().width());
+        if (!output.isEmpty()) {
+            QVERIFY(QDir().mkpath(output));
+            QVERIFY(page.grab().save(QDir(output).filePath(QString("Abyss-staking-%1.png").arg(which.name))));
+        }
+    }
+    // The card asks for no more room than the balances card has anyway.
+    QVERIFY2(widest <= balances->minimumSizeHint().width(), qPrintable(QString("card %1, balances %2").arg(widest).arg(balances->minimumSizeHint().width())));
+    // The button: the switch, or the unlock on a locked wallet; by mouse and by keyboard.
+    page.setStakingStatus(StakingCase("off")); Settle();
+    QVERIFY(button->focusPolicy() != Qt::NoFocus);
+    button->click();
+    QCOMPARE(toggles.count(), 1);
+    QVERIFY(toggles.last().at(0).toBool()); // "Start staking" asks for on, never for a flip.
+    QCOMPARE(unlocks.count(), 0);
+    QTest::keyClick(button, Qt::Key_Space);
+    QCOMPARE(toggles.count(), 2);
+    QVERIFY(toggles.last().at(0).toBool());
+    page.setStakingStatus(StakingCase("staking")); Settle();
+    button->click();
+    QCOMPARE(toggles.count(), 3);
+    QVERIFY(!toggles.last().at(0).toBool()); // "Pause staking" asks for off.
+    page.setStakingStatus(StakingCase("syncing")); Settle();
+    button->click();
+    QVERIFY(!toggles.last().at(0).toBool());
+    page.setStakingStatus(StakingCase("locked")); Settle();
+    button->click();
+    QCOMPARE(unlocks.count(), 1);
+    QCOMPARE(toggles.count(), 4);
+    // Discreet mode masks amounts, not states: the card and the banner stay.
+    page.setPrivacy(true); Settle();
+    QVERIFY(card->isVisible());
+    QVERIFY(banner->isVisible());
+    page.setPrivacy(false); Settle();
+    // A classic theme has neither, whatever the state; Abyss brings them back as they were.
+    Theme("Light"); Settle();
+    QVERIFY(card->isHidden());
+    QVERIFY(banner->isHidden());
+    page.setStakingStatus(StakingCase("locked")); Settle();
+    QVERIFY(banner->isHidden());
+    Theme("Abyss"); Settle();
+    QVERIFY(card->isVisible());
+    QVERIFY(banner->isVisible());
+    QCOMPARE(state->text(), QString("Paused: wallet locked"));
+}
+
+void AbyssTests::stakingBanner()
+{
+    // Over the network bar, only while the wallet is locked, with its own way out.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    OverviewPage page;
+    page.setWalletModel(fixture.model.get());
+    page.resize(1280, 850);
+    page.show(); Settle();
+    auto* banner = page.findChild<QFrame*>("stakingBanner");
+    auto* text = page.findChild<QLabel*>("stakingBannerText");
+    auto* unlock = page.findChild<QPushButton*>("stakingBannerUnlock");
+    auto* bar = page.findChild<QFrame*>("networkCard");
+    auto* header = page.findChild<QWidget*>("modernOverviewHeader");
+    QVERIFY(banner && text && unlock && bar && header);
+    QVERIFY(banner->isHidden());
+    QSignalSpy unlocks(&page, &OverviewPage::stakingUnlockRequested);
+    page.setStakingStatus(StakingCase("locked")); Settle();
+    QVERIFY(banner->isVisible());
+    QVERIFY(text->text().contains("locked"));
+    QVERIFY(OnPage(page, banner).top() >= OnPage(page, header).bottom());
+    QVERIFY(OnPage(page, banner).bottom() <= OnPage(page, bar).top());
+    QVERIFY(unlock->height() >= 34);
+    unlock->click();
+    QCOMPARE(unlocks.count(), 1);
+    // A wallet unlocked for mixing (and so for staking) is not locked for the banner.
+    OverviewPage::StakingStatus mixing = StakingCase("ready");
+    page.setStakingStatus(mixing); Settle();
+    QVERIFY(banner->isHidden());
+    // A wallet without keys has nothing to unlock for.
+    OverviewPage::StakingStatus keyless = StakingCase("locked");
+    keyless.keyless = true;
+    page.setStakingStatus(keyless); Settle();
+    QVERIFY(banner->isHidden());
+    page.setStakingStatus(StakingCase("locked")); Settle();
+    QVERIFY(banner->isVisible());
+    page.setPrivacy(true); Settle();
+    QVERIFY(banner->isVisible());
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    if (!output.isEmpty()) QVERIFY(page.grab().save(QDir(output).filePath("Abyss-staking-banner-discreet.png")));
+    page.setPrivacy(false); Settle();
+    page.setStakingStatus(StakingCase("off")); Settle();
+    QVERIFY(banner->isHidden());
+}
+
+void AbyssTests::coinJoinCardConditional()
+{
+    // In Abyss the CoinJoin card stays out of the way until it has something
+    // to say -- mixing, or mixed coins -- and a one-line row with a link
+    // stands in for it, since the card is where mixing is started. The
+    // classic themes show the card whenever CoinJoin is on, as before.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    QVERIFY(fixture.client->coinJoinOptions().isEnabled());
+    const auto open = [&](OverviewPage& page) {
+        page.setClientModel(fixture.client.get());
+        page.setWalletModel(fixture.model.get());
+        page.resize(1280, 850);
+        page.show(); Settle();
+        page.coinJoinStatus(true); Settle();
+    };
+    OverviewPage page;
+    open(page);
+    auto* card = page.findChild<QFrame*>("frameCoinJoin");
+    auto* row = page.findChild<QWidget*>("coinJoinRow");
+    auto* show = page.findChild<QPushButton*>("coinJoinRowShow");
+    auto* staking = page.findChild<QFrame*>("frameStaking");
+    QVERIFY(card && row && show && staking);
+    QVERIFY(card->isHidden());
+    QVERIFY(row->isVisible());
+    QVERIFY(OnPage(page, row).top() >= OnPage(page, staking).bottom()); // Where the card stood.
+    QVERIFY(show->focusPolicy() != Qt::NoFocus);
+    show->click(); Settle();
+    QVERIFY(card->isVisible());
+    QVERIFY(row->isHidden());
+    QVERIFY(OnPage(page, card).top() >= OnPage(page, staking).bottom());
+    page.coinJoinStatus(true); Settle(); // The timer's next pass keeps it open.
+    QVERIFY(card->isVisible());
+    // Mixed coins open it on a fresh page without the link.
+    OverviewPage mixed;
+    open(mixed);
+    QVERIFY(mixed.findChild<QFrame*>("frameCoinJoin")->isHidden());
+    interfaces::WalletBalances balances;
+    balances.anonymized_balance = 5 * COIN;
+    mixed.setBalance(balances); Settle();
+    QVERIFY(mixed.findChild<QFrame*>("frameCoinJoin")->isVisible());
+    QVERIFY(mixed.findChild<QWidget*>("coinJoinRow")->isHidden());
+    balances.anonymized_balance = 0;
+    mixed.setBalance(balances); Settle();
+    QVERIFY(mixed.findChild<QFrame*>("frameCoinJoin")->isHidden());
+    QVERIFY(mixed.findChild<QWidget*>("coinJoinRow")->isVisible());
+    // A classic theme: the card, never the row.
+    Theme("Light"); Settle();
+    OverviewPage classic;
+    open(classic);
+    QVERIFY(classic.findChild<QFrame*>("frameCoinJoin")->isVisible());
+    QVERIFY(classic.findChild<QWidget*>("coinJoinRow")->isHidden());
+    QVERIFY(classic.findChild<QFrame*>("frameStaking")->isHidden());
+    // And the Abyss page that had the card hidden shows it in a classic theme too.
+    QVERIFY(mixed.findChild<QFrame*>("frameCoinJoin")->isVisible());
+    QVERIFY(mixed.findChild<QWidget*>("coinJoinRow")->isHidden());
+    // Disabled by the node (automatic backups off): Abyss keeps the card behind
+    // the link, where it explains itself; a classic page leaves it as it stands.
+    const int backups = nWalletBackups;
+    nWalletBackups = 0;
+    const auto restore_backups = interfaces::MakeHandler([backups] { nWalletBackups = backups; });
+    Theme("Abyss"); Settle();
+    OverviewPage disabled;
+    open(disabled);
+    QVERIFY(disabled.findChild<QFrame*>("frameCoinJoin")->isHidden());
+    QVERIFY(disabled.findChild<QWidget*>("coinJoinRow")->isVisible());
+    disabled.findChild<QPushButton*>("coinJoinRowShow")->click(); Settle();
+    QVERIFY(disabled.findChild<QFrame*>("frameCoinJoin")->isVisible());
+    QVERIFY(!disabled.findChild<QFrame*>("frameCoinJoin")->isEnabled());
+    QVERIFY(disabled.findChild<QPushButton*>("toggleCoinJoin")->text().contains("Disabled"));
+    Theme("Light"); Settle();
+    // The Abyss page whose link opened it: Light has it as the base would,
+    // and the base never shows a card disabled from the start.
+    QVERIFY(disabled.findChild<QFrame*>("frameCoinJoin")->isHidden());
+    QVERIFY(disabled.findChild<QWidget*>("coinJoinRow")->isHidden());
+    OverviewPage classic_disabled;
+    open(classic_disabled);
+    QVERIFY(classic_disabled.findChild<QFrame*>("frameCoinJoin")->isHidden()); // As before: never shown.
+    QVERIFY(classic_disabled.findChild<QWidget*>("coinJoinRow")->isHidden());
+    // The other way: a classic card that stood when the backups failed keeps
+    // standing, through Abyss (behind the row there) and back.
+    nWalletBackups = backups;
+    OverviewPage stood;
+    open(stood);
+    auto* stood_card = stood.findChild<QFrame*>("frameCoinJoin");
+    auto* stood_row = stood.findChild<QWidget*>("coinJoinRow");
+    QVERIFY(stood_card->isVisible());
+    nWalletBackups = 0;
+    stood.coinJoinStatus(true); Settle();
+    QVERIFY(stood_card->isVisible());
+    QVERIFY(!stood_card->isEnabled());
+    Theme("Abyss"); Settle();
+    QVERIFY(stood_card->isHidden());
+    QVERIFY(stood_row->isVisible());
+    Theme("Light"); Settle();
+    QVERIFY(stood_card->isVisible());
+    QVERIFY(stood_row->isHidden());
+}
+
+void AbyssTests::nextLevelLine()
+{
+    // Under the total: the balance the next sky level starts at, as the
+    // badge's tooltip has it, or that this is the top. Never in discreet
+    // mode, nor for a wallet whose balance does not count.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    OverviewPage page;
+    page.setWalletModel(fixture.model.get());
+    page.resize(1280, 850);
+    page.show(); Settle();
+    auto* line = page.findChild<QLabel*>("nextLevelLabel");
+    auto* total = page.findChild<QLabel*>("labelTotal");
+    QVERIFY(line && total);
+    const int unit = fixture.options->getDisplayUnit();
+    const auto at = [unit](int tier) {
+        QString amount = BitcoinUnits::formatWithUnit(unit, SkyTiers::threshold(tier), false, BitcoinUnits::SeparatorStyle::ALWAYS);
+        amount.remove(amount.indexOf('.'), BitcoinUnits::decimals(unit) + 1);
+        return QString("Next level at %1").arg(amount);
+    };
+    interfaces::WalletBalances balances;
+    page.setBalance(balances); Settle();
+    QVERIFY(line->isVisible());
+    QCOMPARE(line->text(), at(1));
+    QVERIFY(OnPage(page, line).top() >= OnPage(page, total).bottom());
+    QVERIFY(std::abs(OnPage(page, line).right() - OnPage(page, total).right()) <= 2);
+    // The whole line is on the card, not clipped to the amounts' column.
+    QVERIFY2(QFontMetrics(line->font()).horizontalAdvance(line->text()) <= line->contentsRect().width(),
+             qPrintable(QString("%1 px of text in %2 px").arg(QFontMetrics(line->font()).horizontalAdvance(line->text())).arg(line->contentsRect().width())));
+    balances.balance = 1000000 * COIN;
+    page.setBalance(balances); Settle();
+    QCOMPARE(page.skyTier(), 4);
+    QCOMPARE(line->text(), at(5));
+    balances.balance = 25000000 * COIN;
+    page.setBalance(balances); Settle();
+    QCOMPARE(page.skyTier(), 10);
+    QCOMPARE(line->text(), QString("Top level"));
+    // It takes the column's width and never sets it.
+    QCOMPARE(line->minimumWidth(), 0);
+    QCOMPARE(line->sizePolicy().horizontalPolicy(), QSizePolicy::Ignored);
+    page.setPrivacy(true); Settle();
+    QVERIFY(line->isHidden());
+    page.setPrivacy(false); Settle();
+    QVERIFY(line->isVisible());
+    fixture.wallet->SetWalletFlag(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    page.setBalance(balances); Settle();
+    QVERIFY(line->isHidden());
+    fixture.wallet->UnsetWalletFlag(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    page.setBalance(balances); Settle();
+    QVERIFY(line->isVisible());
+    Theme("Light"); Settle();
+    QVERIFY(line->isHidden());
+    Theme("Abyss"); Settle();
+    QVERIFY(line->isVisible());
+    QCOMPARE(line->text(), QString("Top level"));
+}
+
+void AbyssTests::stakingWindow()
+{
+    // The window's staking tick feeds the card: the node's part from the
+    // thread's flags, the wallet's part from its own switch and lock; the
+    // card's button works the real switch.
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    const std::string name = fixture.wallet->GetName();
+    const bool minter_before = fMinterRunning;
+    const bool try_before = fTryToSync;
+    const auto restore_flags = interfaces::MakeHandler([&] {
+        if (IsWalletStaking(name)) ToggleWalletStaking(name);
+        fMinterRunning = minter_before;
+        fTryToSync = try_before;
+        fixture.wallet->m_is_staking = NOT_STAKING;
+    });
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.resize(1280, 850);
+    window.show(); Settle();
+    window.addWallet(fixture.model.get()); Settle();
+    auto* page = window.findChild<OverviewPage*>();
+    QVERIFY(page);
+    auto* button = page->findChild<QPushButton*>("stakingButton");
+    QVERIFY(button);
+    // No thread in this process: the card says so and offers nothing.
+    fMinterRunning = false;
+    window.setStakingStatus(); Settle();
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Disabled);
+    QVERIFY(button->isHidden());
+    // With the thread: the node's own gates are the card's. This node never
+    // finishes the masternode sync, so the card waits -- whatever the
+    // thread's fTryToSync flag happens to say, which is not a state.
+    fMinterRunning = true;
+    window.setStakingStatus(); Settle();
+    QCOMPARE(page->stakingStatus().configured, gArgs.GetBoolArg("-staking", DEFAULT_STAKING));
+    QVERIFY(!m_node.masternodeSync().isSynced());
+    QVERIFY(page->stakingStatus().syncing);
+    fTryToSync = !try_before;
+    window.setStakingStatus(); Settle();
+    QVERIFY(page->stakingStatus().syncing);
+    fTryToSync = try_before;
+    QVERIFY(!page->stakingStatus().locked);
+    QVERIFY(!page->stakingStatus().keyless);
+    QVERIFY(!page->stakingStatus().enabled); // Not in the staking registry yet.
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Off);
+    // Register the wallet as the node does at start, then work the switch from the card.
+    MultiwalletInitialize();
+    QVERIFY(!IsWalletStaking(name));
+    window.setStakingStatus(); Settle();
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Off);
+    QCOMPARE(button->text(), QString("Start staking"));
+    button->click(); Settle();
+    QVERIFY(IsWalletStaking(name));
+    QVERIFY(page->stakingStatus().enabled); // At once, not at the next tick.
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Syncing);
+    QCOMPARE(button->text(), QString("Pause staking"));
+    // A stale "staking" word from the thread does not outrank the node's gates.
+    fixture.wallet->m_is_staking = IS_STAKING;
+    window.setStakingStatus(); Settle();
+    QCOMPARE(page->stakingStatus().wallet_state, int(IS_STAKING));
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Syncing);
+    fixture.wallet->m_is_staking = NOT_STAKING;
+    button->click(); Settle();
+    QVERIFY(!IsWalletStaking(name));
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Off);
+    // The button asks for the position it offered, not for a flip: the switch
+    // moved under it (the menu, the RPC) and the card has not ticked yet.
+    QCOMPARE(button->text(), QString("Start staking"));
+    QVERIFY(ToggleWalletStaking(name)); // on, behind the card's back
+    button->click(); Settle();           // the stale "Start staking"
+    QVERIFY(IsWalletStaking(name));      // still on
+    QCOMPARE(button->text(), QString("Pause staking"));
+    QVERIFY(!ToggleWalletStaking(name)); // off, behind the card's back
+    button->click(); Settle();           // the stale "Pause staking"
+    QVERIFY(!IsWalletStaking(name));     // still off
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Off);
+    // The wallet's part follows the model's lock state: unencrypted is never locked.
+    QCOMPARE(fixture.model->getEncryptionStatus(), WalletModel::Unencrypted);
+    QVERIFY(!page->stakingStatus().locked);
+    // A wallet without keys: the card says so, and the switch is not offered.
+    fixture.wallet->SetWalletFlag(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    window.setStakingStatus(); Settle();
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Unavailable);
+    QVERIFY(button->isHidden());
+    fixture.wallet->UnsetWalletFlag(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    window.setStakingStatus(); Settle();
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Off);
+    // The lock's tooltips name staking in Abyss, whose card unlocks for it;
+    // the classic themes keep their own text.
+    auto* lock_icon = window.findChild<QLabel*>("labelWalletEncryptionIcon");
+    auto* lock_button = window.findChild<QToolButton*>("walletLockButton");
+    QVERIFY(lock_icon && lock_button);
+    window.setEncryptionStatus(WalletModel::UnlockedForMixingOnly);
+    QCOMPARE(lock_icon->toolTip(), QString("Wallet is <b>encrypted</b> and currently <b>unlocked</b> for mixing and staking only"));
+    QCOMPARE(lock_button->toolTip(), QString("Wallet is <b>unlocked for mixing and staking only</b>. Click to lock it."));
+    Theme("Light"); Settle();
+    window.setEncryptionStatus(WalletModel::UnlockedForMixingOnly);
+    QCOMPARE(lock_icon->toolTip(), QString("Wallet is <b>encrypted</b> and currently <b>unlocked</b> for mixing only"));
+    QCOMPARE(lock_button->toolTip(), QString("Wallet is <b>unlocked for mixing only</b>. Click to lock it."));
+    Theme("Abyss"); Settle();
+    window.setEncryptionStatus(fixture.model->getEncryptionStatus());
+    // The unlock dialog the card opens asks for the mixing-grade unlock under its own name.
+    AskPassphraseDialog dialog(AskPassphraseDialog::UnlockStaking, nullptr);
+    QCOMPARE(dialog.windowTitle(), QString("Unlock wallet for staking"));
+    QVERIFY(dialog.findChild<QLabel*>("warningLabel")->text().contains("Sending stays locked"));
+    QVERIFY(dialog.findChild<QLineEdit*>("passEdit2")->isHidden());
+    QVERIFY(dialog.findChild<QLineEdit*>("passEdit3")->isHidden());
+    // The tick reaches the card only while the window has its client model.
+    // Without it -- before the node's start ends, and from the start of its
+    // shutdown, which deletes the wallet models under the views -- the card
+    // keeps its last state, and the tick asks the node nothing.
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Off);
+    detach->disconnect(); // setClientModel(nullptr), as the shutdown does first
+    fMinterRunning = false;
+    window.setStakingStatus(); Settle();
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Off);
+}
+
+void AbyssTests::stakingSyncGates()
+{
+    // The card waits exactly where the thread does (pos/minter.cpp): the
+    // peers and the initial download count on the main network only; the
+    // proof-of-work end and the masternode data on every network.
+    OverviewPage::StakingGates ready;
+    ready.masternodes_synced = true;
+    ready.peers = STAKING_MIN_PEERS_MAINNET;
+    ready.height = 1000;
+    ready.last_pow_block = 500;
+    for (const bool mainnet : {false, true}) {
+        const auto with = [&](const std::function<void(OverviewPage::StakingGates&)>& change) {
+            OverviewPage::StakingGates gates = ready;
+            gates.mainnet = mainnet;
+            change(gates);
+            return OverviewPage::stakingWaitsForSync(gates);
+        };
+        const char* net = mainnet ? "main" : "other";
+        QVERIFY2(!with([](auto&) {}), net);
+        QVERIFY2(with([](auto& g) { g.initial_download = true; }) == mainnet, net);
+        QVERIFY2(with([](auto& g) { g.peers = STAKING_MIN_PEERS_MAINNET - 1; }) == mainnet, net);
+        QVERIFY2(with([](auto& g) { g.peers = 0; }) == mainnet, net);
+        QVERIFY2(with([](auto& g) { g.initial_download = true; g.peers = 0; }) == mainnet, net);
+        QVERIFY2(with([](auto& g) { g.masternodes_synced = false; }), net);
+        QVERIFY2(with([](auto& g) { g.height = g.last_pow_block - 1; }), net);
+        QVERIFY2(!with([](auto& g) { g.height = g.last_pow_block; }), net); // The thread stakes from that height on.
+        // A tip stamped ahead of the node's clock holds the thread on every network.
+        QVERIFY2(with([](auto& g) { g.adjusted_time = 1000000; g.tip_time = 1000001; }), net);
+        QVERIFY2(!with([](auto& g) { g.adjusted_time = 1000000; g.tip_time = 1000000; }), net);
+    }
+    // The thread's last word "staking" does not outrank that wait: after a tip
+    // from the future, the card waits as the thread does, then stakes again.
+    OverviewPage page;
+    OverviewPage::StakingStatus status;
+    status.enabled = true;
+    status.wallet_state = IS_STAKING;
+    OverviewPage::StakingGates ahead = ready;
+    ahead.adjusted_time = 1000000;
+    ahead.tip_time = ahead.adjusted_time + 30;
+    status.syncing = OverviewPage::stakingWaitsForSync(ahead);
+    page.setStakingStatus(status);
+    QCOMPARE(page.stakingState(), OverviewPage::StakingState::Syncing);
+    ahead.adjusted_time = ahead.tip_time;
+    status.syncing = OverviewPage::stakingWaitsForSync(ahead);
+    page.setStakingStatus(status);
+    QCOMPARE(page.stakingState(), OverviewPage::StakingState::Staking);
+    // Nor does it outrank the thread's own flag, which a pass that failed
+    // before the search (no block template) drops.
+    status.searching = false;
+    page.setStakingStatus(status);
+    QCOMPARE(page.stakingState(), OverviewPage::StakingState::Ready);
+    QVERIFY(!page.findChild<QLabel*>("stakingDetail")->text().contains("A reward comes"));
+}
+
+void AbyssTests::stakingUnlockFlow()
+{
+    // The card's unlock on an encrypted wallet, through the real dialog:
+    // cancelled, nothing moves; the wrong passphrase, nothing moves; the right
+    // one unlocks for mixing and staking only -- the wallet stakes and still
+    // refuses to send -- and switches staking on; done again from the banner
+    // with the switch already on, the switch stays on and nothing is said.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node, /*dummy_database=*/true);
+    const std::string name = fixture.wallet->GetName();
+    const SecureString passphrase("staking-trial");
+    QVERIFY(fixture.wallet->EncryptWallet(passphrase));
+    QCOMPARE(fixture.model->getEncryptionStatus(), WalletModel::Locked);
+    MultiwalletInitialize();
+    const bool minter_before = fMinterRunning;
+    const auto cleanup = interfaces::MakeHandler([&] {
+        if (IsWalletStaking(name)) ToggleWalletStaking(name);
+        fMinterRunning = minter_before;
+    });
+    WalletView view(nullptr);
+    view.setClientModel(fixture.client.get());
+    view.setWalletModel(fixture.model.get());
+    view.resize(1280, 850);
+    view.show(); Settle();
+    auto* page = view.findChild<OverviewPage*>();
+    QVERIFY(page);
+    OverviewPage::StakingStatus node; // the thread up, the chain in
+    view.setStakingStatus(node); Settle();
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Locked);
+    auto* button = page->findChild<QPushButton*>("stakingButton");
+    auto* banner = page->findChild<QFrame*>("stakingBanner");
+    auto* banner_button = page->findChild<QPushButton*>("stakingBannerUnlock");
+    QVERIFY(button && banner && banner_button);
+    QVERIFY(banner->isVisible());
+    QSignalSpy messages(&view, &WalletView::message);
+    // The dialog the button opens is answered from the event loop, as the
+    // send confirmation is in wallettests. Two timers, because a timer does
+    // not fire again while its own slot is still running: the answerer types
+    // and accepts (a failed unlock then runs its message box from inside that
+    // slot), the closer closes any message box and then cancels a dialog that
+    // was answered and stayed open for another try. No step can leave a modal
+    // window waiting, so a failure is a failed check, never a hang.
+    std::optional<std::pair<QString, bool>> pending;
+    bool answered = false;
+    QStringList seen_titles, seen_boxes;
+    QTimer answerer;
+    answerer.setInterval(20);
+    QObject::connect(&answerer, &QTimer::timeout, [&] {
+        if (!pending) return;
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            auto* dialog = qobject_cast<AskPassphraseDialog*>(widget);
+            if (dialog == nullptr || !dialog->isVisible()) continue;
+            const auto [text, accept] = *pending;
+            pending.reset();
+            answered = true;
+            seen_titles << dialog->windowTitle();
+            dialog->findChild<QLineEdit*>("passEdit1")->setText(text);
+            if (accept) dialog->accept(); else dialog->reject();
+            return;
+        }
+    });
+    QTimer closer;
+    closer.setInterval(20);
+    QObject::connect(&closer, &QTimer::timeout, [&] {
+        bool box_open = false;
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            auto* box = qobject_cast<QMessageBox*>(widget);
+            if (box == nullptr || !box->isVisible()) continue;
+            seen_boxes << box->windowTitle();
+            box->close();
+            box_open = true;
+        }
+        if (box_open || !answered) return;
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            auto* dialog = qobject_cast<AskPassphraseDialog*>(widget);
+            if (dialog != nullptr && dialog->isVisible()) dialog->reject();
+        }
+    });
+    answerer.start();
+    closer.start();
+    const auto step = [&](const QString& text, bool accept, QPushButton* via) {
+        pending = std::make_pair(text, accept);
+        answered = false;
+        seen_titles.clear();
+        seen_boxes.clear();
+        via->click(); Settle();
+        QVERIFY(!pending); // The dialog opened and was answered.
+    };
+    const QString right = QString::fromStdString(std::string(passphrase.begin(), passphrase.end()));
+    // Cancelled.
+    step(QString(), false, button);
+    QCOMPARE(seen_titles, QStringList{"Unlock wallet for staking"});
+    QVERIFY(seen_boxes.isEmpty());
+    QCOMPARE(fixture.model->getEncryptionStatus(), WalletModel::Locked);
+    QVERIFY(!IsWalletStaking(name));
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Locked);
+    QCOMPARE(messages.count(), 0);
+    // The wrong passphrase: the dialog's own message, the dialog cancelled
+    // after it, and still locked.
+    step("not-the-passphrase", true, button);
+    seen_boxes.removeDuplicates();
+    QCOMPARE(seen_boxes, QStringList{"Wallet unlock failed"});
+    QCOMPARE(fixture.model->getEncryptionStatus(), WalletModel::Locked);
+    QVERIFY(!IsWalletStaking(name));
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Locked);
+    QCOMPARE(messages.count(), 0);
+    // The right one: unlocked for mixing and staking, and staking is on.
+    step(right, true, button);
+    QVERIFY2(seen_boxes.isEmpty(), qPrintable(seen_boxes.join(", ")));
+    QCOMPARE(fixture.model->getEncryptionStatus(), WalletModel::UnlockedForMixingOnly);
+    QVERIFY(fixture.model->wallet().isLocked());       // sending still refused
+    QVERIFY(!fixture.model->wallet().isLocked(true));  // the keys stake
+    QVERIFY(IsWalletStaking(name));
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Ready);
+    QVERIFY(banner->isHidden());
+    QCOMPARE(messages.count(), 0);
+    // Locked again with the switch on: the banner's button unlocks, the switch stays on, nothing is said.
+    QVERIFY(fixture.model->setWalletLocked(true));
+    view.setStakingStatus(node); Settle();
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Locked);
+    QVERIFY(banner->isVisible());
+    step(right, true, banner_button);
+    QVERIFY2(seen_boxes.isEmpty(), qPrintable(seen_boxes.join(", ")));
+    QCOMPARE(fixture.model->getEncryptionStatus(), WalletModel::UnlockedForMixingOnly);
+    QVERIFY(IsWalletStaking(name));
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Ready);
+    QCOMPARE(messages.count(), 0);
+    QVERIFY(fixture.model->setWalletLocked(true));
+    // A quit request while the dialog is open: BitcoinApplication turns it
+    // into the shutdown in whatever loop runs, the dialog's too, and the
+    // shutdown unsets the client model and then deletes the wallet model. The
+    // dialog goes with its model, and the unlock reads nothing of it after.
+    answerer.stop();
+    closer.stop();
+    view.setStakingStatus(node); Settle();
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Locked);
+    bool dialog_seen = false, shut_down = false, checked = false, outlived = false;
+    // Closes a dialog that outlived its model, so that is a failed check, not a hang.
+    QTimer guard;
+    guard.setSingleShot(true);
+    guard.setInterval(300);
+    QObject::connect(&guard, &QTimer::timeout, [&] {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            auto* dialog = qobject_cast<AskPassphraseDialog*>(widget);
+            if (dialog == nullptr || !dialog->isVisible()) continue;
+            outlived = true;
+            dialog->reject();
+        }
+        checked = true;
+    });
+    QTimer quit;
+    quit.setInterval(20);
+    QObject::connect(&quit, &QTimer::timeout, [&] {
+        for (QWidget* widget : QApplication::topLevelWidgets()) {
+            auto* dialog = qobject_cast<AskPassphraseDialog*>(widget);
+            if (dialog == nullptr || !dialog->isVisible()) continue;
+            quit.stop();
+            dialog_seen = true;
+            view.setClientModel(nullptr); // the shutdown's order: the client model first,
+            fixture.model.reset();        // then the wallet controller deletes its models
+            shut_down = true;
+            guard.start();
+            return;
+        }
+    });
+    quit.start();
+    button->click();
+    QTRY_VERIFY_WITH_TIMEOUT(checked, 5000);
+    QVERIFY(dialog_seen);
+    QVERIFY(shut_down);
+    QVERIFY(!outlived);
+    QCOMPARE(messages.count(), 0);
+}
+
+void AbyssTests::stakingTipTime()
+{
+    // The card's clock gate reads the active tip's time from every block
+    // notice, also from one the GUI's throttling drops: in the initial
+    // download a notice within 250 ms of the last one shown never reaches the
+    // window, and nothing repeats it. Both ways: a later tip stamped earlier
+    // after one ahead of the clock, and a tip ahead of the clock dropped.
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QVERIFY(style);
+    WalletFixture fixture(m_node);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    int shown = 0;
+    QObject::connect(fixture.client.get(), &ClientModel::numBlocksChanged, [&] { ++shown; });
+    const int height = fixture.client->getNumBlocks();
+    // A new active tip as validation announces it while still in the initial download.
+    const auto notice = [&](int64_t time, int at) {
+        uint256 hash{};
+        std::memcpy(hash.begin(), &time, sizeof(time));
+        CBlockIndex index;
+        index.nHeight = at;
+        index.nTime = uint32_t(time);
+        index.nChainTx = 1;
+        index.phashBlock = &hash;
+        uiInterface.NotifyBlockTip(SynchronizationState::INIT_DOWNLOAD, &index);
+    };
+    const int64_t now = GetAdjustedTime();
+    QTest::qWait(300); // past the throttle window of any notice before
+    shown = 0;
+    notice(now + 120, height + 1);
+    notice(now - 600, height + 2);
+    Settle();
+    QCOMPARE(shown, 1); // the second one was dropped
+    QCOMPARE(window.stakingTipTime(), now - 600);
+    QTest::qWait(300);
+    shown = 0;
+    notice(now - 600, height + 3);
+    notice(now + 120, height + 4);
+    Settle();
+    QCOMPARE(shown, 1);
+    QCOMPARE(window.stakingTipTime(), now + 120);
+    // The first fills, before any notice: one that lands between the node's
+    // answer and the store wins, for the height and the tip time alike. A
+    // plain store would put the older value over it until the next block.
+    QTest::qWait(300);
+    fixture.client->m_cached_num_blocks = -1;
+    fixture.client->m_cached_tip_time = -1;
+    fixture.client->m_test_hook_fill = [&] { notice(now + 30, height + 7); };
+    QCOMPARE(fixture.client->getNumBlocks(), height + 7);
+    fixture.client->m_cached_tip_time = -1; // the notice set it too: fill it anew
+    fixture.client->m_test_hook_fill = [&] { notice(now - 30, height + 8); };
+    QCOMPARE(window.stakingTipTime(), now - 30);
+    fixture.client->m_test_hook_fill = nullptr;
+    Settle();
 }

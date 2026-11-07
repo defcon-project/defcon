@@ -95,6 +95,8 @@ public:
     void addWallet(WalletModel* walletModel);
     void removeWallet(WalletModel* walletModel);
     void removeAllWallets();
+    /** The active tip's time the staking card's clock gate uses (0 without a client model). */
+    int64_t stakingTipTime() const;
 #endif // ENABLE_WALLET
     bool enableWallet = false;
 

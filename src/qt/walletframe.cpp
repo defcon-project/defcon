@@ -194,6 +194,13 @@ void WalletFrame::showOutOfSyncWarning(bool fShow)
         i.value()->showOutOfSyncWarning(fShow);
 }
 
+void WalletFrame::setStakingStatus(const OverviewPage::StakingStatus& node_status)
+{
+    for (auto i = mapWalletViews.constBegin(); i != mapWalletViews.constEnd(); ++i) {
+        i.value()->setStakingStatus(node_status);
+    }
+}
+
 void WalletFrame::gotoGovernancePage()
 {
     QMap<WalletModel*, WalletView*>::const_iterator i;

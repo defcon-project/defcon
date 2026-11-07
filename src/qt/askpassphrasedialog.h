@@ -25,6 +25,7 @@ public:
     enum Mode {
         Encrypt,    /**< Ask passphrase twice and encrypt */
         UnlockMixing,     /**< Ask passphrase and unlock only for mixing */
+        UnlockStaking,    /**< The same unlock, asked for staking: the keys stake, sending stays locked */
         Unlock,     /**< Ask passphrase and unlock */
         ChangePass, /**< Ask old passphrase + new passphrase twice */
     };

@@ -13,6 +13,7 @@
 #include <QDateTime>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <uint256.h>
 
@@ -70,6 +71,9 @@ public:
     //! Return number of connections, default is in- and outbound (total)
     int getNumConnections(unsigned int flags = CONNECTIONS_ALL) const;
     int getNumBlocks() const;
+    //! The active tip's block time, kept from every block notice before the
+    //! GUI drops any during the initial download (see BlockTipChanged).
+    int64_t getTipTime() const;
     uint256 getBestBlockHash() EXCLUSIVE_LOCKS_REQUIRED(!m_cached_tip_mutex);
     int getHeaderTipHeight() const;
     int64_t getHeaderTipTime() const;
@@ -98,6 +102,10 @@ public:
     mutable std::atomic<int> cachedBestHeaderHeight;
     mutable std::atomic<int64_t> cachedBestHeaderTime;
     mutable std::atomic<int> m_cached_num_blocks{-1};
+    mutable std::atomic<int64_t> m_cached_tip_time{-1};
+    //! Tests only: run in a first fill of the height or the tip time, between
+    //! the node's answer and the store, where a block notice may land.
+    std::function<void()> m_test_hook_fill;
 
     Mutex m_cached_tip_mutex;
     uint256 m_cached_tip_blocks GUARDED_BY(m_cached_tip_mutex){};

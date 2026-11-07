@@ -552,6 +552,86 @@ QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin {
     min-width: 150px;
 }
 
+/* The staking card, under the balances: the same card as the others, and
+   the page's one blue button. The state is a step larger than the amounts;
+   the line under it takes the muted color of the labels. */
+QWidget#OverviewPage QFrame#frameStaking {
+    background-color: #0b1727;
+    border: 1px solid #20344c;
+    border-radius: 10px;
+}
+
+QWidget#OverviewPage QFrame#frameStaking QLabel#labelStakingHeader,
+QWidget#OverviewPage QFrame#frameStaking QLabel#stakingState {
+    color: #ffffff;
+    margin: 0px;
+    padding: 0px;
+}
+
+QWidget#OverviewPage QFrame#frameStaking QLabel#stakingDetail,
+QWidget#OverviewPage QWidget#coinJoinRow QLabel#coinJoinRowText,
+QWidget#OverviewPage QFrame#frame QLabel#nextLevelLabel {
+    color: #91a5bc;
+    margin: 0px;
+    padding: 0px;
+}
+
+/* general.css gives every label a 60px floor; this line takes the amounts'
+   column as it is and must not hold it open. */
+QWidget#OverviewPage QFrame#frame QLabel#nextLevelLabel {
+    min-width: 0px;
+}
+
+QWidget#OverviewPage QFrame#frameStaking QPushButton#stakingButton {
+    min-width: 150px;
+    min-height: 40px;
+    max-height: 40px;
+}
+
+QWidget#OverviewPage QFrame#frameStaking QPushButton#stakingButton:focus {
+    border: 1px solid #ffffff;
+}
+
+/* Over the network bar while the wallet is locked: amber, as the bar is
+   while the node catches up, with the unlock as a dark button beside it. */
+QWidget#OverviewPage QFrame#stakingBanner {
+    background-color: #1b2d43;
+    border: 1px solid #5a4410;
+    border-radius: 10px;
+}
+
+QWidget#OverviewPage QFrame#stakingBanner QLabel#stakingBannerText {
+    color: #f5b42d;
+    margin: 0px;
+    padding: 0px;
+}
+
+QWidget#OverviewPage QFrame#stakingBanner QPushButton#stakingBannerUnlock {
+    min-width: 90px;
+}
+
+/* The link that opens the CoinJoin card: text only, underlined, a frame when
+   reached with the keyboard. */
+QWidget#OverviewPage QWidget#coinJoinRow QPushButton#coinJoinRowShow {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #1297ff;
+    text-decoration: underline;
+    min-width: 0px;
+    min-height: 24px;
+    max-height: 24px;
+    padding: 0px 4px;
+}
+
+QWidget#OverviewPage QWidget#coinJoinRow QPushButton#coinJoinRowShow:hover {
+    color: #42aaff;
+}
+
+QWidget#OverviewPage QWidget#coinJoinRow QPushButton#coinJoinRowShow:focus {
+    border-color: #1297ff;
+}
+
 /******************************************************
 Status bar and dialogs
 ******************************************************/
@@ -793,6 +873,7 @@ QLabel#devnetBadge {
 Explicit overrides of inherited Dark ID selectors
 ******************************************************/
 QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin,
+QWidget#OverviewPage QFrame#stakingBanner QPushButton#stakingBannerUnlock,
 QPushButton#exportButton,
 MultisigPage > QPushButton,
 MultisigPage > QGroupBox QPushButton,
@@ -819,6 +900,7 @@ QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM {
 }
 
 QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin:hover,
+QWidget#OverviewPage QFrame#stakingBanner QPushButton#stakingBannerUnlock:hover,
 QPushButton#exportButton:hover,
 MultisigPage > QPushButton:hover,
 MultisigPage > QGroupBox QPushButton:hover,
@@ -845,6 +927,7 @@ QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:hover {
 }
 
 QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin:pressed,
+QWidget#OverviewPage QFrame#stakingBanner QPushButton#stakingBannerUnlock:pressed,
 QPushButton#exportButton:pressed,
 MultisigPage > QPushButton:pressed,
 MultisigPage > QGroupBox QPushButton:pressed,
@@ -871,6 +954,7 @@ QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:pressed {
 }
 
 QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin:disabled,
+QWidget#OverviewPage QFrame#stakingBanner QPushButton#stakingBannerUnlock:disabled,
 QPushButton#exportButton:disabled,
 MultisigPage > QPushButton:disabled,
 MultisigPage > QPushButton#multisigCreate:disabled,
@@ -1176,19 +1260,24 @@ QFrame#emptyState QPushButton#emptyStateSecondary {
     min-height: 40px;
     max-height: 40px;
 }
+/* The Overview's empty list offers Receive in the dark style: the page's one
+   blue button is the staking card's. */
 ReceiveCoinsDialog QFrame#emptyState QPushButton#emptyStateAction,
+QWidget#OverviewPage QFrame#emptyState QPushButton#emptyStateAction,
 QFrame#emptyState QPushButton#emptyStateSecondary {
     background-color: #0d2032;
     border-color: #243c54;
     color: #b9cee1;
 }
 ReceiveCoinsDialog QFrame#emptyState QPushButton#emptyStateAction:hover,
+QWidget#OverviewPage QFrame#emptyState QPushButton#emptyStateAction:hover,
 QFrame#emptyState QPushButton#emptyStateSecondary:hover {
     background-color: #12324d;
     border-color: #1d3f60;
     color: #ffffff;
 }
 ReceiveCoinsDialog QFrame#emptyState QPushButton#emptyStateAction:pressed,
+QWidget#OverviewPage QFrame#emptyState QPushButton#emptyStateAction:pressed,
 QFrame#emptyState QPushButton#emptyStateSecondary:pressed {
     background-color: #10263e;
     border-color: #1297ff;

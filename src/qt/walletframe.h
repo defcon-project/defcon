@@ -5,6 +5,8 @@
 #ifndef BITCOIN_QT_WALLETFRAME_H
 #define BITCOIN_QT_WALLETFRAME_H
 
+#include <qt/overviewpage.h>
+
 #include <QFrame>
 #include <QGroupBox>
 #include <QMap>
@@ -49,6 +51,8 @@ public:
     bool handlePaymentRequest(const SendCoinsRecipient& recipient);
 
     void showOutOfSyncWarning(bool fShow);
+    //! The node's staking state for every wallet view, from the window's timer.
+    void setStakingStatus(const OverviewPage::StakingStatus& node_status);
 
     //! The wallets the Abyss no-wallet card offers to open.
     void setOpenWalletMenu(QMenu* menu);

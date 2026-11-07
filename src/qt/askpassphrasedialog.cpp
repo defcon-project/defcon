@@ -65,6 +65,14 @@ AskPassphraseDialog::AskPassphraseDialog(Mode _mode, QWidget *parent, SecureStri
             ui->passEdit3->hide();
             setWindowTitle(tr("Unlock wallet for mixing only"));
             break;
+        case UnlockStaking:
+            ui->warningLabel->setText(tr("Enter your passphrase to let this wallet stake. Sending stays locked until you unlock the wallet fully."));
+            ui->passLabel2->hide();
+            ui->passEdit2->hide();
+            ui->passLabel3->hide();
+            ui->passEdit3->hide();
+            setWindowTitle(tr("Unlock wallet for staking"));
+            break;
         case Unlock: // Ask passphrase
             ui->warningLabel->setText(tr("This operation needs your wallet passphrase to unlock the wallet."));
             ui->passLabel2->hide();
@@ -181,9 +189,12 @@ void AskPassphraseDialog::accept()
         }
         } break;
     case UnlockMixing:
+    case UnlockStaking:
     case Unlock:
         try {
-            if(!model->setWalletLocked(false, oldpass, mode == UnlockMixing))
+            // Staking needs no more than the mixing unlock: the thread signs
+            // with the keys, and sending stays refused.
+            if(!model->setWalletLocked(false, oldpass, mode == UnlockMixing || mode == UnlockStaking))
             {
                 QMessageBox::critical(this, tr("Wallet unlock failed"),
                                       tr("The passphrase entered for the wallet decryption was incorrect."));
@@ -230,6 +241,7 @@ void AskPassphraseDialog::textChanged()
         acceptable = !ui->passEdit2->text().isEmpty() && !ui->passEdit3->text().isEmpty();
         break;
     case UnlockMixing: // Old passphrase x1
+    case UnlockStaking:
     case Unlock: // Old passphrase x1
         acceptable = !ui->passEdit1->text().isEmpty();
         break;
