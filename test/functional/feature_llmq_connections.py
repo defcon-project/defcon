@@ -74,9 +74,7 @@ class LLMQConnections(DashTestFramework):
         self.nodes[0].sporkupdate("SPORK_23_QUORUM_POSE", 4070908800)
         self.wait_for_sporks_same()
 
-        self.mine_cycle_quorum()
-
-        # Since we IS quorums are mined only using dip24 (rotation) we need to enable rotation, and continue tests on llmq_test_dip0024 for connections.
+        self.mine_instantsend_quorum()
 
         self.log.info("check that old masternode connections are dropped")
         removed = False
@@ -85,7 +83,7 @@ class LLMQConnections(DashTestFramework):
                 try:
                     with mn.node.assert_debug_log(['removing masternodes quorum connections']):
                         with mn.node.assert_debug_log(['keeping mn quorum connections']):
-                            self.mine_cycle_quorum(is_first=False)
+                            self.mine_instantsend_quorum()
                             mn.node.mockscheduler(60) # we check for old connections via the scheduler every 60 seconds
                     removed = True
                 except:
@@ -100,7 +98,7 @@ class LLMQConnections(DashTestFramework):
             if len(mn.node.quorum("memberof", mn.proTxHash)) > 0:
                 try:
                     with mn.node.assert_debug_log(['adding mn inter-quorum connections']):
-                        self.mine_cycle_quorum(is_first=False)
+                        self.mine_instantsend_quorum()
                     added = True
                 except:
                     pass # it's ok to not add connections sometimes

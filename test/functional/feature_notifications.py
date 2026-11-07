@@ -103,7 +103,7 @@ class NotificationsTest(DashTestFramework):
         self.nodes[0].sporkupdate("SPORK_17_QUORUM_DKG_ENABLED", 0)
         self.nodes[0].sporkupdate("SPORK_19_CHAINLOCKS_ENABLED", 4070908800)
         self.wait_for_sporks_same()
-        (quorum_info_i_0, quorum_info_i_1) = self.mine_cycle_quorum()
+        self.mine_instantsend_quorum()
         self.nodes[0].sporkupdate("SPORK_19_CHAINLOCKS_ENABLED", 0)
         self.wait_for_sporks_same()
 

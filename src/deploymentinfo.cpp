@@ -37,8 +37,6 @@ std::string DeploymentName(Consensus::BuriedDeployment dep)
         return "dip0003";
     case Consensus::DEPLOYMENT_DIP0008:
         return "dip0008";
-    case Consensus::DEPLOYMENT_DIP0024:
-        return "dip0024";
     case Consensus::DEPLOYMENT_V19:
         return "v19";
     case Consensus::DEPLOYMENT_V20:

@@ -30,7 +30,7 @@ class LLMQ_IS_RetroactiveSigning(DashTestFramework):
         self.nodes[0].sporkupdate("SPORK_2_INSTANTSEND_ENABLED", 1)
         self.wait_for_sporks_same()
 
-        self.mine_cycle_quorum()
+        self.mine_instantsend_quorum()
 
         # Make sure that all nodes are chainlocked at the same height before starting actual tests
         self.wait_for_chainlocked_block_all_nodes(self.nodes[0].getbestblockhash(), timeout=30)

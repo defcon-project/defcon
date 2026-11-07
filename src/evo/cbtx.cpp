@@ -63,7 +63,7 @@ bool CheckCbTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxValidati
 
 // This can only be done after the block has been fully processed, as otherwise we won't have the finished MN list
 bool CheckCbTxMerkleRoots(const CBlock& block, const CBlockIndex* pindex, CDeterministicMNManager& dmnman,
-                          llmq::CQuorumSnapshotManager& qsnapman, const llmq::CQuorumBlockProcessor& quorum_block_processor,
+                          const llmq::CQuorumBlockProcessor& quorum_block_processor,
                           BlockValidationState& state, const CCoinsViewCache& view)
 {
     if (block.vtx[0]->nType != TRANSACTION_COINBASE) {
@@ -88,7 +88,7 @@ bool CheckCbTxMerkleRoots(const CBlock& block, const CBlockIndex* pindex, CDeter
         static int64_t nTimeMerkleQuorum = 0;
 
         uint256 calculatedMerkleRoot;
-        if (!CalcCbTxMerkleRootMNList(block, pindex->pprev, calculatedMerkleRoot, state, dmnman, qsnapman, view)) {
+        if (!CalcCbTxMerkleRootMNList(block, pindex->pprev, calculatedMerkleRoot, state, dmnman, view)) {
             // pass the state returned by the function above
             return false;
         }
@@ -119,7 +119,7 @@ bool CheckCbTxMerkleRoots(const CBlock& block, const CBlockIndex* pindex, CDeter
 
 bool CalcCbTxMerkleRootMNList(const CBlock& block, const CBlockIndex* pindexPrev, uint256& merkleRootRet,
                               BlockValidationState& state, CDeterministicMNManager& dmnman,
-                              llmq::CQuorumSnapshotManager& qsnapman, const CCoinsViewCache& view)
+                              const CCoinsViewCache& view)
 {
     try {
         static std::atomic<int64_t> nTimeDMN = 0;
@@ -129,7 +129,7 @@ bool CalcCbTxMerkleRootMNList(const CBlock& block, const CBlockIndex* pindexPrev
         int64_t nTime1 = GetTimeMicros();
 
         CDeterministicMNList tmpMNList;
-        if (!dmnman.BuildNewListFromBlock(block, pindexPrev, state, view, tmpMNList, qsnapman, false)) {
+        if (!dmnman.BuildNewListFromBlock(block, pindexPrev, state, view, tmpMNList, false)) {
             // pass the state returned by the function above
             return false;
         }
@@ -182,7 +182,6 @@ bool CalcCbTxMerkleRootMNList(const CBlock& block, const CBlockIndex* pindexPrev
 }
 
 using llmq::QcHashMap;
-using llmq::QcIndexedHashMap;
 
 auto CalcHashCountFromQCHashes(const QcHashMap& qcHashes)
 {
@@ -208,7 +207,7 @@ bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPre
         return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "commitment-not-found");
     }
     // The returned quorums are in reversed order, so the most recent one is at index 0
-    auto [qcHashes, qcIndexedHashes] = retVal.value();
+    auto qcHashes = std::move(retVal.value());
 
     int64_t nTime2 = GetTimeMicros(); nTimeMined += nTime2 - nTime1;
     LogPrint(BCLog::BENCHMARK, "            - GetQcHashes: %.2fms [%.2fs]\n", 0.001 * (nTime2 - nTime1), nTimeMined * 0.000001);
@@ -233,26 +232,14 @@ bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPre
             }
             const auto& llmq_params = llmq_params_opt.value();
             const auto qcHash = ::SerializeHash(opt_qc->commitment);
-            if (llmq::IsQuorumRotationEnabled(llmq_params, pindexPrev)) {
-                auto& map_indexed_hashes = qcIndexedHashes[opt_qc->commitment.llmqType];
-                map_indexed_hashes[opt_qc->commitment.quorumIndex] = qcHash;
-            } else {
-                auto& vec_hashes = qcHashes[llmq_params.type];
-                if (vec_hashes.size() == size_t(llmq_params.signingActiveQuorumCount)) {
-                    // we pop the last entry, which is actually the oldest quorum as GetMinedAndActiveCommitmentsUntilBlock
-                    // returned quorums in reversed order. This pop and later push can only work ONCE, but we rely on the
-                    // fact that a block can only contain a single commitment for one LLMQ type
-                    vec_hashes.pop_back();
-                }
-                vec_hashes.emplace_back(qcHash);
+            auto& vec_hashes = qcHashes[llmq_params.type];
+            if (vec_hashes.size() == size_t(llmq_params.signingActiveQuorumCount)) {
+                // we pop the last entry, which is actually the oldest quorum as GetMinedAndActiveCommitmentsUntilBlock
+                // returned quorums in reversed order. This pop and later push can only work ONCE, but we rely on the
+                // fact that a block can only contain a single commitment for one LLMQ type
+                vec_hashes.pop_back();
             }
-        }
-    }
-
-    for (const auto& [llmqType, map_indexed_hashes] : qcIndexedHashes) {
-        auto& vec_hashes = qcHashes[llmqType];
-        for (const auto& [_, hash] : map_indexed_hashes) {
-            vec_hashes.emplace_back(hash);
+            vec_hashes.emplace_back(qcHash);
         }
     }
 

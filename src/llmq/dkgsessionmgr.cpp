@@ -33,7 +33,7 @@ static const std::string DB_ENC_CONTRIB = "qdkg_E";
 
 CDKGSessionManager::CDKGSessionManager(CBLSWorker& _blsWorker, CChainState& chainstate, CDeterministicMNManager& dmnman,
                                        CDKGDebugManager& _dkgDebugManager, CMasternodeMetaMan& mn_metaman,
-                                       CQuorumBlockProcessor& _quorumBlockProcessor, CQuorumSnapshotManager& qsnapman,
+                                       CQuorumBlockProcessor& _quorumBlockProcessor,
                                        const CActiveMasternodeManager* const mn_activeman,
                                        const CSporkManager& sporkman, bool unitTests, bool fWipe) :
     db(std::make_unique<CDBWrapper>(unitTests ? "" : (gArgs.GetDataDirNet() / "llmq/dkgdb"), 1 << 20, unitTests, fWipe)),
@@ -42,7 +42,6 @@ CDKGSessionManager::CDKGSessionManager(CBLSWorker& _blsWorker, CChainState& chai
     m_dmnman(dmnman),
     dkgDebugManager(_dkgDebugManager),
     quorumBlockProcessor(_quorumBlockProcessor),
-    m_qsnapman(qsnapman),
     spork_manager(sporkman)
 {
     if (mn_activeman == nullptr && !IsWatchQuorumsEnabled()) {
@@ -52,13 +51,11 @@ CDKGSessionManager::CDKGSessionManager(CBLSWorker& _blsWorker, CChainState& chai
 
     const Consensus::Params& consensus_params = Params().GetConsensus();
     for (const auto& params : consensus_params.llmqs) {
-        auto session_count = (params.useRotation) ? params.signingActiveQuorumCount : 1;
-        for (const auto i : irange::range(session_count)) {
-            dkgSessionHandlers.emplace(std::piecewise_construct, std::forward_as_tuple(params.type, i),
-                                       std::forward_as_tuple(blsWorker, m_chainstate, dmnman, dkgDebugManager, *this,
-                                                             mn_metaman, quorumBlockProcessor, m_qsnapman, mn_activeman,
-                                                             spork_manager, params, i));
-        }
+        // One session per type: no profile rotates, so every quorum has index 0.
+        dkgSessionHandlers.emplace(std::piecewise_construct, std::forward_as_tuple(params.type, 0),
+                                   std::forward_as_tuple(blsWorker, m_chainstate, dmnman, dkgDebugManager, *this,
+                                                         mn_metaman, quorumBlockProcessor, mn_activeman,
+                                                         spork_manager, params, 0));
     }
 }
 
@@ -175,10 +172,7 @@ PeerMsgRet CDKGSessionManager::ProcessMessage(CNode& pfrom, PeerManager& peerman
         }
 
         quorumIndex = pQuorumBaseBlockIndex->nHeight % llmq_params.dkgInterval;
-        int quorumIndexMax = IsQuorumRotationEnabled(llmq_params, pQuorumBaseBlockIndex) ?
-                llmq_params.signingActiveQuorumCount - 1 : 0;
-
-        if (quorumIndex > quorumIndexMax) {
+        if (quorumIndex > 0) {
             LogPrintf("CDKGSessionManager -- invalid quorumHash %s\n", quorumHash.ToString());
             return tl::unexpected{100};
         }
@@ -307,7 +301,7 @@ void CDKGSessionManager::WriteEncryptedContributions(Consensus::LLMQType llmqTyp
 bool CDKGSessionManager::GetVerifiedContributions(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex, const std::vector<bool>& validMembers, std::vector<uint16_t>& memberIndexesRet, std::vector<BLSVerificationVectorPtr>& vvecsRet, std::vector<CBLSSecretKey>& skContributionsRet) const
 try
 {
-    auto members = utils::GetAllQuorumMembers(llmqType, m_dmnman, m_qsnapman, pQuorumBaseBlockIndex);
+    auto members = utils::GetAllQuorumMembers(llmqType, m_dmnman, pQuorumBaseBlockIndex);
 
     memberIndexesRet.clear();
     vvecsRet.clear();
@@ -357,7 +351,7 @@ try
 bool CDKGSessionManager::GetEncryptedContributions(Consensus::LLMQType llmqType, const CBlockIndex* pQuorumBaseBlockIndex, const std::vector<bool>& validMembers, const uint256& nProTxHash, std::vector<CBLSIESEncryptedObject<CBLSSecretKey>>& vecRet) const
 try
 {
-    auto members = utils::GetAllQuorumMembers(llmqType, m_dmnman, m_qsnapman, pQuorumBaseBlockIndex);
+    auto members = utils::GetAllQuorumMembers(llmqType, m_dmnman, pQuorumBaseBlockIndex);
 
     vecRet.clear();
     vecRet.reserve(members.size());

@@ -74,7 +74,7 @@ CDKGMember::CDKGMember(const CDeterministicMNCPtr& _dmn, size_t _idx) :
 CDKGSession::CDKGSession(const CBlockIndex* pQuorumBaseBlockIndex, const Consensus::LLMQParams& _params,
                          CBLSWorker& _blsWorker, CDeterministicMNManager& dmnman, CDKGSessionManager& _dkgManager,
                          CDKGDebugManager& _dkgDebugManager, CMasternodeMetaMan& mn_metaman,
-                         CQuorumSnapshotManager& qsnapman, const CActiveMasternodeManager* const mn_activeman,
+                         const CActiveMasternodeManager* const mn_activeman,
                          const CSporkManager& sporkman) :
     params(_params),
     blsWorker(_blsWorker),
@@ -83,7 +83,6 @@ CDKGSession::CDKGSession(const CBlockIndex* pQuorumBaseBlockIndex, const Consens
     dkgManager(_dkgManager),
     dkgDebugManager(_dkgDebugManager),
     m_mn_metaman(mn_metaman),
-    m_qsnapman(qsnapman),
     m_mn_activeman(mn_activeman),
     m_sporkman(sporkman),
     m_quorum_base_block_index{pQuorumBaseBlockIndex},
@@ -93,7 +92,7 @@ CDKGSession::CDKGSession(const CBlockIndex* pQuorumBaseBlockIndex, const Consens
 
 bool CDKGSession::Init(const uint256& _myProTxHash, int _quorumIndex)
 {
-    const auto mns = utils::GetAllQuorumMembers(params.type, m_dmnman, m_qsnapman, m_quorum_base_block_index);
+    const auto mns = utils::GetAllQuorumMembers(params.type, m_dmnman, m_quorum_base_block_index);
     quorumIndex = _quorumIndex;
     members.resize(mns.size());
     memberIds.resize(members.size());
@@ -121,16 +120,6 @@ bool CDKGSession::Init(const uint256& _myProTxHash, int _quorumIndex)
 
     CDKGLogger logger(*this, __func__, __LINE__);
 
-    if (LogAcceptDebug(BCLog::LLMQ) && IsQuorumRotationEnabled(params, m_quorum_base_block_index)) {
-        int cycleQuorumBaseHeight = m_quorum_base_block_index->nHeight - quorumIndex;
-        const CBlockIndex* pCycleQuorumBaseBlockIndex = m_quorum_base_block_index->GetAncestor(cycleQuorumBaseHeight);
-        std::stringstream ss;
-        for (const auto& mn : members) {
-            ss << mn->dmn->proTxHash.ToString().substr(0, 4) << " | ";
-        }
-        logger.Batch("DKGComposition h[%d] i[%d] DKG:[%s]", pCycleQuorumBaseBlockIndex->nHeight, quorumIndex, ss.str());
-    }
-
     if (mns.size() < size_t(params.minSize)) {
         logger.Batch("not enough members (%d < %d), aborting init", mns.size(), params.minSize);
         return false;
@@ -138,7 +127,7 @@ bool CDKGSession::Init(const uint256& _myProTxHash, int _quorumIndex)
 
     if (!myProTxHash.IsNull()) {
         dkgDebugManager.InitLocalSessionStatus(params, quorumIndex, m_quorum_base_block_index->GetBlockHash(), m_quorum_base_block_index->nHeight);
-        relayMembers = utils::GetQuorumRelayMembers(params, m_dmnman, m_qsnapman, m_quorum_base_block_index,
+        relayMembers = utils::GetQuorumRelayMembers(params, m_dmnman, m_quorum_base_block_index,
                                                     myProTxHash, true);
         if (LogAcceptDebug(BCLog::LLMQ)) {
             std::stringstream ss;
@@ -1271,9 +1260,8 @@ std::vector<CFinalCommitment> CDKGSession::FinalizeCommitments()
         fqc.quorumPublicKey = first.quorumPublicKey;
         fqc.quorumVvecHash = first.quorumVvecHash;
 
-        const bool isQuorumRotationEnabled{IsQuorumRotationEnabled(params, m_quorum_base_block_index)};
-        fqc.nVersion = CFinalCommitment::GetVersion(isQuorumRotationEnabled, DeploymentActiveAfter(m_quorum_base_block_index, Params().GetConsensus(), Consensus::DEPLOYMENT_V19));
-        fqc.quorumIndex = isQuorumRotationEnabled ? quorumIndex : 0;
+        fqc.nVersion = CFinalCommitment::GetVersion(/*is_rotation_enabled=*/false, DeploymentActiveAfter(m_quorum_base_block_index, Params().GetConsensus(), Consensus::DEPLOYMENT_V19));
+        fqc.quorumIndex = 0;
 
         uint256 commitmentHash = BuildCommitmentHash(fqc.llmqType, fqc.quorumHash, fqc.validMembers, fqc.quorumPublicKey, fqc.quorumVvecHash);
 
@@ -1311,7 +1299,7 @@ std::vector<CFinalCommitment> CDKGSession::FinalizeCommitments()
         t2.stop();
 
         cxxtimer::Timer t3(true);
-        if (!fqc.Verify(m_dmnman, m_qsnapman, m_quorum_base_block_index, true)) {
+        if (!fqc.Verify(m_dmnman, m_quorum_base_block_index, true)) {
             logger.Batch("failed to verify final commitment");
             continue;
         }

@@ -44,20 +44,6 @@ bool IsQuorumPoseEnabled(const Consensus::LLMQType llmqType, const CSporkManager
 }
 
 
-bool IsQuorumRotationEnabled(const Consensus::LLMQParams& llmqParams, gsl::not_null<const CBlockIndex*> pindex)
-{
-    if (!llmqParams.useRotation) {
-        return false;
-    }
-
-    int cycleQuorumBaseHeight = pindex->nHeight - (pindex->nHeight % llmqParams.dkgInterval);
-    if (cycleQuorumBaseHeight < 1) {
-        return false;
-    }
-    // It should activate at least 1 block prior to the cycle start
-    return DeploymentActiveAfter(pindex->GetAncestor(cycleQuorumBaseHeight - 1), Params().GetConsensus(), Consensus::DEPLOYMENT_DIP0024);
-}
-
 bool QuorumDataRecoveryEnabled()
 {
     return gArgs.GetBoolArg("-llmq-data-recovery", DEFAULT_ENABLE_QUORUM_DATA_RECOVERY);
@@ -124,7 +110,7 @@ bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, const CBlockIndex* pindex
     if (pindexPrev == nullptr) {
         return false;
     }
-    return IsQuorumTypeEnabledInternal(llmqType, pindexPrev, std::nullopt, std::nullopt);
+    return IsQuorumTypeEnabledInternal(llmqType, pindexPrev);
 }
 
 Consensus::LLMQType GetChainLocksLLMQType(const ::Consensus::Params& params, int nSignedHeight)
@@ -183,8 +169,7 @@ int GetQuorumFormationEndHeight(const ::Consensus::Params& params, Consensus::LL
     return it == params.llmqFormationEndHeights.end() ? std::numeric_limits<int>::max() : it->second;
 }
 
-bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev,
-                                std::optional<bool> optDIP0024IsActive, std::optional<bool> optHaveDIP0024Quorums)
+bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev)
 {
     const Consensus::Params& consensusParams = Params().GetConsensus();
 
@@ -200,8 +185,6 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
         return false;
     }
 
-    const bool fDIP0024IsActive{optDIP0024IsActive.value_or(DeploymentActiveAfter(pindexPrev, consensusParams, Consensus::DEPLOYMENT_DIP0024))};
-    const bool fHaveDIP0024Quorums{optHaveDIP0024Quorums.value_or(pindexPrev->nHeight >= consensusParams.DIP0024QuorumsHeight)};
     switch (llmqType)
     {
         case Consensus::LLMQType::LLMQ_DEVNET:
@@ -243,9 +226,6 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
             return Params().NetworkIDString() == CBaseChainParams::DEVNET;
         }
         case Consensus::LLMQType::LLMQ_TEST_INSTANTSEND:
-            return !fDIP0024IsActive || !fHaveDIP0024Quorums ||
-                    consensusParams.llmqTypeDIP0024InstantSend == Consensus::LLMQType::LLMQ_TEST_INSTANTSEND ||
-                    consensusParams.llmqTypeDIP0024InstantSendV2 == Consensus::LLMQType::LLMQ_TEST_INSTANTSEND;
         case Consensus::LLMQType::LLMQ_TEST:
         case Consensus::LLMQType::LLMQ_TEST_PLATFORM:
         case Consensus::LLMQType::LLMQ_400_60:
@@ -262,11 +242,6 @@ bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<con
             // height; regtest set the height to 1 but does not register this profile.
             // With the deployment gone it never forms.
             return false;
-
-        case Consensus::LLMQType::LLMQ_DEVNET_DIP0024:
-        case Consensus::LLMQType::LLMQ_TEST_DIP0024: {
-            return fDIP0024IsActive;
-        }
 
         default:
             throw std::runtime_error(strprintf("%s: Unknown LLMQ type %d", __func__, ToUnderlying(llmqType)));
@@ -311,9 +286,7 @@ bool IsQuorumCycleEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBlo
     if (cycle_base_height >= GetQuorumFormationEndHeight(consensus, llmqType)) {
         return false;
     }
-    return IsQuorumTypeEnabledInternal(llmqType, pindexTip,
-                                       /*optDIP0024IsActive=*/cycle_base_height >= consensus.DeploymentHeight(Consensus::DEPLOYMENT_DIP0024),
-                                       /*optHaveDIP0024Quorums=*/predecessor_height >= consensus.DIP0024QuorumsHeight);
+    return IsQuorumTypeEnabledInternal(llmqType, pindexTip);
 }
 
 int GetBlocksUntilNextDKG(gsl::not_null<const CBlockIndex*> pindexTip)
@@ -322,11 +295,6 @@ int GetBlocksUntilNextDKG(gsl::not_null<const CBlockIndex*> pindexTip)
     for (const auto& params : Params().GetConsensus().llmqs) {
         const int stage{pindexTip->nHeight % params.dkgInterval};
         const int cycle_base{pindexTip->nHeight - stage};
-        // Sessions start on the cycle's first blocks, one per active quorum. After the
-        // last of them the next start is on the next cycle's base block, counted below.
-        if (params.useRotation && stage + 1 < params.signingActiveQuorumCount && IsQuorumCycleEnabled(params.type, pindexTip, cycle_base)) {
-            return 1;
-        }
         if (IsQuorumCycleEnabled(params.type, pindexTip, cycle_base + params.dkgInterval)) {
             blocks = std::min(blocks, params.dkgInterval - stage);
         }

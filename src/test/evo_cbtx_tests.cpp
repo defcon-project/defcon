@@ -296,7 +296,7 @@ BOOST_FIXTURE_TEST_CASE(storage_failure_is_not_a_consensus_rejection, QuorumHist
     // Use the real LevelDB read error type emitted by failed scans too.
     BOOST_CHECK_THROW(pool.GetCreditPool(previous, consensus), dbwrapper_error);
     CSpecialTxProcessor processor(pool, *m_node.dmnman, *m_node.mnhf_manager,
-        *ctx.quorum_block_processor, *ctx.qsnapman, *m_node.chainman, consensus, *ctx.clhandler, *ctx.qman);
+        *ctx.quorum_block_processor, *m_node.chainman, consensus, *ctx.clhandler, *ctx.qman);
     const auto& view = m_node.chainman->ActiveChainstate().CoinsTip();
     CBlock block;
     std::optional<MNListUpdates> updates;
@@ -346,7 +346,7 @@ BOOST_FIXTURE_TEST_CASE(quorum_history_read_failure_is_local_block_error, Quorum
     BOOST_REQUIRE_EQUAL(m_node.cpoolman->GetCreditPool(previous, consensus).locked, 0);
 
     llmq::CFinalCommitment qc(params, previous->GetBlockHash());
-    qc.nVersion = llmq::CFinalCommitment::GetVersion(llmq::IsQuorumRotationEnabled(params, previous),
+    qc.nVersion = llmq::CFinalCommitment::GetVersion(/*is_rotation_enabled=*/false,
         DeploymentActiveAfter(previous, consensus, Consensus::DEPLOYMENT_V19));
     std::fill(qc.signers.begin(), qc.signers.end(), true);
     std::fill(qc.validMembers.begin(), qc.validMembers.end(), true);
@@ -357,8 +357,8 @@ BOOST_FIXTURE_TEST_CASE(quorum_history_read_failure_is_local_block_error, Quorum
     qc.membersSig = key.Sign(GetRandHash(), bls::bls_legacy_scheme.load());
     qc.quorumSig = key.Sign(GetRandHash(), bls::bls_legacy_scheme.load());
     // A failed lookup must not cache an empty membership or call the commitment invalid.
-    BOOST_CHECK_THROW(llmq::utils::GetAllQuorumMembers(params.type, *m_node.dmnman, *ctx.qsnapman, previous), CoinbaseChainlockReadError);
-    BOOST_CHECK_THROW(qc.Verify(*m_node.dmnman, *ctx.qsnapman, previous, false), CoinbaseChainlockReadError);
+    BOOST_CHECK_THROW(llmq::utils::GetAllQuorumMembers(params.type, *m_node.dmnman, previous), CoinbaseChainlockReadError);
+    BOOST_CHECK_THROW(qc.Verify(*m_node.dmnman, previous, false), CoinbaseChainlockReadError);
 
     llmq::CFinalCommitmentTxPayload payload;
     payload.nHeight = previous->nHeight + 1;

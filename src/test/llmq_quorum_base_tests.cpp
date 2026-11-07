@@ -57,7 +57,7 @@ BOOST_FIXTURE_TEST_CASE(genesis_quorum_base_null_pprev_is_safe, RegTestingSetup)
     BOOST_CHECK(!llmq::IsQuorumTypeEnabled(llmq_type, null_index));
 
     // The GetAllQuorumMembers() path that CFinalCommitment::Verify() takes.
-    BOOST_CHECK(llmq::utils::GetAllQuorumMembers(llmq_type, *Assert(m_node.dmnman), *Assert(m_node.llmq_ctx)->qsnapman,
+    BOOST_CHECK(llmq::utils::GetAllQuorumMembers(llmq_type, *Assert(m_node.dmnman),
                                                  genesis).empty());
 }
 
@@ -74,7 +74,7 @@ BOOST_FIXTURE_TEST_CASE(genesis_quorum_base_commitment_is_rejected, RegTestingSe
     const auto llmq_params = *Assert(Params().GetLLMQ(Params().GetConsensus().llmqTypeChainLocks));
 
     llmq::CFinalCommitment qc(llmq_params, genesis->GetBlockHash());
-    qc.nVersion = llmq::CFinalCommitment::GetVersion(llmq::IsQuorumRotationEnabled(llmq_params, genesis),
+    qc.nVersion = llmq::CFinalCommitment::GetVersion(/*is_rotation_enabled=*/false,
                                                      DeploymentActiveAfter(genesis, Params().GetConsensus(),
                                                                            Consensus::DEPLOYMENT_V19));
     qc.quorumIndex = 0;
@@ -88,7 +88,7 @@ BOOST_FIXTURE_TEST_CASE(genesis_quorum_base_commitment_is_rejected, RegTestingSe
     qc.quorumSig = sk.Sign(GetRandHash(), bls::bls_legacy_scheme.load());
     BOOST_REQUIRE(!qc.IsNull());
 
-    BOOST_CHECK(!qc.Verify(*Assert(m_node.dmnman), *Assert(m_node.llmq_ctx)->qsnapman, genesis, /*checkSigs=*/false));
+    BOOST_CHECK(!qc.Verify(*Assert(m_node.dmnman), genesis, /*checkSigs=*/false));
 }
 
 // Debug output must not assume an untrusted member bitset has the quorum size.
@@ -143,7 +143,7 @@ BOOST_FIXTURE_TEST_CASE(short_commitment_debug_logging_is_safe, RegTestingSetup)
             }
             TxValidationState state;
             BOOST_CHECK(!llmq::CheckLLMQCommitment(*Assert(m_node.dmnman),
-                *Assert(m_node.llmq_ctx)->qsnapman, *m_node.chainman, CTransaction(tx), tip, state));
+                *m_node.chainman, CTransaction(tx), tip, state));
             BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-qc-version");
             std::lock_guard<std::mutex> lock(log_mutex);
             if (debug) {

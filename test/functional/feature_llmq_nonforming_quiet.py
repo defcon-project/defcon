@@ -4,9 +4,9 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """A masternode logs no failure for a quorum type that does not form.
 
-The network has one masternode. llmq_test_instantsend never forms on regtest and
-llmq_test_v17 stops forming at END. llmq_test does form, and one member is too few
-for it: that is a real failure, so it keeps its line and shows the round was reached.
+The network has one masternode. llmq_test_v17 stops forming at END. llmq_test and
+llmq_test_instantsend do form, and one member is too few for them: that is a real
+failure, so they keep their line and show the round was reached.
 
 1. The last cycle below END: llmq_test_v17 still fails like llmq_test.
 2. The cycle at END and the next one: llmq_test_v17 is quiet too, and its thread keeps
@@ -22,7 +22,7 @@ END = 720              # on llmq_test_v17's 24-block grid, below regtest's V20 h
 INTERVAL = 24
 V17_TYPE = 102
 TEST_TYPE = 100
-NEVER_FORMS = "llmq_test_instantsend"
+INSTANTSEND = "llmq_test_instantsend"
 RETIRED = "llmq_test_v17"
 TOO_FEW = "llmq_test"
 
@@ -79,7 +79,7 @@ class LLMQNonFormingQuietTest(DashTestFramework):
         assert_equal(self.upcoming(V17_TYPE), [END - INTERVAL])
         assert_equal(self.upcoming(TEST_TYPE), [END - INTERVAL])
 
-        self.check_cycle(END - INTERVAL, quiet=[NEVER_FORMS], failing=[RETIRED, TOO_FEW])
+        self.check_cycle(END - INTERVAL, quiet=[], failing=[RETIRED, TOO_FEW, INSTANTSEND])
 
         self.log.info("the cycle at END is not, though its predecessor is not mined yet")
         self.generate_to(END - 5)
@@ -87,11 +87,11 @@ class LLMQNonFormingQuietTest(DashTestFramework):
         assert_equal(self.upcoming(TEST_TYPE), [END])
         assert_equal(node.quorum("dkginfo")["next_dkg"], 5)
 
-        self.check_cycle(END, quiet=[NEVER_FORMS, RETIRED], failing=[TOO_FEW])
-        self.check_cycle(END + INTERVAL, quiet=[NEVER_FORMS, RETIRED], failing=[TOO_FEW])
+        self.check_cycle(END, quiet=[RETIRED], failing=[TOO_FEW, INSTANTSEND])
+        self.check_cycle(END + INTERVAL, quiet=[RETIRED], failing=[TOO_FEW, INSTANTSEND])
 
-        self.log.info("next_dkg: the rotating llmq_test_dip0024 forms, its first sessions count")
-        assert_equal(node.quorum("dkginfo")["next_dkg"], 1)
+        self.log.info("next_dkg: on a cycle base the next session is the next cycle's")
+        assert_equal(node.quorum("dkginfo")["next_dkg"], INTERVAL)
         self.generate_to(END + INTERVAL + 5)
         assert_equal(node.quorum("dkginfo")["next_dkg"], INTERVAL - 5)
 

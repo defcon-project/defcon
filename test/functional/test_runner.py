@@ -115,6 +115,7 @@ BASE_SCRIPTS = [
     # vv Tests less than 2m vv
     'p2p_instantsend.py',
     'feature_llmq_is_nonrotation.py',
+    'feature_llmq_no_rotation.py',
     'feature_llmq_is_nonrotated_verify.py',
     'feature_llmq_is_named_quorum_window.py',
     'wallet_basic.py --legacy-wallet',
@@ -179,7 +180,6 @@ BASE_SCRIPTS = [
     'feature_dip3_deterministicmns.py --descriptors', # NOTE: needs dash_hash to pass
     'feature_llmq_signing.py', # NOTE: needs dash_hash to pass
     'feature_llmq_signing.py --spork21', # NOTE: needs dash_hash to pass
-    'feature_llmq_rotation.py', # NOTE: needs dash_hash to pass
     'feature_llmq_is_cl_conflicts.py', # NOTE: needs dash_hash to pass
     'feature_llmq_dkgerrors.py', # NOTE: needs dash_hash to pass
     'feature_dip4_coinbasemerkleroots.py', # NOTE: needs dash_hash to pass

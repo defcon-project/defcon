@@ -28,7 +28,6 @@
 #include <llmq/quorums.h>
 #include <llmq/signing.h>
 #include <llmq/signing_shares.h>
-#include <llmq/snapshot.h>
 #include <llmq/utils.h>
 
 #include <iomanip>
@@ -114,7 +113,7 @@ static RPCHelpMan quorum_list_extended()
                         {RPCResult::Type::OBJ, "xxxx", "Quorum hash. Note: most recent quorums come first.",
                         {
                             {RPCResult::Type::NUM, "creationHeight", "Block height where the DKG started."},
-                            {RPCResult::Type::NUM, "quorumIndex", "Quorum index (applicable only to rotated quorums)."},
+                            {RPCResult::Type::NUM, "quorumIndex", "Quorum index (always 0: no quorum type rotates)."},
                             {RPCResult::Type::STR_HEX, "minedBlockHash", "Blockhash where the commitment was mined."},
                             {RPCResult::Type::NUM, "numValidMembers", "The total of valid members."},
                             {RPCResult::Type::STR_AMOUNT, "healthRatio", "The ratio of healthy members to quorum size. Range [0.0 - 1.0]."}
@@ -161,9 +160,7 @@ static RPCHelpMan quorum_list_extended()
             UniValue obj(UniValue::VOBJ);
             {
                 UniValue j(UniValue::VOBJ);
-                if (llmq_params.useRotation) {
-                    j.pushKV("quorumIndex", q->qc->quorumIndex);
-                }
+                j.pushKV("quorumIndex", q->qc->quorumIndex);
                 j.pushKV("creationHeight", q->m_quorum_base_block_index->nHeight);
                 j.pushKV("minedBlockHash", q->minedBlockHash.ToString());
                 j.pushKV("numValidMembers", (int32_t)num_valid_members);
@@ -189,17 +186,6 @@ static UniValue BuildQuorumInfo(const llmq::CQuorumBlockProcessor& quorum_block_
     ret.pushKV("quorumHash", quorum->qc->quorumHash.ToString());
     ret.pushKV("quorumIndex", quorum->qc->quorumIndex);
     ret.pushKV("minedBlock", quorum->minedBlockHash.ToString());
-
-    if (quorum->params.useRotation) {
-        auto previousActiveCommitment = quorum_block_processor.GetLastMinedCommitmentsByQuorumIndexUntilBlock(quorum->params.type, quorum->m_quorum_base_block_index, quorum->qc->quorumIndex, 0);
-        if (previousActiveCommitment.has_value()) {
-            int previousConsecutiveDKGFailures = (quorum->m_quorum_base_block_index->nHeight - previousActiveCommitment.value()->nHeight) /  quorum->params.dkgInterval - 1;
-            ret.pushKV("previousConsecutiveDKGFailures", previousConsecutiveDKGFailures);
-        }
-        else {
-            ret.pushKV("previousConsecutiveDKGFailures", 0);
-        }
-    }
 
     if (includeMembers) {
         UniValue membersArr(UniValue::VARR);
@@ -297,7 +283,7 @@ static RPCHelpMan quorum_dkgstatus()
     llmq::CDKGDebugStatus status;
     llmq_ctx.dkg_debugman->GetLocalDebugStatus(status);
 
-    auto ret = status.ToJson(*CHECK_NONFATAL(node.dmnman), *llmq_ctx.qsnapman, chainman, detailLevel);
+    auto ret = status.ToJson(*CHECK_NONFATAL(node.dmnman), chainman, detailLevel);
 
     CBlockIndex* pindexTip = WITH_LOCK(cs_main, return chainman.ActiveChain().Tip());
     int tipHeight = pindexTip->nHeight;
@@ -309,8 +295,8 @@ static RPCHelpMan quorum_dkgstatus()
         const auto llmq_params_opt = Params().GetLLMQ(type);
         CHECK_NONFATAL(llmq_params_opt.has_value());
         const auto& llmq_params = llmq_params_opt.value();
-        bool rotation_enabled = llmq::IsQuorumRotationEnabled(llmq_params, pindexTip);
-        int quorums_num = rotation_enabled ? llmq_params.signingActiveQuorumCount : 1;
+        // One quorum per type and cycle (no profile rotates), index 0.
+        const int quorums_num{1};
 
         for (const int quorumIndex : irange::range(quorums_num)) {
             UniValue obj(UniValue::VOBJ);
@@ -326,10 +312,10 @@ static RPCHelpMan quorum_dkgstatus()
                     obj.pushKV("pindexTip", pindexTip->nHeight);
 
                     auto allConnections = llmq::utils::GetQuorumConnections(llmq_params, *node.dmnman,
-                                                                            *llmq_ctx.qsnapman, *node.sporkman,
+                                                                            *node.sporkman,
                                                                             pQuorumBaseBlockIndex, proTxHash, false);
                     auto outboundConnections = llmq::utils::GetQuorumConnections(llmq_params, *node.dmnman,
-                                                                                 *llmq_ctx.qsnapman, *node.sporkman,
+                                                                                 *node.sporkman,
                                                                                  pQuorumBaseBlockIndex, proTxHash, true);
                     std::map<uint256, CAddress> foundConnections;
                     connman.ForEachNode([&](const CNode* pnode) {
@@ -830,50 +816,6 @@ static RPCHelpMan quorum_getdata()
     };
 }
 
-static RPCHelpMan quorum_rotationinfo()
-{
-    return RPCHelpMan{
-        "quorum rotationinfo",
-        "Get quorum rotation information\n",
-        {
-            {"blockRequestHash", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The blockHash of the request."},
-            {"extraShare", RPCArg::Type::BOOL, RPCArg::Default{false}, "Extra share"},
-            {"baseBlockHash...", RPCArg::Type::STR_HEX, RPCArg::DefaultHint{"baseBlockHashes …"}, "The list of block hashes"},
-        },
-        RPCResults{},
-        RPCExamples{""},
-        [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
-{
-    const NodeContext& node = EnsureAnyNodeContext(request.context);
-    const ChainstateManager& chainman = EnsureChainman(node);
-    const LLMQContext& llmq_ctx = EnsureLLMQContext(node);
-    ;
-
-    llmq::CGetQuorumRotationInfo cmd;
-    llmq::CQuorumRotationInfo quorumRotationInfoRet;
-    std::string strError;
-
-    cmd.blockRequestHash = ParseHashV(request.params[0], "blockRequestHash");
-    cmd.extraShare = request.params[1].isNull() ? false : ParseBoolV(request.params[1], "extraShare");
-
-    size_t idx = 2;
-    while (!request.params[idx].isNull()) {
-        cmd.baseBlockHashes.emplace_back(ParseHashV(request.params[idx], "baseBlockHash"));
-        ++idx;
-    }
-
-    LOCK(cs_main);
-
-    if (!BuildQuorumRotationInfo(*CHECK_NONFATAL(node.dmnman), *llmq_ctx.qsnapman, chainman, *llmq_ctx.qman,
-                                 *llmq_ctx.quorum_block_processor, cmd, false, quorumRotationInfoRet, strError)) {
-        throw JSONRPCError(RPC_INVALID_REQUEST, strError);
-    }
-
-    return quorumRotationInfoRet.ToJson();
-},
-    };
-}
-
 static RPCHelpMan quorum_dkginfo()
 {
     return RPCHelpMan{
@@ -935,7 +877,8 @@ static RPCHelpMan quorum_dkginfo()
         ret.pushKV("proTxHash", proTxHash.ToString());
         UniValue upcoming(UniValue::VARR);
         for (const auto& llmq_params : consensus.llmqs) {
-            const int quorums_num = llmq_params.useRotation ? llmq_params.signingActiveQuorumCount : 1;
+            // One quorum per type and cycle (no profile rotates), index 0.
+            const int quorums_num{1};
 
             for (const int quorumIndex : irange::range(quorums_num)) {
                 int quorumHeight = nTipHeight - (nTipHeight % llmq_params.dkgInterval) + quorumIndex;
@@ -947,21 +890,13 @@ static RPCHelpMan quorum_dkginfo()
                     continue;
                 }
 
-                // A rotation-capable type without DIP0024 active at its cycle base has no
-                // canonical member selection; this can only happen around activation.
-                if (llmq_params.useRotation &&
-                    (cycleBaseHeight < 1 || cycleBaseHeight < consensus.DeploymentHeight(Consensus::DEPLOYMENT_DIP0024))) {
-                    continue;
-                }
-
                 UniValue obj(UniValue::VOBJ);
                 obj.pushKV("llmqType", static_cast<int>(llmq_params.type));
                 obj.pushKV("quorumIndex", quorumIndex);
                 obj.pushKV("quorumHeight", quorumHeight);
                 obj.pushKV("blocksUntilStart", quorumHeight - nTipHeight);
 
-                // All indices of a rotated cycle share the work block of their cycle base;
-                // for non-rotated types cycleBaseHeight == quorumHeight anyway.
+                // The work block is 8 blocks below the cycle base (cycleBaseHeight == quorumHeight).
                 const int workHeight{cycleBaseHeight - 8};
                 if (workHeight > nTipHeight) {
                     continue;
@@ -979,7 +914,7 @@ static RPCHelpMan quorum_dkginfo()
                     llmq_params.type, *CHECK_NONFATAL(node.dmnman), pWorkBlockIndex, quorumHeight);
                 if (!predicted_members.has_value()) {
                     obj.pushKV("known", false);
-                    obj.pushKV("reason", "rotated quorum member prediction is not available");
+                    obj.pushKV("reason", "quorum member prediction is not available");
                     upcoming.push_back(obj);
                     continue;
                 }
@@ -1027,8 +962,7 @@ static RPCHelpMan quorum_help()
             "  getrecsig         - Get a recovered signature\n"
             "  isconflicting     - Test if a conflict exists\n"
             "  selectquorum      - Return the quorum that would/should sign a request\n"
-            "  getdata           - Request quorum data from other masternodes in the quorum\n"
-            "  rotationinfo      - Request quorum rotation information\n",
+            "  getdata           - Request quorum data from other masternodes in the quorum\n",
             {
                 {"command", RPCArg::Type::STR, RPCArg::Optional::NO, "The command to execute"},
             },
@@ -1246,7 +1180,6 @@ static const CRPCCommand commands[] =
     { "evo",                &quorum_selectquorum,    },
     { "evo",                &quorum_dkgsimerror,     },
     { "evo",                &quorum_getdata,         },
-    { "evo",                &quorum_rotationinfo,    },
     { "evo",                &submitchainlock,        },
     { "evo",                &verifychainlock,        },
     { "evo",                &verifyislock,           },

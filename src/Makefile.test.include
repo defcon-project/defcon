@@ -165,7 +165,6 @@ BITCOIN_TESTS =\
   test/dsl_service_pose_tests.cpp \
   test/llmq_qgetdata_tests.cpp \
   test/llmq_signing_shares_tests.cpp \
-  test/llmq_snapshot_tests.cpp \
   test/llmq_chainlocks_tests.cpp \
   test/llmq_formation_end_tests.cpp \
   test/llmq_instantsend_tests.cpp \

@@ -84,7 +84,6 @@
 #include <llmq/quorums.h>
 #include <llmq/signing.h>
 #include <llmq/signing_shares.h>
-#include <llmq/snapshot.h>
 
 #include <stats/client.h>
 
@@ -6030,27 +6029,11 @@ void PeerManagerImpl::ProcessMessage(
         return;
     }
 
-    if (msg_type == NetMsgType::GETQUORUMROTATIONINFO) {
-        llmq::CGetQuorumRotationInfo cmd;
-        vRecv >> cmd;
-
-        LOCK(cs_main);
-
-        llmq::CQuorumRotationInfo quorumRotationInfoRet;
-        std::string strError;
-        bool use_legacy_construction = pfrom.GetCommonVersion() < EFFICIENT_QRINFO_VERSION;;
-        if (BuildQuorumRotationInfo(*m_dmnman, *m_llmq_ctx->qsnapman, m_chainman, *m_llmq_ctx->qman, *m_llmq_ctx->quorum_block_processor, cmd, use_legacy_construction, quorumRotationInfoRet, strError)) {
-            m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::QUORUMROTATIONINFO, quorumRotationInfoRet));
-        } else {
-            strError = strprintf("getquorumrotationinfo failed for size(baseBlockHashes)=%d, blockRequestHash=%s. error=%s", cmd.baseBlockHashes.size(), cmd.blockRequestHash.ToString(), strError);
-            Misbehaving(pfrom.GetId(), 1, strError);
-        }
-        return;
-    }
-
-    if (msg_type == NetMsgType::QUORUMROTATIONINFO) {
-        // we have never requested this
-        Misbehaving(pfrom.GetId(), 100, strprintf("received not-requested quorumrotationinfo. peer=%d", pfrom.GetId()));
+    if (msg_type == NetMsgType::GETQUORUMROTATIONINFO || msg_type == NetMsgType::QUORUMROTATIONINFO) {
+        // Quorum rotation (DIP0024) is gone from this chain, and with it the data these
+        // two messages carried: neither is answered nor punished. The names stay known so
+        // the v2 transport's short IDs (V2_DASH_IDS in net.cpp) keep their slots.
+        LogPrint(BCLog::NET, "ignoring %s from peer=%d: quorum rotation is not supported\n", msg_type, pfrom.GetId());
         return;
     }
 

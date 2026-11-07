@@ -59,7 +59,7 @@ class LLMQ_IS_CL_Conflicts(DashTestFramework):
         self.nodes[0].sporkupdate("SPORK_17_QUORUM_DKG_ENABLED", 0)
         self.wait_for_sporks_same()
 
-        self.mine_cycle_quorum()
+        self.mine_instantsend_quorum()
 
         # mine single block, wait for chainlock
         self.generate(self.nodes[0], 1, sync_fun=self.no_op)

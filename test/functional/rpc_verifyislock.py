@@ -33,7 +33,7 @@ class RPCVerifyISLockTest(DashTestFramework):
         node.sporkupdate("SPORK_17_QUORUM_DKG_ENABLED", 0)
         self.wait_for_sporks_same()
 
-        self.mine_cycle_quorum()
+        self.mine_instantsend_quorum()
         self.bump_mocktime(1)
         self.generate(self.nodes[0], 8, sync_fun=self.sync_blocks())
 
@@ -41,9 +41,9 @@ class RPCVerifyISLockTest(DashTestFramework):
         self.wait_for_instantlock(txid, node)
 
         request_id = self.get_request_id(self.nodes[0].getrawtransaction(txid))
-        self.wait_until(lambda: node.quorum("hasrecsig", 103, request_id, txid))
+        self.wait_until(lambda: node.quorum("hasrecsig", 104, request_id, txid))
 
-        rec_sig = node.quorum("getrecsig", 103, request_id, txid)['sig']
+        rec_sig = node.quorum("getrecsig", 104, request_id, txid)['sig']
         assert node.verifyislock(request_id, txid, rec_sig)
         # Not mined, should use maxHeight
         assert not node.verifyislock(request_id, txid, rec_sig, 1)
@@ -54,8 +54,8 @@ class RPCVerifyISLockTest(DashTestFramework):
         # Mined, should ignore higher maxHeight
         assert node.verifyislock(request_id, txid, rec_sig, node.getblockcount() + 100)
 
-        # Mine one more cycle of rotated quorums
-        self.mine_cycle_quorum(is_first=False)
+        # Mine one more InstantSend quorum
+        self.mine_instantsend_quorum()
         # Create an ISLOCK using an active quorum which will be replaced when a new cycle happens
         request_id = None
         utxos = node.listunspent()
@@ -75,10 +75,10 @@ class RPCVerifyISLockTest(DashTestFramework):
             rawtx = node.signrawtransactionwithwallet(rawtx)["hex"]
             request_id = self.get_request_id(rawtx)
             break
-        # Create the ISDLOCK, then mine a cycle quorum to move renew active set
+        # Create the ISDLOCK, then mine a new quorum to renew the active set
         isdlock = self.create_isdlock(rawtx)
         # Mine one block to trigger the "signHeight + dkgInterval" verification for the ISDLOCK
-        self.mine_cycle_quorum(is_first=False)
+        self.mine_instantsend_quorum()
         # Verify the ISLOCK for a transaction that is not yet known by the node
         rawtx_txid = node.decoderawtransaction(rawtx)["txid"]
         assert_raises_rpc_error(-5, "No such mempool or blockchain transaction", node.getrawtransaction, rawtx_txid)

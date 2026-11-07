@@ -1161,7 +1161,7 @@ void FuncEvoDbDiffRoundTrip(TestChainSetup& setup)
             const CDeterministicMNList& prevList, const CCoinsViewCache& view,
             bool debugLogs, BlockValidationState& state, CDeterministicMNList& mnListRet) {
             return dmnman.RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet,
-                                               *setup.m_node.llmq_ctx->qsnapman, debugLogs);
+                                               debugLogs);
         };
     result = dmnman.RecalculateAndRepairDiffs(chainman.ActiveChain().Genesis(), chainman.ActiveChain().Tip(),
                                               chainman, rebuild, /*repair=*/true);
@@ -1224,10 +1224,10 @@ void FuncDKGJustificationIndexBound(TestChainSetup& setup)
 
     // The session as an observer of that quorum.
     llmq::CDKGSession session(base, llmq_params, *llmq_ctx.bls_worker, dmnman, *llmq_ctx.qdkgsman,
-                              *llmq_ctx.dkg_debugman, *Assert(setup.m_node.mn_metaman), *llmq_ctx.qsnapman,
+                              *llmq_ctx.dkg_debugman, *Assert(setup.m_node.mn_metaman),
                               /*mn_activeman=*/nullptr, *Assert(setup.m_node.sporkman));
     BOOST_REQUIRE(session.Init(/*_myProTxHash=*/uint256(), /*_quorumIndex=*/0));
-    const auto members = llmq::utils::GetAllQuorumMembers(llmq_params.type, dmnman, *llmq_ctx.qsnapman, base);
+    const auto members = llmq::utils::GetAllQuorumMembers(llmq_params.type, dmnman, base);
     BOOST_REQUIRE_EQUAL(members.size(), size_t(llmq_params.size));
 
     const auto justification = [&](size_t index) {
@@ -1371,7 +1371,6 @@ void FuncRepairableDiffDamage(TestChainSetup& setup)
     auto& chainman = *Assert(setup.m_node.chainman.get());
     auto& dmnman = *Assert(setup.m_node.dmnman);
     auto& evodb = *Assert(setup.m_node.evodb);
-    auto& qsnapman = *Assert(setup.m_node.llmq_ctx->qsnapman);
 
     // Keep the DIP3 activation block empty: the verifier anchors its first
     // snapshot pair there (see FuncEvoDbDiffRoundTrip).
@@ -1446,7 +1445,7 @@ void FuncRepairableDiffDamage(TestChainSetup& setup)
                 const CDeterministicMNList& prevList, const CCoinsViewCache& view,
                 bool debugLogs, BlockValidationState& state, CDeterministicMNList& mnListRet) {
                 return repairer.RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet,
-                                                     qsnapman, debugLogs);
+                                                     debugLogs);
             };
         // A shutdown before any diff is written ends the check without a verdict. The diffs and the
         // mark, set or unset, stay as they were. Both for the startup check and for the call

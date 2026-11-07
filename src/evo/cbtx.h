@@ -22,7 +22,6 @@ class TxValidationState;
 namespace llmq {
 class CChainLocksHandler;
 class CQuorumBlockProcessor;
-class CQuorumSnapshotManager;
 }// namespace llmq
 
 // Forward declaration from core_io to get rid of circular dependency
@@ -89,11 +88,11 @@ template<> struct is_serializable_enum<CCbTx::Version> : std::true_type {};
 bool CheckCbTx(const CTransaction& tx, const CBlockIndex* pindexPrev, TxValidationState& state);
 
 bool CheckCbTxMerkleRoots(const CBlock& block, const CBlockIndex* pindex, CDeterministicMNManager& dmnman,
-                          llmq::CQuorumSnapshotManager& qsnapman, const llmq::CQuorumBlockProcessor& quorum_block_processor,
+                          const llmq::CQuorumBlockProcessor& quorum_block_processor,
                           BlockValidationState& state, const CCoinsViewCache& view);
 bool CalcCbTxMerkleRootMNList(const CBlock& block, const CBlockIndex* pindexPrev, uint256& merkleRootRet,
                               BlockValidationState& state, CDeterministicMNManager& dmnman,
-                              llmq::CQuorumSnapshotManager& qsnapman, const CCoinsViewCache& view);
+                              const CCoinsViewCache& view);
 bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPrev,
                                const llmq::CQuorumBlockProcessor& quorum_block_processor, uint256& merkleRootRet,
                                BlockValidationState& state);

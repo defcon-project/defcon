@@ -140,7 +140,7 @@ class DashZMQTest (DashTestFramework):
             assert_raises_rpc_error(-32603, "Unable to find any ChainLock", self.nodes[0].getbestchainlock)
             self.wait_for_sporks_same()
 
-            self.mine_cycle_quorum()
+            self.mine_instantsend_quorum()
 
             self.sync_blocks()
             self.wait_for_chainlocked_block_all_nodes(self.nodes[0].getbestblockhash())
@@ -155,9 +155,9 @@ class DashZMQTest (DashTestFramework):
             self.test_instantsend_publishers()
             self.wait_for_chainlocked_block_all_nodes(self.nodes[0].getbestblockhash())
             self.test_instantsend_publishers()
-            # At this point, we need to move forward 3 cycles (3 x 24 blocks) so the first 3 quarters can be created (without DKG sessions)
+            # One cycle later, a second InstantSend quorum
             self.generate(self.nodes[0], 24)
-            self.mine_cycle_quorum()
+            self.mine_instantsend_quorum()
             self.test_instantsend_publishers()
         finally:
             # Destroy the ZMQ context.
@@ -189,7 +189,7 @@ class DashZMQTest (DashTestFramework):
         def validate_recovered_sig(request_id, msg_hash):
             # Make sure the recovered sig exists by RPC
             self.wait_for_recovered_sig(request_id, msg_hash)
-            rpc_recovered_sig = self.mninfo[0].node.quorum('getrecsig', 103, request_id, msg_hash)
+            rpc_recovered_sig = self.mninfo[0].node.quorum('getrecsig', 104, request_id, msg_hash)
             # Validate hashrecoveredsig
             zmq_recovered_sig_hash = self.subscribers[ZMQPublisher.hash_recovered_sig].receive().read(32).hex()
             assert_equal(zmq_recovered_sig_hash, msg_hash)

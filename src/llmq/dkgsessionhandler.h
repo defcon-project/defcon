@@ -41,7 +41,6 @@ class CDKGDebugManager;
 class CDKGSession;
 class CDKGSessionManager;
 class CQuorumBlockProcessor;
-class CQuorumSnapshotManager;
 
 enum class QuorumPhase {
     Initialized = 1,
@@ -170,7 +169,6 @@ private:
     CDKGSessionManager& dkgManager;
     CMasternodeMetaMan& m_mn_metaman;
     CQuorumBlockProcessor& quorumBlockProcessor;
-    CQuorumSnapshotManager& m_qsnapman;
     const CActiveMasternodeManager* const m_mn_activeman;
     const CSporkManager& m_sporkman;
     const Consensus::LLMQParams params;
@@ -195,7 +193,7 @@ public:
     CDKGSessionHandler(CBLSWorker& _blsWorker, CChainState& chainstate, CDeterministicMNManager& dmnman,
                        CDKGDebugManager& _dkgDebugManager, CDKGSessionManager& _dkgManager,
                        CMasternodeMetaMan& mn_metaman, CQuorumBlockProcessor& _quorumBlockProcessor,
-                       CQuorumSnapshotManager& qsnapman, const CActiveMasternodeManager* const mn_activeman,
+                       const CActiveMasternodeManager* const mn_activeman,
                        const CSporkManager& sporkman, const Consensus::LLMQParams& _params, int _quorumIndex);
     ~CDKGSessionHandler();
 

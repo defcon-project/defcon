@@ -20,7 +20,6 @@
 #include <evo/mnhftx.h>
 #include <llmq/blockprocessor.h>
 #include <llmq/context.h>
-#include <llmq/snapshot.h>
 
 //! Rebuild the evodb entries for every block between where the evodb stopped and
 //! the chain tip the coins database was loaded at.
@@ -31,10 +30,8 @@
 //! no commit followed. MigrateDBIfNeeded then reads the absent marker as an
 //! interrupted migration and refuses to start, which is why this runs before it.
 //!
-//! Only three of the five evodb writers need replaying. CQuorumSnapshotManager
-//! writes through GetRawDB(), so its entries never sat in the deferred batch, and
-//! CCreditPoolManager memoises a derivation it recomputes whenever the entry is
-//! absent.
+//! Only three of the four evodb writers need replaying: CCreditPoolManager
+//! memoises a derivation it recomputes whenever the entry is absent.
 //!
 //! The per-transaction checks of CSpecialTxProcessor::ProcessSpecialTxsInBlock are
 //! deliberately skipped: these blocks were fully validated when they were first
@@ -217,7 +214,7 @@ static bool ReconcileEvoDBToTip(ChainstateManager& chainman,
             return false;
         }
         std::optional<MNListUpdates> updates{std::nullopt};
-        if (!dmnman.ProcessBlock(block, pindex, state, view, *llmq_ctx.qsnapman, /*fJustCheck=*/false, updates)) {
+        if (!dmnman.ProcessBlock(block, pindex, state, view, /*fJustCheck=*/false, updates)) {
             LogPrintf("%s -- masternode list failed at height %d: %s\n", __func__, height, state.ToString());
             return false;
         }
@@ -467,7 +464,7 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
         const auto rebuild = [&mnman, &llmq](const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
                                              const CDeterministicMNList& prevList, const CCoinsViewCache& view,
                                              bool debugLogs, BlockValidationState& state, CDeterministicMNList& mnListRet) {
-            return mnman.RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet, *llmq.qsnapman,
+            return mnman.RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet,
                                               debugLogs);
         };
         const auto check = mnman.VerifyOrRepairDiffs(chainman, rebuild, /*repair=*/true);
@@ -543,7 +540,7 @@ void DashChainstateSetup(ChainstateManager& chainman,
 
     chain_helper.reset();
     chain_helper = std::make_unique<CChainstateHelper>(*cpoolman, *dmnman, *mnhf_manager, govman, *(llmq_ctx->isman), *(llmq_ctx->quorum_block_processor),
-                                                       *(llmq_ctx->qsnapman), chainman, consensus_params, mn_sync, sporkman, *(llmq_ctx->clhandler),
+                                                       chainman, consensus_params, mn_sync, sporkman, *(llmq_ctx->clhandler),
                                                        *(llmq_ctx->qman));
 }
 

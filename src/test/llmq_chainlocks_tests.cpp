@@ -582,21 +582,21 @@ BOOST_FIXTURE_TEST_CASE(formation_follows_the_height_not_the_network, RegTesting
 
     // Scheduled, but the lead has not been reached: still closed.
     consensus.nChainLocksV2ActivationHeight = next + lead + 1;
-    BOOST_CHECK(!IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_DEFCON, tip, false, false));
+    BOOST_CHECK(!IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_DEFCON, tip));
 
     // Exactly at the lead: open. Under the network-name guard this was false,
     // and would have stayed false all the way past the activation height.
     consensus.nChainLocksV2ActivationHeight = next + lead;
-    BOOST_CHECK(IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_DEFCON, tip, false, false));
+    BOOST_CHECK(IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_DEFCON, tip));
 
     // Past the switchover it stays open -- the profile has to keep forming the
     // quorums that sign after it.
     consensus.nChainLocksV2ActivationHeight = next - 1;
-    BOOST_CHECK(IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_DEFCON, tip, false, false));
+    BOOST_CHECK(IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_DEFCON, tip));
 
     // And an unscheduled network never forms it, however it is registered.
     consensus.nChainLocksV2ActivationHeight = std::numeric_limits<int>::max();
-    BOOST_CHECK(!IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_DEFCON, tip, false, false));
+    BOOST_CHECK(!IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_DEFCON, tip));
 }
 
 // Which ChainLock may replace the one held as best. The rule has to answer

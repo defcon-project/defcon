@@ -1668,7 +1668,6 @@ static UniValue evodb_verify_or_repair_impl(const JSONRPCRequest& request, bool 
     ChainstateManager& chainman = EnsureChainman(node);
     CDeterministicMNManager& dmnman = *CHECK_NONFATAL(node.dmnman);
     const LLMQContext& llmq_ctx = *CHECK_NONFATAL(node.llmq_ctx);
-    auto& qsnapman = *CHECK_NONFATAL(llmq_ctx.qsnapman);
 
     const CBlockIndex* start_index;
     const CBlockIndex* stop_index;
@@ -1715,12 +1714,12 @@ static UniValue evodb_verify_or_repair_impl(const JSONRPCRequest& request, bool 
 
     // Upstream reaches this through CSpecialTxProcessor; in this tree the
     // function still lives on CDeterministicMNManager, so the callback binds
-    // there and passes the quorum snapshot manager that signature takes.
-    auto build_list_func = [&dmnman, &qsnapman](const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
+    // there.
+    auto build_list_func = [&dmnman](const CBlock& block, gsl::not_null<const CBlockIndex*> pindexPrev,
                                                 const CDeterministicMNList& prevList, const CCoinsViewCache& view,
                                                 bool debugLogs, BlockValidationState& state,
                                                 CDeterministicMNList& mnListRet) -> bool {
-        return dmnman.RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet, qsnapman, debugLogs);
+        return dmnman.RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet, debugLogs);
     };
 
     // Call the dmnman method to do the work

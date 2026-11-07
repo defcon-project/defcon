@@ -36,7 +36,6 @@ class CDKGDebugManager;
 class CDKGSession;
 class CDKGSessionManager;
 class CDKGPendingMessages;
-class CQuorumSnapshotManager;
 
 class CDKGContribution
 {
@@ -287,7 +286,6 @@ private:
     CDKGSessionManager& dkgManager;
     CDKGDebugManager& dkgDebugManager;
     CMasternodeMetaMan& m_mn_metaman;
-    CQuorumSnapshotManager& m_qsnapman;
     const CActiveMasternodeManager* const m_mn_activeman;
     const CSporkManager& m_sporkman;
 
@@ -332,7 +330,7 @@ private:
 public:
     CDKGSession(const CBlockIndex* pQuorumBaseBlockIndex, const Consensus::LLMQParams& _params, CBLSWorker& _blsWorker,
                 CDeterministicMNManager& dmnman, CDKGSessionManager& _dkgManager, CDKGDebugManager& _dkgDebugManager,
-                CMasternodeMetaMan& mn_metaman, CQuorumSnapshotManager& qsnapman,
+                CMasternodeMetaMan& mn_metaman,
                 const CActiveMasternodeManager* const mn_activeman, const CSporkManager& sporkman);
 
     // TODO: remove Init completely

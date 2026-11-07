@@ -35,7 +35,7 @@ An earlier draft asserted absence instead -- "no ChainLock can form below the
 height" -- and it was wrong, which is worth recording because it is the whole
 reason this file is shaped the way it is: DashTestFramework.mine_quorum forms
 EVERY enabled type in the same windows, so llmq_test, llmq_test_v17,
-llmq_test_dip0024 and llmq_test_platform quorums all exist alongside the Q60
+llmq_test_instantsend and llmq_test_platform quorums all exist alongside the Q60
 one, and ChainLocks below the switchover work perfectly well on llmq_test.
 Absence would have passed only by accident.
 
