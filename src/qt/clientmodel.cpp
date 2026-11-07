@@ -156,9 +156,26 @@ void ClientModel::getAllGovernanceObjects(std::vector<CGovernanceObject> &obj)
 int ClientModel::getNumBlocks() const
 {
     if (m_cached_num_blocks == -1) {
-        m_cached_num_blocks = m_node.getNumBlocks();
+        // Before the first notice: asked once, and a notice meanwhile wins. A
+        // plain store could put an older height over it until the next block.
+        const int height{m_node.getNumBlocks()};
+        if (m_test_hook_fill) m_test_hook_fill();
+        int unset{-1};
+        m_cached_num_blocks.compare_exchange_strong(unset, height);
     }
     return m_cached_num_blocks;
+}
+
+int64_t ClientModel::getTipTime() const
+{
+    if (m_cached_tip_time == -1) {
+        // Before the first notice: asked once, and a notice meanwhile wins.
+        const int64_t time{m_node.getLastBlockTime()};
+        if (m_test_hook_fill) m_test_hook_fill();
+        int64_t unset{-1};
+        m_cached_tip_time.compare_exchange_strong(unset, time);
+    }
+    return m_cached_tip_time;
 }
 
 uint256 ClientModel::getBestBlockHash()
@@ -318,6 +335,7 @@ static void BlockTipChanged(ClientModel* clientmodel, SynchronizationState sync_
         clientmodel->cachedBestHeaderTime = tip.block_time;
     } else if (synctype == SyncType::BLOCK_SYNC) {
         clientmodel->m_cached_num_blocks = tip.block_height;
+        clientmodel->m_cached_tip_time = tip.block_time;
         WITH_LOCK(clientmodel->m_cached_tip_mutex, clientmodel->m_cached_tip_blocks = tip.block_hash;);
     }
 

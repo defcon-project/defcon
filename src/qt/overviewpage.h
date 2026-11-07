@@ -32,6 +32,7 @@ class QLabel;
 class QModelIndex;
 class QPaintEvent;
 class QProgressBar;
+class QPushButton;
 class QSpacerItem;
 QT_END_NAMESPACE
 
@@ -67,6 +68,41 @@ public:
     //! 0 in discreet mode or without a wallet.
     int skyTier() const;
 
+    //! What the Abyss staking card shows. The window fills the node's part
+    //! from the staking thread, the wallet view adds its wallet's part, and
+    //! setStakingStatus() only draws it, so a test can hand it any state.
+    struct StakingStatus {
+        bool configured{true};   //!< the node was started with staking (-staking)
+        bool minter{true};       //!< the staking thread is inside its loop right now
+        bool syncing{false};     //!< the thread's own gates: the chain, the masternode data, the peers
+        bool enabled{false};     //!< this wallet's own staking switch
+        int wallet_state{0};     //!< the thread's last word on this wallet (CWallet::m_is_staking)
+        bool searching{true};    //!< the thread's own flag (fIsStaking): its last pass reached the search, not a gate or a failed block template
+        bool locked{false};      //!< encrypted and fully locked: the thread cannot sign
+        bool keyless{false};     //!< holds no private keys, so it can never stake
+    };
+    //! The node's side of the staking thread's gates, as the window reads them.
+    struct StakingGates {
+        bool mainnet{false};
+        bool masternodes_synced{false};
+        bool initial_download{false};
+        size_t peers{0};
+        int height{0};
+        int last_pow_block{0};
+        int64_t tip_time{0};      //!< the active tip's block time
+        int64_t adjusted_time{0}; //!< the node's network-adjusted clock
+    };
+    //! Whether the thread waits on one of them (pos/minter.cpp): below the last
+    //! proof-of-work block, the masternode data not in, a tip stamped later
+    //! than the node's clock, and on the main network only, fewer peers than
+    //! it needs or the initial download.
+    static bool stakingWaitsForSync(const StakingGates& gates);
+    //! The one word the card says, in the order the checks are made.
+    enum class StakingState { Unavailable, Disabled, Locked, Off, Syncing, Ready, Staking };
+    void setStakingStatus(const StakingStatus& status);
+    const StakingStatus& stakingStatus() const { return m_staking; }
+    StakingState stakingState() const;
+
 public Q_SLOTS:
     void coinJoinStatus(bool fForce = false);
     void setBalance(const interfaces::WalletBalances& balances);
@@ -79,6 +115,12 @@ Q_SIGNALS:
     void receiveClicked();
     //! The level in skyTier() changed; the window hands it to the sky.
     void skyTierChanged(int tier);
+    //! The staking card's button: put this wallet's staking switch into the
+    //! position the button offered, whatever the switch is by now.
+    void stakingToggleRequested(bool enable);
+    //! The card's or the banner's button on a locked wallet: unlock it for
+    //! staking, and turn staking on if it is off.
+    void stakingUnlockRequested();
 
 protected:
     void changeEvent(QEvent* event) override;
@@ -132,6 +174,44 @@ private:
     void updateSkyBadge();
     //! Put the badge in the free middle of the bar, or hide it if it does not fit there.
     void placeSkyBadge();
+    //! Under the total: the balance the next sky level starts at, or that this is the top.
+    QLabel* m_next_level{nullptr};
+    void updateNextLevel();
+    //! The staking card: a word for the state, a line about it, one button.
+    QFrame* m_staking_card{nullptr};
+    QLabel* m_staking_icon{nullptr};
+    QLabel* m_staking_state{nullptr};
+    QLabel* m_staking_detail{nullptr};
+    QPushButton* m_staking_button{nullptr};
+    //! Over the network bar while the wallet is locked: staking is paused, with the way out.
+    QFrame* m_staking_banner{nullptr};
+    QPushButton* m_staking_banner_button{nullptr};
+    StakingStatus m_staking;
+    //! The dot last drawn (its RGBA and pixel ratio): a tick that changes
+    //! neither paints nothing.
+    unsigned int m_staking_dot_rgba{0};
+    qreal m_staking_dot_dpr{0};
+    void updateStakingCard();
+    //! The CoinJoin card is shown in Abyss only while it has something to say
+    //! (mixing, or mixed coins), or once this row's link has opened it.
+    QWidget* m_coinjoin_row{nullptr};
+    //! Until coinJoinStatus() has looked, the card's visibility is not this
+    //! page's to change: the classic themes leave it as the form and the
+    //! status leave it.
+    bool m_coinjoin_known{false};
+    bool m_coinjoin_enabled{false};
+    //! The card as the classic themes have it: hidden from the start, then
+    //! shown whenever coinJoinStatus() finds CoinJoin on and hidden when off;
+    //! disabled leaves it as the last of these left it. Kept apart from what
+    //! Abyss shows, so a trip through Abyss does not change it.
+    bool m_coinjoin_classic_card{false};
+    //! coinJoinStatus() disabled it (a masternode, or automatic backups
+    //! off or failed): the classic themes leave the card as it stands and it
+    //! explains itself; Abyss keeps it behind the row's link.
+    bool m_coinjoin_disabled{false};
+    bool m_coinjoin_mixing{false};
+    bool m_coinjoin_card_pinned{false};
+    void updateCoinJoinCard();
     QProgressBar* m_net_progress{nullptr};
     int m_block_height{0};
     QDateTime m_block_time;

@@ -195,7 +195,7 @@ void PoSMiner(NodeContext& node)
     int64_t nBestTime;
 
     const CChainParams& params = Params();
-    int min_nodes = IsMainnet() ? 3 : 0;
+    int min_nodes = IsMainnet() ? STAKING_MIN_PEERS_MAINNET : 0;
 
     CConnman& connman = *node.connman;
     CTxMemPool& mempool = *node.mempool;

@@ -22,11 +22,14 @@
 #include <evo/deterministicmns.h>
 #include <interfaces/coinjoin.h>
 #include <interfaces/node.h>
+#include <pos/minter.h>
+#include <wallet/wallet.h>
 
 #include <QFrame>
 #include <QFontMetricsF>
 #include <QHBoxLayout>
 #include <QProgressBar>
+#include <QPushButton>
 #include <QScreen>
 
 #include <algorithm>
@@ -176,6 +179,18 @@ OverviewPage::OverviewPage(QWidget* parent) :
 {
     ui->setupUi(this);
 
+    // Under the total, in Abyss: where the next sky level starts. It is part
+    // of the balances card and so of the maps below; it never widens the
+    // amounts' column (applyBalanceWidths leaves it out, and its own policy
+    // lets the column decide).
+    m_next_level = new QLabel(ui->frame);
+    m_next_level->setObjectName("nextLevelLabel");
+    m_next_level->setAlignment(Qt::AlignRight | Qt::AlignTrailing | Qt::AlignVCenter);
+    m_next_level->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    m_next_level->hide();
+    // Across the label and the amount columns, ending where the amounts end.
+    ui->gridLayout->addWidget(m_next_level, 6, 0, 1, 2);
+
     // These are the .ui constraints, before CSS polish or measured Abyss widths.
     // The page itself has a 960px minimum in the form; restoring everything to
     // zero would lose that constraint even if the stylesheet restores the card.
@@ -294,6 +309,98 @@ OverviewPage::OverviewPage(QWidget* parent) :
     m_net_masternodes.text->installEventFilter(this);
     setNetworkStatus({});
 
+    // Over the bar while the wallet is locked: the one thing that stops a
+    // staking wallet from earning, and the way out. It stays in discreet
+    // mode, which hides amounts, not states.
+    m_staking_banner = new QFrame(this);
+    m_staking_banner->setObjectName("stakingBanner");
+    auto* bannerLayout = new QHBoxLayout(m_staking_banner);
+    bannerLayout->setContentsMargins(16, 8, 12, 8);
+    bannerLayout->setSpacing(12);
+    auto* bannerText = new QLabel(tr("Staking is paused while the wallet is locked."), m_staking_banner);
+    bannerText->setObjectName("stakingBannerText");
+    bannerText->setWordWrap(true);
+    bannerLayout->addWidget(bannerText, 1);
+    m_staking_banner_button = new QPushButton(tr("Unlock"), m_staking_banner);
+    m_staking_banner_button->setObjectName("stakingBannerUnlock");
+    m_staking_banner_button->setCursor(Qt::PointingHandCursor);
+    m_staking_banner_button->setToolTip(tr("Unlock the wallet for staking. Sending stays locked."));
+    bannerLayout->addWidget(m_staking_banner_button);
+    m_staking_banner->hide();
+    ui->topLayout->insertWidget(1, m_staking_banner);
+    connect(m_staking_banner_button, &QPushButton::clicked, this, &OverviewPage::stakingUnlockRequested);
+
+    // The staking card, under the balances: what the wallet's staking is
+    // doing in one word, why in one line, and the one thing to do about it.
+    m_staking_card = new QFrame(this);
+    m_staking_card->setObjectName("frameStaking");
+    m_staking_card->setFrameShape(QFrame::StyledPanel);
+    auto* stakingLayout = new QVBoxLayout(m_staking_card);
+    stakingLayout->setContentsMargins(ui->VerticalLayout_PS1->contentsMargins());
+    stakingLayout->setSpacing(ui->VerticalLayout_PS1->spacing());
+    auto* stakingHeader = new QLabel(tr("Staking"), m_staking_card);
+    stakingHeader->setObjectName("labelStakingHeader");
+    stakingLayout->addWidget(stakingHeader);
+    auto* stakingStateRow = new QHBoxLayout();
+    stakingStateRow->setContentsMargins(0, 0, 0, 0);
+    stakingStateRow->setSpacing(8);
+    m_staking_icon = new QLabel(m_staking_card);
+    m_staking_icon->setObjectName("stakingIcon");
+    m_staking_icon->setFixedSize(18, 18);
+    stakingStateRow->addWidget(m_staking_icon);
+    m_staking_state = new QLabel(m_staking_card);
+    m_staking_state->setObjectName("stakingState");
+    stakingStateRow->addWidget(m_staking_state);
+    stakingStateRow->addStretch();
+    stakingLayout->addLayout(stakingStateRow);
+    m_staking_detail = new QLabel(m_staking_card);
+    m_staking_detail->setObjectName("stakingDetail");
+    m_staking_detail->setWordWrap(true);
+    stakingLayout->addWidget(m_staking_detail);
+    auto* stakingButtonRow = new QHBoxLayout();
+    stakingButtonRow->setContentsMargins(0, 4, 0, 0);
+    m_staking_button = new QPushButton(m_staking_card);
+    m_staking_button->setObjectName("stakingButton");
+    m_staking_button->setCursor(Qt::PointingHandCursor);
+    stakingButtonRow->addWidget(m_staking_button);
+    stakingButtonRow->addStretch();
+    stakingLayout->addLayout(stakingButtonRow);
+    m_staking_card->hide();
+    ui->verticalLayout_2->insertWidget(1, m_staking_card);
+    connect(m_staking_button, &QPushButton::clicked, this, [this] {
+        // What the button said is what is asked for: the switch may have
+        // moved since the last tick, and "Start" must never pause.
+        const StakingState state = stakingState();
+        if (state == StakingState::Locked) {
+            Q_EMIT stakingUnlockRequested();
+        } else {
+            Q_EMIT stakingToggleRequested(state == StakingState::Off);
+        }
+    });
+
+    // Where the CoinJoin card stood while it has nothing to say: one line
+    // with a link that opens it, so mixing can still be started from here.
+    m_coinjoin_row = new QWidget(this);
+    m_coinjoin_row->setObjectName("coinJoinRow");
+    auto* coinJoinRowLayout = new QHBoxLayout(m_coinjoin_row);
+    coinJoinRowLayout->setContentsMargins(ui->VerticalLayout_PS1->contentsMargins().left(), 0, 0, 0);
+    coinJoinRowLayout->setSpacing(6);
+    auto* coinJoinRowText = new QLabel(tr("%1: off").arg(QString::fromStdString(gCoinJoinName)), m_coinjoin_row);
+    coinJoinRowText->setObjectName("coinJoinRowText");
+    coinJoinRowLayout->addWidget(coinJoinRowText);
+    auto* coinJoinShow = new QPushButton(tr("Show"), m_coinjoin_row);
+    coinJoinShow->setObjectName("coinJoinRowShow");
+    coinJoinShow->setCursor(Qt::PointingHandCursor);
+    coinJoinShow->setToolTip(tr("Show the %1 card, where mixing is started").arg(QString::fromStdString(gCoinJoinName)));
+    coinJoinRowLayout->addWidget(coinJoinShow);
+    coinJoinRowLayout->addStretch();
+    m_coinjoin_row->hide();
+    ui->verticalLayout_2->insertWidget(3, m_coinjoin_row);
+    connect(coinJoinShow, &QPushButton::clicked, this, [this] {
+        m_coinjoin_card_pinned = true;
+        updateCoinJoinCard();
+    });
+
     m_total_size_policy = ui->labelTotal->sizePolicy();
     m_total_minimum_height = ui->labelTotal->minimumHeight();
     m_coinjoin_form_spacing = ui->coinJoinFormLayout->horizontalSpacing();
@@ -322,6 +429,11 @@ OverviewPage::OverviewPage(QWidget* parent) :
     GUIUtil::setFont({modernSubtitle}, GUIUtil::FontWeight::Normal, 13);
     GUIUtil::setFont(network_words, GUIUtil::FontWeight::Normal);
     GUIUtil::setFont(network_values, GUIUtil::FontWeight::Bold);
+    // Abyss only: the card title as the other cards' in Abyss, the state a
+    // step larger than the amounts, the rest in the running size.
+    GUIUtil::setFont({stakingHeader}, GUIUtil::FontWeight::Bold, 12);
+    GUIUtil::setFont({m_staking_state}, GUIUtil::FontWeight::Bold, 14);
+    GUIUtil::setFont({m_staking_detail, bannerText, coinJoinRowText, m_next_level}, GUIUtil::FontWeight::Normal);
     updateThemePresentation();
     GUIUtil::updateFonts();
 
@@ -372,6 +484,7 @@ void OverviewPage::setPrivacy(bool privacy)
 {
     m_privacy = privacy;
     updateSkyBadge();
+    updateNextLevel();
     if (m_balances.balance != -1) {
         setBalance(m_balances);
         coinJoinStatus(true);
@@ -440,6 +553,12 @@ void OverviewPage::updateThemePresentation()
         networkCard->setVisible(modern);
         if (modern) paintNetworkIcons();
         updateSkyBadge();
+    }
+    if (m_staking_card) {
+        m_staking_card->setVisible(modern);
+        updateStakingCard();
+        updateNextLevel();
+        updateCoinJoinCard();
     }
     ui->topLayout->setContentsMargins(11, 11, 11, 11);
     ui->topLayout->setSpacing(modern ? 12 : 6);
@@ -537,6 +656,33 @@ void OverviewPage::updateNetworkState()
 }
 
 namespace {
+//! A dot in the given color with a soft glow, at the label's pixel ratio
+//! like the glyphs: the level's badge and the staking card draw their state
+//! with it rather than ship one bitmap per color.
+QPixmap GlowDot(const QLabel& label, const QColor& color)
+{
+    const qreal dpr = label.devicePixelRatioF();
+    QPixmap dot(label.size() * dpr);
+    dot.setDevicePixelRatio(dpr);
+    dot.fill(Qt::transparent);
+    QPainter painter(&dot);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    const QPointF centre(label.width() / 2.0, label.height() / 2.0);
+    QColor glow = color;
+    glow.setAlphaF(0.45);
+    QColor edge = color;
+    edge.setAlpha(0);
+    QRadialGradient halo(centre, 8);
+    halo.setColorAt(0, glow);
+    halo.setColorAt(1, edge);
+    painter.setBrush(halo);
+    painter.drawEllipse(centre, 8, 8);
+    painter.setBrush(color);
+    painter.drawEllipse(centre, 3.5, 3.5);
+    return dot;
+}
+
 //! 150628 as "150 628", grouped with the thin space the amounts use.
 QString GroupDigits(qint64 number)
 {
@@ -650,31 +796,8 @@ void OverviewPage::paintNetworkIcons()
     paint(m_net_peers, "plug-connected", ThemedColor::UNCONFIRMED);
     paint(m_net_masternodes, "server", ThemedColor::UNCONFIRMED);
     paint(m_net_mempool, "stack-2", ThemedColor::UNCONFIRMED);
-    // The level's glyph is drawn, not shipped: a dot in the theme's blue
-    // with a soft glow, at the label's pixel ratio like the glyphs.
-    const qreal dpr = m_net_sky.icon->devicePixelRatioF();
-    QPixmap dot(m_net_sky.icon->size() * dpr);
-    dot.setDevicePixelRatio(dpr);
-    dot.fill(Qt::transparent);
-    {
-        QPainter painter(&dot);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(Qt::NoPen);
-        const QColor blue = GUIUtil::getThemedQColor(ThemedColor::BLUE);
-        const QPointF centre(m_net_sky.icon->width() / 2.0, m_net_sky.icon->height() / 2.0);
-        QColor glow = blue;
-        glow.setAlphaF(0.45);
-        QColor edge = blue;
-        edge.setAlpha(0);
-        QRadialGradient halo(centre, 8);
-        halo.setColorAt(0, glow);
-        halo.setColorAt(1, edge);
-        painter.setBrush(halo);
-        painter.drawEllipse(centre, 8, 8);
-        painter.setBrush(blue);
-        painter.drawEllipse(centre, 3.5, 3.5);
-    }
-    m_net_sky.icon->setPixmap(dot);
+    // The level's glyph is drawn, not shipped: a dot in the theme's blue.
+    m_net_sky.icon->setPixmap(GlowDot(*m_net_sky.icon, GUIUtil::getThemedQColor(ThemedColor::BLUE)));
 }
 
 int OverviewPage::skyTier() const
@@ -723,6 +846,162 @@ void OverviewPage::updateSkyBadge()
         m_sky_tier_shown = tier;
         Q_EMIT skyTierChanged(tier);
     }
+}
+
+void OverviewPage::updateNextLevel()
+{
+    if (m_next_level == nullptr) return;
+    // The level is the balance's own (not skyTier(), which is 0 in discreet
+    // mode): the line goes with the amounts, which discreet mode masks, and
+    // with the level, which a wallet without keys does not have.
+    const bool shown = GUIUtil::isModernTheme() && !m_privacy && walletModel != nullptr &&
+                       walletModel->getOptionsModel() != nullptr && !walletModel->wallet().privateKeysDisabled();
+    if (shown) {
+        if (m_sky_tier >= SkyTiers::COUNT - 1) {
+            m_next_level->setText(tr("Top level"));
+        } else {
+            const int unit = walletModel->getOptionsModel()->getDisplayUnit();
+            // The thresholds are whole coins: no decimals, as the CoinJoin amount is shown.
+            QString amount = BitcoinUnits::formatWithUnit(unit, SkyTiers::threshold(m_sky_tier + 1), false, BitcoinUnits::SeparatorStyle::ALWAYS);
+            const int dot = amount.indexOf('.');
+            if (dot >= 0) amount.remove(dot, BitcoinUnits::decimals(unit) + 1);
+            m_next_level->setText(tr("Next level at %1").arg(amount));
+        }
+        m_next_level->setToolTip(tr("The night sky behind the wallet grows with the balance: %1 now.").arg(SkyTiers::name(m_sky_tier)));
+    }
+    if (m_next_level->isHidden() == shown) m_next_level->setVisible(shown);
+}
+
+OverviewPage::StakingState OverviewPage::stakingState() const
+{
+    // In the order the thread itself gives up: a wallet that cannot sign
+    // (no keys, or locked) before the switch, the chain before the coins.
+    if (m_staking.keyless) return StakingState::Unavailable;
+    if (!m_staking.minter) return StakingState::Disabled;
+    if (m_staking.locked) return StakingState::Locked;
+    if (!m_staking.enabled) return StakingState::Off;
+    if (m_staking.syncing) return StakingState::Syncing;
+    // The wallet's word stays "staking" across passes that never search; the
+    // thread's own flag drops when a pass fails before the search.
+    if (m_staking.wallet_state == IS_STAKING && m_staking.searching) return StakingState::Staking;
+    return StakingState::Ready;
+}
+
+bool OverviewPage::stakingWaitsForSync(const StakingGates& gates)
+{
+    // As the thread checks them: the peers and the initial download on the
+    // main network only; the proof-of-work end, the masternode data and the
+    // clock on every network. A tip stamped ahead of the clock (up to the
+    // three minutes validation allows) keeps the thread from searching, and
+    // its last word on the wallet would still say "staking".
+    if (gates.mainnet && (gates.peers < size_t(STAKING_MIN_PEERS_MAINNET) || gates.initial_download)) return true;
+    if (gates.height < gates.last_pow_block) return true;
+    if (gates.adjusted_time < gates.tip_time) return true;
+    return !gates.masternodes_synced;
+}
+
+void OverviewPage::setStakingStatus(const StakingStatus& status)
+{
+    m_staking = status;
+    updateStakingCard();
+}
+
+void OverviewPage::updateStakingCard()
+{
+    if (m_staking_card == nullptr) return;
+    const bool modern = GUIUtil::isModernTheme();
+    const StakingState state = stakingState();
+    QString word, detail, button;
+    GUIUtil::ThemedColor color = GUIUtil::ThemedColor::UNCONFIRMED;
+    switch (state) {
+    case StakingState::Unavailable:
+        word = tr("Not available");
+        detail = tr("This wallet holds no private keys, so it cannot stake.");
+        break;
+    case StakingState::Disabled:
+        word = tr("Off");
+        // Not running while configured: the thread stopped on an error and is
+        // between retries; the log has the reason, the card must not guess one.
+        detail = m_staking.configured ? tr("The node's staking thread is not running. See debug.log.")
+                                      : tr("This node runs without staking (-staking=0).");
+        break;
+    case StakingState::Locked:
+        word = tr("Paused: wallet locked");
+        detail = tr("Unlock to let this wallet stake. Sending stays locked.");
+        button = tr("Unlock for staking");
+        color = GUIUtil::ThemedColor::ORANGE;
+        break;
+    case StakingState::Off:
+        word = tr("Off");
+        detail = tr("Start staking to earn rewards with your balance.");
+        button = tr("Start staking");
+        break;
+    case StakingState::Syncing:
+        word = tr("Waiting for sync");
+        detail = tr("Staking starts once the wallet is up to date with the network.");
+        button = tr("Pause staking");
+        color = GUIUtil::ThemedColor::ORANGE;
+        break;
+    case StakingState::Ready:
+        word = tr("Ready");
+        // The thread's reasons are coarse: no spendable balance over the
+        // reserve, or nothing it could select -- immature or too young, too
+        // small or too large, or exactly a collateral. None of these is a
+        // wait that ends by itself, so the card does not promise one.
+        detail = m_staking.wallet_state == NOT_STAKING_BALANCE ? tr("No spendable balance to stake.") :
+                 m_staking.wallet_state == NOT_STAKING_DEPTH ? tr("None of the coins can stake right now.") :
+                 tr("Looking for coins to stake.");
+        button = tr("Pause staking");
+        color = GUIUtil::ThemedColor::BLUE;
+        break;
+    case StakingState::Staking:
+        word = tr("Staking");
+        // The thread is searching; a reward comes only with a block it finds.
+        detail = tr("This wallet is staking. A reward comes with each block it stakes.");
+        button = tr("Pause staking");
+        color = GUIUtil::ThemedColor::GREEN;
+        break;
+    }
+    m_staking_state->setText(word);
+    m_staking_detail->setText(detail);
+    m_staking_detail->setToolTip(state == StakingState::Ready && m_staking.wallet_state == NOT_STAKING_DEPTH ?
+        tr("Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.") : QString());
+    m_staking_button->setText(button);
+    // Each tick lands here: a name that did not change is not announced again.
+    if (m_staking_button->accessibleName() != button) m_staking_button->setAccessibleName(button);
+    if (m_staking_button->isHidden() == !button.isEmpty()) m_staking_button->setVisible(!button.isEmpty());
+    if (modern) {
+        // Nor is a dot of the same color at the same pixel ratio painted again.
+        const QColor dot = GUIUtil::getThemedQColor(color);
+        const qreal dpr = m_staking_icon->devicePixelRatioF();
+        if (dot.rgba() != m_staking_dot_rgba || dpr != m_staking_dot_dpr) {
+            m_staking_dot_rgba = dot.rgba();
+            m_staking_dot_dpr = dpr;
+            m_staking_icon->setPixmap(GlowDot(*m_staking_icon, dot));
+        }
+    }
+    const bool banner = modern && state == StakingState::Locked;
+    if (m_staking_banner->isHidden() == banner) m_staking_banner->setVisible(banner);
+}
+
+void OverviewPage::updateCoinJoinCard()
+{
+    if (m_coinjoin_row == nullptr || !m_coinjoin_known) return;
+    const bool modern = GUIUtil::isModernTheme();
+    if (!modern) {
+        // As before: the card whenever CoinJoin is on; disabled, it stays as
+        // the classic status last left it (not as Abyss did) and says so itself.
+        if (ui->frameCoinJoin->isHidden() == m_coinjoin_classic_card) ui->frameCoinJoin->setVisible(m_coinjoin_classic_card);
+        if (!m_coinjoin_row->isHidden()) m_coinjoin_row->hide();
+        return;
+    }
+    // Mixed coins are a reason to show the card; a balance never received is not.
+    const bool mixed = m_balances.balance != -1 && m_balances.anonymized_balance > 0;
+    const bool card = m_coinjoin_disabled ? m_coinjoin_card_pinned :
+                      m_coinjoin_enabled && (m_coinjoin_mixing || mixed || m_coinjoin_card_pinned);
+    if (ui->frameCoinJoin->isHidden() == card) ui->frameCoinJoin->setVisible(card);
+    const bool row = (m_coinjoin_disabled || m_coinjoin_enabled) && !card;
+    if (m_coinjoin_row->isHidden() == row) m_coinjoin_row->setVisible(row);
 }
 
 OverviewPage::~OverviewPage()
@@ -843,6 +1122,7 @@ void OverviewPage::applyBalanceWidths()
     std::for_each(balance_column.begin(), balance_column.end(), set_column);
     std::for_each(coinjoin_column.begin(), coinjoin_column.end(), set_column);
     for (QLabel* label : ui->frame->findChildren<QLabel*>()) {
+        if (label == m_next_level) continue; // Takes the column's width, never sets it.
         label->ensurePolished();
         const int original = inherited(label);
         int wanted;
@@ -915,6 +1195,8 @@ void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
     const bool keyless = walletModel->wallet().privateKeysDisabled();
     m_sky_tier = SkyTiers::tierForBalance(keyless ? 0 : balances.balance + balances.unconfirmed_balance + balances.immature_balance, m_sky_tier);
     updateSkyBadge();
+    updateNextLevel();
+    updateCoinJoinCard();
     if (walletModel->wallet().isLegacy()) {
         if (walletModel->wallet().privateKeysDisabled()) {
             ui->labelBalance->setText(formatBalance(unit, balances.watch_only_balance));
@@ -1051,6 +1333,7 @@ void OverviewPage::setWalletModel(WalletModel *model)
     if (model == nullptr) {
         m_sky_tier = 0;
         updateSkyBadge();
+        updateNextLevel();
     }
     if(model && model->getOptionsModel())
     {
@@ -1250,11 +1533,25 @@ void OverviewPage::coinJoinStatus(bool fForce)
         if (nWalletBackups <= 0) {
             ui->labelCoinJoinEnabled->setToolTip(tr("Automatic backups are disabled, no mixing available!"));
         }
+        // Disabled is a state of its own for the card: Abyss keeps it behind
+        // the row's link, the classic themes leave it as it stands.
+        m_coinjoin_known = true;
+        m_coinjoin_disabled = true;
+        m_coinjoin_mixing = false;
+        updateCoinJoinCard();
         return;
     }
 
     bool fIsEnabled = clientModel->coinJoinOptions().isEnabled();
-    ui->frameCoinJoin->setVisible(fIsEnabled);
+    // Abyss keeps the card out of the way until it has something to say; the
+    // classic themes show it whenever CoinJoin is on, as before.
+    m_coinjoin_known = true;
+    m_coinjoin_disabled = false;
+    m_coinjoin_enabled = fIsEnabled;
+    m_coinjoin_classic_card = fIsEnabled;
+    m_coinjoin_mixing = false;
+    if (fIsEnabled) walletModel->withCoinJoin([&](auto& client) { m_coinjoin_mixing = client.isMixing(); });
+    updateCoinJoinCard();
     if (!fIsEnabled) {
         SetupTransactionList(NUM_ITEMS_DISABLED);
         if (timer != nullptr) {

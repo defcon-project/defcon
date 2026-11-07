@@ -43,6 +43,7 @@
 #include <pos/multiwallet.h>
 #include <qt/governancelist.h>
 #include <qt/masternodelist.h>
+#include <timedata.h>
 #include <util/system.h>
 #include <util/translation.h>
 #include <validation.h>
@@ -2640,6 +2641,15 @@ void BitcoinGUI::setHDStatus(int hdEnabled)
     labelWalletHDStatusIcon->setVisible(hdEnabled);
 }
 
+int64_t BitcoinGUI::stakingTipTime() const
+{
+    // From the client model's cache, which every block notice writes before
+    // the GUI's throttling drops any: in the initial download a notice within
+    // 250 ms of the last one shown never reaches setNumBlocks, and nothing
+    // repeats it. No chain lock for the tick.
+    return clientModel != nullptr ? clientModel->getTipTime() : 0;
+}
+
 void BitcoinGUI::setStakingStatus()
 {
     const auto icon = [this](const char* classic, const char* glyph, GUIUtil::ThemedColor color) {
@@ -2674,6 +2684,33 @@ void BitcoinGUI::setStakingStatus()
         icon("staking_inactive", "leaf-off", GUIUtil::ThemedColor::UNCONFIRMED);
         labelStakingIcon->setToolTip(tr("Staking is inactive"));
     }
+    // The same tick feeds the Overview's staking card: the node's part here,
+    // each wallet view adds its own. "Syncing" is the thread's own gates read
+    // from the node, not its fTryToSync flag: that one flips on each pass
+    // without peers on the main network, and off the main network nothing
+    // clears it once the masternode data is in.
+    // Only while the client model is set: from the end of the node's start to
+    // the start of its shutdown. This timer runs from the window's birth, when
+    // the node has no chain yet (the initial download question asserts on
+    // it), and on through the shutdown, which deletes the wallet models while
+    // the views still point at them. The card keeps its last state meanwhile.
+    if (walletFrame != nullptr && clientModel != nullptr) {
+        OverviewPage::StakingStatus status;
+        status.configured = gArgs.GetBoolArg("-staking", DEFAULT_STAKING);
+        status.minter = fMinterRunning;
+        status.searching = fIsStaking;
+        OverviewPage::StakingGates gates;
+        gates.mainnet = Params().NetworkIDString() == CBaseChainParams::MAIN;
+        gates.masternodes_synced = m_node.masternodeSync().isSynced();
+        gates.initial_download = m_node.isInitialBlockDownload();
+        gates.peers = m_node.getNodeCount(ConnectionDirection::Both);
+        gates.height = clientModel->getNumBlocks();
+        gates.last_pow_block = Params().GetConsensus().lastPowBlock;
+        gates.tip_time = stakingTipTime();
+        gates.adjusted_time = GetAdjustedTime();
+        status.syncing = OverviewPage::stakingWaitsForSync(gates);
+        walletFrame->setStakingStatus(status);
+    }
 }
 
 void BitcoinGUI::updateWalletLockButton(int status)
@@ -2696,7 +2733,10 @@ void BitcoinGUI::updateWalletLockButton(int status)
         break;
     case WalletModel::UnlockedForMixingOnly:
         GUIUtil::setThemedIcon(walletLockButton, "lock_open", "lock-open", walletLockButton->iconSize(), GUIUtil::ThemedColor::ORANGE);
-        walletLockButton->setToolTip(tr("Wallet is <b>unlocked for mixing only</b>. Click to lock it."));
+        // Abyss names staking, which its Overview card unlocks for; the
+        // classic themes keep their text. A theme change refreshes it.
+        walletLockButton->setToolTip(modern ? tr("Wallet is <b>unlocked for mixing and staking only</b>. Click to lock it.")
+                                            : tr("Wallet is <b>unlocked for mixing only</b>. Click to lock it."));
         break;
     case WalletModel::Locked:
         GUIUtil::setThemedIcon(walletLockButton, "lock_closed", "lock", walletLockButton->iconSize(), GUIUtil::ThemedColor::GREEN);
@@ -2774,7 +2814,9 @@ void BitcoinGUI::setEncryptionStatus(int status)
     case WalletModel::UnlockedForMixingOnly:
         labelWalletEncryptionIcon->show();
         GUIUtil::setThemedPixmap(labelWalletEncryptionIcon, "lock_open", "lock-open", QSize(STATUSBAR_ICONSIZE, STATUSBAR_ICONSIZE), GUIUtil::ThemedColor::ORANGE);
-        labelWalletEncryptionIcon->setToolTip(tr("Wallet is <b>encrypted</b> and currently <b>unlocked</b> for mixing only"));
+        labelWalletEncryptionIcon->setToolTip(GUIUtil::isModernTheme() ?
+            tr("Wallet is <b>encrypted</b> and currently <b>unlocked</b> for mixing and staking only") :
+            tr("Wallet is <b>encrypted</b> and currently <b>unlocked</b> for mixing only"));
         changePassphraseAction->setEnabled(true);
         unlockWalletAction->setVisible(true);
         lockWalletAction->setVisible(true);

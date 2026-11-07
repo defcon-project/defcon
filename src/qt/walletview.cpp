@@ -24,7 +24,9 @@
 
 #include <interfaces/node.h>
 #include <node/interface_ui.h>
+#include <pos/multiwallet.h>
 #include <util/strencodings.h>
+#include <wallet/wallet.h>
 
 #include <algorithm>
 
@@ -34,6 +36,7 @@
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPointer>
 #include <QProgressDialog>
 #include <QPushButton>
 #include <QSettings>
@@ -114,6 +117,8 @@ WalletView::WalletView(QWidget* parent) :
     connect(overviewPage, &OverviewPage::outOfSyncWarningClicked, this, &WalletView::outOfSyncWarningClicked);
     connect(overviewPage, &OverviewPage::receiveClicked, this, &WalletView::receiveClicked);
     connect(overviewPage, &OverviewPage::skyTierChanged, this, &WalletView::skyTierChanged);
+    connect(overviewPage, &OverviewPage::stakingToggleRequested, this, &WalletView::toggleStaking);
+    connect(overviewPage, &OverviewPage::stakingUnlockRequested, this, &WalletView::unlockForStaking);
     connect(transactionView, &TransactionView::receiveClicked, this, &WalletView::receiveClicked);
 
     connect(sendCoinsPage, &SendCoinsDialog::coinsSent, this, &WalletView::coinsSent);
@@ -246,6 +251,9 @@ void WalletView::setWalletModel(WalletModel *_walletModel)
 
         // Handle changes in encryption status
         connect(_walletModel, &WalletModel::encryptionStatusChanged, this, &WalletView::encryptionStatusChanged);
+        // A lock or unlock changes what the staking card says at once, not at
+        // the window's next tick.
+        connect(_walletModel, &WalletModel::encryptionStatusChanged, this, &WalletView::refreshStakingStatus);
 
         // Balloon pop-up for new transaction
         connect(_walletModel->getTransactionTableModel(), &TransactionTableModel::rowsInserted, this, &WalletView::processNewTransaction);
@@ -256,6 +264,75 @@ void WalletView::setWalletModel(WalletModel *_walletModel)
         // Show progress dialog
         connect(_walletModel, &WalletModel::showProgress, this, &WalletView::showProgress);
     }
+}
+
+void WalletView::setStakingStatus(const OverviewPage::StakingStatus& node_status)
+{
+    m_node_staking = node_status;
+    refreshStakingStatus();
+}
+
+void WalletView::refreshStakingStatus()
+{
+    OverviewPage::StakingStatus status = m_node_staking;
+    if (walletModel != nullptr) {
+        const std::string name = walletModel->wallet().getWalletName();
+        status.enabled = IsWalletStaking(name);
+        status.keyless = walletModel->wallet().privateKeysDisabled();
+        // Unlocked for mixing only is enough to stake (the thread signs with
+        // the keys it then has); only the full lock pauses it.
+        status.locked = walletModel->getEncryptionStatus() == WalletModel::Locked;
+        // The thread's last word on this wallet, an atomic it writes on each
+        // pass: which of several wallets is really staking, and why one is not.
+        if (const std::shared_ptr<CWallet> wallet = GetWallet(name)) status.wallet_state = wallet->m_is_staking.load();
+    }
+    overviewPage->setStakingStatus(status);
+}
+
+void WalletView::toggleStaking(bool enable)
+{
+    if (walletModel == nullptr) return;
+    // The warning below runs a modal loop, and BitcoinApplication turns a quit
+    // request into the shutdown inside any loop: the shutdown deletes the
+    // wallet model, so nothing of it is touched after the loop unless it is
+    // still there.
+    const QPointer<WalletModel> model{walletModel};
+    const std::string name = model->wallet().getWalletName();
+    // The position the button offered, set under the registry's lock: the
+    // card is up to a tick old, and the menu or the RPC may have moved the
+    // switch meanwhile, so "Start" must never pause and "Pause" never start.
+    // Enabling goes through the one path the menu and the RPC share; it
+    // refuses a wallet that cannot sign, and says why in the log.
+    const bool now_on = SetWalletStaking(name, enable);
+    if (enable && !now_on) {
+        Q_EMIT message(tr("Staking"), tr("Staking could not be started for this wallet. See debug.log for details."),
+                       CClientUIInterface::MSG_WARNING);
+        if (model.isNull()) return;
+    }
+    refreshStakingStatus();
+}
+
+void WalletView::unlockForStaking()
+{
+    if (walletModel == nullptr) return;
+    // The dialog runs a modal loop. A quit request handled there starts the
+    // shutdown, which deletes the wallet model under the dialog: the dialog
+    // closes with its model, and nothing here touches the model afterwards.
+    const QPointer<WalletModel> model{walletModel};
+    if (model->getEncryptionStatus() == WalletModel::Locked) {
+        AskPassphraseDialog dlg(AskPassphraseDialog::UnlockStaking, this);
+        dlg.setModel(model.data());
+        connect(model.data(), &QObject::destroyed, &dlg, &QDialog::reject);
+        dlg.exec();
+        if (model.isNull()) return;
+    }
+    // Cancelled, or the wrong passphrase: still locked, nothing to switch on.
+    if (model->getEncryptionStatus() == WalletModel::Locked) {
+        refreshStakingStatus();
+        return;
+    }
+    // On, if it is not already: one call under the registry's lock.
+    toggleStaking(true);
 }
 
 void WalletView::processNewTransaction(const QModelIndex& parent, int start, int /*end*/)

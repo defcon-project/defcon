@@ -64,6 +64,14 @@ private Q_SLOTS:
     void transactionFilters();
     void fontsAfterDeletedWidgets();
     void coinJoinHelp();
+    void stakingCard();
+    void stakingBanner();
+    void coinJoinCardConditional();
+    void nextLevelLine();
+    void stakingWindow();
+    void stakingSyncGates();
+    void stakingUnlockFlow();
+    void stakingTipTime();
     // Last, after the window-activation checks of paymentPages: run before
     // them, its two short-lived wallet windows were followed by occasional
     // activation failures on xcb without a window manager.
