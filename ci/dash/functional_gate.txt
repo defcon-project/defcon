@@ -1,0 +1,98 @@
+# The hosted functional gate: a named list, not the whole runner.
+#
+# One test per line: the seconds all of its registered variants took together on
+# the hosted runner, the test, and what it guards. A bare name runs every
+# registered variant of it (feature_pos_staking.py is --descriptors and
+# --legacy-wallet), so its seconds are the sum of theirs.
+#
+# The functional lane of .github/workflows/build.yml starts these longest
+# first, in the order of their seconds; equal seconds keep this file's order.
+# test_runner.py starts tests in the order it is given them, and a long test
+# that starts late holds the lane after everything else has finished: on
+# 2026-11-07 p2p_unbacked_pos_headers.py, sixth in the hand-ordered list this
+# file replaced, started seven minutes in and then ran 1600 s alone. The seconds
+# need not be exact, only in the right order. Every run of the gate lists the
+# measured ones in its summary ("Functional gate: recorded and measured
+# seconds"); refresh a line when its test has grown or shrunk a lot. Recorded on
+# push run 42371427370 (2026-11-07); the four tests #379 added, on its PR run
+# 42406840902.
+#
+# Until the gate existed the workflow ran zero functional tests: the inherited
+# integration runner was never wired into the workflow. Every regression that
+# only test/functional covers -- proof-of-stake, the evodb recovery, the Q60
+# switchover, the Sentinel layer, the peer protocol -- was guarded by hand. Two
+# defects lived under a green CI because of it: feature_llmq_chainlocks.py
+# failed with a TypeError on the tip for months (#226), and a new log category
+# aborted the node at its first line (#228).
+#
+# The list is explicit and every entry says what it guards, so dropping one
+# takes a line here that says why. Registered tests that stay out, each with the
+# measured reason (this binary, four CPUs, --jobs=4):
+#   feature_llmq_q60_switchover.py, feature_llmq_q60_dkg.py and
+#   feature_dsl_enforcement_scale.py run 66 daemons each, raise
+#   TEST_RUNNER_MAX_NODES themselves and would collide with the port stride of
+#   a parallel runner -- which is also why they are kept out of test_runner.py's
+#   lists;
+#   feature_dsl_scenarios.py: 261 s, seven masternodes and a quorum under
+#   injected faults, on its own nearly another chainlocks run;
+#   feature_dsl_enforcement.py: 83 s, seven masternodes, the punishing branch
+#   behind -testactivationheight=dslenforcement;
+#   feature_dsl_faults.py: 71 s, seven masternodes with faults injected into a
+#   running node;
+#   feature_dsl_fault_injection.py: 9 s and two daemons, kept out because it
+#   tests the fault injector itself, a lab instrument the node refuses to start
+#   with outside regtest and devnet;
+#   rpc_getblockstats.py: an inherited failure, its fixture assumes Dash's
+#   subsidy.
+# From the same Sentinel layer the gate carries feature_dsl_service.py (the test
+# that caught #228), feature_dsl_commit_decision_log.py and
+# feature_dsl_commitment_v2.py: the probe, the producer's decision and the
+# second bitfield, all live on the devnet.
+#
+# feature_dsl_commitment_v2.py was measured out of this gate once, and the
+# measurement was right at the time: alone it passed three runs out of three,
+# and in this company (--jobs=4 beside the chainlocks and staking runs) it
+# failed three out of three. What it was failing on was not the runner but the
+# node -- a receiver dropped an announcement that arrived more than one block
+# ahead of the epoch base, which under load is where the announcements are --
+# and that is now fixed (#235). Two halves of one lesson: a red gate on a timing
+# race teaches people to ignore red, and a test that only fails under load can
+# be reporting a defect that only appears under load. Re-measured on the fix,
+# same four CPUs and the same list: three runs out of three green, the test
+# itself 88/80/81 s, the whole gate 344/328/327 s wall.
+
+1600 p2p_unbacked_pos_headers.py            # how many headers without their blocks a node takes, from one peer and above its tip
+981  feature_pos_stake_combine.py           # continuous consolidation, both wallets and key-only scope
+298  feature_llmq_chainlocks.py             # ChainLocks, with a masternode added dynamically
+297  feature_pos_staking.py                 # real proof-of-stake blocks on regtest; descriptor and legacy wallet
+231  feature_v231_no_payee.py               # from the v23.1 height a staked block with no payable masternode carries no payout at all (#354)
+208  feature_pos_header_only.py             # headers with no block behind them hold neither masternode sync nor staking
+147  feature_pos_mixingonly_unlock.py       # a wallet unlocked for mixing only stakes, and still refuses to send or export keys
+95   feature_dsl_sign_wait.py               # wait for late Sentinel reports, with a signing deadline
+83   feature_dsl_commitment_v2.py           # the Sentinel commitment's second bitfield: who the pool judged at all (#231)
+57   feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates
+54   p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
+51   feature_pos_double_sign.py             # a stake signed twice is counted once and changes nothing else
+50   feature_llmq_is_named_quorum_window.py # an InstantSend lock signed by the quorum that has just left the signing-active set, right after a new commitment
+43   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
+42   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
+34   feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
+29   feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
+29   rpc_verifyislock.py                    # the lock-verifying RPCs
+23   feature_llmq_q60_proto_floor.py        # the peer protocol floor from the formation lead, against the real predecessor version
+22   feature_addressindex.py                # the address index end to end, and the same hash as P2PKH and as P2SH among other P2SH outputs (#328)
+22   feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
+22   feature_llmq_is_nonrotation.py         # an InstantSend lock on a quorum that does not rotate
+21   feature_v23_bundle_heights.py          # the v23 bundle's own regtest name on a running chain: three of its heights observed where the one number puts them
+20   feature_evodb_reconcile.py             # an evodb that stopped short of the coins tip is rebuilt at startup, with its log line
+19   rpc_verifychainlock.py                 # the lock-verifying RPCs
+17   rpc_bls.py                             # BLS key persistence and the empty staking registry, both wallet formats
+12   feature_evodb_reconcile_below_dip3.py  # the evodb reconcile below DIP0003, where an empty evodb is current
+12   feature_evodb_repair_startup.py        # -evodbrepair finishes before the import, the network and the end of RPC warmup
+10   feature_superblock_retirement.py       # a test chain with the superblock spork on: getblocktemplate at the retirement height, and the regtest alias
+9    feature_llmq_q60_regtest.py            # the Q60 ChainLock profile (llmq_defcon) on regtest
+9    feature_llmq_switchover_config.py      # the startup guards on the Q60 switchover heights, the v23@N alias
+6    feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
+5    p2p_headers_uncompressed.py            # the plain headers reader consumes what every writer writes (#220)
+4    feature_addressindex_type_boundary.py  # the P2PKH and P2SH records of one hash on a sparse index, where they are neighbours on disk (#328)
+3    feature_dsl_commit_decision_log.py     # the producer's Sentinel commit decision without a commitment (F-2026-140)
