@@ -404,9 +404,9 @@ TestChainSetup::TestChainSetup(int num_blocks, const std::vector<const char*>& e
             /* TestChainDIP3BeforeActivationSetup */
             {  430, uint256S("0x4576a2400f24c417ee6846472e1940d20a75a3d45dd0469d8c5af57576c96fb0") },
             /* TestChainBRRBeforeActivationSetup */
-            {  497, uint256S("0x2a8532fe90946370df6b962510d1486de7bddef0f697cc3a369b8d661ee1ea06") },
+            {  497, uint256S("0x3bd0830e3cb096683d04bc4c530720cbd52d6372e565a14fa3d70937c69b8b28") },
             /* TestChainV19BeforeActivationSetup */
-            {  494, uint256S("0x74d41d2e7cb9613a7b3d4b71e92072a378c08d3b5e8f91663059695ed511c331") },
+            {  494, uint256S("0x5a789f521b0b6cb83f88fdd094aaa66d596f80affa3474023d3e8393be8e8fa9") },
         }
     };
 
@@ -494,7 +494,7 @@ CBlock TestChainSetup::CreateBlock(
         auto cbTx = GetTxPayload<CCbTx>(*block.vtx[0]);
         Assert(cbTx.has_value());
         BlockValidationState state;
-        if (!CalcCbTxMerkleRootMNList(block, chainstate.m_chain.Tip(), cbTx->merkleRootMNList, state, *m_node.dmnman, *m_node.llmq_ctx->qsnapman, chainstate.CoinsTip())) {
+        if (!CalcCbTxMerkleRootMNList(block, chainstate.m_chain.Tip(), cbTx->merkleRootMNList, state, *m_node.dmnman, chainstate.CoinsTip())) {
             Assert(false);
         }
         if (!CalcCbTxMerkleRootQuorums(block, chainstate.m_chain.Tip(), *m_node.llmq_ctx->quorum_block_processor, cbTx->merkleRootQuorums, state)) {

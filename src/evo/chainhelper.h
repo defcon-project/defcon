@@ -29,7 +29,6 @@ class CChainLocksHandler;
 class CInstantSendManager;
 class CQuorumBlockProcessor;
 class CQuorumManager;
-class CQuorumSnapshotManager;
 }
 
 class CChainstateHelper
@@ -42,7 +41,7 @@ private:
 public:
     explicit CChainstateHelper(CCreditPoolManager& cpoolman, CDeterministicMNManager& dmnman, CMNHFManager& mnhfman,
                                CGovernanceManager& govman, llmq::CInstantSendManager& isman,
-                               llmq::CQuorumBlockProcessor& qblockman, llmq::CQuorumSnapshotManager& qsnapman,
+                               llmq::CQuorumBlockProcessor& qblockman,
                                const ChainstateManager& chainman, const Consensus::Params& consensus_params,
                                const CMasternodeSync& mn_sync, const CSporkManager& sporkman,
                                const llmq::CChainLocksHandler& clhandler, const llmq::CQuorumManager& qman);

@@ -8,9 +8,8 @@ feature_llmq_is_nonrotation.py
 
 A mempool transaction becomes InstantSend-locked within seconds, without a
 block, on a quorum that does not rotate. This is the configuration this chain
-runs -- DIP0024 never activated, so every InstantSend profile here is
-non-rotating -- and it is what p2p_instantsend.py does not cover, because that
-test locks on the regtest rotation quorum.
+runs: no quorum profile rotates (DIP0024 rotation is gone), and regtest signs
+InstantSend with llmq_test_instantsend, which this test also names explicitly.
 
 The lock is checked on `instantlock_internal`, never on `instantlock`: the
 latter is also true for a ChainLocked block, so it can pass with no ISLOCK at
@@ -45,6 +44,15 @@ class LLMQInstantSendNonRotationTest(DashTestFramework):
 
         self.log.info("Form the non-rotating InstantSend quorum")
         self.mine_quorum(llmq_type_name="llmq_test_instantsend", llmq_type=LLMQ_TYPE_TEST_INSTANTSEND)
+
+        self.log.info("Quorum RPCs report quorumIndex 0")
+        quorum_hash = node.quorum("list")["llmq_test_instantsend"][0]
+        assert_equal(node.quorum("info", LLMQ_TYPE_TEST_INSTANTSEND, quorum_hash)["quorumIndex"], 0)
+        entries = node.quorum("listextended")["llmq_test_instantsend"]
+        assert entries
+        for entry in entries:
+            for details in entry.values():
+                assert_equal(details["quorumIndex"], 0)
 
         self.log.info("A mempool transaction is locked without a block")
         height = node.getblockcount()

@@ -46,14 +46,16 @@ struct DevNetSetup : public BasicTestingSetup {
 };
 
 struct RegTestRetiringSetup : public BasicTestingSetup {
-    RegTestRetiringSetup() : BasicTestingSetup(CBaseChainParams::REGTEST, {"-llmqformationendheight=llmq_test_instantsend:480"}) {}
+    // llmq_test_instantsend signs InstantSend on regtest; the InstantSend role moves to llmq_test here so the
+    // profile retired below has no role, as a retired profile must not.
+    RegTestRetiringSetup() : BasicTestingSetup(CBaseChainParams::REGTEST, {"-llmqtestinstantsenddip0024=llmq_test", "-llmqformationendheight=llmq_test_instantsend:480"}) {}
 };
 
 bool FormsNextBlock(Consensus::LLMQType type, int prev_height)
 {
     CBlockIndex index;
     index.nHeight = prev_height;
-    return llmq::IsQuorumTypeEnabledInternal(type, &index, /*optDIP0024IsActive=*/false, /*optHaveDIP0024Quorums=*/false);
+    return llmq::IsQuorumTypeEnabledInternal(type, &index);
 }
 
 } // namespace
@@ -167,24 +169,6 @@ BOOST_AUTO_TEST_CASE(next_dkg_follows_the_formation_end)
     }
 }
 
-// A rotating type counts until the last session of its cycle has started, and only if
-// it forms. llmq_test_dip0024 has two, on the cycle base and the block after it. No
-// network registers a rotating type that does not form, so the test switches it off.
-BOOST_FIXTURE_TEST_CASE(next_dkg_counts_a_rotating_type_only_if_it_forms, RegTestRetiringSetup)
-{
-    std::vector<CBlockIndex> chain(27);
-    for (size_t i = 0; i < chain.size(); ++i) {
-        chain[i].nHeight = i;
-        chain[i].pprev = i > 0 ? &chain[i - 1] : nullptr;
-    }
-    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain[24]), 1);
-    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain[25]), 23);
-    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain[26]), 22);
-
-    const_cast<Consensus::Params&>(Params().GetConsensus()).DIP0024Height = UNSET;
-    BOOST_CHECK_EQUAL(llmq::GetBlocksUntilNextDKG(&chain[24]), 24);
-}
-
 BOOST_AUTO_TEST_CASE(regtest_argument_refuses_malformed_input)
 {
     for (const std::string& bad : {"llmq_test_instantsend", "llmq_test_instantsend:", "llmq_test_instantsend:-24",
@@ -197,13 +181,25 @@ BOOST_AUTO_TEST_CASE(regtest_argument_refuses_malformed_input)
 
 // Each configuration below stops a profile somebody still depends on, or stops
 // it mid-cycle. Regtest is the canvas: its roles are LLMQ_TEST (ChainLocks,
-// MNHF), LLMQ_TEST_DIP0024 (InstantSend, rotating) and LLMQ_TEST_PLATFORM.
+// MNHF), LLMQ_TEST_INSTANTSEND (InstantSend) and LLMQ_TEST_PLATFORM.
 BOOST_AUTO_TEST_CASE(startup_check_refuses_what_would_break)
 {
+    {
+        // The InstantSend profile is a live role.
+        ArgsManager plain;
+        auto params = CreateChainParams(plain, CBaseChainParams::REGTEST);
+        BOOST_CHECK(params->GetConsensus().llmqTypeDIP0024InstantSend == Consensus::LLMQType::LLMQ_TEST_INSTANTSEND);
+        const_cast<Consensus::Params&>(params->GetConsensus()).llmqFormationEndHeights[Consensus::LLMQType::LLMQ_TEST_INSTANTSEND] = 480;
+        BOOST_CHECK_THROW(CheckLLMQConfiguration(*params), std::runtime_error);
+    }
+
+    // Below, the InstantSend role moves to llmq_test, so llmq_test_instantsend has none.
     ArgsManager args;
     const auto with_end = [&](Consensus::LLMQType type, int end) {
         auto params = CreateChainParams(args, CBaseChainParams::REGTEST);
-        const_cast<Consensus::Params&>(params->GetConsensus()).llmqFormationEndHeights[type] = end;
+        auto& consensus = const_cast<Consensus::Params&>(params->GetConsensus());
+        consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_TEST;
+        consensus.llmqFormationEndHeights[type] = end;
         return params;
     };
 
@@ -218,8 +214,6 @@ BOOST_AUTO_TEST_CASE(startup_check_refuses_what_would_break)
     // Live roles: ChainLocks with no switchover scheduled, MNHF, Platform.
     BOOST_CHECK_THROW(CheckLLMQConfiguration(*with_end(Consensus::LLMQType::LLMQ_TEST, 480)), std::runtime_error);
     BOOST_CHECK_THROW(CheckLLMQConfiguration(*with_end(Consensus::LLMQType::LLMQ_TEST_PLATFORM, 480)), std::runtime_error);
-    // A rotating profile.
-    BOOST_CHECK_THROW(CheckLLMQConfiguration(*with_end(Consensus::LLMQType::LLMQ_TEST_DIP0024, 480)), std::runtime_error);
 
     // A pre-switchover role stops only after its successor has taken over, and
     // not at the switchover itself. On devnet llmq_60_75 signed InstantSend

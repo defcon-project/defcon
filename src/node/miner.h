@@ -42,7 +42,6 @@ class CChainLocksHandler;
 class CInstantSendManager;
 class CQuorumBlockProcessor;
 class CQuorumManager;
-class CQuorumSnapshotManager;
 class CSigningManager;
 } // namespace llmq
 
@@ -180,7 +179,6 @@ private:
     CMNHFManager& m_mnhfman;
     llmq::CChainLocksHandler& m_clhandler;
     llmq::CInstantSendManager& m_isman;
-    llmq::CQuorumSnapshotManager& m_qsnapman;
     const CChainParams& chainparams;
     const CTxMemPool& m_mempool;
     const llmq::CQuorumBlockProcessor& m_quorum_block_processor;

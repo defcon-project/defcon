@@ -23,7 +23,7 @@ class InstantSendTest(DashTestFramework):
     def run_test(self):
         self.nodes[0].sporkupdate("SPORK_17_QUORUM_DKG_ENABLED", 0)
         self.wait_for_sporks_same()
-        (quorum_info_i_0, quorum_info_i_1) = self.mine_cycle_quorum()
+        self.mine_instantsend_quorum()
 
         self.test_mempool_doublespend()
         self.test_block_doublespend()

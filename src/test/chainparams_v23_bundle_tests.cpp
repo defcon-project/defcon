@@ -491,7 +491,7 @@ void CheckRegisteredButUnformedProfiles(bool expect_formed, int prev_height = 10
     CBlockIndex index;
     index.nHeight = prev_height;
     for (const auto type : {Consensus::LLMQType::LLMQ_50_60, Consensus::LLMQType::LLMQ_60_75}) {
-        BOOST_CHECK_EQUAL(llmq::IsQuorumTypeEnabledInternal(type, &index, false, false), expect_formed);
+        BOOST_CHECK_EQUAL(llmq::IsQuorumTypeEnabledInternal(type, &index), expect_formed);
     }
 }
 
@@ -752,7 +752,7 @@ bool FormsNextBlock(Consensus::LLMQType type, int prev_height)
 {
     CBlockIndex index;
     index.nHeight = prev_height;
-    return llmq::IsQuorumTypeEnabledInternal(type, &index, /*optDIP0024IsActive=*/false, /*optHaveDIP0024Quorums=*/false);
+    return llmq::IsQuorumTypeEnabledInternal(type, &index);
 }
 
 } // namespace

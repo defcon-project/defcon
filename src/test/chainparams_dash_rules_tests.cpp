@@ -2,10 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-//! The Dash rule packages DeFCoN's public networks never activate: DIP0024 (rotation and its first quorum), V19, V20
-//! and MN_RR. Mainnet, testnet and devnet leave all five heights unset, and selecting one of those networks refuses
+//! The Dash rule packages DeFCoN's public networks never activate: V19, V20 and MN_RR. Mainnet, testnet and devnet
+//! leave all three heights unset, and selecting one of those networks refuses
 //! any of them set, whatever its value. Regtest keeps them, switched on for the tests inherited from Dash.
-//! (The BRR and DIP0020 deployments are gone; llmq_100_67, which the DIP0020 deployment enabled, never forms.)
+//! (The BRR, DIP0020 and DIP0024 deployments are gone; llmq_100_67, which the DIP0020 deployment enabled, never
+//! forms, and no quorum profile rotates.)
 //!
 //! The check runs in SelectParams, on the network chosen, and not where every network's parameters are built: the
 //! help text builds mainnet's, testnet's and regtest's before the command line has chosen, and a refusal there would
@@ -37,19 +38,17 @@ constexpr int UNSET = std::numeric_limits<int>::max();
 
 using Field = std::function<int&(Consensus::Params&)>;
 
-//! The five heights, by name, so a failure names the field.
+//! The three heights, by name, so a failure names the field.
 std::vector<std::pair<std::string, Field>> DashRuleHeights()
 {
     return {
-        {"DIP0024Height", [](Consensus::Params& c) -> int& { return c.DIP0024Height; }},
-        {"DIP0024QuorumsHeight", [](Consensus::Params& c) -> int& { return c.DIP0024QuorumsHeight; }},
         {"V19Height", [](Consensus::Params& c) -> int& { return c.V19Height; }},
         {"V20Height", [](Consensus::Params& c) -> int& { return c.V20Height; }},
         {"MN_RRHeight", [](Consensus::Params& c) -> int& { return c.MN_RRHeight; }},
     };
 }
 
-//! A network as it starts: all five heights unset, and the check passes.
+//! A network as it starts: all three heights unset, and the check passes.
 void ExpectNoneSet(const Consensus::Params& consensus, const std::string& network)
 {
     for (const auto& [name, field] : DashRuleHeights()) {
@@ -92,7 +91,7 @@ void ExpectPlatformProfileNeverForms(const std::string& network)
     for (const int prev_height : {0, 1, 100000, UNSET - 2}) {
         CBlockIndex index;
         index.nHeight = prev_height;
-        BOOST_CHECK_MESSAGE(!llmq::IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_100_67, &index, false, false),
+        BOOST_CHECK_MESSAGE(!llmq::IsQuorumTypeEnabledInternal(Consensus::LLMQType::LLMQ_100_67, &index),
                             strprintf("%s: llmq_100_67 forms after height %d", network, prev_height));
     }
 }
@@ -201,10 +200,18 @@ BOOST_AUTO_TEST_CASE(regtest_keeps_them)
         BOOST_CHECK_EQUAL(params->GetConsensus().V20Height, 120);
     }
     {
+        // The DIP0024 deployment is gone: its name is refused like any unknown one.
         ArgsManager args;
         args.ForceSetArg("-testactivationheight", "dip0024@150");
+        BOOST_CHECK_EXCEPTION(CreateChainParams(args, CBaseChainParams::REGTEST), std::runtime_error,
+                              HasReason("Invalid name (dip0024@150) for -testactivationheight=name@height."));
+    }
+    {
+        // Regtest signs InstantSend with a profile that does not rotate.
+        ArgsManager args;
         const auto params = CreateChainParams(args, CBaseChainParams::REGTEST);
-        BOOST_CHECK_EQUAL(params->GetConsensus().DIP0024QuorumsHeight, 150);
+        BOOST_CHECK(params->GetConsensus().llmqTypeDIP0024InstantSend == Consensus::LLMQType::LLMQ_TEST_INSTANTSEND);
+        BOOST_CHECK(!params->GetLLMQ(static_cast<Consensus::LLMQType>(103)).has_value());
     }
     {
         // The BRR deployment is gone: its name is refused like any unknown one.

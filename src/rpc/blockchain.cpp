@@ -1586,7 +1586,6 @@ RPCHelpMan getblockchaininfo()
                          Consensus::DEPLOYMENT_DIP0001,
                          Consensus::DEPLOYMENT_DIP0003,
                          Consensus::DEPLOYMENT_DIP0008,
-                         Consensus::DEPLOYMENT_DIP0024,
                          Consensus::DEPLOYMENT_V19,
                          Consensus::DEPLOYMENT_V20,
                          Consensus::DEPLOYMENT_MN_RR }) {

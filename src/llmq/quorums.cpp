@@ -241,7 +241,7 @@ bool CQuorum::ReadContributions(const CDBWrapper& db)
 
 CQuorumManager::CQuorumManager(CBLSWorker& _blsWorker, CChainState& chainstate, CDeterministicMNManager& dmnman,
                                CDKGSessionManager& _dkgManager, CEvoDB& _evoDb,
-                               CQuorumBlockProcessor& _quorumBlockProcessor, CQuorumSnapshotManager& qsnapman,
+                               CQuorumBlockProcessor& _quorumBlockProcessor,
                                const CActiveMasternodeManager* const mn_activeman, const CMasternodeSync& mn_sync,
                                const CSporkManager& sporkman, bool unit_tests, bool wipe) :
     db(std::make_unique<CDBWrapper>(unit_tests ? "" : (gArgs.GetDataDirNet() / "llmq" / "quorumdb"), 1 << 20,
@@ -251,7 +251,6 @@ CQuorumManager::CQuorumManager(CBLSWorker& _blsWorker, CChainState& chainstate, 
     m_dmnman(dmnman),
     dkgManager(_dkgManager),
     quorumBlockProcessor(_quorumBlockProcessor),
-    m_qsnapman(qsnapman),
     m_mn_activeman(mn_activeman),
     m_mn_sync(mn_sync),
     m_sporkman(sporkman)
@@ -369,20 +368,7 @@ try
     auto connmanQuorumsToDelete = connman.GetMasternodeQuorums(llmqParams.type);
 
     // don't remove connections for the currently in-progress DKG round
-    if (IsQuorumRotationEnabled(llmqParams, pindexNew)) {
-        int cycleIndexTipHeight = pindexNew->nHeight % llmqParams.dkgInterval;
-        int cycleQuorumBaseHeight = pindexNew->nHeight - cycleIndexTipHeight;
-        std::stringstream ss;
-        for (const auto quorumIndex : irange::range(llmqParams.signingActiveQuorumCount)) {
-            if (quorumIndex <= cycleIndexTipHeight) {
-                int curDkgHeight = cycleQuorumBaseHeight + quorumIndex;
-                auto curDkgBlock = pindexNew->GetAncestor(curDkgHeight)->GetBlockHash();
-                ss << curDkgHeight << ":" << curDkgBlock.ToString() << " | ";
-                connmanQuorumsToDelete.erase(curDkgBlock);
-            }
-        }
-        LogPrint(BCLog::LLMQ, "CQuorumManager::%s -- llmqType[%d] h[%d] keeping mn quorum connections for rotated quorums: [%s]\n", __func__, ToUnderlying(llmqParams.type), pindexNew->nHeight, ss.str());
-    } else {
+    {
         int curDkgHeight = pindexNew->nHeight - (pindexNew->nHeight % llmqParams.dkgInterval);
         auto curDkgBlock = pindexNew->GetAncestor(curDkgHeight)->GetBlockHash();
         connmanQuorumsToDelete.erase(curDkgBlock);
@@ -399,7 +385,7 @@ try
                     });
 
     for (const auto& quorum : lastQuorums) {
-        if (utils::EnsureQuorumConnections(llmqParams, connman, m_dmnman, m_sporkman, m_qsnapman,
+        if (utils::EnsureQuorumConnections(llmqParams, connman, m_dmnman, m_sporkman,
                                            m_dmnman.GetListAtChainTip(), quorum->m_quorum_base_block_index, myProTxHash,
                                            /* is_masternode = */ m_mn_activeman != nullptr)) {
             if (connmanQuorumsToDelete.erase(quorum->qc->quorumHash) > 0) {
@@ -446,7 +432,7 @@ CQuorumPtr CQuorumManager::BuildQuorumFromCommitment(const Consensus::LLMQType l
     const auto& llmq_params_opt = Params().GetLLMQ(llmqType);
     assert(llmq_params_opt.has_value());
     auto quorum = std::make_shared<CQuorum>(llmq_params_opt.value(), blsWorker);
-    auto members = utils::GetAllQuorumMembers(qc->llmqType, m_dmnman, m_qsnapman, pQuorumBaseBlockIndex);
+    auto members = utils::GetAllQuorumMembers(qc->llmqType, m_dmnman, pQuorumBaseBlockIndex);
 
     quorum->Init(std::move(qc), pQuorumBaseBlockIndex, minedBlockHash, members);
 
@@ -682,8 +668,7 @@ std::vector<CQuorumCPtr> CQuorumManager::ScanQuorums(Consensus::LLMQType llmqTyp
     }
 
     // Get the block indexes of the mined commitments to build the required quorums from
-    std::vector<const CBlockIndex*> pQuorumBaseBlockIndexes{ llmq_params_opt->useRotation ?
-            quorumBlockProcessor.GetMinedCommitmentsIndexedUntilBlock(llmqType, pIndexScanCommitments, nScanCommitments) :
+    std::vector<const CBlockIndex*> pQuorumBaseBlockIndexes{
             quorumBlockProcessor.GetMinedCommitmentsUntilBlock(llmqType, pIndexScanCommitments, nScanCommitments)
     };
     vecResultQuorums.reserve(vecResultQuorums.size() + pQuorumBaseBlockIndexes.size());
@@ -1368,48 +1353,22 @@ CQuorumCPtr SelectQuorumForSigningAt(const Consensus::LLMQParams& llmq_params, c
     }
     size_t poolSize = llmq_params.signingActiveQuorumCount;
 
-    if (IsQuorumRotationEnabled(llmq_params, pindexStart)) {
-        auto quorums = qman.ScanQuorums(llmq_params.type, pindexStart, poolSize);
-        if (quorums.empty()) {
-            return nullptr;
-        }
-        //log2 int
-        int n = std::log2(llmq_params.signingActiveQuorumCount);
-        //Extract last 64 bits of selectionHash
-        uint64_t b = selectionHash.GetUint64(3);
-        //Take last n bits of b
-        uint64_t signer = (((1ull << n) - 1) & (b >> (64 - n - 1)));
-
-        if (signer > quorums.size()) {
-            return nullptr;
-        }
-        auto itQuorum = std::find_if(quorums.begin(),
-                                     quorums.end(),
-                                     [signer](const CQuorumCPtr& obj) {
-                                         return uint64_t(obj->qc->quorumIndex) == signer;
-                                     });
-        if (itQuorum == quorums.end()) {
-            return nullptr;
-        }
-        return *itQuorum;
-    } else {
-        auto quorums = qman.ScanQuorums(llmq_params.type, pindexStart, poolSize);
-        if (quorums.empty()) {
-            return nullptr;
-        }
-
-        std::vector<std::pair<uint256, size_t>> scores;
-        scores.reserve(quorums.size());
-        for (const auto i : irange::range(quorums.size())) {
-            CHashWriter h(SER_NETWORK, 0);
-            h << llmq_params.type;
-            h << quorums[i]->qc->quorumHash;
-            h << selectionHash;
-            scores.emplace_back(h.GetHash(), i);
-        }
-        std::sort(scores.begin(), scores.end());
-        return quorums[scores.front().second];
+    auto quorums = qman.ScanQuorums(llmq_params.type, pindexStart, poolSize);
+    if (quorums.empty()) {
+        return nullptr;
     }
+
+    std::vector<std::pair<uint256, size_t>> scores;
+    scores.reserve(quorums.size());
+    for (const auto i : irange::range(quorums.size())) {
+        CHashWriter h(SER_NETWORK, 0);
+        h << llmq_params.type;
+        h << quorums[i]->qc->quorumHash;
+        h << selectionHash;
+        scores.emplace_back(h.GetHash(), i);
+    }
+    std::sort(scores.begin(), scores.end());
+    return quorums[scores.front().second];
 }
 
 VerifyRecSigStatus VerifyRecoveredSig(Consensus::LLMQType llmqType, const CChain& active_chain, const CQuorumManager& qman,

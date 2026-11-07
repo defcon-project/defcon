@@ -2283,7 +2283,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                     // Upstream reaches this through CSpecialTxProcessor; in this tree
                     // the function lives on CDeterministicMNManager.
                     return node.dmnman->RebuildListFromBlock(block, pindexPrev, prevList, state, view, mnListRet,
-                                                             *node.llmq_ctx->qsnapman, debugLogs);
+                                                             debugLogs);
                 };
                 using Outcome = CDeterministicMNManager::HistoryCheck::Outcome;
                 const auto check = node.dmnman->VerifyOrRepairDiffs(chainman, build_list_func, /*repair=*/false);

@@ -33,7 +33,6 @@ static constexpr bool DEFAULT_WATCH_QUORUMS{true};
 bool IsAllMembersConnectedEnabled(const Consensus::LLMQType llmqType, const CSporkManager& sporkman);
 bool IsQuorumPoseEnabled(const Consensus::LLMQType llmqType, const CSporkManager& sporkman);
 
-bool IsQuorumRotationEnabled(const Consensus::LLMQParams& llmqParams, gsl::not_null<const CBlockIndex*> pindex);
 
 /// Returns the state of `-llmq-data-recovery`
 bool QuorumDataRecoveryEnabled();
@@ -98,12 +97,12 @@ bool IsQuorumTypeEnabled(Consensus::LLMQType llmqType, const CBlockIndex* pindex
  *  the profile is not retired. */
 [[nodiscard]] int GetQuorumFormationEndHeight(const ::Consensus::Params& params, Consensus::LLMQType llmqType);
 
-bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev, std::optional<bool> optDIP0024IsActive, std::optional<bool> optHaveDIP0024Quorums);
+bool IsQuorumTypeEnabledInternal(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexPrev);
 
 /** Whether a DKG cycle based at this height forms, as far as the tip can tell. A
  *  base whose predecessor is mined asks the ordinary gate with that predecessor. For
- *  a later base the formation end and the DIP0024 conditions are pure height checks,
- *  read at the base; the tip stands in for the rest, so a type whose formation opens
+ *  a later base the formation end is a pure height check, read at the base; the tip
+ *  stands in for the rest, so a type whose formation opens
  *  on a height gate first counts once the tip reaches that gate. */
 [[nodiscard]] bool IsQuorumCycleEnabled(Consensus::LLMQType llmqType, gsl::not_null<const CBlockIndex*> pindexTip, int cycle_base_height);
 

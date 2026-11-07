@@ -1211,7 +1211,6 @@ class DashTestFramework(BitcoinTestFramework):
         # LLMQ default test params (no need to pass -llmqtestparams)
         self.llmq_size = 3
         self.llmq_threshold = 2
-        self.llmq_size_dip0024 = 4
 
         # This is nRequestTimeout in dash-q-recovery thread
         self.quorum_data_thread_request_timeout_seconds = 10
@@ -1613,12 +1612,12 @@ class DashTestFramework(BitcoinTestFramework):
         request_id = hash256(request_id_buf)[::-1].hex()
         message_hash = tx.hash
 
-        llmq_type = 103
+        llmq_type = 104  # llmq_test_instantsend
 
         rec_sig = self.get_recovered_sig(request_id, message_hash, llmq_type=llmq_type)
 
-        block_count = self.mninfo[0].node.getblockcount()
-        cycle_hash = int(self.mninfo[0].node.getblockhash(block_count - (block_count % 24)), 16)
+        # No InstantSend profile rotates: the cycle hash is the signing quorum's own base block.
+        cycle_hash = int(rec_sig['quorumHash'], 16)
         isdlock = msg_isdlock(1, inputs, tx.sha256, cycle_hash, bytes.fromhex(rec_sig['sig']))
 
         return isdlock
@@ -1915,129 +1914,9 @@ class DashTestFramework(BitcoinTestFramework):
 
         return new_quorum
 
-    def mine_cycle_quorum(self, is_first=True):
-        spork21_active = self.nodes[0].spork('show')['SPORK_21_QUORUM_ALL_CONNECTED'] <= 1
-        spork23_active = self.nodes[0].spork('show')['SPORK_23_QUORUM_POSE'] <= 1
-
-        llmq_type_name="llmq_test_dip0024"
-        llmq_type=103
-        expected_connections = (self.llmq_size_dip0024 - 1) if spork21_active else 2
-        expected_members = self.llmq_size_dip0024
-        expected_contributions = self.llmq_size_dip0024
-        expected_commitments = self.llmq_size_dip0024
-        mninfos_online = self.mninfo.copy()
-        expected_complaints=0
-        expected_justifications=0
-
-        self.log.info(f"Mining quorum: expected_members={expected_members}, expected_connections={expected_connections}, expected_contributions={expected_contributions}, expected_commitments={expected_commitments}, no complains and justfications expected")
-
-        nodes = [self.nodes[0]] + [mn.node for mn in mninfos_online]
-
-        cycle_length = 24
-        cur_block = self.nodes[0].getblockcount()
-
-        skip_count = cycle_length - (cur_block % cycle_length)
-        # move forward to next 3 DKG rounds for the first quorum
-        extra_blocks = 24 * 3 if is_first else 0
-        self.move_blocks(nodes, extra_blocks + skip_count)
-        self.log.info('Moved from block %d to %d' % (cur_block, self.nodes[0].getblockcount()))
-
-        q_0 = self.nodes[0].getbestblockhash()
-        self.log.info("Expected quorum_0 at:" + str(self.nodes[0].getblockcount()))
-        self.log.info("Expected quorum_0 hash:" + str(q_0))
-        self.log.info("quorumIndex 0: Waiting for phase 1 (init)")
-        self.wait_for_quorum_phase(q_0, 1, expected_members, None, 0, mninfos_online, llmq_type_name)
-        self.log.info("quorumIndex 0: Waiting for quorum connections (init)")
-        self.wait_for_quorum_connections(q_0, expected_connections, mninfos_online, llmq_type_name, wait_proc=lambda: self.bump_mocktime(1))
-        if spork23_active:
-            self.wait_for_masternode_probes(q_0, mninfos_online, wait_proc=lambda: self.bump_mocktime(1), llmq_type_name=llmq_type_name)
-
-        self.move_blocks(nodes, 1)
-
-        q_1 = self.nodes[0].getbestblockhash()
-        self.log.info("Expected quorum_1 at:" + str(self.nodes[0].getblockcount()))
-        self.log.info("Expected quorum_1 hash:" + str(q_1))
-        self.log.info("quorumIndex 1: Waiting for phase 1 (init)")
-        self.wait_for_quorum_phase(q_1, 1, expected_members, None, 0, mninfos_online, llmq_type_name)
-        self.log.info("quorumIndex 1: Waiting for quorum connections (init)")
-        self.wait_for_quorum_connections(q_1, expected_connections, mninfos_online, llmq_type_name, wait_proc=lambda: self.bump_mocktime(1))
-        if spork23_active:
-            self.wait_for_masternode_probes(q_1, mninfos_online, wait_proc=lambda: self.bump_mocktime(1), llmq_type_name=llmq_type_name)
-
-        self.move_blocks(nodes, 1)
-
-        self.log.info("quorumIndex 0: Waiting for phase 2 (contribute)")
-        self.wait_for_quorum_phase(q_0, 2, expected_members, "receivedContributions", expected_contributions, mninfos_online, llmq_type_name)
-
-        self.move_blocks(nodes, 1)
-
-        self.log.info("quorumIndex 1: Waiting for phase 2 (contribute)")
-        self.wait_for_quorum_phase(q_1, 2, expected_members, "receivedContributions", expected_contributions, mninfos_online, llmq_type_name)
-
-        self.move_blocks(nodes, 1)
-
-        self.log.info("quorumIndex 0: Waiting for phase 3 (complain)")
-        self.wait_for_quorum_phase(q_0, 3, expected_members, "receivedComplaints", expected_complaints, mninfos_online, llmq_type_name)
-
-        self.move_blocks(nodes, 1)
-
-        self.log.info("quorumIndex 1: Waiting for phase 3 (complain)")
-        self.wait_for_quorum_phase(q_1, 3, expected_members, "receivedComplaints", expected_complaints, mninfos_online, llmq_type_name)
-
-        self.move_blocks(nodes, 1)
-
-        self.log.info("quorumIndex 0: Waiting for phase 4 (justify)")
-        self.wait_for_quorum_phase(q_0, 4, expected_members, "receivedJustifications", expected_justifications, mninfos_online, llmq_type_name)
-
-        self.move_blocks(nodes, 1)
-
-        self.log.info("quorumIndex 1: Waiting for phase 4 (justify)")
-        self.wait_for_quorum_phase(q_1, 4, expected_members, "receivedJustifications", expected_justifications, mninfos_online, llmq_type_name)
-
-        self.move_blocks(nodes, 1)
-
-        self.log.info("quorumIndex 0: Waiting for phase 5 (commit)")
-        self.wait_for_quorum_phase(q_0, 5, expected_members, "receivedPrematureCommitments", expected_commitments, mninfos_online, llmq_type_name)
-
-        self.move_blocks(nodes, 1)
-
-        self.log.info("quorumIndex 1: Waiting for phase 5 (commit)")
-        self.wait_for_quorum_phase(q_1, 5, expected_members, "receivedPrematureCommitments", expected_commitments, mninfos_online, llmq_type_name)
-
-        self.move_blocks(nodes, 1)
-
-        self.log.info("quorumIndex 0: Waiting for phase 6 (finalization)")
-        self.wait_for_quorum_phase(q_0, 6, expected_members, None, 0, mninfos_online, llmq_type_name)
-
-        self.move_blocks(nodes, 1)
-
-        self.log.info("quorumIndex 1: Waiting for phase 6 (finalization)")
-        self.wait_for_quorum_phase(q_1, 6, expected_members, None, 0, mninfos_online, llmq_type_name)
-        self.log.info("Mining final commitments")
-        self.bump_mocktime(1)
-        self.nodes[0].getblocktemplate() # this calls CreateNewBlock
-        self.generate(self.nodes[0], 1, sync_fun=lambda: self.sync_blocks(nodes))
-
-        self.log.info("Waiting for quorum(s) to appear in the list")
-        self.wait_for_quorums_list(q_0, q_1, nodes, llmq_type_name)
-
-        quorum_info_0 = self.nodes[0].quorum("info", llmq_type, q_0)
-        quorum_info_1 = self.nodes[0].quorum("info", llmq_type, q_1)
-        # Mine 8 (SIGN_HEIGHT_OFFSET) more blocks to make sure that the new quorum gets eligible for signing sessions
-        self.generate(self.nodes[0], 8, sync_fun=lambda: self.sync_blocks(nodes))
-
-        self.log.info("New quorum: height=%d, quorumHash=%s, quorumIndex=%d, minedBlock=%s" % (quorum_info_0["height"], q_0, quorum_info_0["quorumIndex"], quorum_info_0["minedBlock"]))
-        self.log.info("New quorum: height=%d, quorumHash=%s, quorumIndex=%d, minedBlock=%s" % (quorum_info_1["height"], q_1, quorum_info_1["quorumIndex"], quorum_info_1["minedBlock"]))
-
-        self.log.info("quorum_info_0:"+str(quorum_info_0))
-        self.log.info("quorum_info_1:"+str(quorum_info_1))
-
-        best_block_hash = self.nodes[0].getbestblockhash()
-        block_height = self.nodes[0].getblockcount()
-        quorum_rotation_info = self.nodes[0].quorum("rotationinfo", best_block_hash)
-        self.log.info("h("+str(block_height)+"):"+str(quorum_rotation_info))
-
-        return (quorum_info_0, quorum_info_1)
+    def mine_instantsend_quorum(self):
+        """Mine a quorum of regtest's InstantSend profile, llmq_test_instantsend (it does not rotate)."""
+        return self.mine_quorum(llmq_type_name="llmq_test_instantsend", llmq_type=104)
 
     def wait_for_recovered_sig(self, rec_sig_id, rec_sig_msg_hash, llmq_type=100, timeout=10):
         def check_recovered_sig():

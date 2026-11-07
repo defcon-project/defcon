@@ -139,7 +139,6 @@ Consensus::LLMQParams WireTestParams()
     return Consensus::LLMQParams{
         .type = Consensus::LLMQType::LLMQ_TEST,
         .name = "wire_test",
-        .useRotation = false,
         .size = 5,
         .minSize = 3,
         .threshold = 2,

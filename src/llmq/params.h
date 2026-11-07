@@ -37,13 +37,11 @@ enum class LLMQType : uint8_t {
     // for testing activation of new quorums only
     LLMQ_TEST_V17 = 102, // 3 members, 2 (66%) threshold, one per hour. Params might differ when -llmqtestparams is used
 
-    // for testing only
-    LLMQ_TEST_DIP0024 = 103,     // 4 members, 3 (75%) threshold, one per hour.
+    // for testing only (103 was Dash's rotating llmq_test_dip0024; unassigned)
     LLMQ_TEST_INSTANTSEND = 104, // 3 members, 2 (66%) threshold, one per hour. Params might differ when -llmqtestinstantsendparams is used
     LLMQ_TEST_PLATFORM = 106,    // 3 members, 2 (66%) threshold, one per hour.
 
-    // for devnets only. rotated version (v2) for devnets
-    LLMQ_DEVNET_DIP0024 = 105 // 8 members, 4 (50%) threshold, one per hour. Params might differ when -llmqdevnetparams is used
+    // 105 was Dash's rotating llmq_devnet_dip0024; unassigned
 };
 
 // Configures a LLMQ and its DKG
@@ -53,9 +51,6 @@ struct LLMQParams {
 
     // not consensus critical, only used in logging, RPC and UI
     std::string_view name;
-
-    // Whether this is a DIP0024 quorum or not
-    bool useRotation;
 
     // the size of the quorum, e.g. 50 or 400
     int size;
@@ -112,8 +107,7 @@ struct LLMQParams {
     int signingActiveQuorumCount;
 
     // Used for intra-quorum communication. This is the number of quorums for which we should keep old connections.
-    // For non-rotated quorums it should be at least one more than the active quorums set.
-    // For rotated quorums it should be equal to 2 x active quorums set.
+    // It should be at least one more than the active quorums set.
     int keepOldConnections;
 
     // The number of quorums for which we should keep keys. Usually it's equal to signingActiveQuorumCount * 2.
@@ -128,7 +122,7 @@ struct LLMQParams {
 public:
     [[nodiscard]] constexpr int max_cycles(int quorums_count) const
     {
-        return useRotation ? quorums_count / signingActiveQuorumCount : quorums_count;
+        return quorums_count;
     }
 
     // For how many blocks recent DKG info should be kept
@@ -141,7 +135,7 @@ static_assert(std::is_trivially_copyable_v<Consensus::LLMQParams>, "LLMQParams i
 static_assert(std::is_trivially_assignable_v<Consensus::LLMQParams, Consensus::LLMQParams>, "LLMQParams is not trivially assignable");
 
 
-static constexpr std::array<LLMQParams, 15> available_llmqs = {
+static constexpr std::array<LLMQParams, 13> available_llmqs = {
 
     /**
      * llmq_test
@@ -151,7 +145,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_TEST,
         .name = "llmq_test",
-        .useRotation = false,
         .size = 3,
         .minSize = 2,
         .threshold = 2,
@@ -177,7 +170,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_TEST_INSTANTSEND,
         .name = "llmq_test_instantsend",
-        .useRotation = false,
         .size = 3,
         .minSize = 2,
         .threshold = 2,
@@ -203,7 +195,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_TEST_V17,
         .name = "llmq_test_v17",
-        .useRotation = false,
         .size = 3,
         .minSize = 2,
         .threshold = 2,
@@ -222,32 +213,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     },
 
     /**
-     * llmq_test_dip0024
-     * This quorum is only used for testing
-     *
-     */
-    LLMQParams{
-        .type = LLMQType::LLMQ_TEST_DIP0024,
-        .name = "llmq_test_dip0024",
-        .useRotation = true,
-        .size = 4,
-        .minSize = 4,
-        .threshold = 3,
-
-        .dkgInterval = 24, // DKG cycle
-        .dkgPhaseBlocks = 2,
-        .dkgMiningWindowStart = 12, // signingActiveQuorumCount + dkgPhaseBlocks * 5 = after finalization
-        .dkgMiningWindowEnd = 20,
-        .dkgBadVotesThreshold = 2,
-
-        .signingActiveQuorumCount = 2, // just a few ones to allow easier testing
-
-        .keepOldConnections = 4,
-        .keepOldKeys = 4,
-        .recoveryMembers = 3,
-    },
-
-    /**
      * llmq_test_platform
      * This quorum is only used for testing
      *
@@ -255,7 +220,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_TEST_PLATFORM,
         .name = "llmq_test_platform",
-        .useRotation = false,
         .size = 3,
         .minSize = 2,
         .threshold = 2,
@@ -281,7 +245,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_DEVNET,
         .name = "llmq_devnet",
-        .useRotation = false,
         .size = 12,
         .minSize = 7,
         .threshold = 6,
@@ -300,32 +263,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     },
 
     /**
-     * llmq_devnet_dip0024
-     * This quorum is only used for testing on devnets
-     *
-     */
-    LLMQParams{
-        .type = LLMQType::LLMQ_DEVNET_DIP0024,
-        .name = "llmq_devnet_dip0024",
-        .useRotation = true,
-        .size = 8,
-        .minSize = 6,
-        .threshold = 4,
-
-        .dkgInterval = 48, // DKG cycle
-        .dkgPhaseBlocks = 2,
-        .dkgMiningWindowStart = 12, // signingActiveQuorumCount + dkgPhaseBlocks * 5 = after finalization
-        .dkgMiningWindowEnd = 20,
-        .dkgBadVotesThreshold = 7,
-
-        .signingActiveQuorumCount = 2, // just a few ones to allow easier testing
-
-        .keepOldConnections = 4,
-        .keepOldKeys = 4,
-        .recoveryMembers = 4,
-    },
-
-    /**
      * llmq_devnet_platform
      * This quorum is only used for testing on devnets
      *
@@ -333,7 +270,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_DEVNET_PLATFORM,
         .name = "llmq_devnet_platform",
-        .useRotation = false,
         .size = 12,
         .minSize = 9,
         .threshold = 8,
@@ -360,7 +296,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_50_60,
         .name = "llmq_50_60",
-        .useRotation = false,
         .size = 50,
         .minSize = 3,
         .threshold = 3,
@@ -386,7 +321,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_60_75,
         .name = "llmq_60_75",
-        .useRotation = false,
         .size = 60,
         .minSize = 3,
         .threshold = 3,
@@ -412,7 +346,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_400_60,
         .name = "llmq_400_60",
-        .useRotation = false,
         .size = 400,
         .minSize = 4,
         .threshold = 3,
@@ -444,7 +377,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_400_85,
         .name = "llmq_400_85",
-        .useRotation = false,
         .size = 400,
         .minSize = 350,
         .threshold = 340,
@@ -472,7 +404,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_100_67,
         .name = "llmq_100_67",
-        .useRotation = false,
         .size = 100,
         .minSize = 80,
         .threshold = 67,
@@ -500,7 +431,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_25_67,
         .name = "llmq_25_67",
-        .useRotation = false,
         .size = 25,
         .minSize = 22,
         .threshold = 17,
@@ -532,7 +462,6 @@ static constexpr std::array<LLMQParams, 15> available_llmqs = {
     LLMQParams{
         .type = LLMQType::LLMQ_DEFCON,
         .name = "llmq_defcon",
-        .useRotation = false,
         .size = 60,
         .minSize = 44,
         .threshold = 41,

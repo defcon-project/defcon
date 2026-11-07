@@ -292,8 +292,6 @@ public:
         consensus.DIP0003EnforcementHeight = 1100;
         consensus.DIP0003EnforcementHash = uint256();
         consensus.DIP0008Height = 1200;
-        consensus.DIP0024Height = std::numeric_limits<int>::max();
-        consensus.DIP0024QuorumsHeight = std::numeric_limits<int>::max();
         consensus.V19Height = std::numeric_limits<int>::max();
         consensus.V20Height = std::numeric_limits<int>::max();
         consensus.MN_RRHeight = std::numeric_limits<int>::max();
@@ -516,8 +514,6 @@ public:
         consensus.DIP0003EnforcementHeight = 1100;
         consensus.DIP0003EnforcementHash = uint256();
         consensus.DIP0008Height = 1200;
-        consensus.DIP0024Height = std::numeric_limits<int>::max();
-        consensus.DIP0024QuorumsHeight = std::numeric_limits<int>::max();
         consensus.V19Height = std::numeric_limits<int>::max();
         consensus.V20Height = std::numeric_limits<int>::max();
         consensus.MN_RRHeight = std::numeric_limits<int>::max();
@@ -726,8 +722,6 @@ public:
         consensus.DIP0003EnforcementHeight = 1100;
         consensus.DIP0003EnforcementHash = uint256();
         consensus.DIP0008Height = 1200;
-        consensus.DIP0024Height = std::numeric_limits<int>::max();
-        consensus.DIP0024QuorumsHeight = std::numeric_limits<int>::max();
         consensus.V19Height = std::numeric_limits<int>::max();
         consensus.V20Height = std::numeric_limits<int>::max();
         consensus.MN_RRHeight = std::numeric_limits<int>::max();
@@ -1013,7 +1007,7 @@ public:
     void UpdateDevnetLLMQChainLocksFromArgs(const ArgsManager& args);
 
     /**
-     * Allows modifying the LLMQ type for InstantSend (DIP0024).
+     * Allows modifying the LLMQ type for InstantSend (the role keeps its old DIP0024 name).
      */
     void UpdateDevnetLLMQDIP0024InstantSend(Consensus::LLMQType llmqType)
     {
@@ -1105,8 +1099,6 @@ public:
         consensus.DIP0003EnforcementHeight = 500;
         consensus.DIP0003EnforcementHash = uint256();
         consensus.DIP0008Height = 1; // Always active unless overridden
-        consensus.DIP0024Height = 1; // Always have dip0024 quorums unless overridden
-        consensus.DIP0024QuorumsHeight = 1; // Always have dip0024 quorums unless overridden
         consensus.V19Height = 1; // Always active unless overriden
         consensus.V20Height = 900;
         consensus.MN_RRHeight = 900;
@@ -1250,10 +1242,11 @@ public:
         AddLLMQ(Consensus::LLMQType::LLMQ_TEST);
         AddLLMQ(Consensus::LLMQType::LLMQ_TEST_INSTANTSEND);
         AddLLMQ(Consensus::LLMQType::LLMQ_TEST_V17);
-        AddLLMQ(Consensus::LLMQType::LLMQ_TEST_DIP0024);
         AddLLMQ(Consensus::LLMQType::LLMQ_TEST_PLATFORM);
         consensus.llmqTypeChainLocks = Consensus::LLMQType::LLMQ_TEST;
-        consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_TEST_DIP0024;
+        // InstantSend on regtest is signed by a quorum that does not rotate, as on every network of
+        // this chain (DIP0024 rotation, which no public network activated, is gone).
+        consensus.llmqTypeDIP0024InstantSend = Consensus::LLMQType::LLMQ_TEST_INSTANTSEND;
         consensus.llmqTypePlatform = Consensus::LLMQType::LLMQ_TEST_PLATFORM;
         consensus.llmqTypeMnhf = Consensus::LLMQType::LLMQ_TEST;
 
@@ -1341,7 +1334,7 @@ public:
     }
 
     /**
-     * Allows modifying the LLMQ type for InstantSend (DIP0024).
+     * Allows modifying the LLMQ type for InstantSend (the role keeps its old DIP0024 name).
      */
     void UpdateLLMQDIP0024InstantSend(Consensus::LLMQType llmqType)
     {
@@ -1383,8 +1376,6 @@ static void MaybeUpdateHeights(const ArgsManager& args, Consensus::Params& conse
             consensus.DIP0001Height = int{height};
         } else if (name == "dip0008") {
             consensus.DIP0008Height = int{height};
-        } else if (name == "dip0024") {
-            consensus.DIP0024QuorumsHeight = int{height};
         } else if (name == "v19") {
             consensus.V19Height = int{height};
         } else if (name == "v20") {
@@ -1688,9 +1679,6 @@ void CDevNetParams::UpdateDevnetLLMQChainLocksFromArgs(const ArgsManager& args)
     Consensus::LLMQType llmqType = Consensus::LLMQType::LLMQ_NONE;
     for (const auto& params : consensus.llmqs) {
         if (params.name == strLLMQType) {
-            if (params.useRotation) {
-                throw std::runtime_error("LLMQ type specified for -llmqchainlocks must NOT use rotation");
-            }
             llmqType = params.type;
         }
     }
@@ -1714,9 +1702,8 @@ void CDevNetParams::UpdateDevnetLLMQInstantSendFromArgs(const ArgsManager& args)
     std::string strLLMQType = args.GetArg(option, std::string(llmq_params_opt->name));
 
     Consensus::LLMQType llmqType = Consensus::LLMQType::LLMQ_NONE;
-    // Any registered profile will do: deterministic locks work on rotating and
-    // non-rotating quorums alike, and this chain's InstantSend profiles do not
-    // rotate (DIP0024 never activated here).
+    // Any registered profile will do: none of them rotates (DIP0024 rotation is
+    // gone from this chain).
     for (const auto& params : consensus.llmqs) {
         if (params.name == strLLMQType) {
             llmqType = params.type;
@@ -1967,10 +1954,6 @@ void CheckLLMQConfiguration(const CChainParams& params)
             throw std::runtime_error(strprintf("%s: the formation end height of %s on %s must be positive, got %d",
                                                __func__, profile->name, network, end));
         }
-        if (profile->useRotation) {
-            throw std::runtime_error(strprintf("%s: %s rotates; retiring a rotating profile is not supported (%s)",
-                                               __func__, profile->name, network));
-        }
         // On the grid, and with the mining window inside the cycle, the last
         // cycle below the end mines its commitment before the end: no commitment
         // is ever required on one side of the height and refused on the other.
@@ -2203,8 +2186,6 @@ void CheckNeverActivatedDashRules(const Consensus::Params& consensus, const std:
     if (network == CBaseChainParams::REGTEST) return;
     constexpr int UNSET = std::numeric_limits<int>::max();
     const struct { const char* name; int height; } rules[] = {
-        {"DIP0024Height", consensus.DIP0024Height},
-        {"DIP0024QuorumsHeight", consensus.DIP0024QuorumsHeight},
         {"V19Height", consensus.V19Height},
         {"V20Height", consensus.V20Height},
         {"MN_RRHeight", consensus.MN_RRHeight},
@@ -2269,7 +2250,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-highsubsidyfactor=<n>", "The factor to multiply the normal block subsidy by while in the highsubsidyblocks window of a chain (default: 1, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqchainlocks=<quorum name>", "Override the LLMQ type that signs ChainLocks below the Q60 switchover height; at and above it llmq_defcon signs regardless. Allows ChainLocks with smaller LLMQs. (default: llmq_400_60, devnet-only)", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqdevnetparams=<size>:<threshold>", "Override the default LLMQ size for the LLMQ_DEVNET quorum (devnet-only). Rejected when LLMQ_DEVNET is not registered on the network, which the mainnet-parity devnet profile set does not do", ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
-    // DIP0024 (quorum rotation) never activates on this chain, so the option
+    // DIP0024 (quorum rotation) never activated on this chain and is gone, so the option
     // that used to carry its name now says what it does: pick the InstantSend
     // profile used below the Q60 switchover height. The old name is still
     // accepted, hidden.
@@ -2281,7 +2262,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     // but a help page should not offer knobs that turn nothing.
     argsman.AddArg("-llmqplatform=<quorum name>", "Override the LLMQ type recorded for the (unused) platform role. (default: llmq_100_67, devnet-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqmnhf=<quorum name>", "Override the LLMQ type recorded for EHF signalling, which no deployment on this chain uses. (default: llmq_400_85, devnet-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-llmqtestinstantsenddip0024=<quorum name>", "Override the LLMQ type that signs InstantSend locks on regtest, e.g. llmq_test_instantsend for the non-rotating path this chain runs. (default: llmq_test_dip0024, regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-llmqtestinstantsenddip0024=<quorum name>", "Override the LLMQ type that signs InstantSend locks on regtest. (default: llmq_test_instantsend, regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqformationendheight=<quorum name>:<height>", "Stop the named quorum profile forming new quorums from this height; may be given once per profile (regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqtestinstantsendparams=<size>:<threshold>", "Override the default LLMQ size for the LLMQ_TEST_INSTANTSEND quorums (default: 3:2, regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-llmqtestparams=<size>:<threshold>", "Override the default LLMQ size for the LLMQ_TEST quorum (default: 3:2, regtest-only)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
@@ -2292,7 +2273,7 @@ void SetupChainParamsOptions(ArgsManager& argsman)
     argsman.AddArg("-dslenforcementheight=<n>", "Height from which a DSL verdict suspends rewards and bans, instead of only being recorded. Must not be below -dslactivationheight; the gap between them is the shadow window (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-dslcommitmentv2height=<n>", "Height from which DSL service commitments must carry the observed bitfield (format version 2); below it version 1 stays required, so a devnet that already carries version-1 commitments keeps its history valid. Every node must run a binary that knows the format before this height (default: 0, i.e. version 2 from the first commitment; devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-v231activationheight=<n>", "Height from which the v23.1 bundle applies: the masternode payment falls to 5000, llmq_400_60 and llmq_400_85 stop forming, and no superblock path skips the coinstake ceiling. Must be a multiple of 576, above the Q60 ChainLocks switchover and not below the proof-of-stake coinbase bound. Every node must run with the same value before this height, and a node without it forks off there (default: unreachable, devnet-only)", ArgsManager::ALLOW_INT, OptionsCategory::CHAINPARAMS);
-    argsman.AddArg("-testactivationheight=name@height.", strprintf("Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, dip0001, dip0008, dip0024, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, superblocksretired, chainlocksv2, instantsendv2, v23, v231, dsl, dslenforcement, dslcommitmentv2). v23 schedules the whole mainnet bundle at one height, exactly as the release does, including the Sentinel layer's start at v23+%d; dslenforcement stays unset, as the release leaves it. v231 sets only the height the masternode payment and the superblock ceiling read. (regtest-only)", V23_DSL_ACTIVATION_OFFSET), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
+    argsman.AddArg("-testactivationheight=name@height.", strprintf("Set the activation height of 'name' (bip147, bip34, dersig, cltv, csv, dip0001, dip0008, v19, v20, mn_rr, posv2, poscoinbase, posmodifier, postime, posfeeburn, compute, superblocksretired, chainlocksv2, instantsendv2, v23, v231, dsl, dslenforcement, dslcommitmentv2). v23 schedules the whole mainnet bundle at one height, exactly as the release does, including the Sentinel layer's start at v23+%d; dslenforcement stays unset, as the release leaves it. v231 sets only the height the masternode payment and the superblock ceiling read. (regtest-only)", V23_DSL_ACTIVATION_OFFSET), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);
     argsman.AddArg("-vbparams=<deployment>:<start>:<end>(:min_activation_height(:<window>:<threshold/thresholdstart>(:<thresholdmin>:<falloffcoeff>:<mnactivation>)))",
                  "Use given start/end times and min_activation_height for specified version bits deployment (regtest-only). "
                  "Specifying window, threshold/thresholdstart, thresholdmin, falloffcoeff and mnactivation is optional.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::CHAINPARAMS);

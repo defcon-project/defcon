@@ -935,10 +935,7 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
 
         // Which quorum signed this lock.
         //
-        // With rotation, cycleHash names the CYCLE the signer selected in and
-        // the request id decides which of that cycle's quorums signed, so the
-        // selection is replayed at the cycle's signing height. Without rotation
-        // -- every InstantSend profile this chain runs -- cycleHash IS the
+        // No InstantSend profile of this chain rotates, so cycleHash IS the
         // signing quorum's own base block, and the signer is named outright.
         //
         // Replaying the selection in the non-rotated case is what this fork did
@@ -974,10 +971,8 @@ std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPend
         // recovered-signature path: GetQuorum can rebuild a historical quorum on
         // a cache miss, and a lock naming an old cycle must not force that work.
         CQuorumCPtr quorum;
-        if (!IsQuorumRotationEnabled(llmq_params, blockIndex)) {
-            if (IsQuorumActive(llmq_params.type, qman, islock->cycleHash)) {
-                quorum = qman.GetQuorum(llmq_params.type, islock->cycleHash);
-            }
+        if (IsQuorumActive(llmq_params.type, qman, islock->cycleHash)) {
+            quorum = qman.GetQuorum(llmq_params.type, islock->cycleHash);
         }
         if (quorum == nullptr) {
             int nSignHeight{-1};

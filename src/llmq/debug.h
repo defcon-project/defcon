@@ -20,7 +20,6 @@ class CScheduler;
 
 namespace llmq
 {
-class CQuorumSnapshotManager;
 
 enum class QuorumPhase;
 
@@ -77,7 +76,7 @@ public:
 public:
     CDKGDebugSessionStatus() : statusBitset(0) {}
 
-    UniValue ToJson(CDeterministicMNManager& dmnman, CQuorumSnapshotManager& qsnapman,
+    UniValue ToJson(CDeterministicMNManager& dmnman,
                     const ChainstateManager& chainman, int quorumIndex, int detailLevel) const;
 };
 
@@ -90,7 +89,7 @@ public:
     //std::map<Consensus::LLMQType, CDKGDebugSessionStatus> sessions;
 
 public:
-    UniValue ToJson(CDeterministicMNManager& dmnman, CQuorumSnapshotManager& qsnapman,
+    UniValue ToJson(CDeterministicMNManager& dmnman,
                     const ChainstateManager& chainman, int detailLevel) const;
 };
 

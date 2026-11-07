@@ -255,7 +255,6 @@ BITCOIN_CORE_H = \
   llmq/quorums.h \
   llmq/signing.h \
   llmq/signing_shares.h \
-  llmq/snapshot.h \
   llmq/utils.h \
   logging.h \
   logging/timer.h \
@@ -516,7 +515,6 @@ libbitcoin_server_a_SOURCES = \
   llmq/quorums.cpp \
   llmq/signing.cpp \
   llmq/signing_shares.cpp \
-  llmq/snapshot.cpp \
   llmq/utils.cpp \
   mapport.cpp \
   masternode/collateral.cpp \
