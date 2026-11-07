@@ -1,4 +1,13 @@
-FROM ubuntu:jammy
+# The base is pinned by digest: a new jammy release must not change the CI
+# environment, and invalidate every cache keyed on the image, on whichever push
+# happens to build next, untested by any pull request. This is the base the
+# published image was built from (the Build Image log of push run 42402804785
+# resolves ubuntu:jammy to it, 2026-11-07). To move to a newer jammy,
+# replace the digest in a pull request of its own (`docker buildx imagetools
+# inspect ubuntu:jammy` prints the current one). That pull request's own run
+# still uses the published image; the push run after its merge builds the new
+# one, and every later run uses it.
+FROM ubuntu:jammy@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11
 
 # Native linux64 CI. The full Dockerfile remains available for cross builds,
 # sanitizers and lint tooling that the linux64 gate does not use.
