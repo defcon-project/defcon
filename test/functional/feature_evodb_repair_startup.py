@@ -29,6 +29,14 @@ REPAIR_START = "Repairing masternode list diffs..."
 REPAIR_DONE = "Verified 1 snapshot pair(s)"
 # The verification-only pass the import thread runs when no repair was asked for.
 VERIFY_START = "Verifying masternode list diffs..."
+# The import thread's last word on the lists, written after it has loaded the
+# mempool; "Done loading" follows the end of RPC warmup on the main thread.
+ALREADY_REPAIRED = "Masternode list diffs are already repaired"
+CHECKED_AT_LOAD = "Masternode list diffs were checked by the repair at load"
+DONE_LOADING = "init message: Done loading"
+# Written by the network threads themselves once they run; CConnman::Start does
+# not wait for that.
+NET_THREADS = ("net thread start", "msghand thread start")
 
 
 class EvoDBRepairStartupTest(BitcoinTestFramework):
@@ -41,11 +49,17 @@ class EvoDBRepairStartupTest(BitcoinTestFramework):
             f.seek(offset)
             return f.read()
 
-    def restart_with(self, extra_args):
+    def restart_with(self, extra_args, last_lines):
         node = self.nodes[0]
         self.stop_node(0)
         offset = node.debug_log_path.stat().st_size
         self.start_node(0, extra_args=extra_args)
+        # start_node returns once RPC answers and the mempool is loaded. The
+        # import thread writes the repair state only after loading the mempool,
+        # "Done loading" follows the end of warmup, and the network threads write
+        # their start lines when they first run, so a snapshot taken right away
+        # could miss the lines this restart is read for; wait for them.
+        self.wait_until(lambda: all(line in self.log_since(node, offset) for line in last_lines))
         return self.log_since(node, offset)
 
     def run_test(self):
@@ -53,11 +67,10 @@ class EvoDBRepairStartupTest(BitcoinTestFramework):
         self.generate(node, CHAIN_HEIGHT)
 
         self.log.info("-evodbrepair runs and finishes before the import, the network and the end of warmup")
-        log = self.restart_with(["-evodbrepair"])
+        log = self.restart_with(["-evodbrepair"], (ALREADY_REPAIRED, DONE_LOADING) + NET_THREADS)
         done = log.find(REPAIR_DONE)
         assert done != -1, "the requested repair did not finish clean"
-        for later in ("init message: Verifying blocks", "loadblk thread start", "net thread start",
-                      "msghand thread start", "init message: Done loading"):
+        for later in ("init message: Verifying blocks", "loadblk thread start") + NET_THREADS + (DONE_LOADING,):
             position = log.find(later)
             assert position != -1, f"{later!r} is missing from the log"
             assert done < position, f"{later!r} came before the repair finished"
@@ -67,21 +80,21 @@ class EvoDBRepairStartupTest(BitcoinTestFramework):
         assert start != -1 and start < done, "the repair finished without starting as a repair"
         # Clean, it marked the history, so the import thread does not check it again.
         assert VERIFY_START not in log
-        assert "Masternode list diffs are already repaired" in log[done:]
+        assert ALREADY_REPAIRED in log[done:]
         assert_equal(node.getblockcount(), CHAIN_HEIGHT)
 
         self.log.info("A completed repair is remembered")
-        log = self.restart_with(["-evodbrepair"])
+        log = self.restart_with(["-evodbrepair"], (ALREADY_REPAIRED, DONE_LOADING))
         assert REPAIR_START not in log and VERIFY_START not in log
-        assert "Masternode list diffs are already repaired" in log
+        assert ALREADY_REPAIRED in log
 
         self.log.info("-forceevodbrepair asks again, still at load")
-        log = self.restart_with(["-evodbrepair", "-forceevodbrepair"])
+        log = self.restart_with(["-evodbrepair", "-forceevodbrepair"], (CHECKED_AT_LOAD, DONE_LOADING))
         done = log.find(REPAIR_DONE)
         assert log.find(REPAIR_START) != -1 and done != -1
         assert done < log.find("loadblk thread start")
         assert VERIFY_START not in log
-        assert "Masternode list diffs were checked by the repair at load" in log
+        assert CHECKED_AT_LOAD in log
         assert_equal(node.getblockcount(), CHAIN_HEIGHT)
 
 

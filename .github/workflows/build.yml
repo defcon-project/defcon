@@ -610,6 +610,8 @@ jobs:
             feature_dsl_sign_wait.py               # wait for late Sentinel reports, with a signing deadline
             feature_dsl_commitment_v2.py           # the Sentinel commitment's second bitfield: who the pool judged at all (#231)
             feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
+            feature_addressindex.py                # the address index end to end, and the same hash as P2PKH and as P2SH among other P2SH outputs (#328)
+            feature_addressindex_type_boundary.py  # the same pair on a sparse index, where the two records are neighbours on disk (#328)
             p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
             rpc_verifyislock.py                    # the lock-verifying RPCs
             rpc_bls.py                             # BLS key persistence and the empty staking registry, both wallet formats
@@ -620,8 +622,10 @@ jobs:
             feature_llmq_is_nonrotation.py         # an InstantSend lock on a quorum that does not rotate
             feature_llmq_is_nonrotated_verify.py   # the receiving side of the same: a non-masternode accepts a lock signed by a quorum older than one cycle (#238)
             feature_llmq_is_named_quorum_window.py # and one signed by the quorum that has just left the signing-active set, right after a new commitment
+            feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
             feature_superblock_retirement.py       # a test chain with the superblock spork on: getblocktemplate at the retirement height, and the regtest alias
             feature_v23_bundle_heights.py          # the v23 bundle's own regtest name on a running chain: three of its heights observed where the one number puts them
+            feature_v231_no_payee.py               # from the v23.1 height a staked block with no payable masternode carries no payout at all (#354)
             feature_llmq_q60_proto_floor.py        # the peer protocol floor from the formation lead, against the real predecessor version
             feature_evodb_reconcile.py             # an evodb that stopped short of the coins tip is rebuilt at startup, with its log line
             rpc_verifychainlock.py                 # the lock-verifying RPCs

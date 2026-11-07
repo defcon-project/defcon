@@ -28,6 +28,7 @@
 #include <node/coinstats.h>
 #include <node/interface_ui.h>
 #include <node/miner.h>
+#include <node/storage_error.h>
 #include <node/utxo_snapshot.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
@@ -5642,6 +5643,12 @@ bool LoadMempool(CTxMemPool& pool, CChainState& active_chainstate, FopenFn mocka
             if (pool.get(txid) != nullptr) pool.AddUnbroadcastTx(txid);
         }
 
+    } catch (const dbwrapper_error&) {
+        // Not the mempool file: a database a transaction's acceptance needed (the masternode list,
+        // for one) is missing or unreadable. "Continuing anyway" would run the node on it with the
+        // mempool marked as loaded; stop in order and name the way out.
+        HandleStorageError(std::current_exception(), "the mempool import");
+        return false;
     } catch (const std::exception& e) {
         LogPrintf("Failed to deserialize mempool data on disk: %s. Continuing anyway.\n", e.what());
         return false;

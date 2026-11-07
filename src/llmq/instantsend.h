@@ -18,6 +18,8 @@
 #include <gsl/pointers.h>
 
 #include <atomic>
+#include <chrono>
+#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -311,6 +313,13 @@ private:
         const Consensus::LLMQParams& llmq_params, PeerManager& peerman, int signOffset,
         const std::unordered_map<uint256, std::pair<NodeId, CInstantSendLockPtr>, StaticSaltedHasher>& pend, bool ban)
         EXCLUSIVE_LOCKS_REQUIRED(!cs_creating, !cs_inputReqests, !cs_nonLocked, !cs_pendingLocks, !cs_pendingRetry);
+    /** Run `work` on a batch taken from the queue; on a local history read error (CoinbaseChainlockReadError) put
+     *  what `pend` still holds back into the queue, then pass the error on. */
+    void RequeueOnHistoryReadError(
+        std::unordered_map<uint256, std::pair<NodeId, CInstantSendLockPtr>, StaticSaltedHasher>& pend,
+        const std::function<void()>& work) EXCLUSIVE_LOCKS_REQUIRED(!cs_pendingLocks);
+    //! The worker's pause after a local history read error, before it retries the batch.
+    static constexpr std::chrono::seconds HISTORY_READ_RETRY_DELAY{5};
     void ProcessInstantSendLock(NodeId from, PeerManager& peerman, const uint256& hash, const CInstantSendLockPtr& islock)
         EXCLUSIVE_LOCKS_REQUIRED(!cs_creating, !cs_inputReqests, !cs_nonLocked, !cs_pendingLocks, !cs_pendingRetry);
 

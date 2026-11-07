@@ -9,5 +9,6 @@ superblock path skips the coinstake ceiling.
 The height must be a multiple of 576, above the devnet's Q60 ChainLocks switchover and not
 below its proof-of-stake coinbase bound, so the lowest it can take is 8064. Every node must
 run with the same value before that height, because a node without it forks off there. The
-option has no effect on mainnet, testnet or regtest, where every v23.1 height stays unset
-until the release.
+option has no effect on mainnet, testnet or regtest. On mainnet and testnet every v23.1
+height stays unset until the release; a regtest node can schedule it for testing with
+`-testactivationheight=v231@<n>`.

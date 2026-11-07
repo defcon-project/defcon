@@ -4,6 +4,8 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test transaction signing using the signrawtransaction* RPCs."""
 
+import random
+
 from test_framework.key import ORDER
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -135,11 +137,42 @@ class SignRawTransactionsTest(BitcoinTestFramework):
         assert_equal(rawTxSigned['errors'][1]['txid'], inputs[2]['txid'])
         assert_equal(rawTxSigned['errors'][1]['vout'], inputs[2]['vout'])
 
+    def bls_pubkey_input_test(self):
+        """A pay-to-BLS-pubkey input is signed with the given BLS secret, and only with it.
+
+        The BLS key is handed over as a WIF like any other key; the output names it by its BLS
+        public key (basic scheme, as every pay-to-BLS-pubkey script and the node's own BLS signing
+        use), so the call must find the key under that id. With no key, or another key, the input
+        stays unsigned. The key pair comes from `bls fromsecret`, so no wallet is involved (the
+        wallet is encrypted by now)."""
+        self.log.info("Test signing a pay-to-BLS-pubkey input with the given key")
+        node = self.nodes[0]
+        # A 32-byte secret with a zero top byte is below both group orders: a valid BLS secret and a
+        # valid WIF key.
+        secrets = ['00' + f'{random.getrandbits(248):062x}' for _ in range(2)]
+        bls, other = (node.bls('fromsecret', secret) for secret in secrets)
+        assert_equal(bls['scheme'], 'basic')
+        assert_equal(len(bls['public']), 96)
+        inputs = [{'txid': '9b907ef1e3c26fc71fe4a4b3580bc75264112f95050014157059c736f0202e71', 'vout': 0}]
+        prevtxs = [dict(inputs[0], scriptPubKey='30' + bls['public'] + 'ac', amount=1)]
+        rawTx = node.createrawtransaction(inputs, {'ycwedq2f3sz2Yf9JqZsBCQPxp18WU3Hp4J': 0.1})
+        wif = bytes_to_wif(bytes.fromhex(bls['secret']))
+
+        signed = node.signrawtransactionwithkey(rawTx, [wif], prevtxs)
+        assert signed['complete'], signed
+        assert 'errors' not in signed
+
+        for keys in ([], [bytes_to_wif(bytes.fromhex(other['secret']))]):
+            unsigned = node.signrawtransactionwithkey(rawTx, keys, prevtxs)
+            assert not unsigned['complete']
+            assert_equal(node.decoderawtransaction(unsigned['hex'])['vin'][0]['scriptSig']['hex'], '')
+
     def run_test(self):
         self.successful_signing_test()
         self.invalid_private_key_test()
         self.script_verification_error_test()
         self.test_with_lock_outputs()
+        self.bls_pubkey_input_test()
 
 
 if __name__ == '__main__':

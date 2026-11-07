@@ -14,6 +14,7 @@ could put an output of its own into that coinbase. Every release network already
 retires superblocks earlier and schedules no platform share, so neither changes
 anything there; a regtest that schedules the height names both.
 
-Nothing changes before the height, which stays unset on every network until the
-release. The condition itself is rare: it needs every masternode on the network
-to be banned at once.
+Nothing changes before the height. It stays unset on mainnet and testnet until the
+release; a devnet can schedule it with `-v231activationheight=<n>`, and a regtest
+with `-testactivationheight=v231@<n>`. The condition itself is rare: it needs every
+masternode on the network to be banned at once.

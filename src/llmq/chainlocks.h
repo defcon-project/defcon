@@ -78,6 +78,10 @@ private:
     int32_t lastSignedHeight GUARDED_BY(cs) {-1};
     uint256 lastSignedRequestId GUARDED_BY(cs);
     uint256 lastSignedMsgHash GUARDED_BY(cs);
+    // The height of the last signing attempt that stopped at a local history read error before anything was voted
+    // or signed: the next scheduled run may try it again, -1 when there is none. lastSigned* stay set meanwhile, so
+    // a recovered sig for that attempt is still recognized.
+    int32_t retrySignHeight GUARDED_BY(cs) {-1};
 
     // We keep track of txids from recently received blocks so that we can check if all TXs got islocked
     struct BlockHasher

@@ -5,6 +5,7 @@
 #include <arith_uint256.h>
 #include <bls/bls.h>
 #include <chainparams.h>
+#include <evo/cbtx.h>
 #include <llmq/context.h>
 #include <llmq/instantsend.h>
 #include <llmq/signing.h>
@@ -93,6 +94,34 @@ struct InstantSendQueueTest {
         manager.ProcessInstantSendLock(NodeId{1}, peerman, SerializeHash(*lock), lock);
     }
 
+    static bool IsNonLocked(const CInstantSendManager& manager, const uint256& txid)
+    {
+        LOCK(manager.cs_nonLocked);
+        return manager.nonLockedTxs.count(txid) != 0;
+    }
+
+    static bool HasNoTx(const CInstantSendManager& manager, const uint256& hash)
+    {
+        LOCK(manager.cs_pendingLocks);
+        return manager.pendingNoTxInstantSendLocks.count(hash) != 0;
+    }
+
+    using Batch = std::unordered_map<uint256, std::pair<NodeId, CInstantSendLockPtr>, StaticSaltedHasher>;
+
+    //! Take the whole received queue as one batch, as the worker takes up to 32 locks.
+    static Batch Take(CInstantSendManager& manager)
+    {
+        LOCK(manager.cs_pendingLocks);
+        Batch pend;
+        pend.swap(manager.pendingInstantSendLocks);
+        return pend;
+    }
+
+    static void RunBatch(CInstantSendManager& manager, Batch& pend, const std::function<void()>& work)
+    {
+        manager.RequeueOnHistoryReadError(pend, work);
+    }
+
     //! Run locks from one source through the batch verification (the current active set, no penalty), as the worker does.
     //! `first`, if given, receives the hash of the lock the batch visits first.
     static std::unordered_set<uint256, StaticSaltedHasher> VerifyBatch(CInstantSendManager& manager, PeerManager& peerman,
@@ -120,12 +149,6 @@ struct InstantSendQueueTest {
     static bool WorkerStep(CInstantSendManager& manager, PeerManager& peerman)
     {
         return manager.ProcessPendingInstantSendLocks(peerman);
-    }
-
-    static bool HasNoTx(const CInstantSendManager& manager, const uint256& hash)
-    {
-        LOCK(manager.cs_pendingLocks);
-        return manager.pendingNoTxInstantSendLocks.count(hash) != 0;
     }
 
     //! Store a recovered sig for the lock's request id and txid. The signing manager stores only verified ones
@@ -168,6 +191,33 @@ BOOST_AUTO_TEST_CASE(verified_no_tx_queue_exact_and_over_limit)
     BOOST_CHECK_EQUAL(llmq::InstantSendQueueTest::Size(manager, true), 1024U);
 }
 
+// A lock the full no-tx queue drops is kept nowhere, so nothing may act on it as if the node held it.
+// The transaction here was mined without a lock: it is in the non-locked set but not in the mempool,
+// so its lock takes the no-tx path. Acting on the dropped lock removed it from that set (and relayed
+// the lock, dropped its inputs' recovered sigs and resolved block conflicts as if it were known).
+BOOST_AUTO_TEST_CASE(dropped_no_tx_lock_has_no_side_effects)
+{
+    auto& manager = *m_node.llmq_ctx->isman;
+    llmq::InstantSendQueueTest::Seed(manager, true, 1024);
+    CMutableTransaction mutable_tx;
+    mutable_tx.vin.emplace_back(COutPoint{uint256::ONE, 1});
+    mutable_tx.vout.emplace_back(1, CScript{});
+    const auto tx = MakeTransactionRef(mutable_tx);
+    llmq::InstantSendQueueTest::Retry(manager, tx);
+    BOOST_REQUIRE(llmq::InstantSendQueueTest::IsNonLocked(manager, tx->GetHash()));
+
+    auto lock = llmq::InstantSendQueueTest::MakeLock(2001);
+    lock->txid = tx->GetHash();
+    const auto hash = SerializeHash(*lock);
+    llmq::InstantSendQueueTest::Verified(manager, *m_node.peerman, lock);
+
+    BOOST_CHECK_EQUAL(llmq::InstantSendQueueTest::Size(manager, true), 1024U);
+    BOOST_CHECK(!llmq::InstantSendQueueTest::HasNoTx(manager, hash));
+    BOOST_CHECK(llmq::InstantSendQueueTest::IsNonLocked(manager, tx->GetHash()));
+    // Not known, so a later announcement can bring it again.
+    BOOST_CHECK(!manager.AlreadyHave(CInv(MSG_ISDLOCK, hash)));
+}
+
 BOOST_AUTO_TEST_CASE(verified_lock_moves_to_full_received_queue)
 {
     auto& manager = *m_node.llmq_ctx->isman;
@@ -181,20 +231,35 @@ BOOST_AUTO_TEST_CASE(verified_lock_moves_to_full_received_queue)
     llmq::InstantSendQueueTest::Verified(manager, *m_node.peerman, lock);
     BOOST_REQUIRE_EQUAL(llmq::InstantSendQueueTest::Size(manager, true), 1U);
     llmq::InstantSendQueueTest::Retry(manager, tx);
-    BOOST_CHECK_EQUAL(llmq::InstantSendQueueTest::Size(manager, false), 1024U);
+    // Queued past the limit: nothing is pushed out to make room (a pushed-out entry could be verified too).
+    BOOST_CHECK_EQUAL(llmq::InstantSendQueueTest::Size(manager, false), 1025U);
     BOOST_CHECK_EQUAL(llmq::InstantSendQueueTest::Size(manager, true), 0U);
     BOOST_CHECK(llmq::InstantSendQueueTest::HasPending(manager, SerializeHash(*lock)));
 }
 
-// A recovered signature has already been verified. Retain the node's own
-// lock even when peer-supplied pending verifications fill the queue.
-BOOST_AUTO_TEST_CASE(own_recovered_lock_displaces_pending_at_capacity)
+// A recovered signature has already been verified. Retain the node's own lock even when peer-supplied pending
+// verifications fill the queue, and let no later verified lock push it out: before, each one made room by dropping
+// an arbitrary entry, which could be the lock queued just before it, kept nowhere else.
+BOOST_AUTO_TEST_CASE(verified_locks_are_kept_at_capacity)
 {
     auto& manager = *m_node.llmq_ctx->isman;
     llmq::InstantSendQueueTest::Seed(manager, false, 1024);
-    const auto hash = llmq::InstantSendQueueTest::RecoverOwn(manager, llmq::InstantSendQueueTest::MakeLock(2001));
-    BOOST_CHECK_EQUAL(llmq::InstantSendQueueTest::Size(manager, false), 1024U);
-    BOOST_CHECK(llmq::InstantSendQueueTest::HasPending(manager, hash));
+    const auto own = llmq::InstantSendQueueTest::RecoverOwn(manager, llmq::InstantSendQueueTest::MakeLock(2001));
+    BOOST_CHECK_EQUAL(llmq::InstantSendQueueTest::Size(manager, false), 1025U);
+    BOOST_CHECK(llmq::InstantSendQueueTest::HasPending(manager, own));
+
+    // A second verified lock: one leaving the no-tx queue when its transaction arrives.
+    CMutableTransaction mutable_tx;
+    mutable_tx.vin.emplace_back(COutPoint{uint256::ONE, 2});
+    mutable_tx.vout.emplace_back(1, CScript{});
+    const auto tx = MakeTransactionRef(mutable_tx);
+    auto moved = llmq::InstantSendQueueTest::MakeLock(2002);
+    moved->txid = tx->GetHash();
+    llmq::InstantSendQueueTest::Verified(manager, *m_node.peerman, moved);
+    llmq::InstantSendQueueTest::Retry(manager, tx);
+    BOOST_CHECK_EQUAL(llmq::InstantSendQueueTest::Size(manager, false), 1026U);
+    BOOST_CHECK(llmq::InstantSendQueueTest::HasPending(manager, own));
+    BOOST_CHECK(llmq::InstantSendQueueTest::HasPending(manager, SerializeHash(*moved)));
 }
 
 // Re-encountering a lock already in both maps must not evict a different
@@ -323,6 +388,41 @@ BOOST_AUTO_TEST_CASE(worker_step_processes_only_checked_locks)
     BOOST_CHECK(!InstantSendQueueTest::HasNoTx(manager, SerializeHash(*unreadable)));
     BOOST_CHECK(!InstantSendQueueTest::HasNoTx(manager, SerializeHash(*unknown_cycle)));
     BOOST_CHECK_EQUAL(InstantSendQueueTest::Size(manager, true), 1U);
+}
+
+// A local history read error while a batch is verified must not lose the batch: what is left of it goes back to
+// the queue for the next run, and the error still reaches the worker.
+BOOST_AUTO_TEST_CASE(batch_returns_to_queue_on_history_read_error)
+{
+    using llmq::InstantSendQueueTest;
+    auto& manager = *m_node.llmq_ctx->isman;
+    InstantSendQueueTest::Seed(manager, false, 3);
+
+    // The error before anything is handled: the whole batch goes back.
+    auto pend = InstantSendQueueTest::Take(manager);
+    BOOST_REQUIRE_EQUAL(pend.size(), 3U);
+    BOOST_REQUIRE_EQUAL(InstantSendQueueTest::Size(manager, false), 0U);
+    BOOST_CHECK_THROW(InstantSendQueueTest::RunBatch(manager, pend, [] { throw CoinbaseChainlockReadError("test"); }),
+                      CoinbaseChainlockReadError);
+    BOOST_CHECK_EQUAL(InstantSendQueueTest::Size(manager, false), 3U);
+
+    // The error on the older quorum set, after the batch shrank to the locks left for it: only those go back.
+    pend = InstantSendQueueTest::Take(manager);
+    BOOST_REQUIRE_EQUAL(pend.size(), 3U);
+    const auto handled = pend.begin()->first;
+    BOOST_CHECK_THROW(InstantSendQueueTest::RunBatch(manager, pend, [&] {
+                          pend.erase(handled);
+                          throw CoinbaseChainlockReadError("test");
+                      }),
+                      CoinbaseChainlockReadError);
+    BOOST_CHECK_EQUAL(InstantSendQueueTest::Size(manager, false), 2U);
+    BOOST_CHECK(!InstantSendQueueTest::HasPending(manager, handled));
+
+    // The next run takes them; without an error nothing goes back.
+    pend = InstantSendQueueTest::Take(manager);
+    BOOST_CHECK_EQUAL(pend.size(), 2U);
+    InstantSendQueueTest::RunBatch(manager, pend, [] {});
+    BOOST_CHECK_EQUAL(InstantSendQueueTest::Size(manager, false), 0U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

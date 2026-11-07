@@ -16,6 +16,7 @@
 #include <unordered_lru_cache.h>
 
 #include <functional>
+#include <optional>
 #include <unordered_map>
 
 class CActiveMasternodeManager;
@@ -234,6 +235,12 @@ public:
     bool AsyncSignIfMember(Consensus::LLMQType llmqType, CSigSharesManager& shareman, const uint256& id,
                            const uint256& msgHash, const uint256& quorumHash = uint256(), bool allowReSign = false,
                            bool allowDiffMsgHashSigning = false);
+    //! As AsyncSignIfMember, but std::nullopt instead of false when the quorum could not be looked up because of a
+    //! local history read error (CoinbaseChainlockReadError): nothing was voted or signed then, so a caller may retry.
+    std::optional<bool> TryAsyncSignIfMember(Consensus::LLMQType llmqType, CSigSharesManager& shareman,
+                                             const uint256& id, const uint256& msgHash,
+                                             const uint256& quorumHash = uint256(), bool allowReSign = false,
+                                             bool allowDiffMsgHashSigning = false);
     bool HasRecoveredSig(Consensus::LLMQType llmqType, const uint256& id, const uint256& msgHash) const;
     bool HasRecoveredSigForId(Consensus::LLMQType llmqType, const uint256& id) const;
     bool HasRecoveredSigForSession(const uint256& signHash) const;

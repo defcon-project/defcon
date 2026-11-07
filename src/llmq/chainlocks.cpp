@@ -14,6 +14,7 @@
 #include <masternode/sync.h>
 #include <node/blockstorage.h>
 #include <node/interface_ui.h>
+#include <node/storage_error.h>
 #include <scheduler.h>
 #include <spork.h>
 #include <txmempool.h>
@@ -44,7 +45,11 @@ CChainLocksHandler::CChainLocksHandler(CChainState& chainstate, CQuorumManager& 
     scheduler(std::make_unique<CScheduler>()),
     seenChainLocks{SEEN_CHAINLOCKS_CUTOFF, MAX_SEEN_CHAINLOCKS}
 {
-    scheduler->m_service_thread = std::thread(util::TraceThread, "cl-schdlr", [&] { scheduler->serviceQueue(); });
+    // A storage error in a scheduled signing attempt stops the node in order but keeps this thread serving
+    // its queue until stop(), as the main scheduler does.
+    scheduler->m_service_thread = std::thread(util::TraceThread, "cl-schdlr", [&] {
+        RunHandlingStorageErrors([&] { scheduler->serviceQueue(); }, "the ChainLocks scheduler");
+    });
 }
 
 CChainLocksHandler::~CChainLocksHandler()
@@ -318,7 +323,7 @@ void CChainLocksHandler::TrySignChainTip(const llmq::CInstantSendManager& isman)
     {
         LOCK(cs);
 
-        if (pindex->nHeight == lastSignedHeight) {
+        if (pindex->nHeight == lastSignedHeight && pindex->nHeight != retrySignHeight) {
             // already signed this one
             return;
         }
@@ -404,13 +409,22 @@ void CChainLocksHandler::TrySignChainTip(const llmq::CInstantSendManager& isman)
         lastSignedHeight = pindex->nHeight;
         lastSignedRequestId = requestId;
         lastSignedMsgHash = msgHash;
+        retrySignHeight = -1;
     }
 
     // The profile is resolved from the signed height so that a node signing
     // across the Q60 activation boundary switches at exactly the height every
     // verifier will resolve for this CLSIG.
-    sigman.AsyncSignIfMember(GetChainLocksLLMQType(Params().GetConsensus(), pindex->nHeight), shareman, requestId,
-                             msgHash);
+    if (!sigman.TryAsyncSignIfMember(GetChainLocksLLMQType(Params().GetConsensus(), pindex->nHeight), shareman,
+                                     requestId, msgHash)
+             .has_value()) {
+        // A local history read error stopped the quorum lookup: nothing was voted or signed, so this was no
+        // attempt. Let a later run try the height again, unless a newer attempt has started meanwhile.
+        LOCK(cs);
+        if (lastSignedHeight == pindex->nHeight && lastSignedMsgHash == msgHash) {
+            retrySignHeight = pindex->nHeight;
+        }
+    }
 }
 
 void CChainLocksHandler::TransactionAddedToMempool(const CTransactionRef& tx, int64_t nAcceptTime)

@@ -4,7 +4,9 @@
 
 #include <pos/minter.h>
 
+#include <dbwrapper.h>
 #include <masternode/sync.h>
+#include <node/storage_error.h>
 #include <pos/multiwallet.h>
 #include <sync.h>
 #include <timedata.h>
@@ -444,6 +446,12 @@ void ThreadStakeMiner(NodeContext& node)
             MinterRunningScope running;
             PoSMiner(node);
             return; // clean return: shutdown was requested
+        } catch (const dbwrapper_error& e) {
+            // Not a fault to retry past: a database this node cannot read. Retrying would hide it
+            // behind "staking failed" forever; the node stops in order instead and names the way out.
+            SetMinterLastError(e.what());
+            HandleStorageError(std::current_exception(), "the staking thread");
+            return;
         } catch (const std::exception& e) {
             SetMinterLastError(e.what());
             PrintExceptionContinue(std::current_exception(), e.what());

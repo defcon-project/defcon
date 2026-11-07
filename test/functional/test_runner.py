@@ -265,6 +265,7 @@ BASE_SCRIPTS = [
     'p2p_epoll_eof.py --v1transport',
     'p2p_epoll_eof.py --v2transport',
     'feature_addressindex.py',
+    'feature_addressindex_type_boundary.py',
     'feature_addressindex_coinstake.py',
     'rpc_addressindex_bls.py',
     'wallet_dumpwallet_bls.py',

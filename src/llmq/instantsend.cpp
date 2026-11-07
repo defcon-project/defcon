@@ -739,11 +739,10 @@ void CInstantSendManager::HandleNewInstantSendLockRecoveredSig(const llmq::CReco
         return;
     }
     LOCK(cs_pendingLocks);
-    // A locally recovered lock is already verified and takes priority over
-    // a pending verification, just like a lock leaving the no-tx queue.
-    if (!pendingInstantSendLocks.count(hash) && pendingInstantSendLocks.size() >= MAX_PENDING_INSTANTSEND_LOCKS) {
-        pendingInstantSendLocks.erase(pendingInstantSendLocks.begin());
-    }
+    // A locally recovered lock is already verified: it is queued even at the limit, which bounds the unverified
+    // locks peers send (ProcessMessageInstantSendLock). Making room by dropping an entry could drop another verified
+    // lock -- one leaving the no-tx queue, or another of the node's own -- that is then kept nowhere. Verified locks
+    // come only from the no-tx queue (itself bounded) and the node's own signing, so the queue stays bounded.
     pendingInstantSendLocks.emplace(hash, std::make_pair(-1, islock));
 }
 
@@ -876,24 +875,46 @@ bool CInstantSendManager::ProcessPendingInstantSendLocks(PeerManager& peerman)
     const auto& llmq_params = llmq_params_opt.value();
     auto dkgInterval = llmq_params.dkgInterval;
 
-    // First check against the current active set and don't ban
-    auto badISLocks = ProcessPendingInstantSendLocks(llmq_params, peerman, /*signOffset=*/0, pend, false);
-    if (!badISLocks.empty()) {
-        LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- doing verification on old active set\n", __func__);
+    RequeueOnHistoryReadError(pend, [&] {
+        // First check against the current active set and don't ban
+        auto badISLocks = ProcessPendingInstantSendLocks(llmq_params, peerman, /*signOffset=*/0, pend, false);
+        if (!badISLocks.empty()) {
+            LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- doing verification on old active set\n", __func__);
 
-        // filter out valid IS locks from "pend"
-        for (auto it = pend.begin(); it != pend.end(); ) {
-            if (!badISLocks.count(it->first)) {
-                it = pend.erase(it);
-            } else {
-                ++it;
+            // filter out valid IS locks from "pend"
+            for (auto it = pend.begin(); it != pend.end(); ) {
+                if (!badISLocks.count(it->first)) {
+                    it = pend.erase(it);
+                } else {
+                    ++it;
+                }
             }
+            // Now check against the previous active set and perform banning if this fails
+            ProcessPendingInstantSendLocks(llmq_params, peerman, dkgInterval, pend, true);
         }
-        // Now check against the previous active set and perform banning if this fails
-        ProcessPendingInstantSendLocks(llmq_params, peerman, dkgInterval, pend, true);
-    }
+    });
 
     return fMoreWork;
+}
+
+void CInstantSendManager::RequeueOnHistoryReadError(
+    std::unordered_map<uint256, std::pair<NodeId, CInstantSendLockPtr>, StaticSaltedHasher>& pend,
+    const std::function<void()>& work)
+{
+    // The quorum lookup during verification can hit a local history read error after the batch has left the queue.
+    // Its locks -- verified ones among them, back from the no-tx queue or the node's own -- are then kept nowhere,
+    // so put back what `pend` still holds before passing the error on: all of it, or the locks left for the older
+    // quorum set. One processed before the error is handled again later; a known lock ends early there. This can
+    // exceed the queue limit by at most one batch, as a verified lock already may.
+    try {
+        work();
+    } catch (const CoinbaseChainlockReadError&) {
+        LOCK(cs_pendingLocks);
+        for (auto& [hash, entry] : pend) {
+            pendingInstantSendLocks.try_emplace(hash, std::move(entry));
+        }
+        throw;
+    }
 }
 
 std::unordered_set<uint256, StaticSaltedHasher> CInstantSendManager::ProcessPendingInstantSendLocks(
@@ -1105,11 +1126,16 @@ void CInstantSendManager::ProcessInstantSendLock(NodeId from, PeerManager& peerm
     if (tx == nullptr) {
         // put it in a separate pending map and try again later
         LOCK(cs_pendingLocks);
-        if (pendingNoTxInstantSendLocks.size() < MAX_PENDING_INSTANTSEND_LOCKS) {
-            pendingNoTxInstantSendLocks.try_emplace(hash, std::make_pair(from, islock));
-        } else {
+        if (!pendingNoTxInstantSendLocks.count(hash) &&
+            pendingNoTxInstantSendLocks.size() >= MAX_PENDING_INSTANTSEND_LOCKS) {
+            // A dropped lock is kept nowhere: not in the database, not in a queue. Everything below
+            // acts on a lock this node holds -- relaying it, dropping the recovered sigs of its inputs,
+            // resolving block conflicts as if its transaction were known -- so stop here, as if it
+            // had never arrived; a later announcement can bring it again.
             LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- no-tx islock queue full, dropping islock=%s\n", __func__, hash.ToString());
+            return;
         }
+        pendingNoTxInstantSendLocks.try_emplace(hash, std::make_pair(from, islock));
     } else {
         db.WriteNewInstantSendLock(hash, *islock);
         if (pindexMined) {
@@ -1158,12 +1184,9 @@ void CInstantSendManager::TransactionAddedToMempool(PeerManager& peerman, const 
         auto it = pendingNoTxInstantSendLocks.begin();
         while (it != pendingNoTxInstantSendLocks.end()) {
             if (it->second.second->txid == tx->GetHash()) {
-                // A verified lock whose transaction arrived takes priority over a
-                // pending verification. Do not strand it in the no-tx queue.
-                if (!pendingInstantSendLocks.count(it->first) &&
-                    pendingInstantSendLocks.size() >= MAX_PENDING_INSTANTSEND_LOCKS) {
-                    pendingInstantSendLocks.erase(pendingInstantSendLocks.begin());
-                }
+                // A verified lock whose transaction arrived is queued even at the limit (see
+                // HandleNewInstantSendLockRecoveredSig): it must not be stranded in the no-tx queue, nor push out
+                // another verified lock.
                 // we received an islock earlier
                 LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s, islock=%s\n", __func__,
                          tx->GetHash().ToString(), it->first.ToString());
@@ -1255,12 +1278,9 @@ void CInstantSendManager::AddNonLockedTx(const CTransactionRef& tx, const CBlock
         auto it = pendingNoTxInstantSendLocks.begin();
         while (it != pendingNoTxInstantSendLocks.end()) {
             if (it->second.second->txid == tx->GetHash()) {
-                // A verified lock whose transaction arrived takes priority over a
-                // pending verification. Do not strand it in the no-tx queue.
-                if (!pendingInstantSendLocks.count(it->first) &&
-                    pendingInstantSendLocks.size() >= MAX_PENDING_INSTANTSEND_LOCKS) {
-                    pendingInstantSendLocks.erase(pendingInstantSendLocks.begin());
-                }
+                // A verified lock whose transaction arrived is queued even at the limit (see
+                // HandleNewInstantSendLockRecoveredSig): it must not be stranded in the no-tx queue, nor push out
+                // another verified lock.
                 // we received an islock earlier, let's put it back into pending and verify/lock
                 LogPrint(BCLog::INSTANTSEND, "CInstantSendManager::%s -- txid=%s, islock=%s\n", __func__,
                          tx->GetHash().ToString(), it->first.ToString());
@@ -1701,7 +1721,12 @@ void CInstantSendManager::WorkThreadMain(PeerManager& peerman)
             ProcessPendingRetryLockTxs();
         } catch (const CoinbaseChainlockReadError& e) {
             LogPrintf("%s: local ChainLock history unavailable: %s\n", __func__, e.what());
-            fMoreWork = false;
+            // The batch is back in the queue (RequeueOnHistoryReadError). Retry after a pause rather than at the
+            // idle pace: a block missing or damaged on disk stays so until the operator acts.
+            if (!workInterrupt.sleep_for(HISTORY_READ_RETRY_DELAY)) {
+                return;
+            }
+            continue;
         }
 
         if (!fMoreWork && !workInterrupt.sleep_for(std::chrono::milliseconds(100))) {
