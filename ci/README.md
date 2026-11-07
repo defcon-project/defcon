@@ -48,6 +48,22 @@ The dependency build likewise reuses a cache made for the same depends tree and
 image under another workflow; `make -C depends` checks every package by its
 build id and rebuilds what differs.
 
+A push to a fork builds and tests no product code. After each merge, `gh repo
+sync` moves the fork's release branch to a commit this repository's own push
+run already tests, so a fork's push (to its release branch, or a tag) only
+detects changes (with the scheduling checks above), refreshes the fork's own CI
+image and runs `Upstream CI result (mirrored)`. That job waits until every CI
+run here on the same commit has finished, a re-run included, and then passes or
+fails with the required check of the newest run's latest attempt, so the fork's
+commit turns green or red without a second full run. After a re-run here,
+re-run the fork's job to bring the fork up to date. A commit this repository
+never ran (one pushed to a fork's release branch alone) fails the job after 30
+minutes with a message saying so, and the job gives up at its own deadline,
+before the runner's limit. Pull requests run the full CI. One opened
+inside a fork runs in the fork's CI image, which the fork's pushes keep up to
+date; those pushes no longer save dependency or compiler caches, so such a pull
+request may build them from scratch.
+
 Run the no-build scheduling and required-check regressions with:
 
 ```
