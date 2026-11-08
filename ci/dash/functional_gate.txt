@@ -69,6 +69,7 @@
 231  feature_v231_no_payee.py               # from the v23.1 height a staked block with no payable masternode carries no payout at all (#354)
 208  feature_pos_header_only.py             # headers with no block behind them hold neither masternode sync nor staking
 147  feature_pos_mixingonly_unlock.py       # a wallet unlocked for mixing only stakes, and still refuses to send or export keys
+100  feature_dsl_dkg_isolation.py           # a slow node: announcement copies unread, the tick behind the DKG, commitments intact (SF1-A)
 95   feature_dsl_sign_wait.py               # wait for late Sentinel reports, with a signing deadline
 83   feature_dsl_commitment_v2.py           # the Sentinel commitment's second bitfield: who the pool judged at all (#231)
 57   feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates

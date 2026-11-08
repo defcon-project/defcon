@@ -695,6 +695,7 @@ class SchedulingTest(unittest.TestCase):
             'feature_dsl_commit_decision_log.py',
             'feature_pos_double_sign.py',
             'wallet_combineoutputs.py',
+            'feature_dsl_dkg_isolation.py',
         ]), sorted(name for name, _ in functional_gate.read_gate()))
         functional = run_script(step_text(self.checks, 'Functional tests (named gate)'))
         self.assertIn('python3 ci/dash/functional_gate.py order > "$gate" || exit 1\n', functional)

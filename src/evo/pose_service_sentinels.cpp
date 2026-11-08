@@ -9,6 +9,7 @@
 #include <evo/pose_service_metrics.h>
 #include <evo/pose_service_sigcache.h>
 #include <evo/specialtx.h>
+#include <crypto/sha256.h>
 #include <hash.h>
 #include <streams.h>
 #include <version.h>
@@ -143,6 +144,32 @@ std::optional<ReportWire> PeekReportWire(Span<const unsigned char> payload)
     reader >> wire.nEpoch >> wire.targetProTxHash >> wire.sentinelProTxHash >> wire.status;
     wire.sig = payload.last(static_cast<size_t>(BLS_CURVE_SIG_SIZE));
     return wire;
+}
+
+namespace {
+uint256 Sha256(Span<const unsigned char> bytes)
+{
+    uint256 out;
+    CSHA256().Write(bytes.data(), bytes.size()).Finalize(out.begin());
+    return out;
+}
+} // namespace
+
+std::optional<ResponseWire> PeekResponseWire(Span<const unsigned char> payload)
+{
+    if (payload.size() != CPoSeServiceResponse::WIRE_SIZE) return std::nullopt;
+    ResponseWire wire;
+    SpanReader reader{SER_NETWORK, PROTOCOL_VERSION, payload, 0};
+    reader >> wire.nEpoch >> wire.proTxHash;
+    wire.hash = Sha256(payload);
+    return wire;
+}
+
+uint256 ResponseWireHash(const CPoSeServiceResponse& resp)
+{
+    CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
+    stream << resp;
+    return Sha256(MakeUCharSpan(stream));
 }
 
 CPoSeServiceCommitment BuildServiceCommitment(uint32_t nEpoch, const uint256& epochBlockHash,

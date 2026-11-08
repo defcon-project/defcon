@@ -156,6 +156,30 @@ struct ReportWire {
 std::optional<ReportWire> PeekReportWire(Span<const unsigned char> payload);
 
 /**
+ * A liveness announcement as it arrived, without decoding its signature: the
+ * epoch and the masternode, read the way CPoSeServiceResponse reads them, and
+ * the SHA-256 of the exact payload. Like PeekReportWire it validates nothing,
+ * so it may serve only to recognise bytes already decoded once (accepted or
+ * held), never to accept (sentinelfix.md 4.2).
+ */
+class CPoSeServiceResponse; // below
+
+struct ResponseWire {
+    uint32_t nEpoch{0};
+    uint256 proTxHash;
+    uint256 hash; //!< SHA-256 of the CPoSeServiceResponse::WIRE_SIZE bytes
+};
+/** The wire view of a payload that is exactly one serialized announcement; nothing for any other length. */
+std::optional<ResponseWire> PeekResponseWire(Span<const unsigned char> payload);
+/** The same SHA-256 over a decoded announcement's serialization: the bytes that read back to exactly this
+ *  announcement. With a valid signature these are the bytes it arrived as, since the reader refuses any other
+ *  encoding of a valid point (CheckMalleable). A signature in the other scheme's encoding is read, by the reader's
+ *  fallback, as an invalid one, which serializes as zeros: copies of the bytes such an announcement arrived as do
+ *  not match and are read on the ordinary path, while its zero form, which reads to the same announcement, does.
+ *  A payload matches only where reading it would give the announcement already decoded (sentinelfix.md 4.2). */
+uint256 ResponseWireHash(const CPoSeServiceResponse& resp);
+
+/**
  * Wire message: a sentinel asks a target to prove it is alive for an epoch.
  * The nonce is deterministic from (epoch base, target), so the challenge need
  * only name the epoch -- the target derives the rest and signs it.
@@ -183,6 +207,9 @@ public:
     uint32_t nEpoch{0};
     uint256 proTxHash;
     CBLSSignature sig;
+
+    /** Bytes in a serialized announcement: epoch, masternode, then the signature. */
+    static constexpr size_t WIRE_SIZE{sizeof(uint32_t) + uint256::size() + static_cast<size_t>(BLS_CURVE_SIG_SIZE)};
 
     SERIALIZE_METHODS(CPoSeServiceResponse, obj)
     {

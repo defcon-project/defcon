@@ -109,6 +109,16 @@ protected:
      */
     virtual void UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload) {}
     /**
+     * The end of an UpdatedBlockTip event: called after every subscriber's UpdatedBlockTip for the same event, as part
+     * of the same queued event and on the same thread, so whatever waits for the event
+     * (SyncWithValidationInterfaceQueue) waits for this as well. For work that has to come after the other
+     * subscribers have seen the tip and still belongs to the event (the Sentinel tick, behind the DKG). Not called
+     * when a subscriber's UpdatedBlockTip threw.
+     *
+     * Called on a background thread.
+     */
+    virtual void UpdatedBlockTipFinal(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload) {}
+    /**
      * Same as UpdatedBlockTip, but called from the caller's thread
      */
     virtual void SynchronousUpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload) {}
