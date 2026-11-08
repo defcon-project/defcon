@@ -27,6 +27,16 @@ jobs:
   # but every step in them is skipped. Skipping the jobs themselves would
   # report the matrix job under a different name and leave the required
   # check pending forever.
+  #
+  # A push to a fork (its release branch, as gh repo sync moves it after each
+  # merge, or a tag) builds and tests no product code: this repository's own
+  # push run tests the same commit, and no required check waits on the fork. It
+  # still runs this job, with the CI's own scheduling checks, and Build Image,
+  # which refreshes the fork's own CI image, the one pull requests opened inside
+  # the fork run in. build-depends and fuzz
+  # carry the condition, checks needs build-depends, the required-check job at
+  # the end has it too, and upstream-result shows the fork this repository's
+  # verdict instead.
   changes:
     name: Detect changes
     runs-on: ubuntu-22.04
@@ -159,6 +169,8 @@ jobs:
 
   build-depends:
     name: Build Dependencies
+    # Not on a fork's push (see changes); checks, which needs this, skips with it.
+    if: github.event_name != 'push' || github.repository == 'defcon-project/defcon'
     outputs:
       artifact-id: ${{ steps.prefix-upload.outputs.artifact-id }}
       envelope-sha256: ${{ steps.prefix.outputs.envelope_sha256 }}
@@ -647,11 +659,11 @@ jobs:
   # code changes. Informational for its first weeks: a failure fails this job and shows on the
   # pull request, but the required check below neither waits for it nor reads it, and the
   # branch requires only that one. No compiler cache: the repository's cache space is already
-  # full, and a sanitizer build would evict the main build's.
+  # full, and a sanitizer build would evict the main build's. Not on a fork's push (see changes).
   fuzz:
     name: Fuzz regression (linux64_fuzz)
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'push' || github.repository == 'defcon-project/defcon')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -679,9 +691,10 @@ jobs:
 
   # Keep the existing required check name. A successful runtime lane alone
   # cannot authorize a merge when build-options failed, skipped or cancelled.
+  # Not on a fork's push, where no product code is built or tested (see changes).
   build:
     name: Build (linux64, x86_64-pc-linux-gnu, linux64)
-    if: ${{ always() }}
+    if: ${{ always() && (github.event_name != 'push' || github.repository == 'defcon-project/defcon') }}
     needs: [changes, build-image, build-depends, checks]
     runs-on: ubuntu-22.04
     steps:
@@ -705,3 +718,151 @@ jobs:
               sys.exit('Change detection did not produce a valid decision')
           print('All required CI lanes succeeded')
           PY
+
+  # A fork's push in place of a CI run. The commit is one this repository already
+  # tests in its own push run, so instead of a second full CI that nobody waits
+  # for, the fork shows this repository's required check on that commit. The job
+  # accepts a verdict only at one point: every CI run here on the commit has
+  # finished (a re-run sets its run back to in progress), the newest run's latest
+  # attempt has a finished required check, a second read of the runs after the
+  # jobs finds them unchanged (so no re-run began in between), and its own
+  # deadline has not passed. After a re-run here, re-running this job brings the
+  # fork up to date. A commit this repository never ran (one pushed to a fork's
+  # release branch alone) fails it once nothing has appeared for APPEAR_MINUTES;
+  # every API read is cut off at the deadline.
+  upstream-result:
+    name: Upstream CI result (mirrored)
+    if: github.event_name == 'push' && github.repository != 'defcon-project/defcon'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - name: Wait for the upstream required check on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM: defcon-project/defcon
+          CHECK_NAME: Build (linux64, x86_64-pc-linux-gnu, linux64)
+          COMMIT: ${{ github.sha }}
+          POLL_SECONDS: 60
+          APPEAR_MINUTES: 30
+          WAIT_MINUTES: 285
+          MAX_API_ERRORS: 15
+        shell: bash
+        run: |
+          set -euo pipefail
+          # This workflow's runs upstream on this commit, one per line: id,
+          # status, attempt and link; then the jobs of one attempt of one run:
+          # id, status, conclusion, link and name.
+          runs_api="repos/$UPSTREAM/actions/runs?head_sha=$COMMIT&per_page=100"
+          runs_filter='.workflow_runs[] | select(.path == ".github/workflows/build.yml") | [.id, .status, .run_attempt, .html_url] | @tsv'
+          jobs_filter='.jobs[] | [.id, .status, (.conclusion // "none"), .html_url, .name] | @tsv'
+          err="$RUNNER_TEMP/upstream-result.err"
+          start=$(date +%s)
+          deadline=$((start + WAIT_MINUTES * 60))
+          errors=0
+          past_deadline() {
+            if (($(date +%s) >= deadline)); then
+              echo "::error::The upstream required check did not finish within $WAIT_MINUTES minutes."
+              exit 1
+            fi
+          }
+          # One API read, cut off at the deadline and after a minute at most;
+          # the lines come out sorted, so two reads of one state are equal.
+          read_api() {
+            local left cap rc=0 out
+            left=$((deadline - $(date +%s)))
+            if ((left <= 0)); then
+              echo "the deadline passed" > "$err"
+              return 1
+            fi
+            cap=$((left < 60 ? left : 60))
+            out=$(timeout "$cap" gh api --paginate "$1" --jq "$2" 2> "$err") || rc=$?
+            if ((rc == 124)); then
+              echo "no answer within $cap s" >> "$err"
+            fi
+            if ((rc != 0)); then
+              return "$rc"
+            fi
+            printf '%s\n' "$out" | awk 'NF' | sort
+          }
+          # Counts failed reads in a row; only a poll round with every read
+          # answered starts the count again.
+          failed_read() {
+            errors=$((errors + 1))
+            echo "::warning::Reading the upstream CI state failed ($errors in a row): $(head -c 500 "$err" | tr '\n' ' ')"
+            if ((errors >= MAX_API_ERRORS)); then
+              echo "::error::Reading the upstream CI state failed $errors times in a row."
+              exit 1
+            fi
+          }
+          pause() {
+            local left
+            left=$((deadline - $(date +%s)))
+            if ((left > 0)); then
+              sleep "$((left < POLL_SECONDS ? left : POLL_SECONDS))"
+            fi
+          }
+          while :; do
+            past_deadline
+            if ! runs=$(read_api "$runs_api" "$runs_filter"); then
+              failed_read
+              pause
+              continue
+            fi
+            if [[ -z "$runs" ]]; then
+              errors=0
+              if (($(date +%s) - start >= APPEAR_MINUTES * 60)); then
+                echo "::error::$UPSTREAM has no CI run on $COMMIT after $APPEAR_MINUTES minutes: it never tested this commit."
+                exit 1
+              fi
+              echo "No upstream CI run on this commit yet"
+              pause
+              continue
+            fi
+            if printf '%s\n' "$runs" | awk -F'\t' '$2 != "completed" { going = 1 } END { exit !going }'; then
+              errors=0
+              echo "An upstream CI run on this commit is not finished (a re-run counts): waiting"
+              pause
+              continue
+            fi
+            IFS=$'\t' read -r run attempt url <<< "$(printf '%s\n' "$runs" | sort -n -k1,1 | tail -n 1 | cut -f1,3,4)"
+            if ! jobs=$(read_api "repos/$UPSTREAM/actions/runs/$run/attempts/$attempt/jobs?per_page=100" "$jobs_filter"); then
+              failed_read
+              pause
+              continue
+            fi
+            # The runs once more, after the jobs: a re-run that began since the
+            # first read shows here, and the attempt just read is then no answer.
+            if ! again=$(read_api "$runs_api" "$runs_filter"); then
+              failed_read
+              pause
+              continue
+            fi
+            errors=0
+            if [[ "$again" != "$runs" ]]; then
+              echo "The upstream CI runs changed while they were read (a re-run, or a new run): reading again"
+              pause
+              continue
+            fi
+            job=$(printf '%s\n' "$jobs" | awk -F'\t' -v name="$CHECK_NAME" '$5 == name' | sort -n -k1,1 | tail -n 1)
+            if [[ -n "$job" ]]; then
+              IFS=$'\t' read -r _ status conclusion job_url _ <<< "$job"
+              if [[ "$status" != completed ]]; then
+                echo "Attempt $attempt's required check is $status: waiting"
+                pause
+                continue
+              fi
+            fi
+            # The one point that accepts a verdict, still inside the deadline.
+            past_deadline
+            if [[ -z "$job" ]]; then
+              echo "::error::The upstream run $url (attempt $attempt) finished without the required check '$CHECK_NAME'."
+              exit 1
+            fi
+            echo "Upstream '$CHECK_NAME' on $COMMIT, attempt $attempt of $url: $conclusion ($job_url)"
+            echo "Upstream [$CHECK_NAME]($job_url) on \`$COMMIT\`, attempt $attempt: **$conclusion**" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$conclusion" == success ]]; then
+              exit 0
+            fi
+            echo "::error::The upstream required check concluded $conclusion on this commit. If it is re-run there, re-run this job."
+            exit 1
+          done

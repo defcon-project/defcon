@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import types
 import unittest
 
 sys.dont_write_bytecode = True
@@ -47,6 +48,113 @@ def run_script(step):
     return textwrap.dedent(match.group(1))
 
 
+UPSTREAM = 'defcon-project/defcon'
+NOT_A_FORK_PUSH = "github.event_name != 'push' || github.repository == 'defcon-project/defcon'"
+MIRROR_STEP = 'Wait for the upstream required check on this commit'
+
+# The mirror job's tools, faked. A clock in $FAKE_DIR/clock: `date +%s` prints it and `sleep` moves it on. `timeout`
+# hands its limit to the command. `gh api --paginate <url> --jq <filter>` answers from canned responses kept per
+# endpoint -- the runs on the commit, the jobs of one attempt -- the last one repeating, printed the way the job's
+# filters print them (a runs answer may name another workflow file, which the filter drops). Each gh call takes one
+# second of the clock (or the answer's "takes") and is recorded with the time it started; a "hang" answer takes the
+# whole limit and exits 124, as timeout would end it; an "error" answer writes to stderr and exits 1. `date` can also
+# move the clock on by FAKE_TICK seconds a call, standing for the time the script spends between its calls.
+FAKE_GH = r'''#!/usr/bin/env python3
+import json
+import os
+import sys
+
+home = os.environ['FAKE_DIR']
+clock_file = os.path.join(home, 'clock')
+now = int(open(clock_file, encoding='utf8').read())
+kind = 'jobs' if '/attempts/' in sys.argv[3] else 'runs'
+with open(os.path.join(home, 'calls'), 'a', encoding='utf8') as calls:
+    calls.write(json.dumps({'at': now, 'kind': kind, 'args': sys.argv[1:]}) + '\n')
+counter = os.path.join(home, 'count-' + kind)
+number = int(open(counter, encoding='utf8').read()) if os.path.exists(counter) else 0
+with open(counter, 'w', encoding='utf8') as out:
+    out.write(str(number + 1))
+answers = json.load(open(os.path.join(home, 'responses.json'), encoding='utf8'))[kind]
+answer = answers[min(number, len(answers) - 1)]
+cap = int(os.environ['FAKE_CAP'])
+cut = 'hang' in answer or answer.get('takes', 1) > cap
+with open(clock_file, 'w', encoding='utf8') as out:
+    out.write(str(now + (cap if cut else answer.get('takes', 1))))
+if cut:
+    sys.exit(124)
+if 'error' in answer:
+    sys.stderr.write(answer['error'] + '\n')
+    sys.exit(1)
+if kind == 'runs':
+    for run in answer['runs']:
+        if run['path'] == '.github/workflows/build.yml':
+            print('\t'.join([str(run['id']), run['status'], str(run['attempt']),
+                             'https://github.com/defcon-project/defcon/actions/runs/%d' % run['id']]))
+else:
+    for job in answer['jobs']:
+        print('\t'.join([str(job['id']), job['status'], job['conclusion'] or 'none',
+                         'https://github.com/defcon-project/defcon/actions/runs/1/job/%d' % job['id'], job['name']]))
+'''
+FAKE_DATE = ('#!/bin/sh\nnow=$(cat "$FAKE_DIR/clock")\necho "$now"\n'
+             'echo $((now + ${FAKE_TICK:-0})) > "$FAKE_DIR/clock"\n')
+FAKE_SLEEP = '#!/bin/sh\necho "$1" >> "$FAKE_DIR/sleeps"\nnow=$(( $(cat "$FAKE_DIR/clock") + $1 ))\necho "$now" > "$FAKE_DIR/clock"\n'
+FAKE_TIMEOUT = '#!/bin/sh\ncap=$1\nshift\necho "$cap" >> "$FAKE_DIR/timeouts"\nFAKE_CAP=$cap exec "$@"\n'
+RUNS_FILTER = ('.workflow_runs[] | select(.path == ".github/workflows/build.yml") '
+               '| [.id, .status, .run_attempt, .html_url] | @tsv')
+JOBS_FILTER = '.jobs[] | [.id, .status, (.conclusion // "none"), .html_url, .name] | @tsv'
+REQUIRED = 'Build (linux64, x86_64-pc-linux-gnu, linux64)'
+COMMIT = 'c' * 40
+START = 1000000
+
+
+def workflow_jobs(workflow):
+    """Each job's condition (None without one) and needs, in the order the jobs appear."""
+    section = workflow[workflow.index('\njobs:\n'):]
+    jobs = {}
+    for name in re.findall(r'^  ([\w-]+):\n', section, re.MULTILINE):
+        text = job_text(workflow, name)
+        condition = re.search(r'^    if: (.+)$', text, re.MULTILINE)
+        needs = re.search(r'^    needs: (.+)$', text, re.MULTILINE)
+        listed = needs.group(1).strip() if needs else ''
+        if listed.startswith('['):
+            listed = listed[1:-1]
+        jobs[name] = (condition.group(1).strip() if condition else None,
+                      [item.strip() for item in listed.split(',') if item.strip()])
+    return jobs
+
+
+def evaluate(condition, event, repository):
+    """(value, has a status function) of a job condition, for the expressions this workflow uses. Anything this does
+    not know -- another context, another function, a bare `!` -- fails to evaluate, so a new kind of condition needs
+    a matching change here rather than passing unnoticed."""
+    expression = condition
+    if expression.startswith('${{') and expression.endswith('}}'):
+        expression = expression[3:-2].strip()
+    status = 'always()' in expression
+    python = (expression.replace('always()', 'True').replace('&&', ' and ').replace('||', ' or ')
+              .replace('github.event_name', repr(event)).replace('github.repository', repr(repository))
+              .replace('needs.changes.outputs.code', repr('true')))
+    return bool(eval(python, {'__builtins__': {}}, {})), status  # a fixed expression from the workflow
+
+
+def running_jobs(workflow, event, repository):
+    """The jobs a run starts for this event in this repository, when every job that starts succeeds: a job runs when
+    its condition holds and, unless the condition has a status function, every job it needs ran."""
+    jobs = workflow_jobs(workflow)
+    ran = {}
+    while len(ran) < len(jobs):
+        progress = False
+        for name, (condition, needs) in jobs.items():
+            if name in ran or any(need not in ran for need in needs):
+                continue
+            value, status = evaluate(condition, event, repository) if condition else (True, False)
+            ran[name] = value and (status or all(ran[need] for need in needs))
+            progress = True
+        if not progress:
+            raise AssertionError('jobs with unknown or circular needs: %s' % sorted(set(jobs) - set(ran)))
+    return {name for name, started in ran.items() if started}
+
+
 class SchedulingTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -68,9 +176,296 @@ class SchedulingTest(unittest.TestCase):
 
     def test_required_check_keeps_its_exact_name_and_waits_even_on_failure(self):
         self.assertIn('    name: Build (linux64, x86_64-pc-linux-gnu, linux64)\n', self.build)
-        self.assertIn('    if: ${{ always() }}\n', self.build)
+        # always(), except on a fork's push, where nothing is built.
+        self.assertIn('    if: ${{ always() && (' + NOT_A_FORK_PUSH + ') }}\n', self.build)
         self.assertIn('    needs: [changes, build-image, build-depends, checks]\n', self.build)
         self.assertIn('          NEEDS_JSON: ${{ toJSON(needs) }}\n', self.build)
+
+    def test_a_fork_push_tests_nothing_and_only_refreshes_the_image(self):
+        everything = set(workflow_jobs(self.workflow)) - {'upstream-result'}
+        self.assertEqual({'changes', 'build-image', 'build-depends', 'checks', 'fuzz', 'build'}, everything)
+        for event in ('push', 'pull_request'):
+            with self.subTest(event=event, repository=UPSTREAM):
+                self.assertEqual(everything, running_jobs(self.workflow, event, UPSTREAM))
+        # A pull request opened inside a fork still starts every job, in the fork's own CI image.
+        self.assertEqual(everything, running_jobs(self.workflow, 'pull_request', 'minuszka/defcon'))
+        # A fork's push detects changes and refreshes that image -- nothing else would -- and builds and tests
+        # nothing: the mirror shows this repository's result instead.
+        for fork in ('minuszka/defcon', 'someone/defcon'):
+            with self.subTest(event='push', repository=fork):
+                self.assertEqual({'changes', 'build-image', 'upstream-result'},
+                                 running_jobs(self.workflow, 'push', fork))
+        self.assertIn("        if: github.event_name == 'push' && needs.changes.outputs.code == 'true'\n",
+                      step_text(job_text(self.workflow, 'build-image'), 'Build and push native Linux CI image'))
+        self.assertIn("    if: " + NOT_A_FORK_PUSH + "\n", job_text(self.workflow, 'build-depends'))
+        self.assertIn('    needs: [changes, build-image, build-depends]\n', self.checks)
+
+    def test_the_condition_evaluator_refuses_what_it_does_not_know(self):
+        self.assertEqual((True, True), evaluate('${{ always() && (' + NOT_A_FORK_PUSH + ') }}', 'push', UPSTREAM))
+        self.assertEqual((False, False), evaluate(NOT_A_FORK_PUSH, 'push', 'minuszka/defcon'))
+        for unknown in ('${{ !cancelled() }}', 'github.ref == "x"', 'failure()', "needs.checks.result == 'success'"):
+            with self.subTest(condition=unknown):
+                with self.assertRaises(Exception):
+                    evaluate(unknown, 'push', UPSTREAM)
+
+    def test_the_mirror_reads_this_repositorys_required_check(self):
+        mirror = job_text(self.workflow, 'upstream-result')
+        self.assertIn('    name: Upstream CI result (mirrored)\n', mirror)
+        self.assertNotIn('    needs:', mirror)
+        step = step_text(mirror, MIRROR_STEP)
+        required = re.search(r'^    name: (.+)$', self.build, re.MULTILINE).group(1)
+        self.assertIn('          CHECK_NAME: ' + required + '\n', step)
+        self.assertIn('          UPSTREAM: ' + UPSTREAM + '\n', step)
+        self.assertIn('          COMMIT: ${{ github.sha }}\n', step)
+        self.assertIn('          GH_TOKEN: ${{ github.token }}\n', step)
+        self.assertIn('        shell: bash\n', step)
+        # Its own deadline comes first, so running out of time is a failure that says why, not a cancelled job.
+        timeout = int(re.search(r'^    timeout-minutes: (\d+)$', mirror, re.MULTILINE).group(1))
+        wait = int(re.search(r'^          WAIT_MINUTES: (\d+)$', step, re.MULTILINE).group(1))
+        self.assertLess(wait, timeout)
+
+    def run_mirror(self, runs, jobs=({'jobs': []},), **overrides):
+        """Runs the mirror step against the fake tools, with canned answers for the runs and the jobs endpoints."""
+        step = step_text(job_text(self.workflow, 'upstream-result'), MIRROR_STEP)
+        script = run_script(step)
+        block = re.search(r'^        env:\n((?:          [^\n]*\n)+)', step, re.MULTILINE).group(1)
+        settings = dict(re.findall(r'^          ([A-Z_]+): (.+)$', block, re.MULTILINE))
+        self.assertEqual({'GH_TOKEN', 'UPSTREAM', 'CHECK_NAME', 'COMMIT', 'POLL_SECONDS', 'APPEAR_MINUTES',
+                          'WAIT_MINUTES', 'MAX_API_ERRORS'}, set(settings))
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            tools = home / 'bin'
+            tools.mkdir()
+            for name, text in (('gh', FAKE_GH), ('date', FAKE_DATE), ('sleep', FAKE_SLEEP), ('timeout', FAKE_TIMEOUT)):
+                (tools / name).write_text(text)
+                (tools / name).chmod(0o755)
+            (home / 'clock').write_text(str(START))
+            (home / 'responses.json').write_text(json.dumps({'runs': list(runs), 'jobs': list(jobs)}))
+            summary = home / 'summary.md'
+            summary.write_text('')
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1')
+            env.update({key: value for key, value in settings.items() if '${{' not in value})
+            env.update(GH_TOKEN='fake', COMMIT=COMMIT, GITHUB_STEP_SUMMARY=str(summary), RUNNER_TEMP=tmp,
+                       FAKE_DIR=tmp, PATH=str(tools) + os.pathsep + os.environ['PATH'])
+            env.update({key: str(value) for key, value in overrides.items()})
+            result = subprocess.run(['bash', '-c', script], env=env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, timeout=60)
+
+            def lines(name):
+                path = home / name
+                return path.read_text().splitlines() if path.exists() else []
+            return types.SimpleNamespace(
+                status=result.returncode, output=result.stdout, summary=summary.read_text(),
+                calls=[json.loads(line) for line in lines('calls')], sleeps=[int(s) for s in lines('sleeps')],
+                timeouts=[int(t) for t in lines('timeouts')], end=int((home / 'clock').read_text()))
+
+    @staticmethod
+    def upstream_run(number, status, attempt=1, path='.github/workflows/build.yml'):
+        return {'id': number, 'status': status, 'attempt': attempt, 'path': path}
+
+    @staticmethod
+    def job(number, status, conclusion=None, name=REQUIRED):
+        return {'id': number, 'status': status, 'conclusion': conclusion, 'name': name}
+
+    def answered(self, *conclusions):
+        """Jobs answers of finished attempts: change detection, then the required check, concluded as given."""
+        return [{'jobs': [self.job(5, 'completed', 'success', 'Detect changes'), self.job(9, 'completed', conclusion)]}
+                for conclusion in conclusions]
+
+    @staticmethod
+    def jobs_urls(result):
+        return [call['args'][2] for call in result.calls if call['kind'] == 'jobs']
+
+    def test_the_mirror_reads_the_runs_then_the_jobs_of_that_exact_attempt(self):
+        result = self.run_mirror([{'runs': [self.upstream_run(42, 'completed', attempt=3)]}], self.answered('success'))
+        self.assertEqual(0, result.status, result.output)
+        runs = ['api', '--paginate', 'repos/defcon-project/defcon/actions/runs?head_sha=' + COMMIT + '&per_page=100',
+                '--jq', RUNS_FILTER]
+        self.assertEqual([runs, ['api', '--paginate', 'repos/defcon-project/defcon/actions/runs/42/attempts/3/jobs'
+                                 '?per_page=100', '--jq', JOBS_FILTER], runs],
+                         [call['args'] for call in result.calls])
+        self.assertEqual([60, 60, 60], result.timeouts)
+
+    def test_the_mirror_passes_and_fails_with_the_upstream_check(self):
+        result = self.run_mirror([{'runs': [self.upstream_run(42, 'completed', attempt=2)]}], self.answered('success'))
+        self.assertEqual((0, []), (result.status, result.sleeps))
+        self.assertIn('[' + REQUIRED + '](https://github.com/defcon-project/defcon/actions/runs/1/job/9) on `'
+                      + COMMIT + '`, attempt 2: **success**', result.summary)
+        for conclusion in ('failure', 'cancelled', 'timed_out', 'action_required', 'skipped', 'neutral'):
+            with self.subTest(conclusion=conclusion):
+                result = self.run_mirror([{'runs': [self.upstream_run(42, 'completed')]}], self.answered(conclusion))
+                self.assertEqual(1, result.status)
+                self.assertIn('::error::The upstream required check concluded ' + conclusion, result.output)
+                self.assertIn('re-run this job', result.output)
+                self.assertIn('**' + conclusion + '**', result.summary)
+
+    def test_the_mirror_waits_out_a_re_run_and_reads_only_its_attempt(self):
+        # While a re-run goes, its run is in progress again, whatever the earlier attempt's required check said:
+        # nothing is read from any attempt until the run has finished, and then only the newest attempt counts. A
+        # partial re-run lists the jobs it reused next to the ones it ran again.
+        for new in ('success', 'failure'):
+            with self.subTest(re_run=new):
+                result = self.run_mirror(
+                    [{'runs': [self.upstream_run(42, 'in_progress', attempt=2)]}, {'runs': [self.upstream_run(42, 'queued', attempt=2)]},
+                     {'runs': [self.upstream_run(42, 'completed', attempt=2)]}],
+                    [{'jobs': [self.job(5, 'completed', 'success', 'Detect changes'),
+                               self.job(7, 'completed', 'success', 'Checks (linux64, x86_64-pc-linux-gnu, linux64, runtime)'),
+                               self.job(9, 'completed', new)]}])
+                self.assertEqual(0 if new == 'success' else 1, result.status, result.output)
+                self.assertEqual(['repos/defcon-project/defcon/actions/runs/42/attempts/2/jobs?per_page=100'],
+                                 self.jobs_urls(result))
+                self.assertEqual(2, len(result.sleeps))
+
+    def test_the_mirror_does_not_take_an_answer_from_an_attempt_a_re_run_replaced(self):
+        # A re-run begins after the runs were read: attempt 1's jobs stay finished, with either conclusion, but the
+        # runs read again after them show attempt 2, so attempt 1's answer is not taken; attempt 2 decides.
+        for old, new in (('success', 'failure'), ('failure', 'success')):
+            with self.subTest(old=old, new=new):
+                result = self.run_mirror(
+                    [{'runs': [self.upstream_run(42, 'completed', attempt=1)]},
+                     {'runs': [self.upstream_run(42, 'in_progress', attempt=2)]},
+                     {'runs': [self.upstream_run(42, 'completed', attempt=2)]}],
+                    self.answered(old, new))
+                self.assertEqual(0 if new == 'success' else 1, result.status, result.output)
+                self.assertIn('changed while they were read', result.output)
+                self.assertEqual(['repos/defcon-project/defcon/actions/runs/42/attempts/1/jobs?per_page=100',
+                                  'repos/defcon-project/defcon/actions/runs/42/attempts/2/jobs?per_page=100'],
+                                 self.jobs_urls(result))
+                self.assertIn('**' + new + '**', result.summary)
+                self.assertNotIn('**' + old + '**', result.summary)
+        # Re-run and finished between the reads: the attempt changed, so the same.
+        result = self.run_mirror(
+            [{'runs': [self.upstream_run(42, 'completed', attempt=1)]},
+             {'runs': [self.upstream_run(42, 'completed', attempt=2)]}],
+            self.answered('success', 'failure'))
+        self.assertEqual(1, result.status, result.output)
+        # A new run on the commit between the reads (a tag pushed) also sends it back to reading.
+        result = self.run_mirror(
+            [{'runs': [self.upstream_run(40, 'completed')]},
+             {'runs': [self.upstream_run(40, 'completed'), self.upstream_run(44, 'queued')]},
+             {'runs': [self.upstream_run(40, 'completed'), self.upstream_run(44, 'completed')]}],
+            self.answered('success', 'failure'))
+        self.assertEqual(1, result.status, result.output)
+        self.assertEqual('repos/defcon-project/defcon/actions/runs/44/attempts/1/jobs?per_page=100',
+                         self.jobs_urls(result)[-1])
+
+    def test_the_mirror_waits_when_the_attempt_s_check_is_not_finished(self):
+        result = self.run_mirror(
+            [{'runs': [self.upstream_run(42, 'completed', attempt=1)]}],
+            [{'jobs': [self.job(9, 'in_progress')]}, {'jobs': [self.job(9, 'completed', 'success')]}])
+        self.assertEqual(0, result.status, result.output)
+        self.assertIn("Attempt 1's required check is in_progress: waiting", result.output)
+
+    def test_the_mirror_waits_for_every_run_on_the_commit_and_the_newest_decides(self):
+        # A release branch push and a tag push on one commit make two runs.
+        result = self.run_mirror(
+            [{'runs': [self.upstream_run(44, 'in_progress'), self.upstream_run(40, 'completed')]},
+             {'runs': [self.upstream_run(44, 'completed'), self.upstream_run(40, 'completed')]}],
+            self.answered('failure'))
+        self.assertEqual(1, result.status, result.output)
+        self.assertEqual(['repos/defcon-project/defcon/actions/runs/44/attempts/1/jobs?per_page=100'],
+                         self.jobs_urls(result))
+        self.assertEqual(1, len(result.sleeps))
+        # The newest by id, in whatever order the runs are listed.
+        result = self.run_mirror(
+            [{'runs': [self.upstream_run(40, 'completed', attempt=2), self.upstream_run(44, 'completed')]}],
+            self.answered('success'))
+        self.assertEqual(0, result.status, result.output)
+        self.assertEqual(['repos/defcon-project/defcon/actions/runs/44/attempts/1/jobs?per_page=100'],
+                         self.jobs_urls(result))
+
+    def test_the_mirror_ignores_other_workflows_and_similar_names(self):
+        result = self.run_mirror(
+            [{'runs': [self.upstream_run(45, 'in_progress', path='.github/workflows/macos-smoke.yml'),
+                       self.upstream_run(41, 'completed')]}],
+            [{'jobs': [self.job(5, 'completed', 'success', 'Build Image'),
+                       self.job(6, 'completed', 'success', REQUIRED + ' '),
+                       self.job(4, 'completed', 'failure')]}])
+        self.assertEqual((1, []), (result.status, result.sleeps), result.output)
+        self.assertEqual(['repos/defcon-project/defcon/actions/runs/41/attempts/1/jobs?per_page=100'],
+                         self.jobs_urls(result))
+
+    def test_the_mirror_fails_when_a_finished_run_has_no_required_check(self):
+        result = self.run_mirror([{'runs': [self.upstream_run(42, 'completed')]}],
+                                 [{'jobs': [self.job(5, 'completed', 'success', 'Detect changes')]}])
+        self.assertEqual(1, result.status)
+        self.assertIn('finished without the required check', result.output)
+
+    def test_the_mirror_fails_for_a_commit_upstream_never_ran(self):
+        result = self.run_mirror([{'runs': []}], APPEAR_MINUTES=0)
+        self.assertEqual(1, result.status)
+        self.assertIn('::error::defcon-project/defcon has no CI run on ' + COMMIT + ' after 0 minutes: it never '
+                      'tested this commit.', result.output)
+        # Within the appearance window it keeps waiting: the push may not have reached upstream yet.
+        result = self.run_mirror([{'runs': []}, {'runs': [self.upstream_run(42, 'completed')]}], self.answered('success'))
+        self.assertEqual((0, 1), (result.status, len(result.sleeps)), result.output)
+
+    def test_the_mirror_rides_out_a_few_failed_reads_but_not_many(self):
+        outage = {'error': 'gh: HTTP 502: Bad Gateway'}
+        result = self.run_mirror([outage, outage, {'runs': [self.upstream_run(42, 'completed')]}], self.answered('success'),
+                                 MAX_API_ERRORS=3)
+        self.assertEqual(0, result.status, result.output)
+        self.assertIn('::warning::Reading the upstream CI state failed (2 in a row): gh: HTTP 502', result.output)
+        result = self.run_mirror([outage], MAX_API_ERRORS=3)
+        self.assertEqual((1, 3), (result.status, len(result.calls)), result.output)
+        self.assertIn('::error::Reading the upstream CI state failed 3 times in a row.', result.output)
+        # An answered runs read does not reset the count while every jobs read fails.
+        result = self.run_mirror([{'runs': [self.upstream_run(42, 'completed')]}], [outage], MAX_API_ERRORS=3)
+        self.assertEqual((1, 3), (result.status, len(self.jobs_urls(result))), result.output)
+        # A round with every read answered starts the count again.
+        result = self.run_mirror([outage, outage, {'runs': [self.upstream_run(42, 'in_progress')]}, outage, outage,
+                                  {'runs': [self.upstream_run(42, 'completed')]}], self.answered('success'), MAX_API_ERRORS=3)
+        self.assertEqual(0, result.status, result.output)
+
+    def test_the_mirror_keeps_its_own_deadline(self):
+        # Polling a run that never finishes: no read starts at or after the deadline, the last pause is cut short to
+        # end on it, and the job fails there.
+        result = self.run_mirror([{'runs': [self.upstream_run(42, 'in_progress')]}], WAIT_MINUTES=5)
+        self.assertEqual(1, result.status)
+        self.assertIn('::error::The upstream required check did not finish within 5 minutes.', result.output)
+        self.assertTrue(all(call['at'] < START + 300 for call in result.calls), result.calls)
+        self.assertEqual(START + 300, result.end)
+        self.assertTrue(all(0 < pause <= 60 for pause in result.sleeps), result.sleeps)
+        # A result that would only arrive after the deadline is never read.
+        result = self.run_mirror([{'runs': [self.upstream_run(42, 'in_progress')]}] * 2 + [{'runs': [self.upstream_run(42, 'completed')]}],
+                                 self.answered('success'), WAIT_MINUTES=2)
+        self.assertEqual(1, result.status, result.output)
+        self.assertEqual([], self.jobs_urls(result))
+
+    def test_the_mirror_takes_no_verdict_after_its_deadline(self):
+        # The second runs read answers exactly at the deadline, inside its own limit: the verdict, a success here,
+        # is not taken.
+        result = self.run_mirror([{'runs': [self.upstream_run(42, 'completed')], 'takes': 30},
+                                  {'runs': [self.upstream_run(42, 'completed')], 'takes': 1}],
+                                 [{'jobs': [self.job(9, 'completed', 'success')], 'takes': 29}], WAIT_MINUTES=1)
+        self.assertEqual([START, START + 30, START + 59], [call['at'] for call in result.calls])
+        self.assertEqual(1, result.status, result.output)
+        self.assertIn('::error::The upstream required check did not finish within 1 minutes.', result.output)
+        self.assertEqual('', result.summary)
+        # Time spent between the calls counts as well.
+        for tick in (1, 2, 3):
+            with self.subTest(tick=tick):
+                result = self.run_mirror([{'runs': [self.upstream_run(42, 'completed')], 'takes': 54}],
+                                         self.answered('success'), WAIT_MINUTES=1, FAKE_TICK=tick)
+                if result.status == 0:
+                    self.assertLess(result.end - tick, START + 60, result.output)
+                else:
+                    self.assertIn('did not finish within 1 minutes', result.output)
+                    self.assertEqual('', result.summary)
+
+    def test_the_mirror_cuts_off_a_read_that_does_not_answer(self):
+        hang = {'hang': True}
+        result = self.run_mirror([hang], WAIT_MINUTES=3)
+        self.assertEqual(1, result.status)
+        self.assertEqual([60, 60], result.timeouts)
+        self.assertEqual(START + 180, result.end)
+        self.assertIn('no answer within 60 s', result.output)
+        self.assertIn('::error::The upstream required check did not finish within 3 minutes.', result.output)
+        # Near the deadline a read gets only the time left.
+        result = self.run_mirror([{'runs': [self.upstream_run(42, 'in_progress')]}, hang], WAIT_MINUTES=1, POLL_SECONDS=45)
+        self.assertEqual(1, result.status)
+        self.assertEqual([60, 14], result.timeouts)
+        self.assertEqual(START + 60, result.end)
 
     def test_code_and_documentation_success(self):
         for code in ('true', 'false'):
@@ -416,7 +811,7 @@ class SchedulingTest(unittest.TestCase):
     def test_fuzz_regression_runs_for_code_and_does_not_hold_the_required_check(self):
         fuzz = job_text(self.workflow, 'fuzz')
         self.assertIn('    needs: changes\n', fuzz)
-        self.assertIn("    if: needs.changes.outputs.code == 'true'\n", fuzz)
+        self.assertIn("    if: needs.changes.outputs.code == 'true' && (" + NOT_A_FORK_PUSH + ")\n", fuzz)
         # Informational for its first weeks: its failure shows as a failed job (no continue-on-error, which would
         # report it as a success), and the required check neither waits for it nor reads it.
         self.assertNotIn('continue-on-error', fuzz)
