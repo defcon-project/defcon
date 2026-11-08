@@ -5,10 +5,10 @@
 """combineoutputs: combine a wallet's small outputs in batches.
 
 A wallet that received many small payments at many addresses holds them as
-many outputs, and a staking wallet's own win-time combining never reaches
-outputs at other addresses or in wallets that rarely win. combineoutputs
-spends them in batches, each one transaction to one new address of the same
-wallet, paying its fee out of the combined amount.
+many outputs. A staking wallet's own combining takes at most 19 of them, and
+only when it wins (with -stakecombinescope=key, only the winning key's).
+combineoutputs spends them in batches, each one transaction to one new address
+of the same wallet, paying its fee out of the combined amount.
 
 What is checked:
 

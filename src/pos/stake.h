@@ -55,9 +55,10 @@ static constexpr int64_t STAKE_COMBINE_REST_BUDGET_BPS{500};
  * Why optional consolidation left outputs out of a win, by count.
  *
  * Only outputs consolidation would otherwise take are counted: the wallet's
- * own, mature, of a signable type and in scope, not a collateral amount and
- * not already a full-size stake. Which of the brakes holds on a given wallet
- * was visible nowhere; this is what the K01 tuning is decided from.
+ * own, mature, of a signable type and in scope, not a masternode collateral
+ * amount, not a CoinJoin denomination or collateral amount, and not already a
+ * full-size stake. Which of the brakes holds on a given wallet was visible
+ * nowhere; this is what the K01 tuning is decided from.
  */
 struct CombineSkips
 {
@@ -345,7 +346,9 @@ class CStakeWallet
         std::vector<CAmount> SplitStakeCredit(CAmount nCredit, CAmount target, CAmount split_above = 0) const;
 
         /** Joint input/output plan, including the reward. Candidates have passed
-         * ownership, script, lock and depth checks. No wallet-count thresholds.
+         * ownership, script, lock and depth checks, and the CoinJoin amount rule:
+         * PlanCombine leaves out denominations and collateral amounts, and this
+         * function does not repeat that check. No wallet-count thresholds.
          * Amounts below the staking floor consume no eligible-value budget. */
         CoinstakePlan PlanCoinstake(CAmount kernel, CAmount reward,
                                    const std::vector<CAmount>& candidates, CAmount base_target,
@@ -368,7 +371,9 @@ class CStakeWallet
          * Scan `wallet` for the outputs a win could combine with its kernel and
          * lay out the coinstake (PlanCoinstake). `max_extra` is how many more
          * inputs the block has room for; the scan runs whatever it is, so a full
-         * block's size brake is counted. The kernel itself is never a candidate.
+         * block's size brake is counted. The kernel itself is never a candidate,
+         * nor, in either scope, a CoinJoin denomination or collateral amount; a
+         * kernel of such an amount takes no other input, and nothing is counted.
          */
         CombineChoice PlanCombine(CWallet& wallet, const COutPoint& kernel_outpoint, const CPubKey& kernel_key,
                                   CAmount kernel_value, CAmount reward, CAmount target, size_t max_extra,

@@ -96,7 +96,9 @@ static const bool DEFAULT_WALLET_REJECT_LONG_CHAINS = false;
 static const unsigned int DEFAULT_TX_CONFIRM_TARGET = 6;
 static const bool DEFAULT_WALLETBROADCAST = true;
 static const bool DEFAULT_DISABLE_WALLET = false;
-//! -stakecombine default: a coinstake also spends the winning key's small outputs
+//! -stakecombine default: a winning coinstake also spends small outputs of the
+//! wallet, from any of its keys (only the winning key's with
+//! -stakecombinescope=key), never a CoinJoin denomination or collateral amount
 static const bool DEFAULT_STAKE_COMBINE = true;
 
 //! combineoutputs lays a batch out in `pieces` equal outputs with the fee taken
@@ -1276,8 +1278,12 @@ public:
     //! The size a coinstake lays its credit out in (-staketarget). Zero lets
     //! the wallet derive it from the network's stake weight: StakeTargetSize.
     CAmount m_stake_target{0};
+    //! -stakecombinescope: true (wallet, the default) combines outputs of any of
+    //! this wallet's keys, which links their addresses; false (key) only the
+    //! winning key's.
     bool m_stake_combine_wallet{true};
-    //! Whether a coinstake also spends this key's small outputs (-stakecombine).
+    //! Whether a winning coinstake also spends small outputs of this wallet
+    //! (-stakecombine); never a CoinJoin denomination or collateral amount.
     bool m_stake_combine{DEFAULT_STAKE_COMBINE};
     int64_t nLastCoinStakeSearchTime{0};
     std::atomic<int> m_is_staking{NOT_STAKING};

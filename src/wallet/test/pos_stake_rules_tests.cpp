@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chainparams.h>
+#include <coinjoin/common.h>
 #include <coins.h>
 #include <consensus/consensus.h>
 #include <interfaces/chain.h>
@@ -11,6 +12,8 @@
 #include <policy/feerate.h>
 #include <pos/stake.h>
 #include <primitives/block.h>
+#include <rpc/server.h>
+#include <rpc/util.h>
 #include <script/sign.h>
 #include <script/signingprovider.h>
 #include <script/standard.h>
@@ -20,7 +23,9 @@
 #include <util/time.h>
 #include <util/translation.h>
 #include <validation.h>
+#include <wallet/coincontrol.h>
 #include <wallet/ismine.h>
+#include <wallet/rpcwallet.h>
 #include <wallet/test/wallet_test_fixture.h>
 #include <wallet/wallet.h>
 
@@ -29,6 +34,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -686,6 +692,224 @@ BOOST_FIXTURE_TEST_CASE(a_full_block_counts_every_combine_candidate_under_size, 
     BOOST_CHECK(broke.plan.extra_inputs.empty());
     BOOST_CHECK_EQUAL(broke.plan.skipped.budget, 4u);
     BOOST_CHECK_EQUAL(broke.plan.skipped.Total(), 4u);
+}
+
+BOOST_AUTO_TEST_CASE(the_coinjoin_amount_rule_is_exact)
+{
+    // What staking and combineoutputs leave out: the five denominations and
+    // the collateral range, inclusive, and nothing next to them.
+    for (const CAmount denom : CoinJoin::GetStandardDenominations()) {
+        BOOST_CHECK(CoinJoin::IsDenominatedOrCollateralAmount(denom));
+        BOOST_CHECK(!CoinJoin::IsDenominatedOrCollateralAmount(denom - 1));
+        BOOST_CHECK(!CoinJoin::IsDenominatedOrCollateralAmount(denom + 1));
+    }
+    for (const CAmount collateral : {CoinJoin::GetCollateralAmount(), CAmount{25000}, CoinJoin::GetMaxCollateralAmount()}) {
+        BOOST_CHECK(CoinJoin::IsDenominatedOrCollateralAmount(collateral));
+    }
+    for (const CAmount other : {CAmount{0}, CoinJoin::GetCollateralAmount() - 1, CoinJoin::GetMaxCollateralAmount() + 1, COIN, 10 * COIN}) {
+        BOOST_CHECK(!CoinJoin::IsDenominatedOrCollateralAmount(other));
+    }
+}
+
+namespace {
+//! One wallet, two keys, and outputs that differ only in amount: at each key
+//! every CoinJoin denomination and three collateral amounts, and beside them
+//! near misses that are neither. One transaction, the same scripts and the
+//! same depth, so only the amount rule can keep the CoinJoin ones out.
+struct CoinJoinDecoySetup : public TestChain100Setup {
+    //! Stakeable under MainnetLikeLimits too, so neither plan is empty.
+    static constexpr CAmount KERNEL_VALUE{12000 * COIN};
+    CKey held;  //!< the kernel's key
+    CKey other; //!< another key of the same wallet
+    COutPoint kernel;
+    COutPoint coinjoin_kernel; //!< the largest denomination at held, as a kernel where the floor is zero
+    CAmount coinjoin_kernel_value{CoinJoin::GetStandardDenominations()[0]};
+    std::set<COutPoint> coinjoin;       //!< 8 CoinJoin amounts at each key
+    std::set<COutPoint> controls_held;  //!< 9999 and 40001 sat, each denomination + 1 sat
+    std::set<COutPoint> controls_other; //!< 9999 and 40001 sat, each denomination - 1 sat
+    CAmount control_total{0};
+    std::shared_ptr<CWallet> wallet;
+
+    CoinJoinDecoySetup()
+    {
+        held.MakeNewKey(true);
+        other.MakeNewKey(true);
+        const CScript to_held = GetScriptForDestination(PKHash(held.GetPubKey()));
+        const CScript to_other = GetScriptForDestination(PKHash(other.GetPubKey()));
+        std::vector<CAmount> decoys{CoinJoin::GetCollateralAmount(), 25000, CoinJoin::GetMaxCollateralAmount()};
+        std::vector<CAmount> above{CoinJoin::GetCollateralAmount() - 1, CoinJoin::GetMaxCollateralAmount() + 1};
+        std::vector<CAmount> below(above);
+        for (const CAmount denom : CoinJoin::GetStandardDenominations()) {
+            decoys.push_back(denom);
+            above.push_back(denom + 1);
+            below.push_back(denom - 1);
+        }
+        CMutableTransaction funding;
+        funding.vin.emplace_back(COutPoint(m_coinbase_txns[0]->GetHash(), 0));
+        funding.vout.emplace_back(KERNEL_VALUE, to_held);
+        std::vector<std::pair<size_t, std::set<COutPoint>*>> placed;
+        const auto pay = [&](CAmount value, const CScript& script, std::set<COutPoint>& into) {
+            placed.emplace_back(funding.vout.size(), &into);
+            funding.vout.emplace_back(value, script);
+        };
+        size_t coinjoin_kernel_n{0};
+        for (const CAmount value : decoys) {
+            if (value == coinjoin_kernel_value) coinjoin_kernel_n = funding.vout.size();
+            pay(value, to_held, coinjoin);
+            pay(value, to_other, coinjoin);
+        }
+        BOOST_REQUIRE(coinjoin_kernel_n != 0);
+        for (const CAmount value : above) pay(value, to_held, controls_held);
+        for (const CAmount value : below) pay(value, to_other, controls_other);
+        BOOST_REQUIRE(m_coinbase_txns[0]->vout[0].nValue >= CTransaction(funding).GetValueOut());
+        {
+            FillableSigningProvider keystore;
+            keystore.AddKey(coinbaseKey);
+            BOOST_REQUIRE(SignSignature(keystore, *m_coinbase_txns[0], funding, 0, SIGHASH_ALL));
+        }
+        const uint256 txid = funding.GetHash();
+        kernel = COutPoint(txid, 0);
+        coinjoin_kernel = COutPoint(txid, static_cast<uint32_t>(coinjoin_kernel_n));
+        for (const auto& [n, into] : placed) into->emplace(txid, static_cast<uint32_t>(n));
+        for (const auto* controls : {&controls_held, &controls_other}) {
+            for (const COutPoint& outpoint : *controls) control_total += funding.vout[outpoint.n].nValue;
+        }
+        CreateAndProcessBlock({funding}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+        for (int i = 0; i < COINBASE_MATURITY + 5; ++i) {
+            CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+        }
+        wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "", CreateMockWalletDatabase());
+        {
+            LOCK(wallet->cs_wallet);
+            wallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+        }
+        wallet->LoadWallet();
+        {
+            auto* spk_man = wallet->GetOrCreateLegacyScriptPubKeyMan();
+            LOCK2(wallet->cs_wallet, spk_man->cs_KeyStore);
+            BOOST_REQUIRE(spk_man->AddKeyPubKey(held, held.GetPubKey()));
+            BOOST_REQUIRE(spk_man->AddKeyPubKey(other, other.GetPubKey()));
+        }
+        {
+            WalletRescanReserver reserver(*wallet);
+            reserver.reserve();
+            const CWallet::ScanResult result = wallet->ScanForWalletTransactions(
+                m_node.chainman->ActiveChain().Genesis()->GetBlockHash(), /*start_height=*/0, /*max_height=*/{}, reserver, /*fUpdate=*/true);
+            BOOST_REQUIRE_EQUAL(result.status, CWallet::ScanResult::SUCCESS);
+        }
+        // Last, so a failed check above leaves no wallet loaded for later tests.
+        BOOST_REQUIRE(AddWallet(wallet));
+    }
+    ~CoinJoinDecoySetup() { RemoveWallet(wallet, std::nullopt); }
+};
+} // namespace
+
+BOOST_FIXTURE_TEST_CASE(staking_never_combines_a_coinjoin_amount_in_either_scope, CoinJoinDecoySetup)
+{
+    LOCK(wallet->cs_wallet);
+    const auto deep_spendable = [&](const CCoinControl* control) {
+        std::vector<COutput> coins;
+        wallet->AvailableCoins(coins, control);
+        std::set<COutPoint> outpoints;
+        for (const COutput& out : coins) {
+            if (out.fSpendable && out.nDepth - 1 >= COINBASE_MATURITY + 1) outpoints.emplace(out.tx->GetHash(), out.i);
+        }
+        return outpoints;
+    };
+    // Otherwise ordinary: every output is available, spendable and deep enough
+    // for PlanCombine, so only the amount rule can leave the decoys out.
+    const std::set<COutPoint> available = deep_spendable(nullptr);
+    for (const auto* group : {&coinjoin, &controls_held, &controls_other}) {
+        for (const COutPoint& outpoint : *group) BOOST_REQUIRE(available.count(outpoint));
+    }
+    // The same outputs the wallet's own ONLY_NONDENOMINATED rule leaves out.
+    const CCoinControl nondenominated_only(CoinType::ONLY_NONDENOMINATED);
+    const std::set<COutPoint> nondenominated = deep_spendable(&nondenominated_only);
+    for (const COutPoint& outpoint : coinjoin) BOOST_CHECK(!nondenominated.count(outpoint));
+    for (const auto* group : {&controls_held, &controls_other}) {
+        for (const COutPoint& outpoint : *group) BOOST_CHECK(nondenominated.count(outpoint));
+    }
+
+    std::vector<Consensus::Params> networks{Params().GetConsensus(), MainnetLikeLimits()};
+    for (Consensus::Params& params : networks) {
+        CStakeWallet staker(wallet, params);
+        for (const bool wallet_scope : {true, false}) {
+            wallet->m_stake_combine_wallet = wallet_scope;
+            std::set<COutPoint> expected(controls_held);
+            if (wallet_scope) expected.insert(controls_other.begin(), controls_other.end());
+            const std::string context = strprintf("floor %d COIN, scope %s", params.stakeValueRange[0] / COIN, wallet_scope ? "wallet" : "key");
+            const auto choice = staker.PlanCombine(*wallet, kernel, held.GetPubKey(), KERNEL_VALUE, GetProofOfStakeReward(),
+                                                   MIN_STAKE_TARGET, /*max_extra=*/19, MAX_MONEY, MAX_MONEY);
+            std::set<COutPoint> refs;
+            for (const auto& [wtx, n] : choice.refs) refs.emplace(wtx->GetHash(), n);
+            BOOST_CHECK_MESSAGE(refs == expected, context);
+            BOOST_CHECK_MESSAGE(!choice.plan.output_values.empty(), context);
+            BOOST_CHECK_MESSAGE(choice.plan.extra_inputs.size() == expected.size(), context);
+            for (const size_t i : choice.plan.extra_inputs) {
+                BOOST_CHECK_MESSAGE(!coinjoin.count(COutPoint(choice.refs[i].first->GetHash(), choice.refs[i].second)), context);
+            }
+            BOOST_CHECK_MESSAGE(choice.plan.skipped.Total() == 0, context);
+        }
+    }
+
+    // Smallest first, the collaterals would lead; with room for three the plan
+    // takes the three smallest near misses instead.
+    wallet->m_stake_combine_wallet = true;
+    Consensus::Params mainnet = MainnetLikeLimits();
+    CStakeWallet staker(wallet, mainnet);
+    const auto three = staker.PlanCombine(*wallet, kernel, held.GetPubKey(), KERNEL_VALUE, GetProofOfStakeReward(),
+                                          MIN_STAKE_TARGET, /*max_extra=*/3, MAX_MONEY, MAX_MONEY);
+    std::multiset<CAmount> taken;
+    for (const size_t i : three.plan.extra_inputs) taken.insert(three.refs[i].first->tx->vout[three.refs[i].second].nValue);
+    const CAmount low = CoinJoin::GetCollateralAmount() - 1;
+    const CAmount high = CoinJoin::GetMaxCollateralAmount() + 1;
+    BOOST_CHECK(taken == (std::multiset<CAmount>{low, low, high}));
+    BOOST_CHECK_EQUAL(three.plan.skipped.size, controls_held.size() + controls_other.size() - 3);
+    BOOST_CHECK_EQUAL(three.plan.skipped.Total(), three.plan.skipped.size);
+
+    // Where the floor is zero a mixed coin can win a stake itself. It then wins
+    // alone: nothing is taken with it, and nothing is scanned or counted.
+    BOOST_REQUIRE(coinjoin.count(coinjoin_kernel));
+    Consensus::Params zero_floor = Params().GetConsensus();
+    BOOST_REQUIRE_EQUAL(zero_floor.stakeValueRange[0], CAmount{0});
+    CStakeWallet regtest_staker(wallet, zero_floor);
+    for (const bool wallet_scope : {true, false}) {
+        wallet->m_stake_combine_wallet = wallet_scope;
+        const std::string context = strprintf("CoinJoin kernel, scope %s", wallet_scope ? "wallet" : "key");
+        const auto alone = regtest_staker.PlanCombine(*wallet, coinjoin_kernel, held.GetPubKey(), coinjoin_kernel_value,
+                                                      GetProofOfStakeReward(), MIN_STAKE_TARGET, /*max_extra=*/19, MAX_MONEY, MAX_MONEY);
+        BOOST_CHECK_MESSAGE(alone.refs.empty(), context);
+        BOOST_CHECK_MESSAGE(alone.plan.extra_inputs.empty(), context);
+        BOOST_CHECK_MESSAGE(!alone.plan.output_values.empty(), context);
+        BOOST_CHECK_MESSAGE(alone.plan.skipped.Total() == 0, context);
+    }
+}
+
+BOOST_FIXTURE_TEST_CASE(combineoutputs_never_takes_a_coinjoin_amount, CoinJoinDecoySetup)
+{
+    // Unit tests ignore the request URI (URL_DECODE is null), so the call
+    // goes to the one loaded wallet, which must be this one.
+    BOOST_REQUIRE_EQUAL(GetWallets().size(), 1u);
+    const CRPCCommand* combine{nullptr};
+    for (const CRPCCommand& command : GetWalletRPCCommands()) {
+        if (command.name == "combineoutputs") combine = &command;
+    }
+    BOOST_REQUIRE(combine);
+    // A dry run with every default: on regtest max_amount is the smaller
+    // masternode collateral (1000), far above every output but the kernel.
+    JSONRPCRequest request;
+    request.params.setArray();
+    UniValue result;
+    BOOST_REQUIRE(combine->actor(request, result, /*last_handler=*/true));
+    const int64_t expected = controls_held.size() + controls_other.size();
+    BOOST_CHECK(find_value(result, "dry_run").get_bool());
+    BOOST_CHECK_EQUAL(find_value(result, "candidates").get_int64(), expected);
+    BOOST_CHECK_EQUAL(AmountFromValue(find_value(result, "candidate_amount")), control_total);
+    const UniValue& batches = find_value(result, "batches");
+    BOOST_REQUIRE_EQUAL(batches.size(), 1u);
+    BOOST_CHECK_EQUAL(find_value(batches[0], "inputs").get_int64(), expected);
+    // Built as well: the RPC refuses a transaction with any other inputs.
+    BOOST_CHECK(find_value(batches[0], "error").isNull());
 }
 
 static CTransactionRef CleanupTx(uint32_t id, bool coinstake = true)

@@ -38,6 +38,7 @@
 #include <key_io.h>
 
 #include <coinjoin/client.h>
+#include <coinjoin/common.h>
 #include <coinjoin/options.h>
 #include <llmq/chainlocks.h>
 
@@ -2415,14 +2416,16 @@ static RPCHelpMan combineoutputs()
 {
     return RPCHelpMan{"combineoutputs",
         "\nCombine this wallet's small outputs into a few larger ones, in batches of one transaction each.\n"
-        "Only spendable, unlocked outputs below max_amount are used, and never one of exactly a masternode collateral amount. "
+        "Only spendable, unlocked outputs below max_amount are used, never one of exactly a masternode collateral amount, "
+        "and never a CoinJoin denomination or CoinJoin collateral amount. "
         "Every batch pays to one new address of this wallet and pays its own fee out of the combined amount, so nothing "
         "else in the wallet is touched. Spending outputs of several addresses in one transaction links those addresses on the chain.\n"
         "By default nothing is sent: the batches are only reported, with their fees (dry_run).\n"
         "Use staking_only=true to require staking-sized outputs after fees. A preview does not reserve inputs; a later call selects again. "
         "A send may partially complete: inspect every batch and txid before retrying.\n"
-        "A staking wallet combines its winning key's small outputs by itself when it wins; this is for the outputs that "
-        "never win, or sit at other addresses.\n" +
+        "With -stakecombine (the default), a winning stake can also combine up to 19 more small outputs of this wallet: "
+        "from any of its addresses, or with -stakecombinescope=key only the winning key's. Staking skips the same "
+        "CoinJoin amounts. This call combines without waiting for wins.\n" +
             HELP_REQUIRING_PASSPHRASE,
         {
             {"dry_run", RPCArg::Type::BOOL, RPCArg::Default{true}, "Only report the batches; send nothing"},
@@ -2536,6 +2539,9 @@ static RPCHelpMan combineoutputs()
             const CTxOut& txout = out.tx->tx->vout[out.i];
             if (txout.nValue < min_amount || txout.nValue >= max_amount) continue;
             if (is_collateral_amount(txout.nValue)) continue;
+            // Nor a CoinJoin denomination or collateral amount: combining one
+            // would link mixed coins to each other and to the wallet's other addresses.
+            if (CoinJoin::IsDenominatedOrCollateralAmount(txout.nValue)) continue;
             std::vector<std::vector<unsigned char>> solutions;
             const TxoutType type = Solver(txout.scriptPubKey, solutions);
             if (type != TxoutType::PUBKEY && type != TxoutType::PUBKEYHASH) continue;

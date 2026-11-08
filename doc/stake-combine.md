@@ -8,8 +8,11 @@ With `-stakecombine=1` (the default), a winning coinstake can spend up to 19
 additional eligible, unlocked outputs from the SAME wallet. The default
 `-stakecombinescope=wallet` permits different own keys and links those source
 addresses on chain. `-stakecombinescope=key` restricts gathering to the winning
-key. Masternode collateral amounts are excluded. Additional inputs are selected
-after the kernel is found and do not increase its winning weight.
+key. Masternode collateral amounts, CoinJoin denominations and CoinJoin
+collateral amounts are excluded in both scopes, and a stake won by an output of
+such a CoinJoin amount (possible only where the staking floor is zero) takes no
+additional input. Additional inputs are selected after the kernel is found and
+do not increase its winning weight.
 
 The wallet evaluates inputs and new outputs together, including the reward.
 Optional inputs must reduce the UTXO count and improve on the kernel-only layout.
@@ -71,9 +74,10 @@ output amounts must also satisfy the staking limits.
 Each send request with at least two candidates creates one new address labelled
 `combined`; all its batches use that address. Previews create no address. Combining different
 addresses links them on-chain. Locked outputs, masternode collateral amounts,
-and unsupported scripts are excluded. Each batch pays its own fee, and a lone
-last input is left untouched. A requested batch may be too large even when its
-input count is within the accepted range.
+CoinJoin denominations and collateral amounts, and unsupported scripts are
+excluded. Each batch pays its own fee, and a lone last input is left untouched.
+A requested batch may be too large even when its input count is within the
+accepted range.
 
 A send stops on the first failed batch; earlier batches remain sent. Inspect
 every batch before retrying. Returned submission states are:

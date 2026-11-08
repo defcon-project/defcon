@@ -15,7 +15,8 @@
 # measured ones in its summary ("Functional gate: recorded and measured
 # seconds"); refresh a line when its test has grown or shrunk a lot. Recorded on
 # push run 42371427370 (2026-11-07); the four tests #379 added, on its PR run
-# 42406840902.
+# 42406840902; wallet_combineoutputs.py, which the CJ1 change (no CoinJoin amounts in
+# combining) touches, estimated from its local runs until its first hosted run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -73,6 +74,7 @@
 57   feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates
 54   p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
 51   feature_pos_double_sign.py             # a stake signed twice is counted once and changes nothing else
+50   wallet_combineoutputs.py               # combineoutputs: previews, batches smallest first, exactly the reported inputs and no change; both wallets
 50   feature_llmq_is_named_quorum_window.py # an InstantSend lock signed by the quorum that has just left the signing-active set, right after a new commitment
 43   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 42   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)

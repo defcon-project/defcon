@@ -3,7 +3,8 @@
 The staking wallet gradually consolidates outputs during successful coinstakes.
 There are no wallet UTXO-count thresholds and no guarantee of staying below a
 particular count. Locked wallets, wallets without an eligible winning input,
-locked coins and masternode collateral are not automatically repaired.
+locked coins, masternode collateral and CoinJoin denominations and collateral
+amounts are not automatically repaired.
 
 ## Defaults and privacy
 
@@ -12,7 +13,9 @@ spendable P2PK/P2PKH outputs from different keys of the SAME wallet can join a
 winning input. This links those source addresses on chain. `-stakecombinescope=key`
 restricts gathering to the winning key. `-stakecombine=0` disables gathering and
 uses the original split policy. Neither mode sends independent maintenance
-transactions. No funds are taken from a different loaded wallet.
+transactions. No funds are taken from a different loaded wallet. CoinJoin
+denominations and CoinJoin collateral amounts never join, in either scope, and a
+stake won by one takes no other output.
 
 ## Policy
 
@@ -57,8 +60,9 @@ only when all input records are available.
 ## Validation
 
 Unit coverage checks conservation, amount/collateral limits, bounded input count,
-rest budget, target-size inputs, stable later wins, unknown GUI input records and
-HTML escaping. Functional coverage exercises default cross-key and key-only scope,
+rest budget, target-size inputs, stable later wins, unknown GUI input records,
+HTML escaping, and that neither staking (in both scopes) nor `combineoutputs`
+takes a CoinJoin amount. Functional coverage exercises default cross-key and key-only scope,
 legacy/descriptor wallets, excluded coins, positive net reward, disconnect/reconnect,
 and observer reindex. An unchanged observer binary can be supplied with
 `feature_pos_stake_combine.py --observer-binary=/absolute/path/to/defcond`.
