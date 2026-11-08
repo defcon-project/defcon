@@ -5,12 +5,12 @@
 To quickly get started fuzzing DeFCoN Core using [libFuzzer](https://llvm.org/docs/LibFuzzer.html):
 
 ```sh
-$ git clone https://github.com/dashpay/dash
-$ cd dash/
+$ git clone https://github.com/defcon-project/defcon
+$ cd defcon/
 $ ./autogen.sh
 $ CC=clang CXX=clang++ ./configure --enable-fuzz --with-sanitizers=address,fuzzer,undefined
 # macOS users: If you have problem with this step then make sure to read "macOS hints for
-# libFuzzer" on https://github.com/dashpay/dash/blob/develop/doc/fuzzing.md#macos-hints-for-libfuzzer
+# libFuzzer" below
 $ make
 $ FUZZ=process_message src/test/fuzz/fuzz
 # abort fuzzing using ctrl-c
@@ -21,7 +21,7 @@ There is also a runner script to execute all fuzz targets. Refer to
 
 ## Fuzzing harnesses and output
 
-[`process_message`](https://github.com/dashpay/dash/blob/develop/src/test/fuzz/process_message.cpp) is a fuzzing harness for the [`ProcessMessage(...)` function (`net_processing`)](https://github.com/dashpay/dash/blob/develop/src/net_processing.cpp). The available fuzzing harnesses are found in [`src/test/fuzz/`](https://github.com/dashpay/dash/tree/develop/src/test/fuzz).
+[`process_message`](../src/test/fuzz/process_message.cpp) is a fuzzing harness for the [`ProcessMessage(...)` function (`net_processing`)](../src/net_processing.cpp). The available fuzzing harnesses are found in [`src/test/fuzz/`](../src/test/fuzz/).
 
 The fuzzer will output `NEW` every time it has created a test input that covers new areas of the code under test. For more information on how to interpret the fuzzer output, see the [libFuzzer documentation](https://llvm.org/docs/LibFuzzer.html).
 
@@ -78,7 +78,7 @@ $ FUZZ=address_deserialize_v2 src/test/fuzz/fuzz -runs=1 fuzz_seed_corpus/addres
 
 ## Fuzzing corpora
 
-The project's collection of seed corpora is found in the [`bitcoin-core/qa-assets`](https://github.com/bitcoin-core/qa-assets) repo.
+Seed corpora for the targets inherited from upstream are found in the [`bitcoin-core/qa-assets`](https://github.com/bitcoin-core/qa-assets) and [`dashpay/qa-assets`](https://github.com/dashpay/qa-assets) repos. The DeFCoN Core CI uses a pinned commit of the latter (see below).
 
 To fuzz `process_message` using the [`bitcoin-core/qa-assets`](https://github.com/bitcoin-core/qa-assets) seed corpus:
 
@@ -101,7 +101,8 @@ Fuzzing on a harness compiled with `--with-sanitizers=address,fuzzer,undefined` 
 
 ## Reproduce a fuzzer crash reported by the CI
 
-- `cd` into the `qa-assets` directory and update it with `git pull qa-assets`
+- `cd` into a clone of the [`dashpay/qa-assets`](https://github.com/dashpay/qa-assets) repo and check out
+  the commit the CI uses (`QA_ASSETS_COMMIT` in [`ci/dash/fuzz_regression.sh`](../ci/dash/fuzz_regression.sh))
 - locate the crash case described in the CI output, e.g. `Test unit written to
   ./crash-1bc91feec9fc00b107d97dc225a9f2cdaa078eb6`
 - make sure to compile with all sanitizers, if they are needed (fuzzing runs
@@ -115,7 +116,7 @@ Fuzzing on a harness compiled with `--with-sanitizers=address,fuzzer,undefined` 
 
 If you find coverage increasing inputs when fuzzing you are highly encouraged to submit them for inclusion in the [`bitcoin-core/qa-assets`](https://github.com/bitcoin-core/qa-assets) repo.
 
-The DeFCoN Core CI does not run the fuzz corpus; fuzzing is run by hand, as described above. Inputs that increase coverage of code inherited from Bitcoin Core are best contributed to [`bitcoin-core/qa-assets`](https://github.com/bitcoin-core/qa-assets).
+On every pull request that changes code, the DeFCoN Core CI runs the fuzz targets once over a pinned set of saved inputs (the `Fuzz regression (linux64_fuzz)` job, [`ci/dash/fuzz_regression.sh`](../ci/dash/fuzz_regression.sh)). The inputs come from a fixed commit of [`dashpay/qa-assets`](https://github.com/dashpay/qa-assets); inputs for Dash targets this build does not have ([`ci/dash/fuzz_qa_assets_dash_only.txt`](../ci/dash/fuzz_qa_assets_dash_only.txt)) are left out, and DeFCoN's own seed inputs are not part of it yet. A target with no saved inputs runs once on an empty input. Targets with a known failure are not run at all: they are listed, with the reason, in `EXCLUDED_TARGETS` in that script (today only `rpc`). The job is informational for now: a failure shows on the pull request but does not block the merge. It is a regression check, not a fuzzing campaign; long fuzzing runs are done by hand, as described above. Inputs that increase coverage of code inherited from Bitcoin Core are best contributed to [`bitcoin-core/qa-assets`](https://github.com/bitcoin-core/qa-assets).
 
 ## macOS hints for libFuzzer
 
@@ -125,7 +126,7 @@ example using `brew install llvm`.
 
 Should you run into problems with the address sanitizer, it is possible you
 may need to run `./configure` with `--disable-asm` to avoid errors
-with certain assembly code from DeFCoN Core's code. See [developer notes on sanitizers](https://github.com/dashpay/dash/blob/develop/doc/developer-notes.md#sanitizers)
+with certain assembly code from DeFCoN Core's code. See [developer notes on sanitizers](developer-notes.md#sanitizers)
 for more information.
 
 You may also need to take care of giving the correct path for `clang` and
@@ -147,8 +148,8 @@ Read the [libFuzzer documentation](https://llvm.org/docs/LibFuzzer.html) for mor
 To quickly get started fuzzing DeFCoN Core using [afl++](https://github.com/AFLplusplus/AFLplusplus):
 
 ```sh
-$ git clone https://github.com/dashpay/dash
-$ cd dash/
+$ git clone https://github.com/defcon-project/defcon
+$ cd defcon/
 $ git clone https://github.com/AFLplusplus/AFLplusplus
 $ make -C AFLplusplus/ source-only
 $ ./autogen.sh
@@ -174,8 +175,8 @@ Read the [afl++ documentation](https://github.com/AFLplusplus/AFLplusplus) for m
 To quickly get started fuzzing DeFCoN Core using [Honggfuzz](https://github.com/google/honggfuzz):
 
 ```sh
-$ git clone https://github.com/dashpay/dash
-$ cd dash/
+$ git clone https://github.com/defcon-project/defcon
+$ cd defcon/
 $ ./autogen.sh
 $ git clone https://github.com/google/honggfuzz
 $ cd honggfuzz/
@@ -191,7 +192,7 @@ Read the [Honggfuzz documentation](https://github.com/google/honggfuzz/blob/mast
 
 ## Fuzzing the DeFCoN Core P2P layer using Honggfuzz NetDriver
 
-Honggfuzz NetDriver allows for very easy fuzzing of TCP servers such as Dash
+Honggfuzz NetDriver allows for very easy fuzzing of TCP servers such as DeFCoN
 Core without having to write any custom fuzzing harness. The `defcond` server
 process is largely fuzzed without modification.
 
@@ -203,8 +204,8 @@ To quickly get started fuzzing the P2P layer using Honggfuzz NetDriver:
 ```sh
 $ mkdir bitcoin-honggfuzz-p2p/
 $ cd bitcoin-honggfuzz-p2p/
-$ git clone https://github.com/dashpay/dash/
-$ cd dash/
+$ git clone https://github.com/defcon-project/defcon
+$ cd defcon/
 $ ./autogen.sh
 $ git clone https://github.com/google/honggfuzz
 $ cd honggfuzz/

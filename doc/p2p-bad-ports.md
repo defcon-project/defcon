@@ -2,20 +2,20 @@ When DeFCoN Core automatically opens outgoing P2P connections, it chooses
 a peer (address and port) from its list of potential peers. This list is
 populated with unchecked data gossiped over the P2P network by other peers.
 
-A malicious actor may gossip an address:port where no Dash node is listening,
-or one where a service is listening that is not related to the Dash network.
-As a result, this service may occasionally get connection attempts from Dash
+A malicious actor may gossip an address:port where no DeFCoN node is listening,
+or one where a service is listening that is not related to the DeFCoN network.
+As a result, this service may occasionally get connection attempts from DeFCoN
 nodes.
 
 "Bad" ports are ones used by services which are usually not open to the public
 and usually require authentication. A connection attempt (by DeFCoN Core,
-trying to connect because it thinks there is a Dash node on that
+trying to connect because it thinks there is a DeFCoN node on that
 address:port) to such service may be considered a malicious action by an
 ultra-paranoid administrator. An example for such a port is 22 (ssh).
 
 Additionally, ports below 1024 are classified as "system ports" by RFC 6335
 and on some platforms, require administrative privileges in order to use them.
-They are also considered "bad" ports as they require clients to either run Dash
+They are also considered "bad" ports as they require clients to either run DeFCoN
 Core with elevated privileges or configure their system to relax such requirements,
 which may not be possible or desirable in some deployments.
 

@@ -25,7 +25,7 @@ libtool
 pkg-config
 python37
 
-git clone https://github.com/dashpay/dash.git
+git clone https://github.com/defcon-project/defcon.git
 ```
 
 See [dependencies.md](dependencies.md) for a complete overview.

@@ -123,7 +123,7 @@ use old versions of Upstart and do not supply the start-stop-daemon utility.
 Copy defcond.init to /etc/init.d/defcond. Test by running `service defcond start`.
 
 Using this script, you can adjust the path and flags to the defcond program by
-setting the DASHD and FLAGS environment variables in the file
+setting the BITCOIND_BIN and BITCOIND_OPTS environment variables in the file
 /etc/sysconfig/defcond. You can also use the DAEMONOPTS environment variable here.
 
 ### macOS

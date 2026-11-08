@@ -23,7 +23,7 @@ application bridge enabled. The following routers are recommended for use with D
 Note the IP address and port the SAM proxy is listening to; usually, it is
 `127.0.0.1:7656`.
 
-Once an I2P router with SAM enabled is up and running, use the following Dash
+Once an I2P router with SAM enabled is up and running, use the following DeFCoN
 Core configuration options:
 
 ```
@@ -136,7 +136,7 @@ port (`TO_PORT`) is always set to 0 and is not in the control of DeFCoN Core.
 By default, your node shares bandwidth and transit tunnels with the I2P network
 in order to increase your anonymity with cover traffic, help the I2P router used
 by your node integrate optimally with the network, and give back to the network.
-It's important that the nodes of a popular application like Dash contribute
+It's important that the nodes of a popular application like DeFCoN Core contribute
 as much to the I2P network as they consume.
 
 It is possible, though strongly discouraged, to change your I2P router
@@ -163,7 +163,7 @@ in [Embedding I2P in your Application](https://geti2p.net/en/docs/applications/e
 
 In most cases, the default router settings should work fine.
 
-## Bundling I2P in a Dash application
+## Bundling I2P in a DeFCoN application
 
 Please see the "General Guidance for Developers" section in https://geti2p.net/en/docs/api/samv3
-if you are developing a downstream application that may be bundling I2P with Dash.
+if you are developing a downstream application that may be bundling I2P with DeFCoN Core.

@@ -1,11 +1,39 @@
 Release Process
 ====================
 
-The Guix instructions below are inherited from upstream and are not currently
-part of the DeFCoN release process. The tools in `contrib/guix` are retained for
-future reproducible releases.
+## DeFCoN Core releases
 
-* [ ] Update translations, see [translation_process.md](https://github.com/dashpay/dash/blob/master/doc/translation_process.md#synchronising-translations).
+Every DeFCoN Core release must satisfy this checklist.
+
+In the release pull request:
+
+* [ ] Set the version in `configure.ac` (`_CLIENT_VERSION_*`, with `_CLIENT_VERSION_IS_RELEASE` set to `true`).
+* [ ] Add a recent mainnet checkpoint to `checkpointData` and update the fork-recovery anchor
+  (`nForkRecoveryAnchorHeight`, `hashForkRecoveryAnchor`) in `src/chainparams.cpp`, both from current mainnet data.
+* [ ] Collect the `doc/release-notes-*.md` fragments into `doc/release-notes.md`.
+* [ ] Update the activation heights, the platform table and the `git checkout` tag in `README.md`, and the
+  supported versions in `SECURITY.md`.
+
+Binaries, built from the tagged commit with the depends system:
+
+* [ ] `defcon-linux.tgz` (x86_64-pc-linux-gnu), `defcon-windows.zip` (x86_64-w64-mingw32) and `defcon-apple.tgz`
+  (x86_64-apple-darwin, cross-built and unsigned). Keep these file names: download links and scripts rely on them.
+* [ ] Each archive contains `COPYING` next to the binaries (the Windows archive also `doc/README_windows.txt` as `readme.txt`).
+* [ ] Regenerate the manual pages from the release binaries with
+  [`contrib/devtools/gen-manpages.py`](../contrib/devtools/gen-manpages.py), and commit them.
+
+On the GitHub releases page:
+
+* [ ] The archives; `SHA256SUMS` (one line per archive); `SHA256SUMS.binaries` (the binaries inside the
+  archives); `BUILDINFO.txt` (source commit, tree, tag and build targets); and the release notes, with
+  the verification commands for each platform.
+* [ ] Point the download page on https://www.dfcn.io/wallet/ to the new release.
+
+The longer checklist and the Guix instructions below are inherited from upstream. The Guix build is not
+currently part of the DeFCoN release process; the tools in `contrib/guix` are retained for future
+reproducible releases.
+
+* [ ] Update translations, see [translation_process.md](translation_process.md).
 * [ ] Update manpages (after rebuilding the binaries), see [gen-manpages.py](https://github.com/bitcoin/bitcoin/blob/master/contrib/devtools/README.md#gen-manpagespy).
 
 Before every minor and major release:
@@ -92,7 +120,7 @@ git -C ./guix.sigs pull
 _Note: this step can be skipped if [our CI](https://github.com/dashpay/dash/blob/master/ci/test/00_setup_env.sh#L64) still uses bitcoin's SDK package (see SDK_URL)_
 
 Create the macOS SDK tarball, see the [macOS build
-instructions](build-osx.md#deterministic-macos-app-notes) for
+instructions](../contrib/macdeploy/README.md#deterministic-macos-app-notes) for
 details.
 
 ### Build and attest to build outputs:
@@ -175,7 +203,7 @@ Non-codesigners: wait for Windows/macOS detached signatures:
 - Detached signatures will then be committed to the [dash-detached-sigs](https://github.com/dashpay/dash-detached-sigs) repository, which can be combined with the unsigned apps to create signed binaries.
 
 Create (and optionally verify) the codesigned outputs:
-- [Codesigning](/contrib/guix/README.md#codesigning)
+- [Codesigning](/contrib/guix/README.md#codesigning-build-outputs)
 
 Commit your signature for the signed macOS/Windows binaries:
 

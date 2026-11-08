@@ -13,7 +13,8 @@ document describes how changes get into the repository.
 
 ## Making a change
 
-1. Fork the repository and branch from the default branch.
+1. Fork the repository and branch from the default branch, `v22.1.x`. Despite its name it is the
+   development branch and carries the work towards the next release.
 2. Keep each pull request to one logical change. Unrelated fixes go in separate pull requests.
 3. Add or update tests with the change: unit tests in [`src/test/`](src/test/), functional tests in
    [`test/functional/`](test/functional/). A pull request that changes behaviour without a test that

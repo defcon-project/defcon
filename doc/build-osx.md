@@ -85,7 +85,7 @@ To install, run the following from your terminal:
 brew install automake libtool boost gmp pkg-config libevent
 ```
 
-### 4. Clone Dash repository
+### 4. Clone DeFCoN Core repository
 
 `git` should already be installed by default on your system.
 Now that all the required dependencies are installed, let's clone the DeFCoN Core repository to a directory.
@@ -101,7 +101,7 @@ git clone https://github.com/defcon-project/defcon.git
 
 It is not necessary to build wallet functionality to run `defcond` or  `defcon-qt`.
 To enable legacy wallets, you must install `berkeley-db@4`.
-To enable [descriptor wallets](https://github.com/dashpay/dash/blob/master/doc/descriptors.md), `sqlite` is required.
+To enable [descriptor wallets](descriptors.md), `sqlite` is required.
 Skip `berkeley-db@4` if you intend to *exclusively* use descriptor wallets.
 
 ###### Legacy Wallet Support
@@ -147,7 +147,7 @@ brew uninstall qt
 ```
 
 Note: Building with Qt binaries downloaded from the Qt website is not officially supported.
-See the notes in [#7714](https://github.com/dashpay/dash/issues/7714).
+See the notes in [bitcoin#7714](https://github.com/bitcoin/bitcoin/issues/7714).
 
 ###### qrencode
 
@@ -236,7 +236,7 @@ Additionally, this explicitly disables the GUI.
 ###### Berkeley DB
 
 It is recommended to use Berkeley DB 4.8. If you have to build it yourself,
-you can use [the installation script included in contrib/](contrib/install_db4.sh)
+you can use [the installation script included in contrib/](../contrib/install_db4.sh)
 like so:
 
 ```shell
@@ -300,7 +300,7 @@ This process could take many hours, or even days on slower than average systems.
 By default, blockchain and wallet data files will be stored in:
 
 ``` bash
-/Users/${USER}/Library/Application Support/Dash/
+/Users/${USER}/Library/Application Support/Defcon/
 ```
 
 Before running, you may create an empty configuration file:

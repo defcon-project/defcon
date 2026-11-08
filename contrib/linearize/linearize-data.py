@@ -302,9 +302,9 @@ if __name__ == '__main__':
     settings['rev_hash_bytes'] = settings['rev_hash_bytes'].lower()
 
     if 'netmagic' not in settings:
-        settings['netmagic'] = 'bf0c6bbd'
+        settings['netmagic'] = 'a1b2c3d4'
     if 'genesis' not in settings:
-        settings['genesis'] = '00000ffd590b1485b3caadc19b22e6379c733355108f107a430458cdf3407ab6'
+        settings['genesis'] = '2291f606f0402347e5d8b86fa2d4cea7408ded6071b1120cf8364101b5d5d712'
     if 'input' not in settings:
         settings['input'] = 'input'
     if 'hashlist' not in settings:

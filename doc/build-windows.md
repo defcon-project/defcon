@@ -45,7 +45,7 @@ The first step is to install the mingw-w64 cross-compilation tool chain:
 Once the toolchain is installed the build steps are common:
 
 Note that for WSL the DeFCoN Core source path MUST be somewhere in the default mount file system, for
-example /usr/src/dash, AND not under /mnt/d/. If this is not the case the dependency autoconf scripts will fail.
+example /usr/src/defcon, AND not under /mnt/d/. If this is not the case the dependency autoconf scripts will fail.
 This means you cannot use a directory that is located directly on the host Windows file system to perform the build.
 
 Additional WSL Note: WSL support for [launching Win32 applications](https://docs.microsoft.com/en-us/archive/blogs/wsl/windows-and-ubuntu-interoperability#launching-win32-applications-from-within-wsl)
@@ -74,10 +74,9 @@ Installation
 After building using the Windows subsystem it can be useful to copy the compiled
 executables to a directory on the Windows drive in the same directory structure
 as they appear in the release `.zip` archive. This can be done in the following
-way. This will install to `c:\workspace\dash`, for example:
+way. This will install to `c:\workspace\defcon`, for example:
 
-    make install DESTDIR=/mnt/c/workspace/dash
+    make install DESTDIR=/mnt/c/workspace/defcon
 
-You can also create an installer using:
-
-    make deploy
+The installer target (`make deploy`) is inherited from upstream and is not supported: DeFCoN Core
+releases for Windows are `.zip` archives.
