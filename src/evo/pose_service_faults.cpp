@@ -153,4 +153,19 @@ std::optional<std::string> FaultInjectionRefusal(const CChainParams& params, boo
                      FAULT_INJECTION_ARG, params.NetworkIDString());
 }
 
+const char* const TEST_PROCESS_DELAY_ARG{"-dsltestprocessdelay"};
+
+std::optional<std::string> TestProcessDelayRefusal(const CChainParams& params, int64_t delay_ms)
+{
+    if (delay_ms == 0) return std::nullopt;
+    if (delay_ms < 0 || delay_ms > MAX_TEST_PROCESS_DELAY_MS) {
+        return strprintf("%s must be between 0 and %d milliseconds", TEST_PROCESS_DELAY_ARG, MAX_TEST_PROCESS_DELAY_MS);
+    }
+    if (!FaultInjectionAllowedOn(params)) {
+        return strprintf("%s is not available on the %s chain: it runs on devnet and regtest only", TEST_PROCESS_DELAY_ARG,
+                         params.NetworkIDString());
+    }
+    return std::nullopt;
+}
+
 } // namespace dsl

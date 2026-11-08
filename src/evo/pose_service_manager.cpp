@@ -249,6 +249,7 @@ std::vector<CPoSeServiceReport> CPoSeServiceManager::EmitReports(const CDetermin
         {
             PerfTimer sign_timer(epoch, epochHash, PerfMetric::REPORT_SIGN);
             r.sig = signer(r.GetSignHash(epochHash));
+            TestProcessDelay(); // -dsltestprocessdelay: signing an own report costs this much more
         }
         out.push_back(std::move(r));
     }

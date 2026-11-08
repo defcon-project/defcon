@@ -1752,4 +1752,37 @@ BOOST_AUTO_TEST_CASE(socket_handler_skips_receive_paused_nodes)
     BOOST_CHECK(HasUnpausedReceivableNode(receivable));
 }
 
+// A received message also carries a monotonic arrival time (dsl::PerfMetric::BLOCK_MSG_WAIT), taken when its
+// bytes arrive and independent of the mockable time in m_time.
+BOOST_AUTO_TEST_CASE(a_received_message_carries_a_monotonic_arrival_time)
+{
+    SetMockTime(1700000000);
+    in_addr ipv4Addr;
+    ipv4Addr.s_addr = 0xa0b0c001;
+    const CAddress addr{CService(ipv4Addr, 7777), NODE_NETWORK};
+    CNode node{/*id=*/0, /*sock=*/nullptr, addr, /*nKeyedNetGroupIn=*/0, /*nLocalHostNonceIn=*/0, CAddress(), /*pszDest=*/"",
+               ConnectionType::OUTBOUND_FULL_RELAY, /*inbound_onion=*/false};
+    // The node's own transport serialises the message, and the same bytes are fed back as received ones.
+    CSerializedNetMsg ping{CNetMsgMaker(INIT_PROTO_VERSION).Make(NetMsgType::PING, uint64_t{7})};
+    BOOST_REQUIRE(node.m_transport->SetMessageToSend(ping));
+    const auto before = std::chrono::steady_clock::now();
+    bool complete{false};
+    while (true) {
+        const auto& [bytes, more, type] = node.m_transport->GetBytesToSend(/*have_next_message=*/false);
+        if (bytes.empty()) break;
+        BOOST_REQUIRE(node.ReceiveMsgBytes(bytes, complete));
+        node.m_transport->MarkBytesSent(bytes.size());
+    }
+    const auto after = std::chrono::steady_clock::now();
+    BOOST_REQUIRE(complete);
+    node.MarkReceivedMsgsForProcessing();
+    auto polled = node.PollMessage();
+    BOOST_REQUIRE(polled);
+    const CNetMessage& msg = polled->first;
+    BOOST_CHECK_EQUAL(msg.m_type, NetMsgType::PING);
+    BOOST_CHECK(msg.m_time_steady >= before && msg.m_time_steady <= after);
+    BOOST_CHECK_EQUAL(msg.m_time.count(), int64_t{1700000000} * 1000000);
+    SetMockTime(0);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

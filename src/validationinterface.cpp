@@ -23,6 +23,7 @@
 
 #include <exception>
 #include <future>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -242,14 +243,13 @@ void CMainSignals::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockInd
 
     const auto enqueued = dsl::PerfEnabled() ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     auto event = [pindexNew, pindexFork, fInitialDownload, this, enqueued] {
+        std::optional<dsl::TipEventScope> queued_at;
         if (enqueued != std::chrono::steady_clock::time_point{} && pindexNew != nullptr) {
-            const auto& consensus = Params().GetConsensus();
-            if (consensus.nDSLEpochInterval > 0 && pindexNew->nHeight >= consensus.nDSLActivationHeight) {
-                const auto epoch = static_cast<uint32_t>(pindexNew->nHeight / consensus.nDSLEpochInterval);
-                const auto base = pindexNew->GetAncestor(static_cast<int>(epoch) * consensus.nDSLEpochInterval);
-                const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - enqueued).count();
-                if (base != nullptr) dsl::RecordPerf(epoch, base->GetBlockHash(), dsl::PerfMetric::TIP_QUEUE, nanos);
+            if (const auto key = dsl::TipPerfKey(pindexNew, Params().GetConsensus())) {
+                dsl::RecordLatency(key->epoch, key->base, dsl::PerfMetric::TIP_QUEUE, key->position, dsl::NanosSince(enqueued));
             }
+            // For the callbacks below: when this event was queued (DKG_TIP_START).
+            queued_at.emplace(enqueued);
         }
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.UpdatedBlockTip(pindexNew, pindexFork, fInitialDownload); });
     };

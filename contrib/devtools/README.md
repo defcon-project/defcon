@@ -207,3 +207,15 @@ Example usage:
 
     cd .../src
     ../contrib/devtools/circular-dependencies.py {*,*/*,*/*/*}.{h,cpp}
+
+dsl_perf_pct.py
+===============
+
+Reads the Sentinel latency histograms a node writes to its debug.log with `-dslperf` (one
+`DSL perf hist` line per epoch, latency metric and position in the 24-block DKG cycle) and prints
+p50, p90 and p99 per metric and position, conservatively: the upper bound of the log2 bucket that
+holds the sample of that rank.
+
+```
+contrib/devtools/dsl_perf_pct.py [--epoch E] [--metric M] [--json] ~/.defcon/debug.log
+```
