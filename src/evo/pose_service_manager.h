@@ -145,6 +145,11 @@ public:
     size_t RespondedCount() const;
     /** Whether this masternode's announcement was already seen this epoch. */
     bool HasResponded(const uint256& proTxHash) const;
+    /** Whether an announcement with exactly this wire hash (ResponseWireHash) was accepted for this masternode
+     *  in this epoch on this base: a byte-identical copy would be refused as seen, so the message thread can drop
+     *  it without decoding it (sentinelfix.md 4.2). */
+    bool HaveIdenticalResponse(uint32_t nEpoch, const uint256& epochBaseHash, const uint256& proTxHash,
+                               const uint256& wireHash) const;
 
     /**
      * Keep the commitment this node asked the quorum to sign, under the hash it
@@ -190,6 +195,9 @@ private:
     // window as the store, so an announcement racing the local epoch tick in
     // either direction still lands in its own epoch's set.
     std::map<uint32_t, std::set<uint256>> m_responded GUARDED_BY(m_mutex);
+    //! For each accepted announcement, by epoch and (base, masternode), the SHA-256 of its bytes; kept and dropped
+    //! with m_responded, so at most one entry per masternode and retained epoch.
+    std::map<uint32_t, std::map<std::pair<uint256, uint256>, uint256>> m_responseWire GUARDED_BY(m_mutex);
     // per-epoch commitments, each under the hash the quorum signs. Only the
     // current epoch and the one before it are kept: a commitment is useful up
     // to its boundary block, and the previous epoch covers a producer whose

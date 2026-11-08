@@ -144,6 +144,7 @@ BASE_SCRIPTS = [
     'feature_dsl_sign_wait.py',
     'feature_dsl_commit_decision_log.py',
     'feature_dsl_commitment_v2.py',
+    'feature_dsl_dkg_isolation.py',
     'feature_superblock_retirement.py',
     'feature_v23_bundle_heights.py',
     'feature_dsl_early_announcement_hold.py',

@@ -39,12 +39,14 @@ CPoSeServiceManager::EpochChange CPoSeServiceManager::BeginEpoch(uint32_t nEpoch
                     ++it;
                 }
             }
+            m_responseWire.erase(m_responseWire.lower_bound(nEpoch), m_responseWire.end());
             result = EpochChange::Rewound;
         } else if (nEpoch == m_epoch && epochBlockHash != m_epochBlockHash) {
             // Same epoch number, base block swapped by a shallow reorg: the
             // responses gathered under the old base would count each responder
             // as "seen" and block its fresh announcement as a duplicate.
             m_responded.erase(nEpoch);
+            m_responseWire.erase(nEpoch);
             stale.push_back(nEpoch);
             result = EpochChange::Rebased;
         }
@@ -62,6 +64,7 @@ CPoSeServiceManager::EpochChange CPoSeServiceManager::BeginEpoch(uint32_t nEpoch
                 ++it;
             }
         }
+        m_responseWire.erase(m_responseWire.begin(), m_responseWire.lower_bound(oldest));
 
         // Commitments. Anything older than the epoch before this one has
         // passed its boundary block for good, and on a rewind every epoch above
@@ -193,14 +196,26 @@ bool CPoSeServiceManager::ProcessResponse(const CPoSeServiceResponse& resp, cons
                  resp.proTxHash.ToString(), resp.nEpoch);
         return false;
     }
+    const uint256 wireHash = ResponseWireHash(resp);
     LOCK(m_mutex);
     auto& responded = m_responded[resp.nEpoch];
     const bool fresh = responded.insert(resp.proTxHash).second;
     if (fresh) {
+        m_responseWire[resp.nEpoch][{epochBaseHash, resp.proTxHash}] = wireHash;
         LogPrint(BCLog::DSL, "DSL -- announcement by %s for epoch %u accepted (%d responded so far)\n",
                  resp.proTxHash.ToString(), resp.nEpoch, responded.size());
     }
     return fresh;
+}
+
+bool CPoSeServiceManager::HaveIdenticalResponse(uint32_t nEpoch, const uint256& epochBaseHash, const uint256& proTxHash,
+                                                const uint256& wireHash) const
+{
+    LOCK(m_mutex);
+    const auto epoch = m_responseWire.find(nEpoch);
+    if (epoch == m_responseWire.end()) return false;
+    const auto it = epoch->second.find({epochBaseHash, proTxHash});
+    return it != epoch->second.end() && it->second == wireHash;
 }
 
 bool CPoSeServiceManager::ProcessReport(const CPoSeServiceReport& report, const CDeterministicMNList& list,

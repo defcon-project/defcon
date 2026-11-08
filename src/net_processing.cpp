@@ -753,7 +753,9 @@ public:
     void BlockDisconnected(const std::shared_ptr<const CBlock> &block, const CBlockIndex* pindex) override
         EXCLUSIVE_LOCKS_REQUIRED(!m_recent_confirmed_transactions_mutex);
     void UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload) override
-        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
+        EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_dsl_tick_mutex);
+    void UpdatedBlockTipFinal(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload) override
+        EXCLUSIVE_LOCKS_REQUIRED(!m_dsl_tick_mutex);
     void SynchronousUpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload) override
     {
         m_dsl_chain_height.store(pindexNew != nullptr ? pindexNew->nHeight : -1, std::memory_order_relaxed);
@@ -818,14 +820,24 @@ private:
     bool ReadDSLMessage(CDataStream& vRecv, NodeId nodeid, const std::string& msg_type, T& obj)
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     /** Per-block DSL epoch tick: roll the epoch, announce our own liveness, and
-     *  at the cutoff turn silence into signed reports. */
-    void ProcessDSLTick(const CBlockIndex* pindexNew);
+     *  at the cutoff turn silence into signed reports. Runs at the end of the
+     *  block's UpdatedBlockTip event (UpdatedBlockTipFinal); blockchain_synced is
+     *  the masternode sync as UpdatedBlockTip found it, earlier in that event. */
+    void ProcessDSLTick(const CBlockIndex* pindexNew, bool blockchain_synced);
     /** Hold an announcement before its base block or local epoch tick.
      *  With a connected base, false means the tick already began that epoch
      *  (its drain may still be pending); process the response directly. */
     bool HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceResponse& resp, uint32_t tip_epoch, int64_t blocks_early,
                              size_t hold_max, const uint256& connected_base = uint256{},
                              const CBLSPublicKey* connected_operator = nullptr);
+    /** A payload that is, byte for byte, a held announcement's serialization (dsl::ResponseWireHash), before it is
+     *  decoded: it reads to that entry, so it vouches for it by HoldDSLEarlyResponse's rule where that rule needs
+     *  no signature check -- the copy comes for the same connected base the entry was held for, or before its
+     *  base. False when it did nothing: no such entry, a copy for another connected base (which needs its
+     *  signature checked), or the tick already began the epoch; the copy then takes the ordinary path
+     *  (sentinelfix.md 4.2). */
+    bool VouchDSLEarlyResponseCopy(NodeId from, const dsl::ResponseWire& wire, int64_t blocks_early,
+                                   const uint256& connected_base);
     /** A disconnecting peer stops vouching for the early announcements it
      *  delivered; connected_height is the chain height it connected at. */
     void ForgetDSLEarlyVoucher(NodeId id, int connected_height);
@@ -1046,6 +1058,9 @@ private:
          *  tell apart. */
         std::vector<NodeId> departed;
         bool departed_shared{false};
+        /** SHA-256 of its serialization (dsl::ResponseWireHash): a payload of exactly these bytes reads to this
+         *  entry, so it vouches without being decoded. */
+        uint256 wire_hash;
     };
     struct DSLEarlyEpoch {
         std::vector<DSLEarlyResponse> held;   // oldest first
@@ -1062,6 +1077,16 @@ private:
      *  drains it; the insert path keeps that bound, not the tick. */
     Mutex m_dsl_early_mutex;
     std::map<uint32_t, DSLEarlyEpoch> m_dsl_early_responses GUARDED_BY(m_dsl_early_mutex);
+    /** The Sentinel tick of the UpdatedBlockTip event being delivered: UpdatedBlockTip notes its block and whether
+     *  the blockchain stage of the masternode sync was done at that point, and UpdatedBlockTipFinal runs the tick
+     *  from the note at the end of the same event. Only the validation queue's thread uses it, one event at a time;
+     *  there is at most one note, taken by its own event's end. */
+    struct DSLTickNote {
+        const CBlockIndex* pindex{nullptr};
+        bool blockchain_synced{false};
+    };
+    Mutex m_dsl_tick_mutex;
+    std::optional<DSLTickNote> m_dsl_tick_note GUARDED_BY(m_dsl_tick_mutex);
     bool m_dsl_first_tick{true};
     /** The masternode count the per-peer DSL budget is sized from, and the
      *  epoch in which it was read: the list is walked once an epoch, not once
@@ -2582,8 +2607,22 @@ void PeerManagerImpl::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlock
     });
     m_connman.WakeMessageHandler();
 
+    // The Sentinel tick runs at the end of this event (UpdatedBlockTipFinal), behind the DKG notification and the
+    // other subscribers. Whether it may run is decided here, from the masternode sync as it stands at the point the
+    // tick has always run at: a later subscriber of the same event can still reset the sync (sentinelfix.md 4.2).
+    LOCK(m_dsl_tick_mutex);
+    m_dsl_tick_note = DSLTickNote{pindexNew, m_mn_sync.IsBlockchainSynced()};
+}
+
+void PeerManagerImpl::UpdatedBlockTipFinal(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload)
+{
+    // Nothing is noted during the initial block download (UpdatedBlockTip returns first), and a note is taken by
+    // the end of its own event only.
+    const auto note = WITH_LOCK(m_dsl_tick_mutex, return std::exchange(m_dsl_tick_note, std::nullopt));
+    if (!note || note->pindex != pindexNew) return;
+    const auto perf_key = dsl::PerfEnabled() ? dsl::TipPerfKey(pindexNew, m_chainparams.GetConsensus()) : std::nullopt;
     dsl::LatencyTimer tick_timer(perf_key, dsl::PerfMetric::DSL_TICK_RUN);
-    ProcessDSLTick(pindexNew);
+    ProcessDSLTick(pindexNew, note->blockchain_synced);
 }
 
 /**
@@ -6580,6 +6619,36 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
     };
 
     if (msg_type == NetMsgType::POSERESPONSE) {
+        // Announcements are flooded like reports, and nearly every arrival is a copy. A payload that is, byte for
+        // byte, an announcement already accepted on its base would read to that announcement and be refused as seen
+        // (ProcessResponse), so it is dropped here, unread. One that is, byte for byte, a held entry's serialization
+        // would read to that entry and join its vouchers, and does so here, unread, where the hold needs no signature
+        // check for it. Anything else -- another length, other bytes, an epoch or base with no such entry -- goes
+        // down the ordinary path below (sentinelfix.md 4.2).
+        if (const auto wire = dsl::PeekResponseWire(MakeUCharSpan(vRecv)); wire && consensus.nDSLEpochInterval > 0) {
+            const auto [wire_base, wire_tip] = WITH_LOCK(cs_main, return std::make_pair(epoch_base(wire->nEpoch), m_chainman.ActiveChain().Height()));
+            const uint32_t tip_epoch = static_cast<uint32_t>(std::max(wire_tip, 0)) / static_cast<uint32_t>(consensus.nDSLEpochInterval);
+            bool unread{false};
+            if (wire_base != nullptr &&
+                m_dslman->HaveIdenticalResponse(wire->nEpoch, wire_base->GetBlockHash(), wire->proTxHash, wire->hash)) {
+                LogPrint(BCLog::NET, "DSL -- poseresp epoch=%d proTx=%s accepted=%d, peer=%d\n",
+                         wire->nEpoch, wire->proTxHash.ToString(), false, pfrom.GetId());
+                unread = true;
+            } else if (wire_base != nullptr) {
+                // Where the ordinary path would hold it for a connected base (below).
+                unread = m_mn_sync.IsBlockchainSynced() && wire->nEpoch == tip_epoch &&
+                         VouchDSLEarlyResponseCopy(pfrom.GetId(), *wire, /*blocks_early=*/0, wire_base->GetBlockHash());
+            } else {
+                // Where the ordinary path would hold it before its base (below).
+                const int64_t blocks_early = static_cast<int64_t>(wire->nEpoch) * consensus.nDSLEpochInterval - static_cast<int64_t>(wire_tip);
+                unread = blocks_early >= 1 && blocks_early <= static_cast<int64_t>(consensus.nDSLEpochInterval) &&
+                         VouchDSLEarlyResponseCopy(pfrom.GetId(), *wire, blocks_early, uint256{});
+            }
+            if (unread) {
+                dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::DUPLICATE_RESPONSE_UNDECODED);
+                return;
+            }
+        }
         dsl::CPoSeServiceResponse resp;
         dsl::PerfTimer decode_timer(perf_epoch, perf_base, dsl::PerfMetric::DECODE_RESPONSE);
         if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, resp)) return;
@@ -6865,7 +6934,7 @@ bool PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
     // and how many connections it takes to crowd honest entries out by the
     // size of the hold (DSLEarlyResponsesMax).
     if (held.size() < hold_max) {
-        held.push_back({resp, connected_base, {}, {}, false});
+        held.push_back({resp, connected_base, {}, {}, false, dsl::ResponseWireHash(resp)});
         vouch(held.back());
         log_outcome("held");
         return true;
@@ -6933,9 +7002,45 @@ bool PeerManagerImpl::HoldDSLEarlyResponse(NodeId from, const dsl::CPoSeServiceR
         if (const auto voucher = vouchers.find(id); voucher != vouchers.end() && --voucher->second == 0) vouchers.erase(voucher);
     }
     held.erase(held.begin() + static_cast<std::ptrdiff_t>(weakest));
-    held.push_back({resp, connected_base, {}, {}, false});
+    held.push_back({resp, connected_base, {}, {}, false, dsl::ResponseWireHash(resp)});
     vouch(held.back());
     log_outcome(strprintf("held in place of one whose lightest voucher pushed %s", share_str));
+    return true;
+}
+
+bool PeerManagerImpl::VouchDSLEarlyResponseCopy(NodeId from, const dsl::ResponseWire& wire, int64_t blocks_early,
+                                                const uint256& connected_base)
+{
+    LOCK(m_dsl_early_mutex);
+    // As in HoldDSLEarlyResponse: once the tick began this epoch on this base, a copy is processed directly.
+    if (!connected_base.IsNull() && m_dslman->CurrentEpoch() == wire.nEpoch &&
+        m_dslman->CurrentEpochHash() == connected_base) {
+        return false;
+    }
+    const auto epoch = m_dsl_early_responses.find(wire.nEpoch);
+    if (epoch == m_dsl_early_responses.end()) return false;
+    auto& held = epoch->second.held;
+    const auto same = std::find_if(held.begin(), held.end(),
+                                   [&wire](const DSLEarlyResponse& entry) { return entry.wire_hash == wire.hash; });
+    if (same == held.end()) return false;
+    // For another connected base HoldDSLEarlyResponse checks the signature against it first, which needs it decoded.
+    if (!connected_base.IsNull() && same->connected_base != connected_base) return false;
+    // HoldDSLEarlyResponse's vouch rule, unchanged.
+    if (std::find(same->vouchers.begin(), same->vouchers.end(), from) == same->vouchers.end() &&
+        same->vouchers.size() < DSL_EARLY_VOUCHERS_MAX) {
+        same->vouchers.push_back(from);
+        ++epoch->second.vouchers[from];
+    }
+    // The line HoldDSLEarlyResponse writes for a copy, word for word: tests read it (DUPLICATE_RESPONSE_UNDECODED
+    // counts that this one was not read).
+    const std::string outcome = strprintf("already held, vouched for by %d peer(s)", same->vouchers.size());
+    if (!connected_base.IsNull()) {
+        LogPrint(BCLog::DSL, "DSL -- poseresp epoch=%d proTx=%s arrived before its local epoch tick, %s, peer=%d\n",
+                 wire.nEpoch, wire.proTxHash.ToString(), outcome, from);
+    } else {
+        LogPrint(BCLog::NET, "DSL -- poseresp epoch=%d proTx=%s arrived %d block(s) before its base block, %s, peer=%d\n",
+                 wire.nEpoch, wire.proTxHash.ToString(), blocks_early, outcome, from);
+    }
     return true;
 }
 
@@ -6973,13 +7078,13 @@ void PeerManagerImpl::ForgetDSLEarlyVoucher(NodeId id, int connected_height)
     }
 }
 
-void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew)
+void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew, bool blockchain_synced)
 try
 {
     if (m_dslman == nullptr || m_dmnman == nullptr) return;
     const Consensus::Params& consensus = m_chainparams.GetConsensus();
     if (pindexNew->nHeight < consensus.nDSLActivationHeight) return;
-    if (!m_mn_sync.IsBlockchainSynced()) {
+    if (!blockchain_synced) {
         LogPrint(BCLog::NET, "DSL -- tick at height %d skipped, masternode sync not finished\n", pindexNew->nHeight);
         return;
     }

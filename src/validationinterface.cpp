@@ -252,6 +252,10 @@ void CMainSignals::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockInd
             queued_at.emplace(enqueued);
         }
         m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.UpdatedBlockTip(pindexNew, pindexFork, fInitialDownload); });
+        // The end of the same event, once every subscriber has seen the tip. If the first round threw, its error has
+        // already left this function and the second round does not run: the event failed, and such an error ends
+        // the node (a storage error in order, any other at the thread boundary).
+        m_internals->Iterate([&](CValidationInterface& callbacks) { callbacks.UpdatedBlockTipFinal(pindexNew, pindexFork, fInitialDownload); });
     };
     ENQUEUE_AND_LOG_EVENT(event, "%s: new block hash=%s fork block hash=%s (in IBD=%s)", __func__,
                           pindexNew->GetBlockHash().ToString(),
