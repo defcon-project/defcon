@@ -51,6 +51,7 @@
 #include <policy/settings.h>
 #include <pos/minter.h>
 #include <pos/multiwallet.h>
+#include <pos/stakingpace.h>
 #include <rpc/blockchain.h>
 #include <rpc/register.h>
 #include <rpc/server.h>
@@ -524,6 +525,7 @@ void SetupServerArgs(ArgsManager& argsman)
     argsman.AddArg("-dslsignwait", "Wait for complete Sentinel verdicts before signing until the last epoch block (regtest only; default: 1)", ArgsManager::ALLOW_BOOL | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-dslperf", "Log bounded per-epoch Sentinel cost summaries (default: 0)", ArgsManager::ALLOW_BOOL | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-enablefaultinjection", "Enable DSL fault injection (devnet and regtest only; startup is refused elsewhere). Faults are armed with the faultinject RPC over cookie authentication, expire by height and are never persisted (default: 0)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg(strprintf("%s=<n>", pos::STAKING_POLL_ARG), strprintf("Milliseconds the staking thread pauses between rounds and after a block it found; its waits for the chain, the masternode sync or the clock are four times this (the pause before restarting after a failure stays 10 seconds). For tests: devnet and regtest only, startup is refused elsewhere (%d to %d, default: %d)", pos::MIN_STAKING_POLL_MS, pos::DEFAULT_STAKING_POLL_MS, pos::DEFAULT_STAKING_POLL_MS), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
 #if HAVE_SYSTEM
     argsman.AddArg("-blocknotify=<cmd>", "Execute command when the best block changes (%s in cmd is replaced by block hash)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 #endif
@@ -1325,6 +1327,10 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     }
     if (args.IsArgSet("-dslsignwait") && chainparams.NetworkIDString() != CBaseChainParams::REGTEST) {
         return InitError(Untranslated("-dslsignwait is only supported on regtest"));
+    }
+    // A shorter staking pace is a test facility in the same way.
+    if (const auto refusal = pos::StakingPaceRefusal(chainparams, args)) {
+        return InitError(Untranslated(*refusal));
     }
     nBytesPerSigOp = args.GetArg("-bytespersigop", nBytesPerSigOp);
 

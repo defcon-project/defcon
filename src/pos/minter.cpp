@@ -8,6 +8,7 @@
 #include <masternode/sync.h>
 #include <node/storage_error.h>
 #include <pos/multiwallet.h>
+#include <pos/stakingpace.h>
 #include <sync.h>
 #include <timedata.h>
 #include <util/moneystr.h>
@@ -105,8 +106,9 @@ void MaybeWarnAboutExcludedValue(const std::string& name, const CStakeWallet& wa
         if (it != g_excluded_scanned_at.end() && now - it->second < EXCLUDED_SCAN_INTERVAL) return;
         // Stamped before the scan rather than after, and only on the way to a
         // scan: ExplainExcludedCoins walks every coin the wallet holds, and the
-        // miner arrives here every 2.5 seconds. Rate-limiting the message alone
-        // would leave that walk running on every tick.
+        // miner arrives here every round (2.5 seconds at the production pace,
+        // more often under -stakingpollms on a test chain). Rate-limiting the
+        // message alone would leave that walk running on every tick.
         g_excluded_scanned_at[name] = now;
     }
 
@@ -199,6 +201,16 @@ void PoSMiner(NodeContext& node)
     const CChainParams& params = Params();
     int min_nodes = IsMainnet() ? STAKING_MIN_PEERS_MAINNET : 0;
 
+    // The production pace, except where a test asked for a shorter one with
+    // -stakingpollms (devnet and regtest only, checked at startup). The long
+    // waits keep their ratio to the short one. Each look follows the same rules;
+    // only when the thread looks changes, and with it which masked search times
+    // it reaches (see pos/stakingpace.h).
+    static_assert(pos::DEFAULT_STAKING_POLL_MS == CStakeWallet::SHORTDELAY);
+    static_assert(CStakeWallet::LARGEDELAY == 4 * CStakeWallet::SHORTDELAY);
+    const std::chrono::milliseconds short_delay{pos::StakingPollInterval(params, gArgs)};
+    const std::chrono::milliseconds long_delay{4 * short_delay};
+
     CConnman& connman = *node.connman;
     CTxMemPool& mempool = *node.mempool;
     CMasternodeSync& mn_sync = *node.mn_sync;
@@ -214,7 +226,7 @@ void PoSMiner(NodeContext& node)
         if (fStopMinerProc)
             return;
 
-        UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
+        UninterruptibleSleep(short_delay);
 
         MultiwalletMaintenance();
 
@@ -259,7 +271,7 @@ void PoSMiner(NodeContext& node)
                     if (num_nodes < min_nodes || chainman.ActiveChainstate().IsInitialBlockDownload()) {
                         fIsStaking = false;
                         LogPrint(BCLog::POS, "%s: TryToSync\n", __func__);
-                        UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::LARGEDELAY});
+                        UninterruptibleSleep(long_delay);
                         continue;
                     }
                 }
@@ -268,7 +280,7 @@ void PoSMiner(NodeContext& node)
                     fIsStaking = false;
                     fTryToSync = true;
                     LogPrint(BCLog::POS, "%s: IsInitialBlockDownload\n", __func__);
-                    UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::LARGEDELAY});
+                    UninterruptibleSleep(long_delay);
                     continue;
                 }
             }
@@ -276,7 +288,7 @@ void PoSMiner(NodeContext& node)
             if (nBestHeight < params.GetConsensus().lastPowBlock) {
                 fIsStaking = false;
                 LogPrint(BCLog::POS, "%s: WaitForPoS\n", __func__);
-                UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::LARGEDELAY});
+                UninterruptibleSleep(long_delay);
                 continue;
             }
 
@@ -284,7 +296,7 @@ void PoSMiner(NodeContext& node)
                 fIsStaking = false;
                 fTryToSync = true;
                 LogPrint(BCLog::POS, "%s: IsMasternodeSynced\n", __func__);
-                UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::LARGEDELAY});
+                UninterruptibleSleep(long_delay);
                 continue;
             }
 
@@ -299,7 +311,7 @@ void PoSMiner(NodeContext& node)
             {
                 if (nTime < nBestTime) {
                     LogPrint(BCLog::POS, "%s: Can't stake before last block time.\n", __func__);
-                    UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::LARGEDELAY});
+                    UninterruptibleSleep(long_delay);
                     continue;
                 }
 
@@ -336,7 +348,7 @@ void PoSMiner(NodeContext& node)
                 }
                 if (wallet_locked) {
                     LogPrint(BCLog::POS, "%s: Wallet %d, locked wallet.\n", __func__, y);
-                    UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
+                    UninterruptibleSleep(short_delay);
                     continue;
                 }
 
@@ -349,7 +361,7 @@ void PoSMiner(NodeContext& node)
                         this_wallet->nLastCoinStakeSearchTime = nSearchTime + 60;
                     }
                     LogPrint(BCLog::POS, "%s: Wallet %d, low balance.\n", __func__, y);
-                    UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
+                    UninterruptibleSleep(short_delay);
                     continue;
                 }
 
@@ -358,7 +370,7 @@ void PoSMiner(NodeContext& node)
                     if (!pblocktemplate.get()) {
                         fIsStaking = false;
                         LogPrint(BCLog::POS, "%s: Couldn't create new block.\n", __func__);
-                        UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
+                        UninterruptibleSleep(short_delay);
                         continue;
                     }
                 }
@@ -371,7 +383,7 @@ void PoSMiner(NodeContext& node)
                     if (CheckStake(chainman, pblock)) {
                         foundBlock = true;
                         nTimeLastStake = GetTime();
-                        UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
+                        UninterruptibleSleep(short_delay);
                         continue;
                     }
                 }
@@ -396,7 +408,7 @@ void PoSMiner(NodeContext& node)
                         this_wallet->nLastCoinStakeSearchTime = nSearchTime + 60;
                     }
                     LogPrint(BCLog::POS, "%s: No outputs eligible to stake.\n", __func__);
-                    UninterruptibleSleep(std::chrono::milliseconds{CStakeWallet::SHORTDELAY});
+                    UninterruptibleSleep(short_delay);
                     continue;
                 }
                 // NoKernelFound is the ordinary outcome, and the wallet is staking
