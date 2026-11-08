@@ -331,7 +331,8 @@ OverviewPage::OverviewPage(QWidget* parent) :
     connect(m_staking_banner_button, &QPushButton::clicked, this, &OverviewPage::stakingUnlockRequested);
 
     // The staking card, under the balances: what the wallet's staking is
-    // doing in one word, why in one line, and the one thing to do about it.
+    // doing in one word, why in one line, and the one thing to do about it;
+    // on a locked wallet only the word, the banner above has the rest.
     m_staking_card = new QFrame(this);
     m_staking_card->setObjectName("frameStaking");
     m_staking_card->setFrameShape(QFrame::StyledPanel);
@@ -612,6 +613,10 @@ void OverviewPage::updateThemePresentation()
         auto policy = m_total_size_policy;
         if (modern) policy.setHorizontalPolicy(QSizePolicy::Ignored);
         ui->labelTotal->setSizePolicy(policy);
+        // The list's own minimum as the new theme has it, once per switch: an
+        // empty list's message raises it to what it needs, and an ordinary
+        // style pass must not take that back.
+        if (m_transaction_list_items > 0) ui->listTransactions->setMinimumHeight(transactionListMinimum(m_transaction_list_items));
     }
     ui->horizontalLayout->invalidate();
     scheduleBalanceWidths();
@@ -938,9 +943,13 @@ void OverviewPage::updateStakingCard()
                                       : tr("This node runs without staking (-staking=0).");
         break;
     case StakingState::Locked:
+        // The banner over the network bar says why and holds the unlock, so
+        // the card keeps to the state: the banner's room comes out of the
+        // card's line and button, and the page needs no more height locked
+        // than unlocked. At 175% on a 1600-pixel display there was none to
+        // spare, and the window, held under the screen, squeezed the balances
+        // card instead.
         word = tr("Paused: wallet locked");
-        detail = tr("Unlock to let this wallet stake. Sending stays locked.");
-        button = tr("Unlock for staking");
         color = GUIUtil::ThemedColor::ORANGE;
         break;
     case StakingState::Off:
@@ -976,6 +985,8 @@ void OverviewPage::updateStakingCard()
     }
     m_staking_state->setText(word);
     m_staking_detail->setText(detail);
+    // An empty line would still take a row and its spacing.
+    if (m_staking_detail->isHidden() == !detail.isEmpty()) m_staking_detail->setVisible(!detail.isEmpty());
     m_staking_detail->setToolTip(state == StakingState::Ready && m_staking.wallet_state == NOT_STAKING_DEPTH ?
         tr("Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.") : QString());
     m_staking_button->setText(button);
@@ -1222,7 +1233,15 @@ void OverviewPage::fitTotalFont()
     // CSS's small-label floor otherwise overrides the larger Abyss font's
     // natural height in the grid. Keep the complete rendered amount visible;
     // classic entry restores the original height before its stylesheet polish.
-    const int height = label->minimumSizeHint().height();
+    // The height is the text's own at this font, measured as QLabel measures
+    // plain text, and not minimumSizeHint(): a label's hints include its
+    // minimum, so once the total had been shown at the hero size its row kept
+    // that height under any smaller font. The "Total:" label beside it keeps
+    // the stylesheet's floor for the row.
+    const QMargins margins = label->contentsMargins();
+    const int flags = int(label->alignment()) & ~(Qt::AlignVCenter | Qt::AlignHCenter);
+    const int height = label->fontMetrics().boundingRect(QRect(0, 0, 2000, 2000), flags, label->text()).height() +
+                       margins.top() + margins.bottom() + 2 * label->margin();
     if (label->minimumHeight() != height) label->setMinimumHeight(height);
 }
 
@@ -1845,8 +1864,22 @@ void OverviewPage::SetupTransactionList(int nNumItems)
     }
 
     filter->setLimit(nNumItems);
-    ui->listTransactions->setMinimumHeight(nNumItems * ITEM_HEIGHT);
+    m_transaction_list_items = nNumItems;
+    ui->listTransactions->setMinimumHeight(transactionListMinimum(nNumItems));
     updateEmptyState();
+}
+
+//! In Abyss the recent transactions card takes the row the left column sets
+//! (updateColumnStretch), and its list shows as many of the transactions as
+//! fit there; it does not hold the row open for all of them, so that a short
+//! left column (a locked wallet's staking card, under its banner) makes the
+//! page shorter. Four rows stay its floor, which an empty list's message
+//! raises to what it needs (EmptyStateWidget::fitList). The classic themes
+//! keep the room for every row.
+int OverviewPage::transactionListMinimum(int items) const
+{
+    constexpr int MODERN_LIST_MINIMUM_ROWS{4};
+    return (GUIUtil::isModernTheme() ? std::min(items, MODERN_LIST_MINIMUM_ROWS) : items) * ITEM_HEIGHT;
 }
 
 void OverviewPage::DisableCoinJoinCompletely()

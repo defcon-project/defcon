@@ -251,6 +251,10 @@ private:
     bool m_modern_presentation{false};
     void scheduleBalanceWidths();
     void fitTotalFont();
+    //! The recent transactions list's minimum height for so many rows, as the
+    //! active theme has it; and the rows last asked for (0 before the first).
+    int transactionListMinimum(int items) const;
+    int m_transaction_list_items{0};
 
     void SetupTransactionList(int nNumItems);
     void DisableCoinJoinCompletely();
