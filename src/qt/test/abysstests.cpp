@@ -4263,7 +4263,8 @@ void AbyssTests::stakingCard()
 {
     // One word for the state, one line about it, one button; the states in
     // the order the thread itself gives up, so the card never says "Staking"
-    // about a wallet that cannot sign.
+    // about a wallet that cannot sign. On a locked wallet the word alone: the
+    // banner says why and holds the unlock.
     RestoreAppearance restore;
     Theme("Abyss");
     WalletFixture fixture(m_node);
@@ -4288,7 +4289,7 @@ void AbyssTests::stakingCard()
     struct Case { const char* name; State state; const char* word; const char* button; Color color; };
     const std::vector<Case> cases{
         {"off", State::Off, "Off", "Start staking", Color::UNCONFIRMED},
-        {"locked", State::Locked, "Paused: wallet locked", "Unlock for staking", Color::ORANGE},
+        {"locked", State::Locked, "Paused: wallet locked", "", Color::ORANGE},
         {"syncing", State::Syncing, "Waiting for sync", "Pause staking", Color::ORANGE},
         {"ready", State::Ready, "Ready", "Pause staking", Color::BLUE},
         {"depth", State::Ready, "Ready", "Pause staking", Color::BLUE},
@@ -4303,7 +4304,8 @@ void AbyssTests::stakingCard()
         page.setStakingStatus(StakingCase(which.name)); Settle();
         QVERIFY2(page.stakingState() == which.state, which.name);
         QVERIFY2(state->text() == QString(which.word), qPrintable(QString("%1: %2").arg(which.name, state->text())));
-        QVERIFY2(!detail->text().isEmpty(), which.name);
+        QVERIFY2(detail->isHidden() == (which.state == State::Locked), which.name);
+        QVERIFY2(detail->isHidden() == detail->text().isEmpty(), which.name);
         QVERIFY2(button->isHidden() == QString(which.button).isEmpty(), which.name);
         if (!button->isHidden()) {
             QCOMPARE(button->text(), QString(which.button));
@@ -4328,7 +4330,7 @@ void AbyssTests::stakingCard()
     }
     // The card asks for no more room than the balances card has anyway.
     QVERIFY2(widest <= balances->minimumSizeHint().width(), qPrintable(QString("card %1, balances %2").arg(widest).arg(balances->minimumSizeHint().width())));
-    // The button: the switch, or the unlock on a locked wallet; by mouse and by keyboard.
+    // The button: the switch, by mouse and by keyboard; the unlock is the banner's.
     page.setStakingStatus(StakingCase("off")); Settle();
     QVERIFY(button->focusPolicy() != Qt::NoFocus);
     button->click();
@@ -4346,7 +4348,8 @@ void AbyssTests::stakingCard()
     button->click();
     QVERIFY(!toggles.last().at(0).toBool());
     page.setStakingStatus(StakingCase("locked")); Settle();
-    button->click();
+    QVERIFY(button->isHidden());
+    banner->findChild<QPushButton*>("stakingBannerUnlock")->click();
     QCOMPARE(unlocks.count(), 1);
     QCOMPARE(toggles.count(), 4);
     // Discreet mode masks amounts, not states: the card and the banner stay.
@@ -4364,6 +4367,12 @@ void AbyssTests::stakingCard()
     QVERIFY(card->isVisible());
     QVERIFY(banner->isVisible());
     QCOMPARE(state->text(), QString("Paused: wallet locked"));
+    QVERIFY(detail->isHidden());
+    QVERIFY(button->isHidden());
+    // Unlocked, the line and the button come back.
+    page.setStakingStatus(StakingCase("ready")); Settle();
+    QVERIFY(detail->isVisible());
+    QVERIFY(button->isVisible());
 }
 
 void AbyssTests::stakingBanner()
@@ -4752,11 +4761,12 @@ void AbyssTests::stakingSyncGates()
 
 void AbyssTests::stakingUnlockFlow()
 {
-    // The card's unlock on an encrypted wallet, through the real dialog:
+    // The banner's unlock on an encrypted wallet, through the real dialog:
     // cancelled, nothing moves; the wrong passphrase, nothing moves; the right
     // one unlocks for mixing and staking only -- the wallet stakes and still
-    // refuses to send -- and switches staking on; done again from the banner
-    // with the switch already on, the switch stays on and nothing is said.
+    // refuses to send -- and switches staking on; done again with the switch
+    // already on, the switch stays on and nothing is said. The card offers no
+    // second button for it.
     RestoreAppearance restore;
     Theme("Abyss");
     WalletFixture fixture(m_node, /*dummy_database=*/true);
@@ -4785,6 +4795,7 @@ void AbyssTests::stakingUnlockFlow()
     auto* banner_button = page->findChild<QPushButton*>("stakingBannerUnlock");
     QVERIFY(button && banner && banner_button);
     QVERIFY(banner->isVisible());
+    QVERIFY(button->isHidden());
     QSignalSpy messages(&view, &WalletView::message);
     // The dialog the button opens is answered from the event loop, as the
     // send confirmation is in wallettests. Two timers, because a timer does
@@ -4841,7 +4852,7 @@ void AbyssTests::stakingUnlockFlow()
     };
     const QString right = QString::fromStdString(std::string(passphrase.begin(), passphrase.end()));
     // Cancelled.
-    step(QString(), false, button);
+    step(QString(), false, banner_button);
     QCOMPARE(seen_titles, QStringList{"Unlock wallet for staking"});
     QVERIFY(seen_boxes.isEmpty());
     QCOMPARE(fixture.model->getEncryptionStatus(), WalletModel::Locked);
@@ -4850,7 +4861,7 @@ void AbyssTests::stakingUnlockFlow()
     QCOMPARE(messages.count(), 0);
     // The wrong passphrase: the dialog's own message, the dialog cancelled
     // after it, and still locked.
-    step("not-the-passphrase", true, button);
+    step("not-the-passphrase", true, banner_button);
     seen_boxes.removeDuplicates();
     QCOMPARE(seen_boxes, QStringList{"Wallet unlock failed"});
     QCOMPARE(fixture.model->getEncryptionStatus(), WalletModel::Locked);
@@ -4858,7 +4869,7 @@ void AbyssTests::stakingUnlockFlow()
     QCOMPARE(page->stakingState(), OverviewPage::StakingState::Locked);
     QCOMPARE(messages.count(), 0);
     // The right one: unlocked for mixing and staking, and staking is on.
-    step(right, true, button);
+    step(right, true, banner_button);
     QVERIFY2(seen_boxes.isEmpty(), qPrintable(seen_boxes.join(", ")));
     QCOMPARE(fixture.model->getEncryptionStatus(), WalletModel::UnlockedForMixingOnly);
     QVERIFY(fixture.model->wallet().isLocked());       // sending still refused
@@ -4866,12 +4877,14 @@ void AbyssTests::stakingUnlockFlow()
     QVERIFY(IsWalletStaking(name));
     QCOMPARE(page->stakingState(), OverviewPage::StakingState::Ready);
     QVERIFY(banner->isHidden());
+    QVERIFY(!button->isHidden()); // the switch again
     QCOMPARE(messages.count(), 0);
     // Locked again with the switch on: the banner's button unlocks, the switch stays on, nothing is said.
     QVERIFY(fixture.model->setWalletLocked(true));
     view.setStakingStatus(node); Settle();
     QCOMPARE(page->stakingState(), OverviewPage::StakingState::Locked);
     QVERIFY(banner->isVisible());
+    QVERIFY(button->isHidden());
     step(right, true, banner_button);
     QVERIFY2(seen_boxes.isEmpty(), qPrintable(seen_boxes.join(", ")));
     QCOMPARE(fixture.model->getEncryptionStatus(), WalletModel::UnlockedForMixingOnly);
@@ -4917,7 +4930,7 @@ void AbyssTests::stakingUnlockFlow()
         }
     });
     quit.start();
-    button->click();
+    banner_button->click();
     QTRY_VERIFY_WITH_TIMEOUT(checked, 5000);
     QVERIFY(dialog_seen);
     QVERIFY(shut_down);
@@ -5008,9 +5021,10 @@ void AbyssTests::overviewColumnsAligned()
     auto* row = page.findChild<QWidget*>("coinJoinRow");
     auto* banner = page.findChild<QFrame*>("stakingBanner");
     auto* staking_button = page.findChild<QPushButton*>("stakingButton");
+    auto* staking_word = page.findChild<QLabel*>("stakingState");
     auto* coinjoin_button = page.findChild<QPushButton*>("toggleCoinJoin");
     auto* show = page.findChild<QPushButton*>("coinJoinRowShow");
-    QVERIFY(balances && staking && coinjoin && right && row && banner && staking_button && coinjoin_button && show);
+    QVERIFY(balances && staking && coinjoin && right && row && banner && staking_button && staking_word && coinjoin_button && show);
     QVERIFY(coinjoin->isHidden());
     QVERIFY(row->isVisible());
     const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
@@ -5018,7 +5032,9 @@ void AbyssTests::overviewColumnsAligned()
     std::map<QString, int> minimum_height;
     const auto check = [&](const QString& state) {
         QWidget* last = coinjoin->isHidden() ? static_cast<QWidget*>(staking) : static_cast<QWidget*>(coinjoin);
-        QPushButton* content = last == staking ? staking_button : coinjoin_button;
+        // The card's lowest content: a locked wallet's staking card has only its word.
+        QWidget* content = last == staking ? (staking_button->isHidden() ? static_cast<QWidget*>(staking_word) : staking_button)
+                                           : static_cast<QWidget*>(coinjoin_button);
         std::optional<int> content_offset;
         minimum_height[state] = page.minimumSizeHint().height();
         // No card of the column may be shrunk by its layout below its size hint
@@ -5077,9 +5093,11 @@ void AbyssTests::overviewColumnsAligned()
     page.setStakingStatus(StakingCase("locked")); Settle();
     QVERIFY(banner->isVisible());
     check("staking-locked");
-    // The banner's room comes out of the page's minimum, not out of a card.
-    if (minimum_height["staking-locked"] <= minimum_height["staking-unlocked"]) {
-        found << QString("the locked page's minimum %1 is not above the unlocked one's %2")
+    // The banner's room comes out of the staking card's line and button, not
+    // out of the balances card: the locked page asks for no more height than
+    // the unlocked one (overviewLockedFits has the window's side of it).
+    if (minimum_height["staking-locked"] > minimum_height["staking-unlocked"]) {
+        found << QString("the locked page's minimum %1 is above the unlocked one's %2")
                      .arg(minimum_height["staking-locked"]).arg(minimum_height["staking-unlocked"]);
     }
     show->click(); Settle();
@@ -5089,5 +5107,146 @@ void AbyssTests::overviewColumnsAligned()
     page.setStakingStatus(StakingCase("off")); Settle();
     check("coinjoin-unlocked");
     for (const QString& line : found) qInfo().noquote() << "OVERVIEW_COLUMNS" << line;
+    QCOMPARE(found.join("\n"), QString());
+}
+
+void AbyssTests::overviewLockedFits()
+{
+    // The window holds the page under the screen (applyModernWindowMinimum),
+    // and a page given less than its minimum is squeezed, the biggest card
+    // first: at 175% on a 2560x1600 display the locked page, banner and all,
+    // asked for some 70 pixels more than the screen had, and the balances
+    // card gave them. The banner's room now comes out of the staking card,
+    // which keeps to its word on a locked wallet: held at the unlocked page's
+    // minimum, as that window held it, the locked page squeezes no card. The
+    // total's row follows its font both ways instead of keeping a size the
+    // total once had. Also run at QT_SCALE_FACTOR=1.75; the family is the
+    // one the native trial showed.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Card heights require a font-capable platform; run minimal:enable_fonts");
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::Roboto);
+    GUIUtil::setFontScale(0);
+    // A child page, as in the wallet's stack: its own minimum height stays 0,
+    // so the host can give it less than its layout asks for, as the window can.
+    QWidget host;
+    auto* page = new OverviewPage(&host);
+    page->setClientModel(fixture.client.get());
+    page->setWalletModel(fixture.model.get());
+    const auto hold = [&](int width, int height) {
+        width = std::max(width, page->minimumWidth());
+        host.resize(width, height);
+        page->setGeometry(0, 0, width, height);
+        Settle();
+    };
+    hold(1280, 850);
+    host.show(); Settle();
+    page->coinJoinStatus(true); Settle();
+    auto* balances = page->findChild<QFrame*>("frame");
+    auto* staking = page->findChild<QFrame*>("frameStaking");
+    auto* banner = page->findChild<QFrame*>("stakingBanner");
+    auto* unlock = page->findChild<QPushButton*>("stakingBannerUnlock");
+    auto* word = page->findChild<QLabel*>("stakingState");
+    auto* detail = page->findChild<QLabel*>("stakingDetail");
+    auto* button = page->findChild<QPushButton*>("stakingButton");
+    auto* total = page->findChild<QLabel*>("labelTotal");
+    auto* next = page->findChild<QLabel*>("nextLevelLabel");
+    QVERIFY(balances && staking && banner && unlock && word && detail && button && total && next);
+    QVERIFY(page->findChild<QFrame*>("frameCoinJoin")->isHidden());
+    interfaces::WalletBalances zero{};
+    interfaces::WalletBalances large{};
+    large.balance = 50'820'975 * COIN + 99 * COIN / 100;
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    QStringList found;
+    struct Case { const char* name; const interfaces::WalletBalances* balances; bool privacy; };
+    const std::vector<Case> cases{{"zero", &zero, false}, {"large", &large, false}, {"discreet", &large, true}};
+    for (const Case& which : cases) {
+        page->setPrivacy(which.privacy);
+        page->setBalance(*which.balances); Settle();
+        for (int width : {0, 1280, 2560}) {
+            page->setStakingStatus(StakingCase("off")); Settle();
+            hold(width, page->minimumSizeHint().height());
+            const int open_minimum = page->minimumSizeHint().height();
+            page->setStakingStatus(StakingCase("locked")); Settle();
+            const QString at = QString("%1 at width %2").arg(which.name).arg(page->width());
+            if (banner->isHidden() || unlock->isHidden() || word->isHidden() || !detail->isHidden() || !button->isHidden()) {
+                found << QString("%1: locked, the card is not the word alone under the banner (banner %2, unlock %3, word %4, line %5, button %6)")
+                             .arg(at).arg(!banner->isHidden()).arg(!unlock->isHidden()).arg(!word->isHidden()).arg(!detail->isHidden()).arg(!button->isHidden());
+            }
+            const int locked_minimum = page->minimumSizeHint().height();
+            qInfo().noquote() << "OVERVIEW_LOCKED_FITS" << at << "unlocked minimum" << open_minimum << "locked minimum" << locked_minimum
+                              << "banner" << banner->height() << "DPR" << page->devicePixelRatioF();
+            if (locked_minimum > open_minimum) {
+                found << QString("%1: the locked page asks for %2, the unlocked one for %3").arg(at).arg(locked_minimum).arg(open_minimum);
+            }
+            // Held where the unlocked page stood, as the window under the screen holds it.
+            hold(page->width(), open_minimum);
+            for (QWidget* card : {static_cast<QWidget*>(balances), static_cast<QWidget*>(staking)}) {
+                const int natural = card->hasHeightForWidth() ? card->heightForWidth(card->width()) : card->sizeHint().height();
+                if (card->height() < natural) {
+                    found << QString("%1: %2 squeezed to %3 of %4").arg(at, card->objectName()).arg(card->height()).arg(natural);
+                }
+            }
+            // The whole amount, and the line under it, inside the card and apart.
+            const QRect card_inside = balances->contentsRect().translated(balances->mapTo(page, QPoint()));
+            for (QLabel* label : {total, next}) {
+                if (label->isHidden()) continue;
+                if (OnPage(*page, label).bottom() > card_inside.bottom()) {
+                    found << QString("%1: %2 ends at %3, under the card's inside (%4)").arg(at, label->objectName())
+                                 .arg(OnPage(*page, label).bottom()).arg(card_inside.bottom());
+                }
+            }
+            if (!next->isHidden() && OnPage(*page, next).top() <= OnPage(*page, total).bottom()) {
+                found << QString("%1: the next-level line at %2 is not under the total (%3)").arg(at).arg(OnPage(*page, next).top()).arg(OnPage(*page, total).bottom());
+            }
+            // A line's box may round up from the font's height by one pixel either way.
+            if (total->contentsRect().height() + 1 < total->fontMetrics().height()) {
+                found << QString("%1: the total has %2 of %3 pixels").arg(at).arg(total->contentsRect().height()).arg(total->fontMetrics().height());
+            }
+            if (!output.isEmpty() && width == 1280) {
+                QVERIFY(QDir().mkpath(output));
+                QVERIFY(PageImage(*page).save(QDir(output).filePath(QString("Abyss-locked-fits-%1.png").arg(which.name))));
+            }
+        }
+    }
+    // The total's row: under a smaller font it comes down, and it goes back up with the hero size.
+    page->setPrivacy(false);
+    page->setStakingStatus(StakingCase("off"));
+    page->setBalance(zero); Settle();
+    hold(1280, 850);
+    const qreal hero_font = total->font().pointSizeF();
+    const int hero_row = total->minimumHeight();
+    const int hero_card = balances->sizeHint().height();
+    page->setBalance(large); Settle();
+    const QString row = QString("hero %1 pt, row %2, card %3; large %4 pt, row %5, card %6")
+                            .arg(hero_font).arg(hero_row).arg(hero_card)
+                            .arg(total->font().pointSizeF()).arg(total->minimumHeight()).arg(balances->sizeHint().height());
+    qInfo().noquote() << "OVERVIEW_TOTAL_ROW" << row;
+    QVERIFY2(total->font().pointSizeF() < hero_font, qPrintable(row));
+    if (total->minimumHeight() >= hero_row) found << "the total's row kept its hero height: " + row;
+    if (balances->sizeHint().height() >= hero_card) found << "the balances card kept its hero height: " + row;
+    // Its contents, inside the margins (general.css gives the total a negative bottom margin), hold the text.
+    const QMargins margins = total->contentsMargins();
+    if (total->minimumHeight() - margins.top() - margins.bottom() + 1 < total->fontMetrics().height()) {
+        found << QString("the total's row is lower than its text (margins %1, %2): ").arg(margins.top()).arg(margins.bottom()) + row;
+    }
+    page->setBalance(zero); Settle();
+    if (total->minimumHeight() != hero_row) found << QString("back at zero, the total's row is %1, not %2").arg(total->minimumHeight()).arg(hero_row);
+    // The recent transactions list does not hold the row open in Abyss (the
+    // locked page above relies on it); a classic theme keeps its room for
+    // every row, and Abyss takes it back off after a switch. (The empty
+    // list's message may raise the Abyss figure to what it needs.)
+    auto* list = page->findChild<QListView*>("listTransactions");
+    QVERIFY(list);
+    const int abyss_list = list->minimumHeight();
+    Theme("Light"); Settle();
+    const int classic_list = list->minimumHeight();
+    Theme("Abyss"); Settle();
+    qInfo().noquote() << "OVERVIEW_LOCKED_FITS list minimum: Abyss" << abyss_list << "Light" << classic_list << "Abyss again" << list->minimumHeight();
+    if (abyss_list >= classic_list || list->minimumHeight() >= classic_list) {
+        found << QString("the list's minimum: Abyss %1, Light %2, Abyss again %3").arg(abyss_list).arg(classic_list).arg(list->minimumHeight());
+    }
+    for (const QString& line : found) qInfo().noquote() << "OVERVIEW_LOCKED_FITS" << line;
     QCOMPARE(found.join("\n"), QString());
 }
