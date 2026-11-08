@@ -90,6 +90,10 @@ class WalletCombineOutputsTest(BitcoinTestFramework):
         assert dust_w.lockunspent(False, [{"txid": locked[0], "vout": locked[1]}])
         # stays unconfirmed: minconf 1 must leave it out
         unconfirmed = self.fund(funder, dust_w.getnewaddress(), Decimal("7"))
+        # The dust wallet learns of a payment from another wallet through the validation queue, not by the
+        # time sendtoaddress returns; wait for it, so that every snapshot below sees the same outputs.
+        node.syncwithvalidationinterfacequeue()
+        assert unconfirmed in self.unspent(dust_w)
         never = {locked, at_collateral, above, unconfirmed}
         dust_total = sum(dust.values())
 
