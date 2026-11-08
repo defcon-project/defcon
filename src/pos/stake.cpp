@@ -9,6 +9,7 @@
 static constexpr CAmount CENT{1000000};
 
 #include <chainparams.h>
+#include <coinjoin/common.h>
 #include <consensus/merkle.h>
 #include <interfaces/chain.h>
 #include <node/miner.h>
@@ -575,9 +576,11 @@ const SigningProvider* GetStakingSigningProvider(const CWallet& wallet, const CS
  * outputs take: pay-to-pubkey, which every coinstake writes, or the
  * pay-to-pubkey-hash address it was funded at.
  *
- * Combining stays within one key on purpose. Spending outputs of several
- * addresses in one transaction would tie those addresses together on the
- * chain; outputs of one key are already tied by the key itself.
+ * Only -stakecombinescope=key uses this, to keep combining within the winning
+ * key: outputs of one key are already tied together by the key itself. The
+ * default scope, wallet, combines outputs of all the wallet's keys and so ties
+ * their addresses together on the chain. Neither scope combines a CoinJoin
+ * denomination or collateral amount (PlanCombine).
  */
 bool PaysToKey(const CScript& script, const CPubKey& pubkey)
 {
@@ -728,6 +731,14 @@ CStakeWallet::CombineChoice CStakeWallet::PlanCombine(CWallet& wallet, const COu
 {
     AssertLockHeld(wallet.cs_wallet);
     CombineChoice choice;
+    // A kernel of a CoinJoin denomination or collateral amount wins alone:
+    // combining would tie that mixed coin to the wallet's other outputs. Such a
+    // kernel can win only where the staking floor is zero (testnet, regtest).
+    // Nothing is scanned, so nothing is counted.
+    if (CoinJoin::IsDenominatedOrCollateralAmount(kernel_value)) {
+        choice.plan = PlanCoinstake(kernel_value, reward, {}, target, /*max_extra=*/0, allowance, rest_allowance);
+        return choice;
+    }
     std::vector<CAmount> values;
     // Scanned even when the block leaves no room (max_extra == 0): the plan
     // then takes nothing and counts every candidate under size, rather than
@@ -741,6 +752,10 @@ CStakeWallet::CombineChoice CStakeWallet::PlanCombine(CWallet& wallet, const COu
         const CTxOut& txout = out.tx->tx->vout[out.i];
         if (txout.nValue <= 0 || txout.nValue > params.stakeValueRange[1] ||
             txout.nValue == params.regularMnCollateral || txout.nValue == params.evoMnCollateral) continue;
+        // Never a CoinJoin denomination or collateral amount, in either scope:
+        // combining one would tie mixed coins to each other and to the staking
+        // key. Like a masternode collateral amount, it is not counted below.
+        if (CoinJoin::IsDenominatedOrCollateralAmount(txout.nValue)) continue;
         const bool stakeable = txout.nValue >= params.stakeValueRange[0];
         // A stake of a whole target or more is left as it is by design.
         if (stakeable && txout.nValue > target) continue;
@@ -749,8 +764,7 @@ CStakeWallet::CombineChoice CStakeWallet::PlanCombine(CWallet& wallet, const COu
         if (type != TxoutType::PUBKEY && type != TxoutType::PUBKEYHASH) continue;
         if (!wallet.m_stake_combine_wallet && !PaysToKey(txout.scriptPubKey, kernel_key)) continue;
         // From here on this is an output consolidation would take, so
-        // each reason it is still left out is counted (K01). The same
-        // outputs are skipped as before; only the order of the checks moved.
+        // each reason it is still left out is counted (K01).
         if (txout.nValue > allowance || (stakeable && txout.nValue > rest_allowance)) {
             ++choice.plan.skipped.budget;
             continue;

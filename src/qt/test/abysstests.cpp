@@ -4225,6 +4225,7 @@ void AbyssTests::coinJoinHelp()
         QVERIFY2(text.contains(participants), qPrintable(participants));
         for (const char* expected : {"<h3>CoinJoin basics</h3>", "slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN",
                                      "10.0001 DFCN", "on the main network, mixed coins are smaller than the minimum stake",
+                                     "staking never combines them or the mixing collaterals with your other coins",
                                      "not guaranteed to be different people",
                                      "if the wallet is locked", "unlocks for mixing only", "automatic wallet backups"}) {
             QVERIFY2(text.contains(expected), expected);

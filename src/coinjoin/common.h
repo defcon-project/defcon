@@ -115,6 +115,14 @@ constexpr bool IsCollateralAmount(CAmount nInputAmount)
     return (nInputAmount >= GetCollateralAmount() && nInputAmount <= GetMaxCollateralAmount());
 }
 
+/** A denomination or a collateral amount: the amounts CoinJoin itself spends,
+ *  exactly what CoinType::ONLY_NONDENOMINATED leaves out. Stake combining and
+ *  combineoutputs never spend an output of such an amount. */
+constexpr bool IsDenominatedOrCollateralAmount(CAmount nInputAmount)
+{
+    return IsDenominatedAmount(nInputAmount) || IsCollateralAmount(nInputAmount);
+}
+
 constexpr int CalculateAmountPriority(CAmount nInputAmount)
 {
     if (auto optDenom = ranges::find_if_opt(GetStandardDenominations(), [&nInputAmount](const auto& denom) {
