@@ -199,6 +199,7 @@ BITCOIN_CORE_H = \
   evo/pose_service_store.h \
   evo/pose_service_manager.h \
   evo/pose_service_faults.h \
+  evo/pose_service_seen.h \
   evo/providertx.h \
   evo/simplifiedmns.h \
   evo/specialtx.h \
@@ -480,6 +481,7 @@ libbitcoin_server_a_SOURCES = \
   evo/pose_service_store.cpp \
   evo/pose_service_manager.cpp \
   evo/pose_service_faults.cpp \
+  evo/pose_service_seen.cpp \
   evo/dmn_types.cpp \
   evo/providertx.cpp \
   evo/simplifiedmns.cpp \

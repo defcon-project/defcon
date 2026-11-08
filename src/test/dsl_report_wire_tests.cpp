@@ -221,6 +221,16 @@ struct ReportWireSetup : RegTestingSetup {
         BOOST_REQUIRE_LT(WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Height()), block->nHeight);
     }
 
+    // Undo Disconnect(): the block's failure flags cleared and the best chain activated again.
+    void Reconnect(const CBlockIndex* block)
+    {
+        WITH_LOCK(cs_main, m_node.chainman->ActiveChainstate().ResetBlockFailureFlags(const_cast<CBlockIndex*>(block)));
+        BlockValidationState state;
+        BOOST_REQUIRE(m_node.chainman->ActiveChainstate().ActivateBestChain(state));
+        SyncWithValidationInterfaceQueue();
+        BOOST_REQUIRE_GE(WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Height()), block->nHeight);
+    }
+
     uint256 Target() const { return protx.at(0); }
 
     // The sentinels the epoch whose base block is `at` (by default epoch 10's) assigns to `target`.
@@ -881,6 +891,132 @@ BOOST_AUTO_TEST_CASE(counters_account_for_every_message)
     // and the store was asked for each of those that got that far
     BOOST_CHECK_EQUAL(c[PerfMetric::STORE_WAIT],
                       c[PerfMetric::ACCEPTED] + c[PerfMetric::DUPLICATE] - c[PerfMetric::DUPLICATE_UNDECODED] + c[PerfMetric::REFUSED]);
+}
+
+// sentinelfix.md 4.3 (SF1-B): a peer that already sent this node exactly these bytes is left out of their first relay;
+// other bytes -- a re-encoded copy of a message included -- are relayed to it as before, and so are the same bytes
+// once the store has forgotten them and taken them again. The listener's copies arrive while the epoch's base is
+// disconnected, so they are refused -- and still remembered as the listener's.
+BOOST_AUTO_TEST_CASE(a_peer_that_sent_the_exact_bytes_is_left_out_of_their_relay)
+{
+    const CBlockIndex* next{AdvanceToNextEpoch()};
+    const uint256 target{Target()};
+    const auto sentinels = Sentinels(target, next);
+    const auto report = Report(target, sentinels.at(0), dsl::ServiceStatus::ONLINE, next);
+    const auto other = Report(target, sentinels.at(1), dsl::ServiceStatus::ONLINE, next);
+    Disconnect(next);
+    Observe();
+    Send(report, *listener);
+    // `other` with its signature in the legacy encoding: it reads to the same report, but it is not these bytes
+    Send(WithSignatureBytes(Wire(other), other.sig.ToBytes(/*specificLegacyScheme=*/true)), *listener);
+    BOOST_CHECK_EQUAL(Poll()[PerfMetric::BASE_REFUSED], 2U);
+    BOOST_CHECK_EQUAL(Held(), 0U);
+
+    Reconnect(next);
+    // other bytes first, while the listener's entries have never been relayed: a key matching more than the exact
+    // bytes -- the payload or the signature left out -- would withhold them here
+    Send(other, *peer_a);
+    BOOST_CHECK_EQUAL(Held(), 1U);
+    BOOST_CHECK_EQUAL(Relayed(), 1U);
+    Send(report, *peer_a);
+    BOOST_CHECK_EQUAL(Held(), 2U);
+    BOOST_CHECK_EQUAL(Relayed(), 1U); // the listener sent these very bytes
+    BOOST_CHECK_EQUAL(Score(*listener), 0);
+
+    // the store forgets the epoch, as a rewind back across its end that keeps its base makes it do, and takes the
+    // same bytes again from another peer: the table follows the store, so they reach the listener as well
+    dslman->Store().DropEpoch(EPOCH + 1);
+    BOOST_CHECK_EQUAL(Held(), 0U);
+    Send(report, *peer_b);
+    BOOST_CHECK_EQUAL(Held(), 1U);
+    BOOST_CHECK_EQUAL(Relayed(), 2U);
+}
+
+// sentinelfix.md 4.3/2 and 4.3/5: only the epochs the table keeps are noted -- the tip's, the one before and the
+// next. A copy two epochs ahead of the tip is not noted, so the same bytes, accepted once the chain has caught up,
+// reach the peer that sent that copy too.
+BOOST_AUTO_TEST_CASE(a_copy_outside_the_kept_epochs_is_not_noted)
+{
+    const CBlockIndex* next{AdvanceToNextEpoch()};
+    const int interval{static_cast<int>(Params().GetConsensus().nDSLEpochInterval)};
+    // Two epochs on, with a list only on the report's own base: the blocks above a block that carries a synthetic list
+    // were mined on it, and no longer connect once that block has been connected again -- so `next` is never taken
+    // away here, only the block above it.
+    while (WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Height()) < next->nHeight + 2 * interval) {
+        MineBlock(m_node, CScript{} << OP_TRUE);
+    }
+    const CBlockIndex* after{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip())};
+    InstallList(after);
+    SyncWithValidationInterfaceQueue();
+    BOOST_REQUIRE_EQUAL(dslman->CurrentEpoch(), EPOCH + 3);
+    const uint256 target{Target()};
+    const auto report = Report(target, Sentinels(target, after).at(0), dsl::ServiceStatus::ONLINE, after);
+    BOOST_REQUIRE_EQUAL(report.nEpoch, EPOCH + 3);
+
+    const CBlockIndex* above{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain()[next->nHeight + 1])};
+    Disconnect(above); // the tip back on `next`, in epoch EPOCH + 1, two epochs behind the report's
+    Observe();
+    Send(report, *listener);
+    BOOST_CHECK_EQUAL(Poll()[PerfMetric::BASE_REFUSED], 1U);
+    BOOST_CHECK_EQUAL(Held(), 0U);
+
+    Reconnect(above);
+    BOOST_REQUIRE_EQUAL(dslman->CurrentEpoch(), EPOCH + 3);
+    Send(report, *peer_a);
+    BOOST_CHECK_EQUAL(Held(), 1U);
+    BOOST_CHECK_EQUAL(Relayed(), 1U); // not noted when the listener sent it, so it is sent to the listener
+    BOOST_CHECK_EQUAL(Score(*listener), 0);
+}
+
+// The table follows the store across a reorg: when a rewind back across an epoch's start makes the store drop the
+// epoch (BeginEpoch Rewound), the table drops it too, so the bytes a peer sent before the rewind, taken after it,
+// reach that peer.
+BOOST_AUTO_TEST_CASE(a_rewind_forgets_what_the_store_forgets)
+{
+    const CBlockIndex* next{AdvanceToNextEpoch()};
+    const uint256 target{Target()};
+    const auto report = Report(target, Sentinels(target, next).at(0), dsl::ServiceStatus::ONLINE, next);
+    Disconnect(next);
+    Observe();
+    Send(report, *listener); // noted: its epoch is the next one
+    BOOST_CHECK_EQUAL(Poll()[PerfMetric::BASE_REFUSED], 1U);
+    Reconnect(next);  // on into the report's epoch: nothing is forgotten
+    Disconnect(next); // back across its start: the store drops the epoch, and so does the table
+    Reconnect(next);
+    BOOST_REQUIRE_EQUAL(dslman->CurrentEpoch(), EPOCH + 1);
+    Send(report, *peer_a);
+    BOOST_CHECK_EQUAL(Held(), 1U);
+    BOOST_CHECK_EQUAL(Relayed(), 1U); // the listener's copy went with the epoch
+    BOOST_CHECK_EQUAL(Score(*listener), 0);
+}
+
+// sentinelfix.md 4.3/5 and 6.1: an entry expires with its epoch (RefreshDSLBudgetEpoch), and an expired entry
+// withholds nothing. Two epochs on, the listener's copy is older than the epoch before the tip, so the same bytes,
+// taken now -- the store keeps eight epochs -- reach the listener.
+BOOST_AUTO_TEST_CASE(an_expired_entry_withholds_nothing)
+{
+    const CBlockIndex* next{AdvanceToNextEpoch()};
+    const uint256 target{Target()};
+    const auto report = Report(target, Sentinels(target, next).at(0), dsl::ServiceStatus::ONLINE, next);
+    Disconnect(next);
+    Observe();
+    Send(report, *listener);
+    BOOST_CHECK_EQUAL(Poll()[PerfMetric::BASE_REFUSED], 1U);
+    Reconnect(next);
+
+    const int interval{static_cast<int>(Params().GetConsensus().nDSLEpochInterval)};
+    for (int height = next->nHeight + interval; height <= next->nHeight + 2 * interval; height += interval) {
+        while (WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Height()) < height) {
+            MineBlock(m_node, CScript{} << OP_TRUE);
+        }
+        InstallList(WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip()));
+    }
+    SyncWithValidationInterfaceQueue();
+    BOOST_REQUIRE_EQUAL(dslman->CurrentEpoch(), EPOCH + 3);
+    Send(report, *peer_a);
+    BOOST_CHECK_EQUAL(Held(), 1U);
+    BOOST_CHECK_EQUAL(Relayed(), 1U);
+    BOOST_CHECK_EQUAL(Score(*listener), 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
