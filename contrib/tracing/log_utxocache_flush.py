@@ -4,10 +4,10 @@ import sys
 import ctypes
 from bcc import BPF, USDT
 
-"""Example logging Dash Core utxo set cache flushes utilizing
+"""Example logging DeFCoN Core utxo set cache flushes utilizing
     the utxocache:flush tracepoint."""
 
-# USAGE:  ./contrib/tracing/log_utxocache_flush.py path/to/dashd
+# USAGE:  ./contrib/tracing/log_utxocache_flush.py path/to/defcond
 
 # BCC: The C program to be compiled to an eBPF program (by BCC) and loaded into
 # a sandboxed Linux kernel VM.
@@ -97,7 +97,7 @@ def main(bitcoind_path):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("USAGE: ", sys.argv[0], "path/to/dashd")
+        print("USAGE: ", sys.argv[0], "path/to/defcond")
         exit(1)
 
     path = sys.argv[1]

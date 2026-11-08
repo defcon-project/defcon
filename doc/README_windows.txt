@@ -1,23 +1,25 @@
-Dash Core
-==========
+DeFCoN Core
+===========
 
 Intro
 -----
-Dash is a free open source peer-to-peer electronic cash system that is
-completely decentralized, without the need for a central server or trusted
-parties.  Users hold the crypto keys to their own money and transact directly
-with each other, with the help of a P2P network to check for double-spending.
+DeFCoN Core is the reference implementation of the DeFCoN (DFCN) network:
+a full node, a wallet and the masternode software, in one program.
 
 
 Setup
 -----
-Unpack the files into a directory and run dash-qt.exe.
+Unpack the files into a directory and run defcon-qt.exe (graphical wallet),
+or defcond.exe (daemon) together with defcon-cli.exe. There is no installer.
 
-Dash Core is the original Dash client and it builds the backbone of the network.
-However, it downloads and stores the entire history of Dash transactions;
-depending on the speed of your computer and network connection, the synchronization
-process can take anywhere from a few hours to a day or more.
+On its first start DeFCoN Core downloads and checks the entire history of
+DeFCoN transactions; depending on the speed of your computer and network
+connection, this can take anywhere from a few hours to a day or more.
 
-See the Dash documentation at:
-  https://docs.dash.org
-for more help and information.
+Wallet, block chain and settings (defcon.conf) are stored in
+%APPDATA%\Defcon\, for example C:\Users\<name>\AppData\Roaming\Defcon\.
+
+For more help and information:
+  https://www.dfcn.io
+  https://github.com/defcon-project/defcon/releases (release notes)
+  https://discord.gg/UpUq7V7Fg7 (community)

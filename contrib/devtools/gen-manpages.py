@@ -8,12 +8,12 @@ import sys
 import tempfile
 
 BINARIES = [
-'src/dashd',
-'src/dash-cli',
-'src/dash-tx',
-'src/dash-wallet',
-#'src/dash-util',
-'src/qt/dash-qt',
+'src/defcond',
+'src/defcon-cli',
+'src/defcon-tx',
+'src/defcon-wallet',
+#'src/defcon-util',
+'src/qt/defcon-qt',
 ]
 
 # Paths to external utilities.
@@ -47,8 +47,8 @@ for relpath in BINARIES:
     verstr = verstr.split()[-1]
     assert verstr.startswith('v')
 
-    # Only dash-qt prints the copyright message on --version, so store it specifically.
-    if relpath == 'src/qt/dash-qt':
+    # Only defcon-qt prints the copyright message on --version, so store it specifically.
+    if relpath == 'src/qt/defcon-qt':
         copyright = r.stdout.split('\n')[1:]
 
     versions.append((abspath, verstr))

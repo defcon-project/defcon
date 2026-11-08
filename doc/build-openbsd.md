@@ -4,6 +4,8 @@ OpenBSD build guide
 
 This guide describes how to build defcond, defcon-qt, and command-line utilities on OpenBSD.
 
+**This guide is inherited from upstream and has not been tested for DeFCoN Core. Please report your results; contributions welcome.**
+
 Preparation
 -------------
 
@@ -19,7 +21,7 @@ pkg_add gmp
 pkg_add bash
 pkg_add boost
 
-git clone https://github.com/dashpay/dash.git
+git clone https://github.com/defcon-project/defcon.git
 ```
 
 See [dependencies.md](dependencies.md) for a complete overview.

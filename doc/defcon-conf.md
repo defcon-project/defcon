@@ -51,7 +51,7 @@ rpcport=4000
 
 ## Configuration File Path
 
-The configuration file is not automatically created; you can create it using your favorite text editor. By default, the configuration file name is `defcon.conf` and it is located in the Dash data directory, but both the dash data directory and the configuration file path may be changed using the `-datadir` and `-conf` command-line options.
+The configuration file is not automatically created; you can create it using your favorite text editor. By default, the configuration file name is `defcon.conf` and it is located in the DeFCoN data directory, but both the data directory and the configuration file path may be changed using the `-datadir` and `-conf` command-line options.
 
 The `includeconf=<file>` option in the `defcon.conf` file can be used to include additional configuration files.
 
@@ -63,4 +63,4 @@ Windows | `%APPDATA%\Defcon\` | `C:\Users\username\AppData\Roaming\Defcon\defcon
 Linux | `$HOME/.defcon/` | `/home/username/.defcon/defcon.conf`
 macOS | `$HOME/Library/Application Support/Defcon/` | `/Users/username/Library/Application Support/Defcon/defcon.conf`
 
-You can find an example defcon.conf file in [share/examples/defcon.conf](../share/examples/defcon.conf).
+There is no example `defcon.conf` in this repository; `defcond -help` lists every option with its default.

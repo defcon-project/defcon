@@ -1,14 +1,14 @@
 Translations
 ============
 
-The DeFCoN Core project has been designed to support multiple localisations. This makes adding new phrases, and completely new languages easily achievable. For managing all application translations, DeFCoN Core makes use of the Transifex online translation management tool.
+DeFCoN Core can show its graphical interface in several languages. The translations are Qt Linguist
+files in `src/qt/locale/`. Their names, `dash_xx.ts` and `dash_xx_YY.ts`, are inherited from Dash Core
+and are kept so that the build and the translation tools keep working.
 
-### Helping to translate (using Transifex)
-Transifex is setup to monitor the GitHub repo for updates, and when code containing new translations is found, Transifex will process any changes. It may take several hours after a pull-request has been merged, to appear in the Transifex web interface.
-
-Multiple language support is critical in assisting Dash’s global adoption, and growth. One of Dash’s greatest strengths is cross-border money transfers, any help making that easier is greatly appreciated.
-
-See the [Transifex Dash project](https://www.transifex.com/projects/p/dash/) to assist in translations. You should also join the translation mailing list for announcements - see details below.
+DeFCoN Core does not run a Transifex project. Translations are contributed as pull requests, as
+described below. The `.tx/config` file and `contrib/devtools/update-translations.py` are inherited from
+Dash Core and point to the Dash Transifex project: do not use them, because they would import Dash's
+translations instead of DeFCoN's.
 
 ### Writing code with translations
 We use automated scripts to help extract translations in both Qt, and non-Qt source files. It is rarely necessary to manually edit the files in `src/qt/locale/`. The translation source files must adhere to the following format:
@@ -27,59 +27,31 @@ make translate
 QToolBar *toolbar = addToolBar(tr("Tabs toolbar"));
 ```
 
-### Creating a pull-request
-For general PRs, you shouldn’t include any updates to the translation source files. They will be updated periodically, primarily around pre-releases, allowing time for any new phrases to be translated before public releases. This is also important in avoiding translation related merge conflicts.
+### Updating the source file
+For general PRs, you shouldn’t include any updates to the translation source files. They are updated in a separate pull request, preferably well before a release, so that new phrases can be translated in time. This also avoids translation related merge conflicts.
 
-When an updated source file is merged into the GitHub repo, Transifex will automatically detect it (although it can take several hours). Once processed, the new strings will show up as "Remaining" in the Transifex web interface and are ready for translators.
-
-To create the pull-request, use the following commands:
+To create that pull request, use the following commands:
 ```
 git add src/qt/dashstrings.cpp src/qt/locale/dash_en.ts
 git commit
 ```
 
+### Bringing new strings into a language file
+`make translate` updates only the English source file. A language file gets the new and changed strings, with its existing translations kept, from the same `lupdate` command with the language file as the target:
 
-### Creating a Transifex account
-Visit the [Transifex Signup](https://www.transifex.com/signup/) page to create an account. Take note of your username and password, as they will be required to configure the command-line tool.
-
-You can find the Dash translation project at [https://www.transifex.com/projects/p/dash/](https://www.transifex.com/projects/p/dash/).
-
-### Installing the Transifex client command-line tool
-The client it used to fetch updated translations. If you are having problems, or need more details, see [http://docs.transifex.com/developer/client/setup](http://docs.transifex.com/developer/client/setup)
-
-**For Linux and Mac**
-
-`pip install transifex-client`
-
-Setup your Transifex client config as follows. Please *ignore the token field*.
-
-```ini
-nano ~/.transifexrc
-
-[https://www.transifex.com]
-hostname = https://www.transifex.com
-password = PASSWORD
-token =
-username = USERNAME
+```sh
+cd src/
+make translate V=1     # prints the lupdate command it runs
+# run that lupdate command again, with -ts ./qt/locale/dash_de.ts (for example) in place of -ts ./qt/locale/dash_en.ts
 ```
 
-**For Windows**
+New strings arrive unfinished, ready to translate in Qt Linguist; with `-no-obsolete`, strings that are no longer used are dropped. Commit such an update in its own pull request, not together with code changes.
 
-Please see [http://docs.transifex.com/developer/client/setup#windows](http://docs.transifex.com/developer/client/setup#windows) for details on installation.
-
-The Transifex Dash project config file is included as part of the repo. It can be found at `.tx/config`, however you shouldn’t need to change anything.
-
-### Synchronising translations
-To assist in updating translations, we have created a script to help.
-
-1. `python contrib/devtools/update-translations.py`
-2. Update `src/qt/dash_locale.qrc` manually or via
-   `ls src/qt/locale/*ts|xargs -n1 basename|sed 's/\(dash_\(.*\)\).ts/<file alias="\2">locale\/\1.qm<\/file>/'`
-3. Update `src/Makefile.qt_locale.include` manually or via
-   `ls src/qt/locale/*ts|xargs -n1 basename|sed 's/\(dash_\(.*\)\).ts/  qt\/locale\/\1.ts \\/'`
-4. `git add` new translations from `src/qt/locale/`
-
-**Do not directly download translations** one by one from the Transifex website, as we do a few post-processing steps before committing the translations.
+### Adding or improving a translation
+1. If the language file is missing newer strings, bring them in first (see above). Then open the file, for example
+   `src/qt/locale/dash_de.ts`, in Qt Linguist (included in the Qt SDK).
+2. Translate the unfinished entries, or correct existing ones, and mark them as done.
+3. Save the file and open a pull request with it. Do not include unrelated changes.
 
 ### Handling Plurals (in source files)
 When new plurals are added to the source file, it's important to do the following steps:
@@ -93,7 +65,12 @@ When new plurals are added to the source file, it's important to do the followin
 7. Save the source file
 
 ### Translating a new language
-To create a new language template, you will need to edit the languages manifest file `src/qt/dash_locale.qrc` and add a new entry. Below is an example of the English language entry.
+1. Create the new file, for example by copying `src/qt/locale/dash_en.ts` to `src/qt/locale/dash_xx.ts` and setting its `language` attribute, then translate it in Qt Linguist.
+2. Add the language to the manifest file `src/qt/dash_locale.qrc`, manually or via
+   `ls src/qt/locale/*ts|xargs -n1 basename|sed 's/\(dash_\(.*\)\).ts/<file alias="\2">locale\/\1.qm<\/file>/'`.
+   Below is an example of the English language entry.
+3. Add it to `src/Makefile.qt_locale.include`, manually or via
+   `ls src/qt/locale/*ts|xargs -n1 basename|sed 's/\(dash_\(.*\)\).ts/  qt\/locale\/\1.ts \\/'`.
 
 ```xml
 <qresource prefix="/translations">
@@ -105,4 +82,4 @@ To create a new language template, you will need to edit the languages manifest 
 **Note:** that the language translation file **must end in `.qm`** (the compiled extension), and not `.ts`.
 
 ### Questions and general assistance
-Check official forum at [https://www.dash.org/forum/topic/dash-worldwide-collaboration.88/](https://www.dash.org/forum/topic/dash-worldwide-collaboration.88/).
+Ask on the [DeFCoN Discord](https://discord.gg/UpUq7V7Fg7).

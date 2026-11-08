@@ -4,6 +4,8 @@
 
 This guide describes how to build defcond, command-line utilities, and GUI on FreeBSD.
 
+**This guide is inherited from upstream and has not been tested for DeFCoN Core. Please report your results; contributions welcome.**
+
 ## Dependencies
 
 The following dependencies are **required**:
@@ -44,7 +46,7 @@ pkg install autoconf automake boost-libs git gmake libevent libtool pkgconf
 
 ```
 
-### 2. Clone Dash Repo
+### 2. Clone DeFCoN Core Repo
 Now that `git` and all the required dependencies are installed, let's clone the DeFCoN Core repository to a directory. All build scripts and commands will run from this directory.
 ``` bash
 git clone https://github.com/defcon-project/defcon.git
@@ -59,7 +61,7 @@ pkg install gmp
 ```
 
 #### Wallet Dependencies
-It is not necessary to build wallet functionality to run defcond or the GUI. To enable legacy wallets, you must install `db5`. To enable [descriptor wallets](https://github.com/dashpay/dash/blob/master/doc/descriptors.md), `sqlite3` is required. Skip `db5` if you intend to *exclusively* use descriptor wallets
+It is not necessary to build wallet functionality to run defcond or the GUI. To enable legacy wallets, you must install `db5`. To enable [descriptor wallets](descriptors.md), `sqlite3` is required. Skip `db5` if you intend to *exclusively* use descriptor wallets
 
 ###### Legacy Wallet Support
 `db5` is required to enable support for legacy wallets. Skip if you don't intend to use legacy wallets

@@ -1,4 +1,4 @@
-# TOR SUPPORT IN DASH CORE
+# Tor support in DeFCoN Core
 
 It is possible to run DeFCoN Core as a Tor onion service, and connect to such services.
 
@@ -166,7 +166,7 @@ details).
 If you configure your Tor system accordingly, it is possible to make your node also
 reachable from the Tor network. Add these lines to your /etc/tor/torrc (or equivalent
 config file): *Needed for Tor version 0.2.7.0 and older versions of Tor only. For newer
-versions of Tor see [Section 4](#4-automatically-listen-on-tor).*
+versions of Tor see [Section 2](#2-automatically-create-a-defcon-core-onion-service).*
 
     HiddenServiceDir /var/lib/tor/defcon-service/
     HiddenServicePort 8192 127.0.0.1:8189

@@ -100,7 +100,7 @@ For example:
   ./github-merge.py 3077
 
 (in any git repository) will help you merge pull request #3077 for the
-dashpay/dash repository.
+defcon-project/defcon repository.
 
 What it does:
 * Fetch master and the pull request.
@@ -118,9 +118,9 @@ couldn't mess with the sources.
 
 Setup
 ---------
-Configuring the github-merge tool for the Dash Core repository is done in the following way:
+Configuring the github-merge tool for the DeFCoN Core repository is done in the following way:
 
-    git config githubmerge.repository dashpay/dash
+    git config githubmerge.repository defcon-project/defcon
     git config githubmerge.testcmd "make -j4 check" (adapt to whatever you want to use for testing)
     git config --global user.signingkey mykeyid
 
@@ -153,7 +153,7 @@ for further details.
 optimize-pngs.py
 ================
 
-A script to optimize png files in the dash
+A script to optimize png files in the DeFCoN Core
 repository (requires pngcrush).
 
 security-check.py and test-security-check.py

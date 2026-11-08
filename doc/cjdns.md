@@ -16,7 +16,7 @@ Compared to IPv4/IPv6, CJDNS provides end-to-end encryption and protects nodes
 from traffic analysis and filtering.
 
 Used with Tor and I2P, CJDNS is a complementary option that can enhance network
-redundancy and robustness for both the Dash network and individual nodes.
+redundancy and robustness for both the DeFCoN network and individual nodes.
 
 Each network has different characteristics. For instance, Tor is widely used but
 somewhat centralized. I2P connections have a source address and I2P is slow.
@@ -79,7 +79,7 @@ number of CJDNS addresses known to your node.
 In general, a node can be run with both an onion service and CJDNS (or any/all
 of IPv4/IPv6/onion/I2P/CJDNS), which can provide a potential fallback if one of
 the networks has issues. There are a number of ways to configure this; see
-[doc/tor.md](https://github.com/dashpay/dash/blob/master/doc/tor.md) for
+[doc/tor.md](tor.md) for
 details.
 
 ## CJDNS-related information in DeFCoN Core
