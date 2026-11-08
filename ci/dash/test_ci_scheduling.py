@@ -672,7 +672,7 @@ class SchedulingTest(unittest.TestCase):
         self.assertEqual('!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:'
                          '!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:'
                          '!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:'
-                         '!rpc_tests:!transaction_tests:!util_tests:!validation_chainstate_tests:'
+                         '!transaction_tests:!util_tests:!validation_chainstate_tests:'
                          '!wallet_tests', selection)
 
     def test_original_functional_gate_tests_and_runner_flags_are_preserved(self):

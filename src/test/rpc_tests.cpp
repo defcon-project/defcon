@@ -2,6 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#if defined(HAVE_CONFIG_H)
+#include <config/bitcoin-config.h>
+#endif
+
+#include <bls/bls.h>
 #include <context.h>
 #include <core_io.h>
 #include <interfaces/chain.h>
@@ -178,11 +183,12 @@ BOOST_AUTO_TEST_CASE(rpc_rawsign)
       "[{\"txid\":\"b4cc287e58f87cdae59417329f710f3ecd75a4ee1d2872b7248f50977c8493f3\","
       "\"vout\":1,\"scriptPubKey\":\"a914b10c9df5f7edf436c697f02f1efdba4cf399615187\","
       "\"redeemScript\":\"512103debedc17b3df2badbcdd86d5feb4562b86fe182e5998abd8bcd4f122c6155b1b21027e940bb73ab8732bfdf7f9216ecefca5b94d6df834e77e108f68e66f126044c052ae\"}]";
+    // The address and the two keys use this chain's mainnet prefixes (script 22, secret 158).
     r = CallRPC(std::string("createrawtransaction ")+prevout+" "+
-      "{\"7iYoULd4BAqRsRt1UbD5qqna88JvKRU3SL\":11}");
+      "{\"A8aRNzQnSFcgn2iXd7CzkbRHu9raZFHSkT\":11}");
     std::string notsigned = r.get_str();
-    std::string privkey1 = "\"XEwTRsCX3CiWSQf8YmKMTeb84KyTbibkUv9mDTZHQ5MwuKG2ZzES\"";
-    std::string privkey2 = "\"XDmZ7LjGd94Q81eUBjb2h6uV5Y14s7fmeXWEGYabfBJP8RVpprBu\"";
+    std::string privkey1 = "\"QSGT8Sd8z8aBcc3o7HAGqeEicLjTCU8JzbVmUZcvp4hCx66fsLPE\"";
+    std::string privkey2 = "\"QR6Yov9ta4v5JD38kFRx56Z5dYm4TsCLACrEXeeF5AdeBCNKeB44\"";
     r = CallRPC(std::string("signrawtransactionwithkey ")+notsigned+" [] "+prevout);
     BOOST_CHECK(find_value(r.get_obj(), "complete").get_bool() == false);
     r = CallRPC(std::string("signrawtransactionwithkey ")+notsigned+" ["+privkey1+","+privkey2+"] "+prevout);
@@ -507,20 +513,20 @@ BOOST_AUTO_TEST_CASE(help_example)
 {
     // test different argument types
     const RPCArgList& args = {{"foo", "bar"}, {"b", true}, {"n", 1}};
-    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", args), "> dash-cli -named test foo=bar b=true n=1\n");
+    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", args), "> defcon-cli -named test foo=bar b=true n=1\n");
     BOOST_CHECK_EQUAL(HelpExampleRpcNamed("test", args), "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\": \"curltest\", \"method\": \"test\", \"params\": {\"foo\":\"bar\",\"b\":true,\"n\":1}}' -H 'content-type: text/plain;' http://127.0.0.1:8193/\n");
 
     // test shell escape
-    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"foo", "b'ar"}}), "> dash-cli -named test foo='b'''ar'\n");
-    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"foo", "b\"ar"}}), "> dash-cli -named test foo='b\"ar'\n");
-    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"foo", "b ar"}}), "> dash-cli -named test foo='b ar'\n");
+    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"foo", "b'ar"}}), "> defcon-cli -named test foo='b'''ar'\n");
+    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"foo", "b\"ar"}}), "> defcon-cli -named test foo='b\"ar'\n");
+    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"foo", "b ar"}}), "> defcon-cli -named test foo='b ar'\n");
 
     // test object params
     UniValue obj_value(UniValue::VOBJ);
     obj_value.pushKV("foo", "bar");
     obj_value.pushKV("b", false);
     obj_value.pushKV("n", 1);
-    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"name", obj_value}}), "> dash-cli -named test name='{\"foo\":\"bar\",\"b\":false,\"n\":1}'\n");
+    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"name", obj_value}}), "> defcon-cli -named test name='{\"foo\":\"bar\",\"b\":false,\"n\":1}'\n");
     BOOST_CHECK_EQUAL(HelpExampleRpcNamed("test", {{"name", obj_value}}), "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\": \"curltest\", \"method\": \"test\", \"params\": {\"name\":{\"foo\":\"bar\",\"b\":false,\"n\":1}}}' -H 'content-type: text/plain;' http://127.0.0.1:8193/\n");
 
     // test array params
@@ -528,7 +534,7 @@ BOOST_AUTO_TEST_CASE(help_example)
     arr_value.push_back("bar");
     arr_value.push_back(false);
     arr_value.push_back(1);
-    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"name", arr_value}}), "> dash-cli -named test name='[\"bar\",false,1]'\n");
+    BOOST_CHECK_EQUAL(HelpExampleCliNamed("test", {{"name", arr_value}}), "> defcon-cli -named test name='[\"bar\",false,1]'\n");
     BOOST_CHECK_EQUAL(HelpExampleRpcNamed("test", {{"name", arr_value}}), "> curl --user myusername --data-binary '{\"jsonrpc\": \"1.0\", \"id\": \"curltest\", \"method\": \"test\", \"params\": {\"name\":[\"bar\",false,1]}}' -H 'content-type: text/plain;' http://127.0.0.1:8193/\n");
 
     // test types don't matter for shell
@@ -542,6 +548,20 @@ BOOST_AUTO_TEST_CASE(rpc_bls)
 {
     UniValue r;
 
+#ifdef ENABLE_WALLET
+    // With the wallet built in, bls generate stores the new secret in the loaded wallet's BLS key store, so it
+    // refuses here, where no wallet is loaded; rpc_bls.py covers it with a wallet. The fromsecret checks below
+    // take a key pair made here in each scheme instead.
+    BOOST_CHECK_EXCEPTION(CallRPC(std::string("bls generate")), std::runtime_error, HasReason("No wallet is loaded"));
+    CBLSSecretKey sk_legacy;
+    sk_legacy.MakeNewKey();
+    std::string secret_legacy = sk_legacy.ToString();
+    std::string public_legacy = sk_legacy.GetPublicKey().ToString(/*specificLegacyScheme=*/true);
+    CBLSSecretKey sk_basic;
+    sk_basic.MakeNewKey();
+    std::string secret_basic = sk_basic.ToString();
+    std::string public_basic = sk_basic.GetPublicKey().ToString(/*specificLegacyScheme=*/false);
+#else
     BOOST_CHECK_NO_THROW(r = CallRPC(std::string("bls generate")));
     BOOST_CHECK_EQUAL(find_value(r.get_obj(), "scheme").get_str(), "basic");
 
@@ -554,6 +574,7 @@ BOOST_AUTO_TEST_CASE(rpc_bls)
     BOOST_CHECK_EQUAL(find_value(r.get_obj(), "scheme").get_str(), "basic");
     std::string secret_basic = find_value(r.get_obj(), "secret").get_str();
     std::string public_basic = find_value(r.get_obj(), "public").get_str();
+#endif
 
     BOOST_CHECK_NO_THROW(r = CallRPC(std::string("bls fromsecret ") + secret_basic));
     BOOST_CHECK_EQUAL(find_value(r.get_obj(), "scheme").get_str(), "basic");

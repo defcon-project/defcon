@@ -499,9 +499,15 @@ jobs:
       # validation_chainstatemanager_tests came off once the regtest assumeutxo
       # value for height 110 stopped being Dash's: a correct snapshot of this
       # chain was being refused.
+      #
+      # rpc_tests came off once three of its cases were brought up to this
+      # fork. help_example expected Dash's dash-cli rather than defcon-cli;
+      # rpc_rawsign used Dash's script and private key prefixes; rpc_bls called
+      # bls generate with no wallet loaded, which it refuses since it began
+      # storing the new key in the wallet (rpc_bls.py covers it with a wallet).
       #   still to triage:                       bip324_tests, bip39_tests,
       #                                          denialofservice_tests, evo_utils_tests,
-      #                                          governance_validators_tests, rpc_tests,
+      #                                          governance_validators_tests,
       #                                          transaction_tests, util_tests,
       #                                          validation_chainstate_tests,
       #                                          wallet_tests
@@ -515,7 +521,7 @@ jobs:
           cd "build-ci/DeFCoN-${{ matrix.build_target }}"
           make -j"$(nproc)" -C src test/test_defcon
           ./src/test/test_defcon \
-            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:!rpc_tests:!transaction_tests:!util_tests:!validation_chainstate_tests:!wallet_tests' \
+            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:!transaction_tests:!util_tests:!validation_chainstate_tests:!wallet_tests' \
             --catch_system_errors=no -l test_suite
         shell: bash
 

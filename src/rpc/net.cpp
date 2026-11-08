@@ -305,7 +305,7 @@ static RPCHelpMan addnode()
         RPCResult{RPCResult::Type::NONE, "", ""},
         RPCExamples{
             HelpExampleCli("addnode", "\"192.168.0.6:8192\" \"onetry\" true")
-    + HelpExampleRpc("addnode", "\"192.168.0.6:8192\", \"onetry\" true")
+    + HelpExampleRpc("addnode", "\"192.168.0.6:8192\", \"onetry\", true")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -370,7 +370,7 @@ static RPCHelpMan addconnection()
             }},
         RPCExamples{
             HelpExampleCli("addconnection", "\"192.168.0.6:8192\" \"outbound-full-relay\" true")
-            + HelpExampleRpc("addconnection", "\"192.168.0.6:8192\" \"outbound-full-relay\" true")
+            + HelpExampleRpc("addconnection", "\"192.168.0.6:8192\", \"outbound-full-relay\", true")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1050,7 +1050,7 @@ static RPCHelpMan sendmsgtopeer()
         },
         RPCResult{RPCResult::Type::NONE, "", ""},
         RPCExamples{
-            HelpExampleCli("sendmsgtopeer", "0 \"addr\" \"ffffff\"") + HelpExampleRpc("sendmsgtopeer", "0 \"addr\" \"ffffff\"")},
+            HelpExampleCli("sendmsgtopeer", "0 \"addr\" \"ffffff\"") + HelpExampleRpc("sendmsgtopeer", "0, \"addr\", \"ffffff\"")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
             const NodeId peer_id{request.params[0].get_int()};
             const std::string& msg_type{request.params[1].get_str()};

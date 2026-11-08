@@ -39,7 +39,7 @@ static RPCHelpMan gettxoutproof()
         RPCExamples{
             HelpExampleCli("gettxoutproof", "'[\"mytxid\",...]'")
             + HelpExampleCli("gettxoutproof", "'[\"mytxid\",...]' \"blockhash\"")
-            + HelpExampleRpc("gettxoutproof", "[\"mytxid\",...], \"blockhash\"")
+            + HelpExampleRpc("gettxoutproof", "[\"mytxid1\",\"mytxid2\"], \"blockhash\"")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -138,7 +138,7 @@ static RPCHelpMan verifytxoutproof()
         },
         RPCExamples{
             HelpExampleCli("verifytxoutproof", "\"proof\"")
-            + HelpExampleRpc("gettxoutproof", "\"proof\"")
+            + HelpExampleRpc("verifytxoutproof", "\"proof\"")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {

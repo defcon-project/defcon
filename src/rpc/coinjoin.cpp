@@ -313,7 +313,7 @@ static RPCHelpMan coinjoinsalt_set()
         },
         RPCExamples{
             HelpExampleCli("coinjoinsalt set", "f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16")
-          + HelpExampleRpc("coinjoinsalt set", "f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16")
+          + HelpExampleRpc("coinjoinsalt set", "\"f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16\"")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {

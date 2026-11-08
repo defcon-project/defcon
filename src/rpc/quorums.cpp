@@ -58,7 +58,7 @@ static RPCHelpMan quorum_list()
         RPCExamples{
             HelpExampleCli("quorum", "list")
     + HelpExampleCli("quorum", "list 10")
-    + HelpExampleRpc("quorum", "list, 10")
+    + HelpExampleRpc("quorum", "\"list\", 10")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -124,7 +124,7 @@ static RPCHelpMan quorum_list_extended()
             RPCExamples{
                 HelpExampleCli("quorum", "listextended")
                 + HelpExampleCli("quorum", "listextended 2500")
-                + HelpExampleRpc("quorum", "listextended, 2500")
+                + HelpExampleRpc("quorum", "\"listextended\", 2500")
             },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
