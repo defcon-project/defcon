@@ -130,6 +130,7 @@ BITCOIN_TESTS =\
   test/dsl_apply_tests.cpp \
   test/dsl_commitment_v2_tests.cpp \
   test/dsl_fault_injection_tests.cpp \
+  test/dsl_seen_tests.cpp \
   test/pose_service_tests.cpp \
   test/mn_dsl_state_tests.cpp \
   test/compute_descriptor_tests.cpp \

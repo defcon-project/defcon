@@ -71,6 +71,7 @@
 #include <evo/mnauth.h>
 #include <evo/pose_service_manager.h>
 #include <evo/pose_service_metrics.h>
+#include <evo/pose_service_seen.h>
 #include <evo/pose_service_faults.h>
 #include <evo/simplifiedmns.h>
 #include <llmq/blockprocessor.h>
@@ -1077,6 +1078,14 @@ private:
      *  drains it; the insert path keeps that bound, not the tick. */
     Mutex m_dsl_early_mutex;
     std::map<uint32_t, DSLEarlyEpoch> m_dsl_early_responses GUARDED_BY(m_dsl_early_mutex);
+    /** Which connected peers already have which exact Sentinel message (sentinelfix.md 4.3): RelayDSLMessage leaves
+     *  out a peer that sent us these bytes, or was sent them outside a relay, before this node first relays them; a
+     *  later relay of the same bytes starts over, and a reorg the store follows is followed here too (ProcessDSLTick).
+     *  It has its own lock; its capacity and expiry follow the epoch (RefreshDSLBudgetEpoch, at the first Sentinel
+     *  message after an epoch change; before the first one, the capacity of the masternode floor). A note carries
+     *  the table's generation as read before the message touched the store, and the tick brackets the store's
+     *  forgetting and the table's in a ForgetWindow, so that following a reorg races no note and no relay. */
+    dsl::SeenTable m_dsl_seen;
     /** The Sentinel tick of the UpdatedBlockTip event being delivered: UpdatedBlockTip notes its block and whether
      *  the blockchain stage of the masternode sync was done at that point, and UpdatedBlockTipFinal runs the tick
      *  from the note at the end of the same event. Only the validation queue's thread uses it, one event at a time;
@@ -2065,6 +2074,7 @@ void PeerManagerImpl::UpdateLastBlockAnnounceTime(NodeId node, int64_t time_in_s
 
 void PeerManagerImpl::InitializeNode(CNode& node, ServiceFlags our_services) {
     NodeId nodeid = node.GetId();
+    m_dsl_seen.AddPeer(nodeid);
     {
         LOCK(cs_main);
         m_node_states.emplace_hint(m_node_states.end(), std::piecewise_construct, std::forward_as_tuple(nodeid), std::forward_as_tuple(node.IsInboundConn()));
@@ -2102,6 +2112,7 @@ void PeerManagerImpl::ReattemptInitialBroadcast(CScheduler& scheduler)
 
 void PeerManagerImpl::FinalizeNode(const CNode& node) {
     NodeId nodeid = node.GetId();
+    m_dsl_seen.RemovePeer(nodeid);
     int misbehavior{0};
     int dsl_connected_height{-1};
     LOCK(cs_main);
@@ -2417,6 +2428,9 @@ std::unique_ptr<PeerManager> PeerManager::make(const CChainParams& chainparams, 
     return std::make_unique<PeerManagerImpl>(chainparams, connman, addrman, banman, chainman, pool, mn_metaman, mn_sync, govman, sporkman, mn_activeman, dmnman, cj_ctx, llmq_ctx, dslman, ignore_incoming_txs, faultinjector);
 }
 
+/** The exact seen table's capacity for a list of mn_count masternodes (defined with the DSL bounds below). */
+static size_t DSLSeenCapacity(int64_t mn_count, const Consensus::Params& consensus);
+
 PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& connman, AddrMan& addrman, BanMan* banman,
                                  ChainstateManager& chainman, CTxMemPool& pool,
                                  CMasternodeMetaMan& mn_metaman, CMasternodeSync& mn_sync,
@@ -2447,6 +2461,10 @@ PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& conn
       m_ignore_incoming_txs(ignore_incoming_txs)
 {
     m_dsl_chain_height.store(WITH_LOCK(cs_main, return m_chainman.ActiveChain().Height()), std::memory_order_relaxed);
+    // The seen table holds nothing at capacity 0, and RefreshDSLBudgetEpoch sizes it only at the first Sentinel
+    // message: until then, the capacity of the masternode floor, so that a relay before it -- a restarted
+    // masternode's first announcement -- still leaves its mark (pose_service_seen.h).
+    m_dsl_seen.SetCapacity(DSLSeenCapacity(0, chainparams.GetConsensus()));
     // While Erlay support is incomplete, it must be enabled explicitly via -txreconciliation.
     // This argument can go away after Erlay support is complete.
     if (gArgs.GetBoolArg("-txreconciliation", DEFAULT_TXRECONCILIATION_ENABLE)) {
@@ -6213,6 +6231,17 @@ void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj,
             perf_base = m_chainman.ActiveChain()[static_cast<int>(base_height)]->GetBlockHash();
         }
     }
+    // The exact seen table (sentinelfix.md 4.3/3): a peer that sent us these bytes, or was sent them outside a relay,
+    // before this node first relays them has them and is left out; every other peer is sent them as before, and is
+    // noted. Every relay is of something the store or the manager has just taken as new, so the same bytes relayed a
+    // second time were forgotten in between, and the peers may have forgotten them too: BeginRelay then withholds them
+    // from nobody (pose_service_seen.h), and so does a relay while the tick follows a reorg (a ForgetWindow). The
+    // key's serialization is the bytes each peer is sent: the DSL serializers do not depend on the stream version.
+    CDataStream wire{SER_NETWORK, PROTOCOL_VERSION};
+    wire << obj;
+    const uint256 seen_key{dsl::SeenTable::Key(msg_type, MakeUCharSpan(wire))};
+    const std::vector<dsl::SeenTable::PeerId> holders{m_dsl_seen.BeginRelay(seen_key)};
+    std::vector<dsl::SeenTable::PeerId> sent;
     m_connman.ForEachNode([&](CNode* pnode) {
         if (pnode->GetId() == skip_id) return;
         if (!pnode->fSuccessfullyConnected || pnode->fDisconnect) return;
@@ -6230,6 +6259,7 @@ void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj,
         // and the layer silently stops recording. Seen on an eight-node lab,
         // where every one of the miner's seven peers was a quorum connection.
         if (pnode->IsBlockOnlyConn()) return;
+        if (std::binary_search(holders.begin(), holders.end(), pnode->GetId())) return;
         const CNetMsgMaker msgMaker(pnode->GetCommonVersion());
         auto message = [&] {
             dsl::PerfTimer serialize_timer(obj.nEpoch, perf_base, dsl::PerfMetric::RELAY_SERIALIZE);
@@ -6237,7 +6267,9 @@ void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj,
         }();
         dsl::PerfTimer push_timer(obj.nEpoch, perf_base, dsl::PerfMetric::RELAY_PUSH);
         m_connman.PushMessage(pnode, std::move(message));
+        sent.push_back(pnode->GetId());
     });
+    m_dsl_seen.NoteRelayed(seen_key, obj.nEpoch, sent);
 }
 
 /** The masternode count the DSL bounds below are sized for when the real list
@@ -6335,6 +6367,20 @@ static constexpr size_t DSL_POSECOMMIT_MAX_LIST{65536};
 static constexpr size_t DSL_POSECOMMIT_MAX_SIZE{2 + 4 + 32 + 1 + 32 +
                                                 2 * (5 + (DSL_POSECOMMIT_MAX_LIST + 7) / 8) + BLS_CURVE_SIG_SIZE};
 
+/** The longest payload a relay of this Sentinel message type carries (sentinelfix.md 4.3/2): a report and a
+ *  liveness announcement serialize to a fixed length, a signed commitment to at most DSL_POSECOMMIT_MAX_SIZE, and
+ *  POSECHALLENGE is never relayed. A received payload longer than this can never be the bytes of a relay, so the
+ *  seen table neither keys nor notes it -- and does not hash it. */
+static size_t DSLSeenMaxPayload(const std::string& msg_type)
+{
+    static const size_t report_size{::GetSerializeSize(dsl::CPoSeServiceReport{}, PROTOCOL_VERSION)};
+    static const size_t response_size{::GetSerializeSize(dsl::CPoSeServiceResponse{}, PROTOCOL_VERSION)};
+    if (msg_type == NetMsgType::POSEREPORT) return report_size;
+    if (msg_type == NetMsgType::POSERESPONSE) return response_size;
+    if (msg_type == NetMsgType::POSECOMMIT) return DSL_POSECOMMIT_MAX_SIZE;
+    return 0;
+}
+
 /** What one peer may legitimately deliver over one DSL epoch: every masternode
  *  announces once, EmitReports files a report for every target a sentinel is
  *  assigned whether the target answered or not, the quorum's signed commitment
@@ -6352,6 +6398,15 @@ static int64_t DSLHonestEpochCeiling(int64_t mn_count, const Consensus::Params& 
     return mns + mns * std::max<int64_t>(consensus.nDSLSentinelCount, 0) + DSL_COMMITMENTS_PER_EPOCH;
 }
 
+/** Epochs of honest traffic the exact seen table holds at most (sentinelfix.md 4.3/5): the tip's epoch, the one
+ *  before and the next, each entry once, with room to spare. */
+static constexpr int64_t DSL_SEEN_CAP_EPOCHS{4};
+
+static size_t DSLSeenCapacity(int64_t mn_count, const Consensus::Params& consensus)
+{
+    return static_cast<size_t>(DSL_SEEN_CAP_EPOCHS * DSLHonestEpochCeiling(mn_count, consensus));
+}
+
 void PeerManagerImpl::RefreshDSLBudgetEpoch()
 {
     const Consensus::Params& consensus = m_chainparams.GetConsensus();
@@ -6367,6 +6422,8 @@ void PeerManagerImpl::RefreshDSLBudgetEpoch()
     // the address map never outgrows the connections this node opened in an epoch
     m_dsl_identity_grants.clear();
     m_dsl_outbound_grants.clear();
+    m_dsl_seen.SetCapacity(DSLSeenCapacity(m_dsl_budget_mn_count, consensus));
+    m_dsl_seen.Expire(static_cast<uint32_t>(epoch));
 }
 
 bool PeerManagerImpl::ChargeDSLMessageBudget(const CNode& pfrom, Peer& peer)
@@ -6600,6 +6657,26 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
         return;
     }
 
+    // The exact bytes this peer sent, for the seen table (sentinelfix.md 4.3/2): noted once the message's epoch is
+    // known, read or not -- a copy dropped undecoded counts as much as a message read, and one that vouches for a held
+    // early announcement is noted before it vouches -- and only for an epoch the table keeps: the tip's, the one
+    // before or the next (a later epoch would pin the table, since nothing drops a newer epoch early). POSECHALLENGE
+    // is never relayed, so it is not noted, and neither is a payload longer than any relay of its type
+    // (DSLSeenMaxPayload): it is not even hashed.
+    // The table's generation, read before this message touches the store or anything is sent: if the table follows
+    // a reorg after this point, the notes below are dropped (pose_service_seen.h), so none of them can bring back a
+    // bit the forget took.
+    const uint64_t seen_generation{m_dsl_seen.Generation()};
+    const bool seen_keyed{msg_type != NetMsgType::POSECHALLENGE && vRecv.size() <= DSLSeenMaxPayload(msg_type)};
+    const uint256 seen_key{seen_keyed ? dsl::SeenTable::Key(msg_type, MakeUCharSpan(vRecv)) : uint256{}};
+    const auto note_seen = [&](uint32_t epoch) {
+        if (!seen_keyed) return;
+        const int64_t tip_epoch{static_cast<int64_t>(m_best_height.load()) / std::max<int64_t>(consensus.nDSLEpochInterval, 1)};
+        if (static_cast<int64_t>(epoch) + 1 >= tip_epoch && static_cast<int64_t>(epoch) <= tip_epoch + 1) {
+            m_dsl_seen.NoteReceived(seen_key, epoch, pfrom.GetId(), seen_generation);
+        }
+    };
+
     // The epoch base block for a wire-supplied epoch, off this node's active
     // chain (not the manager's tick, which runs on the validation-interface
     // queue and can lag the wire by an epoch -- and the flood forwards each copy
@@ -6633,13 +6710,17 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
                 m_dslman->HaveIdenticalResponse(wire->nEpoch, wire_base->GetBlockHash(), wire->proTxHash, wire->hash)) {
                 LogPrint(BCLog::NET, "DSL -- poseresp epoch=%d proTx=%s accepted=%d, peer=%d\n",
                          wire->nEpoch, wire->proTxHash.ToString(), false, pfrom.GetId());
+                note_seen(wire->nEpoch);
                 unread = true;
             } else if (wire_base != nullptr) {
-                // Where the ordinary path would hold it for a connected base (below).
+                // Where the ordinary path would hold it for a connected base (below). Noted before the vouch, so that
+                // a drain racing it on the validation queue leaves this peer out.
+                note_seen(wire->nEpoch);
                 unread = m_mn_sync.IsBlockchainSynced() && wire->nEpoch == tip_epoch &&
                          VouchDSLEarlyResponseCopy(pfrom.GetId(), *wire, /*blocks_early=*/0, wire_base->GetBlockHash());
             } else {
-                // Where the ordinary path would hold it before its base (below).
+                // Where the ordinary path would hold it before its base (below); noted before the vouch likewise.
+                note_seen(wire->nEpoch);
                 const int64_t blocks_early = static_cast<int64_t>(wire->nEpoch) * consensus.nDSLEpochInterval - static_cast<int64_t>(wire_tip);
                 unread = blocks_early >= 1 && blocks_early <= static_cast<int64_t>(consensus.nDSLEpochInterval) &&
                          VouchDSLEarlyResponseCopy(pfrom.GetId(), *wire, blocks_early, uint256{});
@@ -6653,6 +6734,7 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
         dsl::PerfTimer decode_timer(perf_epoch, perf_base, dsl::PerfMetric::DECODE_RESPONSE);
         if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, resp)) return;
         decode_timer.Stop();
+        note_seen(resp.nEpoch);
         const auto [base, tip] = WITH_LOCK(cs_main, return std::make_pair(epoch_base(resp.nEpoch), m_chainman.ActiveChain().Height()));
         if (base != nullptr && consensus.nDSLEpochInterval > 0 && m_mn_sync.IsBlockchainSynced()) {
             const uint32_t tip_epoch = static_cast<uint32_t>(std::max(tip, 0)) / static_cast<uint32_t>(consensus.nDSLEpochInterval);
@@ -6722,6 +6804,7 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
                 const uint256 wire_base_hash = wire_base->GetBlockHash();
                 dsl::RecordPerf(wire->nEpoch, wire_base_hash, dsl::PerfMetric::DUPLICATE);
                 dsl::RecordPerf(wire->nEpoch, wire_base_hash, dsl::PerfMetric::DUPLICATE_UNDECODED);
+                note_seen(wire->nEpoch);
                 LogPrint(BCLog::NET, "DSL -- posereport epoch=%d target=%s accepted=%d, peer=%d\n",
                          wire->nEpoch, wire->targetProTxHash.ToString(), false, pfrom.GetId());
                 return;
@@ -6734,6 +6817,7 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
             return;
         }
         decode_timer.Stop();
+        note_seen(report.nEpoch);
         const CBlockIndex* base = epoch_base(report.nEpoch);
         if (base == nullptr) dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::BASE_REFUSED);
         const bool accepted = base != nullptr &&
@@ -6753,6 +6837,7 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
         }
         CPoSeServiceCommitment commitment;
         if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, commitment)) return;
+        note_seen(commitment.nEpoch);
         // Of use only until its boundary block is connected here: after that it
         // can enter no block on this chain, nor help a peer build one.
         const CBlockIndex* base = epoch_base(commitment.nEpoch);
@@ -6813,6 +6898,12 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
     });
     const CNetMsgMaker msgMaker(pfrom.GetCommonVersion());
     m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::POSERESPONSE, ann));
+    // the bytes just sent: the DSL serializers do not depend on the stream version, so they are the key's; noted with
+    // the generation read before the send
+    CDataStream wire{SER_NETWORK, PROTOCOL_VERSION};
+    wire << ann;
+    m_dsl_seen.NoteSent(dsl::SeenTable::Key(NetMsgType::POSERESPONSE, MakeUCharSpan(wire)), ann.nEpoch, {pfrom.GetId()},
+                        seen_generation);
 }
 
 bool PeerManagerImpl::DslFaultHolds(dsl::FaultKind drop, dsl::FaultKind delay, uint32_t pos, uint32_t normalOffset,
@@ -7098,7 +7189,17 @@ try
     // announcements against that obsolete callback.
     if (WITH_LOCK(cs_main, return m_chainman.ActiveChain()[pindexBase->nHeight]) != pindexBase) return;
     const uint32_t pos = static_cast<uint32_t>(pindexNew->nHeight) % interval;
-    const auto change = m_dslman->BeginEpoch(epoch, pindexBase->GetBlockHash());
+    // The store forgets in BeginEpoch on a reorg, and the seen table follows it: the window keeps a relay from reading
+    // the bits, and a note from writing them, between the two (pose_service_seen.h). A later take of the same bytes
+    // is then sent to every peer, which may have forgotten them as well.
+    const auto change = [&] {
+        const dsl::SeenTable::ForgetWindow seen_window{m_dsl_seen};
+        const auto c = m_dslman->BeginEpoch(epoch, pindexBase->GetBlockHash());
+        if (c == dsl::CPoSeServiceManager::EpochChange::Rebased || c == dsl::CPoSeServiceManager::EpochChange::Rewound) {
+            m_dsl_seen.ForgetFrom(epoch);
+        }
+        return c;
+    }();
 
     // A reorg changed this epoch's base block (Rebased) or moved the tip back
     // across a boundary into it (Rewound): the manager discarded the stale
