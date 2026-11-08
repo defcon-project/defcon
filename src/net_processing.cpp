@@ -2545,6 +2545,8 @@ void PeerManagerImpl::NewPoWValidBlock(const CBlockIndex *pindex, const std::sha
  * in m_chainman.ActiveChain() to our peers.
  */
 void PeerManagerImpl::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload){
+    const auto perf_key = dsl::PerfEnabled() ? dsl::TipPerfKey(pindexNew, m_chainparams.GetConsensus()) : std::nullopt;
+    dsl::LatencyTimer run_timer(perf_key, dsl::PerfMetric::PEERMAN_TIP_RUN);
     m_best_height = pindexNew->nHeight;
 
     SetServiceFlagsIBDCache(!fInitialDownload);
@@ -2580,6 +2582,7 @@ void PeerManagerImpl::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlock
     });
     m_connman.WakeMessageHandler();
 
+    dsl::LatencyTimer tick_timer(perf_key, dsl::PerfMetric::DSL_TICK_RUN);
     ProcessDSLTick(pindexNew);
 }
 
@@ -6452,10 +6455,15 @@ bool PeerManagerImpl::ChargeDSLMessageBudget(const CNode& pfrom, Peer& peer)
 template <typename T>
 bool PeerManagerImpl::ReadDSLMessage(CDataStream& vRecv, NodeId nodeid, const std::string& msg_type, T& obj)
 {
+    // -dsltestprocessdelay: a report or liveness announcement read off the wire costs this much more, read
+    // or not -- the reading is what it stands for.
+    const bool delayed{msg_type == NetMsgType::POSEREPORT || msg_type == NetMsgType::POSERESPONSE};
     try {
         vRecv >> obj;
+        if (delayed) dsl::TestProcessDelay();
         return true;
     } catch (const std::exception& e) {
+        if (delayed) dsl::TestProcessDelay();
         // Caught here rather than left to the dispatcher's own handler, which
         // only logs -- and which the rest of this message's handlers never
         // reach, because the exception unwinds past them.
@@ -6573,7 +6581,9 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
 
     if (msg_type == NetMsgType::POSERESPONSE) {
         dsl::CPoSeServiceResponse resp;
+        dsl::PerfTimer decode_timer(perf_epoch, perf_base, dsl::PerfMetric::DECODE_RESPONSE);
         if (!ReadDSLMessage(vRecv, pfrom.GetId(), msg_type, resp)) return;
+        decode_timer.Stop();
         const auto [base, tip] = WITH_LOCK(cs_main, return std::make_pair(epoch_base(resp.nEpoch), m_chainman.ActiveChain().Height()));
         if (base != nullptr && consensus.nDSLEpochInterval > 0 && m_mn_sync.IsBlockchainSynced()) {
             const uint32_t tip_epoch = static_cast<uint32_t>(std::max(tip, 0)) / static_cast<uint32_t>(consensus.nDSLEpochInterval);
@@ -7105,7 +7115,9 @@ try
                         continue;
                     }
                 }
-                if (m_dslman->ProcessResponse(held.resp, list_at_base, pindexBase->GetBlockHash())) {
+                const bool held_accepted{m_dslman->ProcessResponse(held.resp, list_at_base, pindexBase->GetBlockHash())};
+                dsl::TestProcessDelay(); // -dsltestprocessdelay: the check of a held announcement costs this much more
+                if (held_accepted) {
                     ++accepted_count;
                     RelayDSLMessage(NetMsgType::POSERESPONSE, held.resp, /*skip_id=*/-1);
                 } else if (listed && !connected_verified && !m_dslman->HasResponded(held.resp.proTxHash)) {
@@ -7404,6 +7416,18 @@ bool PeerManagerImpl::ProcessMessages(CNode* pfrom, std::atomic<bool>& interrupt
 
     CNetMessage& msg{poll_result->first};
     bool fMoreWork = poll_result->second;
+
+    // How long a block, or what announces one, waited behind this peer's earlier messages (and the other
+    // peers' turns) before its processing starts, filed at the position of the block the chain waits for.
+    if (dsl::PerfEnabled() && msg.m_time_steady != std::chrono::steady_clock::time_point{} &&
+        (msg.m_type == NetMsgType::BLOCK || msg.m_type == NetMsgType::CMPCTBLOCK || msg.m_type == NetMsgType::BLOCKTXN ||
+         msg.m_type == NetMsgType::HEADERS || msg.m_type == NetMsgType::HEADERS2)) {
+        const CBlockIndex* tip = WITH_LOCK(cs_main, return m_chainman.ActiveChain().Tip());
+        if (const auto key = dsl::TipPerfKey(tip, m_chainparams.GetConsensus())) {
+            dsl::RecordLatency(key->epoch, key->base, dsl::PerfMetric::BLOCK_MSG_WAIT, dsl::PerfPosition(tip->nHeight + 1),
+                               dsl::NanosSince(msg.m_time_steady));
+        }
+    }
 
     TRACE6(net, inbound_message,
         pfrom->GetId(),

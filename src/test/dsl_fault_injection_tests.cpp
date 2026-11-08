@@ -54,6 +54,27 @@ BOOST_AUTO_TEST_CASE(startup_refuses_fault_injection_outside_devnet_and_regtest)
     }
 }
 
+// The test switch that slows a node down follows the same gate, and a delay out of range is refused anywhere.
+BOOST_AUTO_TEST_CASE(startup_refuses_the_test_process_delay_outside_devnet_and_regtest)
+{
+    for (const auto& chain : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
+        const auto params = ParamsFor(chain);
+        const auto refusal = dsl::TestProcessDelayRefusal(*params, 200);
+        BOOST_REQUIRE(refusal.has_value());
+        BOOST_CHECK(refusal->find("-dsltestprocessdelay") != std::string::npos);
+        BOOST_CHECK(refusal->find(chain) != std::string::npos);
+        BOOST_CHECK(!dsl::TestProcessDelayRefusal(*params, 0).has_value());
+    }
+    for (const auto& chain : {CBaseChainParams::DEVNET, CBaseChainParams::REGTEST}) {
+        const auto params = ParamsFor(chain);
+        BOOST_CHECK(!dsl::TestProcessDelayRefusal(*params, 0).has_value());
+        BOOST_CHECK(!dsl::TestProcessDelayRefusal(*params, 1).has_value());
+        BOOST_CHECK(!dsl::TestProcessDelayRefusal(*params, dsl::MAX_TEST_PROCESS_DELAY_MS).has_value());
+        BOOST_CHECK(dsl::TestProcessDelayRefusal(*params, -1).has_value());
+        BOOST_CHECK(dsl::TestProcessDelayRefusal(*params, dsl::MAX_TEST_PROCESS_DELAY_MS + 1).has_value());
+    }
+}
+
 // A disabled injector is inert in every direction: it stores nothing, lists
 // nothing and answers no fault -- so an RPC reaching it on a chain where the
 // gate stayed closed can only ever report "disabled".

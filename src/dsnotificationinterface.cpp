@@ -16,6 +16,7 @@
 
 #include <evo/deterministicmns.h>
 #include <evo/mnauth.h>
+#include <evo/pose_service_metrics.h>
 
 #include <llmq/chainlocks.h>
 #include <llmq/context.h>
@@ -82,6 +83,16 @@ void CDSNotificationInterface::SynchronousUpdatedBlockTip(const CBlockIndex *pin
 void CDSNotificationInterface::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload)
 {
     assert(m_cj_ctx && m_llmq_ctx);
+
+    // From the event being queued to here: what the callbacks registered before this one (PeerManager, with
+    // the Sentinel tick, among them) and the queue ahead of it cost the DKG (sentinelfix.md 4.1).
+    if (dsl::PerfEnabled()) {
+        if (const auto queued = dsl::TipEventQueued()) {
+            if (const auto key = dsl::TipPerfKey(pindexNew, Params().GetConsensus())) {
+                dsl::RecordLatency(key->epoch, key->base, dsl::PerfMetric::DKG_TIP_START, key->position, dsl::NanosSince(*queued));
+            }
+        }
+    }
 
     if (pindexNew == pindexFork) // blocks were disconnected without any new ones
         return;

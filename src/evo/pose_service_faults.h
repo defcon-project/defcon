@@ -139,6 +139,12 @@ bool FaultInjectionAllowedOn(const CChainParams& params);
  */
 std::optional<std::string> FaultInjectionRefusal(const CChainParams& params, bool requested);
 
+/** -dsltestprocessdelay (dsl::TestProcessDelay): refused unless it is 0 or a delay of 1 to
+ *  MAX_TEST_PROCESS_DELAY_MS milliseconds on devnet or regtest. */
+extern const char* const TEST_PROCESS_DELAY_ARG;
+static constexpr int64_t MAX_TEST_PROCESS_DELAY_MS{10000};
+std::optional<std::string> TestProcessDelayRefusal(const CChainParams& params, int64_t delay_ms);
+
 } // namespace dsl
 
 #endif // BITCOIN_EVO_POSE_SERVICE_FAULTS_H

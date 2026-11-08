@@ -287,6 +287,9 @@ class CNetMessage {
 public:
     CDataStream m_recv;                  //!< received message data
     std::chrono::microseconds m_time{0}; //!< time of message receipt
+    //! Monotonic time of message receipt, for latency diagnostics only (dsl::PerfMetric::BLOCK_MSG_WAIT):
+    //! unlike m_time it is not mockable, so a measured wait is a real one.
+    std::chrono::steady_clock::time_point m_time_steady{};
     uint32_t m_message_size{0};     //!< size of the payload
     uint32_t m_raw_message_size{0}; //!< used wire size of the message (including header/checksum)
     std::string m_type;

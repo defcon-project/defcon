@@ -780,6 +780,7 @@ bool CNode::ReceiveMsgBytes(Span<const uint8_t> msg_bytes, bool& complete)
 {
     complete = false;
     const auto time = GetTime<std::chrono::microseconds>();
+    const auto time_steady = std::chrono::steady_clock::now();
     LOCK(cs_vRecv);
     m_last_recv = std::chrono::duration_cast<std::chrono::seconds>(time);
     nRecvBytes += msg_bytes.size();
@@ -794,6 +795,7 @@ bool CNode::ReceiveMsgBytes(Span<const uint8_t> msg_bytes, bool& complete)
             // decompose a transport agnostic CNetMessage from the deserializer
             bool reject_message{false};
             CNetMessage msg = m_transport->GetReceivedMessage(time, reject_message);
+            msg.m_time_steady = time_steady;
             if (reject_message) {
                 // Message deserialization failed. Drop the message but don't disconnect the peer.
                 // store the size of the corrupt message

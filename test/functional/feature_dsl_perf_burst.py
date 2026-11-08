@@ -22,7 +22,7 @@ class DSLPerfBurstTest(DSLPerfTest):
         self.extra_args = [[*args, "-llmqtestinstantsenddip0024=llmq_test"] for args in self.extra_args]
 
     def run_test(self):
-        super().run_test()
+        self.run_perf_checks()
         node = self.nodes[0]
         for peer in self.nodes:
             force_finish_mnsync(peer)

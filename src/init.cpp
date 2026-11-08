@@ -524,6 +524,7 @@ void SetupServerArgs(ArgsManager& argsman)
     argsman.AddArg("-fastprune", "Use smaller block files and lower minimum prune height for testing purposes", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-dslsignwait", "Wait for complete Sentinel verdicts before signing until the last epoch block (regtest only; default: 1)", ArgsManager::ALLOW_BOOL | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-dslperf", "Log bounded per-epoch Sentinel cost summaries (default: 0)", ArgsManager::ALLOW_BOOL | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-dsltestprocessdelay=<ms>", strprintf("Make this a slow node for tests: wait <ms> milliseconds after reading each Sentinel report or liveness announcement, after checking each held announcement and after signing each own report (devnet and regtest only; startup is refused elsewhere; at most %d; default: 0)", dsl::MAX_TEST_PROCESS_DELAY_MS), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-enablefaultinjection", "Enable DSL fault injection (devnet and regtest only; startup is refused elsewhere). Faults are armed with the faultinject RPC over cookie authentication, expire by height and are never persisted (default: 0)", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg(strprintf("%s=<n>", pos::STAKING_POLL_ARG), strprintf("Milliseconds the staking thread pauses between rounds and after a block it found; its waits for the chain, the masternode sync or the clock are four times this (the pause before restarting after a failure stays 10 seconds). For tests: devnet and regtest only, startup is refused elsewhere (%d to %d, default: %d)", pos::MIN_STAKING_POLL_MS, pos::DEFAULT_STAKING_POLL_MS, pos::DEFAULT_STAKING_POLL_MS), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
 #if HAVE_SYSTEM
@@ -1325,6 +1326,9 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     if (const auto refusal = dsl::FaultInjectionRefusal(chainparams, args.GetBoolArg(dsl::FAULT_INJECTION_ARG, false))) {
         return InitError(Untranslated(*refusal));
     }
+    if (const auto refusal = dsl::TestProcessDelayRefusal(chainparams, args.GetArg(dsl::TEST_PROCESS_DELAY_ARG, 0))) {
+        return InitError(Untranslated(*refusal));
+    }
     if (args.IsArgSet("-dslsignwait") && chainparams.NetworkIDString() != CBaseChainParams::REGTEST) {
         return InitError(Untranslated("-dslsignwait is only supported on regtest"));
     }
@@ -2049,6 +2053,14 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     assert(!node.dslman);
     dsl::SetPerfEnabled(args.GetBoolArg("-dslperf", false));
+    {
+        // Only ever set on devnet/regtest: AppInitParameterInteraction refused it everywhere else.
+        const int64_t delay_ms = args.GetArg(dsl::TEST_PROCESS_DELAY_ARG, 0);
+        dsl::SetTestProcessDelay(std::chrono::milliseconds{delay_ms});
+        if (delay_ms > 0) {
+            LogPrintf("WARNING: %s=%d: this node is slowed down on purpose for tests\n", dsl::TEST_PROCESS_DELAY_ARG, delay_ms);
+        }
+    }
     node.dslman = std::make_unique<dsl::CPoSeServiceManager>();
     assert(!node.faultinjector);
     {
