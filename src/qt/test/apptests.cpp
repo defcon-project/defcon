@@ -48,6 +48,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -73,6 +74,88 @@ void TestRpcCommand(RPCConsole* console)
     const QString output = messagesWidget->toPlainText();
     const QString pattern = QStringLiteral("\"chain\": \"(\\w+)\"");
     QCOMPARE(FindInConsole(output, pattern), QString("regtest"));
+}
+
+//! Enter a command in the console. Once its reply is shown, return the text
+//! the command added and the number of changes to the message view, or -1
+//! changes if no reply came.
+std::pair<QString, int> EnterCommand(RPCConsole* console, const QString& command)
+{
+    QTextEdit* messagesWidget = console->findChild<QTextEdit*>("messagesWidget");
+    QLineEdit* lineEdit = console->findChild<QLineEdit*>("lineEdit");
+    const int before = messagesWidget->toPlainText().size();
+    QSignalSpy spy(messagesWidget, &QTextEdit::textChanged);
+    QTest::keyClicks(lineEdit, command);
+    QTest::keyClick(lineEdit, Qt::Key_Return);
+    if (!spy.wait(5000)) return {QString{}, -1};
+    return {messagesWidget->toPlainText().mid(before), spy.count()};
+}
+
+//! A secret typed into the console stays out of the echo, the error and the
+//! history, and a reply that can show a secret has a warning above it.
+void TestConsoleSecrets(RPCConsole* console)
+{
+    QLineEdit* lineEdit = console->findChild<QLineEdit*>("lineEdit");
+    const QString warning{"Warning: the reply below can contain private keys"};
+    const QString key{"PROBEkey0123456789abcdefghijklmnopqrstuvwxyzABCDEF"};
+    QString added;
+    int changes;
+
+    // The request line, "Executing…", its removal and the error.
+    std::tie(added, changes) = EnterCommand(console, "importblsprivkey " + key);
+    QCOMPARE(changes, 4);
+    QVERIFY(added.contains("importblsprivkey(…)"));
+    QVERIFY(!added.contains(key));
+    QVERIFY(!added.contains(warning));
+    // Undo in the emptied input line cannot bring the command back.
+    QVERIFY(!lineEdit->isUndoAvailable());
+    QTest::keyClick(lineEdit, Qt::Key_Z, Qt::ControlModifier);
+    QVERIFY(lineEdit->text().isEmpty());
+    QTest::keyClick(lineEdit, Qt::Key_Up);
+    QCOMPARE(lineEdit->text(), QString("importblsprivkey(…)"));
+    lineEdit->clear();
+
+    // The parse error would repeat the whole array.
+    std::tie(added, changes) = EnterCommand(console, "signrawtransactionwithkey 00 '[\"" + key + "\"'");
+    QCOMPARE(changes, 4);
+    QVERIFY(added.contains("Error parsing JSON"));
+    QVERIFY(!added.contains(key));
+
+    // An error that would repeat the key shows its code and a fixed text.
+    std::tie(added, changes) = EnterCommand(console, "getdescriptorinfo 'pkh(" + key + ")'");
+    QCOMPARE(changes, 4);
+    QVERIFY(added.contains("getdescriptorinfo(…)"));
+    QVERIFY(added.contains("The details of this error are hidden"));
+    QVERIFY(added.contains("(code -5)"));
+    QVERIFY(!added.contains(key));
+
+    // The warning comes between the removal of "Executing…" and the reply.
+    std::tie(added, changes) = EnterCommand(console, "bls fromsecret 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    QCOMPARE(changes, 5);
+    QVERIFY(added.contains("bls fromsecret(…)"));
+    QVERIFY(added.contains(warning));
+    QVERIFY(added.indexOf(warning) < added.indexOf("\"public\""));
+
+    std::tie(added, changes) = EnterCommand(console, "getblockcount");
+    QCOMPARE(changes, 4);
+    QVERIFY(!added.contains(warning));
+
+    // A subcommand computed by a hidden nested command, and a hidden command
+    // left open behind an unclosed inner parenthesis.
+    std::tie(added, changes) = EnterCommand(console, "bls(importprivkey(fromsecret)[name], " + key + ")");
+    QCOMPARE(changes, 4);
+    QVERIFY(added.contains("bls(importprivkey(…))"));
+    QVERIFY(!added.contains(key));
+    QTest::keyClick(lineEdit, Qt::Key_Up);
+    QCOMPARE(lineEdit->text(), QString("bls(importprivkey(…))"));
+    lineEdit->clear();
+    std::tie(added, changes) = EnterCommand(console, "walletpassphrase " + key + " echo(60");
+    QCOMPARE(changes, 4);
+    QVERIFY(added.contains("walletpassphrase(…)"));
+    QVERIFY(!added.contains(key));
+    QTest::keyClick(lineEdit, Qt::Key_Up);
+    QCOMPARE(lineEdit->text(), QString("walletpassphrase(…)"));
+    lineEdit->clear();
 }
 
 #ifdef ENABLE_WALLET
@@ -418,6 +501,7 @@ void AppTests::consoleTests(RPCConsole* console)
 {
     HandleCallback callback{"consoleTests", *this};
     TestRpcCommand(console);
+    TestConsoleSecrets(console);
 }
 
 //! Destructor to shut down after the last expected callback completes.

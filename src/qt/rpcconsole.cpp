@@ -30,6 +30,10 @@
 
 #include <univalue.h>
 
+#include <algorithm>
+#include <utility>
+#include <vector>
+
 #ifdef ENABLE_WALLET
 #ifdef USE_BDB
 #include <wallet/bdb.h>
@@ -74,17 +78,166 @@ const QString REINDEX("-reindex");
 
 namespace {
 
-// don't add private key handling cmd's to the history
+// Commands whose arguments can hold a private key, a seed, a recovery phrase
+// or a passphrase, or an output descriptor, which can hold private keys. Two
+// words name a subcommand, and only that subcommand is hidden. The console
+// shows such a command as "name(…)", keeps it that way in its history, and
+// shows an error of its command line only by its code and a fixed text (see
+// ShownError). RPCNestedTests checks that
+// every registered command with such an argument is listed here.
 const QStringList historyFilter = QStringList()
-    << "importprivkey"
+    << "bls fromsecret"
+    << "createwallet"
+    << "deriveaddresses"
+    << "encryptwallet"
+    << "generateblock"
+    << "generatetodescriptor"
+    << "getdescriptorinfo"
+    << "importblsprivkey"
+    << "importdescriptors"
     << "importmulti"
+    << "importprivkey"
+    << "protx revoke"
+    << "protx update_service"
+    << "protx update_service_compute"
+    << "scantxoutset"
     << "sethdseed"
     << "signmessagewithprivkey"
     << "signrawtransactionwithkey"
     << "upgradetohd"
+    << "utxoupdatepsbt"
     << "walletpassphrase"
-    << "walletpassphrasechange"
-    << "encryptwallet";
+    << "walletpassphrasechange";
+
+// Commands whose reply can show a private key, a seed or a recovery phrase:
+// the command, its subcommand if it has one, and the argument after them that
+// decides it (-1: the reply always can). The console puts a warning above
+// such a reply.
+struct SecretReply {
+    const char* command;
+    const char* subcommand;
+    int arg;
+};
+const SecretReply secretReplies[]{
+    {"bls", "fromsecret", -1},
+    {"bls", "generate", -1},
+    {"dumphdinfo", "", -1},
+    {"dumpprivkey", "", -1},
+    {"listdescriptors", "", 0},
+    {"quorum", "info", 2},
+};
+
+//! A command name as the lists hold it: lower case, its words joined by single
+//! spaces, so that a quoted name with extra spaces ("protx " revoke) is found.
+std::string NormalName(const std::string& name)
+{
+    std::string out;
+    for (const std::string& word : SplitString(name, " \t\n\r\f\v")) {
+        if (word.empty()) continue;
+        if (!out.empty()) out += ' ';
+        out += ToLower(word);
+    }
+    return out;
+}
+
+bool SameName(const std::string& a, const std::string& b) { return NormalName(a) == NormalName(b); }
+
+//! Whether a listed pair has this command as its first word.
+bool HasHiddenSubcommand(const std::string& command)
+{
+    for (const QString& entry : historyFilter) {
+        if (entry.contains(' ') && SameName(entry.section(' ', 0, 0).toStdString(), command)) return true;
+    }
+    return false;
+}
+
+//! Whether adding token to the innermost frame of stack (each frame holds the
+//! words of one command so far) starts a hidden command: a listed command, or
+//! the subcommand of a listed pair, also when it is written as a nested call.
+//! A computed token (the result of a nested command) is only known once that
+//! runs, so in the subcommand's place it counts as a hidden subcommand.
+bool StartsHiddenCommand(const std::vector<std::vector<std::string>>& stack, const std::string& token, bool computed)
+{
+    const auto listed = [](const std::string& name) { return historyFilter.contains(QString::fromStdString(NormalName(name)), Qt::CaseInsensitive); };
+    const std::vector<std::string>& frame = stack.back();
+    if (frame.size() == 1) return listed(frame[0] + " " + token) || (computed && HasHiddenSubcommand(frame[0]));
+    if (!frame.empty()) return false;
+    if (listed(token)) return true;
+    // "bls(fromsecret(…))": the subcommand opens a frame of its own.
+    return stack.size() >= 2 && stack[stack.size() - 2].size() == 1 && listed(stack[stack.size() - 2][0] + " " + token);
+}
+
+//! Whether the reply to the command in frame (its words, and which of them are
+//! computed) can show a secret. A computed word is only known once its command
+//! runs, so it counts as the one that shows a secret; a deciding argument
+//! counts unless it is absent or plainly false.
+bool ReplyShowsSecrets(const std::vector<std::string>& frame, const std::vector<bool>& computed)
+{
+    if (frame.empty()) return false;
+    // A pair can also be typed as one quoted word: "bls generate".
+    std::vector<std::string> words{frame};
+    std::vector<bool> unknown{computed};
+    const size_t space{frame[0].find(' ')};
+    if (space != std::string::npos) {
+        words[0] = frame[0].substr(0, space);
+        words.insert(words.begin() + 1, frame[0].substr(space + 1));
+        unknown.insert(unknown.begin() + 1, false);
+    }
+    for (const SecretReply& entry : secretReplies) {
+        if (!SameName(words[0], entry.command)) continue;
+        size_t pos{1};
+        if (*entry.subcommand) {
+            if (words.size() < 2) continue;
+            if (!unknown[1] && !SameName(words[1], entry.subcommand)) continue;
+            pos = 2;
+        }
+        if (entry.arg < 0) return true;
+        pos += size_t(entry.arg);
+        if (pos >= words.size()) continue;
+        if (unknown[pos]) return true;
+        const std::string value{ToLower(TrimString(words[pos]))};
+        if (value != "false" && value != "no" && value != "0" && value != "null") return true;
+    }
+    return false;
+}
+
+//! What the console shows in place of the message of an error of a command
+//! line with a hidden argument. Such a message can repeat the argument, also
+//! changed (cut, in another case, decoded), so no part of it is shown.
+const char* const HIDDEN_ERROR{"The details of this error are hidden, because the command can contain a private key, a recovery phrase or a passphrase."};
+
+//! Errors of hidden commands that are shown as they are: fixed messages from
+//! the source, which repeat no argument. Only an exact match counts.
+const char* const FIXED_ERRORS[]{
+    "Error: The wallet passphrase entered was incorrect.",
+    "Error: Please enter the wallet passphrase with walletpassphrase first.",
+    "Error: Wallet is already fully unlocked.",
+    "Error: Wallet encrypted but passphrase not supplied to RPC.",
+    "Error: running with an unencrypted wallet, but walletpassphrase was called.",
+    "Error: running with an unencrypted wallet, but walletpassphrasechange was called.",
+    "Error: running with an encrypted wallet, but encryptwallet was called.",
+    "passphrase cannot be empty",
+    "Timeout cannot be negative.",
+    "Invalid private key encoding",
+    "Invalid private key",
+    "Invalid BLS private key specified.",
+    "secretKey must be a valid BLS secret key",
+    "operatorKey must be a valid BLS secret key",
+    "Cannot import private keys to a wallet with private keys disabled",
+    "Error: Private keys are disabled for this wallet",
+    "Requested wallet does not exist or is not loaded",
+    "Wallet file not specified (must request wallet RPC through /wallet/<filename> uri-path).",
+    "Method not found",
+};
+
+//! The message to show for an error of a command line with a hidden argument.
+std::string ShownError(const std::string& message)
+{
+    for (const char* fixed : FIXED_ERRORS) {
+        if (message == fixed) return message;
+    }
+    return HIDDEN_ERROR;
+}
 
 }
 
@@ -172,9 +325,12 @@ public:
  * @param[in]    strCommand  Command line to split
  * @param[in]    fExecute    set true if you want the command to be executed
  * @param[out]   pstrFilteredOut  Command line, filtered to remove any sensitive data
+ * @param[in]    wallet_model  optional wallet to execute the command(s) in
+ * @param[out]   reply_shows_secrets  whether the reply of the last command can show a private key, seed or recovery phrase
+ * @param[out]   line_has_hidden_args  whether the line holds an argument of a hidden command
  */
 
-bool RPCConsole::RPCParseCommandLine(interfaces::Node* node, std::string &strResult, const std::string &strCommand, const bool fExecute, std::string * const pstrFilteredOut, const WalletModel* wallet_model)
+bool RPCConsole::RPCParseCommandLine(interfaces::Node* node, std::string &strResult, const std::string &strCommand, const bool fExecute, std::string * const pstrFilteredOut, const WalletModel* wallet_model, bool* const reply_shows_secrets, bool* const line_has_hidden_args)
 {
     std::vector< std::vector<std::string> > stack;
     stack.push_back(std::vector<std::string>());
@@ -197,28 +353,56 @@ bool RPCConsole::RPCParseCommandLine(interfaces::Node* node, std::string &strRes
     unsigned nDepthInsideSensitive = 0;
     size_t filter_begin_pos = 0, chpos;
     std::vector<std::pair<size_t, size_t>> filter_ranges;
-
-    auto add_to_current_stack = [&](const std::string& strArg) {
-        if (stack.back().empty() && (!nDepthInsideSensitive) && historyFilter.contains(QString::fromStdString(strArg), Qt::CaseInsensitive)) {
-            nDepthInsideSensitive = 1;
-            filter_begin_pos = chpos;
+    // Whether the line holds an argument of a hidden command anywhere: then an
+    // error reported here shows only its code and a fixed text, also one of a
+    // command that runs before the hidden one. So a line that runs is parsed
+    // whole first, without running; one that does not parse counts as such.
+    bool has_hidden_args{false};
+    if (fExecute) {
+        try {
+            std::string unused;
+            RPCParseCommandLine(nullptr, unused, strCommand, false, nullptr, nullptr, nullptr, &has_hidden_args);
+        } catch (const std::exception&) {
+            has_hidden_args = true;
         }
+    }
+    // A hidden subcommand stops its filter at the parenthesis that closes the
+    // command, so "protx(revoke, …)" is shown as "protx(revoke(…))".
+    bool filter_is_subcommand = false;
+    size_t frame_close_pos = std::string::npos;
+    bool last_reply_shows_secrets = false;
+    // For each frame of stack, which of its words are computed: the result of
+    // a nested command, known only once that runs.
+    std::vector<std::vector<bool>> computed_words{{}};
+
+    auto add_to_current_stack = [&](const std::string& strArg, bool computed = false) {
         // Make sure stack is not empty before adding something
         if (stack.empty()) {
             stack.push_back(std::vector<std::string>());
+            computed_words.emplace_back();
+        }
+        if (nDepthInsideSensitive) {
+            has_hidden_args = true;
+        } else if (StartsHiddenCommand(stack, strArg, computed)) {
+            nDepthInsideSensitive = 1;
+            filter_begin_pos = chpos;
+            filter_is_subcommand = !stack.back().empty();
         }
         stack.back().push_back(strArg);
+        computed_words.back().push_back(computed);
     };
 
     auto close_out_params = [&]() {
         if (nDepthInsideSensitive) {
             if (!--nDepthInsideSensitive) {
                 assert(filter_begin_pos);
-                filter_ranges.push_back(std::make_pair(filter_begin_pos, chpos));
+                const bool keep_close = filter_is_subcommand && frame_close_pos != std::string::npos;
+                filter_ranges.push_back(std::make_pair(filter_begin_pos, keep_close ? frame_close_pos : chpos));
                 filter_begin_pos = 0;
             }
         }
         stack.pop_back();
+        computed_words.pop_back();
     };
 
     std::string strCommandTerminated = strCommand;
@@ -283,7 +467,7 @@ bool RPCConsole::RPCParseCommandLine(interfaces::Node* node, std::string &strRes
                         if (curarg.size())
                         {
                             if (stack.size())
-                                add_to_current_stack(curarg);
+                                add_to_current_stack(curarg, /*computed=*/true);
                             else
                                 strResult = curarg;
                         }
@@ -315,6 +499,7 @@ bool RPCConsole::RPCParseCommandLine(interfaces::Node* node, std::string &strRes
                                 ++nDepthInsideSensitive;
                             }
                             stack.push_back(std::vector<std::string>());
+                            computed_words.emplace_back();
                         }
 
                         // don't allow commands after executed commands on baselevel
@@ -327,10 +512,20 @@ bool RPCConsole::RPCParseCommandLine(interfaces::Node* node, std::string &strRes
                     }
                     if ((ch == ')' || ch == '\n') && stack.size() > 0)
                     {
+                        frame_close_pos = ch == ')' ? chpos : std::string::npos;
+                        last_reply_shows_secrets = ReplyShowsSecrets(stack.back(), computed_words.back());
                         if (fExecute) {
                             // Convert argument list to JSON objects in method-dependent way,
                             // and pass it along with the method name to the dispatcher.
-                            UniValue params = RPCConvertValues(stack.back()[0], std::vector<std::string>(stack.back().begin() + 1, stack.back().end()));
+                            UniValue params;
+                            try {
+                                params = RPCConvertValues(stack.back()[0], std::vector<std::string>(stack.back().begin() + 1, stack.back().end()));
+                            } catch (const std::runtime_error&) {
+                                // The message repeats the argument that does not parse: a hidden
+                                // argument, or what a hidden nested command returned.
+                                if (has_hidden_args) throw std::runtime_error("Error parsing JSON: (…)");
+                                throw;
+                            }
                             std::string method = stack.back()[0];
                             std::string uri;
 #ifdef ENABLE_WALLET
@@ -340,7 +535,22 @@ bool RPCConsole::RPCParseCommandLine(interfaces::Node* node, std::string &strRes
                             }
 #endif
                             assert(node);
-                            lastResult = node->executeRpc(method, params, uri);
+                            try {
+                                lastResult = node->executeRpc(method, params, uri);
+                            } catch (const UniValue& error) {
+                                // An error can repeat an argument, such as a key a descriptor
+                                // does not accept, also changed: only its code stays.
+                                if (!has_hidden_args) throw;
+                                const UniValue& code = find_value(error, "code");
+                                const UniValue& message = find_value(error, "message");
+                                if (code.isNum() && message.isStr()) {
+                                    throw JSONRPCError(code.get_int(), ShownError(message.get_str()));
+                                }
+                                throw std::runtime_error(HIDDEN_ERROR);
+                            } catch (const std::exception& e) {
+                                if (!has_hidden_args) throw;
+                                throw std::runtime_error(ShownError(e.what()));
+                            }
                         }
 
                         state = STATE_COMMAND_EXECUTED;
@@ -395,11 +605,27 @@ bool RPCConsole::RPCParseCommandLine(interfaces::Node* node, std::string &strRes
             assert(!stack.empty());
             close_out_params();
         }
+        // A hidden command still open at the end, behind an inner parenthesis
+        // left unclosed, is hidden to the end of the line.
+        if (nDepthInsideSensitive) filter_ranges.emplace_back(filter_begin_pos, strCommand.size());
+        // Ranges that touch become one, as when a hidden nested command gives
+        // the subcommand: "bls(fromsecret(…))".
+        std::sort(filter_ranges.begin(), filter_ranges.end());
+        std::vector<std::pair<size_t, size_t>> merged;
+        for (const auto& range : filter_ranges) {
+            if (!merged.empty() && range.first <= merged.back().second) {
+                merged.back().second = std::max(merged.back().second, range.second);
+            } else {
+                merged.push_back(range);
+            }
+        }
         *pstrFilteredOut = strCommand;
-        for (auto i = filter_ranges.rbegin(); i != filter_ranges.rend(); ++i) {
+        for (auto i = merged.rbegin(); i != merged.rend(); ++i) {
             pstrFilteredOut->replace(i->first, i->second - i->first, "(…)");
         }
     }
+    if (reply_shows_secrets) *reply_shows_secrets = last_reply_shows_secrets;
+    if (line_has_hidden_args) *line_has_hidden_args = has_hidden_args;
     switch(state) // final state
     {
         case STATE_COMMAND_EXECUTED:
@@ -1135,9 +1361,10 @@ void RPCConsole::on_lineEdit_returnPressed()
     }
 
     std::string strFilteredCmd;
+    bool reply_shows_secrets{false};
     try {
         std::string dummy;
-        if (!RPCParseCommandLine(nullptr, dummy, cmd.toStdString(), false, &strFilteredCmd)) {
+        if (!RPCParseCommandLine(nullptr, dummy, cmd.toStdString(), false, &strFilteredCmd, nullptr, &reply_shows_secrets)) {
             // Failed to parse command, so we cannot even filter it for the history
             throw std::runtime_error("Invalid command line");
         }
@@ -1157,7 +1384,9 @@ void RPCConsole::on_lineEdit_returnPressed()
         return;
     }
 
-    ui->lineEdit->clear();
+    // Unlike clear(), setText() also drops the undo history, from which Ctrl+Z
+    // would bring the command back, with any secret in it.
+    ui->lineEdit->setText(QString());
 
 #ifdef ENABLE_WALLET
     WalletModel* wallet_model = ui->WalletSelector->currentData().value<WalletModel*>();
@@ -1176,6 +1405,7 @@ void RPCConsole::on_lineEdit_returnPressed()
     //: A console message indicating an entered command is currently being executed.
     message(CMD_REPLY, tr("Executing…"));
     m_is_executing = true;
+    m_reply_shows_secrets = reply_shows_secrets;
     Q_EMIT cmdRequest(cmd, m_last_wallet_model);
 
     cmd = QString::fromStdString(strFilteredCmd);
@@ -1225,6 +1455,11 @@ void RPCConsole::startExecutor()
     connect(executor, &RPCExecutor::reply, this, [this](int category, const QString& command) {
         // Remove "Executing…" message.
         ui->messagesWidget->undo();
+        if (category == CMD_REPLY && m_reply_shows_secrets) {
+            //: A console warning above a reply that can show a private key, a seed or a recovery phrase. %1 is the shortcut that clears the console.
+            message(CMD_ERROR, tr("Warning: the reply below can contain private keys or a recovery phrase. Anyone who sees them can take your coins. Never share them, and press %1 to clear the console when you are done.")
+                                   .arg(ui->clearButton->shortcut().toString(QKeySequence::NativeText)));
+        }
         message(category, command);
         scrollToEnd();
         m_is_executing = false;
