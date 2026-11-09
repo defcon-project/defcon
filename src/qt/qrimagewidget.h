@@ -32,6 +32,8 @@ public:
     //! payment URIs; larger payloads (PSBTs, multisig setups) may pass a limit
     //! up to the QR version 40 capacity (~2900 8-bit characters).
     bool setQR(const QString& data, const QString& text = "", int max_chars = MAX_URI_LENGTH);
+    //! The side of the code, in logical pixels, for the next setQR(); QR_IMAGE_SIZE unless set.
+    void setImageSize(int side) { m_image_size = side; }
     QImage exportImage();
 
 public Q_SLOTS:
@@ -44,6 +46,7 @@ protected:
 
 private:
     QMenu *contextMenu;
+    int m_image_size{QR_IMAGE_SIZE};
 };
 
 #endif // BITCOIN_QT_QRIMAGEWIDGET_H

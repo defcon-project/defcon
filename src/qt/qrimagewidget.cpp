@@ -60,7 +60,7 @@ bool QRImageWidget::setQR(const QString& data, const QString& text, int max_char
     constexpr int quiet_modules{4};
     const qreal scale = qApp->devicePixelRatio();
     const int modules = code->width + 2 * quiet_modules;
-    const int qr_side = std::max(qRound(QR_IMAGE_SIZE * scale), modules);
+    const int qr_side = std::max(qRound(m_image_size * scale), modules);
     const int module_size = std::max(1, qr_side / modules);
     const int offset = (qr_side - code->width * module_size) / 2;
     QImage qrAddrImage(qr_side, qr_side + qRound(QR_IMAGE_MARGIN * scale), QImage::Format_RGB32);

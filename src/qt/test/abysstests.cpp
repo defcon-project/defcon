@@ -4,7 +4,13 @@
 #include <config/bitcoin-config.h>
 #endif
 #include <qt/test/abysstests.h>
+#include <qt/abysstoast.h>
+#include <qt/editaddressdialog.h>
+#include <qt/receiverequestdialog.h>
+#include <qt/transactiontablemodel.h>
 #include <interfaces/node.h>
+#include <script/descriptor.h>
+#include <util/strencodings.h>
 #include <interfaces/wallet.h>
 #include <node/interface_ui.h>
 #include <chainparams.h>
@@ -119,6 +125,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <utility>
 #include <vector>
@@ -139,7 +146,7 @@ struct WalletFixture {
     std::unique_ptr<WalletModel> model;
     //! The mock Berkeley database cannot be encrypted (its rewrite reloads an
     //! environment with no path); a wallet that will be, takes the dummy one.
-    explicit WalletFixture(interfaces::Node& n, bool dummy_database = false) : node(n), previous(n.context())
+    explicit WalletFixture(interfaces::Node& n, bool dummy_database = false, uint64_t wallet_flags = 0) : node(n), previous(n.context())
     {
         node.setContext(&chain.m_node);
         wallet = std::make_shared<CWallet>(node.context()->chain.get(), node.context()->coinjoin_loader.get(), "",
@@ -148,6 +155,7 @@ struct WalletFixture {
         // The dummy database's cursor never reports its end: LoadWallet() would
         // not return. There is nothing in it to load.
         if (!dummy_database) wallet->LoadWallet();
+        if (wallet_flags) wallet->SetWalletFlag(wallet_flags);
         wallet->GetOrCreateLegacyScriptPubKeyMan();
         options = std::make_unique<OptionsModel>();
         options->setNode(node);
@@ -791,7 +799,8 @@ void AbyssTests::cssStates()
         {"OpenURIDialog", "", "selectFileButton"}, {"OptionsDialog", "", "resetButton"},
         {"SendCoinsDialog", "", "addButton"}, {"SendCoinsDialog", "", "clearButton"},
         {"ReceiveCoinsDialog", "frame", "removeRequestButton"}, {"ReceiveCoinsDialog", "frame", "showRequestButton"},
-        {"ReceiveCoinsDialog", "frame2", "clearButton"}, {"SignVerifyMessageDialog", "", "clearButton_SM"},
+        {"ReceiveCoinsDialog", "frame2", "clearButton"}, {"ReceiveCoinsDialog", "frame2", "receiveButton"},
+        {"ReceiveCoinsDialog", "abyssReceiveCard", "abyssReceiveNewAddress"}, {"SignVerifyMessageDialog", "", "clearButton_SM"},
         {"SignVerifyMessageDialog", "", "clearButton_VM"}}) {
         QDialog page;
         page.setObjectName(spec.page);
@@ -1213,6 +1222,7 @@ void AbyssTests::paymentPages()
         }
         const QImage original_send = send.grab().toImage();
         const QImage original_receive = receive.grab().toImage();
+        QPointer<QWidget> original_receive_focus = receive.focusWidget();
         auto* actions = send.findChild<QHBoxLayout*>("horizontalLayout");
         QVERIFY(actions);
         const int original_action_count = actions->count();
@@ -1228,6 +1238,15 @@ void AbyssTests::paymentPages()
         QVERIFY(summary && amount && count && rate && summary->isVisible());
         QCOMPARE(send.findChild<QPushButton*>("sendButton"), send_button);
         QCOMPARE(receive.findChild<QPushButton*>("receiveButton"), receive_button);
+        // Abyss folds the request form behind the address card's link: open it to lay it out.
+        auto* request_toggle = receive.findChild<QPushButton*>("abyssReceiveRequestToggle");
+        QVERIFY(request_toggle);
+        request_toggle->click(); Settle();
+        QVERIFY(receive.findChild<QFrame*>("frame2")->isVisible());
+        // The link hands the focus to the form; the classic comparisons want it where it was.
+        if (original_receive_focus) original_receive_focus->setFocus(Qt::OtherFocusReason);
+        else if (QWidget* focused = receive.focusWidget()) focused->clearFocus();
+        Settle();
         QCOMPARE(count->text(), QString("1"));
         QCOMPARE(rate->text(), send.findChild<QLabel*>("labelFeeMinimized")->text());
         for (int width : {704, 1026}) {
@@ -1243,6 +1262,12 @@ void AbyssTests::paymentPages()
             auto* label = receive.findChild<QLineEdit*>("reqLabel");
             auto* field = receive.findChild<QLabel*>("label_2");
             QVERIFY(label && field && OnPage(receive, field).bottom() < OnPage(receive, label).top());
+            // The whole address on its one line, and the whole card on the page.
+            auto* address = receive.findChild<QLabel*>("abyssReceiveAddress");
+            auto* address_card = receive.findChild<QFrame*>("abyssReceiveCard");
+            QVERIFY(address && address_card);
+            QVERIFY2(AmountFits(address), qPrintable(QString("%1: %2 in %3").arg(width).arg(address->text()).arg(address->width())));
+            QVERIFY2(receive.rect().contains(OnPage(receive, address_card)), qPrintable(QString::number(width)));
             if (!output.isEmpty() && QString(classic) == "Light") {
                 QVERIFY(QDir().mkpath(output));
                 QVERIFY(send.grab().save(QDir(output).filePath(QString("Abyss-send-stage2-%1.png").arg(width))));
@@ -1371,6 +1396,9 @@ void AbyssTests::paymentPages()
         QVERIFY(available);
         fields_scroll->ensureWidgetVisible(available); Settle();
         QVERIFY(available->visibleRegion().contains(available->rect()));
+        auto* scaled_address = receive.findChild<QLabel*>("abyssReceiveAddress");
+        QVERIFY(scaled_address && AmountFits(scaled_address));
+        QVERIFY(receive.rect().contains(OnPage(receive, receive.findChild<QFrame*>("abyssReceiveCard"))));
         if (!output.isEmpty() && QString(classic) == "Light") {
             QVERIFY(send.grab().save(QDir(output).filePath("Abyss-send-stage2-font25.png")));
             QVERIFY(receive.grab().save(QDir(output).filePath("Abyss-receive-stage2-font25.png")));
@@ -1563,29 +1591,47 @@ void AbyssTests::emptyStates()
         QVERIFY(!unshown_empty->isVisible());
     }
 
-    // Receive: the empty payment history points at the form beside it.
+    // Receive: the address card comes first; an empty payment history folds
+    // down to its title and one line, and opens with its first request.
     {
         Theme("Abyss");
         ReceiveCoinsDialog receive;
         receive.setModel(fixture.model.get());
         receive.resize(1280, 820); receive.show(); Settle();
-        auto* empty = receive.findChild<EmptyStateWidget*>("emptyState");
-        auto* label = receive.findChild<QLineEdit*>("reqLabel");
-        QVERIFY(empty && label);
-        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
-        QCOMPARE(empty->actionButton()->text(), ReceiveCoinsDialog::tr("Create a request"));
-        QVERIFY(fits(empty));
+        auto* none = receive.findChild<QLabel*>("abyssReceiveHistoryNone");
+        auto* table = receive.findChild<QTableView*>("recentRequestsView");
+        auto* show = receive.findChild<QPushButton*>("showRequestButton");
+        auto* remove = receive.findChild<QPushButton*>("removeRequestButton");
+        auto* history = receive.findChild<QFrame*>("frame");
+        QVERIFY(none && table && show && remove && history);
+        auto* title = receive.findChild<QLabel*>("label_6");
+        auto* folded_title = receive.findChild<QLabel*>("abyssReceiveHistoryTitle");
+        QVERIFY(title && folded_title);
+        QVERIFY(none->isVisible() && folded_title->isVisible() && !title->isVisible());
+        QVERIFY(!table->isVisible() && !show->isVisible() && !remove->isVisible());
+        QCOMPARE(none->text(), ReceiveCoinsDialog::tr("No payment requests yet"));
+        QCOMPARE(folded_title->text(), title->text());
+        // One line: the title and what the history says, side by side.
+        QVERIFY(std::abs(OnPage(receive, none).center().y() - OnPage(receive, folded_title).center().y()) <= 1);
+        // And that line is the card's middle: no room is left under it for the hidden buttons' row.
+        QVERIFY2(std::abs(OnPage(receive, history).center().y() - OnPage(receive, folded_title).center().y()) <= 2,
+                 qPrintable(QString("card %1, line %2").arg(OnPage(receive, history).center().y()).arg(OnPage(receive, folded_title).center().y())));
+        // Folded, the card is no taller than its title and that line need.
+        QVERIFY2(history->height() <= history->sizeHint().height(), qPrintable(QString("%1 > %2").arg(history->height()).arg(history->sizeHint().height())));
         QVERIFY(capture(receive, "receive"));
-        empty->actionButton()->click();
-        QCOMPARE(receive.focusWidget(), label);
         RecentRequestsTableModel* requests = fixture.model->getRecentRequestsTableModel();
         requests->addNewRequest(SendCoinsRecipient(address, "Sample", 100000000, ""));
         QCOMPARE(requests->rowCount({}), 1);
-        QCOMPARE(empty->state(), EmptyStateWidget::State::Hidden);
+        Settle();
+        QVERIFY(table->isVisible() && show->isVisible() && remove->isVisible() && !none->isVisible());
+        QVERIFY(title->isVisible() && !folded_title->isVisible());
+        QVERIFY(capture(receive, "receive-history"));
         QVERIFY(requests->removeRows(0, 1));
-        QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
+        Settle();
+        QVERIFY(none->isVisible() && !table->isVisible());
         Theme("Light"); Settle();
-        QVERIFY(!empty->isVisible());
+        QVERIFY(!none->isVisible() && table->isVisible() && show->isVisible() && remove->isVisible());
+        QVERIFY(title->isVisible() && !folded_title->isVisible());
     }
 
     // Address book: Add address opens the existing dialog; a search that
@@ -2701,7 +2747,7 @@ void AbyssTests::primaryButtons()
     const std::vector<std::pair<const char*, QStringList>> expected{
         {"Overview", {"stakingButton"}},
         {"Transactions", {"emptyStateAction"}},
-        {"Receive", {"receiveButton"}},
+        {"Receive", {"abyssReceiveCopy"}},
         {"Send", {"sendButton"}},
         {"CoinJoin", {"sendButton"}},
         {"Multisig", {"multisigCreate"}},
@@ -2741,18 +2787,23 @@ void AbyssTests::primaryButtons()
         QVERIFY2(brightest(disabled) < DIM_TEXT, qPrintable(button->objectName()));
         button->setEnabled(true);
     }
-    // The dark button of the Receive page's empty card answers a press like the
-    // other secondary buttons do, with the primary blue border.
+    // The Receive page's dark New address answers a press like the other
+    // secondary buttons do, with the primary blue border; its request form,
+    // once opened, adds no second blue button.
     {
         view.setCurrentWidget(view.widget(2)); Settle();
-        auto* action = view.widget(2)->findChild<QPushButton*>("emptyStateAction");
-        QVERIFY(action && action->isVisible());
-        const QImage up = action->grab().toImage();
-        action->setDown(true);
-        const QImage down = action->grab().toImage();
-        action->setDown(false);
+        auto* fresh = view.widget(2)->findChild<QPushButton*>("abyssReceiveNewAddress");
+        QVERIFY(fresh && fresh->isVisible());
+        const QImage up = fresh->grab().toImage();
+        fresh->setDown(true);
+        const QImage down = fresh->grab().toImage();
+        fresh->setDown(false);
         QVERIFY(down != up);
         QCOMPARE(down.pixelColor(6, down.height() / 2), QColor("#10263e"));
+        view.widget(2)->findChild<QPushButton*>("abyssReceiveRequestToggle")->click(); Settle();
+        auto* create = view.widget(2)->findChild<QPushButton*>("receiveButton");
+        QVERIFY(create && create->isVisible() && create->isEnabled());
+        QCOMPARE(blue(view.widget(2)), QStringList{"abyssReceiveCopy"});
     }
     // The dialogs a page opens keep their own blue OK: the page's rule stops at the page.
     auto* multisig = view.widget(5);
@@ -5248,5 +5299,826 @@ void AbyssTests::overviewLockedFits()
         found << QString("the list's minimum: Abyss %1, Light %2, Abyss again %3").arg(abyss_list).arg(classic_list).arg(list->minimumHeight());
     }
     for (const QString& line : found) qInfo().noquote() << "OVERVIEW_LOCKED_FITS" << line;
+    QCOMPARE(found.join("\n"), QString());
+}
+
+namespace {
+//! The wallet's receiving addresses, as its address list has them.
+QStringList ReceivingAddresses(AddressTableModel* table)
+{
+    QStringList found;
+    for (int row = 0; row < table->rowCount({}); ++row) {
+        const QModelIndex address = table->index(row, AddressTableModel::Address, QModelIndex());
+        if (address.data(AddressTableModel::TypeRole).toString() == AddressTableModel::Receive) {
+            found << address.data(Qt::EditRole).toString();
+        }
+    }
+    return found;
+}
+//! A payment of one coin to `address` from nowhere in particular: the wallet's
+//! transaction list names the address from then on.
+bool PayTo(CWallet& wallet, const QString& address, uint32_t n)
+{
+    CMutableTransaction payment;
+    payment.vin.emplace_back(COutPoint(uint256S("0100000000000000000000000000000000000000000000000000000000000000"), n));
+    payment.vout.emplace_back(COIN, GetScriptForDestination(DecodeDestination(address.toStdString())));
+    return wallet.AddToWallet(MakeTransactionRef(std::move(payment)), CWalletTx::Confirmation{}) != nullptr;
+}
+} // namespace
+
+void AbyssTests::receiveAddressFirst()
+{
+    // Abyss opens Receive on an address to give out: its QR, the address in
+    // full on one line, Copy and New address, the label if it has one. It is
+    // the one shown before while nothing has been paid to it; else one of the
+    // wallet's own unlabeled, unused addresses; else a new one, which the
+    // wallet gives without asking for anything. None of them becomes a
+    // payment request. A classic theme shows its page as it was and makes no
+    // address.
+    RestoreAppearance restore;
+    const int flash = QApplication::cursorFlashTime();
+    QApplication::setCursorFlashTime(0);
+    const auto restore_flash = interfaces::MakeHandler([flash] { QApplication::setCursorFlashTime(flash); });
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    WalletFixture fixture(m_node);
+    // As a loaded wallet has them: taking a key from the pool signals, from inside the
+    // request, that the wallet's addresses changed; the card hears it there and then.
+    fixture.wallet->ConnectScriptPubKeyManNotifiers();
+    AddressTableModel* table = fixture.model->getAddressTableModel();
+    RecentRequestsTableModel* requests = fixture.model->getRecentRequestsTableModel();
+    const auto own = [&](const QString& address) {
+        const CTxDestination dest = DecodeDestination(address.toStdString());
+        return IsValidDestination(dest) && fixture.model->wallet().isSpendable(dest);
+    };
+
+    Theme("Light");
+    ReceiveCoinsDialog receive;
+    receive.setModel(fixture.model.get());
+    receive.resize(1280, 850); receive.show(); Settle();
+    // The pictures compared compare the layout, not where the focus was left.
+    const auto unfocus = [&receive] {
+        if (QWidget* focused = receive.focusWidget()) focused->clearFocus();
+        Settle();
+    };
+    unfocus();
+    const QImage classic = receive.grab().toImage();
+    QCOMPARE(ReceivingAddresses(table), QStringList());
+
+    Theme("Abyss"); Settle();
+    auto* card = receive.findChild<QFrame*>("abyssReceiveCard");
+    auto* text = receive.findChild<QLabel*>("abyssReceiveAddress");
+    auto* label = receive.findChild<QLabel*>("abyssReceiveLabel");
+    auto* qr = receive.findChild<QRImageWidget*>("abyssReceiveQR");
+    auto* copy = receive.findChild<QPushButton*>("abyssReceiveCopy");
+    auto* fresh = receive.findChild<QPushButton*>("abyssReceiveNewAddress");
+    auto* edit = receive.findChild<QPushButton*>("abyssReceiveEditLabel");
+    QVERIFY(card && text && label && qr && copy && fresh && edit);
+    QVERIFY(card->isVisible() && copy->isVisible() && fresh->isVisible() && edit->isVisible());
+    QVERIFY(fresh->isEnabled());
+    const QString first = text->text();
+    QVERIFY2(own(first), qPrintable(first));
+    QCOMPARE(ReceivingAddresses(table), QStringList{first});
+    QCOMPARE(requests->rowCount({}), 0);
+    QVERIFY(!label->isVisible());
+    // The whole address, on one line, inside the card.
+    QVERIFY(AmountFits(text));
+    QVERIFY(card->rect().contains(QRect(text->mapTo(card, QPoint()), text->size())));
+#ifdef USE_QRCODE
+    // The QR is the address's payment link, drawn as the request dialog draws one, at the card's size.
+    QVERIFY(qr->isVisible() && GUIUtil::HasPixmap(qr));
+    QRImageWidget reference;
+    reference.setImageSize(ReceiveCoinsDialog::ADDRESS_QR_SIZE);
+    QVERIFY(reference.setQR(GUIUtil::formatBitcoinURI(SendCoinsRecipient(first, QString(), 0, QString())), first));
+    QCOMPARE(qr->exportImage(), reference.exportImage());
+    QCOMPARE(qr->width(), ReceiveCoinsDialog::ADDRESS_QR_SIZE);
+#endif
+    if (!output.isEmpty()) {
+        QVERIFY(QDir().mkpath(output));
+        QVERIFY(receive.grab().save(QDir(output).filePath("Abyss-receive-address.png")));
+    }
+
+    // Shown again, or after a theme round trip, it is the same address, and nothing new is made.
+    receive.hide(); Settle(); receive.show(); Settle();
+    QCOMPARE(text->text(), first);
+    Theme("Dark"); Theme("Abyss"); Settle();
+    QCOMPARE(text->text(), first);
+    QCOMPARE(ReceivingAddresses(table).size(), 1);
+
+    QApplication::clipboard()->clear();
+    copy->click(); Settle();
+    QCOMPARE(QApplication::clipboard()->text(), first);
+
+    // New address: another one; the first stays the wallet's.
+    fresh->click(); Settle();
+    const QString second = text->text();
+    QVERIFY2(second != first, qPrintable(second));
+    QVERIFY(own(second));
+    const QStringList both = ReceivingAddresses(table);
+    QCOMPARE(both.size(), 2);
+    QVERIFY(both.contains(first) && both.contains(second));
+    QCOMPARE(requests->rowCount({}), 0);
+    copy->click(); Settle();
+    QCOMPARE(QApplication::clipboard()->text(), second);
+
+    // A label given elsewhere shows at once, and the card keeps its address.
+    const int second_row = table->lookupAddress(second);
+    QVERIFY(second_row >= 0);
+    QVERIFY(table->setData(table->index(second_row, AddressTableModel::Label, QModelIndex()), QString("Savings"), Qt::EditRole));
+    Settle();
+    QVERIFY(label->isVisible());
+    QCOMPARE(label->text(), QString("Savings"));
+    QCOMPARE(text->text(), second);
+    // Edit label opens the address book's own dialog on this address.
+    edit->click(); Settle();
+    QPointer<EditAddressDialog> dialog = receive.findChild<EditAddressDialog*>();
+    QVERIFY(dialog && dialog->isVisible());
+    QCOMPARE(dialog->findChild<QLineEdit*>("addressEdit")->text(), second);
+    QCOMPARE(dialog->findChild<QLineEdit*>("labelEdit")->text(), QString("Savings"));
+    dialog->reject(); Settle();
+    QVERIFY(!dialog || !dialog->isVisible());
+
+    // Two the card must never offer: an address given out with a label, and
+    // one in the address book that the wallet cannot spend from.
+    const QString alice = table->addRow(AddressTableModel::Receive, "Alice", "");
+    QVERIFY(own(alice));
+    CKey other_key;
+    other_key.MakeNewKey(true);
+    const QString foreign = QString::fromStdString(EncodeDestination(PKHash(other_key.GetPubKey())));
+    fixture.wallet->SetAddressBook(PKHash(other_key.GetPubKey()), "", "receive");
+    Settle();
+    QVERIFY(ReceivingAddresses(table).contains(alice) && ReceivingAddresses(table).contains(foreign));
+    QCOMPARE(text->text(), second);
+    int count = ReceivingAddresses(table).size();
+
+    // Paid, the address is done with: the card goes to the unlabeled first one,
+    // and when that is paid too, to a new one.
+    QVERIFY(PayTo(*fixture.wallet, second, 0));
+    Settle();
+    QCOMPARE(text->text(), first);
+    QVERIFY(PayTo(*fixture.wallet, first, 1));
+    Settle();
+    const QString third = text->text();
+    QVERIFY2(third != first && third != second && third != alice && third != foreign && own(third), qPrintable(third));
+    QCOMPARE(ReceivingAddresses(table).size(), ++count);
+    // Paid while the page is away: it moves on when it is shown again, not before.
+    receive.hide(); Settle();
+    QVERIFY(PayTo(*fixture.wallet, third, 2));
+    Settle();
+    QCOMPARE(ReceivingAddresses(table).size(), count);
+    receive.show(); Settle();
+    const QString fourth = text->text();
+    QVERIFY2(fourth != third && fourth != alice && fourth != foreign && own(fourth), qPrintable(fourth));
+    QCOMPARE(ReceivingAddresses(table).size(), ++count);
+    QCOMPARE(requests->rowCount({}), 0);
+
+    // The request form, opened from the card: a label and an amount, and no
+    // message, not even one typed earlier where the field was shown.
+    auto* toggle = receive.findChild<QPushButton*>("abyssReceiveRequestToggle");
+    auto* form = receive.findChild<QFrame*>("frame2");
+    auto* message = receive.findChild<QLineEdit*>("reqMessage");
+    auto* request_label = receive.findChild<QLineEdit*>("reqLabel");
+    auto* amount = receive.findChild<BitcoinAmountField*>("reqAmount");
+    auto* create = receive.findChild<QPushButton*>("receiveButton");
+    QVERIFY(toggle && form && message && request_label && amount && create);
+    QVERIFY(!form->isVisible());
+    toggle->click(); Settle();
+    QVERIFY(form->isVisible() && request_label->isVisible() && amount->isVisible() && create->isVisible());
+    QVERIFY(!message->isVisible());
+    message->setText("typed in a classic theme");
+    request_label->setText("Bob");
+    amount->setValue(5 * COIN);
+    create->click(); Settle();
+    for (ReceiveRequestDialog* shown : receive.findChildren<ReceiveRequestDialog*>()) shown->close();
+    QCOMPARE(requests->rowCount({}), 1);
+    QCOMPARE(requests->entry(0).recipient.label, QString("Bob"));
+    QCOMPARE(requests->entry(0).recipient.amount, 5 * COIN);
+    QCOMPARE(requests->entry(0).recipient.message, QString());
+    QCOMPARE(text->text(), fourth);
+    QVERIFY(requests->removeRows(0, 1));
+    toggle->click(); Settle();
+    QVERIFY(!form->isVisible());
+
+    // The classic page is the one it was before Abyss, card and all gone.
+    Theme("Light"); Settle();
+    QVERIFY(!card->isVisible());
+    QVERIFY(form->isVisible() && message->isVisible());
+    unfocus();
+    QCOMPARE(receive.grab().toImage(), classic);
+}
+
+void AbyssTests::receiveUsedAddresses()
+{
+    // "Paid" is read from the wallet's own transactions, output by output. The
+    // transaction list is not a record of them: a payment to self shows its
+    // addresses joined on one line ("A, B"), and an outgoing payment does not
+    // list what it pays to the wallet's own address. Both count, on the page
+    // already open and on one opened afterwards.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    fixture.wallet->ConnectScriptPubKeyManNotifiers();
+    AddressTableModel* table = fixture.model->getAddressTableModel();
+    TransactionTableModel* list = fixture.model->getTransactionTableModel();
+    const auto own = [&](const QString& address) {
+        const CTxDestination dest = DecodeDestination(address.toStdString());
+        return IsValidDestination(dest) && fixture.model->wallet().isSpendable(dest);
+    };
+    const auto script = [](const QString& address) { return GetScriptForDestination(DecodeDestination(address.toStdString())); };
+    const auto listed = [&](const QString& address) {
+        QStringList rows;
+        for (int row = 0; row < list->rowCount({}); ++row) {
+            const QString text = list->index(row, 0).data(TransactionTableModel::AddressRole).toString();
+            if (text.contains(address)) rows << text;
+        }
+        return rows;
+    };
+    Theme("Abyss");
+    ReceiveCoinsDialog receive;
+    receive.setModel(fixture.model.get());
+    receive.resize(1280, 850); receive.show(); Settle();
+    auto* text = receive.findChild<QLabel*>("abyssReceiveAddress");
+    QVERIFY(text);
+    const QString first = text->text();
+    QVERIFY(own(first));
+    // Two given out for something (labeled), so the card never offers them.
+    const QString funding = table->addRow(AddressTableModel::Receive, "funding", "");
+    const QString savings = table->addRow(AddressTableModel::Receive, "savings", "");
+    Settle();
+    QVERIFY(own(funding) && own(savings));
+    QCOMPARE(text->text(), first);
+
+    // Coins for the wallet to spend, from nowhere in particular.
+    CMutableTransaction fund;
+    fund.vin.emplace_back(COutPoint(uint256S("0200000000000000000000000000000000000000000000000000000000000000"), 0));
+    fund.vout.emplace_back(10 * COIN, script(funding));
+    const CTransactionRef fund_tx = MakeTransactionRef(std::move(fund));
+    QVERIFY(fixture.wallet->AddToWallet(fund_tx, CWalletTx::Confirmation{}));
+    Settle();
+    QCOMPARE(text->text(), first);
+
+    // The wallet pays itself, to the shown address and to "savings": one row names both.
+    CMutableTransaction self;
+    self.vin.emplace_back(COutPoint(fund_tx->GetHash(), 0));
+    self.vout.emplace_back(4 * COIN, script(first));
+    self.vout.emplace_back(5 * COIN, script(savings));
+    const CTransactionRef self_tx = MakeTransactionRef(std::move(self));
+    QVERIFY(fixture.wallet->AddToWallet(self_tx, CWalletTx::Confirmation{}));
+    Settle();
+    const QStringList joined = listed(first);
+    QVERIFY2(joined.size() == 1 && joined.front() != first && joined.front().contains(savings), qPrintable(joined.join(" | ")));
+    const QString second = text->text();
+    QVERIFY2(second != first && second != funding && second != savings && own(second), qPrintable(second));
+
+    // An outgoing payment that also pays the shown address: the list has no row for that part.
+    CKey other_key;
+    other_key.MakeNewKey(true);
+    const QString elsewhere = QString::fromStdString(EncodeDestination(PKHash(other_key.GetPubKey())));
+    CMutableTransaction out;
+    out.vin.emplace_back(COutPoint(self_tx->GetHash(), 0));
+    out.vout.emplace_back(1 * COIN, script(elsewhere));
+    out.vout.emplace_back(2 * COIN, script(second));
+    QVERIFY(fixture.wallet->AddToWallet(MakeTransactionRef(std::move(out)), CWalletTx::Confirmation{}));
+    Settle();
+    QVERIFY2(listed(second).isEmpty(), qPrintable(listed(second).join(" | ")));
+    QVERIFY(!listed(elsewhere).isEmpty());
+    const QString third = text->text();
+    QVERIFY2(third != first && third != second && third != funding && third != savings && own(third), qPrintable(third));
+
+    // The address paid while it was somebody else's becomes the wallet's own: its key
+    // imported, without a label, as importprivkey does with no rescan. It has been paid,
+    // so when the shown one is paid too the card takes a new address, not that one.
+    {
+        auto spk_man = fixture.wallet->GetOrCreateLegacyScriptPubKeyMan();
+        LOCK2(fixture.wallet->cs_wallet, spk_man->cs_KeyStore);
+        QVERIFY(spk_man->AddKeyPubKey(other_key, other_key.GetPubKey()));
+    }
+    fixture.wallet->SetAddressBook(PKHash(other_key.GetPubKey()), "", "receive");
+    Settle();
+    QVERIFY(own(elsewhere) && ReceivingAddresses(table).contains(elsewhere));
+    QCOMPARE(text->text(), third);
+    CMutableTransaction pay_third;
+    pay_third.vin.emplace_back(COutPoint(uint256S("0300000000000000000000000000000000000000000000000000000000000000"), 0));
+    pay_third.vout.emplace_back(COIN, script(third));
+    QVERIFY(fixture.wallet->AddToWallet(MakeTransactionRef(std::move(pay_third)), CWalletTx::Confirmation{}));
+    Settle();
+    const QString fourth = text->text();
+    QVERIFY2(fourth != elsewhere && fourth != third && fourth != second && fourth != first && own(fourth), qPrintable(fourth));
+
+    // A page opened afterwards reads the same from the wallet: of the unlabeled
+    // addresses only the fourth is unpaid.
+    ReceiveCoinsDialog later;
+    later.setModel(fixture.model.get());
+    later.resize(1280, 850); later.show(); Settle();
+    QCOMPARE(later.findChild<QLabel*>("abyssReceiveAddress")->text(), fourth);
+}
+
+void AbyssTests::receiveKeyless()
+{
+    // A wallet without private keys can still hand out addresses: public keys
+    // imported into its pool. The card offers none of them, makes none, and
+    // its New address is off; the request form keeps the classic way.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node, /*dummy_database=*/false, WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    CKey key;
+    key.MakeNewKey(true);
+    const CPubKey pubkey = key.GetPubKey();
+    {
+        LOCK(fixture.wallet->cs_wallet);
+        QVERIFY(fixture.wallet->ImportPubKeys({pubkey.GetID()}, {{pubkey.GetID(), pubkey}}, {}, /*add_keypool=*/true, /*internal=*/false, /*timestamp=*/1));
+    }
+    const auto pool = [&] { LOCK(fixture.wallet->cs_wallet); return fixture.wallet->KeypoolCountExternalKeys(); };
+    QCOMPARE(pool(), size_t{1});
+    QVERIFY(fixture.model->wallet().canGetAddresses());
+    QVERIFY(fixture.model->wallet().privateKeysDisabled());
+    Theme("Abyss");
+    ReceiveCoinsDialog receive;
+    receive.setModel(fixture.model.get());
+    receive.resize(1280, 850); receive.show(); Settle();
+    auto* text = receive.findChild<QLabel*>("abyssReceiveAddress");
+    auto* copy = receive.findChild<QPushButton*>("abyssReceiveCopy");
+    auto* fresh = receive.findChild<QPushButton*>("abyssReceiveNewAddress");
+    auto* qr = receive.findChild<QRImageWidget*>("abyssReceiveQR");
+    QVERIFY(text && copy && fresh && qr);
+    QCOMPARE(text->text(), ReceiveCoinsDialog::tr("No receiving address yet."));
+    QVERIFY(!copy->isVisible() && !qr->isVisible());
+    QVERIFY(!fresh->isEnabled());
+    QCOMPARE(pool(), size_t{1});
+    // Shown again, or the wallet's addresses signalled as changed: still nothing taken.
+    receive.hide(); Settle(); receive.show(); Settle();
+    Q_EMIT fixture.model->canGetAddressesChanged();
+    Settle();
+    QCOMPARE(pool(), size_t{1});
+    QCOMPARE(text->text(), ReceiveCoinsDialog::tr("No receiving address yet."));
+    QCOMPARE(fixture.model->getAddressTableModel()->rowCount({}), 0);
+}
+
+void AbyssTests::receiveKeylessDescriptor()
+{
+    // A descriptor wallet without private keys reports what its descriptors cover
+    // as its own and spendable, and importing a single-key descriptor gives it an
+    // unlabeled receiving address. The card shows none of it.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node, /*dummy_database=*/false, WALLET_FLAG_DESCRIPTORS | WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    CKey key;
+    key.MakeNewKey(true);
+    FlatSigningProvider provider;
+    std::string error;
+    const CPubKey pubkey = key.GetPubKey();
+    std::unique_ptr<Descriptor> parsed = Parse("pkh(" + HexStr(pubkey) + ")", provider, error, /*require_checksum=*/false);
+    QVERIFY2(parsed, error.c_str());
+    WalletDescriptor descriptor(std::move(parsed), /*creation_time=*/1, /*range_start=*/0, /*range_end=*/0, /*next_index=*/0);
+    QVERIFY(fixture.wallet->AddWalletDescriptor(descriptor, provider, "", /*internal=*/false));
+    Settle();
+    const QString watched = QString::fromStdString(EncodeDestination(PKHash(pubkey)));
+    AddressTableModel* table = fixture.model->getAddressTableModel();
+    QVERIFY(ReceivingAddresses(table).contains(watched));
+    QVERIFY(fixture.model->wallet().privateKeysDisabled());
+    // The case: the wallet calls it spendable.
+    QVERIFY(fixture.model->wallet().isSpendable(DecodeDestination(watched.toStdString())));
+    Theme("Abyss");
+    ReceiveCoinsDialog receive;
+    receive.setModel(fixture.model.get());
+    receive.resize(1280, 850); receive.show(); Settle();
+    auto* text = receive.findChild<QLabel*>("abyssReceiveAddress");
+    auto* copy = receive.findChild<QPushButton*>("abyssReceiveCopy");
+    auto* fresh = receive.findChild<QPushButton*>("abyssReceiveNewAddress");
+    QVERIFY(text && copy && fresh);
+    QCOMPARE(text->text(), ReceiveCoinsDialog::tr("No receiving address yet."));
+    QVERIFY(!copy->isVisible() && !fresh->isEnabled());
+}
+
+void AbyssTests::receiveMadeAddressPaid()
+{
+    // A request for a new address may return one a wallet transaction has paid
+    // already: a descriptor imported again from its first index does. Here the
+    // legacy pool's next key is paid by a transaction added the direct way, which
+    // leaves the key in the pool. The card's own request does not show it and asks
+    // no more by itself; New address does not show it either, says so, and keeps
+    // the card's address, and its next press gets a fresh one.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    fixture.wallet->ConnectScriptPubKeyManNotifiers();
+    AddressTableModel* table = fixture.model->getAddressTableModel();
+    const auto own = [&](const QString& address) {
+        const CTxDestination dest = DecodeDestination(address.toStdString());
+        return IsValidDestination(dest) && fixture.model->wallet().isSpendable(dest);
+    };
+    // The pool's next key, given back when the reservation ends.
+    const auto next_key = [&] {
+        ReserveDestination peek(fixture.wallet.get());
+        CTxDestination dest;
+        return peek.GetReservedDestination(dest, /*internal=*/false) ? QString::fromStdString(EncodeDestination(dest)) : QString();
+    };
+    const QString paid = next_key();
+    QVERIFY(!paid.isEmpty());
+    QVERIFY(PayTo(*fixture.wallet, paid, 0));
+    Settle();
+    QCOMPARE(next_key(), paid);
+
+    Theme("Abyss");
+    ReceiveCoinsDialog receive;
+    receive.setModel(fixture.model.get());
+    receive.resize(1280, 850); receive.show(); Settle();
+    auto* text = receive.findChild<QLabel*>("abyssReceiveAddress");
+    auto* fresh = receive.findChild<QPushButton*>("abyssReceiveNewAddress");
+    QVERIFY(text && fresh);
+    // The wallet did give it out, and the card did not show it.
+    QVERIFY(ReceivingAddresses(table).contains(paid));
+    QCOMPARE(text->text(), ReceiveCoinsDialog::tr("No receiving address yet."));
+    const int count = ReceivingAddresses(table).size();
+    receive.hide(); Settle(); receive.show(); Settle();
+    Q_EMIT fixture.model->canGetAddressesChanged();
+    Settle();
+    QCOMPARE(ReceivingAddresses(table).size(), count);
+
+    // New address, asked by hand: the pool's next key is a fresh one.
+    QVERIFY(fresh->isEnabled());
+    fresh->click(); Settle();
+    const QString made = text->text();
+    QVERIFY2(made != paid && own(made), qPrintable(made));
+
+    // New address that gets a paid one: an error, and the card keeps its address.
+    const QString paid_next = next_key();
+    QVERIFY(!paid_next.isEmpty() && paid_next != made);
+    QVERIFY(PayTo(*fixture.wallet, paid_next, 1));
+    Settle();
+    QCOMPARE(text->text(), made);
+    QString shown_error;
+    QTimer closer;
+    closer.setInterval(50);
+    QObject::connect(&closer, &QTimer::timeout, [&shown_error] {
+        for (QWidget* window : QApplication::topLevelWidgets()) {
+            auto* box = qobject_cast<QMessageBox*>(window);
+            if (box && box->isVisible()) {
+                shown_error = box->text();
+                box->accept();
+            }
+        }
+    });
+    closer.start();
+    fresh->click(); Settle();
+    closer.stop();
+    QCOMPARE(shown_error, ReceiveCoinsDialog::tr("Could not generate new address"));
+    QCOMPARE(text->text(), made);
+    QVERIFY(ReceivingAddresses(table).contains(paid_next));
+    QVERIFY(fresh->isEnabled());
+}
+
+void AbyssTests::receivePartialKeys()
+{
+    // A descriptor wallet with private keys takes a multisig descriptor with only
+    // some of its keys (the import only warns), calls its script its own and
+    // spendable, and gives it an unlabeled receiving address, though it cannot
+    // spend from it alone. The card shows only a single key's address: not that
+    // one; a single-key descriptor's, imported with its key, yes, as soon as it
+    // is in the list.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node, /*dummy_database=*/false, WALLET_FLAG_DESCRIPTORS);
+    const auto add = [&](const std::string& text) {
+        FlatSigningProvider provider;
+        std::string error;
+        std::unique_ptr<Descriptor> parsed = Parse(text, provider, error, /*require_checksum=*/false);
+        if (!parsed) {
+            qWarning() << "RECEIVE_PARTIAL_KEYS" << error.c_str();
+            return false;
+        }
+        WalletDescriptor descriptor(std::move(parsed), /*creation_time=*/1, /*range_start=*/0, /*range_end=*/0, /*next_index=*/0);
+        return fixture.wallet->AddWalletDescriptor(descriptor, provider, "", /*internal=*/false) != nullptr;
+    };
+    AddressTableModel* table = fixture.model->getAddressTableModel();
+    const auto spendable = [&](const QString& address) { return fixture.model->wallet().isSpendable(DecodeDestination(address.toStdString())); };
+    CKey mine, theirs, single;
+    mine.MakeNewKey(true);
+    theirs.MakeNewKey(true);
+    single.MakeNewKey(true);
+    const CPubKey mine_pub = mine.GetPubKey(), theirs_pub = theirs.GetPubKey(), single_pub = single.GetPubKey();
+    QVERIFY(add("sh(multi(2," + EncodeSecret(mine) + "," + HexStr(theirs_pub) + "))"));
+    Settle();
+    const QString shared = QString::fromStdString(EncodeDestination(ScriptHash(GetScriptForMultisig(2, {mine_pub, theirs_pub}))));
+    // The case: an unlabeled receiving address the wallet calls spendable, in a wallet with private keys.
+    QVERIFY2(ReceivingAddresses(table).contains(shared), qPrintable(ReceivingAddresses(table).join(", ")));
+    QVERIFY(spendable(shared));
+    QVERIFY(!fixture.model->wallet().privateKeysDisabled());
+    Theme("Abyss");
+    ReceiveCoinsDialog receive;
+    receive.setModel(fixture.model.get());
+    receive.resize(1280, 850); receive.show(); Settle();
+    auto* text = receive.findChild<QLabel*>("abyssReceiveAddress");
+    auto* copy = receive.findChild<QPushButton*>("abyssReceiveCopy");
+    auto* fresh = receive.findChild<QPushButton*>("abyssReceiveNewAddress");
+    QVERIFY(text && copy && fresh);
+    QCOMPARE(text->text(), ReceiveCoinsDialog::tr("No receiving address yet."));
+    QVERIFY(!copy->isVisible());
+    // No active descriptor to give addresses from: nothing to make either.
+    QVERIFY(!fresh->isEnabled());
+
+    // A single key's descriptor with its key: the card takes it when the list gets it.
+    QVERIFY(add("pkh(" + EncodeSecret(single) + ")"));
+    Settle();
+    const QString own = QString::fromStdString(EncodeDestination(PKHash(single_pub)));
+    QVERIFY(ReceivingAddresses(table).contains(own) && spendable(own));
+    QCOMPARE(text->text(), own);
+    QVERIFY(copy->isVisible());
+}
+
+void AbyssTests::receivePurposeChanged()
+{
+    // An entry of the address list changes in place for a new purpose as for a
+    // new label (addmultisigaddress turns a receiving script into a sending one).
+    // The card looks again at every change: a label given elsewhere keeps its
+    // address; a purpose no longer "receive" sends it on to another address, on
+    // the page shown and, when shown again, on one away.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    fixture.wallet->ConnectScriptPubKeyManNotifiers();
+    const auto own = [&](const QString& address) {
+        const CTxDestination dest = DecodeDestination(address.toStdString());
+        return IsValidDestination(dest) && fixture.model->wallet().isSpendable(dest);
+    };
+    Theme("Abyss");
+    ReceiveCoinsDialog receive;
+    receive.setModel(fixture.model.get());
+    receive.resize(1280, 850); receive.show(); Settle();
+    auto* text = receive.findChild<QLabel*>("abyssReceiveAddress");
+    auto* label = receive.findChild<QLabel*>("abyssReceiveLabel");
+    QVERIFY(text && label);
+    const QString first = text->text();
+    QVERIFY2(own(first), qPrintable(first));
+    const CTxDestination first_dest = DecodeDestination(first.toStdString());
+    fixture.wallet->SetAddressBook(first_dest, "Rent", "receive");
+    Settle();
+    QCOMPARE(text->text(), first);
+    QVERIFY(label->isVisible());
+    QCOMPARE(label->text(), QString("Rent"));
+    fixture.wallet->SetAddressBook(first_dest, "Rent", "send");
+    Settle();
+    const QString second = text->text();
+    QVERIFY2(second != first && own(second), qPrintable(second));
+    receive.hide(); Settle();
+    fixture.wallet->SetAddressBook(DecodeDestination(second.toStdString()), "", "send");
+    Settle();
+    receive.show(); Settle();
+    const QString third = text->text();
+    QVERIFY2(third != second && third != first && own(third), qPrintable(third));
+}
+
+void AbyssTests::receiveWalletGone()
+{
+    // At shutdown the wallet models go before their pages, in whatever event loop
+    // runs, a box's of this page too. Here New address gets a paid address and
+    // says so in a box, while the label dialog is open; the wallet model goes
+    // while the box is up, in the shutdown's order. The label dialog goes with
+    // it, the card offers nothing of it, and nothing reads it after the box.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    fixture.wallet->ConnectScriptPubKeyManNotifiers();
+    Theme("Abyss");
+    ReceiveCoinsDialog receive;
+    receive.setModel(fixture.model.get());
+    receive.resize(1280, 850); receive.show(); Settle();
+    auto* text = receive.findChild<QLabel*>("abyssReceiveAddress");
+    auto* copy = receive.findChild<QPushButton*>("abyssReceiveCopy");
+    auto* fresh = receive.findChild<QPushButton*>("abyssReceiveNewAddress");
+    auto* edit = receive.findChild<QPushButton*>("abyssReceiveEditLabel");
+    QVERIFY(text && copy && fresh && edit);
+    const QString first = text->text();
+    QVERIFY(!first.isEmpty() && copy->isVisible() && fresh->isEnabled());
+    edit->click(); Settle();
+    QPointer<EditAddressDialog> dialog = receive.findChild<EditAddressDialog*>();
+    QVERIFY(dialog && dialog->isVisible());
+    // The pool's next key, paid: New address gets it, and says it could not make one.
+    QString paid;
+    {
+        ReserveDestination peek(fixture.wallet.get());
+        CTxDestination dest;
+        QVERIFY(peek.GetReservedDestination(dest, /*internal=*/false));
+        paid = QString::fromStdString(EncodeDestination(dest));
+    }
+    QVERIFY(PayTo(*fixture.wallet, paid, 0));
+    Settle();
+    QCOMPARE(text->text(), first);
+    bool gone = false, closed = false;
+    QString shown_error;
+    QTimer shutdown;
+    shutdown.setInterval(20);
+    QObject::connect(&shutdown, &QTimer::timeout, [&] {
+        for (QWidget* window : QApplication::topLevelWidgets()) {
+            auto* box = qobject_cast<QMessageBox*>(window);
+            if (box == nullptr || !box->isVisible()) continue;
+            if (!gone) {
+                shown_error = box->text();
+                fixture.model.reset(); // as the shutdown's wallet controller deletes its models
+                gone = true;
+                return;
+            }
+            closed = true;
+            shutdown.stop();
+            box->accept();
+            return;
+        }
+    });
+    shutdown.start();
+    fresh->click(); Settle();
+    shutdown.stop();
+    QVERIFY(gone && closed);
+    QCOMPARE(shown_error, ReceiveCoinsDialog::tr("Could not generate new address"));
+    QVERIFY(!dialog || !dialog->isVisible());
+    QCOMPARE(text->text(), ReceiveCoinsDialog::tr("No receiving address yet."));
+    QVERIFY(!copy->isVisible() && !edit->isVisible() && !fresh->isEnabled());
+    // Shown again, its buttons pressed: nothing to read, nothing done.
+    receive.hide(); Settle(); receive.show(); Settle();
+    fresh->click(); copy->click(); Settle();
+    QCOMPARE(text->text(), ReceiveCoinsDialog::tr("No receiving address yet."));
+}
+
+void AbyssTests::receiveToast()
+{
+    // Copy says "Address copied" under the card's buttons for two seconds,
+    // then the line goes. It moves nothing, takes no focus, and stops at once
+    // when the page is left (the window stays, as when the wallet's stack
+    // shows another page) or the window loses the focus.
+    RestoreAppearance restore;
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    WalletFixture fixture(m_node);
+    Theme("Abyss");
+    // A child page, as in the wallet's stack: hiding it leaves its window shown and active.
+    QWidget host;
+    auto* receive = new ReceiveCoinsDialog;
+    receive->setParent(&host);
+    receive->setModel(fixture.model.get());
+    host.resize(1280, 850); receive->setGeometry(0, 0, 1280, 850);
+    host.show(); receive->show(); Settle();
+    auto* card = receive->findChild<QFrame*>("abyssReceiveCard");
+    auto* copy = receive->findChild<QPushButton*>("abyssReceiveCopy");
+    auto* toggle = receive->findChild<QPushButton*>("abyssReceiveRequestToggle");
+    auto* toast = receive->findChild<AbyssToast*>("abyssToast");
+    QVERIFY(card && copy && toggle && toast);
+    QVERIFY(copy->isVisible() && !toast->isVisible());
+    QCOMPARE(toast->focusPolicy(), Qt::NoFocus);
+    QVERIFY(!toast->isWindow());
+    const QRect button = OnPage(*receive, copy);
+    const QRect card_rect = OnPage(*receive, card);
+    toggle->setFocus(Qt::OtherFocusReason); Settle();
+    QWidget* focused = host.focusWidget();
+    QCOMPARE(focused, toggle);
+
+    QElapsedTimer clock;
+    clock.start();
+    copy->click();
+    QVERIFY(toast->isVisible() && toast->isShowing());
+    QCOMPARE(toast->text(), ReceiveCoinsDialog::tr("Address copied"));
+    Settle();
+    QCOMPARE(host.focusWidget(), focused);
+    QCOMPARE(OnPage(*receive, copy), button);
+    QCOMPARE(OnPage(*receive, card), card_rect);
+    QVERIFY(card_rect.contains(OnPage(*receive, toast)));
+    QVERIFY(OnPage(*receive, toast).top() >= button.bottom());
+    if (!output.isEmpty()) {
+        QTest::qWait(400); // past the fade in
+        QVERIFY(QDir().mkpath(output));
+        QVERIFY(receive->grab().save(QDir(output).filePath("Abyss-receive-toast.png")));
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(!toast->isVisible(), AbyssToast::DURATION_MS + 2000);
+    const qint64 shown = clock.elapsed();
+    qInfo() << "RECEIVE_TOAST shown for" << shown << "ms";
+    QVERIFY2(shown >= AbyssToast::DURATION_MS - 250, qPrintable(QString::number(shown)));
+    QVERIFY(!toast->isShowing());
+    QCOMPARE(host.focusWidget(), focused);
+    QCOMPARE(OnPage(*receive, copy), button);
+
+    // A second copy while it shows starts the two seconds again.
+    copy->click();
+    QTest::qWait(AbyssToast::DURATION_MS / 2);
+    copy->click();
+    QTest::qWait(AbyssToast::DURATION_MS * 3 / 4);
+    QVERIFY(toast->isShowing());
+    QTRY_VERIFY_WITH_TIMEOUT(!toast->isVisible(), AbyssToast::DURATION_MS + 2000);
+
+    // The page left while the window stays: it stops; back on the page, no toast is left over.
+    copy->click();
+    QVERIFY(toast->isShowing());
+    receive->hide(); Settle();
+    QVERIFY(host.isVisible());
+    QVERIFY(!toast->isShowing());
+    receive->show(); Settle();
+    QVERIFY(!toast->isVisible() && !toast->isShowing());
+    // The window losing the focus ends it too.
+    copy->click();
+    QVERIFY(toast->isShowing());
+    QEvent deactivate(QEvent::WindowDeactivate);
+    QApplication::sendEvent(&host, &deactivate);
+    QVERIFY(!toast->isShowing() && !toast->isVisible());
+    // No toast on a page that is not on screen.
+    receive->hide(); Settle();
+    toast->showMessage("unseen");
+    QVERIFY(!toast->isShowing());
+    receive->show(); Settle();
+    QVERIFY(!toast->isVisible());
+    // A classic theme has no card, and so no toast.
+    Theme("Light"); Settle();
+    QVERIFY(!toast->isVisible() && !card->isVisible());
+}
+
+void AbyssTests::receiveFits()
+{
+    // List item 18: at 175% on a display some 1600 pixels high, the bottom of
+    // the Receive form and of the empty history card were cut off. The page now
+    // scrolls rather than asking the window for more, and what it shows first
+    // (the address card, the open request form and a folded history) fits in
+    // the height the unlocked Overview takes anyway, so the window the Overview
+    // gets, as on that display, shows it all. Also run at QT_SCALE_FACTOR=1.75.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Page heights require a font-capable platform; run minimal:enable_fonts");
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::Roboto);
+    GUIUtil::setFontScale(0);
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    // Both pages as children, as in the wallet's stack.
+    QWidget overview_host;
+    auto* overview = new OverviewPage(&overview_host);
+    overview->setClientModel(fixture.client.get());
+    overview->setWalletModel(fixture.model.get());
+    overview->setStakingStatus(StakingCase("off"));
+    overview_host.resize(1280, 850); overview->setGeometry(0, 0, 1280, 850);
+    overview_host.show(); Settle();
+    QWidget host;
+    auto* receive = new ReceiveCoinsDialog;
+    receive->setParent(&host);
+    receive->setModel(fixture.model.get());
+    host.resize(1280, 850); receive->setGeometry(0, 0, 1280, 850);
+    host.show(); receive->show(); Settle();
+    auto* scroll = receive->findChild<QScrollArea*>("abyssReceiveScroll");
+    auto* card = receive->findChild<QFrame*>("abyssReceiveCard");
+    auto* toggle = receive->findChild<QPushButton*>("abyssReceiveRequestToggle");
+    auto* form = receive->findChild<QFrame*>("frame2");
+    auto* create = receive->findChild<QPushButton*>("receiveButton");
+    auto* history = receive->findChild<QFrame*>("frame");
+    auto* none = receive->findChild<QLabel*>("abyssReceiveHistoryNone");
+    auto* header = receive->findChild<QWidget*>("abyssPageHeader");
+    QVERIFY(scroll && card && toggle && form && create && history && none && header);
+    toggle->click(); Settle();
+    QVERIFY(form->isVisible() && none->isVisible());
+    QStringList found;
+    interfaces::WalletBalances zero{};
+    interfaces::WalletBalances large{};
+    large.balance = 50'820'975 * COIN + 99 * COIN / 100;
+    for (int width : {704, 1026, 1225}) {
+        // The smaller of the unlocked Overview's minimums, with and without a balance.
+        int height = std::numeric_limits<int>::max();
+        for (const interfaces::WalletBalances* balances : {&zero, &large}) {
+            overview->setBalance(*balances); Settle();
+            overview->setGeometry(0, 0, std::max(width, overview->minimumWidth()), 850); Settle();
+            height = std::min(height, overview->minimumSizeHint().height());
+        }
+        host.resize(width, height);
+        receive->setGeometry(0, 0, width, height); Settle();
+        const QString at = QString("at %1x%2").arg(width).arg(height);
+        qInfo().noquote() << "RECEIVE_FITS" << at << "header" << header->height() << "card" << card->height()
+                          << "link" << toggle->height() << "form" << form->height() << "history" << history->height()
+                          << "viewport" << scroll->viewport()->height() << "needs" << (scroll->widget() ? scroll->widget()->minimumSizeHint().height() : -1)
+                          << "page minimum" << receive->minimumSizeHint().height() << "DPR" << receive->devicePixelRatioF();
+        if (scroll->verticalScrollBar()->maximum() != 0) {
+            found << QString("%1: the page scrolls by %2").arg(at).arg(scroll->verticalScrollBar()->maximum());
+        }
+        for (QWidget* part : {static_cast<QWidget*>(card), static_cast<QWidget*>(create), static_cast<QWidget*>(none), static_cast<QWidget*>(history)}) {
+            const QRect inside = OnPage(*receive, part);
+            if (!receive->rect().contains(inside) || part->visibleRegion() != QRegion(part->rect())) {
+                found << QString("%1: %2 at %3 is not all on the page").arg(at, part->objectName()).arg(QString("%1,%2 %3x%4").arg(inside.x()).arg(inside.y()).arg(inside.width()).arg(inside.height()));
+            }
+        }
+        // The page never asks the window for more than the Overview does.
+        if (receive->minimumSizeHint().height() > height) {
+            found << QString("%1: the page asks for %2").arg(at).arg(receive->minimumSizeHint().height());
+        }
+        if (scroll->horizontalScrollBar()->maximum() != 0) found << QString("%1: the page scrolls sideways").arg(at);
+        if (!output.isEmpty() && width == 1225) {
+            QVERIFY(QDir().mkpath(output));
+            QVERIFY(PageImage(*receive).save(QDir(output).filePath("Abyss-receive-fits.png")));
+        }
+    }
+    // Given less than that, the page still asks for no more: it scrolls, and
+    // the form's button can be brought into view.
+    host.resize(1026, 420);
+    receive->setGeometry(0, 0, 1026, 420); Settle();
+    qInfo().noquote() << "RECEIVE_FITS at 1026x420: page minimum" << receive->minimumSizeHint().height()
+                      << "scrolls by" << scroll->verticalScrollBar()->maximum();
+    if (receive->minimumSizeHint().height() > 420) found << QString("at 1026x420 the page asks for %1").arg(receive->minimumSizeHint().height());
+    if (scroll->verticalScrollBar()->maximum() == 0) found << "at 1026x420 the page does not scroll";
+    scroll->ensureWidgetVisible(create); Settle();
+    if (create->visibleRegion() != QRegion(create->rect())) found << "at 1026x420 the form's button cannot be brought into view";
+    // A long history takes the room left and scrolls within; the card stays whole above it.
+    RecentRequestsTableModel* requests = fixture.model->getRecentRequestsTableModel();
+    const QString address = receive->findChild<QLabel*>("abyssReceiveAddress")->text();
+    for (int i = 0; i < 30; ++i) requests->addNewRequest(SendCoinsRecipient(address, QString("Request %1").arg(i), (i + 1) * COIN, QString()));
+    toggle->click(); Settle();
+    QVERIFY(!form->isVisible());
+    host.resize(1225, 640); receive->setGeometry(0, 0, 1225, 640); Settle();
+    auto* table = receive->findChild<QTableView*>("recentRequestsView");
+    QVERIFY(table && table->isVisible() && !none->isVisible());
+    qInfo().noquote() << "RECEIVE_FITS history of 30: table" << table->height() << "page scrolls by" << scroll->verticalScrollBar()->maximum();
+    if (card->visibleRegion() != QRegion(card->rect())) found << "with 30 requests the card is not whole";
+    if (table->verticalScrollBar()->maximum() == 0) found << "the 30 requests do not scroll within the table";
+    if (!output.isEmpty()) QVERIFY(PageImage(*receive).save(QDir(output).filePath("Abyss-receive-history.png")));
+    for (const QString& line : found) qInfo().noquote() << "RECEIVE_FITS" << line;
     QCOMPARE(found.join("\n"), QString());
 }
