@@ -60,7 +60,7 @@ static RPCHelpMan debug()
         },
         RPCExamples {
             HelpExampleCli("debug", "defcon")
-    + HelpExampleRpc("debug", "defcon+net")
+    + HelpExampleRpc("debug", "\"defcon+net\"")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -413,7 +413,7 @@ static RPCHelpMan deriveaddresses()
             RPCExamples{
         "\nFirst three receive addresses\n"
         + HelpExampleCli("deriveaddresses", "\"" + EXAMPLE_DESCRIPTOR + "\" \"[0,2]\"") +
-          HelpExampleRpc("deriveaddresses", "\"" + EXAMPLE_DESCRIPTOR + "\", \"[0,2]\"")
+          HelpExampleRpc("deriveaddresses", "\"" + EXAMPLE_DESCRIPTOR + "\", [0,2]")
             },
     [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -622,9 +622,13 @@ static RPCHelpMan getaddressmempool()
     return RPCHelpMan{"getaddressmempool",
         "\nReturns all mempool deltas for an address (requires addressindex to be enabled).\n",
         {
-            {"addresses", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "",
+            {"addresses", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED_NAMED_ARG, "",
                 {
-                    {"address", RPCArg::Type::STR, RPCArg::Default{""}, "The base58check encoded address"},
+                    {"addresses", RPCArg::Type::ARR, RPCArg::Optional::NO, "",
+                        {
+                            {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The base58check encoded address"},
+                        },
+                    },
                 },
             },
         },
@@ -695,9 +699,13 @@ static RPCHelpMan getaddressutxos()
     return RPCHelpMan{"getaddressutxos",
         "\nReturns all unspent outputs for an address (requires addressindex to be enabled).\n",
         {
-            {"addresses", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "",
+            {"addresses", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED_NAMED_ARG, "",
                 {
-                    {"address", RPCArg::Type::STR, RPCArg::Default{""}, "The base58check encoded address"},
+                    {"addresses", RPCArg::Type::ARR, RPCArg::Optional::NO, "",
+                        {
+                            {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The base58check encoded address"},
+                        },
+                    },
                 },
             },
         },
@@ -766,9 +774,15 @@ static RPCHelpMan getaddressdeltas()
     return RPCHelpMan{"getaddressdeltas",
         "\nReturns all changes for an address (requires addressindex to be enabled).\n",
         {
-            {"addresses", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "",
+            {"addresses", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED_NAMED_ARG, "",
                 {
-                    {"address", RPCArg::Type::STR, RPCArg::Default{""}, "The base58check encoded address"},
+                    {"addresses", RPCArg::Type::ARR, RPCArg::Optional::NO, "",
+                        {
+                            {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The base58check encoded address"},
+                        },
+                    },
+                    {"start", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "The start block height (used together with end)"},
+                    {"end", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "The end block height (used together with start)"},
                 },
             },
         },
@@ -861,9 +875,13 @@ static RPCHelpMan getaddressbalance()
     return RPCHelpMan{"getaddressbalance",
         "\nReturns the balance for an address(es) (requires addressindex to be enabled).\n",
         {
-            {"addresses", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "",
+            {"addresses", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED_NAMED_ARG, "",
                 {
-                    {"address", RPCArg::Type::STR, RPCArg::Default{""}, "The base58check encoded address"},
+                    {"addresses", RPCArg::Type::ARR, RPCArg::Optional::NO, "",
+                        {
+                            {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The base58check encoded address"},
+                        },
+                    },
                 },
             },
         },
@@ -954,9 +972,15 @@ static RPCHelpMan getaddresstxids()
     return RPCHelpMan{"getaddresstxids",
         "\nReturns the txids for an address(es) (requires addressindex to be enabled).\n",
         {
-            {"addresses", RPCArg::Type::ARR, RPCArg::Default{UniValue::VARR}, "",
+            {"addresses", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED_NAMED_ARG, "",
                 {
-                    {"address", RPCArg::Type::STR, RPCArg::Default{""}, "The base58check encoded address"},
+                    {"addresses", RPCArg::Type::ARR, RPCArg::Optional::NO, "",
+                        {
+                            {"address", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The base58check encoded address"},
+                        },
+                    },
+                    {"start", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "The start block height (used together with end)"},
+                    {"end", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "The end block height (used together with start)"},
                 },
             },
         },
@@ -1259,7 +1283,7 @@ static RPCHelpMan logging()
         },
         RPCExamples{
             HelpExampleCli("logging", "\"[\\\"all\\\"]\" \"[\\\"http\\\"]\"")
-    + HelpExampleRpc("logging", "[\"all\"], \"[libevent]\"")
+    + HelpExampleRpc("logging", "[\"all\"], [\"libevent\"]")
         },
     [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1363,7 +1387,7 @@ static RPCHelpMan getindexinfo()
                     HelpExampleCli("getindexinfo", "")
                   + HelpExampleRpc("getindexinfo", "")
                   + HelpExampleCli("getindexinfo", "txindex")
-                  + HelpExampleRpc("getindexinfo", "txindex")
+                  + HelpExampleRpc("getindexinfo", "\"txindex\"")
                 },
                 [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1398,8 +1422,8 @@ static RPCHelpMan echoipc()
         "This command is for testing.\n",
         {{"arg", RPCArg::Type::STR, RPCArg::Optional::NO, "The string to echo",}},
         RPCResult{RPCResult::Type::STR, "echo", "The echoed string."},
-        RPCExamples{HelpExampleCli("echo", "\"Hello world\"") +
-                    HelpExampleRpc("echo", "\"Hello world\"")},
+        RPCExamples{HelpExampleCli("echoipc", "\"Hello world\"") +
+                    HelpExampleRpc("echoipc", "\"Hello world\"")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
             std::unique_ptr<interfaces::Echo> echo;
             if (interfaces::Ipc* ipc = Assert(EnsureAnyNodeContext(request.context).init)->ipc()) {

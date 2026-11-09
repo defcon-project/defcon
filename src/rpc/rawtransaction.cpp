@@ -307,7 +307,7 @@ static RPCHelpMan getrawtransactionmulti() {
                     HelpExampleCli("getrawtransactionmulti",
                                    R"('{"blockhash1":["txid1","txid2"], "0":["txid3"]}')")
                     + HelpExampleRpc("getrawtransactionmulti",
-                                     R"('{"blockhash1":["txid1","txid2"], "0":["txid3"]})")
+                                     R"({"blockhash1":["txid1","txid2"], "0":["txid3"]})")
             },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -403,7 +403,7 @@ static RPCHelpMan getislocks()
             }},
         RPCExamples{
             HelpExampleCli("getislocks", "'[\"txid\",...]'")
-            + HelpExampleRpc("getislocks", "'[\"txid\",...]'")
+            + HelpExampleRpc("getislocks", "[\"txid1\",\"txid2\"]")
         },
     [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -473,7 +473,7 @@ static RPCHelpMan gettxchainlocks()
         },
         RPCExamples{
             HelpExampleCli("gettxchainlocks", "'[\"mytxid\",...]'")
-        + HelpExampleRpc("gettxchainlocks", "[\"mytxid\",...]")
+        + HelpExampleRpc("gettxchainlocks", "[\"mytxid1\",\"mytxid2\"]")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -542,7 +542,7 @@ static RPCHelpMan getassetunlockstatuses()
             {
                     {"indexes", RPCArg::Type::ARR, RPCArg::Optional::NO, "The Asset Unlock indexes (no more than 100)",
                      {
-                             {"index", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "An Asset Unlock index"},
+                             {"index", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "An Asset Unlock index, as a decimal string"},
                      },
                     },
                     {"height", RPCArg::Type::NUM, RPCArg::Optional::OMITTED, "The maximum block height to check"},
@@ -559,7 +559,7 @@ static RPCHelpMan getassetunlockstatuses()
             },
             RPCExamples{
                     HelpExampleCli("getassetunlockstatuses", "'[\"myindex\",...]'")
-                    + HelpExampleRpc("getassetunlockstatuses", "[\"myindex\",...]")
+                    + HelpExampleRpc("getassetunlockstatuses", "[\"1\",\"2\"]")
             },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -705,8 +705,8 @@ static RPCHelpMan createrawtransaction()
         RPCExamples{
             HelpExampleCli("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\" \"[{\\\"address\\\":0.01}]\"")
     + HelpExampleCli("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\" \"[{\\\"data\\\":\\\"00010203\\\"}]\"")
-    + HelpExampleRpc("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\", \"[{\\\"address\\\":0.01}]\"")
-    + HelpExampleRpc("createrawtransaction", "\"[{\\\"txid\\\":\\\"myid\\\",\\\"vout\\\":0}]\", \"[{\\\"data\\\":\\\"00010203\\\"}]\"")
+    + HelpExampleRpc("createrawtransaction", "[{\"txid\":\"myid\",\"vout\":0}], [{\"address\":0.01}]")
+    + HelpExampleRpc("createrawtransaction", "[{\"txid\":\"myid\",\"vout\":0}], [{\"data\":\"00010203\"}]")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -995,7 +995,7 @@ static RPCHelpMan signrawtransactionwithkey()
         },
         RPCExamples{
             HelpExampleCli("signrawtransactionwithkey", "\"myhex\" \"[\\\"key1\\\",\\\"key2\\\"]\"")
-    + HelpExampleRpc("signrawtransactionwithkey", "\"myhex\", \"[\\\"key1\\\",\\\"key2\\\"]\"")
+    + HelpExampleRpc("signrawtransactionwithkey", "\"myhex\", [\"key1\",\"key2\"]")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
