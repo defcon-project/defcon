@@ -40,6 +40,7 @@ QT_FORMS_UI = \
   qt/forms/transactiondescdialog.ui
 
 QT_MOC_CPP = \
+  qt/moc_abysstoast.cpp \
   qt/moc_addressbookpage.cpp \
   qt/moc_addresstablemodel.cpp \
   qt/moc_appearancewidget.cpp \
@@ -120,6 +121,7 @@ QT_QRC_LOCALE_CPP = qt/qrc_dash_locale.cpp
 QT_QRC_LOCALE = qt/dash_locale.qrc
 
 BITCOIN_QT_H = \
+  qt/abysstoast.h \
   qt/addressbookpage.h \
   qt/addresstablemodel.h \
   qt/appearancewidget.h \
@@ -301,6 +303,7 @@ BITCOIN_QT_WINDOWS_CPP = \
   qt/winshutdownmonitor.cpp
 
 BITCOIN_QT_WALLET_CPP = \
+  qt/abysstoast.cpp \
   qt/addressbookpage.cpp \
   qt/addresstablemodel.cpp \
   qt/askpassphrasedialog.cpp \

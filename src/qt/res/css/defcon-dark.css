@@ -892,6 +892,8 @@ QDialog#SendCoinsDialog .QPushButton#useAvailableBalanceButton,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton,
 QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton,
+QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#receiveButton,
+QWidget#ReceiveCoinsDialog QFrame#abyssReceiveCard QPushButton#abyssReceiveNewAddress,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM {
     background-color: #0b1727;
@@ -919,6 +921,8 @@ QDialog#SendCoinsDialog .QPushButton#useAvailableBalanceButton:hover,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton:hover,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:hover,
 QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton:hover,
+QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#receiveButton:hover,
+QWidget#ReceiveCoinsDialog QFrame#abyssReceiveCard QPushButton#abyssReceiveNewAddress:hover,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM:hover,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:hover {
     background-color: #10263e;
@@ -946,6 +950,8 @@ QDialog#SendCoinsDialog .QPushButton#useAvailableBalanceButton:pressed,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton:pressed,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:pressed,
 QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton:pressed,
+QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#receiveButton:pressed,
+QWidget#ReceiveCoinsDialog QFrame#abyssReceiveCard QPushButton#abyssReceiveNewAddress:pressed,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM:pressed,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:pressed {
     background-color: #10263e;
@@ -974,6 +980,8 @@ QDialog#SendCoinsDialog .QPushButton#useAvailableBalanceButton:disabled,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton:disabled,
 QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:disabled,
 QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton:disabled,
+QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#receiveButton:disabled,
+QWidget#ReceiveCoinsDialog QFrame#abyssReceiveCard QPushButton#abyssReceiveNewAddress:disabled,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM:disabled,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:disabled {
     background-color: #0b1727;
@@ -1216,6 +1224,77 @@ SendCoinsDialog[abyssPaymentPage="true"] QWidget#abyssSendFields,
 SendCoinsDialog[abyssPaymentPage="true"] QScrollArea,
 SendCoinsDialog[abyssPaymentPage="true"] QScrollArea > QWidget,
 SendCoinsDialog[abyssPaymentPage="true"] QWidget#scrollAreaWidgetContents {
+    background: transparent;
+    border: none;
+}
+
+/* Receive: the address card first, the request form behind a link, the toast. */
+ReceiveCoinsDialog QScrollArea#abyssReceiveScroll,
+ReceiveCoinsDialog QScrollArea#abyssReceiveScroll > QWidget,
+ReceiveCoinsDialog QWidget#abyssReceiveContent {
+    background: transparent;
+    border: none;
+}
+ReceiveCoinsDialog QFrame#abyssReceiveCard {
+    background: #0b1727;
+    border: 1px solid #20344c;
+    border-radius: 10px;
+}
+ReceiveCoinsDialog QFrame#abyssReceiveCard QLabel {
+    background: transparent;
+    border: none;
+}
+ReceiveCoinsDialog QFrame#abyssReceiveCard QLabel#abyssReceiveAddress {
+    color: #ffffff;
+}
+ReceiveCoinsDialog QFrame#abyssReceiveCard QLabel#abyssReceiveCaption,
+ReceiveCoinsDialog QFrame#abyssReceiveCard QLabel#abyssReceiveLabel,
+ReceiveCoinsDialog QFrame#frame QLabel#abyssReceiveHistoryNone {
+    color: #91a5bc;
+    background: transparent;
+    border: none;
+}
+ReceiveCoinsDialog QFrame#frame QWidget#abyssReceiveHistoryHead,
+ReceiveCoinsDialog QFrame#frame QLabel#abyssReceiveHistoryTitle {
+    color: #ffffff;
+    background: transparent;
+    border: none;
+}
+/* Text links with a full-height target, framed when reached with the keyboard. */
+QWidget#ReceiveCoinsDialog QPushButton#abyssReceiveEditLabel,
+QWidget#ReceiveCoinsDialog QPushButton#abyssReceiveRequestToggle {
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #1297ff;
+    text-decoration: underline;
+    min-width: 0px;
+    min-height: 40px;
+    max-height: 40px;
+    padding: 0px 4px;
+}
+QWidget#ReceiveCoinsDialog QPushButton#abyssReceiveEditLabel:hover,
+QWidget#ReceiveCoinsDialog QPushButton#abyssReceiveRequestToggle:hover,
+QWidget#ReceiveCoinsDialog QPushButton#abyssReceiveRequestToggle:checked {
+    background-color: transparent;
+    color: #42aaff;
+}
+QWidget#ReceiveCoinsDialog QPushButton#abyssReceiveEditLabel:pressed,
+QWidget#ReceiveCoinsDialog QPushButton#abyssReceiveRequestToggle:pressed {
+    background-color: transparent;
+    color: #ffffff;
+}
+QWidget#ReceiveCoinsDialog QPushButton#abyssReceiveEditLabel:focus,
+QWidget#ReceiveCoinsDialog QPushButton#abyssReceiveRequestToggle:focus {
+    border-color: #1297ff;
+}
+QFrame#abyssToast {
+    background-color: #10263e;
+    border: 1px solid #1d3f60;
+    border-radius: 8px;
+}
+QFrame#abyssToast QLabel#abyssToastText {
+    color: #e6edf7;
     background: transparent;
     border: none;
 }
