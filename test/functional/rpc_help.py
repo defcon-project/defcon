@@ -50,6 +50,7 @@ class HelpRpcTest(BitcoinTestFramework):
     def run_test(self):
         self.test_client_conversion_table()
         self.test_categories()
+        self.test_unlisted()
         self.dump_help()
         if self.is_wallet_compiled():
             self.wallet_help()
@@ -99,11 +100,10 @@ class HelpRpcTest(BitcoinTestFramework):
         # help of unknown command
         assert_equal(node.help('foo'), 'help: unknown command: foo')
 
-        # command titles; help orders them by the category's bytes, so this fork's
-        # capitalised DeFCoN category comes before the lowercase ones
+        # command titles: topics in alphabetical order, whatever their case
         titles = [line[3:-3] for line in node.help().splitlines() if line.startswith('==')]
 
-        components = ['DeFCoN', 'Addressindex', 'Blockchain', 'Control', 'Evo', 'Generating', 'Mining', 'Network', 'Rawtransactions', 'Staking', 'Util']
+        components = ['Addressindex', 'Blockchain', 'CoinJoin', 'Control', 'Generating', 'Governance', 'Keys and signatures', 'Masternodes', 'Mining', 'Network', 'Network security', 'Rawtransactions', 'Sentinel', 'Staking', 'Util']
 
         if self.is_wallet_compiled():
             components.append('Wallet')
@@ -112,6 +112,30 @@ class HelpRpcTest(BitcoinTestFramework):
             components.append('Zmq')
 
         assert_equal(titles, components)
+
+    def test_unlisted(self):
+        """Developer, deprecated and hidden commands stay out of the main help
+        and of the lists of subcommands, and their own help still answers."""
+        node = self.nodes[0]
+        listed = [line.split(' ', 1)[0] for line in node.help().splitlines() if line and not line.startswith('==')]
+        unlisted = ['faultinject', 'getassetunlockstatuses', 'setmocktime']
+        if self.is_wallet_compiled():
+            unlisted.append('getunconfirmedbalance')
+        for name in unlisted:
+            assert name not in listed, name
+            assert node.help(name).startswith(name), name
+
+        def subcommands(parent):
+            return [m.group(1) for m in re.finditer(r'^  ([a-z][a-z_-]*) +- ', node.help(parent), re.M)]
+
+        assert 'dkgsimerror' not in subcommands('quorum')
+        assert 'platformsign' not in subcommands('quorum')
+        assert 'list' in subcommands('quorum')
+        assert node.help('quorum', 'dkgsimerror').startswith('quorum dkgsimerror')
+        for name in ['current', 'winner']:
+            assert name not in subcommands('masternode'), name
+            assert node.help('masternode', name).startswith('masternode ' + name), name
+        assert 'connect' in subcommands('masternode')
 
     def dump_help(self):
         dump_dir = os.path.join(self.options.tmpdir, 'rpc_help_dump')

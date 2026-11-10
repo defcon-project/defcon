@@ -13,6 +13,9 @@
 #include <net.h>
 #include <uint256.h>
 
+#include <string>
+#include <vector>
+
 #include <QByteArray>
 #include <QCompleter>
 #include <QThread>
@@ -49,6 +52,11 @@ public:
     static bool RPCExecuteCommandLine(interfaces::Node& node, std::string &strResult, const std::string &strCommand, std::string * const pstrFilteredOut = nullptr, const WalletModel* wallet_model = nullptr) {
         return RPCParseCommandLine(&node, strResult, strCommand, true, pstrFilteredOut, wallet_model);
     }
+
+    /** The reply to "help-console": a first path through this network's
+     *  commands, then the console's own syntax. A line names a command only if
+     *  it is one of @p listed, the commands the help lists. */
+    static QString consoleHelp(const std::vector<std::string>& listed);
 
     void setClientModel(ClientModel *model = nullptr, int bestblock_height = 0, int64_t bestblock_date = 0, uint256 bestblock_hash = uint256(), double verification_progress = 0.0);
     void addWallet(WalletModel * const walletModel);

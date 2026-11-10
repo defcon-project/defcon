@@ -483,7 +483,7 @@ public:
         req.URI = uri;
         return ::tableRPC.execute(req);
     }
-    std::vector<std::string> listRpcCommands() override { return ::tableRPC.listCommands(); }
+    std::vector<std::string> listRpcCommands() override { return ::tableRPC.listedCommands(); }
     void rpcSetTimerInterfaceIfUnset(RPCTimerInterface* iface) override { RPCSetTimerInterfaceIfUnset(iface); }
     void rpcUnsetTimerInterface(RPCTimerInterface* iface) override { RPCUnsetTimerInterface(iface); }
     bool getUnspentOutput(const COutPoint& output, Coin& coin) override

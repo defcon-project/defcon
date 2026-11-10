@@ -17,7 +17,12 @@
 #include <rpc/util.h>
 #include <test/util/setup_common.h>
 #include <univalue.h>
+#include <util/strencodings.h>
+#include <util/string.h>
 #include <util/time.h>
+
+#include <algorithm>
+#include <set>
 
 #include <boost/test/unit_test.hpp>
 
@@ -603,6 +608,54 @@ BOOST_AUTO_TEST_CASE(rpc_bls)
     BOOST_CHECK_NO_THROW(r = CallRPC(std::string("bls fromsecret ") + secret));
     BOOST_CHECK_EQUAL(find_value(r.get_obj(), "scheme").get_str(), "basic");
     BOOST_CHECK_EQUAL(find_value(r.get_obj(), "public").get_str(), "b379c28e0f50546906fe733f1222c8f7e39574d513790034f1fec1476286eb652a350c8c0e630cd2cc60d10c26d6f6ee");
+}
+
+BOOST_AUTO_TEST_CASE(rpc_command_lists)
+{
+    // The main help groups the commands by topic. The topics come in
+    // alphabetical order whatever their case, and a topic that begins with
+    // another one's name comes after it. The Qt console test measures the
+    // lists of subcommands and the completion against the same rule.
+    const std::string help{CallRPC("help").get_str()};
+    std::vector<std::string> titles;
+    std::set<std::string> in_help;
+    for (const std::string& line : SplitString(help, '\n')) {
+        if (line.rfind("== ", 0) == 0) {
+            titles.push_back(line.substr(3, line.size() - 6));
+        } else if (!line.empty()) {
+            in_help.insert(line.substr(0, line.find(' ')));
+        }
+    }
+    std::vector<std::string> sorted{titles};
+    std::sort(sorted.begin(), sorted.end(), [](const std::string& a, const std::string& b) { return ToLower(a) < ToLower(b); });
+    BOOST_CHECK(titles == sorted);
+    const auto has_title = [&titles](const std::string& title) { return std::count(titles.begin(), titles.end(), title) == 1; };
+    for (const char* topic : {"CoinJoin", "Governance", "Keys and signatures", "Masternodes", "Network", "Network security", "Sentinel", "Staking"}) {
+        BOOST_CHECK_MESSAGE(has_title(topic), topic);
+    }
+    for (const char* gone : {"Evo", "DeFCoN", "Hidden"}) {
+        BOOST_CHECK_MESSAGE(std::count(titles.begin(), titles.end(), gone) == 0, gone);
+    }
+
+    // The main help lists every listed command that is not a subcommand, and
+    // nothing else.
+    const std::vector<std::string> listed{tableRPC.listedCommands()};
+    std::set<std::string> expected;
+    for (const std::string& name : listed) {
+        if (name.find(' ') == std::string::npos) expected.insert(name);
+    }
+    BOOST_CHECK(in_help == expected);
+    const auto is_listed = [&listed](const std::string& name) { return std::count(listed.begin(), listed.end(), name) == 1; };
+    for (const char* name : {"help", "getblockcount", "quorum", "quorum list", "masternode connect", "protx info", "bls generate", "dslstatus", "getcoinjoininfo", "getstakinginfo"}) {
+        BOOST_CHECK_MESSAGE(is_listed(name), name);
+    }
+
+    // Developer, deprecated and hidden commands are left out of the lists, and
+    // "help <command>" still describes them.
+    for (const std::string name : {"faultinject", "faultinject set", "quorum dkgsimerror", "quorum platformsign", "getassetunlockstatuses", "masternode current", "masternode winner", "setmocktime"}) {
+        BOOST_CHECK_MESSAGE(!is_listed(name), name);
+        BOOST_CHECK_MESSAGE(CallRPC("help " + name).get_str().rfind(name, 0) == 0, name);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

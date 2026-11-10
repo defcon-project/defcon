@@ -1474,9 +1474,9 @@ static const CRPCCommand commands[] =
     { "addressindex",       &getaddressbalance,       },
 
     /* DeFCoN features */
-    { "DeFCoN",               &mnsync,                  },
-    { "DeFCoN",               &spork,                   },
-    { "DeFCoN",               &sporkupdate,             },
+    { "masternodes",        &mnsync,                  },
+    { "network security",   &spork,                   },
+    { "network security",   &sporkupdate,             },
 
     /* Not shown in help */
     { "hidden",             &setmocktime,             },

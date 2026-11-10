@@ -1078,25 +1078,24 @@ void RegisterGovernanceRPCCommands(CRPCTable &t)
 static const CRPCCommand commands[] =
 { //  category              actor (function)
   //  --------------------- -----------------------
-    /* DeFCoN features */
-    { "DeFCoN",               &getgovernanceinfo,         },
-    { "DeFCoN",               &getsuperblockbudget,       },
-    { "DeFCoN",               &gobject,                   },
-    { "DeFCoN",               &gobject_count,             },
-    { "DeFCoN",               &gobject_deserialize,       },
-    { "DeFCoN",               &gobject_check,             },
+    { "governance",           &getgovernanceinfo,         },
+    { "governance",           &getsuperblockbudget,       },
+    { "governance",           &gobject,                   },
+    { "governance",           &gobject_count,             },
+    { "governance",           &gobject_deserialize,       },
+    { "governance",           &gobject_check,             },
 #ifdef ENABLE_WALLET
-    { "DeFCoN",               &gobject_prepare,           },
-    { "DeFCoN",               &gobject_list_prepared,     },
-    { "DeFCoN",               &gobject_vote_many,         },
-    { "DeFCoN",               &gobject_vote_alias,        },
+    { "governance",           &gobject_prepare,           },
+    { "governance",           &gobject_list_prepared,     },
+    { "governance",           &gobject_vote_many,         },
+    { "governance",           &gobject_vote_alias,        },
 #endif
-    { "DeFCoN",               &gobject_submit,            },
-    { "DeFCoN",               &gobject_list,              },
-    { "DeFCoN",               &gobject_diff,              },
-    { "DeFCoN",               &gobject_get,               },
-    { "DeFCoN",               &gobject_getcurrentvotes,   },
-    { "DeFCoN",               &voteraw,                   },
+    { "governance",           &gobject_submit,            },
+    { "governance",           &gobject_list,              },
+    { "governance",           &gobject_diff,              },
+    { "governance",           &gobject_get,               },
+    { "governance",           &gobject_getcurrentvotes,   },
+    { "governance",           &voteraw,                   },
 };
 // clang-format on
     for (const auto& command : commands) {

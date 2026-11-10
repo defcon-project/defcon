@@ -84,6 +84,20 @@ void RPCRunLater(const std::string& name, std::function<void()> func, int64_t nS
 
 typedef RPCHelpMan (*RpcMethodFnType)();
 
+/**
+ * What kind of command a command is, for the command lists: the main help, the
+ * list of subcommands in the help of a parent command, and the completion of
+ * the Qt console. Only a normal command is listed. A command that is not listed
+ * runs exactly the same, and "help <command>" still describes it.
+ */
+enum class RPCStatus {
+    NORMAL,
+    //! A lab or test instrument, not for everyday use.
+    DEVELOPER,
+    //! Kept for existing callers; nothing new should rely on it.
+    DEPRECATED,
+};
+
 class CRPCCommand
 {
 public:
@@ -93,28 +107,41 @@ public:
     using Actor = std::function<bool(const JSONRPCRequest& request, UniValue& result, bool last_handler)>;
 
     //! Constructor taking Actor callback supporting multiple handlers.
-    CRPCCommand(std::string category, std::string name, Actor actor, std::vector<std::string> args, intptr_t unique_id)
+    CRPCCommand(std::string category, std::string name, Actor actor, std::vector<std::string> args, intptr_t unique_id,
+                RPCStatus status = RPCStatus::NORMAL)
         : category(std::move(category)), name(std::move(name)), actor(std::move(actor)), argNames(std::move(args)),
-          unique_id(unique_id)
+          unique_id(unique_id), status(status)
     {
     }
 
     //! Simplified constructor taking plain RpcMethodFnType function pointer.
-    CRPCCommand(std::string category, RpcMethodFnType fn)
+    CRPCCommand(std::string category, RpcMethodFnType fn, RPCStatus status = RPCStatus::NORMAL)
         : CRPCCommand(
               category,
               fn().m_name,
               [fn](const JSONRPCRequest& request, UniValue& result, bool) { result = fn().HandleRequest(request); return true; },
               fn().GetArgNames(),
-              intptr_t(fn))
+              intptr_t(fn),
+              status)
     {
     }
 
+    /**
+     * The one rule for every command list: the main help, the subcommand lists
+     * in the help of a parent command, and the Qt console's completion. The
+     * "hidden" category is the inherited way to keep a test command out of the
+     * lists; a command with a real topic keeps its topic and gets a status.
+     */
+    bool listed() const { return category != "hidden" && status == RPCStatus::NORMAL; }
+
+    //! The topic the main help lists the command under, written as its title
+    //! shows it apart from the first letter ("CoinJoin", "network security").
     std::string category;
     std::string name;
     Actor actor;
     std::vector<std::string> argNames;
     intptr_t unique_id;
+    RPCStatus status;
 };
 
 /**
@@ -144,6 +171,12 @@ public:
     * @returns List of registered commands.
     */
     std::vector<std::string> listCommands() const;
+
+    /**
+     * The registered commands the command lists offer (see CRPCCommand::listed),
+     * subcommands included ("quorum list").
+     */
+    std::vector<std::string> listedCommands() const;
 
     /**
      * Return all named arguments that need to be converted by the client from string to another JSON type

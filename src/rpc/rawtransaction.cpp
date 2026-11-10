@@ -2173,9 +2173,10 @@ void RegisterRawTransactionRPCCommands(CRPCTable &t)
 {
 // clang-format off
 static const CRPCCommand commands[] =
-{ //  category               actor (function)
-  //  ---------------------  -----------------------
-    { "rawtransactions",     &getassetunlockstatuses,     },
+{ //  category               actor (function)             status
+  //  ---------------------  ---------------------------  ----------------------
+    // Left over from Dash Platform, which this network does not run.
+    { "rawtransactions",     &getassetunlockstatuses,     RPCStatus::DEPRECATED },
     { "rawtransactions",     &getrawtransaction,          },
     { "rawtransactions",     &getrawtransactionmulti,     },
     { "rawtransactions",     &getislocks,                 },
