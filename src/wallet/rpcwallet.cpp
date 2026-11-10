@@ -1505,9 +1505,9 @@ static RPCHelpMan listtransactions()
     "\nList the most recent 10 transactions in the systems\n"
     + HelpExampleCli("listtransactions", "") +
     "\nList transactions 100 to 120\n"
-    + HelpExampleCli("listtransactions", "\"\" 20 100") +
+    + HelpExampleCli("listtransactions", "\"*\" 20 100") +
     "\nAs a json rpc call\n"
-    + HelpExampleRpc("listtransactions", "\"\", 20, 100")
+    + HelpExampleRpc("listtransactions", "\"*\", 20, 100")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1836,9 +1836,9 @@ static RPCHelpMan gettransaction()
                 }),
         },
         RPCExamples{
-            HelpExampleCli("gettransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d\"")
-    + HelpExampleCli("gettransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d\" true")
-    + HelpExampleRpc("gettransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d\"")
+            HelpExampleCli("gettransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48da\"")
+    + HelpExampleCli("gettransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48da\" true")
+    + HelpExampleRpc("gettransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48da\"")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1911,8 +1911,8 @@ static RPCHelpMan abandontransaction()
         },
         RPCResult{RPCResult::Type::NONE, "", ""},
         RPCExamples{
-            HelpExampleCli("abandontransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d\"")
-    + HelpExampleRpc("abandontransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d\"")
+            HelpExampleCli("abandontransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48da\"")
+    + HelpExampleRpc("abandontransaction", "\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48da\"")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -3254,7 +3254,7 @@ static RPCHelpMan loadwallet()
 {
     return RPCHelpMan{"loadwallet",
         "\nLoads a wallet from a wallet file or directory."
-        "\nNote that all wallet command-line options used when starting dashd will be"
+        "\nNote that all wallet command-line options used when starting the node will be"
         "\napplied to the new wallet (eg, rescan, etc).\n",
         {
             {"filename", RPCArg::Type::STR, RPCArg::Optional::NO, "The wallet directory or .dat file."},

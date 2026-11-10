@@ -32,6 +32,7 @@
 #include <rpc/server_util.h>
 #include <rpc/util.h>
 #include <util/check.h>
+#include <policy/feerate.h>
 #include <util/moneystr.h>
 #include <util/translation.h>
 #include <validation.h>
@@ -395,11 +396,9 @@ static RPCHelpMan protx_register_fund_wrapper(const bool legacy)
     std::string pubkey_operator = legacy ? "\"0532646990082f4fd639f90387b1551f2c7c39d37392cb9055a06a7e85c1d23692db8f87f827886310bccc1e29db9aee\"" : "\"8532646990082f4fd639f90387b1551f2c7c39d37392cb9055a06a7e85c1d23692db8f87f827886310bccc1e29db9aee\"";
     std::string rpc_example = rpc_name.append(" \"" + EXAMPLE_ADDRESS[0] + "\" \"1.2.3.4:1234\" \"" + EXAMPLE_ADDRESS[1] + "\" ").append(pubkey_operator).append(" \"" + EXAMPLE_ADDRESS[1] + "\" 0 \"" + EXAMPLE_ADDRESS[0] + "\"");
     return RPCHelpMan{rpc_full_name,
-        "\nCreates, funds and sends a ProTx to the network. The resulting transaction will move 1000 DeFCoN\n"
-        "to the address specified by collateralAddress and will then function as the collateral of your\n"
-        "masternode.\n"
-        "A few of the limitations you see in the arguments are temporary and might be lifted after DIP3\n"
-        "is fully deployed.\n"
+        "\nCreates, funds and sends a ProTx to the network. The resulting transaction will move the regular\n"
+        "masternode collateral, " + FormatMoney(GetMnType(MnType::Regular).collat_amount) + " " + CURRENCY_UNIT + " on this network, to the address\n"
+        "specified by collateralAddress, where it will then function as the collateral of your masternode.\n"
         + HELP_REQUIRING_PASSPHRASE,
         {
             GetRpcArg("collateralAddress"),
@@ -537,7 +536,8 @@ static RPCHelpMan protx_register_fund_compute()
 {
     return RPCHelpMan{"protx register_fund_compute",
         "\nSame as \"protx register_fund\", but registers a Compute masternode carrying its oracle service\n"
-        "descriptor. Only accepted once the Compute activation height is reached.\n"
+        "descriptor, and moves the Compute masternode collateral, " + FormatMoney(GetMnType(MnType::Compute).collat_amount) + " " + CURRENCY_UNIT + " on\n"
+        "this network. Only accepted once the Compute activation height is reached.\n"
         + HELP_REQUIRING_PASSPHRASE,
         {
             GetRpcArg("collateralAddress"),
@@ -1883,16 +1883,21 @@ static RPCHelpMan bls_generate()
 {
     return RPCHelpMan{
         "bls generate",
-        "\nReturns a BLS secret/public key pair.\n",
+        "\nGenerates a new BLS secret/public key pair and returns it.\n"
+        "With the wallet built in, it needs a loaded wallet, unlocked if it is encrypted, and also stores the\n"
+        "new secret key in that wallet's BLS key store.\n"
+        "The reply shows the secret key: anyone who has it can sign as the masternode operator, so keep it private.\n",
         {
-            {"legacy", RPCArg::Type::BOOL, RPCArg::Default{false}, "Set it true if need in legacy BLS scheme"},
+            {"legacy", RPCArg::Type::BOOL, RPCArg::Default{false}, "Show the public key in the legacy BLS scheme, which only the\n"
+                "protx *_legacy commands read. The default, the basic scheme, is what the other protx commands read.\n"
+                "The secret key is the same either way."},
         },
         RPCResult{RPCResult::Type::OBJ,
                   "",
                   "",
                   {{RPCResult::Type::STR_HEX, "secret", "BLS secret key"},
                    {RPCResult::Type::STR_HEX, "public", "BLS public key"},
-                   {RPCResult::Type::STR_HEX, "scheme", "BLS scheme (valid schemes: legacy, basic)"}}},
+                   {RPCResult::Type::STR, "scheme", "BLS scheme (valid schemes: legacy, basic)"}}},
         RPCExamples{HelpExampleCli("bls generate", "")},
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue {
 
@@ -1941,7 +1946,7 @@ static RPCHelpMan bls_fromsecret()
                   {
                       {RPCResult::Type::STR_HEX, "secret", "BLS secret key"},
                       {RPCResult::Type::STR_HEX, "public", "BLS public key"},
-                      {RPCResult::Type::STR_HEX, "scheme", "BLS scheme (valid schemes: legacy, basic)"},
+                      {RPCResult::Type::STR, "scheme", "BLS scheme (valid schemes: legacy, basic)"},
                   }},
         RPCExamples{
             HelpExampleCli("bls fromsecret", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")},

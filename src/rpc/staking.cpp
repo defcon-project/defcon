@@ -30,41 +30,47 @@ extern std::vector<CStakeWallet> stakable_wallets;
 static RPCHelpMan getstakinginfo()
 {
     return RPCHelpMan{"getstakinginfo",
-                "\nReturns an object containing staking-related information.",
+                "\nReturns staking information for each wallet in the node's staking list (see liststakingwallets), keyed\n"
+                "by its wallet id, whichever wallet the call names. Empty when the list is: with no wallet loaded, with\n"
+                "-staking=0, and in a build without the wallet.",
                 {},
                 RPCResult{
-                    RPCResult::Type::OBJ, "", "",
+                    RPCResult::Type::OBJ_DYN, "", "",
                     {
-                        {RPCResult::Type::BOOL, "staking", "Whether this wallet's staking switch is on"},
-                        {RPCResult::Type::BOOL, "minter_running", "Whether the staking thread is inside its loop right now. Node-wide, not per wallet: one minter serves every staking wallet, so a false here means nothing is being staked whatever the fields above report."},
-                        {RPCResult::Type::NUM_TIME, "minter_running_since", /*optional=*/true, "When the minter's current uninterrupted run began (UNIX epoch seconds). Absent when it is not running."},
-                        {RPCResult::Type::STR, "last_error", /*optional=*/true, "The minter's last failure. Node-wide, absent when it has never failed, and a HIGH-WATER MARK rather than a live status: nothing clears it, so that a fault which recurs stays visible instead of disappearing between failures. To tell a live fault from one already survived, compare last_error_time against minter_running_since -- an error stamped before the current run began has been recovered from."},
-                        {RPCResult::Type::NUM_TIME, "last_error_time", /*optional=*/true, "When that failure happened (UNIX epoch seconds). Present only with last_error."},
-                        {RPCResult::Type::STR, "errors", "Error messages"},
-                        {RPCResult::Type::NUM, "pooledtx", "The size of the mempool"},
-                        {RPCResult::Type::NUM, "difficulty", "The current difficulty"},
-                        {RPCResult::Type::NUM, "search-interval", "The staker search interval"},
-                        {RPCResult::Type::NUM, "weight", "The staker weight"},
-                        {RPCResult::Type::NUM, "netstakeweight", "Network stake weight"},
-                        {RPCResult::Type::NUM, "expectedtime", "Expected time to earn reward"},
-                        {RPCResult::Type::STR_AMOUNT, "stake_target", "Base size used by the staking layout policy. With consolidation enabled see stake_compact_target and stake_split_threshold. Derived from netstakeweight unless -staketarget is set"},
-                        {RPCResult::Type::BOOL, "stake_target_configured", "Whether stake_target comes from -staketarget rather than from the network"},
-                        {RPCResult::Type::BOOL, "stake_combine", "Whether continuous stake consolidation is enabled (-stakecombine)"},
-                        {RPCResult::Type::STR, "stake_combine_scope", "wallet links own addresses on chain; key stays within the winning key"},
-                        {RPCResult::Type::STR_AMOUNT, "stake_compact_target", "Target piece size when consolidation is enabled"},
-                        {RPCResult::Type::STR_AMOUNT, "stake_split_threshold", "Splitting boundary when consolidation is enabled; collateral avoidance and stake limits take precedence"},
-                        {RPCResult::Type::NUM, "stake_combine_rest_budget_bps", "Optional consolidation pauses when the wallet resting-value budget is exhausted; 100 basis points is one percent"},
-                        {RPCResult::Type::STR_AMOUNT, "stake_combine_rest_allowance", "What is left of that budget now: the stakeable value optional consolidation may still set resting, after the value already resting (immature and too_young). A win first takes its own coin off this and rests at most stake_target more; 0 means only outputs under the minimum stakeable amount are still combined"},
-                        {RPCResult::Type::NUM, "stake_outputs", "Spendable outputs, including outputs that are not eligible to stake; this is not a count of combined outputs"},
-                        {RPCResult::Type::OBJ, "excluded", /*optional=*/true, "Coins the staking rules keep out, by reason. Absent when none are.",
+                        {RPCResult::Type::OBJ, "id", "One staking wallet",
                         {
-                            {RPCResult::Type::STR_AMOUNT, "immature", /*optional=*/true, "Rewards not yet deep enough to spend"},
-                            {RPCResult::Type::STR_AMOUNT, "bls", /*optional=*/true, "Held at a BLS address, which cannot stake"},
-                            {RPCResult::Type::STR_AMOUNT, "too_small", /*optional=*/true, "Under the minimum stakeable amount"},
-                            {RPCResult::Type::STR_AMOUNT, "too_large", /*optional=*/true, "Over the maximum stakeable amount"},
-                            {RPCResult::Type::STR_AMOUNT, "collateral_amount", /*optional=*/true, "Exactly a masternode collateral amount"},
-                            {RPCResult::Type::STR_AMOUNT, "too_young", /*optional=*/true, "Not yet old enough to stake"},
-                            {RPCResult::Type::STR_AMOUNT, "too_old", /*optional=*/true, "Older than the stake age limit"},
+                            {RPCResult::Type::STR, "name", "The wallet's name"},
+                            {RPCResult::Type::BOOL, "staking", "Whether this wallet's staking switch is on"},
+                            {RPCResult::Type::BOOL, "minter_running", "Whether the staking thread is inside its loop right now. Node-wide, not per wallet: one minter serves every staking wallet, so a false here means nothing is being staked whatever the fields above report."},
+                            {RPCResult::Type::NUM_TIME, "minter_running_since", /*optional=*/true, "When the minter's current uninterrupted run began (UNIX epoch seconds). Absent when it is not running."},
+                            {RPCResult::Type::STR, "last_error", /*optional=*/true, "The minter's last failure. Node-wide, absent when it has never failed, and a HIGH-WATER MARK rather than a live status: nothing clears it, so that a fault which recurs stays visible instead of disappearing between failures. To tell a live fault from one already survived, compare last_error_time against minter_running_since -- an error stamped before the current run began has been recovered from."},
+                            {RPCResult::Type::NUM_TIME, "last_error_time", /*optional=*/true, "When that failure happened (UNIX epoch seconds). Present only with last_error."},
+                            {RPCResult::Type::STR, "errors", "Error messages"},
+                            {RPCResult::Type::NUM, "pooledtx", "The size of the mempool"},
+                            {RPCResult::Type::NUM, "difficulty", "The current difficulty"},
+                            {RPCResult::Type::NUM, "search-interval", "Despite the name, a time (UNIX epoch seconds), not a duration: the staking thread searches this wallet only at block times later than this. It is set to the time of a search that found no stake, or to 60 seconds past it when a search is skipped for too low a balance or no eligible outputs; a search that finds a stake leaves it as it was. 0 until first set"},
+                            {RPCResult::Type::NUM, "weight", "The staker weight"},
+                            {RPCResult::Type::NUM, "netstakeweight", "Network stake weight"},
+                            {RPCResult::Type::NUM, "expectedtime", /*optional=*/true, "Expected time to earn a reward, in seconds: an estimate from this wallet's weight and the network's. Absent when the weight is 0"},
+                            {RPCResult::Type::STR_AMOUNT, "stake_target", "Base size used by the staking layout policy. With consolidation enabled see stake_compact_target and stake_split_threshold. Derived from netstakeweight unless -staketarget is set"},
+                            {RPCResult::Type::BOOL, "stake_target_configured", "Whether stake_target comes from -staketarget rather than from the network"},
+                            {RPCResult::Type::BOOL, "stake_combine", "Whether continuous stake consolidation is enabled (-stakecombine)"},
+                            {RPCResult::Type::STR, "stake_combine_scope", "wallet links own addresses on chain; key stays within the winning key"},
+                            {RPCResult::Type::STR_AMOUNT, "stake_compact_target", "Target piece size when consolidation is enabled"},
+                            {RPCResult::Type::STR_AMOUNT, "stake_split_threshold", "Splitting boundary when consolidation is enabled; collateral avoidance and stake limits take precedence"},
+                            {RPCResult::Type::NUM, "stake_combine_rest_budget_bps", "Optional consolidation pauses when the wallet resting-value budget is exhausted; 100 basis points is one percent"},
+                            {RPCResult::Type::STR_AMOUNT, "stake_combine_rest_allowance", "What is left of that budget now: the stakeable value optional consolidation may still set resting, after the value already resting (immature and too_young). A win first takes its own coin off this and rests at most stake_target more; 0 means only outputs under the minimum stakeable amount are still combined"},
+                            {RPCResult::Type::NUM, "stake_outputs", "Spendable outputs, including outputs that are not eligible to stake; this is not a count of combined outputs"},
+                            {RPCResult::Type::OBJ, "excluded", /*optional=*/true, "Coins the staking rules keep out, by reason. Absent when none are.",
+                            {
+                                {RPCResult::Type::STR_AMOUNT, "immature", /*optional=*/true, "Rewards not yet deep enough to spend"},
+                                {RPCResult::Type::STR_AMOUNT, "bls", /*optional=*/true, "Held at a BLS address, which cannot stake"},
+                                {RPCResult::Type::STR_AMOUNT, "too_small", /*optional=*/true, "Under the minimum stakeable amount"},
+                                {RPCResult::Type::STR_AMOUNT, "too_large", /*optional=*/true, "Over the maximum stakeable amount"},
+                                {RPCResult::Type::STR_AMOUNT, "collateral_amount", /*optional=*/true, "Exactly a masternode collateral amount"},
+                                {RPCResult::Type::STR_AMOUNT, "too_young", /*optional=*/true, "Not yet old enough to stake"},
+                                {RPCResult::Type::STR_AMOUNT, "too_old", /*optional=*/true, "Older than the stake age limit"},
+                            }},
                         }},
                     }
                 },
@@ -244,21 +250,23 @@ static RPCHelpMan getstakinginfo()
 static RPCHelpMan liststakingwallets()
 {
     return RPCHelpMan{"liststakingwallets",
-        "\nReturns a list of staking-capable wallets.",
+        "\nReturns the node's staking list, keyed by wallet id: the id that setstaking takes. The staking thread fills\n"
+        "the list with the loaded wallets when it starts and keeps it up to date while it runs, so the list is empty\n"
+        "when the node runs with -staking=0. Being listed does not mean a wallet can stake; a wallet without private\n"
+        "keys is listed too.",
         {},
         RPCResult{
-            RPCResult::Type::OBJ, "", "",
+            RPCResult::Type::OBJ_DYN, "", "",
             {
-                {RPCResult::Type::OBJ, "id", "List of wallet ids for loaded wallets.",
+                {RPCResult::Type::OBJ, "id", "One staking wallet",
                 {
                     {RPCResult::Type::STR, "name", "Wallet name"},
                     {RPCResult::Type::BOOL, "enabled", "Wallet staking status"},
-                    {RPCResult::Type::STR, "balance", "Wallet current balance"}
+                    {RPCResult::Type::STR, "balance", "The wallet's available balance less its reserve balance, as a decimal string"}
                 }},
             }},
         RPCExamples{
             HelpExampleCli("liststakingwallets", "")
-    + HelpExampleCli("liststakingwallets", "")
     + HelpExampleRpc("liststakingwallets", "")
         },
         [&](const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
@@ -297,12 +305,17 @@ static RPCHelpMan liststakingwallets()
 static RPCHelpMan setstaking()
 {
     return RPCHelpMan{"setstaking",
-        "\nToggles staking status on a staking wallet.",
+        "\nToggles the staking switch of a wallet: a call turns it off if it was on, and tries to turn it on if it was off.\n"
+        "Turning it on can fail, and the reply is then false: for example for a descriptor wallet that is locked (an\n"
+        "unlock for mixing only is enough) or holds no private keys, whose coinstake descriptors cannot be prepared.\n"
+        "There is no argument to choose the position; read it first with liststakingwallets.",
         {
             {"id", RPCArg::Type::NUM, RPCArg::Optional::NO, "The walletid (as shown by liststakingwallets)."},
         },
-        RPCResult{
-            RPCResult::Type::BOOL, "enabled", "Wallet staking status"},
+        {
+            RPCResult{"for a wallet id that exists", RPCResult::Type::BOOL, "enabled", "Whether the switch is on after the call"},
+            RPCResult{"for a wallet id that is not in the staking list", RPCResult::Type::NONE, "", ""},
+        },
         RPCExamples{
             HelpExampleCli("setstaking", "1")
     + HelpExampleRpc("setstaking", "1")
