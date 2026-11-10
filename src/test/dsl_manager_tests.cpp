@@ -35,6 +35,15 @@ uint256 TaggedHash(uint64_t a, uint64_t b, std::string_view tag)
     return w.GetHash();
 }
 
+// SF1-L: the store and the manager take only the epoch base's own list (its block hash is the base's). The
+// fixture's list is shared by every base a test names, so each call gets a copy stamped with that base.
+CDeterministicMNList BaseList(const CDeterministicMNList& list, const uint256& base)
+{
+    CDeterministicMNList out{list};
+    out.SetBlockHash(base);
+    return out;
+}
+
 struct Fixture {
     CDeterministicMNList list{uint256(), 1, 0};
     std::map<uint256, CBLSSecretKey> opKeys;
@@ -181,8 +190,8 @@ BOOST_AUTO_TEST_CASE(liveness_announcements_flood_once_and_bind_identity)
     BOOST_CHECK(ann.proTxHash == target);
 
     // ...and is accepted here on first sight (relay) and refused as a duplicate
-    BOOST_CHECK(mgr.ProcessResponse(ann, fx.list, fx.epoch));
-    BOOST_CHECK(!mgr.ProcessResponse(ann, fx.list, fx.epoch));
+    BOOST_CHECK(mgr.ProcessResponse(ann, BaseList(fx.list, fx.epoch), fx.epoch));
+    BOOST_CHECK(!mgr.ProcessResponse(ann, BaseList(fx.list, fx.epoch), fx.epoch));
     const auto after = mgr.PendingChallenges(fx.list, me, params);
     BOOST_CHECK(std::find(after.begin(), after.end(), target) == after.end());
 
@@ -190,14 +199,14 @@ BOOST_AUTO_TEST_CASE(liveness_announcements_flood_once_and_bind_identity)
     // signature was bound to this one
     dsl::CPoSeServiceResponse replayed = ann;
     replayed.nEpoch = 499;
-    BOOST_CHECK(!mgr.ProcessResponse(replayed, fx.list, TaggedHash(499, 0, "epoch")));
+    BOOST_CHECK(!mgr.ProcessResponse(replayed, BaseList(fx.list, TaggedHash(499, 0, "epoch")), TaggedHash(499, 0, "epoch")));
 
     // claiming another node's identity fails on its operator key
     dsl::CPoSeServiceResponse stolen;
     stolen.nEpoch = 500;
     stolen.proTxHash = me; // claims to be `me`, but signs with the target's key
     stolen.sig = dsl::SignChallengeResponse(fx.opKeys[target], fx.epoch, me);
-    BOOST_CHECK(!mgr.ProcessResponse(stolen, fx.list, fx.epoch));
+    BOOST_CHECK(!mgr.ProcessResponse(stolen, BaseList(fx.list, fx.epoch), fx.epoch));
 
     // an announcement from a node not on the list is refused
     dsl::CPoSeServiceResponse ghost;
@@ -206,7 +215,7 @@ BOOST_AUTO_TEST_CASE(liveness_announcements_flood_once_and_bind_identity)
     CBLSSecretKey ghostKey;
     ghostKey.MakeNewKey();
     ghost.sig = dsl::SignChallengeResponse(ghostKey, fx.epoch, ghost.proTxHash);
-    BOOST_CHECK(!mgr.ProcessResponse(ghost, fx.list, fx.epoch));
+    BOOST_CHECK(!mgr.ProcessResponse(ghost, BaseList(fx.list, fx.epoch), fx.epoch));
 }
 
 // An announcement that outruns the local epoch tick -- seen on a live regtest
@@ -232,7 +241,7 @@ BOOST_AUTO_TEST_CASE(announcement_ahead_of_the_local_tick_is_kept)
     BOOST_CHECK_EQUAL(ann.nEpoch, 501u);
 
     // accepted while we still sit in epoch 500 (the caller supplies 501's hash)
-    BOOST_CHECK(mgr.ProcessResponse(ann, fx.list, epoch501));
+    BOOST_CHECK(mgr.ProcessResponse(ann, BaseList(fx.list, epoch501), epoch501));
     // it does not pollute the current epoch...
     BOOST_CHECK(!mgr.HasResponded(target));
     // ...and once our tick catches up, it is already there
@@ -262,15 +271,15 @@ BOOST_AUTO_TEST_CASE(process_report_pools_and_refuses_unknown_epoch)
     rep.Sign(fx.opKeys[sentinel], fx.epoch);
 
     // a valid peer report pools once (and would be relayed); a duplicate does not
-    BOOST_CHECK(mgr.ProcessReport(rep, fx.list, fx.epoch, params));
-    BOOST_CHECK(!mgr.ProcessReport(rep, fx.list, fx.epoch, params));
+    BOOST_CHECK(mgr.ProcessReport(rep, BaseList(fx.list, fx.epoch), fx.epoch, params));
+    BOOST_CHECK(!mgr.ProcessReport(rep, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK_EQUAL(mgr.Store().GetReportsForEpoch(500).size(), 1u);
 
     // a report for an epoch far outside the retained window is refused
     dsl::CPoSeServiceReport ancient = rep;
     ancient.nEpoch = 400;
     ancient.Sign(fx.opKeys[sentinel], fx.epoch);
-    BOOST_CHECK(!mgr.ProcessReport(ancient, fx.list, fx.epoch, params));
+    BOOST_CHECK(!mgr.ProcessReport(ancient, BaseList(fx.list, fx.epoch), fx.epoch, params));
 }
 
 // A reorg that swaps an epoch's base block must discard the state gathered
@@ -297,7 +306,7 @@ BOOST_AUTO_TEST_CASE(reorg_rebasing_an_epoch_clears_its_state)
     ann.nEpoch = 500;
     ann.proTxHash = target;
     ann.sig = dsl::SignChallengeResponse(fx.opKeys[target], baseA, target);
-    BOOST_CHECK(mgr.ProcessResponse(ann, fx.list, baseA));
+    BOOST_CHECK(mgr.ProcessResponse(ann, BaseList(fx.list, baseA), baseA));
     BOOST_CHECK(mgr.HasResponded(target));
     const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, baseA,
                                                    static_cast<size_t>(params.nDSLSentinelCount));
@@ -307,7 +316,7 @@ BOOST_AUTO_TEST_CASE(reorg_rebasing_an_epoch_clears_its_state)
     rep.sentinelProTxHash = sentinels.front();
     rep.status = static_cast<uint8_t>(dsl::ServiceStatus::MISSED);
     rep.Sign(fx.opKeys[sentinels.front()], baseA);
-    BOOST_CHECK(mgr.ProcessReport(rep, fx.list, baseA, params));
+    BOOST_CHECK(mgr.ProcessReport(rep, BaseList(fx.list, baseA), baseA, params));
     BOOST_CHECK_EQUAL(mgr.Store().GetReportsForEpoch(500).size(), 1u);
 
     // a same-epoch reorg to a new base clears both, and reports Rebased
@@ -321,7 +330,7 @@ BOOST_AUTO_TEST_CASE(reorg_rebasing_an_epoch_clears_its_state)
     annB.nEpoch = 500;
     annB.proTxHash = target;
     annB.sig = dsl::SignChallengeResponse(fx.opKeys[target], baseB, target);
-    BOOST_CHECK(mgr.ProcessResponse(annB, fx.list, baseB));
+    BOOST_CHECK(mgr.ProcessResponse(annB, BaseList(fx.list, baseB), baseB));
 
     // and calling again for the same (epoch, base) is a no-op
     BOOST_CHECK(mgr.BeginEpoch(500, baseB) == EpochChange::None);
@@ -343,7 +352,7 @@ BOOST_AUTO_TEST_CASE(reorg_rewinding_past_a_boundary_drops_stale_epochs)
         ann.nEpoch = epoch;
         ann.proTxHash = target;
         ann.sig = dsl::SignChallengeResponse(fx.opKeys[target], base, target);
-        BOOST_CHECK(m.ProcessResponse(ann, fx.list, base));
+        BOOST_CHECK(m.ProcessResponse(ann, BaseList(fx.list, base), base));
         const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, base,
                                                        static_cast<size_t>(params.nDSLSentinelCount));
         dsl::CPoSeServiceReport rep;
@@ -352,7 +361,7 @@ BOOST_AUTO_TEST_CASE(reorg_rewinding_past_a_boundary_drops_stale_epochs)
         rep.sentinelProTxHash = sentinels.front();
         rep.status = static_cast<uint8_t>(dsl::ServiceStatus::MISSED);
         rep.Sign(fx.opKeys[sentinels.front()], base);
-        BOOST_CHECK(m.ProcessReport(rep, fx.list, base, params));
+        BOOST_CHECK(m.ProcessReport(rep, BaseList(fx.list, base), base, params));
     };
 
     dsl::CPoSeServiceManager mgr;
@@ -379,7 +388,7 @@ BOOST_AUTO_TEST_CASE(reorg_rewinding_past_a_boundary_drops_stale_epochs)
     annB.nEpoch = 500;
     annB.proTxHash = target;
     annB.sig = dsl::SignChallengeResponse(fx.opKeys[target], base500b, target);
-    BOOST_CHECK(mgr.ProcessResponse(annB, fx.list, base500b));
+    BOOST_CHECK(mgr.ProcessResponse(annB, BaseList(fx.list, base500b), base500b));
     BOOST_CHECK(mgr.HasResponded(target));
 }
 
@@ -620,6 +629,77 @@ BOOST_AUTO_TEST_CASE(commitments_stay_bounded_without_the_epoch_tick)
         BOOST_CHECK_EQUAL(held, 2U);
         BOOST_CHECK(mgr.SigningCandidate(last, hashes.back()).has_value());
     }
+}
+
+// SF1-L: who may announce, and with which key, comes from the epoch base's list,
+// as for reports. A list of another block (until SF1-L the tick passed the chain
+// tip's for its own announcement) is refused, even with the same masternodes.
+BOOST_AUTO_TEST_CASE(announcement_needs_the_epoch_base_s_list)
+{
+    auto fx = MakeFixture(40);
+    const uint256 target = TaggedHash(3, 0, "protx");
+    dsl::CPoSeServiceManager mgr;
+    mgr.BeginEpoch(500, fx.epoch);
+    dsl::CPoSeServiceManager targetMgr;
+    targetMgr.BeginEpoch(500, fx.epoch);
+    const auto ann = targetMgr.AnnounceLiveness(target, fx.opKeys[target]);
+
+    const uint256 tip = TaggedHash(500, 1, "tip"); // a block after the base, in the same epoch
+    BOOST_CHECK(!mgr.ProcessResponse(ann, BaseList(fx.list, tip), fx.epoch));
+    BOOST_CHECK(!mgr.HasResponded(target));
+
+    BOOST_CHECK(mgr.ProcessResponse(ann, BaseList(fx.list, fx.epoch), fx.epoch));
+    BOOST_CHECK(mgr.HasResponded(target));
+}
+
+// SF1-L: the POSECHALLENGE answer chooses who it is from one epoch base's list
+// on the message thread, while the tick's BeginEpoch may move the manager on
+// from the validation thread. AnnounceLivenessFor answers for exactly the epoch
+// and base the caller names or not at all, and binds the signature to that pair
+// even if the manager moves while it signs; AnnounceLiveness would have signed
+// for wherever the manager had got to.
+BOOST_AUTO_TEST_CASE(announcement_for_an_epoch_and_base_is_bound_to_them)
+{
+    auto fx = MakeFixture(40);
+    const uint256 me = TaggedHash(3, 0, "protx");
+    const auto sign = [&](const uint256& hash) { return fx.opKeys[me].Sign(hash, /*specificLegacyScheme=*/false); };
+    const uint256 next = TaggedHash(501, 0, "epoch");
+    const uint256 rebased = TaggedHash(500, 7, "rebased");
+
+    // on the pair: an answer for it, which the epoch base's list accepts
+    dsl::CPoSeServiceManager mgr;
+    mgr.BeginEpoch(500, fx.epoch);
+    const auto ann = mgr.AnnounceLivenessFor(500, fx.epoch, me, sign);
+    BOOST_REQUIRE(ann.has_value());
+    BOOST_CHECK_EQUAL(ann->nEpoch, 500u);
+    dsl::CPoSeServiceManager receiver;
+    receiver.BeginEpoch(500, fx.epoch);
+    BOOST_CHECK(receiver.ProcessResponse(*ann, BaseList(fx.list, fx.epoch), fx.epoch));
+
+    // the next epoch began before the answer: none, where AnnounceLiveness signs for the new epoch
+    mgr.BeginEpoch(501, next);
+    BOOST_CHECK(!mgr.AnnounceLivenessFor(500, fx.epoch, me, sign).has_value());
+    BOOST_CHECK_EQUAL(mgr.AnnounceLiveness(me, fx.opKeys[me]).nEpoch, 501u);
+
+    // a reorg swapped the epoch's base, same epoch number: none for the old base
+    dsl::CPoSeServiceManager rebasedMgr;
+    rebasedMgr.BeginEpoch(500, fx.epoch);
+    BOOST_REQUIRE(rebasedMgr.BeginEpoch(500, rebased) == dsl::CPoSeServiceManager::EpochChange::Rebased);
+    BOOST_CHECK(!rebasedMgr.AnnounceLivenessFor(500, fx.epoch, me, sign).has_value());
+
+    // the manager moves on while the answer is being signed: it stays the checked pair's
+    dsl::CPoSeServiceManager movingMgr;
+    movingMgr.BeginEpoch(500, fx.epoch);
+    const auto moved = movingMgr.AnnounceLivenessFor(500, fx.epoch, me, [&](const uint256& hash) {
+        movingMgr.BeginEpoch(501, next);
+        return sign(hash);
+    });
+    BOOST_REQUIRE(moved.has_value());
+    BOOST_CHECK_EQUAL(movingMgr.CurrentEpoch(), 501u);
+    BOOST_CHECK_EQUAL(moved->nEpoch, 500u);
+    dsl::CPoSeServiceManager receiver2;
+    receiver2.BeginEpoch(500, fx.epoch);
+    BOOST_CHECK(receiver2.ProcessResponse(*moved, BaseList(fx.list, fx.epoch), fx.epoch));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

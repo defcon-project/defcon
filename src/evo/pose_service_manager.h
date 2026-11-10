@@ -85,6 +85,9 @@ public:
     /**
      * The targets this node still owes a challenge this epoch: its probe set
      * (GetProbeTargetsForSentinel) minus those already recorded as responding.
+     * The list must be the epoch base's (CDeterministicMNManager::GetListForBlock
+     * of the base block), as for EmitReports: the assignment of any other list
+     * names other targets than the ones the network checks. No live caller yet.
      */
     std::vector<uint256> PendingChallenges(const CDeterministicMNList& list,
                                            const uint256& myProTxHash,
@@ -101,6 +104,19 @@ public:
     CPoSeServiceResponse AnnounceLiveness(const uint256& myProTxHash,
                                           const CBLSSecretKey& myOperatorKey) const;
     CPoSeServiceResponse AnnounceLiveness(const uint256& myProTxHash, const SignerFn& signer) const;
+
+    /**
+     * The same announcement for exactly epoch `nEpoch` on base `epochBlockHash`,
+     * or nothing if the manager is not on that pair. The check and the pair the
+     * signature binds are one read under the manager's lock, and the signer runs
+     * outside it, on that pair. A caller that chose who it is from that base's
+     * list therefore never signs for another epoch or base that BeginEpoch moved
+     * to in between: the POSECHALLENGE answer runs on the message thread while
+     * the tick's BeginEpoch runs on the validation thread.
+     */
+    std::optional<CPoSeServiceResponse> AnnounceLivenessFor(uint32_t nEpoch, const uint256& epochBlockHash,
+                                                            const uint256& myProTxHash,
+                                                            const SignerFn& signer) const;
 
     /**
      * Ingest a liveness announcement received from the flood. The caller derives
@@ -131,7 +147,9 @@ public:
      * This node's signed reports for the current epoch: for every target it was
      * assigned to probe, ONLINE if that target responded and MISSED otherwise,
      * each signed with this node's operator key. The caller stores and relays
-     * them. A node that was assigned no targets emits nothing.
+     * them. A node that was assigned no targets emits nothing. The list must be
+     * the epoch base's: the receivers and the aggregation derive the assignment
+     * from that list, and ProcessReport refuses any other.
      */
     std::vector<CPoSeServiceReport> EmitReports(const CDeterministicMNList& list,
                                                 const uint256& myProTxHash,

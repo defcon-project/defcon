@@ -18,8 +18,9 @@
 # 42406840902; wallet_combineoutputs.py, which the CJ1 change (no CoinJoin amounts in
 # combining) touches, estimated from its local runs until its first hosted run;
 # rpc_help.py and tool_wallet.py, which the command-line conversion fix brought
-# into the gate, likewise; and wallet_multiwallet.py and rpc_getblockstats.py,
-# which came in once they stopped assuming Dash's chain.
+# into the gate, likewise; wallet_multiwallet.py and rpc_getblockstats.py,
+# which came in once they stopped assuming Dash's chain; and
+# feature_dsl_list_change.py (SF1-L), estimated from its local runs.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -82,6 +83,7 @@
 46   tool_wallet.py                         # defcon-wallet: create, info, dump and createfromdump, salvage; both wallets
 43   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 42   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
+40   feature_dsl_list_change.py             # the Sentinel tick speaks from the epoch base's list: a masternode registered or revoked mid-epoch (SF1-L)
 34   feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
 29   feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
 29   rpc_verifyislock.py                    # the lock-verifying RPCs
