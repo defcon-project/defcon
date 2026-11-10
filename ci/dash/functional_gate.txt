@@ -16,7 +16,9 @@
 # seconds"); refresh a line when its test has grown or shrunk a lot. Recorded on
 # push run 42371427370 (2026-11-07); the four tests #379 added, on its PR run
 # 42406840902; wallet_combineoutputs.py, which the CJ1 change (no CoinJoin amounts in
-# combining) touches, estimated from its local runs until its first hosted run.
+# combining) touches, estimated from its local runs until its first hosted run;
+# rpc_help.py and tool_wallet.py, which the command-line conversion fix brought
+# into the gate, likewise.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -77,6 +79,7 @@
 51   feature_pos_double_sign.py             # a stake signed twice is counted once and changes nothing else
 50   wallet_combineoutputs.py               # combineoutputs: previews, batches smallest first, exactly the reported inputs and no change; both wallets
 50   feature_llmq_is_named_quorum_window.py # an InstantSend lock signed by the quorum that has just left the signing-active set, right after a new commitment
+46   tool_wallet.py                         # defcon-wallet: create, info, dump and createfromdump, salvage; both wallets
 43   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 42   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
 34   feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
@@ -95,6 +98,7 @@
 10   feature_superblock_retirement.py       # a test chain with the superblock spork on: getblocktemplate at the retirement height, and the regtest alias
 9    feature_llmq_q60_regtest.py            # the Q60 ChainLock profile (llmq_defcon) on regtest
 9    feature_llmq_switchover_config.py      # the startup guards on the Q60 switchover heights, the v23@N alias
+7    rpc_help.py                            # defcon-cli converts each argument the way the server names it, and the help categories
 6    feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
 5    p2p_headers_uncompressed.py            # the plain headers reader consumes what every writer writes (#220)
 4    feature_addressindex_type_boundary.py  # the P2PKH and P2SH records of one hash on a sparse index, where they are neighbours on disk (#328)
