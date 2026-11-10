@@ -16,6 +16,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stddef.h>
 #include <stdint.h>
 #include <string>
@@ -255,6 +256,11 @@ public:
     //! List the rpc commands the help lists, subcommands included; developer,
     //! deprecated and hidden commands are left out (CRPCCommand::listed).
     virtual std::vector<std::string> listRpcCommands() = 0;
+
+    //! What a listed rpc command does (rpc/commandflags.h: changes, needs a
+    //! loaded wallet, may need it unlocked, ...), by its full name; nullopt
+    //! for a name the table does not have.
+    virtual std::optional<uint8_t> getRpcCommandFlags(const std::string& name) = 0;
 
     //! Set RPC timer interface if unset.
     virtual void rpcSetTimerInterfaceIfUnset(RPCTimerInterface* iface) = 0;

@@ -9,6 +9,8 @@
 #include <QStringList>
 #include <QWidget>
 
+#include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace interfaces {
@@ -46,6 +48,8 @@ public:
         QStringList command_line;
         //! The whole help.
         QString help;
+        //! What the command does, from the node's table (rpc/commandflags.h).
+        std::optional<uint8_t> flags;
     };
 
     explicit CommandBrowser(interfaces::Node& node, QWidget* parent = nullptr);
@@ -66,6 +70,10 @@ public:
     static QString consoleWord(const QString& word);
     //! The topics the list starts with.
     static QStringList featuredTopics();
+    //! The line the details show for these flags: their labels, in a fixed order.
+    static QString flagsLine(uint8_t flags);
+    //! One sentence per label of flagsLine, saying what it means.
+    static QString flagsToolTip(uint8_t flags);
 
 Q_SIGNALS:
     //! Put this text into the console's input line. Nothing is run.
@@ -87,6 +95,7 @@ private:
     QLabel* m_call;
     QLabel* m_summary;
     QLabel* m_topic;
+    QLabel* m_flags;
     QLabel* m_console_title;
     QWidget* m_console_rows;
     QLabel* m_command_line_title;

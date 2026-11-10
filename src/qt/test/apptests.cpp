@@ -510,6 +510,65 @@ void TestCommandBrowser(RPCConsole* console, interfaces::Node& node)
     QCOMPARE(messages->toPlainText(), before);
     line->clear();
 
+    // Each command carries what it does, from the node's flag table
+    // (rpc/commandflags.h), and the line under the topic says it.
+    for (const CommandBrowser::Entry& entry : browser->entries()) {
+        QVERIFY2(entry.flags.has_value(), qPrintable(entry.name));
+        QVERIFY2(entry.flags == node.getRpcCommandFlags(entry.name.toStdString()), qPrintable(entry.name));
+    }
+    auto* flags_line = browser->findChild<QLabel*>("commandFlags");
+    QVERIFY(flags_line);
+    button->click();
+    const QString dot = QStringLiteral(" · ");
+    const QString changes = QStringLiteral("Can change the wallet, the node or the network");
+    const std::vector<std::pair<QString, QString>> expected_lines{
+        {"getblockcount", "Only reads"},
+        {"protx", "Depends on the subcommand"},
+        {"stop", changes},
+        {"gobject list", changes},
+        {"getblocktemplate", changes},
+        {"savemempool", "Only reads"},
+#ifdef ENABLE_WALLET
+        {"sendtoaddress", changes + dot + "Needs a loaded wallet" + dot + "May ask to unlock the wallet"},
+        {"getbalance", "Only reads" + dot + "Needs a loaded wallet"},
+        {"listwallets", "Only reads"},
+        {"getcoinjoininfo", "Only reads" + dot + "Needs a loaded wallet, except on a masternode"},
+#else
+        {"getcoinjoininfo", "Only reads"},
+#endif
+#if ENABLE_MINER
+        {"generatetoaddress", changes + dot + "Only on a new network, before proof of stake begins"},
+#endif
+    };
+    for (const auto& [name, text] : expected_lines) {
+        QVERIFY2(browser->select(name), qPrintable(name));
+        QApplication::processEvents();
+        QVERIFY2(flags_line->isVisible(), qPrintable(name));
+        QCOMPARE(flags_line->text(), text);
+        // One sentence per label.
+        QCOMPARE(flags_line->toolTip().split('\n').size(), text.split(dot).size());
+    }
+
+    // At the tools window's smallest width the line wraps inside the visible
+    // part of the details and is shown whole. Without the wallet the console is
+    // the main window's central widget (bitcoingui.cpp), whose width the main
+    // window's layout sets, so there is no tools window to narrow.
+    if (console->isWindow()) {
+        const QSize saved_size = console->size();
+        console->resize(1, 700);
+        QVERIFY(browser->select("sendtoaddress") || browser->select("stop"));
+        QApplication::processEvents();
+        auto* area = browser->findChild<QScrollArea*>("commandDetailsArea");
+        QVERIFY(area);
+        const QRect in_view(flags_line->mapTo(area->viewport(), QPoint(0, 0)), flags_line->size());
+        QVERIFY2(in_view.right() < area->viewport()->width(),
+                 qPrintable(QString("window %1, line right %2, view %3").arg(console->width()).arg(in_view.right()).arg(area->viewport()->width())));
+        const QRect text = flags_line->fontMetrics().boundingRect(QRect(0, 0, flags_line->contentsRect().width(), 100000), Qt::TextWordWrap, flags_line->text());
+        QVERIFY2(flags_line->contentsRect().height() >= text.height(),
+                 qPrintable(QString("line height %1, text %2").arg(flags_line->contentsRect().height()).arg(text.height())));
+        console->resize(saved_size);
+    }
+
     // In every theme the details stand on the page's own background: below a short
     // command's details, the pane has the colour of the page's bottom margin.
     {
@@ -550,6 +609,15 @@ void TestCommandBrowser(RPCConsole* console, interfaces::Node& node)
             QApplication::processEvents();
             QVERIFY(console->grab().save(QDir(output).filePath(QString("Console-commands-%1.png").arg(QString::fromLatin1(theme)))));
         }
+        // The flags line at the window's smallest width, in Abyss.
+        QSettings().setValue("theme", "Abyss");
+        GUIUtil::loadTheme(true);
+        console->resize(1, 700);
+        QVERIFY(browser->select("sendtoaddress") || browser->select("stop"));
+        QApplication::processEvents();
+        QVERIFY(console->grab().save(QDir(output).filePath("Console-commands-minwidth.png")));
+        console->resize(1000, 700);
+        QVERIFY(browser->select("combineoutputs") || browser->select("getstakinginfo"));
         QTest::keyClicks(search, "sentinel");
         QApplication::processEvents();
         QVERIFY(console->grab().save(QDir(output).filePath("Console-commands-search.png")));
