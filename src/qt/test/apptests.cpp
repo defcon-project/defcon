@@ -12,8 +12,11 @@
 #include <qt/guiutil.h>
 #include <qt/networkstyle.h>
 #include <qt/rpcconsole.h>
+#include <rpc/request.h>
+#include <rpc/server.h>
 #include <shutdown.h>
 #include <test/util/setup_common.h>
+#include <util/string.h>
 #include <validation.h>
 
 #if defined(HAVE_CONFIG_H)
@@ -21,8 +24,10 @@
 #endif
 
 #include <QAbstractButton>
+#include <QAbstractItemModel>
 #include <QAction>
 #include <QApplication>
+#include <QCompleter>
 #include <QTimer>
 #include <QButtonGroup>
 #include <QDir>
@@ -39,6 +44,8 @@
 #include <QSignalSpy>
 #include <QString>
 #include <QTest>
+#include <QTextCursor>
+#include <QTextDocument>
 #include <QTextEdit>
 #include <QToolBar>
 #include <QToolButton>
@@ -48,6 +55,9 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <map>
+#include <set>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -156,6 +166,197 @@ void TestConsoleSecrets(RPCConsole* console)
     QTest::keyClick(lineEdit, Qt::Key_Up);
     QCOMPARE(lineEdit->text(), QString("walletpassphrase(…)"));
     lineEdit->clear();
+}
+
+//! What one of two sets of names has and the other lacks, for a failure message.
+std::string Difference(const std::set<std::string>& shown, const std::set<std::string>& expected)
+{
+    std::string text;
+    for (const std::string& name : shown) {
+        if (!expected.count(name)) text += " extra: " + name + ";";
+    }
+    for (const std::string& name : expected) {
+        if (!shown.count(name)) text += " missing: " + name + ";";
+    }
+    return text;
+}
+
+//! One rule decides what every command list offers: the main help, the list
+//! of subcommands in the help of a parent command, and the console's
+//! completion. Each list is measured against the registered commands, on the
+//! node the wallet runs, rather than against a copy of the list.
+void TestCommandLists(RPCConsole* console)
+{
+    const std::vector<std::string> registered{tableRPC.listCommands()};
+    const std::vector<std::string> listed_names{tableRPC.listedCommands()};
+    const std::set<std::string> listed(listed_names.begin(), listed_names.end());
+    const auto help = [](const std::string& command) { return tableRPC.help(command, JSONRPCRequest{}); };
+    const auto is_registered = [&registered](const std::string& name) {
+        return std::count(registered.begin(), registered.end(), name) == 1;
+    };
+
+    // The rule leaves developer, deprecated and hidden commands out, and
+    // "help <command>" still describes them.
+    std::vector<std::string> left_out{"faultinject", "faultinject set", "quorum dkgsimerror", "quorum platformsign",
+                                      "getassetunlockstatuses", "masternode current", "masternode winner", "setmocktime", "echo"};
+#ifdef ENABLE_WALLET
+    left_out.emplace_back("getunconfirmedbalance");
+#endif
+    for (const std::string& name : left_out) {
+        QVERIFY2(is_registered(name), name.c_str());
+        QVERIFY2(!listed.count(name), name.c_str());
+        QVERIFY2(help(name).rfind(name, 0) == 0, name.c_str());
+    }
+    for (const char* name : {"help", "getblockcount", "quorum", "quorum list", "masternode connect", "protx info", "dslstatus", "getstakinginfo"}) {
+        QVERIFY2(listed.count(name), name);
+    }
+
+    // The main help: every listed command that is not a subcommand, and nothing else.
+    std::set<std::string> in_help;
+    for (const std::string& line : SplitString(help(""), '\n')) {
+        if (!line.empty() && line.rfind("==", 0) != 0) in_help.insert(line.substr(0, line.find(' ')));
+    }
+    std::set<std::string> commands;
+    for (const std::string& name : listed) {
+        if (name.find(' ') == std::string::npos) commands.insert(name);
+    }
+    QVERIFY2(in_help == commands, Difference(in_help, commands).c_str());
+
+    // Each parent's list of subcommands names exactly its listed subcommands.
+    // Built without the wallet, a parent has fewer of them, and its list too.
+    std::map<std::string, std::set<std::string>> subcommands;
+    for (const std::string& name : registered) {
+        const auto space = name.find(' ');
+        if (space == std::string::npos) continue;
+        auto& listed_here = subcommands[name.substr(0, space)];
+        if (listed.count(name)) listed_here.insert(name.substr(space + 1));
+    }
+    const QRegularExpression entry("^  ([a-z][a-z_-]*) +- ");
+    int parents = 0;
+    for (const auto& [parent, expected] : subcommands) {
+        // "evodb" has subcommands but no help of its own; "faultinject" is a
+        // developer command, and its list is not offered either.
+        if (!listed.count(parent)) continue;
+        ++parents;
+        const std::string text{help(parent)};
+        const auto start = text.find("Available commands:");
+        QVERIFY2(start != std::string::npos, parent.c_str());
+        std::set<std::string> named;
+        for (const std::string& line : SplitString(text.substr(start), '\n')) {
+            const QRegularExpressionMatch match = entry.match(QString::fromStdString(line));
+            if (match.hasMatch()) named.insert(match.captured(1).toStdString());
+        }
+        QVERIFY2(named == expected, (parent + ":" + Difference(named, expected)).c_str());
+    }
+    // quorum, masternode, protx, bls and gobject; coinjoin and coinjoinsalt with the wallet.
+    QVERIFY(parents >= 5);
+
+    // The completion offers each listed command and its help, and help-console.
+    QLineEdit* lineEdit = console->findChild<QLineEdit*>("lineEdit");
+    QVERIFY(lineEdit->completer());
+    const QAbstractItemModel* model = lineEdit->completer()->model();
+    std::set<std::string> offered;
+    for (int row = 0; row < model->rowCount(); ++row) {
+        offered.insert(model->index(row, 0).data().toString().toStdString());
+    }
+    std::set<std::string> words{"help-console"};
+    for (const std::string& name : listed) {
+        words.insert(name);
+        words.insert("help " + name);
+    }
+    QVERIFY2(offered == words, Difference(offered, words).c_str());
+}
+
+//! The lines under "Getting started" in help-console: what is typed, each.
+std::vector<std::string> GettingStarted(const QString& text)
+{
+    std::vector<std::string> typed;
+    const QStringList lines = text.split('\n');
+    const int first = lines.indexOf("Getting started");
+    if (first < 0) return typed;
+    const QRegularExpression step("^   (\\S.*?) - \\S");
+    for (int i = first + 1; i < lines.size() && !lines[i].isEmpty(); ++i) {
+        const QRegularExpressionMatch match = step.match(lines[i]);
+        typed.push_back(match.hasMatch() ? match.captured(1).toStdString() : std::string{"(unreadable) "} + lines[i].toStdString());
+    }
+    return typed;
+}
+
+//! help-console starts with a way in: how to ask for the help of a command
+//! and of a subcommand, then a few commands that only read. Every command it
+//! names is one the help lists, so a build without the wallet, or a command
+//! leaving the lists, takes its line away.
+void TestConsoleHelp(RPCConsole* console)
+{
+    const std::vector<std::string> listed_names{tableRPC.listedCommands()};
+    const std::set<std::string> listed(listed_names.begin(), listed_names.end());
+    const std::vector<std::string> registered{tableRPC.listCommands()};
+    const std::vector<std::string> steps{GettingStarted(RPCConsole::consoleHelp(listed_names))};
+    bool command_help = false;
+    bool subcommand_help = false;
+    for (const std::string& line : steps) {
+        const std::vector<std::string> words{SplitString(line, ' ')};
+        QVERIFY2(!words.empty() && listed.count(words[0]), line.c_str());
+        if (words[0] == "help" && words.size() > 1) {
+            const std::string target{line.substr(5)};
+            QVERIFY2(listed.count(target), line.c_str());
+            (words.size() == 2 ? command_help : subcommand_help) = true;
+        } else if (words.size() > 1) {
+            // "masternode count" is a subcommand; "mnsync status" is mnsync with an argument.
+            const std::string pair{words[0] + " " + words[1]};
+            const bool subcommand = std::count(registered.begin(), registered.end(), pair) == 1;
+            QVERIFY2(!subcommand || listed.count(pair), line.c_str());
+        }
+    }
+    QVERIFY(command_help);
+    QVERIFY(subcommand_help);
+#ifdef ENABLE_WALLET
+    QVERIFY(std::count(steps.begin(), steps.end(), "getwalletinfo") == 1);
+#endif
+
+    // Without the wallet's commands, their lines and the note on the selected wallet go.
+    std::vector<std::string> no_wallet{listed_names};
+    no_wallet.erase(std::remove(no_wallet.begin(), no_wallet.end(), "getwalletinfo"), no_wallet.end());
+    const QString without = RPCConsole::consoleHelp(no_wallet);
+    const std::vector<std::string> fewer{GettingStarted(without)};
+    QVERIFY(std::count(fewer.begin(), fewer.end(), "getwalletinfo") == 0);
+    QVERIFY(std::count(fewer.begin(), fewer.end(), "help protx info") == 1);
+    QVERIFY(!without.contains("Wallet list"));
+
+    // And the console answers help-console with it.
+    QString added;
+    int changes;
+    std::tie(added, changes) = EnterCommand(console, "help-console");
+    QCOMPARE(changes, 4);
+    QVERIFY(added.contains("Getting started"));
+    QVERIFY(added.contains("help protx info"));
+    QVERIFY(added.contains("getblock(getblockhash(0),1)[tx][0]"));
+
+    // A screenshot run captures the reply in each theme, scrolled to its start.
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    if (!output.isEmpty()) {
+        QTextEdit* messagesWidget = console->findChild<QTextEdit*>("messagesWidget");
+        const QVariant saved = QSettings().value("theme");
+        console->resize(1000, 700);
+        QVERIFY(QDir().mkpath(output));
+        for (const char* theme : {"Abyss", "Light", "Dark", "Traditional"}) {
+            QSettings().setValue("theme", theme);
+            GUIUtil::loadTheme(true);
+            QApplication::processEvents();
+            // A theme switch clears the console (RPCConsole::reloadThemedWidgets), so ask again.
+            std::tie(added, changes) = EnterCommand(console, "help-console");
+            QVERIFY(added.contains("Getting started"));
+            messagesWidget->moveCursor(QTextCursor::End);
+            QVERIFY(messagesWidget->find("Getting started", QTextDocument::FindBackward));
+            QTextCursor cursor = messagesWidget->textCursor();
+            cursor.clearSelection();
+            messagesWidget->setTextCursor(cursor);
+            QApplication::processEvents();
+            QVERIFY(console->grab().save(QDir(output).filePath(QString("Console-help-%1.png").arg(QString::fromLatin1(theme)))));
+        }
+        if (saved.isValid()) QSettings().setValue("theme", saved); else QSettings().remove("theme");
+        GUIUtil::loadTheme(true);
+    }
 }
 
 #ifdef ENABLE_WALLET
@@ -502,6 +703,8 @@ void AppTests::consoleTests(RPCConsole* console)
     HandleCallback callback{"consoleTests", *this};
     TestRpcCommand(console);
     TestConsoleSecrets(console);
+    TestCommandLists(console);
+    TestConsoleHelp(console);
 }
 
 //! Destructor to shut down after the last expected callback completes.

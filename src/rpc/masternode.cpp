@@ -491,15 +491,14 @@ static RPCHelpMan masternode_help()
     return RPCHelpMan{"masternode",
         "Set of commands to execute masternode related actions\n"
         "\nAvailable commands:\n"
+        "  connect      - Connect to given masternode\n"
         "  count        - Get information about number of masternodes\n"
-        "  current      - DEPRECATED Print info on current masternode winner to be paid the next block (calculated locally)\n"
 #ifdef ENABLE_WALLET
         "  outputs      - Print masternode compatible outputs\n"
 #endif // ENABLE_WALLET
         "  status       - Print masternode status information\n"
         "  list         - Print list of all known masternodes (see masternodelist for more info)\n"
         "  payments     - Return information about masternode payments in a mined block\n"
-        "  winner       - DEPRECATED Print info on next masternode winner to vote for\n"
         "  winners      - Print list of masternode winners\n",
         {
             {"command", RPCArg::Type::STR, RPCArg::Optional::NO, "The command to execute"},
@@ -722,17 +721,17 @@ void RegisterMasternodeRPCCommands(CRPCTable &t)
 static const CRPCCommand commands[] =
 { //  category              actor (function)
   //  --------------------- -----------------------
-    { "DeFCoN",               &masternode_help,          },
-    { "DeFCoN",               &masternodelist_composite, },
-    { "DeFCoN",               &masternodelist,           },
-    { "DeFCoN",               &masternode_connect,       },
-    { "DeFCoN",               &masternode_count,         },
+    { "masternodes",          &masternode_help,          },
+    { "masternodes",          &masternodelist_composite, },
+    { "masternodes",          &masternodelist,           },
+    { "masternodes",          &masternode_connect,       },
+    { "masternodes",          &masternode_count,         },
 #ifdef ENABLE_WALLET
-    { "DeFCoN",               &masternode_outputs,       },
+    { "masternodes",          &masternode_outputs,       },
 #endif // ENABLE_WALLET
-    { "DeFCoN",               &masternode_status,        },
-    { "DeFCoN",               &masternode_payments,      },
-    { "DeFCoN",               &masternode_winners,       },
+    { "masternodes",          &masternode_status,        },
+    { "masternodes",          &masternode_payments,      },
+    { "masternodes",          &masternode_winners,       },
     { "hidden",             &masternode_current,       },
     { "hidden",             &masternode_winner,        },
 };

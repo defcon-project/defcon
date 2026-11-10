@@ -953,7 +953,6 @@ static RPCHelpMan quorum_help()
             "  listextended      - Extended list of on-chain quorums\n"
             "  info              - Return information about a quorum\n"
             "  dkginfo           - Return information about DKGs\n"
-            "  dkgsimerror       - Simulates DKG errors and malicious behavior\n"
             "  dkgstatus         - Return the status of the current DKG process\n"
             "  memberof          - Checks which quorums the given masternode is a member of\n"
             "  sign              - Threshold-sign a message\n"
@@ -1162,27 +1161,28 @@ void RegisterQuorumsRPCCommands(CRPCTable &tableRPC)
 {
 // clang-format off
 static const CRPCCommand commands[] =
-{ //  category              actor (function)
-  //  --------------------- -----------------------
-    { "evo",                &quorum_help,            },
-    { "evo",                &quorum_list,            },
-    { "evo",                &quorum_list_extended,   },
-    { "evo",                &quorum_info,            },
-    { "evo",                &quorum_dkginfo,         },
-    { "evo",                &quorum_dkgstatus,       },
-    { "evo",                &quorum_memberof,        },
-    { "evo",                &quorum_sign,            },
-    { "evo",                &quorum_platformsign,    },
-    { "evo",                &quorum_verify,          },
-    { "evo",                &quorum_hasrecsig,       },
-    { "evo",                &quorum_getrecsig,       },
-    { "evo",                &quorum_isconflicting,   },
-    { "evo",                &quorum_selectquorum,    },
-    { "evo",                &quorum_dkgsimerror,     },
-    { "evo",                &quorum_getdata,         },
-    { "evo",                &submitchainlock,        },
-    { "evo",                &verifychainlock,        },
-    { "evo",                &verifyislock,           },
+{ //  category              actor (function)         status
+  //  --------------------- ------------------------ ----------------------
+    { "network security",   &quorum_help,            },
+    { "network security",   &quorum_list,            },
+    { "network security",   &quorum_list_extended,   },
+    { "network security",   &quorum_info,            },
+    { "network security",   &quorum_dkginfo,         },
+    { "network security",   &quorum_dkgstatus,       },
+    { "network security",   &quorum_memberof,        },
+    { "network security",   &quorum_sign,            },
+    // Left over from Dash Platform, which this network does not run.
+    { "network security",   &quorum_platformsign,    RPCStatus::DEPRECATED },
+    { "network security",   &quorum_verify,          },
+    { "network security",   &quorum_hasrecsig,       },
+    { "network security",   &quorum_getrecsig,       },
+    { "network security",   &quorum_isconflicting,   },
+    { "network security",   &quorum_selectquorum,    },
+    { "network security",   &quorum_dkgsimerror,     RPCStatus::DEVELOPER },
+    { "network security",   &quorum_getdata,         },
+    { "network security",   &submitchainlock,        },
+    { "network security",   &verifychainlock,        },
+    { "network security",   &verifyislock,           },
 };
 // clang-format on
     for (const auto& command : commands) {

@@ -5172,15 +5172,15 @@ Span<const CRPCCommand> GetWalletRPCCommands()
 {
 // clang-format off
 static const CRPCCommand commands[] =
-{ //  category              actor (function)
-  //  ------------------    ------------------------
+{ //  category              actor (function)                 status
+  //  ------------------    ------------------------         ----------------------
     { "hidden",             &instantsendtoaddress,           },
     { "rawtransactions",    &fundrawtransaction,             },
     { "wallet",             &abandontransaction,             },
     { "wallet",             &abortrescan,                    },
     { "wallet",             &addmultisigaddress,             },
     { "wallet",             &backupwallet,                   },
-    { "wallet",             &combineoutputs,                 },
+    { "staking",            &combineoutputs,                 },
     { "wallet",             &createwallet,                   },
     { "wallet",             &restorewallet,                  },
     { "wallet",             &dumphdinfo,                     },
@@ -5195,7 +5195,7 @@ static const CRPCCommand commands[] =
     { "wallet",             &getreceivedbyaddress,           },
     { "wallet",             &getreceivedbylabel,             },
     { "wallet",             &gettransaction,                 },
-    { "wallet",             &getunconfirmedbalance,          },
+    { "wallet",             &getunconfirmedbalance,          RPCStatus::DEPRECATED },
     { "wallet",             &getbalances,                    },
     { "wallet",             &getwalletinfo,                  },
     { "wallet",             &importaddress,                  },
@@ -5229,8 +5229,8 @@ static const CRPCCommand commands[] =
     { "wallet",             &sendmany,                       },
     { "wallet",             &sendtoaddress,                  },
     { "wallet",             &sethdseed,                      },
-    { "wallet",             &setcoinjoinrounds,              },
-    { "wallet",             &setcoinjoinamount,              },
+    { "CoinJoin",           &setcoinjoinrounds,              },
+    { "CoinJoin",           &setcoinjoinamount,              },
     { "wallet",             &setlabel,                       },
     { "wallet",             &settxfee,                       },
     { "wallet",             &setwalletflag,                  },

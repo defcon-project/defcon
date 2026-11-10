@@ -252,7 +252,8 @@ public:
     //! Execute rpc command.
     virtual UniValue executeRpc(const std::string& command, const UniValue& params, const std::string& uri) = 0;
 
-    //! List rpc commands.
+    //! List the rpc commands the help lists, subcommands included; developer,
+    //! deprecated and hidden commands are left out (CRPCCommand::listed).
     virtual std::vector<std::string> listRpcCommands() = 0;
 
     //! Set RPC timer interface if unset.

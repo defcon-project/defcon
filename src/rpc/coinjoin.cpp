@@ -474,16 +474,16 @@ void RegisterCoinJoinRPCCommands(CRPCTable &t)
 static const CRPCCommand commands[] =
 { //  category               actor (function)
   //  ---------------------  -----------------------
-    { "DeFCoN",                &getcoinjoininfo,        },
+    { "CoinJoin",              &getcoinjoininfo,        },
 #ifdef ENABLE_WALLET
-    { "DeFCoN",                &coinjoin,               },
-    { "DeFCoN",                &coinjoin_reset,         },
-    { "DeFCoN",                &coinjoin_start,         },
-    { "DeFCoN",                &coinjoin_stop,          },
-    { "DeFCoN",                &coinjoinsalt,           },
-    { "DeFCoN",                &coinjoinsalt_generate,  },
-    { "DeFCoN",                &coinjoinsalt_get,       },
-    { "DeFCoN",                &coinjoinsalt_set,       },
+    { "CoinJoin",              &coinjoin,               },
+    { "CoinJoin",              &coinjoin_reset,         },
+    { "CoinJoin",              &coinjoin_start,         },
+    { "CoinJoin",              &coinjoin_stop,          },
+    { "CoinJoin",              &coinjoinsalt,           },
+    { "CoinJoin",              &coinjoinsalt_generate,  },
+    { "CoinJoin",              &coinjoinsalt_get,       },
+    { "CoinJoin",              &coinjoinsalt_set,       },
 
     { "hidden",              &getpoolinfo,            },
 #endif // ENABLE_WALLET

@@ -642,6 +642,75 @@ bool RPCConsole::RPCParseCommandLine(interfaces::Node* node, std::string &strRes
     }
 }
 
+QString RPCConsole::consoleHelp(const std::vector<std::string>& listed)
+{
+    const auto offered = [&listed](const std::string& name) {
+        return std::find(listed.begin(), listed.end(), name) != listed.end();
+    };
+    // Every line is shown as it is typed, so the commands stay out of the
+    // translated text. A line is left out when the command it names is not
+    // offered: a build without the wallet has no wallet commands.
+    struct Step {
+        const char* typed;
+        const char* command;
+        QString what;
+    };
+    const std::vector<Step> steps{
+        //: help-console: what typing the command on the left does.
+        {"help", "help", tr("lists the commands by topic")},
+        //: help-console: what typing the command on the left does.
+        {"help getstakinginfo", "getstakinginfo", tr("describes one command")},
+        //: help-console: what typing the command on the left does.
+        {"help protx info", "protx info", tr("describes one subcommand")},
+        //: help-console: what typing the command on the left does.
+        {"getwalletinfo", "getwalletinfo", tr("the state of the selected wallet")},
+        //: help-console: what typing the command on the left does.
+        {"getstakinginfo", "getstakinginfo", tr("the staking state of every wallet on the staking list")},
+        //: help-console: what typing the command on the left does.
+        {"mnsync status", "mnsync", tr("how far this node has synced")},
+        //: help-console: what typing the command on the left does.
+        {"masternode count", "masternode count", tr("how many masternodes this node knows of")},
+        //: help-console: what typing the command on the left does.
+        {"dslstatus", "dslstatus", tr("what this node's Sentinel probe sees in the current epoch")},
+    };
+    // The console's font is proportional, so the lines are not padded into columns.
+    QString text = "\n" + tr("Getting started") + "\n";
+    for (const Step& step : steps) {
+        if (!offered(step.command)) continue;
+        text += QStringLiteral("   %1 - %2\n").arg(QString::fromLatin1(step.typed), step.what);
+    }
+    text += "\n";
+    if (offered("getwalletinfo")) {
+        text += tr("A command that works on a wallet uses the wallet chosen in the Wallet list above. "
+                   "While only one wallet is loaded the list stays hidden, and that wallet is used.") + "\n";
+    }
+    //: help-console. %1 is the name of the command-line client.
+    text += tr("The examples in the help of a command are written for %1 and for curl. "
+               "Here, type only the command and its arguments.").arg("defcon-cli") + "\n\n";
+
+    text += tr("How to type a command") + "\n";
+    //: help-console: the label in front of an example command.
+    const QString example = tr("example:");
+    const auto rule = [&](const QString& what, std::initializer_list<const char*> typed) {
+        text += what + "\n";
+        bool first = true;
+        for (const char* line : typed) {
+            text += QStringLiteral("   %1 %2\n").arg((first ? example : QString()).leftJustified(12), QString::fromLatin1(line));
+            first = false;
+        }
+        text += "\n";
+    };
+    rule(tr("This console accepts RPC commands using the standard syntax."), {"getblockhash 0"});
+    rule(tr("This console can also accept RPC commands using the parenthesized syntax."), {"getblockhash(0)"});
+    rule(tr("Commands may be nested when specified with the parenthesized syntax."), {"getblock(getblockhash(0) 1)"});
+    rule(tr("A space or a comma can be used to delimit arguments for either syntax."), {"getblockhash 0", "getblockhash,0"});
+    rule(tr("Named results can be queried with a non-quoted key string in brackets using the parenthesized syntax."),
+         {"getblock(getblockhash(0) 1)[tx]"});
+    rule(tr("Results without keys can be queried with an integer in brackets using the parenthesized syntax."),
+         {"getblock(getblockhash(0),1)[tx][0]"});
+    return text;
+}
+
 void RPCExecutor::request(const QString &command, const WalletModel* wallet_model)
 {
     try
@@ -651,25 +720,7 @@ void RPCExecutor::request(const QString &command, const WalletModel* wallet_mode
 
         // Catch the console-only-help command before RPC call is executed and reply with help text as-if a RPC reply.
         if(executableCommand == "help-console\n") {
-            Q_EMIT reply(RPCConsole::CMD_REPLY, QString(("\n"
-                "This console accepts RPC commands using the standard syntax.\n"
-                "   example:    getblockhash 0\n\n"
-
-                "This console can also accept RPC commands using the parenthesized syntax.\n"
-                "   example:    getblockhash(0)\n\n"
-
-                "Commands may be nested when specified with the parenthesized syntax.\n"
-                "   example:    getblock(getblockhash(0) 1)\n\n"
-
-                "A space or a comma can be used to delimit arguments for either syntax.\n"
-                "   example:    getblockhash 0\n"
-                "               getblockhash,0\n\n"
-
-                "Named results can be queried with a non-quoted key string in brackets using the parenthesized syntax.\n"
-                "   example:    getblock(getblockhash(0) 1)[tx]\n\n"
-
-                "Results without keys can be queried with an integer in brackets using the parenthesized syntax.\n"
-                "   example:    getblock(getblockhash(0),1)[tx][0]\n\n")));
+            Q_EMIT reply(RPCConsole::CMD_REPLY, RPCConsole::consoleHelp(m_node.listRpcCommands()));
             return;
         }
         if (!RPCConsole::RPCExecuteCommandLine(m_node, result, executableCommand, nullptr, wallet_model)) {
@@ -1017,7 +1068,8 @@ void RPCConsole::setClientModel(ClientModel *model, int bestblock_height, int64_
         ui->startupTime->setText(model->formatClientStartupTime());
         ui->networkName->setText(QString::fromStdString(Params().NetworkIDString()));
 
-        //Setup autocomplete and attach it
+        // Setup autocomplete and attach it. It offers what the help lists, by
+        // the same rule; a command left out still runs when typed in full.
         QStringList wordList;
         std::vector<std::string> commandList = m_node.listRpcCommands();
         for (size_t i = 0; i < commandList.size(); ++i)

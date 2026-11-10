@@ -579,7 +579,7 @@ public:
                 JSONRPCRequest wallet_request = request;
                 wallet_request.context = m_context;
                 return command.actor(wallet_request, result, last_handler);
-            }, command.argNames, command.unique_id);
+            }, command.argNames, command.unique_id, command.status);
             m_rpc_handlers.emplace_back(m_context.chain->handleRpc(m_rpc_commands.back()));
         }
     }

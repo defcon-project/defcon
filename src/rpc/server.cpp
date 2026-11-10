@@ -94,9 +94,17 @@ std::string CRPCTable::help(const std::string& strCommand, const JSONRPCRequest&
     std::set<intptr_t> setDone;
     std::vector<std::pair<std::string, const CRPCCommand*> > vCommands;
 
-    for (const auto& entry : mapCommands)
-        vCommands.push_back(make_pair(entry.second.front()->category + entry.first, entry.second.front()));
-    sort(vCommands.begin(), vCommands.end());
+    for (const auto& entry : mapCommands) {
+        // A command whose handlers were all removed again.
+        if (entry.second.empty()) continue;
+        vCommands.push_back(make_pair(entry.first, entry.second.front()));
+    }
+    // By topic, then by name. A topic's case does not count, so "CoinJoin" sits
+    // among the lowercase topics; and a topic that begins with another one's
+    // name ("network security") comes after it, not among it.
+    sort(vCommands.begin(), vCommands.end(), [](const auto& a, const auto& b) {
+        return std::make_pair(ToLower(a.second->category), a.first) < std::make_pair(ToLower(b.second->category), b.first);
+    });
 
     JSONRPCRequest jreq = helpreq;
     jreq.mode = JSONRPCRequest::GET_HELP;
@@ -106,7 +114,9 @@ std::string CRPCTable::help(const std::string& strCommand, const JSONRPCRequest&
     {
         const CRPCCommand *pcmd = command.second;
         std::string strMethod = pcmd->name;
-        if ((strCommand != "" || pcmd->category == "hidden") && strMethod != strCommand)
+        // The main help lists what the command lists offer; "help <command>"
+        // answers for every registered command.
+        if (strCommand.empty() ? !pcmd->listed() : strMethod != strCommand)
             continue;
 
         const auto pos_separator{strMethod.find(' ')};
@@ -634,6 +644,15 @@ std::vector<std::string> CRPCTable::listCommands() const
 {
     std::vector<std::string> commandList;
     for (const auto& i : mapCommands) commandList.emplace_back(i.first);
+    return commandList;
+}
+
+std::vector<std::string> CRPCTable::listedCommands() const
+{
+    std::vector<std::string> commandList;
+    for (const auto& [name, handlers] : mapCommands) {
+        if (!handlers.empty() && handlers.front()->listed()) commandList.emplace_back(name);
+    }
     return commandList;
 }
 
