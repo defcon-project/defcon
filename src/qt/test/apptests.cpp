@@ -5,9 +5,11 @@
 #include <qt/test/apptests.h>
 
 #include <chainparams.h>
+#include <interfaces/node.h>
 #include <key.h>
 #include <qt/bitcoin.h>
 #include <qt/bitcoingui.h>
+#include <qt/commandbrowser.h>
 #include <qt/starfieldwidget.h>
 #include <qt/guiutil.h>
 #include <qt/networkstyle.h>
@@ -16,6 +18,7 @@
 #include <rpc/server.h>
 #include <shutdown.h>
 #include <test/util/setup_common.h>
+#include <univalue.h>
 #include <util/string.h>
 #include <validation.h>
 
@@ -38,10 +41,13 @@
 #include <QLineEdit>
 #include <QPainter>
 #include <QPixmap>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QScopedPointer>
+#include <QScrollArea>
 #include <QSettings>
 #include <QSignalSpy>
+#include <QStackedWidget>
 #include <QString>
 #include <QTest>
 #include <QTextCursor>
@@ -49,6 +55,8 @@
 #include <QTextEdit>
 #include <QToolBar>
 #include <QToolButton>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QtGlobal>
 #include <QtTest/QtTestWidgets>
 #include <QtTest/QtTestGui>
@@ -357,6 +365,199 @@ void TestConsoleHelp(RPCConsole* console)
         if (saved.isValid()) QSettings().setValue("theme", saved); else QSettings().remove("theme");
         GUIUtil::loadTheme(true);
     }
+}
+
+//! The arguments the console hands to a command for what follows its name, read
+//! back through the hidden echo command, which returns them as it got them.
+std::string ConsoleArguments(interfaces::Node& node, const QString& rest)
+{
+    std::string result;
+    const QString line = QStringLiteral("echo") + rest;
+    RPCConsole::RPCExecuteCommandLine(node, result, line.toStdString());
+    return result;
+}
+
+//! The Commands page: every command the help lists, by topic, searchable; each
+//! with its help's examples, those for this console giving exactly the
+//! arguments the defcon-cli example gives, ready to copy or to put into the
+//! console's input line without running.
+void TestCommandBrowser(RPCConsole* console, interfaces::Node& node)
+{
+    QApplication::setActiveWindow(console->window());
+    auto* button = console->findChild<QPushButton*>("btnCommands");
+    QVERIFY(button);
+    button->click();
+    QApplication::processEvents();
+    auto* pages = console->findChild<QStackedWidget*>("stackedWidgetRPC");
+    QVERIFY(pages);
+    QCOMPARE(pages->currentWidget()->objectName(), QString("pageCommands"));
+    QCOMPARE(console->tabTitle(RPCConsole::TabTypes::COMMANDS), button->text());
+    auto* browser = console->findChild<CommandBrowser*>("commandBrowser");
+    QVERIFY(browser);
+    auto* search = browser->findChild<QLineEdit*>("commandSearch");
+    auto* list = browser->findChild<QTreeWidget*>("commandList");
+    QVERIFY(search && list);
+    QVERIFY(search->hasFocus());
+
+    // Every listed command once, with the topic the main help gives it; the
+    // featured topics first.
+    std::set<std::string> listed;
+    for (const std::string& name : node.listRpcCommands()) listed.insert(name);
+    std::set<std::string> shown;
+    for (const CommandBrowser::Entry& entry : browser->entries()) {
+        QVERIFY2(shown.insert(entry.name.toStdString()).second, qPrintable(entry.name));
+        QVERIFY2(!entry.topic.isEmpty(), qPrintable(entry.name));
+        QVERIFY2(entry.call.startsWith(entry.name), qPrintable(entry.name));
+    }
+    QVERIFY2(shown == listed, Difference(shown, listed).c_str());
+    int items = 0;
+    for (int g = 0; g < list->topLevelItemCount(); ++g) items += list->topLevelItem(g)->childCount();
+    QCOMPARE(items, int(listed.size()));
+    for (int g = 0; g < 3; ++g) QCOMPARE(list->topLevelItem(g)->text(0), CommandBrowser::featuredTopics()[g]);
+
+    // Each defcon-cli example without an option before the command has a
+    // console form, and the console hands the command the very words the shell
+    // would: checked for every one of them through echo.
+    int checked = 0;
+    for (const CommandBrowser::Entry& entry : browser->entries()) {
+        for (const QString& line : entry.command_line) {
+            if (!line.startsWith("defcon-cli ")) continue;
+            const QStringList words = CommandBrowser::shellWords(line);
+            if (words.size() < 2 || words[1].startsWith('-')) continue;
+            QStringList typed{words[1]};
+            for (int w = 2; w < words.size(); ++w) typed << CommandBrowser::consoleWord(words[w]);
+            const QString example = typed.join(' ');
+            QVERIFY2(entry.console.contains(example), qPrintable(entry.name + ": " + line));
+            UniValue expected(UniValue::VARR);
+            for (int w = 2; w < words.size(); ++w) expected.push_back(words[w].toStdString());
+            if (expected.size() > 10) continue; // echo takes ten
+            QCOMPARE(QString::fromStdString(ConsoleArguments(node, example.mid(words[1].size()))),
+                     QString::fromStdString(expected.write(2)));
+            ++checked;
+        }
+    }
+    QVERIFY2(checked > 100, qPrintable(QString::number(checked)));
+    // The words that need the console's quoting, one by one.
+    for (const QString& word : {QString(""), QString("a b"), QString("a,b"), QString("it's"), QString("say \"hi\""),
+                                QString("back\\slash"), QString("(x)"), QString("[\"a\",1]"), QString("{\"k\": \"it's\"}")}) {
+        UniValue expected(UniValue::VARR);
+        expected.push_back(word.toStdString());
+        QCOMPARE(QString::fromStdString(ConsoleArguments(node, " " + CommandBrowser::consoleWord(word))),
+                 QString::fromStdString(expected.write(2)));
+    }
+
+    // Reading a help: the summary, the examples once each, no console form for
+    // an option before the command, an open quote or a substitution.
+    const CommandBrowser::Entry parsed = CommandBrowser::parseHelp("demo", "Topic",
+        "demo \"a\"\n\nDoes a thing\nin two lines.\n\nMore.\n\nArguments:\n1. a\n\nExamples:\n"
+        "> defcon-cli demo \"x y\"\n> defcon-cli demo \"x y\"\n> defcon-cli -named demo a=1\n"
+        "> defcon-cli demo 'open\n> defcon-cli demo $(cat f)\n> curl --data-binary '{}' http://127.0.0.1:8193/\n");
+    QCOMPARE(parsed.call, QString("demo \"a\""));
+    QCOMPARE(parsed.summary, QString("Does a thing in two lines."));
+    QCOMPARE(parsed.console, QStringList{"demo 'x y'"});
+    QCOMPARE(parsed.command_line.size(), 5);
+
+    // Search: by name or summary, case aside; down arrow goes into the list.
+    QTest::keyClicks(search, "STAK");
+    QApplication::processEvents();
+    bool staking_shown = false;
+    for (int g = 0; g < list->topLevelItemCount(); ++g) {
+        QTreeWidgetItem* group = list->topLevelItem(g);
+        for (int c = 0; c < group->childCount(); ++c) {
+            QTreeWidgetItem* item = group->child(c);
+            if (item->isHidden()) continue;
+            const CommandBrowser::Entry* entry = nullptr;
+            for (const CommandBrowser::Entry& e : browser->entries()) if (e.name == item->text(0)) entry = &e;
+            QVERIFY(entry);
+            QVERIFY2(entry->name.contains("stak", Qt::CaseInsensitive) || entry->summary.contains("stak", Qt::CaseInsensitive), qPrintable(entry->name));
+            if (entry->name == "getstakinginfo") staking_shown = true;
+        }
+    }
+    QVERIFY(staking_shown);
+    QVERIFY(list->currentItem() && !list->currentItem()->isHidden());
+    QTest::keyClick(search, Qt::Key_Down);
+    QVERIFY(list->hasFocus());
+    search->clear();
+    // A word only the summary has: dslstatus describes the Sentinel's probe.
+    QTest::keyClicks(search, "sentinel");
+    QApplication::processEvents();
+    bool dslstatus_shown = false;
+    for (int g = 0; g < list->topLevelItemCount(); ++g) {
+        for (int c = 0; c < list->topLevelItem(g)->childCount(); ++c) {
+            QTreeWidgetItem* item = list->topLevelItem(g)->child(c);
+            if (item->text(0) == "dslstatus" && !item->isHidden()) dslstatus_shown = true;
+        }
+    }
+    QVERIFY(dslstatus_shown);
+    search->clear();
+
+    // Put in console fills the input line on the Console page and runs nothing.
+    QVERIFY(browser->select("getblockcount"));
+    QApplication::processEvents();
+    const QList<QPushButton*> puts = browser->findChildren<QPushButton*>("commandPutInConsole");
+    QCOMPARE(puts.size(), 1);
+    QPushButton* put = puts.front();
+    QVERIFY(put->isVisible());
+    auto* messages = console->findChild<QTextEdit*>("messagesWidget");
+    QLineEdit* line = console->findChild<QLineEdit*>("lineEdit");
+    const QString before = messages->toPlainText();
+    put->click();
+    QApplication::processEvents();
+    QCOMPARE(pages->currentWidget()->objectName(), QString("pageConsole"));
+    QCOMPARE(line->text(), QString("getblockcount"));
+    QVERIFY(line->hasFocus());
+    QTest::qWait(200);
+    QCOMPARE(messages->toPlainText(), before);
+    line->clear();
+
+    // In every theme the details stand on the page's own background: below a short
+    // command's details, the pane has the colour of the page's bottom margin.
+    {
+        const QVariant saved = QSettings().value("theme");
+        console->resize(1000, 700);
+        button->click();
+        QVERIFY(browser->select("dslstatus"));
+        auto* page = console->findChild<QWidget*>("pageCommands");
+        auto* area = browser->findChild<QScrollArea*>("commandDetailsArea");
+        QVERIFY(page && area);
+        for (const char* theme : {"Abyss", "Light", "Dark", "Traditional"}) {
+            QSettings().setValue("theme", theme);
+            GUIUtil::loadTheme(true);
+            QApplication::processEvents();
+            const QImage shot = console->grab().toImage();
+            const qreal dpr = shot.devicePixelRatio();
+            const QPoint pane = area->viewport()->mapTo(console, QPoint(area->viewport()->width() - 12, area->viewport()->height() - 12));
+            const QPoint margin = page->mapTo(console, QPoint(page->width() / 2, page->height() - 2));
+            const QColor pane_colour = shot.pixelColor(qRound(pane.x() * dpr), qRound(pane.y() * dpr));
+            const QColor margin_colour = shot.pixelColor(qRound(margin.x() * dpr), qRound(margin.y() * dpr));
+            QVERIFY2(pane_colour == margin_colour, qPrintable(QString("%1: details %2, page %3").arg(QString::fromLatin1(theme), pane_colour.name(), margin_colour.name())));
+        }
+        if (saved.isValid()) QSettings().setValue("theme", saved); else QSettings().remove("theme");
+        GUIUtil::loadTheme(true);
+    }
+
+    // A screenshot run captures the page in each theme.
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    if (!output.isEmpty()) {
+        const QVariant saved = QSettings().value("theme");
+        console->resize(1000, 700);
+        QVERIFY(QDir().mkpath(output));
+        button->click();
+        QVERIFY(browser->select("combineoutputs") || browser->select("getstakinginfo"));
+        for (const char* theme : {"Abyss", "Light", "Dark", "Traditional"}) {
+            QSettings().setValue("theme", theme);
+            GUIUtil::loadTheme(true);
+            QApplication::processEvents();
+            QVERIFY(console->grab().save(QDir(output).filePath(QString("Console-commands-%1.png").arg(QString::fromLatin1(theme)))));
+        }
+        QTest::keyClicks(search, "sentinel");
+        QApplication::processEvents();
+        QVERIFY(console->grab().save(QDir(output).filePath("Console-commands-search.png")));
+        search->clear();
+        if (saved.isValid()) QSettings().setValue("theme", saved); else QSettings().remove("theme");
+        GUIUtil::loadTheme(true);
+    }
+    console->setTabFocus(RPCConsole::TabTypes::CONSOLE);
 }
 
 #ifdef ENABLE_WALLET
@@ -705,6 +906,7 @@ void AppTests::consoleTests(RPCConsole* console)
     TestConsoleSecrets(console);
     TestCommandLists(console);
     TestConsoleHelp(console);
+    TestCommandBrowser(console, m_app.node());
 }
 
 //! Destructor to shut down after the last expected callback completes.

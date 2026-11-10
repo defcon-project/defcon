@@ -677,6 +677,7 @@ filled button style, whose text is unreadable there.
 ******************************************************/
 
 #btnInfo,
+#btnCommands,
 #btnConsole,
 #btnNetTraffic,
 #btnPeers,
@@ -705,6 +706,7 @@ QDialog#OptionsDialog #btnAppearance,
 }
 
 #btnInfo:checked,
+#btnCommands:checked,
 #btnConsole:checked,
 #btnNetTraffic:checked,
 #btnPeers:checked,
@@ -729,6 +731,7 @@ QDialog#OptionsDialog #btnAppearance:checked,
 }
 
 #btnInfo:hover:!checked,
+#btnCommands:hover:!checked,
 #btnConsole:hover:!checked,
 #btnNetTraffic:hover:!checked,
 #btnPeers:hover:!checked,
@@ -998,6 +1001,7 @@ QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:disabled {
 }
 
 #btnInfo:hover:checked,
+#btnCommands:hover:checked,
 #btnConsole:hover:checked,
 #btnNetTraffic:hover:checked,
 #btnPeers:hover:checked,
@@ -1022,6 +1026,7 @@ QDialog#OptionsDialog #btnAppearance:hover:checked,
 }
 
 #btnInfo:disabled,
+#btnCommands:disabled,
 #btnConsole:disabled,
 #btnNetTraffic:disabled,
 #btnPeers:disabled,
@@ -1151,6 +1156,7 @@ RPCConsole QTableView {
 }
 
 #btnInfo:pressed,
+#btnCommands:pressed,
 #btnConsole:pressed,
 #btnNetTraffic:pressed,
 #btnPeers:pressed,

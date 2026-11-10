@@ -858,7 +858,7 @@ void AbyssTests::cssStates()
     // rules and filled inactive tabs blue. Check every tab in its real parent.
     for (const auto& group : std::vector<std::pair<const char*, QStringList>>{
         {"OptionsDialog", {"Main", "Wallet", "CoinJoin", "Network", "Display", "Appearance"}},
-        {"RPCConsole", {"Info", "Console", "NetTraffic", "Peers", "Repair"}},
+        {"RPCConsole", {"Info", "Console", "Commands", "NetTraffic", "Peers", "Repair"}},
         {"SignVerifyMessageDialog", {"SignMessage", "VerifyMessage"}}}) {
         QDialog page; page.setObjectName(group.first);
         auto* layout = new QVBoxLayout(&page);

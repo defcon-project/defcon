@@ -21,6 +21,7 @@
 #include <QThread>
 #include <QWidget>
 
+class CommandBrowser;
 class RPCTimerInterface;
 class WalletModel;
 
@@ -72,15 +73,17 @@ public:
         CMD_ERROR
     };
 
+    //! In the order of the page buttons and of the pages.
     enum class TabTypes {
         INFO,
         CONSOLE,
+        COMMANDS,
         GRAPH,
         PEERS,
         REPAIR
     };
 
-    std::vector<TabTypes> tabs() const { return {TabTypes::INFO, TabTypes::CONSOLE, TabTypes::GRAPH, TabTypes::PEERS, TabTypes::REPAIR}; }
+    std::vector<TabTypes> tabs() const { return {TabTypes::INFO, TabTypes::CONSOLE, TabTypes::COMMANDS, TabTypes::GRAPH, TabTypes::PEERS, TabTypes::REPAIR}; }
 
     QString tabTitle(TabTypes tab_type) const;
     QKeySequence tabShortcut(TabTypes tab_type) const;
@@ -193,6 +196,8 @@ private:
     bool m_initial_geometry_pending{true};
     bool m_fit_on_show{false};
     QButtonGroup* pageButtons = nullptr;
+    //! The Commands page, filled from the node's help when it is first shown.
+    CommandBrowser* m_command_browser = nullptr;
     QStringList history;
     int historyPtr = 0;
     QString cmdBeforeBrowsing;

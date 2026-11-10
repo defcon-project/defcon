@@ -18,6 +18,7 @@
 #include <node/connection_types.h>
 #include <qt/bantablemodel.h>
 #include <qt/clientmodel.h>
+#include <qt/commandbrowser.h>
 #include <qt/peertablesortproxy.h>
 #include <qt/walletmodel.h>
 #include <rpc/client.h>
@@ -869,9 +870,20 @@ RPCConsole::RPCConsole(interfaces::Node& node, QWidget* parent, Qt::WindowFlags 
 
     setFontSize(settings.value(fontSizeSettingsKey, QFontInfo(GUIUtil::fixedPitchFont()).pointSize()).toInt());
 
+    // The Commands page: the help's commands by topic. "Put in console" only fills the input line.
+    m_command_browser = new CommandBrowser(m_node, ui->pageCommands);
+    ui->pageCommands->layout()->addWidget(m_command_browser);
+    connect(m_command_browser, &CommandBrowser::putInConsole, this, [this](const QString& command) {
+        showPage(ToUnderlying(TabTypes::CONSOLE));
+        ui->lineEdit->setText(command);
+        ui->lineEdit->setFocus();
+    });
+
+    // In the order of TabTypes.
     pageButtons = new QButtonGroup(this);
     pageButtons->addButton(ui->btnInfo, pageButtons->buttons().size());
     pageButtons->addButton(ui->btnConsole, pageButtons->buttons().size());
+    pageButtons->addButton(ui->btnCommands, pageButtons->buttons().size());
     pageButtons->addButton(ui->btnNetTraffic, pageButtons->buttons().size());
     pageButtons->addButton(ui->btnPeers, pageButtons->buttons().size());
     pageButtons->addButton(ui->btnRepair, pageButtons->buttons().size());
@@ -1535,6 +1547,9 @@ void RPCConsole::on_stackedWidgetRPC_currentChanged(int index)
 {
     if (ui->stackedWidgetRPC->widget(index) == ui->pageConsole) {
         ui->lineEdit->setFocus();
+    } else if (ui->stackedWidgetRPC->widget(index) == ui->pageCommands) {
+        m_command_browser->ensureLoaded();
+        m_command_browser->setFocus();
     }
 }
 
@@ -1837,6 +1852,7 @@ QKeySequence RPCConsole::tabShortcut(TabTypes tab_type) const
     switch (tab_type) {
     case TabTypes::INFO: return QKeySequence(tr("Ctrl+Shift+I"));
     case TabTypes::CONSOLE: return QKeySequence(tr("Ctrl+Shift+C"));
+    case TabTypes::COMMANDS: return QKeySequence(tr("Ctrl+Shift+H"));
     case TabTypes::GRAPH: return QKeySequence(tr("Ctrl+Shift+G"));
     case TabTypes::PEERS: return QKeySequence(tr("Ctrl+Shift+P"));
     case TabTypes::REPAIR: return QKeySequence(tr("Ctrl+Shift+R"));
