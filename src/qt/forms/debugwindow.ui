@@ -59,6 +59,16 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="btnCommands">
+       <property name="text">
+        <string>Co&amp;mmands</string>
+       </property>
+       <property name="checkable">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="btnNetTraffic">
        <property name="text">
         <string>&amp;Network Traffic</string>
@@ -683,6 +693,22 @@
          </item>
         </layout>
        </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="pageCommands">
+      <layout class="QVBoxLayout" name="verticalLayout_commands">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>5</number>
+       </property>
       </layout>
      </widget>
      <widget class="QWidget" name="pageNetTraffic">

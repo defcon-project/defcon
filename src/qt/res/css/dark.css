@@ -468,6 +468,7 @@ QPushButton - Special case, tabbar replacement buttons
 
 /* Debug window buttons */
 #btnInfo,
+#btnCommands,
 #btnConsole,
 #btnNetTraffic,
 #btnPeers,
@@ -488,6 +489,7 @@ QPushButton - Special case, tabbar replacement buttons
 
 /* Debug window buttons */
 #btnInfo:hover:checked,
+#btnCommands:hover:checked,
 #btnConsole:hover:checked,
 #btnNetTraffic:hover:checked,
 #btnPeers:hover:checked,
@@ -508,6 +510,7 @@ QPushButton - Special case, tabbar replacement buttons
 
 /* Debug window buttons */
 #btnInfo:hover:!checked,
+#btnCommands:hover:!checked,
 #btnConsole:hover:!checked,
 #btnNetTraffic:hover:!checked,
 #btnPeers:hover:!checked,
@@ -528,6 +531,7 @@ QPushButton - Special case, tabbar replacement buttons
 
 /* Debug window buttons */
 #btnInfo:checked,
+#btnCommands:checked,
 #btnConsole:checked,
 #btnNetTraffic:checked,
 #btnPeers:checked,
