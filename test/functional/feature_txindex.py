@@ -7,7 +7,9 @@
 # Test txindex generation and fetching
 #
 
+from test_framework.blocktools import BLOCK_SUBSIDY, COINBASE_MATURITY
 from test_framework.messages import (
+    COIN,
     COutPoint,
     CTransaction,
     CTxIn,
@@ -45,10 +47,10 @@ class TxIndexTest(BitcoinTestFramework):
 
     def run_test(self):
         self.log.info("Mining blocks...")
-        self.generate(self.nodes[0], 105)
+        self.generate(self.nodes[0], COINBASE_MATURITY + 5)
 
         chain_height = self.nodes[1].getblockcount()
-        assert_equal(chain_height, 105)
+        assert_equal(chain_height, COINBASE_MATURITY + 5)
 
         self.log.info("Testing transaction index...")
 
@@ -66,10 +68,10 @@ class TxIndexTest(BitcoinTestFramework):
         txid = self.nodes[0].sendrawtransaction(signed_tx["hex"], 0)
         self.generate(self.nodes[0], 1)
 
-        # Check verbose raw transaction results
+        # Check verbose raw transaction results (the spent coin is one mature block reward)
         verbose = self.nodes[3].getrawtransaction(txid, 1)
-        assert_equal(verbose["vout"][0]["valueSat"], 50000000000 - tx_fee_sat)
-        assert_equal(verbose["vout"][0]["value"] * 100000000, 50000000000 - tx_fee_sat)
+        assert_equal(verbose["vout"][0]["valueSat"], BLOCK_SUBSIDY * COIN - tx_fee_sat)
+        assert_equal(verbose["vout"][0]["value"] * 100000000, BLOCK_SUBSIDY * COIN - tx_fee_sat)
 
         self.log.info("Passed")
 

@@ -11,7 +11,7 @@ RPCs tested are:
 """
 from collections import defaultdict
 
-from test_framework.blocktools import COINBASE_MATURITY
+from test_framework.blocktools import BLOCK_SUBSIDY, COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 from test_framework.wallet_util import test_address
@@ -31,13 +31,13 @@ class WalletLabelsTest(BitcoinTestFramework):
         assert_equal(len(node.listunspent()), 0)
 
         # Note each time we call generate, all generated coins go into
-        # the same address, so we call twice to get two addresses w/500 each
+        # the same address, so we call twice to get two addresses with one mature block reward each
         self.generatetoaddress(node, nblocks=1, address=node.getnewaddress(label='coinbase'))
         self.generatetoaddress(node, nblocks=COINBASE_MATURITY + 1, address=node.getnewaddress(label='coinbase'))
-        assert_equal(node.getbalance(), 1000)
+        assert_equal(node.getbalance(), 2 * BLOCK_SUBSIDY)
 
         # there should be 2 address groups
-        # each with 1 address with a balance of 500 Dash
+        # each with 1 address with a balance of one block reward
         address_groups = node.listaddressgroupings()
         assert_equal(len(address_groups), 2)
         # the addresses aren't linked now, but will be after we send to the
@@ -46,14 +46,14 @@ class WalletLabelsTest(BitcoinTestFramework):
         for address_group in address_groups:
             assert_equal(len(address_group), 1)
             assert_equal(len(address_group[0]), 3)
-            assert_equal(address_group[0][1], 500)
+            assert_equal(address_group[0][1], BLOCK_SUBSIDY)
             assert_equal(address_group[0][2], 'coinbase')
             linked_addresses.add(address_group[0][0])
 
-        # send 500 from each address to a third address not in this wallet
+        # send the block reward of each address to a third address not in this wallet
         common_address = "yd5KMREs3GLMe6mTJYr3YrH1juwNwrFCfB"
         node.sendmany(
-            amounts={common_address: 1000},
+            amounts={common_address: 2 * BLOCK_SUBSIDY},
             minconf=1,
             addlocked=False,
             comment="",
@@ -71,7 +71,7 @@ class WalletLabelsTest(BitcoinTestFramework):
 
         # we want to reset so that the "" label has what's expected.
         # otherwise we're off by exactly the fee amount as that's mined
-        # and matures in the next 100 blocks
+        # and matures in the next COINBASE_MATURITY blocks
         amount_to_send = 1.0
 
         # Create labels and make sure subsequent label API calls
@@ -165,7 +165,7 @@ class WalletLabelsTest(BitcoinTestFramework):
             ad = INVALID[l]
             assert_raises_rpc_error(
                 -5,
-                "Address is not valid" if self.options.descriptors else "Invalid Dash address or script",
+                "Address is not valid" if self.options.descriptors else "Invalid DeFCoN address or script",
                 lambda: wallet_watch_only.importaddress(label=l, rescan=False, address=ad),
             )
 

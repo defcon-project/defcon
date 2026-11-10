@@ -7,6 +7,7 @@
 from decimal import Decimal
 from itertools import product
 
+from test_framework.blocktools import BLOCK_SUBSIDY, COINBASE_MATURITY
 from test_framework.descriptors import descsum_create
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -68,7 +69,8 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.fee_tolerance = 2 * self.min_relay_tx_fee / 1000
 
         self.generate(self.nodes[2], 1)
-        self.generate(self.nodes[0], 121)
+        # node 0 ends with 21 mature coinbases, node 2 with one (Dash's 121 was its 100-block maturity plus 21)
+        self.generate(self.nodes[0], COINBASE_MATURITY + 21)
 
         self.test_change_position()
         self.test_simple()
@@ -103,7 +105,8 @@ class RawTransactionsTest(BitcoinTestFramework):
     def test_change_position(self):
         """Ensure setting changePosition in fundraw with an exact match is handled properly."""
         self.log.info("Test fundrawtxn changePosition option")
-        rawmatch = self.nodes[2].createrawtransaction([], {self.nodes[2].getnewaddress():500})
+        # node 2's one mature coinbase, whole
+        rawmatch = self.nodes[2].createrawtransaction([], {self.nodes[2].getnewaddress(): BLOCK_SUBSIDY})
         rawmatch = self.nodes[2].fundrawtransaction(rawmatch, {"changePosition":1, "subtractFeeFromOutputs":[0]})
         assert_equal(rawmatch["changepos"], -1)
 
@@ -236,7 +239,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         dec_tx  = self.nodes[2].decoderawtransaction(rawtx)
         assert_equal(utx['txid'], dec_tx['vin'][0]['txid'])
 
-        assert_raises_rpc_error(-5, "Change address must be a valid Dash address", self.nodes[2].fundrawtransaction, rawtx, {'changeAddress':'foobar'})
+        assert_raises_rpc_error(-5, "Change address must be a valid DeFCoN address", self.nodes[2].fundrawtransaction, rawtx, {'changeAddress':'foobar'})
 
     def test_valid_change_address(self):
         self.log.info("Test fundrawtxn with a provided change address")
@@ -561,8 +564,8 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.nodes[1].sendrawtransaction(signedTx['hex'])
         self.generate(self.nodes[1], 1)
 
-        # Make sure funds are received at node1.
-        assert_equal(oldBalance+Decimal('511.0000000'), self.nodes[0].getbalance())
+        # Make sure funds are received at node1 (the 11, and the block reward that node 1's block matures).
+        assert_equal(oldBalance + BLOCK_SUBSIDY + Decimal('11.0000000'), self.nodes[0].getbalance())
 
     def test_many_inputs_fee(self):
         """Multiple (~19) inputs tx test | Compare fee."""
@@ -612,7 +615,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         fundedAndSignedTx = self.nodes[1].signrawtransactionwithwallet(fundedTx['hex'])
         self.nodes[1].sendrawtransaction(fundedAndSignedTx['hex'])
         self.generate(self.nodes[1], 1)
-        assert_equal(oldBalance+Decimal('500.19000000'), self.nodes[0].getbalance()) #0.19+block reward
+        assert_equal(oldBalance + BLOCK_SUBSIDY + Decimal('0.19000000'), self.nodes[0].getbalance()) #0.19+block reward
 
     def test_op_return(self):
         self.log.info("Test fundrawtxn with OP_RETURN and no vin")
@@ -763,7 +766,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         node.fundrawtransaction(rawtx, {"feeRate": 0.00000999, "add_inputs": True})
 
         self.log.info("- raises RPC error if both feeRate and fee_rate are passed")
-        assert_raises_rpc_error(-8, "Cannot specify both fee_rate (duff/B) and feeRate (DASH/kB)",
+        assert_raises_rpc_error(-8, "Cannot specify both fee_rate (duff/B) and feeRate (DFCN/kB)",
             node.fundrawtransaction, rawtx, {"fee_rate": 0.1, "feeRate": 0.1, "add_inputs": True})
 
         self.log.info("- raises RPC error if both feeRate and estimate_mode passed")

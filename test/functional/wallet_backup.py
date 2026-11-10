@@ -8,8 +8,8 @@ Test case is:
 4 nodes. 1 2 and 3 send transactions between each other,
 fourth node is a miner.
 1 2 3 each mine a block to start, then
-Miner creates 100 blocks so 1 2 3 each have 500 mature
-coins to spend.
+Miner creates COINBASE_MATURITY blocks so 1 2 3 each have
+one mature block reward to spend.
 Then 5 iterations of 1/2/3 sending coins amongst
 themselves to get transactions in the wallets,
 and the miner mining one block.
@@ -17,11 +17,11 @@ and the miner mining one block.
 Wallets are backed up using dumpwallet/backupwallet.
 Then 5 more iterations of transactions and mining a block.
 
-Miner then generates 101 more blocks, so any
+Miner then generates COINBASE_MATURITY + 1 more blocks, so any
 transaction fees paid mature.
 
 Sanity check:
-  Sum(1,2,3,4 balances) == 114*500
+  Sum(1,2,3,4 balances) == (COINBASE_MATURITY + 14) block rewards
 
 1/2/3 are shutdown, and their wallets erased.
 Then restore using wallet.dat backup. And
@@ -35,7 +35,7 @@ import os
 from random import randint
 import shutil
 
-from test_framework.blocktools import COINBASE_MATURITY
+from test_framework.blocktools import BLOCK_SUBSIDY, COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 
@@ -150,9 +150,9 @@ class WalletBackupTest(BitcoinTestFramework):
         self.generate(self.nodes[3], COINBASE_MATURITY)
         self.sync_blocks()
 
-        assert_equal(self.nodes[0].getbalance(), 500)
-        assert_equal(self.nodes[1].getbalance(), 500)
-        assert_equal(self.nodes[2].getbalance(), 500)
+        assert_equal(self.nodes[0].getbalance(), BLOCK_SUBSIDY)
+        assert_equal(self.nodes[1].getbalance(), BLOCK_SUBSIDY)
+        assert_equal(self.nodes[2].getbalance(), BLOCK_SUBSIDY)
         assert_equal(self.nodes[3].getbalance(), 0)
 
         self.log.info("Creating transactions")
@@ -175,7 +175,7 @@ class WalletBackupTest(BitcoinTestFramework):
         for _ in range(5):
             self.do_one_round()
 
-        # Generate 101 more blocks, so any fees paid mature
+        # Generate COINBASE_MATURITY + 1 more blocks, so any fees paid mature
         self.generate(self.nodes[3], COINBASE_MATURITY + 1)
 
         balance0 = self.nodes[0].getbalance()
@@ -184,9 +184,10 @@ class WalletBackupTest(BitcoinTestFramework):
         balance3 = self.nodes[3].getbalance()
         total = balance0 + balance1 + balance2 + balance3
 
-        # At this point, there are 214 blocks (103 for setup, then 10 rounds, then 101.)
-        # 114 are mature, so the sum of all wallets should be 114 * 500 = 57000.
-        assert_equal(total, 57000)
+        # At this point, there are COINBASE_MATURITY + 3 blocks for setup, then 10 rounds, then
+        # COINBASE_MATURITY + 1. The first COINBASE_MATURITY + 14 are mature, so the sum of all wallets
+        # should be that many block rewards.
+        assert_equal(total, (COINBASE_MATURITY + 14) * BLOCK_SUBSIDY)
 
         ##
         # Test restoring spender wallets from backups

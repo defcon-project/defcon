@@ -697,6 +697,10 @@ class SchedulingTest(unittest.TestCase):
             'feature_dsl_dkg_isolation.py',
             'rpc_help.py', 'tool_wallet.py',
             'wallet_multiwallet.py', 'rpc_getblockstats.py',
+            'wallet_basic.py', 'wallet_backup.py', 'rpc_fundrawtransaction.py', 'wallet_send.py',
+            'rpc_rawtransaction.py', 'wallet_balance.py', 'interface_bitcoin_cli.py', 'feature_coinstatsindex.py',
+            'wallet_labels.py', 'wallet_orphanedreward.py', 'feature_txindex.py',
+            'wallet_coinbase_category.py',
         ]), sorted(name for name, _ in functional_gate.read_gate()))
         functional = run_script(step_text(self.checks, 'Functional tests (named gate)'))
         self.assertIn('python3 ci/dash/functional_gate.py order > "$gate" || exit 1\n', functional)

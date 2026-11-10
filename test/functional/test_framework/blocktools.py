@@ -47,6 +47,11 @@ MAX_FUTURE_BLOCK_TIME = 3 * 60
 # DeFCoN's COINBASE_MATURITY in src/consensus/consensus.h, not Dash's 100
 COINBASE_MATURITY = 25
 
+# A regtest proof-of-work block pays DeFCoN's 11,000,000 coins (GetBlockSubsidyHelper in src/validation.cpp, flat
+# up to lastPowBlock, 5000 on regtest), not Dash's 500; with no masternode to pay, the miner gets all of it.
+# create_coinbase below still defaults to 500, which is valid: a coinbase may claim less than the subsidy.
+BLOCK_SUBSIDY = 11000000
+
 NORMAL_GBT_REQUEST_PARAMS = {"rules": []} # type: ignore[var-annotated]
 
 VERSIONBITS_LAST_OLD_BLOCK_VERSION = 4

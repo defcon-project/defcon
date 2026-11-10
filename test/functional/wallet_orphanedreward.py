@@ -4,6 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test orphaned block rewards in the wallet."""
 
+from test_framework.blocktools import BLOCK_SUBSIDY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 from decimal import Decimal
@@ -33,7 +34,9 @@ class OrphanedBlockRewardTest(BitcoinTestFramework):
         # the existing balance and the block reward.
         self.generate(self.nodes[0], 150)
         self.sync_blocks()
-        assert_equal(self.nodes[1].getbalance(), Decimal("474.28571429"))
+        # the block reward and the 10 (Dash's 474.28571429 was its regtest reward at that height, 500 less one
+        # 1/14 reduction, plus the 10; DeFCoN's subsidy is flat)
+        assert_equal(self.nodes[1].getbalance(), BLOCK_SUBSIDY + Decimal("10"))
         txid = self.nodes[1].sendtoaddress(self.nodes[0].getnewaddress(), 30)
 
         # Orphan the block reward and make sure that the original coins

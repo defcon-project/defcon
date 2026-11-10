@@ -15,7 +15,7 @@ Test the following RPCs:
 from collections import OrderedDict
 from decimal import Decimal
 
-from test_framework.blocktools import COINBASE_MATURITY
+from test_framework.blocktools import BLOCK_SUBSIDY, COINBASE_MATURITY
 from test_framework.messages import (
     CTransaction,
     tx_from_hex,
@@ -110,7 +110,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         self.nodes[0].createrawtransaction(inputs=[], outputs={})  # Should not throw for backwards compatibility
         self.nodes[0].createrawtransaction(inputs=[], outputs=[])
         assert_raises_rpc_error(-8, "Data must be hexadecimal string", self.nodes[0].createrawtransaction, [], {'data': 'foo'})
-        assert_raises_rpc_error(-5, "Invalid Dash address", self.nodes[0].createrawtransaction, [], {'foo': 0})
+        assert_raises_rpc_error(-5, "Invalid DeFCoN address", self.nodes[0].createrawtransaction, [], {'foo': 0})
         assert_raises_rpc_error(-3, "Invalid amount", self.nodes[0].createrawtransaction, [], {address: 'foo'})
         assert_raises_rpc_error(-3, "Amount out of range", self.nodes[0].createrawtransaction, [], {address: -1})
         assert_raises_rpc_error(-8, "Invalid parameter, duplicated address: %s" % address, self.nodes[0].createrawtransaction, [], multidict([(address, 1), (address, 1)]))
@@ -256,7 +256,7 @@ class RawTransactionsTest(BitcoinTestFramework):
             rawTx = self.nodes[0].decoderawtransaction(rawTxSigned['hex'])
             self.sync_all()
             self.generate(self.nodes[0], 1)
-            assert_equal(self.nodes[0].getbalance(), bal+Decimal('500.00000000')+Decimal('2.19000000')) #block reward + tx
+            assert_equal(self.nodes[0].getbalance(), bal+BLOCK_SUBSIDY+Decimal('2.19000000')) #block reward + tx
 
             # 2of2 test for combining transactions
             bal = self.nodes[2].getbalance()
@@ -299,7 +299,7 @@ class RawTransactionsTest(BitcoinTestFramework):
             rawTx2 = self.nodes[0].decoderawtransaction(rawTxComb)
             self.sync_all()
             self.generate(self.nodes[0], 1)
-            assert_equal(self.nodes[0].getbalance(), bal+Decimal('500.00000000')+Decimal('2.19000000')) #block reward + tx
+            assert_equal(self.nodes[0].getbalance(), bal+BLOCK_SUBSIDY+Decimal('2.19000000')) #block reward + tx
 
 
         # Basic signrawtransaction test
