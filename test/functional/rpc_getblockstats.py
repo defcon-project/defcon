@@ -7,7 +7,6 @@
 # Test getblockstats rpc call
 #
 
-from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -47,7 +46,8 @@ class GetblockstatsTest(BitcoinTestFramework):
         # mined to. The framework creates none for this test: replaying the data needs no wallet.
         self.nodes[0].createwallet(wallet_name='test')
         self.nodes[0].importprivkey(self.nodes[0].get_deterministic_priv_key().key)
-        self.generate(self.nodes[0], COINBASE_MATURITY + 1)
+        # Up to start_height, the first height whose statistics the data file holds (get_stats)
+        self.generate(self.nodes[0], self.start_height)
 
         address = self.nodes[0].get_deterministic_priv_key().address
         self.nodes[0].sendtoaddress(address=address, amount=10, subtractfeefromamount=True)

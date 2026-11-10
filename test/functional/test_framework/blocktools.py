@@ -43,8 +43,9 @@ TIME_GENESIS_BLOCK = 1417713337
 # DeFCoN accepts a block at most three minutes ahead (MAX_FUTURE_BLOCK_TIME in src/chain.h), not Bitcoin's two hours
 MAX_FUTURE_BLOCK_TIME = 3 * 60
 
-# Coinbase transaction outputs can only be spent after this number of new blocks (network rule)
-COINBASE_MATURITY = 100
+# Coinbase transaction outputs can only be spent after this number of new blocks (network rule):
+# DeFCoN's COINBASE_MATURITY in src/consensus/consensus.h, not Dash's 100
+COINBASE_MATURITY = 25
 
 NORMAL_GBT_REQUEST_PARAMS = {"rules": []} # type: ignore[var-annotated]
 

@@ -36,6 +36,7 @@ class LoadblockTest(BitcoinTestFramework):
         # The second half of the chain is in a later month, for the monthly split below.
         self.bump_mocktime(40 * 24 * 60 * 60, update_schedulers=False)
         self.generate(self.nodes[0], COINBASE_MATURITY // 2, sync_fun=self.no_op)
+        height = 2 * (COINBASE_MATURITY // 2)  # both halves above
 
         # Parsing the url of our node to get settings for config file
         data_dir = self.nodes[0].datadir
@@ -57,7 +58,7 @@ class LoadblockTest(BitcoinTestFramework):
             cfg.write(f"port={node_url.port}\n")
             cfg.write(f"host={node_url.hostname}\n")
             cfg.write(f"output_file={bootstrap_file}\n")
-            cfg.write(f"max_height=100\n")
+            cfg.write(f"max_height={height}\n")
             cfg.write(f"netmagic=fcc1b7dc\n")
             cfg.write(f"input={blocks_dir}\n")
             cfg.write(f"genesis={genesis_block}\n")
@@ -79,9 +80,9 @@ class LoadblockTest(BitcoinTestFramework):
 
         self.log.info("Restart second, unsynced node with bootstrap file")
         self.restart_node(1, extra_args=[f"-loadblock={bootstrap_file}"])
-        assert_equal(self.nodes[1].getblockcount(), 100)  # start_node is blocking on all block files being imported
+        assert_equal(self.nodes[1].getblockcount(), height)  # start_node is blocking on all block files being imported
 
-        assert_equal(self.nodes[1].getblockchaininfo()['blocks'], 100)
+        assert_equal(self.nodes[1].getblockchaininfo()['blocks'], height)
         assert_equal(self.nodes[0].getbestblockhash(), self.nodes[1].getbestblockhash())
 
         self.log.info("Refuse a monthly split into one output file, which would keep only the last month")
@@ -112,7 +113,7 @@ class LoadblockTest(BitcoinTestFramework):
 
         self.log.info("Load both months on a third, unsynced node")
         self.restart_node(2, extra_args=[f"-loadblock={file}" for file in monthly_files])
-        assert_equal(self.nodes[2].getblockcount(), 100)
+        assert_equal(self.nodes[2].getblockcount(), height)
         assert_equal(self.nodes[0].getbestblockhash(), self.nodes[2].getbestblockhash())
 
 

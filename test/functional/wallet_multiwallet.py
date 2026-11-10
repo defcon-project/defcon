@@ -15,6 +15,7 @@ import sys
 import time
 
 from test_framework.authproxy import JSONRPCException
+from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import ErrorMatch
 from test_framework.util import (
@@ -24,10 +25,8 @@ from test_framework.util import (
 )
 
 # This chain, not Dash's: a regtest proof-of-work block pays 11,000,000 (GetBlockSubsidyHelper in
-# validation.cpp) and a coinbase matures 25 blocks after its own (consensus/consensus.h). The
-# framework's COINBASE_MATURITY is still Dash's 100, as feature_pos_stake_combine.py notes too.
+# validation.cpp)
 BLOCK_SUBSIDY = 11000000
-COINBASE_MATURITY = 25
 
 got_loading_error = False
 

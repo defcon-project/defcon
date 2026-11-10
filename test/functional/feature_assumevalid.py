@@ -12,22 +12,25 @@ transactions:
 
     0:        genesis block
     1:        block 1 with coinbase transaction output.
-    2-101:    bury that block with 100 blocks so the coinbase transaction
-              output can be spent
-    102:      a block containing a transaction spending the coinbase
-              transaction output. The transaction has an invalid signature.
-    103-2202: bury the bad block with just over two weeks' worth of blocks
-              (2100 blocks)
+    2 to COINBASE_MATURITY + 1:
+              bury that block with COINBASE_MATURITY blocks so the coinbase
+              transaction output can be spent
+    COINBASE_MATURITY + 2:
+              the bad block: a block containing a transaction spending the
+              coinbase transaction output. The transaction has an invalid
+              signature.
+    then:     bury the bad block with just over two weeks' worth of blocks
+              (8400 blocks, see run_test)
 
 Start three nodes:
 
-    - node0 has no -assumevalid parameter. Try to sync to block 2202. It will
-      reject block 102 and only sync as far as block 101
-    - node1 has -assumevalid set to the hash of block 102. Try to sync to
-      block 2202. node1 will sync all the way to block 2202.
-    - node2 has -assumevalid set to the hash of block 102. Try to sync to
-      block 200. node2 will reject block 102 since it's assumed valid, but it
-      isn't buried by at least two weeks' work.
+    - node0 has no -assumevalid parameter. Try to sync to the tip. It will
+      reject the bad block and only sync as far as block COINBASE_MATURITY + 1
+    - node1 has -assumevalid set to the hash of the bad block. node1 accepts
+      the first 200 blocks, the bad block among them.
+    - node2 has -assumevalid set to the hash of the bad block. Try to sync to
+      block 200. node2 will reject the bad block since it's assumed valid, but
+      it isn't buried by at least two weeks' work.
 """
 
 from test_framework.blocktools import (
@@ -108,8 +111,8 @@ class AssumeValidTest(BitcoinTestFramework):
         self.tip = block.sha256
         height += 1
 
-        # Bury the block 100 deep so the coinbase output is spendable
-        for _ in range(100):
+        # Bury the block COINBASE_MATURITY deep so the coinbase output is spendable
+        for _ in range(COINBASE_MATURITY):
             block = create_block(self.tip, create_coinbase(height), self.block_time)
             block.solve()
             self.blocks.append(block)
@@ -123,13 +126,13 @@ class AssumeValidTest(BitcoinTestFramework):
         tx.vout.append(CTxOut(49 * 100000000, CScript([OP_TRUE])))
         tx.calc_sha256()
 
-        block102 = create_block(self.tip, create_coinbase(height), self.block_time)
+        bad_block = create_block(self.tip, create_coinbase(height), self.block_time)
         self.block_time += 1
-        block102.vtx.extend([tx])
-        block102.hashMerkleRoot = block102.calc_merkle_root()
-        block102.solve()
-        self.blocks.append(block102)
-        self.tip = block102.sha256
+        bad_block.vtx.extend([tx])
+        bad_block.hashMerkleRoot = bad_block.calc_merkle_root()
+        bad_block.solve()
+        self.blocks.append(bad_block)
+        self.tip = bad_block.sha256
         self.block_time += 1
         height += 1
 
@@ -146,8 +149,8 @@ class AssumeValidTest(BitcoinTestFramework):
         self.nodes[0].disconnect_p2ps()
 
         # Start node1 and node2 with assumevalid so they accept a block with a bad signature.
-        self.start_node(1, extra_args=self.extra_args + ["-assumevalid=" + hex(block102.sha256)])
-        self.start_node(2, extra_args=self.extra_args + ["-assumevalid=" + hex(block102.sha256)])
+        self.start_node(1, extra_args=self.extra_args + ["-assumevalid=" + hex(bad_block.sha256)])
+        self.start_node(2, extra_args=self.extra_args + ["-assumevalid=" + hex(bad_block.sha256)])
 
         p2p0 = self.nodes[0].add_p2p_connection(BaseNode())
         p2p1 = self.nodes[1].add_p2p_connection(BaseNode())
@@ -169,19 +172,19 @@ class AssumeValidTest(BitcoinTestFramework):
         p2p1.send_header_for_blocks(self.blocks[8000:])
         p2p2.send_header_for_blocks(self.blocks[0:200])
 
-        # Send blocks to node0. Block 102 will be rejected.
+        # Send blocks to node0. The bad block will be rejected.
         self.send_blocks_until_disconnected(p2p0)
         self.wait_until(lambda: self.nodes[0].getblockcount() >= COINBASE_MATURITY + 1)
         assert_equal(self.nodes[0].getblockcount(), COINBASE_MATURITY + 1)
 
-        # Send 200 blocks to node1. All blocks, including block 102, will be accepted.
+        # Send 200 blocks to node1. All blocks, including the bad block, will be accepted.
         for i in range(200):
             p2p1.send_message(msg_block(self.blocks[i]))
         # Syncing so many blocks can take a while on slow systems. Give it plenty of time to sync.
         p2p1.sync_with_ping(960)
         assert_equal(self.nodes[1].getblock(self.nodes[1].getbestblockhash())['height'], 200)
 
-        # Send blocks to node2. Block 102 will be rejected.
+        # Send blocks to node2. The bad block will be rejected.
         self.send_blocks_until_disconnected(p2p2)
         self.wait_until(lambda: self.nodes[2].getblockcount() >= COINBASE_MATURITY + 1)
         assert_equal(self.nodes[2].getblockcount(), COINBASE_MATURITY + 1)
