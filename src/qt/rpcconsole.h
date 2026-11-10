@@ -45,7 +45,7 @@ public:
     explicit RPCConsole(interfaces::Node& node, QWidget* parent, Qt::WindowFlags flags);
     ~RPCConsole();
 
-    static bool RPCParseCommandLine(interfaces::Node* node, std::string &strResult, const std::string &strCommand, bool fExecute, std::string * const pstrFilteredOut = nullptr, const WalletModel* wallet_model = nullptr);
+    static bool RPCParseCommandLine(interfaces::Node* node, std::string &strResult, const std::string &strCommand, bool fExecute, std::string * const pstrFilteredOut = nullptr, const WalletModel* wallet_model = nullptr, bool* reply_shows_secrets = nullptr, bool* line_has_hidden_args = nullptr);
     static bool RPCExecuteCommandLine(interfaces::Node& node, std::string &strResult, const std::string &strCommand, std::string * const pstrFilteredOut = nullptr, const WalletModel* wallet_model = nullptr) {
         return RPCParseCommandLine(&node, strResult, strCommand, true, pstrFilteredOut, wallet_model);
     }
@@ -197,6 +197,8 @@ private:
     QThread thread;
     WalletModel* m_last_wallet_model{nullptr};
     bool m_is_executing{false};
+    //! Whether the reply to the running command can show a private key, a seed or a recovery phrase.
+    bool m_reply_shows_secrets{false};
     QByteArray m_peer_widget_header_state;
     QByteArray m_banlist_widget_header_state;
 
