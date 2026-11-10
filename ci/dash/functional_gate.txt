@@ -18,7 +18,8 @@
 # 42406840902; wallet_combineoutputs.py, which the CJ1 change (no CoinJoin amounts in
 # combining) touches, estimated from its local runs until its first hosted run;
 # rpc_help.py and tool_wallet.py, which the command-line conversion fix brought
-# into the gate, likewise.
+# into the gate, likewise; and wallet_multiwallet.py and rpc_getblockstats.py,
+# which came in once they stopped assuming Dash's chain.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -44,9 +45,7 @@
 #   running node;
 #   feature_dsl_fault_injection.py: 9 s and two daemons, kept out because it
 #   tests the fault injector itself, a lab instrument the node refuses to start
-#   with outside regtest and devnet;
-#   rpc_getblockstats.py: an inherited failure, its fixture assumes Dash's
-#   subsidy.
+#   with outside regtest and devnet.
 # From the same Sentinel layer the gate carries feature_dsl_service.py (the test
 # that caught #228), feature_dsl_commit_decision_log.py and
 # feature_dsl_commitment_v2.py: the probe, the producer's decision and the
@@ -70,6 +69,7 @@
 297  feature_pos_staking.py                 # real proof-of-stake blocks on regtest; descriptor and legacy wallet
 231  feature_v231_no_payee.py               # from the v23.1 height a staked block with no payable masternode carries no payout at all (#354)
 208  feature_pos_header_only.py             # headers with no block behind them hold neither masternode sync nor staking
+161  wallet_multiwallet.py                  # several wallets on one node: wallet directories, loading and unloading, each its own balance and calls
 147  feature_pos_mixingonly_unlock.py       # a wallet unlocked for mixing only stakes, and still refuses to send or export keys
 100  feature_dsl_dkg_isolation.py           # a slow node: announcement copies unread, the tick behind the DKG, commitments intact (SF1-A)
 95   feature_dsl_sign_wait.py               # wait for late Sentinel reports, with a signing deadline
@@ -102,4 +102,5 @@
 6    feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
 5    p2p_headers_uncompressed.py            # the plain headers reader consumes what every writer writes (#220)
 4    feature_addressindex_type_boundary.py  # the P2PKH and P2SH records of one hash on a sparse index, where they are neighbours on disk (#328)
+4    rpc_getblockstats.py                   # getblockstats on a replayed chain: every statistic, by height and by hash, alone and together
 3    feature_dsl_commit_decision_log.py     # the producer's Sentinel commit decision without a commitment (F-2026-140)

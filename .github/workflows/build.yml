@@ -505,12 +505,18 @@ jobs:
       # rpc_rawsign used Dash's script and private key prefixes; rpc_bls called
       # bls generate with no wallet loaded, which it refuses since it began
       # storing the new key in the wallet (rpc_bls.py covers it with a wallet).
+      #
+      # wallet_tests came off once five of its cases stopped assuming Dash's
+      # chain. A coinbase matures here 25 blocks after its own, not 100, so the
+      # 101-block fixture holds 76 spendable coinbases where they counted one; a
+      # block pays 11,000,000, not 500; and importwallet_rescan dated its key
+      # Bitcoin's two-hour window after the blocks it must find, while this
+      # chain's window is three minutes, so the rescan began past them.
       #   still to triage:                       bip324_tests, bip39_tests,
       #                                          denialofservice_tests, evo_utils_tests,
       #                                          governance_validators_tests,
       #                                          transaction_tests, util_tests,
-      #                                          validation_chainstate_tests,
-      #                                          wallet_tests
+      #                                          validation_chainstate_tests
       - name: Unit suites (all but the named exceptions)
         if: needs.changes.outputs.code == 'true' && matrix.lane == 'runtime'
         run: |
@@ -521,7 +527,7 @@ jobs:
           cd "build-ci/DeFCoN-${{ matrix.build_target }}"
           make -j"$(nproc)" -C src test/test_defcon
           ./src/test/test_defcon \
-            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:!transaction_tests:!util_tests:!validation_chainstate_tests:!wallet_tests' \
+            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:!transaction_tests:!util_tests:!validation_chainstate_tests' \
             --catch_system_errors=no -l test_suite
         shell: bash
 

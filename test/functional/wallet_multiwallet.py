@@ -15,7 +15,6 @@ import sys
 import time
 
 from test_framework.authproxy import JSONRPCException
-from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import ErrorMatch
 from test_framework.util import (
@@ -23,6 +22,12 @@ from test_framework.util import (
     assert_raises_rpc_error,
     get_rpc_proxy,
 )
+
+# This chain, not Dash's: a regtest proof-of-work block pays 11,000,000 (GetBlockSubsidyHelper in
+# validation.cpp) and a coinbase matures 25 blocks after its own (consensus/consensus.h). The
+# framework's COINBASE_MATURITY is still Dash's 100, as feature_pos_stake_combine.py notes too.
+BLOCK_SUBSIDY = 11000000
+COINBASE_MATURITY = 25
 
 got_loading_error = False
 
@@ -193,7 +198,7 @@ class MultiWalletTest(BitcoinTestFramework):
         assert_equal(set(node.listwallets()), {"w4", "w5"})
         w5 = wallet("w5")
         w5_info = w5.getwalletinfo()
-        assert_equal(w5_info['immature_balance'], 500)
+        assert_equal(w5_info['immature_balance'], BLOCK_SUBSIDY)
 
         competing_wallet_dir = os.path.join(self.options.tmpdir, 'competing_walletdir')
         os.mkdir(competing_wallet_dir)
@@ -218,7 +223,7 @@ class MultiWalletTest(BitcoinTestFramework):
         self.generatetoaddress(node, nblocks=1, address=wallets[0].getnewaddress(), sync_fun=self.no_op)
         for wallet_name, wallet in zip(wallet_names, wallets):
             info = wallet.getwalletinfo()
-            assert_equal(info['immature_balance'], 500 if wallet is wallets[0] else 0)
+            assert_equal(info['immature_balance'], BLOCK_SUBSIDY if wallet is wallets[0] else 0)
             assert_equal(info['walletname'], wallet_name)
 
         # accessing invalid wallet fails
@@ -229,7 +234,8 @@ class MultiWalletTest(BitcoinTestFramework):
 
         w1, w2, w3, w4, *_ = wallets
         self.generatetoaddress(node, nblocks=COINBASE_MATURITY + 1, address=w1.getnewaddress(), sync_fun=self.no_op)
-        assert_equal(w1.getbalance(), 1000)
+        # w1 mined block 2 and the COINBASE_MATURITY + 1 after it: blocks 2 and 3 have matured
+        assert_equal(w1.getbalance(), 2 * BLOCK_SUBSIDY)
         assert_equal(w2.getbalance(), 0)
         assert_equal(w3.getbalance(), 0)
         assert_equal(w4.getbalance(), 0)

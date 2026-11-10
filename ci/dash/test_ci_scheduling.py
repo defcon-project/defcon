@@ -672,8 +672,7 @@ class SchedulingTest(unittest.TestCase):
         self.assertEqual('!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:'
                          '!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:'
                          '!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:'
-                         '!transaction_tests:!util_tests:!validation_chainstate_tests:'
-                         '!wallet_tests', selection)
+                         '!transaction_tests:!util_tests:!validation_chainstate_tests', selection)
 
     def test_original_functional_gate_tests_and_runner_flags_are_preserved(self):
         # Dropping a test from the gate takes an edit here as well as a line in the list that says why.
@@ -697,6 +696,7 @@ class SchedulingTest(unittest.TestCase):
             'wallet_combineoutputs.py',
             'feature_dsl_dkg_isolation.py',
             'rpc_help.py', 'tool_wallet.py',
+            'wallet_multiwallet.py', 'rpc_getblockstats.py',
         ]), sorted(name for name, _ in functional_gate.read_gate()))
         functional = run_script(step_text(self.checks, 'Functional tests (named gate)'))
         self.assertIn('python3 ci/dash/functional_gate.py order > "$gate" || exit 1\n', functional)
