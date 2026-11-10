@@ -4,6 +4,7 @@
 
 #include <wallet/wallet.h>
 
+#include <algorithm>
 #include <future>
 #include <iostream>
 #include <memory>
@@ -105,8 +106,11 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
     // Cap last block file size, and mine new block in a new block file.
     CBlockIndex* oldTip = m_node.chainman->ActiveChain().Tip();
     WITH_LOCK(::cs_main, m_node.chainman->m_blockman.GetBlockFileInfo(oldTip->GetBlockPos().nFile)->nSize = MAX_BLOCKFILE_SIZE);
-    CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+    const CBlock new_block{CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()))};
     CBlockIndex* newTip = m_node.chainman->ActiveChain().Tip();
+    // What each tip's coinbase pays the key; both are still immature at the new tip.
+    const CAmount old_reward{m_coinbase_txns.back()->GetValueOut()};
+    const CAmount new_reward{new_block.vtx[0]->GetValueOut()};
 
     // Verify ScanForWalletTransactions fails to read an unknown start block.
     {
@@ -143,7 +147,7 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
         BOOST_CHECK(result.last_failed_block.IsNull());
         BOOST_CHECK_EQUAL(result.last_scanned_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.last_scanned_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(wallet.GetBalance().m_mine_immature, 1000 * COIN);
+        BOOST_CHECK_EQUAL(wallet.GetBalance().m_mine_immature, old_reward + new_reward);
     }
 
     // Prune the older block file.
@@ -171,7 +175,7 @@ BOOST_FIXTURE_TEST_CASE(scan_for_wallet_transactions, TestChain100Setup)
         BOOST_CHECK_EQUAL(result.last_failed_block, oldTip->GetBlockHash());
         BOOST_CHECK_EQUAL(result.last_scanned_block, newTip->GetBlockHash());
         BOOST_CHECK_EQUAL(*result.last_scanned_height, newTip->nHeight);
-        BOOST_CHECK_EQUAL(wallet.GetBalance().m_mine_immature, 500 * COIN);
+        BOOST_CHECK_EQUAL(wallet.GetBalance().m_mine_immature, new_reward);
     }
 
     // Prune the remaining block file.
@@ -275,7 +279,7 @@ BOOST_FIXTURE_TEST_CASE(importwallet_rescan, TestChain100Setup)
 
     // Set key birthday to block time increased by the timestamp window, so
     // rescan will start at the block time.
-    const int64_t KEY_TIME = BLOCK_TIME + 7200;
+    const int64_t KEY_TIME = BLOCK_TIME + TIMESTAMP_WINDOW;
     SetMockTime(KEY_TIME);
     m_coinbase_txns.emplace_back(CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey())).vtx[0]);
 
@@ -429,7 +433,7 @@ BOOST_FIXTURE_TEST_CASE(coin_mark_dirty_immature_credit, TestChain100Setup)
     // credit amount is calculated.
     wtx.MarkDirty();
     BOOST_CHECK(spk_man->AddKeyPubKey(coinbaseKey, coinbaseKey.GetPubKey()));
-    BOOST_CHECK_EQUAL(wtx.GetImmatureCredit(), 500*COIN);
+    BOOST_CHECK_EQUAL(wtx.GetImmatureCredit(), m_coinbase_txns.back()->GetValueOut());
 }
 
 static int64_t AddTx(ChainstateManager& chainman, CWallet& wallet, uint32_t lockTime, int64_t mockTime, int64_t blockTime)
@@ -632,6 +636,22 @@ public:
         return it->second;
     }
 
+    //! How many of the fixture's coinbases the wallet can spend at the tip. Every block pays
+    //! coinbaseKey, and a coinbase matures COINBASE_MATURITY blocks after its own: 25 on this chain,
+    //! so 76 of the 101 blocks. Dash's 100 left exactly one, which these tests used to assume.
+    int MatureCoinbases() const
+    {
+        return WITH_LOCK(::cs_main, return m_node.chainman->ActiveChain().Height()) - COINBASE_MATURITY;
+    }
+
+    //! What blocks first + 1 to first + count paid coinbaseKey (m_coinbase_txns[i] is block i + 1's).
+    CAmount CoinbaseValue(int first, int count) const
+    {
+        CAmount value{0};
+        for (int i = first; i < first + count; ++i) value += m_coinbase_txns.at(i)->GetValueOut();
+        return value;
+    }
+
     std::unique_ptr<CWallet> wallet;
 };
 
@@ -639,8 +659,9 @@ BOOST_FIXTURE_TEST_CASE(ListCoins, ListCoinsTestingSetup)
 {
     std::string coinbaseAddress = coinbaseKey.GetPubKey().GetID().ToString();
 
-    // Confirm ListCoins initially returns 1 coin grouped under coinbaseKey
-    // address.
+    // Confirm ListCoins initially returns the mature coinbase coins grouped
+    // under coinbaseKey address.
+    const int mature{MatureCoinbases()};
     std::map<CTxDestination, std::vector<COutput>> list;
     {
         LOCK(wallet->cs_wallet);
@@ -648,15 +669,16 @@ BOOST_FIXTURE_TEST_CASE(ListCoins, ListCoinsTestingSetup)
     }
     BOOST_CHECK_EQUAL(list.size(), 1U);
     BOOST_CHECK_EQUAL(std::get<PKHash>(list.begin()->first).ToString(), coinbaseAddress);
-    BOOST_CHECK_EQUAL(list.begin()->second.size(), 1U);
+    BOOST_CHECK_EQUAL(list.begin()->second.size(), size_t(mature));
 
-    // Check initial balance from one mature coinbase transaction.
-    BOOST_CHECK_EQUAL(500 * COIN, wallet->GetAvailableBalance());
+    // Check initial balance from the mature coinbase transactions.
+    BOOST_CHECK_EQUAL(CoinbaseValue(0, mature), wallet->GetAvailableBalance());
 
     // Add a transaction creating a change address, and confirm ListCoins still
     // returns the coin associated with the change address underneath the
     // coinbaseKey pubkey, even though the change address has a different
-    // pubkey.
+    // pubkey. One coin is spent; its change and the coinbase the new block
+    // matured are added.
     AddTx(CRecipient{GetScriptForRawPubKey({}), 1 * COIN, false /* subtract fee */});
     {
         LOCK(wallet->cs_wallet);
@@ -664,14 +686,14 @@ BOOST_FIXTURE_TEST_CASE(ListCoins, ListCoinsTestingSetup)
     }
     BOOST_CHECK_EQUAL(list.size(), 1U);
     BOOST_CHECK_EQUAL(std::get<PKHash>(list.begin()->first).ToString(), coinbaseAddress);
-    BOOST_CHECK_EQUAL(list.begin()->second.size(), 2U);
+    BOOST_CHECK_EQUAL(list.begin()->second.size(), size_t(mature) + 1);
 
-    // Lock both coins. Confirm number of available coins drops to 0.
+    // Lock every coin. Confirm number of available coins drops to 0.
     {
         LOCK(wallet->cs_wallet);
         std::vector<COutput> available;
         wallet->AvailableCoins(available);
-        BOOST_CHECK_EQUAL(available.size(), 2U);
+        BOOST_CHECK_EQUAL(available.size(), size_t(mature) + 1);
     }
     for (const auto& group : list) {
         for (const auto& coin : group.second) {
@@ -693,7 +715,7 @@ BOOST_FIXTURE_TEST_CASE(ListCoins, ListCoinsTestingSetup)
     }
     BOOST_CHECK_EQUAL(list.size(), 1U);
     BOOST_CHECK_EQUAL(std::get<PKHash>(list.begin()->first).ToString(), coinbaseAddress);
-    BOOST_CHECK_EQUAL(list.begin()->second.size(), 2U);
+    BOOST_CHECK_EQUAL(list.begin()->second.size(), size_t(mature) + 1);
 }
 
 class CreateTransactionTestSetup : public TestChain100Setup
@@ -1142,33 +1164,43 @@ BOOST_FIXTURE_TEST_CASE(CreateTransactionTest, CreateTransactionTestSetup)
 // Check SelectCoinsGroupedByAddresses() behaviour
 BOOST_FIXTURE_TEST_CASE(select_coins_grouped_by_addresses, ListCoinsTestingSetup)
 {
-    // Check initial balance from one mature coinbase transaction.
-    BOOST_CHECK_EQUAL(wallet->GetAvailableBalance(), 500 * COIN);
+    // Check initial balance from the mature coinbase transactions.
+    const int mature{MatureCoinbases()};
+    BOOST_CHECK_EQUAL(wallet->GetAvailableBalance(), CoinbaseValue(0, mature));
 
     {
         std::vector<CompactTallyItem> vecTally = wallet->SelectCoinsGroupedByAddresses(/*fSkipDenominated=*/false,
                 /*fAnonymizable=*/false,
                 /*fSkipUnconfirmed=*/false,
                 /*nMaxOupointsPerAddress=*/100);
-        BOOST_CHECK_EQUAL(vecTally.size(), 1);
-        BOOST_CHECK_EQUAL(vecTally.at(0).nAmount, 500 * COIN);
-        BOOST_CHECK_EQUAL(vecTally.at(0).vecInputCoins.size(), 1);
+        BOOST_CHECK_EQUAL(vecTally.size(), 1U);
+        BOOST_CHECK_EQUAL(vecTally.at(0).nAmount, CoinbaseValue(0, mature));
+        BOOST_CHECK_EQUAL(vecTally.at(0).vecInputCoins.size(), size_t(mature));
     }
 
-    // Create two conflicting transactions, add one to the wallet and mine the other one.
+    // Create two conflicting transactions, add one to the wallet and mine the other one. Both spend
+    // the first block's coinbase: the wallet holds more than one mature coin, so the shared input is
+    // named rather than left to coin selection.
+    const COutPoint first_coinbase{m_coinbase_txns.at(0)->GetHash(), 0};
     CTransactionRef tx1;
     CTransactionRef tx2;
     CAmount fee;
     int changePos = -1;
     bilingual_str error;
-    CCoinControl dummy;
+    CCoinControl spend_first;
+    spend_first.Select(first_coinbase);
     FeeCalculation fee_calc_out;
     BOOST_CHECK(wallet->CreateTransaction({CRecipient{GetScriptForRawPubKey({}), 2 * COIN, true /* subtract fee */}},
-                                        tx1, fee, changePos, error, dummy, fee_calc_out));
+                                        tx1, fee, changePos, error, spend_first, fee_calc_out));
     BOOST_CHECK(wallet->CreateTransaction({CRecipient{GetScriptForRawPubKey({}), 1 * COIN, true /* subtract fee */}},
-                                        tx2, fee, changePos, error, dummy, fee_calc_out));
+                                        tx2, fee, changePos, error, spend_first, fee_calc_out));
+    for (const CTransactionRef& tx : {tx1, tx2}) {
+        BOOST_REQUIRE(tx);
+        BOOST_REQUIRE_EQUAL(tx->vin.size(), 1U);
+        BOOST_CHECK(tx->vin[0].prevout == first_coinbase);
+    }
     wallet->CommitTransaction(tx1, {}, {});
-    BOOST_CHECK_EQUAL(wallet->GetAvailableBalance(), 0);
+    BOOST_CHECK_EQUAL(wallet->GetAvailableBalance(), CoinbaseValue(1, mature - 1));
     CreateAndProcessBlock({CMutableTransaction(*tx2)}, GetScriptForRawPubKey({}));
     {
         LOCK(wallet->cs_wallet);
@@ -1189,16 +1221,25 @@ BOOST_FIXTURE_TEST_CASE(select_coins_grouped_by_addresses, ListCoinsTestingSetup
     }
 
     // Committed tx is the one that should be marked as "conflicting".
-    // Make sure that available balance and SelectCoinsGroupedByAddresses results match.
+    // Make sure that available balance and SelectCoinsGroupedByAddresses results match. tx2 spent the
+    // first coinbase and left its change at an address of its own; the block that mined tx2 matured
+    // one more coinbase, so blocks 2 to mature + 1 remain under coinbaseKey.
+    const CAmount coinbases{CoinbaseValue(1, mature)};
+    const CAmount change{m_coinbase_txns.at(0)->GetValueOut() - 1 * COIN};
     const auto vecTally = wallet->SelectCoinsGroupedByAddresses(/*fSkipDenominated=*/false,
             /*fAnonymizable=*/false,
             /*fSkipUnconfirmed=*/false,
             /*nMaxOupointsPerAddress=*/100);
-    BOOST_CHECK_EQUAL(vecTally.size(), 2);
-    BOOST_CHECK_EQUAL(vecTally.at(0).vecInputCoins.size(), 1);
-    BOOST_CHECK_EQUAL(vecTally.at(1).vecInputCoins.size(), 1);
-    BOOST_CHECK_EQUAL(vecTally.at(0).nAmount + vecTally.at(1).nAmount, (500 + 499) * COIN);
-    BOOST_CHECK_EQUAL(wallet->GetAvailableBalance(), (500 + 499) * COIN);
+    BOOST_REQUIRE_EQUAL(vecTally.size(), 2U);
+    // The groups come in address order; sorted by size and amount, the change comes first.
+    std::vector<std::pair<size_t, CAmount>> groups;
+    for (const auto& item : vecTally) groups.emplace_back(item.vecInputCoins.size(), item.nAmount);
+    std::sort(groups.begin(), groups.end());
+    BOOST_CHECK_EQUAL(groups.at(0).first, 1U);
+    BOOST_CHECK_EQUAL(groups.at(0).second, change);
+    BOOST_CHECK_EQUAL(groups.at(1).first, size_t(mature));
+    BOOST_CHECK_EQUAL(groups.at(1).second, coinbases);
+    BOOST_CHECK_EQUAL(wallet->GetAvailableBalance(), coinbases + change);
 }
 
 BOOST_FIXTURE_TEST_CASE(wallet_disableprivkeys, TestChain100Setup)

@@ -43,16 +43,23 @@ class GetblockstatsTest(BitcoinTestFramework):
 
     def generate_test_data(self, filename):
         self.nodes[0].setmocktime(self.mocktime)
+        # The sends below spend the mined coinbases, so the generator needs a wallet holding the key they are
+        # mined to. The framework creates none for this test: replaying the data needs no wallet.
+        self.nodes[0].createwallet(wallet_name='test')
+        self.nodes[0].importprivkey(self.nodes[0].get_deterministic_priv_key().key)
         self.generate(self.nodes[0], COINBASE_MATURITY + 1)
 
         address = self.nodes[0].get_deterministic_priv_key().address
         self.nodes[0].sendtoaddress(address=address, amount=10, subtractfeefromamount=True)
         self.generate(self.nodes[0], 1)
 
+        # Block 103's transactions differ in shape, so that its size and fee statistics (minimum, maximum, average,
+        # median) differ too. Every spendable coin here is a whole coinbase, so plain sends would all look alike:
+        # one input and two outputs; then more than a coinbase pays, two inputs; then three outputs.
         self.nodes[0].sendtoaddress(address=address, amount=10, subtractfeefromamount=True)
-        self.nodes[0].sendtoaddress(address=address, amount=10, subtractfeefromamount=False)
+        self.nodes[0].sendtoaddress(address=address, amount=12000000, subtractfeefromamount=False)
         self.nodes[0].settxfee(amount=0.003)
-        self.nodes[0].sendtoaddress(address=address, amount=1, subtractfeefromamount=True)
+        self.nodes[0].sendmany(dummy="", amounts={address: 1, self.nodes[0].getnewaddress(): 1}, subtractfeefrom=[address])
         self.sync_all()
         self.generate(self.nodes[0], 1)
 
