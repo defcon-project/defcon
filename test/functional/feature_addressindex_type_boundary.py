@@ -16,12 +16,10 @@ the hash ff..ff once as a P2PKH and once as a P2SH output (#328).
 """
 
 from test_framework.address import keyhash_to_p2pkh, scripthash_to_p2sh
+from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.messages import COIN
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
-
-# consensus/consensus.h: generated outputs mature after 25 blocks on regtest
-COINBASE_MATURITY = 25
 
 
 class AddressIndexTypeBoundaryTest(BitcoinTestFramework):

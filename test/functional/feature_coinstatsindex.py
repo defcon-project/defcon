@@ -110,7 +110,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
 
         for hash_option in index_hash_options:
             # Fetch old stats by height
-            res2 = index_node.gettxoutsetinfo(hash_option, 102)
+            res2 = index_node.gettxoutsetinfo(hash_option, COINBASE_MATURITY + 2)
             del res2['block_info'], res2['total_unspendable_amount']
             res2.pop('muhash', None)
             assert_equal(res0, res2)
@@ -122,7 +122,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
             assert_equal(res0, res3)
 
             # It does not work without coinstatsindex
-            assert_raises_rpc_error(-8, "Querying specific block heights requires coinstatsindex", node.gettxoutsetinfo, hash_option, 102)
+            assert_raises_rpc_error(-8, "Querying specific block heights requires coinstatsindex", node.gettxoutsetinfo, hash_option, COINBASE_MATURITY + 2)
 
         self.log.info("Test gettxoutsetinfo() with index and verbose flag")
 
@@ -145,7 +145,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
             self.block_sanity_check(res4['block_info'], -1)
 
             # Test an older block height that included a normal tx
-            res5 = index_node.gettxoutsetinfo(hash_option, 102)
+            res5 = index_node.gettxoutsetinfo(hash_option, COINBASE_MATURITY + 2)
             assert_equal(res5['total_unspendable_amount'], 50)
             assert_equal(res5['block_info'], {
                 'unspendable': 0,
@@ -159,7 +159,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
                     'unclaimed_rewards': 0,
                 }
             })
-            self.block_sanity_check(res5['block_info'], 101)
+            self.block_sanity_check(res5['block_info'], COINBASE_MATURITY + 1)
 
         # Generate and send a normal tx with two outputs
         tx1_txid, tx1_vout = self.wallet.send_to(
@@ -182,7 +182,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
 
         for hash_option in index_hash_options:
             # Check all amounts were registered correctly
-            res6 = index_node.gettxoutsetinfo(hash_option, 108)
+            res6 = index_node.gettxoutsetinfo(hash_option, COINBASE_MATURITY + 8)
             assert_equal(res6['total_unspendable_amount'], Decimal('70.99900000'))
             assert_equal(res6['block_info'], {
                 'unspendable': Decimal('20.99900000'),
@@ -196,11 +196,11 @@ class CoinStatsIndexTest(BitcoinTestFramework):
                     'unclaimed_rewards': 0,
                 }
             })
-            self.block_sanity_check(res6['block_info'], 107)
+            self.block_sanity_check(res6['block_info'], COINBASE_MATURITY + 7)
 
         # Create a coinbase that does not claim full subsidy and also
         # has two outputs
-        cb = create_coinbase(109, nValue=35)
+        cb = create_coinbase(COINBASE_MATURITY + 9, nValue=35)
         cb.vout.append(CTxOut(5 * COIN, CScript([OP_FALSE])))
         cb.rehash()
 
@@ -213,7 +213,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.sync_all()
 
         for hash_option in index_hash_options:
-            res7 = index_node.gettxoutsetinfo(hash_option, 109)
+            res7 = index_node.gettxoutsetinfo(hash_option, COINBASE_MATURITY + 9)
             assert_equal(res7['total_unspendable_amount'], Decimal('530.99900000'))
             assert_equal(res7['block_info'], {
                 'unspendable': 460,
@@ -227,7 +227,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
                     'unclaimed_rewards': 460
                 }
             })
-            self.block_sanity_check(res7['block_info'], 108)
+            self.block_sanity_check(res7['block_info'], COINBASE_MATURITY + 8)
 
         self.log.info("Test that the index is robust across restarts")
 
@@ -263,7 +263,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.log.info("Test use_index option for nodes running the index")
 
         self.connect_nodes(0, 1)
-        self.nodes[0].waitforblockheight(110)
+        self.nodes[0].waitforblockheight(COINBASE_MATURITY + 10)
         res = self.nodes[0].gettxoutsetinfo('muhash')
         option_res = self.nodes[1].gettxoutsetinfo(hash_type='muhash', hash_or_height=None, use_index=False)
         del res['disk_size'], option_res['disk_size']
@@ -278,14 +278,14 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         reorg_block = reorg_blocks[1]
         res_invalid = index_node.gettxoutsetinfo('muhash')
         index_node.invalidateblock(reorg_blocks[0])
-        assert_equal(index_node.gettxoutsetinfo('muhash')['height'], 110)
+        assert_equal(index_node.gettxoutsetinfo('muhash')['height'], COINBASE_MATURITY + 10)
 
         # Add two new blocks
         block = self.generate(index_node, 2, sync_fun=self.no_op)[1]
         res = index_node.gettxoutsetinfo(hash_type='muhash', hash_or_height=None, use_index=False)
 
         # Test that the result of the reorged block is not returned for its old block height
-        res2 = index_node.gettxoutsetinfo(hash_type='muhash', hash_or_height=112)
+        res2 = index_node.gettxoutsetinfo(hash_type='muhash', hash_or_height=COINBASE_MATURITY + 12)
         assert_equal(res["bestblock"], block)
         assert_equal(res["muhash"], res2["muhash"])
         assert(res["muhash"] != res_invalid["muhash"])
@@ -300,20 +300,20 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self.generate(index_node, 1)
 
         # Ensure that removing and re-adding blocks yields consistent results
-        block = index_node.getblockhash(99)
+        block = index_node.getblockhash(COINBASE_MATURITY - 1)
         index_node.invalidateblock(block)
         index_node.reconsiderblock(block)
-        res3 = index_node.gettxoutsetinfo(hash_type='muhash', hash_or_height=112)
+        res3 = index_node.gettxoutsetinfo(hash_type='muhash', hash_or_height=COINBASE_MATURITY + 12)
         assert_equal(res2, res3)
 
     def _test_index_rejects_hash_serialized(self):
         self.log.info("Test that the rpc raises if the legacy hash is passed with the index")
 
         msg = "hash_serialized_2 hash type cannot be queried for a specific block"
-        assert_raises_rpc_error(-8, msg, self.nodes[1].gettxoutsetinfo, hash_type='hash_serialized_2', hash_or_height=111)
+        assert_raises_rpc_error(-8, msg, self.nodes[1].gettxoutsetinfo, hash_type='hash_serialized_2', hash_or_height=COINBASE_MATURITY + 11)
 
         for use_index in {True, False, None}:
-            assert_raises_rpc_error(-8, msg, self.nodes[1].gettxoutsetinfo, hash_type='hash_serialized_2', hash_or_height=111, use_index=use_index)
+            assert_raises_rpc_error(-8, msg, self.nodes[1].gettxoutsetinfo, hash_type='hash_serialized_2', hash_or_height=COINBASE_MATURITY + 11, use_index=use_index)
 
 
 if __name__ == '__main__':

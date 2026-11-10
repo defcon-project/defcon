@@ -21,6 +21,7 @@ coinstake output the column is about.
 import time
 from decimal import Decimal
 
+from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -32,8 +33,6 @@ from test_framework.util import (
 # chainparams.cpp, CRegTestParams
 LAST_POW_BLOCK = 5000
 STAKE_MIN_AGE = 10 * 60
-# consensus/consensus.h
-COINBASE_MATURITY = 25
 
 POW_CHUNK = 500
 POW_CHUNK_CLOCK_STEP = 100

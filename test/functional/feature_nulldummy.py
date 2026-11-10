@@ -48,7 +48,7 @@ class NULLDUMMYTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.extra_args = [[
             '-whitelist=127.0.0.1',
-            '-dip3params=105:105',
+            f'-dip3params={COINBASE_MATURITY + 5}:{COINBASE_MATURITY + 5}',
             f'-testactivationheight=bip147@{COINBASE_MATURITY + 5}',
             '-par=1',  # Use only one script thread to get the exact reject reason for testing
         ]] * 2

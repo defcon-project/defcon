@@ -12,6 +12,7 @@ import re
 import time
 from decimal import Decimal
 
+from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     FAST_STAKING_ARG,
@@ -35,7 +36,6 @@ POS_REWARD = Decimal("500")
 REST_BUDGET_BPS = 500
 SATS = 100000000
 # the kernel's depth rule, in the wallet's terms (ClassifyForStaking)
-COINBASE_MATURITY = 25
 KERNEL_DEPTH = COINBASE_MATURITY + 2
 
 PIECE = Decimal("20000")          # not a collateral amount on regtest
