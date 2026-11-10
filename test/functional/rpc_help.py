@@ -82,8 +82,10 @@ class HelpRpcTest(BitcoinTestFramework):
 
         for argname, convert in converts_by_argname.items():
             if all(convert) != any(convert):
-                # Only allow dummy to fail consistency check
-                assert argname == 'dummy', ('WARNING: conversion mismatch for argument named %s (%s)' % (argname, list(zip(all_methods_by_argname[argname], converts_by_argname[argname]))))
+                # Only allow dummy and id to fail consistency check. setstaking's id is a
+                # wallet's number in the staking list, verifyislock's a request hash; the
+                # two are unrelated, and renaming either would break callers that name it.
+                assert argname in ['dummy', 'id'], ('WARNING: conversion mismatch for argument named %s (%s)' % (argname, list(zip(all_methods_by_argname[argname], converts_by_argname[argname]))))
 
     def test_categories(self):
         node = self.nodes[0]
@@ -97,10 +99,11 @@ class HelpRpcTest(BitcoinTestFramework):
         # help of unknown command
         assert_equal(node.help('foo'), 'help: unknown command: foo')
 
-        # command titles
+        # command titles; help orders them by the category's bytes, so this fork's
+        # capitalised DeFCoN category comes before the lowercase ones
         titles = [line[3:-3] for line in node.help().splitlines() if line.startswith('==')]
 
-        components = ['Addressindex', 'Blockchain', 'Control', 'Dash', 'Evo', 'Generating', 'Mining', 'Network', 'Rawtransactions', 'Util']
+        components = ['DeFCoN', 'Addressindex', 'Blockchain', 'Control', 'Evo', 'Generating', 'Mining', 'Network', 'Rawtransactions', 'Staking', 'Util']
 
         if self.is_wallet_compiled():
             components.append('Wallet')

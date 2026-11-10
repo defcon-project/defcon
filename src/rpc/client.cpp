@@ -168,6 +168,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "send", 3, "fee_rate"},
     { "send", 4, "options" },
     { "importprivkey", 2, "rescan" },
+    { "importblsprivkey", 1, "rescan" },
     { "importelectrumwallet", 1, "index" },
     { "importaddress", 2, "rescan" },
     { "importaddress", 3, "p2sh" },
@@ -250,7 +251,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "verifyislock", 3, "maxHeight" },
     { "submitchainlock", 2, "blockHeight" },
     { "mnauth", 0, "nodeId" },
-    { "setstaking", 0, "walletId" },
+    { "setstaking", 0, "id" },
 };
 // clang-format on
 
