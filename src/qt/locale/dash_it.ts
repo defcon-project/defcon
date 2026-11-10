@@ -55,11 +55,11 @@
     </message>
     <message>
         <source>Choose the address to send coins to</source>
-        <translation>Scegli l'indirizzo a cui inviare i dash</translation>
+        <translation>Scegli l'indirizzo a cui inviare le monete</translation>
     </message>
     <message>
         <source>Choose the address to receive coins with</source>
-        <translation>Scegli l'indirizzo con cui ricevere dash</translation>
+        <translation>Scegli l'indirizzo con cui ricevere le monete</translation>
     </message>
     <message>
         <source>C&amp;hoose</source>
@@ -3554,7 +3554,7 @@ Per ulteriori informazioni sull'utilizzo di questa console, digitare %6.
     <name>SendCoinsDialog</name>
     <message>
         <source>Send Coins</source>
-        <translation>Invia dash</translation>
+        <translation>Invia monete</translation>
     </message>
     <message>
         <source>Coin Control Features</source>
@@ -3814,7 +3814,7 @@ Per ulteriori informazioni sull'utilizzo di questa console, digitare %6.
     </message>
     <message>
         <source>Confirm send coins</source>
-        <translation>Conferma l'invio di dash</translation>
+        <translation>Conferma l'invio di monete</translation>
     </message>
     <message>
         <source>Confirm transaction proposal</source>
