@@ -950,6 +950,9 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
             'rpc_rawtransaction.py', 'wallet_balance.py', 'interface_bitcoin_cli.py', 'feature_coinstatsindex.py',
             'wallet_labels.py', 'wallet_orphanedreward.py', 'feature_txindex.py',
             'wallet_coinbase_category.py',
+            'p2p_tx_download.py', 'wallet_avoidreuse.py', 'wallet_txn_doublespend.py', 'wallet_txn_clone.py',
+            'rpc_createmultisig.py', 'mempool_reorg.py', 'interface_rest.py', 'mempool_spend_coinbase.py',
+            'rpc_packages.py',
         ]), sorted(name for name, _ in functional_gate.read_gate()))
         functional = run_script(step_text(self.checks, 'Functional tests (named gate)'))
         self.assertIn('python3 ci/dash/functional_gate.py order --shard "$shard" > "$gate" || exit 1\n', functional)

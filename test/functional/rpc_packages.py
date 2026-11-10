@@ -47,7 +47,7 @@ class RPCPackagesTest(BitcoinTestFramework):
         self.privkeys = [node.get_deterministic_priv_key().key]
         self.address = node.get_deterministic_priv_key().address
         self.coins = []
-        # The last 100 coinbase transactions are premature
+        # Take the first 100 coinbase transactions, which are mature (with a maturity of 25, only the last 24 are not)
         for b in self.generatetoaddress(node, 200, self.address)[:100]:
             coinbase = node.getblock(blockhash=b, verbosity=2)["tx"][0]
             self.coins.append({
@@ -232,8 +232,8 @@ class RPCPackagesTest(BitcoinTestFramework):
         node = self.nodes[0]
         prevtx = self.coins.pop()
         inputs = [{"txid": prevtx["txid"], "vout": 0}]
-        output1 = {node.get_deterministic_priv_key().address: 500 - 0.00125}
-        output2 = {ADDRESS_BCRT1_P2SH_OP_TRUE: 500 - 0.00125}
+        output1 = {node.get_deterministic_priv_key().address: prevtx["amount"] - Decimal("0.00125")}
+        output2 = {ADDRESS_BCRT1_P2SH_OP_TRUE: prevtx["amount"] - Decimal("0.00125")}
 
         # tx1 and tx2 share the same inputs
         rawtx1 = node.createrawtransaction(inputs, output1)

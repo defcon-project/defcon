@@ -23,7 +23,10 @@
 # Every run of the gate lists the measured ones in its summary ("Functional
 # gate: recorded and measured seconds"); refresh a line when its test has grown
 # or shrunk a lot. Recorded on pull request run 42887921093 (2026-11-10), the
-# first with every test below in the gate.
+# first with every test then in the gate; the nine wallet, mempool, RPC and
+# peer tests that came in once they stopped assuming Dash's coin amounts and
+# maturity on the test chains, from their local runs until their first hosted
+# run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -80,6 +83,8 @@
 81   feature_dsl_commitment_v2.py           # the Sentinel commitment's second bitfield: who the pool judged at all (#231)
 64   wallet_backup.py                       # backupwallet, restorewallet, dumpwallet and importwallet give back the same balances
 62   feature_dsl_dkg_isolation.py           # a slow node: announcement copies unread, the tick behind the DKG, commitments intact (SF1-A)
+60   wallet_avoidreuse.py                   # the avoid_reuse flag: it persists, is immutable, keeps change as change, keeps reused coins out of sends
+58   p2p_tx_download.py                     # transaction announcements: a getdata to each announcing peer in turn, the in-flight limits, expiry
 57   feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates
 51   feature_pos_double_sign.py             # a stake signed twice is counted once and changes nothing else
 50   feature_llmq_is_named_quorum_window.py # an InstantSend lock signed by the quorum that has just left the signing-active set, right after a new commitment
@@ -94,6 +99,7 @@
 27   feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
 24   rpc_rawtransaction.py                  # createrawtransaction, signing and sending, and the multisig spends
 24   wallet_balance.py                      # getbalance and getbalances with unconfirmed, untrusted and watch-only coins
+24   wallet_txn_doublespend.py              # the wallet's accounting when a double-spend of its funding transactions confirms instead
 23   wallet_combineoutputs.py               # combineoutputs: previews, batches smallest first, exactly the reported inputs and no change; both wallets
 23   feature_llmq_q60_proto_floor.py        # the peer protocol floor from the formation lead, against the real predecessor version
 22   wallet_send.py                         # the send call: given inputs, change address and position, fee rates, locktime
@@ -104,6 +110,8 @@
 19   rpc_verifychainlock.py                 # the lock-verifying RPCs
 16   rpc_bls.py                             # BLS key persistence and the empty staking registry, both wallet formats
 15   interface_bitcoin_cli.py               # defcon-cli: -getinfo with one and several wallets, -generate, -stdin, -rpcwait
+15   wallet_txn_clone.py                    # the wallet's accounting when a malleated clone of its transaction confirms instead
+15   rpc_createmultisig.py                  # createmultisig and addmultisigaddress, a spend from each kind of multisig, the balances after them
 13   feature_coinstatsindex.py              # the coin statistics index agrees with the UTXO set, by height, across restarts and reorgs
 11   feature_evodb_reconcile_below_dip3.py  # the evodb reconcile below DIP0003, where an empty evodb is current
 11   feature_evodb_repair_startup.py        # -evodbrepair finishes before the import, the network and the end of RPC warmup
@@ -114,8 +122,12 @@
 6    rpc_help.py                            # defcon-cli converts each argument the way the server names it, and the help categories
 6    feature_txindex.py                     # getrawtransaction from the transaction index, on nodes without the transaction in a wallet
 6    wallet_coinbase_category.py            # a coinbase is immature, then generate once it matures, then orphan once its block is invalidated
+6    mempool_reorg.py                       # coinbase spends leave the mempool when a reorg makes their coinbase immature again
+6    interface_rest.py                      # the REST interface: transactions, UTXOs with and without the mempool, blocks, headers, chain info
 5    wallet_orphanedreward.py               # a block reward the wallet spent is orphaned, and its other coins stay spendable
 4    feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
+4    mempool_spend_coinbase.py              # a coinbase spend enters the mempool only once the next block may include it
+4    rpc_packages.py                        # testmempoolaccept on packages: chains, several parents or children, conflicts, fees
 3    p2p_headers_uncompressed.py            # the plain headers reader consumes what every writer writes (#220)
 3    feature_addressindex_type_boundary.py  # the P2PKH and P2SH records of one hash on a sparse index, where they are neighbours on disk (#328)
 3    rpc_getblockstats.py                   # getblockstats on a replayed chain: every statistic, by height and by hash, alone and together
