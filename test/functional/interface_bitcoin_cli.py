@@ -7,7 +7,7 @@
 from decimal import Decimal
 import re
 
-from test_framework.blocktools import COINBASE_MATURITY
+from test_framework.blocktools import BLOCK_SUBSIDY, COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -18,10 +18,9 @@ from test_framework.util import (
 )
 import time
 
-# A regtest proof-of-work block pays 11,000,000 (GetBlockSubsidyHelper in validation.cpp), which
-# matures after COINBASE_MATURITY blocks. Therefore, after mining COINBASE_MATURITY + 1 blocks we
-# expect node 0 to have a balance of (BLOCKS - COINBASE_MATURITY) block rewards.
-BLOCK_SUBSIDY = 11000000
+# A regtest proof-of-work block pays BLOCK_SUBSIDY, which matures after COINBASE_MATURITY blocks.
+# Therefore, after mining COINBASE_MATURITY + 1 blocks we expect node 0 to have a balance of
+# (BLOCKS - COINBASE_MATURITY) block rewards.
 BLOCKS = COINBASE_MATURITY + 1
 BALANCE = (BLOCKS - COINBASE_MATURITY) * BLOCK_SUBSIDY
 
@@ -156,13 +155,16 @@ class TestBitcoinCli(BitcoinTestFramework):
             assert_equal(Decimal(cli_get_info['CoinJoin balance']), wallet_info['coinjoin_balance'])
             assert_equal(int(cli_get_info['Keypool size']), wallet_info['keypoolsize'])
             assert_equal(int(cli_get_info['Unlocked until']), wallet_info['unlocked_until'])
-            assert_equal(Decimal(cli_get_info['Transaction fee rate (-paytxfee) (DASH/kB)']), wallet_info['paytxfee'])
-            assert_equal(Decimal(cli_get_info['Min tx relay fee rate (DASH/kB)']), network_info['relayfee'])
+            assert_equal(Decimal(cli_get_info['Transaction fee rate (-paytxfee) (DFCN/kB)']), wallet_info['paytxfee'])
+            assert_equal(Decimal(cli_get_info['Min tx relay fee rate (DFCN/kB)']), network_info['relayfee'])
             assert_equal(self.nodes[0].cli.getwalletinfo(), wallet_info)
 
             # Setup to test -getinfo, -generate, and -rpcwallet= with multiple wallets.
             wallets = [self.default_wallet_name, 'Encrypted', 'secret']
-            amounts = [BALANCE + Decimal('459.9999955'), Decimal(9), Decimal(31)]
+            # The default wallet keeps BALANCE and gains the block reward that the block mined below matures,
+            # less the 9 and 31 it sends the other two wallets and their two fees (Dash's 459.9999955 was its
+            # 500 less the same).
+            amounts = [BALANCE + BLOCK_SUBSIDY - Decimal('40.0000045'), Decimal(9), Decimal(31)]
             self.nodes[0].createwallet(wallet_name=wallets[1])
             self.nodes[0].createwallet(wallet_name=wallets[2])
             w1 = self.nodes[0].get_wallet_rpc(wallets[0])
@@ -325,9 +327,10 @@ class TestBitcoinCli(BitcoinTestFramework):
 
         self.log.info("Test -rpcwait option waits at most -rpcwaittimeout seconds for startup")
         self.stop_node(0)  # stop the node so we time out
-        start_time = time.time()
+        # the monotonic clock, which the CLI's deadline uses (steady_clock); the wall clock can be slewed meanwhile
+        start_time = time.monotonic()
         assert_raises_process_error(1, "Could not connect to the server", self.nodes[0].cli('-rpcwait', '-rpcwaittimeout=5').echo)
-        assert_greater_than_or_equal(time.time(), start_time + 5)
+        assert_greater_than_or_equal(time.monotonic(), start_time + 5)
 
 
 if __name__ == '__main__':

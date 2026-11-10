@@ -18,8 +18,10 @@
 # 42406840902; wallet_combineoutputs.py, which the CJ1 change (no CoinJoin amounts in
 # combining) touches, estimated from its local runs until its first hosted run;
 # rpc_help.py and tool_wallet.py, which the command-line conversion fix brought
-# into the gate, likewise; and wallet_multiwallet.py and rpc_getblockstats.py,
-# which came in once they stopped assuming Dash's chain.
+# into the gate, likewise; wallet_multiwallet.py and rpc_getblockstats.py,
+# which came in once they stopped assuming Dash's chain; and the twelve wallet,
+# RPC and command-line tests that came in once they stopped expecting Dash's
+# block reward and name, likewise.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -71,9 +73,12 @@
 208  feature_pos_header_only.py             # headers with no block behind them hold neither masternode sync nor staking
 161  wallet_multiwallet.py                  # several wallets on one node: wallet directories, loading and unloading, each its own balance and calls
 147  feature_pos_mixingonly_unlock.py       # a wallet unlocked for mixing only stakes, and still refuses to send or export keys
+120  wallet_basic.py                        # the wallet's basic calls: balances, sends, locked outputs, fee rates, rescan and reindex
 100  feature_dsl_dkg_isolation.py           # a slow node: announcement copies unread, the tick behind the DKG, commitments intact (SF1-A)
 95   feature_dsl_sign_wait.py               # wait for late Sentinel reports, with a signing deadline
 83   feature_dsl_commitment_v2.py           # the Sentinel commitment's second bitfield: who the pool judged at all (#231)
+69   wallet_backup.py                       # backupwallet, restorewallet, dumpwallet and importwallet give back the same balances
+60   rpc_fundrawtransaction.py              # fundrawtransaction: coin selection, change position, fees and its options
 57   feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates
 54   p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
 51   feature_pos_double_sign.py             # a stake signed twice is counted once and changes nothing else
@@ -83,24 +88,33 @@
 43   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 42   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
 34   feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
+33   wallet_send.py                         # the send call: given inputs, change address and position, fee rates, locktime
+33   rpc_rawtransaction.py                  # createrawtransaction, signing and sending, and the multisig spends
+31   wallet_balance.py                      # getbalance and getbalances with unconfirmed, untrusted and watch-only coins
 29   feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
 29   rpc_verifyislock.py                    # the lock-verifying RPCs
 23   feature_llmq_q60_proto_floor.py        # the peer protocol floor from the formation lead, against the real predecessor version
 22   feature_addressindex.py                # the address index end to end, and the same hash as P2PKH and as P2SH among other P2SH outputs (#328)
 22   feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
 22   feature_llmq_is_nonrotation.py         # an InstantSend lock on a quorum that does not rotate
+22   interface_bitcoin_cli.py               # defcon-cli: -getinfo with one and several wallets, -generate, -stdin, -rpcwait
 21   feature_v23_bundle_heights.py          # the v23 bundle's own regtest name on a running chain: three of its heights observed where the one number puts them
 20   feature_evodb_reconcile.py             # an evodb that stopped short of the coins tip is rebuilt at startup, with its log line
 19   rpc_verifychainlock.py                 # the lock-verifying RPCs
 17   rpc_bls.py                             # BLS key persistence and the empty staking registry, both wallet formats
+17   feature_coinstatsindex.py              # the coin statistics index agrees with the UTXO set, by height, across restarts and reorgs
+14   wallet_labels.py                       # address labels, address groupings and the label calls
 12   feature_evodb_reconcile_below_dip3.py  # the evodb reconcile below DIP0003, where an empty evodb is current
 12   feature_evodb_repair_startup.py        # -evodbrepair finishes before the import, the network and the end of RPC warmup
 10   feature_superblock_retirement.py       # a test chain with the superblock spork on: getblocktemplate at the retirement height, and the regtest alias
 9    feature_llmq_q60_regtest.py            # the Q60 ChainLock profile (llmq_defcon) on regtest
 9    feature_llmq_switchover_config.py      # the startup guards on the Q60 switchover heights, the v23@N alias
+8    wallet_orphanedreward.py               # a block reward the wallet spent is orphaned, and its other coins stay spendable
 7    rpc_help.py                            # defcon-cli converts each argument the way the server names it, and the help categories
 6    feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
+6    feature_txindex.py                     # getrawtransaction from the transaction index, on nodes without the transaction in a wallet
 5    p2p_headers_uncompressed.py            # the plain headers reader consumes what every writer writes (#220)
 4    feature_addressindex_type_boundary.py  # the P2PKH and P2SH records of one hash on a sparse index, where they are neighbours on disk (#328)
 4    rpc_getblockstats.py                   # getblockstats on a replayed chain: every statistic, by height and by hash, alone and together
 3    feature_dsl_commit_decision_log.py     # the producer's Sentinel commit decision without a commitment (F-2026-140)
+3    wallet_coinbase_category.py            # a coinbase is immature, then generate once it matures, then orphan once its block is invalidated

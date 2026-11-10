@@ -8,6 +8,7 @@ from decimal import Decimal, getcontext
 from itertools import product
 
 from test_framework.authproxy import JSONRPCException
+from test_framework.blocktools import BLOCK_SUBSIDY
 from test_framework.descriptors import descsum_create
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
@@ -391,20 +392,21 @@ class WalletSendTest(BitcoinTestFramework):
         # assert_fee_amount(fee, Decimal(len(res["hex"]) / 2), Decimal("0.000001"))
 
         self.log.info("If inputs are specified, do not automatically add more...")
-        res = self.test_send(from_wallet=w0, to_wallet=w1, amount=501, inputs=[], add_to_wallet=False)
+        # one more than a block reward, so one coinbase is not enough (Dash's 501 of 500)
+        res = self.test_send(from_wallet=w0, to_wallet=w1, amount=BLOCK_SUBSIDY + 1, inputs=[], add_to_wallet=False)
         assert res["complete"]
         utxo1 = w0.listunspent()[0]
-        assert_equal(utxo1["amount"], 500)
-        self.test_send(from_wallet=w0, to_wallet=w1, amount=501, inputs=[utxo1],
+        assert_equal(utxo1["amount"], BLOCK_SUBSIDY)
+        self.test_send(from_wallet=w0, to_wallet=w1, amount=BLOCK_SUBSIDY + 1, inputs=[utxo1],
                        expect_error=(-4, "Insufficient funds"))
-        self.test_send(from_wallet=w0, to_wallet=w1, amount=501, inputs=[utxo1], add_inputs=False,
+        self.test_send(from_wallet=w0, to_wallet=w1, amount=BLOCK_SUBSIDY + 1, inputs=[utxo1], add_inputs=False,
                        expect_error=(-4, "Insufficient funds"))
-        res = self.test_send(from_wallet=w0, to_wallet=w1, amount=501, inputs=[utxo1], add_inputs=True, add_to_wallet=False)
+        res = self.test_send(from_wallet=w0, to_wallet=w1, amount=BLOCK_SUBSIDY + 1, inputs=[utxo1], add_inputs=True, add_to_wallet=False)
         assert res["complete"]
 
         self.log.info("Manual change address and position...")
         self.test_send(from_wallet=w0, to_wallet=w1, amount=1, change_address="not an address",
-                       expect_error=(-5, "Change address must be a valid Dash address"))
+                       expect_error=(-5, "Change address must be a valid DeFCoN address"))
         change_address = w0.getnewaddress()
         self.test_send(from_wallet=w0, to_wallet=w1, amount=1, add_to_wallet=False, change_address=change_address)
         assert res["complete"]

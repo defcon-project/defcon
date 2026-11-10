@@ -28,6 +28,7 @@ import subprocess
 
 from test_framework.address import ADDRESS_BCRT1_P2SH_OP_TRUE
 from test_framework.blocktools import (
+    BLOCK_SUBSIDY,
     MAX_FUTURE_BLOCK_TIME,
     TIME_GENESIS_BLOCK,
     create_block,
@@ -251,7 +252,8 @@ class BlockchainTest(BitcoinTestFramework):
         node = self.nodes[0]
         res = node.gettxoutsetinfo()
 
-        assert_equal(res['total_amount'], Decimal('98214.28571450'))
+        # every block's reward (Dash's 98214.28571450 summed its regtest rewards, reduced every 150 blocks)
+        assert_equal(res['total_amount'], HEIGHT * BLOCK_SUBSIDY)
         assert_equal(res['transactions'], HEIGHT)
         assert_equal(res['height'], HEIGHT)
         assert_equal(res['txouts'], HEIGHT)

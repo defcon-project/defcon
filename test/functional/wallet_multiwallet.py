@@ -15,7 +15,7 @@ import sys
 import time
 
 from test_framework.authproxy import JSONRPCException
-from test_framework.blocktools import COINBASE_MATURITY
+from test_framework.blocktools import BLOCK_SUBSIDY, COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.test_node import ErrorMatch
 from test_framework.util import (
@@ -23,10 +23,6 @@ from test_framework.util import (
     assert_raises_rpc_error,
     get_rpc_proxy,
 )
-
-# This chain, not Dash's: a regtest proof-of-work block pays 11,000,000 (GetBlockSubsidyHelper in
-# validation.cpp)
-BLOCK_SUBSIDY = 11000000
 
 got_loading_error = False
 

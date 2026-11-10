@@ -9,13 +9,12 @@ between a node running the coinstatsindex and a node without
 the index.
 """
 
-import struct
-
 from decimal import Decimal
 
 from test_framework.blocktools import (
     create_block,
     create_coinbase,
+    BLOCK_SUBSIDY,
     COINBASE_MATURITY,
 )
 from test_framework.messages import (
@@ -55,15 +54,11 @@ class CoinStatsIndexTest(BitcoinTestFramework):
         self._test_reorg_index()
         self._test_index_rejects_hash_serialized()
 
-    def block_subsidy(self, prev_bits):
-        # Subsidy calculations valid till block 4500
-        diff = 0x0000ffff / (prev_bits & 0x00ffffff)
-        subsidy = (1111.0 / (pow((diff+1.0),2.0)))
-        return min(500, max(1, subsidy))
-
     def get_block_subsidy(self, prev_height):
-        prev_block = self.nodes[0].getblockheader(self.nodes[0].getblockhash(prev_height), True)
-        return self.block_subsidy(struct.unpack('!I', bytes.fromhex(prev_block['bits']))[0])
+        # A flat proof-of-work subsidy up to lastPowBlock (5000 on regtest), far above this test's heights;
+        # Dash's depended on the previous block's difficulty
+        assert prev_height < 5000
+        return BLOCK_SUBSIDY
 
     def block_sanity_check(self, block_info, prev_height):
         if prev_height != -1:
@@ -149,9 +144,9 @@ class CoinStatsIndexTest(BitcoinTestFramework):
             assert_equal(res5['total_unspendable_amount'], 50)
             assert_equal(res5['block_info'], {
                 'unspendable': 0,
-                'prevout_spent': 500,
-                'new_outputs_ex_coinbase': Decimal('499.99974500'),
-                'coinbase': Decimal('500.00025500'),
+                'prevout_spent': BLOCK_SUBSIDY,
+                'new_outputs_ex_coinbase': BLOCK_SUBSIDY - Decimal('0.00025500'),
+                'coinbase': BLOCK_SUBSIDY + Decimal('0.00025500'),
                 'unspendables': {
                     'genesis_block': 0,
                     'bip30': 0,
@@ -186,9 +181,9 @@ class CoinStatsIndexTest(BitcoinTestFramework):
             assert_equal(res6['total_unspendable_amount'], Decimal('70.99900000'))
             assert_equal(res6['block_info'], {
                 'unspendable': Decimal('20.99900000'),
-                'prevout_spent': 521,
-                'new_outputs_ex_coinbase': Decimal('499.99999000'),
-                'coinbase': Decimal('500.00101000'),
+                'prevout_spent': BLOCK_SUBSIDY + 21,
+                'new_outputs_ex_coinbase': BLOCK_SUBSIDY - Decimal('0.00001000'),
+                'coinbase': BLOCK_SUBSIDY + Decimal('0.00101000'),
                 'unspendables': {
                     'genesis_block': 0,
                     'bip30': 0,
@@ -214,9 +209,10 @@ class CoinStatsIndexTest(BitcoinTestFramework):
 
         for hash_option in index_hash_options:
             res7 = index_node.gettxoutsetinfo(hash_option, COINBASE_MATURITY + 9)
-            assert_equal(res7['total_unspendable_amount'], Decimal('530.99900000'))
+            # the coinbase claims 40 (35 and 5) of the block subsidy, the rest is unclaimed
+            assert_equal(res7['total_unspendable_amount'], Decimal('70.99900000') + BLOCK_SUBSIDY - 40)
             assert_equal(res7['block_info'], {
-                'unspendable': 460,
+                'unspendable': BLOCK_SUBSIDY - 40,
                 'prevout_spent': 0,
                 'new_outputs_ex_coinbase': 0,
                 'coinbase': 40,
@@ -224,7 +220,7 @@ class CoinStatsIndexTest(BitcoinTestFramework):
                     'genesis_block': 0,
                     'bip30': 0,
                     'scripts': 0,
-                    'unclaimed_rewards': 460
+                    'unclaimed_rewards': BLOCK_SUBSIDY - 40
                 }
             })
             self.block_sanity_check(res7['block_info'], COINBASE_MATURITY + 8)
