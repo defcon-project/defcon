@@ -17,6 +17,7 @@ from test_framework.address import (
     key_to_p2pkh,
     ADDRESS_BCRT1_P2SH_OP_TRUE,
 )
+from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.descriptors import descsum_create
 from test_framework.key import ECKey
 from test_framework.messages import (
@@ -96,7 +97,9 @@ class MiniWallet:
         res = self._test_node.scantxoutset(action="start", scanobjects=[self.get_descriptor()])
         assert_equal(True, res['success'])
         for utxo in res['unspents']:
-            self._utxos.append({'txid': utxo['txid'], 'vout': utxo['vout'], 'value': utxo['amount'], 'height': utxo['height']})
+            # scantxoutset does not say whether an output is a coinbase; gettxout, without the mempool, does
+            coinbase = self._test_node.gettxout(utxo['txid'], utxo['vout'], False)['coinbase']
+            self._utxos.append({'txid': utxo['txid'], 'vout': utxo['vout'], 'value': utxo['amount'], 'height': utxo['height'], 'coinbase': coinbase})
 
     def scan_blocks(self, *, start=1, num):
         """Scan the blocks for self._address outputs and add them to self._utxos"""
@@ -109,7 +112,7 @@ class MiniWallet:
         """Scan the tx for self._scriptPubKey outputs and add them to self._utxos"""
         for out in tx['vout']:
             if out['scriptPubKey']['hex'] == self._scriptPubKey.hex():
-                self._utxos.append({'txid': tx['txid'], 'vout': out['n'], 'value': out['value'], 'height': 0})
+                self._utxos.append({'txid': tx['txid'], 'vout': out['n'], 'value': out['value'], 'height': 0, 'coinbase': False})
 
     def sign_tx(self, tx, fixed_length=True):
         """Sign tx that has been created by MiniWallet in P2PK mode"""
@@ -132,7 +135,7 @@ class MiniWallet:
         for b in blocks:
             block_info = self._test_node.getblock(blockhash=b, verbosity=2)
             cb_tx = block_info['tx'][0]
-            self._utxos.append({'txid': cb_tx['txid'], 'vout': 0, 'value': cb_tx['vout'][0]['value'], 'height': block_info['height']})
+            self._utxos.append({'txid': cb_tx['txid'], 'vout': 0, 'value': cb_tx['vout'][0]['value'], 'height': block_info['height'], 'coinbase': True})
         return blocks
 
     def get_scriptPubKey(self):
@@ -144,18 +147,25 @@ class MiniWallet:
     def get_address(self):
         return self._address
 
-    def get_utxo(self, *, txid: str = '', vout: Optional[int] = None, mark_as_spent=True):
+    def get_utxo(self, *, txid: str = '', vout: Optional[int] = None, mark_as_spent=True, from_node=None):
         """
         Returns a utxo and marks it as spent (pops it from the internal list)
 
         Args:
         txid: get the first utxo we find from a specific transaction
+        from_node: the node whose chain decides which coinbases are mature (default: the MiniWallet's own)
         """
         self._utxos = sorted(self._utxos, key=lambda k: (k['value'], -k['height']))  # Put the largest utxo last
         if txid:
             utxo_filter: Any = filter(lambda utxo: txid == utxo['txid'], self._utxos)
         else:
-            utxo_filter = reversed(self._utxos)  # By default the largest utxo
+            # By default the largest utxo that the next block may spend. Bitcoin's and Dash's regtest subsidy falls
+            # with the height, so their largest coinbase was also the oldest; DeFCoN's is flat (BLOCK_SUBSIDY), so
+            # the newest coinbase, which also carries its block's fees, is the largest and still immature. As in
+            # bitcoin/bitcoin#27177, an immature coinbase is skipped, unless nothing else is left.
+            blocks_height = (from_node or self._test_node).getblockcount()
+            mature_coins = [utxo for utxo in self._utxos if not utxo['coinbase'] or COINBASE_MATURITY - 1 <= blocks_height - utxo['height']]
+            utxo_filter = reversed(mature_coins or self._utxos)
         if vout is not None:
             utxo_filter = filter(lambda utxo: vout == utxo['vout'], utxo_filter)
         index = self._utxos.index(next(utxo_filter))
@@ -192,7 +202,7 @@ class MiniWallet:
     def create_self_transfer(self, *, fee_rate=Decimal("0.003"), from_node=None, utxo_to_spend=None, mempool_valid=True, locktime=0, sequence=0):
         """Create and return a tx with the specified fee_rate. Fee may be exact or at most one satoshi higher than needed."""
         from_node = from_node or self._test_node
-        utxo_to_spend = utxo_to_spend or self.get_utxo()
+        utxo_to_spend = utxo_to_spend or self.get_utxo(from_node=from_node)
         if self._priv_key is None:
             vsize = Decimal(85)  # anyone-can-spend
         else:

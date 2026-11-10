@@ -8,6 +8,7 @@ from copy import deepcopy
 from decimal import Decimal
 import math
 
+from test_framework.blocktools import BLOCK_SUBSIDY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.key import ECKey
 from test_framework.messages import (
@@ -105,7 +106,7 @@ class MempoolAcceptanceTest(BitcoinTestFramework):
         tx.vout[0].nValue = int(output_amount * COIN)
         raw_tx_final = tx.serialize().hex()
         tx = tx_from_hex(raw_tx_final)
-        fee_expected = Decimal('500.0') - output_amount
+        fee_expected = BLOCK_SUBSIDY - output_amount  # the coin is a cache-chain coinbase of the MiniWallet
         self.check_mempool_result(
             result_expected=[{'txid': tx.rehash(), 'allowed': True, 'vsize': tx.get_vsize(), 'fees': {'base': fee_expected}}],
             rawtxs=[tx.serialize().hex()],

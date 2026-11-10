@@ -4,6 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the wallet accounts properly when there are cloned transactions with malleated scriptsigs."""
 
+from test_framework.blocktools import BLOCK_SUBSIDY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -32,15 +33,25 @@ class TxnMallTest(BitcoinTestFramework):
         self.disconnect_nodes(1, 2)
 
     def run_test(self):
-        # All nodes should start with 12,500 DASH:
-        starting_balance = 12500
+        # All nodes start with fifty mature cache-chain coinbases: BitcoinTestFramework._initialize_chain() pays each
+        # of the first three nodes two rounds of 25 blocks (node 0: heights 1-25 and 101-125), and with a maturity of
+        # 25 all of them are mature at the tip (200). The coinbases that mature while this test runs (176 and 177)
+        # pay the fourth address, so no reward matures for node 0 here (with Dash's 100, its 101 and 102 did).
+        starting_balance = 50 * BLOCK_SUBSIDY
         for i in range(3):
             assert_equal(self.nodes[i].getbalance(), starting_balance)
 
         self.nodes[0].settxfee(.001)
 
+        # One output may carry at most MAX_MONEY (500,000,000 in src/consensus/amount.h), less than node 0's
+        # balance, so node 0 spends 25 of its coinbases, as many as Dash's node 0 had, and locks the other 25
+        # (locked coins still count in getbalance).
+        newest = sorted(self.nodes[0].listunspent(), key=lambda utxo: utxo['confirmations'])[:25]
+        assert self.nodes[0].lockunspent(False, [{'txid': utxo['txid'], 'vout': utxo['vout']} for utxo in newest])
+        spendable = 25 * BLOCK_SUBSIDY
+
         node0_address1 = self.nodes[0].getnewaddress()
-        node0_txid1 = self.nodes[0].sendtoaddress(node0_address1, 12190)
+        node0_txid1 = self.nodes[0].sendtoaddress(node0_address1, spendable - 310)
         node0_tx1 = self.nodes[0].gettransaction(node0_txid1)
 
         node0_address2 = self.nodes[0].getnewaddress()
@@ -82,11 +93,9 @@ class TxnMallTest(BitcoinTestFramework):
         tx1 = self.nodes[0].gettransaction(txid1)
         tx2 = self.nodes[0].gettransaction(txid2)
 
-        # Node0's balance should be starting balance, plus 500DASH for another
-        # matured block, minus tx1 and tx2 amounts, and minus transaction fees:
+        # Node0's balance should be starting balance, minus tx1 and tx2 amounts, and minus transaction fees
+        # (no coinbase of node 0 matures, see above):
         expected = starting_balance + node0_tx1["fee"] + node0_tx2["fee"]
-        if self.options.mine_block:
-            expected += 500
         expected += tx1["amount"] + tx1["fee"]
         expected += tx2["amount"] + tx2["fee"]
         assert_equal(self.nodes[0].getbalance(), expected)
@@ -121,11 +130,8 @@ class TxnMallTest(BitcoinTestFramework):
         assert_equal(tx1_clone["confirmations"], 2)
         assert_equal(tx2["confirmations"], 1)
 
-        # Check node0's total balance; should be same as before the clone, + 1000 DASH for 2 matured,
-        # less possible orphaned matured subsidy
-        expected += 1000
-        if (self.options.mine_block):
-            expected -= 500
+        # Check node0's total balance; should be same as before the clone (no coinbase of node 0 matures,
+        # so none is orphaned either)
         assert_equal(self.nodes[0].getbalance(), expected)
 
 

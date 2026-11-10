@@ -5,13 +5,14 @@
 """Test spending coinbase transactions.
 
 The coinbase transaction in block N can appear in block
-N+100... so is valid in the mempool when the best block
-height is N+99.
+N+COINBASE_MATURITY (25)... so is valid in the mempool when
+the best block height is N+24.
 This test makes sure coinbase spends that will be mature
 in the next block are accepted into the memory pool,
 but less mature coinbase spends are NOT.
 """
 
+from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 from test_framework.wallet import MiniWallet
@@ -24,17 +25,19 @@ class MempoolSpendCoinbaseTest(BitcoinTestFramework):
     def run_test(self):
         wallet = MiniWallet(self.nodes[0])
 
-        # Invalidate two blocks, so that miniwallet has access to a coin that will mature in the next block
-        chain_height = 198
-        self.nodes[0].invalidateblock(self.nodes[0].getblockhash(chain_height + 1))
+        # The cache chain pays the MiniWallet's address in blocks 76-100 and 176-199 and ends at 200
+        # (BitcoinTestFramework._initialize_chain() and setup_nodes()). With a maturity of 25 the coinbases at
+        # 176 and 177 are the ones that mature in the next block and one block later, so, unlike with Dash's 100,
+        # no block has to be invalidated to reach them.
+        chain_height = 200
         assert_equal(chain_height, self.nodes[0].getblockcount())
 
-        # Coinbase at height chain_height-100+1 ok in mempool, should
-        # get mined. Coinbase at height chain_height-100+2 is
+        # Coinbase at height chain_height-COINBASE_MATURITY+1 ok in mempool, should
+        # get mined. Coinbase at height chain_height-COINBASE_MATURITY+2 is
         # too immature to spend.
-        wallet.scan_blocks(start=chain_height - 100 + 1, num=1)
+        wallet.scan_blocks(start=chain_height - COINBASE_MATURITY + 1, num=1)
         utxo_mature = wallet.get_utxo()
-        wallet.scan_blocks(start=chain_height - 100 + 2, num=1)
+        wallet.scan_blocks(start=chain_height - COINBASE_MATURITY + 2, num=1)
         utxo_immature = wallet.get_utxo()
 
         spend_mature_id = wallet.send_self_transfer(from_node=self.nodes[0], utxo_to_spend=utxo_mature)["txid"]

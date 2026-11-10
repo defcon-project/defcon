@@ -5,6 +5,7 @@
 """Test the wallet accounts properly when there is a double-spend conflict."""
 from decimal import Decimal
 
+from test_framework.blocktools import BLOCK_SUBSIDY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -30,8 +31,11 @@ class TxnMallTest(BitcoinTestFramework):
         self.disconnect_nodes(1, 2)
 
     def run_test(self):
-        # All nodes should start with 12,500 DASH:
-        starting_balance = 12500
+        # All nodes start with fifty mature cache-chain coinbases: BitcoinTestFramework._initialize_chain() pays each
+        # of the first three nodes two rounds of 25 blocks (node 0: heights 1-25 and 101-125), and with a maturity of
+        # 25 all of them are mature at the tip (200). The coinbases that mature while this test runs (176 and 177)
+        # pay the fourth address, so no reward matures for node 0 here (with Dash's 100, its 101 and 102 did).
+        starting_balance = 50 * BLOCK_SUBSIDY
 
         # All nodes should be out of IBD.
         # If the nodes are not all out of IBD, that can interfere with
@@ -43,9 +47,17 @@ class TxnMallTest(BitcoinTestFramework):
         for i in range(3):
             assert_equal(self.nodes[i].getbalance(), starting_balance)
 
-        # Assign coins to foo and bar addresses:
+        # One output may carry at most MAX_MONEY (500,000,000 in src/consensus/amount.h), less than node 0's
+        # balance, so node 0 spends 25 of its coinbases, as many as Dash's node 0 had, and locks the other 25
+        # (locked coins still count in getbalance).
+        newest = sorted(self.nodes[0].listunspent(), key=lambda utxo: utxo['confirmations'])[:25]
+        assert self.nodes[0].lockunspent(False, [{'txid': utxo['txid'], 'vout': utxo['vout']} for utxo in newest])
+        spendable = 25 * BLOCK_SUBSIDY
+
+        # Assign coins to foo and bar addresses (foo takes all 25 coins, bar the change):
+        foo_amount = spendable - 310
         node0_address_foo = self.nodes[0].getnewaddress()
-        fund_foo_txid = self.nodes[0].sendtoaddress(node0_address_foo, 12190)
+        fund_foo_txid = self.nodes[0].sendtoaddress(node0_address_foo, foo_amount)
         fund_foo_tx = self.nodes[0].gettransaction(fund_foo_txid)
 
         node0_address_bar = self.nodes[0].getnewaddress()
@@ -58,25 +70,26 @@ class TxnMallTest(BitcoinTestFramework):
         # Coins are sent to node1_address
         node1_address = self.nodes[1].getnewaddress()
 
-        # First: use raw transaction API to send 12400 DASH to node1_address,
+        # First: use raw transaction API to send all but 100 of the 25 coins to node1_address,
         # but don't broadcast:
+        doublespend_amount = spendable - 100
         doublespend_fee = Decimal('-.02')
         rawtx_input_0 = {}
         rawtx_input_0["txid"] = fund_foo_txid
-        rawtx_input_0["vout"] = find_output(self.nodes[0], fund_foo_txid, 12190)
+        rawtx_input_0["vout"] = find_output(self.nodes[0], fund_foo_txid, foo_amount)
         rawtx_input_1 = {}
         rawtx_input_1["txid"] = fund_bar_txid
         rawtx_input_1["vout"] = find_output(self.nodes[0], fund_bar_txid, 290)
         inputs = [rawtx_input_0, rawtx_input_1]
         change_address = self.nodes[0].getnewaddress()
         outputs = {}
-        outputs[node1_address] = 12400
-        outputs[change_address] = 12480 - 12400 + doublespend_fee
+        outputs[node1_address] = doublespend_amount
+        outputs[change_address] = foo_amount + 290 - doublespend_amount + doublespend_fee
         rawtx = self.nodes[0].createrawtransaction(inputs, outputs)
         doublespend = self.nodes[0].signrawtransactionwithwallet(rawtx)
         assert_equal(doublespend["complete"], True)
 
-        # Create two spends using 1 500 DASH coin each
+        # Create two spends, which can only use foo's and bar's outputs
         txid1 = self.nodes[0].sendtoaddress(node1_address, 400)
         txid2 = self.nodes[0].sendtoaddress(node1_address, 200)
 
@@ -87,11 +100,9 @@ class TxnMallTest(BitcoinTestFramework):
         tx1 = self.nodes[0].gettransaction(txid1)
         tx2 = self.nodes[0].gettransaction(txid2)
 
-        # Node0's balance should be starting balance, plus 500DASH for another
-        # matured block, minus 400, minus 200, and minus transaction fees:
+        # Node0's balance should be starting balance, minus 400, minus 200, and minus transaction fees
+        # (no coinbase of node 0 matures, see above):
         expected = starting_balance + fund_foo_tx["fee"] + fund_bar_tx["fee"]
-        if self.options.mine_block:
-            expected += 500
         expected += tx1["amount"] + tx1["fee"]
         expected += tx2["amount"] + tx2["fee"]
         assert_equal(self.nodes[0].getbalance(), expected)
@@ -126,14 +137,13 @@ class TxnMallTest(BitcoinTestFramework):
         assert_equal(tx1["confirmations"], -2)
         assert_equal(tx2["confirmations"], -2)
 
-        # Node0's total balance should be starting balance, plus 1000DASH for
-        # two more matured blocks, minus 12400 for the double-spend, plus fees (which are
+        # Node0's total balance should be starting balance, minus the double-spend, plus fees (which are
         # negative):
-        expected = starting_balance + 1000 - 12400 + fund_foo_tx["fee"] + fund_bar_tx["fee"] + doublespend_fee
+        expected = starting_balance - doublespend_amount + fund_foo_tx["fee"] + fund_bar_tx["fee"] + doublespend_fee
         assert_equal(self.nodes[0].getbalance(), expected)
 
-        # Node1's balance should be its initial balance (12500 for 25 block rewards) plus the doublespend:
-        assert_equal(self.nodes[1].getbalance(), 12500 + 12400)
+        # Node1's balance should be its initial balance plus the doublespend:
+        assert_equal(self.nodes[1].getbalance(), starting_balance + doublespend_amount)
 
 
 if __name__ == '__main__':

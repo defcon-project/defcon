@@ -4,6 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the avoid_reuse and setwalletflag features."""
 
+from test_framework.blocktools import BLOCK_SUBSIDY
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_approx,
@@ -80,6 +81,11 @@ class AvoidReuseTest(BitcoinTestFramework):
         self.test_immutable()
 
         self.generate(self.nodes[0], 110)
+        # The cache chain leaves node 1 fifty mature coinbases of BLOCK_SUBSIDY (550,000,000), more than one output
+        # may carry (MAX_MONEY, 500,000,000 in src/consensus/amount.h), and reset_balance moves a node's whole
+        # balance into one output, so node 1 first passes ten of them to node 0. Without avoid_reuse: with it, the
+        # wallet groups coins by address, and all fifty pay one address, so the send would spend all of them.
+        self.nodes[1].sendtoaddress(address=self.nodes[0].getnewaddress(), amount=10 * BLOCK_SUBSIDY, avoid_reuse=False)
         self.test_change_remains_change(self.nodes[1])
         reset_balance(self.nodes[1], self.nodes[0].getnewaddress())
         self.test_sending_from_reused_address_without_avoid_reuse()
