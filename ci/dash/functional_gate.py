@@ -7,12 +7,14 @@
 The list lives in ci/dash/functional_gate.txt, one test per line: the seconds all
 of its variants took on the hosted runner, the test, and what it guards.
 
-  order [--shard I/N]  print the tests longest first (or shard I of N of them)
-  report LOG           compare the seconds a test_runner.py log measured with the list
+  order [--shard I/N]       print the tests longest first (or shard I of N of them)
+  report [--shard I/N] LOG  compare the seconds a test_runner.py log measured with the list (or that shard of it)
 
 test_runner.py starts tests in the order it is given them, so a long test that
 starts late holds the lane after everything else has finished. Ordering by the
-recorded seconds keeps the longest first however the list grows.
+recorded seconds keeps the longest first however the list grows. The same
+seconds deal the tests into shards, one runner each: longest first, each test
+to the shard that has the least so far.
 """
 
 import argparse
@@ -120,22 +122,25 @@ def main(argv=None):
     order.add_argument('--shard', default='1/1', help='I/N, for example 2/3')
     order.add_argument('--tests-dir', default=str(TESTS_DIR), help=argparse.SUPPRESS)
     result = sub.add_parser('report')
+    result.add_argument('--shard', default='1/1', help='I/N, the shard the log is of')
     result.add_argument('log')
     args = parser.parse_args(argv)
     try:
         entries = read_gate(args.gate)
-        if args.command == 'report':
-            print(report(entries, Path(args.log).read_text(encoding='utf-8', errors='replace')))
-            return 0
         match = re.fullmatch(r'([1-9][0-9]*)/([1-9][0-9]*)', args.shard)
         if not match:
             raise GateError('--shard takes I/N, for example 2/3')
-        missing = unregistered([name for name, _ in entries], args.tests_dir)
-        if missing:
-            raise GateError('gate entries not registered in test_runner.py: ' + ', '.join(missing))
+        if args.command == 'order':
+            # The whole list, whichever shard is asked for: every runner refuses a name the runner does not know.
+            missing = unregistered([name for name, _ in entries], args.tests_dir)
+            if missing:
+                raise GateError('gate entries not registered in test_runner.py: ' + ', '.join(missing))
         selected = shard(entries, int(match.group(1)), int(match.group(2)))
         if not selected:
             raise GateError('shard {} holds no test'.format(args.shard))
+        if args.command == 'report':
+            print(report(selected, Path(args.log).read_text(encoding='utf-8', errors='replace')))
+            return 0
     except (GateError, OSError) as error:
         print(error, file=sys.stderr)
         return 1

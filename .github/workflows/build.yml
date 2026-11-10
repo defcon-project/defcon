@@ -261,10 +261,17 @@ jobs:
           compression-level: 0
           retention-days: 7
 
-  # Three lanes on three runners. runtime builds and runs the unit and Qt
+  # Three lanes, each runner its own. runtime builds and runs the unit and Qt
   # suites; functional builds the same tree and runs the functional gate, the
   # longest part, without waiting behind the unit suites; build-options checks
   # the other configurations.
+  #
+  # The functional lane is FUNCTIONAL_SHARDS runners, each with its own shard
+  # of the gate. One runner was full: its four slots were busy from the first
+  # test to the last, so the lane took a quarter of the tests' seconds and no
+  # reordering could shorten it. The shards below must be 1 to
+  # FUNCTIONAL_SHARDS, each once: a shard nobody runs is a part of the gate
+  # that silently stopped running (ci/dash/test_ci_scheduling.py holds this).
   checks:
     name: Checks
     needs: [changes, build-image, build-depends]
@@ -281,6 +288,17 @@ jobs:
             host: x86_64-pc-linux-gnu
             depends_on: linux64
             lane: functional
+            shard: 1
+          - build_target: linux64
+            host: x86_64-pc-linux-gnu
+            depends_on: linux64
+            lane: functional
+            shard: 2
+          - build_target: linux64
+            host: x86_64-pc-linux-gnu
+            depends_on: linux64
+            lane: functional
+            shard: 3
           - build_target: linux64
             host: x86_64-pc-linux-gnu
             depends_on: linux64
@@ -291,6 +309,7 @@ jobs:
       CACHE_DIR: /cache
       CCACHE_DIR: /cache/ccache
       CCACHE_SIZE: 400M
+      FUNCTIONAL_SHARDS: 3
     container:
       # Documentation-only runs retain their existing container while all steps skip.
       image: ${{ needs.build-image.outputs.image-ref || format('ghcr.io/{0}/dashcore-ci-runner:{1}', needs.build-image.outputs.repo-name, needs.build-image.outputs.image-tag) }}
@@ -517,6 +536,17 @@ jobs:
       #                                          governance_validators_tests,
       #                                          transaction_tests, util_tests,
       #                                          validation_chainstate_tests
+      #
+      # The suites run one process each, as many at a time as the runner has
+      # CPUs (ci/dash/unit_suites.py). In one process, one after another, they
+      # took 478 s on a runner with four CPUs. The binary lists its own
+      # suites, so the gate stays inverted: a new suite runs without a line
+      # here. Every process must exit 0 and report exactly the number of cases
+      # the listing holds for it, and an exception that names nothing in the
+      # binary is refused, so neither a typing error nor a renamed suite can
+      # quietly shrink the run. dsl_service_pose_tests goes case by case: its
+      # three cases took 255 s of the 478, one of them 180, and as one process
+      # the suite alone would decide how long the step takes.
       - name: Unit suites (all but the named exceptions)
         if: needs.changes.outputs.code == 'true' && matrix.lane == 'runtime'
         run: |
@@ -526,9 +556,10 @@ jobs:
           export LD_LIBRARY_PATH="$DEPENDS_DIR/$HOST/lib"
           cd "build-ci/DeFCoN-${{ matrix.build_target }}"
           make -j"$(nproc)" -C src test/test_defcon
-          ./src/test/test_defcon \
-            --run_test='!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:!transaction_tests:!util_tests:!validation_chainstate_tests' \
-            --catch_system_errors=no -l test_suite
+          python3 "$GITHUB_WORKSPACE/ci/dash/unit_suites.py" run --binary ./src/test/test_defcon --jobs "$(nproc)" \
+            --exclude='bip324_tests:bip39_tests:blockencodings_tests:denialofservice_tests:descriptor_tests:dynamic_activation_thresholds_tests:evo_utils_tests:governance_validators_tests:key_io_tests:miner_tests/CreateNewBlock_validity:transaction_tests:util_tests:validation_chainstate_tests' \
+            --split=dsl_service_pose_tests \
+            -- --catch_system_errors=no -l test_suite
         shell: bash
 
       # Run every compiled Qt suite, including future additions.
@@ -616,25 +647,33 @@ jobs:
       # has to be seen, and one red run should name every failing test. The
       # seconds each test took go to the run summary next to the recorded ones;
       # that report cannot change the step's result.
+      #
+      # Each runner of the lane takes its own shard of the list and runs it as
+      # the one runner ran the whole: the same four slots, the same flags. Every
+      # shard checks the whole list first, and a shard number outside 1 to
+      # FUNCTIONAL_SHARDS, or none, ends the step before any test starts.
       - name: Functional tests (named gate)
         id: functional
         if: needs.changes.outputs.code == 'true' && matrix.lane == 'functional'
+        env:
+          SHARD: ${{ matrix.shard }}
         run: |
           BASE_OUTDIR="/output"
           BUILD_TARGET="${{ matrix.build_target }}"
           source ./ci/dash/matrix.sh
           export LD_LIBRARY_PATH="$DEPENDS_DIR/$HOST/lib"
           gate="$RUNNER_TEMP/functional-gate.txt"
-          python3 ci/dash/functional_gate.py order > "$gate" || exit 1
+          shard="$SHARD/$FUNCTIONAL_SHARDS"
+          python3 ci/dash/functional_gate.py order --shard "$shard" > "$gate" || exit 1
           mapfile -t GATE < "$gate"
-          echo "gate: ${#GATE[@]} tests, longest first: ${GATE[*]}"
+          echo "gate shard $shard: ${#GATE[@]} tests, longest first: ${GATE[*]}"
           log="$RUNNER_TEMP/functional-gate.log"
           cd "build-ci/DeFCoN-${BUILD_TARGET}"
           nproc
           python3 --version
           status=0
           python3 test/functional/test_runner.py --jobs=4 --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}" --combinedlogslen=4000 --tmpdirprefix="$RUNNER_TEMP/functional-tests" "${GATE[@]}" 2>&1 | tee "$log" || status=$?
-          python3 "$GITHUB_WORKSPACE/ci/dash/functional_gate.py" report "$log" >> "$GITHUB_STEP_SUMMARY" || echo "::warning::the functional gate duration report failed"
+          python3 "$GITHUB_WORKSPACE/ci/dash/functional_gate.py" report --shard "$shard" "$log" >> "$GITHUB_STEP_SUMMARY" || echo "::warning::the functional gate duration report failed"
           exit "$status"
         shell: bash
 
@@ -642,7 +681,7 @@ jobs:
         if: ${{ failure() && steps.functional.outcome == 'failure' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: failed-functional-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.build_target }}-${{ matrix.host }}
+          name: failed-functional-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.build_target }}-${{ matrix.host }}-shard${{ matrix.shard }}
           path: ${{ runner.temp }}/functional-tests/
           if-no-files-found: warn
           retention-days: 3

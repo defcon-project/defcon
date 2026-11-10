@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import types
 import unittest
 
@@ -23,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / '.github/workflows/build.yml'
 sys.path.insert(0, str(ROOT / 'ci/dash'))
 import functional_gate  # noqa: E402
+import unit_suites  # noqa: E402
 
 
 def job_text(workflow, name):
@@ -514,8 +516,64 @@ class SchedulingTest(unittest.TestCase):
     def test_lanes_are_independent_and_do_not_cancel_each_other(self):
         self.assertIn('    needs: [changes, build-image, build-depends]\n', self.checks)
         self.assertIn('      fail-fast: false\n', self.checks)
-        self.assertEqual(['runtime', 'functional', 'build-options'],
+        self.assertEqual(['runtime', 'functional', 'functional', 'functional', 'build-options'],
                          re.findall(r'^            lane: (.+)$', self.checks, re.MULTILINE))
+
+    def test_the_functional_runners_take_every_shard_exactly_once(self):
+        # A shard no runner takes is a part of the gate that stopped running, under a green check.
+        count = int(re.search(r'^      FUNCTIONAL_SHARDS: ([0-9]+)$', self.checks, re.MULTILINE).group(1))
+        self.assertGreaterEqual(count, 1)
+        include = re.search(r'^        include:\n((?:          [^\n]*\n)+)', self.checks, re.MULTILINE).group(1)
+        runners = [dict(re.findall(r'^ +(?:- )?(\w+): (.+)$', entry, re.MULTILINE))
+                   for entry in re.split(r'(?m)^(?=          - )', include) if entry]
+        self.assertEqual(count + 2, len(runners))
+        self.assertEqual([str(index) for index in range(1, count + 1)],
+                         [runner.get('shard') for runner in runners if runner['lane'] == 'functional'])
+        self.assertEqual([], [runner for runner in runners if runner['lane'] != 'functional' and 'shard' in runner])
+        # The step hands its runner's number and the count to the gate, for the order and for the report.
+        step = step_text(self.checks, 'Functional tests (named gate)')
+        self.assertIn('        env:\n          SHARD: ${{ matrix.shard }}\n', step)
+        functional = run_script(step)
+        self.assertIn('shard="$SHARD/$FUNCTIONAL_SHARDS"\n', functional)
+        self.assertEqual(2, functional.count('--shard "$shard"'))
+        # Two failed shards must not fight over one artifact name.
+        self.assertIn('-shard${{ matrix.shard }}\n', step_text(self.checks, 'Upload failed functional test directories'))
+        # The real list, dealt as the workflow deals it: every test in exactly one shard, none empty.
+        entries = functional_gate.read_gate()
+        dealt = [functional_gate.shard(entries, index, count) for index in range(1, count + 1)]
+        self.assertTrue(all(dealt))
+        self.assertEqual(sorted(entries), sorted(entry for part in dealt for entry in part))
+
+    def test_a_missing_or_foreign_shard_number_runs_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tests = Path(tmp) / 'functional'
+            tests.mkdir()
+            (tests / 'test_runner.py').write_text("ALL_SCRIPTS = ['a_test.py', 'b_test.py', 'c_test.py']\n")
+            gate = Path(tmp) / 'gate.txt'
+            gate.write_text('9 a_test.py  # a\n5 b_test.py  # b\n2 c_test.py  # c\n')
+            log = Path(tmp) / 'log'
+            log.write_text('b_test.py | ✓ Passed | 6 s\n')
+
+            def call(command, shard):
+                out, err = io.StringIO(), io.StringIO()
+                arguments = ['--gate', str(gate), command, '--shard', shard]
+                arguments += ['--tests-dir', str(tests)] if command == 'order' else [str(log)]
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    status = functional_gate.main(arguments)
+                return status, out.getvalue(), err.getvalue()
+
+            self.assertEqual((0, 'b_test.py\n', ''), call('order', '2/3'))
+            status, text, _ = call('report', '2/3')
+            self.assertEqual(0, status)
+            # Only this shard's tests: the other shards' are not reported as "not run".
+            self.assertEqual(['| b_test.py | 5 | 6 |  |'], [line for line in text.splitlines() if '_test.py' in line])
+            # Four shards of three tests: the fourth holds none.
+            for shard in ('/3', '0/3', '4/3', '4/4', '1/', '1/0', 'x/3', '1/3/3', '+1/3', ''):
+                for command in ('order', 'report'):
+                    with self.subTest(shard=shard, command=command):
+                        status, text, error = call(command, shard)
+                        self.assertEqual((1, ''), (status, text))
+                        self.assertNotEqual('', error)
 
     def test_each_product_gate_has_one_lane_and_is_not_removed(self):
         lanes = {
@@ -667,12 +725,203 @@ class SchedulingTest(unittest.TestCase):
         self.assertIn('tee -a "$GITHUB_STEP_SUMMARY"', report)
 
     def test_original_unit_selection_is_preserved(self):
+        # The exceptions are the ones the single process was given as '!name' filters, and nothing else selects.
         unit = run_script(step_text(self.checks, 'Unit suites (all but the named exceptions)'))
-        selection = re.search(r"--run_test='([^']+)'", unit).group(1)
-        self.assertEqual('!bip324_tests:!bip39_tests:!blockencodings_tests:!denialofservice_tests:'
-                         '!descriptor_tests:!dynamic_activation_thresholds_tests:!evo_utils_tests:'
-                         '!governance_validators_tests:!key_io_tests:!miner_tests/CreateNewBlock_validity:'
-                         '!transaction_tests:!util_tests:!validation_chainstate_tests', selection)
+        self.assertEqual(['bip324_tests:bip39_tests:blockencodings_tests:denialofservice_tests:'
+                          'descriptor_tests:dynamic_activation_thresholds_tests:evo_utils_tests:'
+                          'governance_validators_tests:key_io_tests:miner_tests/CreateNewBlock_validity:'
+                          'transaction_tests:util_tests:validation_chainstate_tests'],
+                         re.findall(r"--exclude='([^']+)'", unit))
+        self.assertNotIn('--run_test', unit)
+        self.assertEqual(1, unit.count('./src/test/test_defcon'))
+        self.assertIn('python3 "$GITHUB_WORKSPACE/ci/dash/unit_suites.py" run --binary ./src/test/test_defcon '
+                      '--jobs "$(nproc)" \\\n', unit)
+        self.assertEqual(['dsl_service_pose_tests'], re.findall(r'--split=(\S+)', unit))
+        # Every process gets what the single one got.
+        self.assertTrue(unit.rstrip().endswith('-- --catch_system_errors=no -l test_suite'))
+
+    LISTING = textwrap.dedent('''\
+        alpha_tests*
+            one*
+            two*
+        beta_tests*
+            only*
+        gamma_tests*
+            first*
+            second*
+            third*
+        ''')
+
+    def test_unit_plan_runs_every_listed_case_once_but_the_exceptions(self):
+        tree = unit_suites.read_listing(self.LISTING)
+        self.assertEqual({'alpha_tests': {'one': {}, 'two': {}}, 'beta_tests': {'only': {}},
+                          'gamma_tests': {'first': {}, 'second': {}, 'third': {}}}, tree)
+
+        def planned(*args, **kwargs):
+            return [(unit.selection, unit.cases) for unit in unit_suites.plan(tree, *args, **kwargs)]
+
+        self.assertEqual([('alpha_tests', 2), ('beta_tests', 1), ('gamma_tests', 3)], planned())
+        self.assertEqual([('alpha_tests', 2), ('gamma_tests:!gamma_tests/second', 2)],
+                         planned(['beta_tests', 'gamma_tests/second']))
+        # A split suite's cases come first, one process each, without the excepted one.
+        self.assertEqual([('gamma_tests/first', 1), ('gamma_tests/third', 1), ('alpha_tests', 2), ('beta_tests', 1)],
+                         planned(['gamma_tests/second'], split=['gamma_tests']))
+        for excluded, split in ((['delta_tests'], []),                    # no such suite
+                                (['alpha_tests/three'], []),              # no such case
+                                (['alpha_tests/'], []),
+                                (['alpha_tests/one/x'], []),
+                                (['/one'], []),
+                                (['alpha_tests', 'alpha_tests/one'], []),
+                                (['alpha_tests/one', 'alpha_tests/one'], []),
+                                (['beta_tests/only'], []),                # every case of it: except the suite
+                                (['alpha_tests', 'beta_tests', 'gamma_tests'], []),
+                                ([], ['delta_tests']),
+                                ([], ['alpha_tests', 'alpha_tests']),
+                                (['alpha_tests'], ['alpha_tests'])):
+            with self.subTest(excluded=excluded, split=split):
+                with self.assertRaises(unit_suites.GateError):
+                    unit_suites.plan(tree, excluded, split)
+
+    def test_unit_listing_that_cannot_be_read_is_refused(self):
+        for text in ('',
+                     '\n',
+                     'alpha_tests\n    one*\n',             # off by default
+                     'alpha_tests*\n    one\n',
+                     'alpha_tests*\n        one*\n',        # indented past its parent
+                     '    one*\n',
+                     'alpha_tests*\n  one*\n',              # not four spaces a level
+                     'alpha_tests*\n    one<int>*\n',       # a name a filter would need escaping for
+                     'alpha_tests*: a description\n',
+                     'alpha_tests*\n    one*\n    one*\n',
+                     'alpha_tests*\nalpha_tests*\n'):
+            with self.subTest(text=text):
+                with self.assertRaises(unit_suites.GateError):
+                    unit_suites.read_listing(text)
+        # Deeper suites are read, and counted by their cases.
+        tree = unit_suites.read_listing('a*\n    b*\n        c*\n        d*\n    e*\nf*\n')
+        self.assertEqual({'a': {'b': {'c': {}, 'd': {}}, 'e': {}}, 'f': {}}, tree)
+        self.assertEqual([('a', 3), ('f', 1)], [(unit.selection, unit.cases) for unit in unit_suites.plan(tree)])
+        self.assertEqual([('a/b', 2), ('a/e', 1), ('f', 1)],
+                         [(unit.selection, unit.cases) for unit in unit_suites.plan(tree, split=['a'])])
+
+    def test_unit_processes_overlap_up_to_the_job_count_and_start_in_order(self):
+        units = [unit_suites.Unit(name, 1) for name in 'abcdef']
+        gate, lock, state = threading.Barrier(3, timeout=30), threading.Lock(), {'now': 0, 'most': 0, 'order': []}
+
+        def runner(unit):
+            with lock:
+                state['now'] += 1
+                state['most'] = max(state['most'], state['now'])
+                state['order'].append(unit.selection)
+            try:
+                gate.wait()  # passes only once three run at the same time
+            finally:
+                with lock:
+                    state['now'] -= 1
+            return unit, 0.0, None, ''
+
+        out = io.StringIO()
+        results = unit_suites.run(units, 3, runner, out)
+        self.assertEqual(3, state['most'])
+        self.assertEqual(sorted('abcdef'), sorted(unit.selection for unit, _, _ in results))
+        self.assertEqual(['a', 'b', 'c'], sorted(state['order'][:3]))
+        self.assertEqual(6, out.getvalue().count('::group::'))
+        state.update(now=0, most=0, order=[])
+        gate = threading.Barrier(1)
+        unit_suites.run(units, 1, runner, io.StringIO())
+        self.assertEqual((1, list('abcdef')), (state['most'], state['order']))
+
+    # A test binary, faked: the listing above on standard error, and for --run_test the cases the filter selects,
+    # as Boost.Test reports them. FAKE_FAIL names a case that fails; FAKE_SHORT one that is silently not run while
+    # the exit stays 0; every start is recorded.
+    FAKE_BINARY = r'''#!/usr/bin/env python3
+import os
+import sys
+
+LISTING = %r
+TREE, suite = {}, None
+for line in LISTING.splitlines():
+    if line.startswith('    '):
+        TREE[suite].append(line.strip().rstrip('*'))
+    else:
+        suite = line.rstrip('*')
+        TREE[suite] = []
+if sys.argv[1:] == ['--list_content']:
+    sys.stderr.write(os.environ.get('FAKE_LISTING', LISTING))
+    sys.exit(int(os.environ.get('FAKE_LIST_EXIT', '0')))
+selection = [arg for arg in sys.argv[1:] if arg.startswith('--run_test=')][0][len('--run_test='):]
+with open(os.path.join(os.environ['FAKE_DIR'], 'starts'), 'a', encoding='utf8') as starts:
+    starts.write(' '.join(sys.argv[1:]) + '\n')
+chosen = []
+for part in selection.split(':'):
+    name, _, case = part.lstrip('!').partition('/')
+    cases = [name + '/' + one for one in TREE.get(name, []) if not case or one == case]
+    chosen = [one for one in chosen if one not in cases] if part.startswith('!') else chosen + cases
+if not chosen:
+    print('Test setup error: no test cases matching filter or all test cases were disabled')
+    sys.exit(200)
+ran = [one for one in chosen if one != os.environ.get('FAKE_SHORT')]
+print('Running %%d test case%%s...' %% (len(ran), '' if len(ran) == 1 else 's'))
+for one in ran:
+    print('\x1b[1;34;49mEntering test case "%%s"\x1b[0;39;49m' %% one)
+if os.environ.get('FAKE_FAIL') in ran:
+    print('*** 1 failure is detected in the test module')
+    sys.exit(201)
+print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
+''' % LISTING
+
+    def run_unit_gate(self, *arguments, **env):
+        with tempfile.TemporaryDirectory() as tmp:
+            binary = Path(tmp) / 'test_fake'
+            binary.write_text(self.FAKE_BINARY)
+            binary.chmod(0o755)
+            summary = Path(tmp) / 'summary'
+            result = subprocess.run(
+                [sys.executable, str(ROOT / 'ci/dash/unit_suites.py'), 'run', '--binary', str(binary), *arguments],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1', FAKE_DIR=tmp, GITHUB_STEP_SUMMARY=str(summary), **env))
+            starts = (Path(tmp) / 'starts').read_text().splitlines() if (Path(tmp) / 'starts').exists() else []
+            return result, starts, summary.read_text() if summary.exists() else ''
+
+    def test_unit_gate_runs_the_listed_cases_and_passes_only_when_each_ran(self):
+        result, starts, summary = self.run_unit_gate(
+            '--jobs', '2', '--exclude=beta_tests:gamma_tests/second', '--split=gamma_tests', '--', '-l', 'test_suite')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(['--run_test=alpha_tests -l test_suite', '--run_test=gamma_tests/first -l test_suite',
+                          '--run_test=gamma_tests/third -l test_suite'], sorted(starts))
+        self.assertEqual(sorted(['alpha_tests/one', 'alpha_tests/two', 'gamma_tests/first', 'gamma_tests/third']),
+                         sorted(re.findall(r'Entering test case "([^"]+)"', result.stdout)))
+        self.assertIn('3 processes, 4 test cases', summary)
+        self.assertIn('0 failed', summary)
+
+        # A failing case fails the gate, by name, and the others still run.
+        result, starts, summary = self.run_unit_gate('--jobs', '2', FAKE_FAIL='beta_tests/only')
+        self.assertEqual(1, result.returncode)
+        self.assertEqual(3, len(starts))
+        self.assertIn('FAILED beta_tests (exit 201', result.stdout)
+        self.assertIn('- FAILED `beta_tests`: exit 201', summary)
+        self.assertIn('1 failed', summary)
+
+        # Exit 0 is not enough: a process that ran fewer cases than the listing holds for it fails the gate.
+        result, _, summary = self.run_unit_gate('--jobs', '2', FAKE_SHORT='gamma_tests/third')
+        self.assertEqual(1, result.returncode)
+        self.assertIn('- FAILED `gamma_tests`: ran 2 test cases, the listing holds 3', summary)
+
+        # Nothing starts on a request the binary does not bear out, or on a listing that cannot be used.
+        for arguments, env in ((['--exclude=delta_tests'], {}),
+                               (['--exclude=alpha_tests/three'], {}),
+                               (['--split=delta_tests'], {}),
+                               (['--jobs', '0'], {}),
+                               ([], {'FAKE_LIST_EXIT': '1'}),
+                               ([], {'FAKE_LISTING': ''}),
+                               ([], {'FAKE_LISTING': 'alpha_tests\n    one*\n'})):
+            with self.subTest(arguments=arguments, env=env):
+                result, starts, _ = self.run_unit_gate(*arguments, **env)
+                self.assertEqual(1, result.returncode)
+                self.assertEqual([], starts)
+                self.assertNotEqual('', result.stderr)
+        result, starts, _ = self.run_unit_gate('--binary', '/nonexistent/test_binary')
+        self.assertEqual((1, []), (result.returncode, starts))
 
     def test_original_functional_gate_tests_and_runner_flags_are_preserved(self):
         # Dropping a test from the gate takes an edit here as well as a line in the list that says why.
@@ -703,7 +952,7 @@ class SchedulingTest(unittest.TestCase):
             'wallet_coinbase_category.py',
         ]), sorted(name for name, _ in functional_gate.read_gate()))
         functional = run_script(step_text(self.checks, 'Functional tests (named gate)'))
-        self.assertIn('python3 ci/dash/functional_gate.py order > "$gate" || exit 1\n', functional)
+        self.assertIn('python3 ci/dash/functional_gate.py order --shard "$shard" > "$gate" || exit 1\n', functional)
         self.assertIn('mapfile -t GATE < "$gate"\n', functional)
         self.assertIn('python3 test/functional/test_runner.py --jobs=4 --timeout-factor="${TEST_RUNNER_TIMEOUT_FACTOR}" '
                       '--combinedlogslen=4000 --tmpdirprefix="$RUNNER_TEMP/functional-tests" "${GATE[@]}" 2>&1 '
