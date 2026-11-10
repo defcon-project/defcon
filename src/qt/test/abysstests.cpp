@@ -127,6 +127,7 @@
 #include <cstring>
 #include <limits>
 #include <map>
+#include <tuple>
 #include <utility>
 #include <vector>
 #ifdef USE_QRCODE
@@ -6080,6 +6081,11 @@ void AbyssTests::receiveFits()
         if (scroll->verticalScrollBar()->maximum() != 0) {
             found << QString("%1: the page scrolls by %2").arg(at).arg(scroll->verticalScrollBar()->maximum());
         }
+        // With room to spare: the native trial at 175% (U2) had the history line
+        // 20 pixels short with the form open, where this platform measured 36 to
+        // spare -- so the native page has some 56 less, and 60 is asked for here.
+        const int spare = scroll->viewport()->height() - (scroll->widget() ? scroll->widget()->minimumSizeHint().height() : 0);
+        if (spare < 60) found << QString("%1: only %2 px to spare under the history line").arg(at).arg(spare);
         for (QWidget* part : {static_cast<QWidget*>(card), static_cast<QWidget*>(create), static_cast<QWidget*>(none), static_cast<QWidget*>(history)}) {
             const QRect inside = OnPage(*receive, part);
             if (!receive->rect().contains(inside) || part->visibleRegion() != QRegion(part->rect())) {
@@ -6121,4 +6127,335 @@ void AbyssTests::receiveFits()
     if (!output.isEmpty()) QVERIFY(PageImage(*receive).save(QDir(output).filePath("Abyss-receive-history.png")));
     for (const QString& line : found) qInfo().noquote() << "RECEIVE_FITS" << line;
     QCOMPARE(found.join("\n"), QString());
+}
+
+void AbyssTests::sendInputsFirst()
+{
+    // U2b: in Abyss the coin control card heads the Send column, above the
+    // recipient -- under the recipients and the fee it was a scroll away -- at
+    // its own height. With coins chosen its figures take two columns where the
+    // column is wide enough, one where it is not. At the height of the unlocked
+    // Overview's minimum the Inputs button and the address field show without
+    // scrolling. The classic form is the same picture before and after. Also run
+    // at QT_SCALE_FACTOR=1.75.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Page heights require a font-capable platform; run minimal:enable_fonts");
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::Roboto);
+    GUIUtil::setFontScale(0);
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    // Coins of its own to choose from: the test chain's coinbase key.
+    {
+        auto spk_man = fixture.wallet->GetOrCreateLegacyScriptPubKeyMan();
+        const CBlockIndex* tip = WITH_LOCK(::cs_main, return fixture.chain.m_node.chainman->ActiveChain().Tip());
+        LOCK2(fixture.wallet->cs_wallet, spk_man->cs_KeyStore);
+        spk_man->AddKeyPubKey(fixture.chain.coinbaseKey, fixture.chain.coinbaseKey.GetPubKey());
+        fixture.wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+    {
+        WalletRescanReserver reserver(*fixture.wallet);
+        reserver.reserve();
+        QCOMPARE(fixture.wallet->ScanForWalletTransactions(Params().GetConsensus().hashGenesisBlock, 0, {}, reserver, true).status,
+                 CWallet::ScanResult::SUCCESS);
+    }
+    COutPoint chosen;
+    {
+        LOCK(fixture.wallet->cs_wallet);
+        QVERIFY(!fixture.wallet->mapWallet.empty());
+        chosen = COutPoint(fixture.wallet->mapWallet.begin()->first, 0);
+    }
+    // Made in a classic theme, so Abyss's first pass comes later in its life.
+    Theme("Light");
+    QWidget overview_host;
+    auto* overview = new OverviewPage(&overview_host);
+    overview->setClientModel(fixture.client.get());
+    overview->setWalletModel(fixture.model.get());
+    overview->setStakingStatus(StakingCase("off"));
+    QWidget host;
+    auto* send = new SendCoinsDialog(false, &host);
+    send->setModel(fixture.model.get());
+    host.resize(1280, 850); send->setGeometry(0, 0, 1280, 850);
+    host.show(); send->show(); Settle();
+    QVERIFY(QMetaObject::invokeMethod(send, "coinControlFeatureChanged", Q_ARG(bool, true)));
+    send->m_coin_control->Select(chosen);
+    QVERIFY(QMetaObject::invokeMethod(send, "coinControlUpdateLabels"));
+    Settle();
+    auto* control = send->findChild<QFrame*>("frameCoinControl");
+    auto* inputs = send->findChild<QPushButton*>("pushButtonCoinControl");
+    auto* figures = send->findChild<QWidget*>("widgetCoinControl");
+    auto* row = send->findChild<QHBoxLayout*>("horizontalLayoutCoinControl3");
+    auto* entry = send->findChild<SendCoinsEntry*>();
+    QVERIFY(control && inputs && figures && row && entry);
+    auto* pay_to = entry->findChild<QLineEdit*>("payTo");
+    QVERIFY(pay_to);
+    std::array<QFormLayout*, 4> groups{};
+    for (int i = 0; i < 4; ++i) {
+        groups[i] = send->findChild<QFormLayout*>(QString("formLayoutCoinControl%1").arg(i + 1));
+        QVERIFY(groups[i]);
+    }
+    QVERIFY(figures->isVisible());
+    const auto classic_row = [&] {
+        for (int i = 0; i < 4; ++i) {
+            if (row->itemAt(i) == nullptr || row->itemAt(i)->layout() != groups[i] || row->stretch(i) != (i == 3 ? 1 : 0)) return false;
+        }
+        return row->count() == 4;
+    };
+    QVERIFY(classic_row());
+    // Without a focused field: a text cursor blinks.
+    const auto classic_picture = [&] {
+        if (QWidget* focused = QApplication::focusWidget()) focused->clearFocus();
+        Settle();
+        return send->grab().toImage();
+    };
+    const QImage classic = classic_picture();
+
+    Theme("Abyss"); Settle();
+    overview_host.resize(1280, 850); overview->setGeometry(0, 0, 1280, 850);
+    overview_host.show(); Settle();
+    auto* scroll = send->findChild<QScrollArea*>("abyssSendFieldsScroll");
+    QVERIFY(scroll && scroll->widget());
+    auto* column = qobject_cast<QVBoxLayout*>(scroll->widget()->layout());
+    QVERIFY(column);
+    QStringList found;
+    // First in the column, above the recipient.
+    if (column->itemAt(0) == nullptr || column->itemAt(0)->widget() != control) found << "the coin control card is not first in the column";
+    // At its own height, however much room the column has.
+    host.resize(1280, 1400); send->setGeometry(0, 0, 1280, 1400); Settle();
+    if (control->height() != control->sizeHint().height()) {
+        found << QString("with room to spare the card is %1 px for %2").arg(control->height()).arg(control->sizeHint().height());
+    }
+    interfaces::WalletBalances zero{};
+    interfaces::WalletBalances large{};
+    large.balance = 50'820'975 * COIN + 99 * COIN / 100;
+    auto* quantity = send->findChild<QLabel*>("labelCoinControlQuantityText");
+    auto* amount = send->findChild<QLabel*>("labelCoinControlAmountText");
+    auto* fee = send->findChild<QLabel*>("labelCoinControlFeeText");
+    auto* change_box = send->findChild<QWidget*>("checkBoxCoinControlChange");
+    auto* change_edit = send->findChild<QWidget*>("lineEditCoinControlChange");
+    QVERIFY(quantity && amount && fee && change_box && change_edit);
+    for (const bool coins : {false, true}) {
+        if (coins) send->m_coin_control->Select(chosen); else send->m_coin_control->UnSelectAll();
+        QVERIFY(QMetaObject::invokeMethod(send, "coinControlUpdateLabels"));
+        Settle();
+        QCOMPARE(figures->isVisible(), coins);
+        for (int width : {1280, 1026, 704}) {
+            // The smaller of the unlocked Overview's minimums, with and without a balance.
+            int height = std::numeric_limits<int>::max();
+            for (const interfaces::WalletBalances* balances : {&zero, &large}) {
+                overview->setBalance(*balances); Settle();
+                overview->setGeometry(0, 0, std::max(width, overview->minimumWidth()), 850); Settle();
+                height = std::min(height, overview->minimumSizeHint().height());
+            }
+            host.resize(width, height); send->setGeometry(0, 0, width, height); Settle();
+            scroll->verticalScrollBar()->setValue(0); Settle();
+            const QString at = QString("%1 at %2x%3").arg(coins ? "chosen" : "automatic").arg(width).arg(height);
+            qInfo().noquote() << "SEND_INPUTS" << at << "columns" << send->m_coin_figure_columns << "card" << control->height()
+                              << "recipient at" << OnPage(*send, entry).top() << "address at" << OnPage(*send, pay_to).top()
+                              << "viewport" << scroll->viewport()->height() << "DPR" << send->devicePixelRatioF();
+            if (scroll->horizontalScrollBar()->maximum() != 0) found << at + ": the column scrolls sideways";
+            if (OnPage(*send, control).bottom() >= OnPage(*send, entry).top()) found << at + ": the card is not above the recipient";
+            if (inputs->visibleRegion() != QRegion(inputs->rect())) found << at + ": the Inputs button is not in view";
+            // With coins chosen the address may scroll in a narrow column; with
+            // two columns of figures it must not.
+            if ((!coins || send->m_coin_figure_columns == 2) && pay_to->visibleRegion() != QRegion(pay_to->rect())) {
+                found << at + ": the address field is not in view";
+            }
+            if (!coins) continue;
+            // Every figure whole inside the card.
+            for (QLabel* label : figures->findChildren<QLabel*>()) {
+                if (!label->isVisibleTo(send)) continue;
+                const QRect inside = OnPage(*send, label);
+                if (!OnPage(*send, control).contains(inside) || label->width() < label->minimumSizeHint().width()) {
+                    found << QString("%1: %2 is not whole in the card").arg(at, label->objectName());
+                }
+            }
+            const QRect q = OnPage(*send, quantity), a = OnPage(*send, amount), f = OnPage(*send, fee);
+            const QRect box = OnPage(*send, change_box), edit = OnPage(*send, change_edit);
+            if (send->m_coin_figure_columns == 2) {
+                // Amount right of Quantity on its row, Fee under Quantity in its
+                // column (each group keeps the form's own margins); the change
+                // address box beside its check box.
+                if (std::abs(a.top() - q.top()) > 2 || a.left() <= q.right()) found << at + ": Amount is not beside Quantity";
+                if (f.top() <= q.bottom() || f.left() >= a.left()) found << at + ": Fee is not under Quantity";
+                if (edit.left() <= box.right() || std::abs(edit.center().y() - box.center().y()) > 4) found << at + ": the change address box is not beside its check box";
+            } else if (send->m_coin_figure_columns == 1) {
+                if (a.top() <= q.bottom() || f.top() <= a.bottom()) found << at + ": the groups are not one under the other";
+                if (edit.top() <= box.bottom()) found << at + ": the change address box is not under its check box";
+            } else {
+                found << at + ": the figures are not arranged";
+            }
+            if (width == 1280 && send->m_coin_figure_columns != 2) found << at + ": a wide column does not take two columns";
+            if (!output.isEmpty() && (width == 1280 || width == 704)) {
+                QVERIFY(QDir().mkpath(output));
+                QVERIFY(PageImage(*send).save(QDir(output).filePath(QString("Abyss-send-inputs-%1.png").arg(width))));
+            }
+        }
+        if (!coins && !output.isEmpty()) {
+            QVERIFY(QDir().mkpath(output));
+            QVERIFY(PageImage(*send).save(QDir(output).filePath("Abyss-send-inputs-automatic.png")));
+        }
+    }
+    for (const QString& line : found) qInfo().noquote() << "SEND_INPUTS" << line;
+    QCOMPARE(found.join("\n"), QString());
+
+    // Back in the classic theme: the form's own row and the same picture.
+    Theme("Light");
+    host.resize(1280, 850); send->setGeometry(0, 0, 1280, 850); Settle();
+    QVERIFY(classic_row());
+    QCOMPARE(send->m_coin_figure_columns, 0);
+    const QImage again = classic_picture();
+    if (again != classic && again.size() == classic.size()) {
+        // Where they differ, and what is drawn there.
+        QRect differs;
+        for (int y = 0; y < again.height(); ++y) {
+            for (int x = 0; x < again.width(); ++x) {
+                if (again.pixel(x, y) != classic.pixel(x, y)) differs |= QRect(x, y, 1, 1);
+            }
+        }
+        const qreal dpr = again.devicePixelRatio();
+        QWidget* there = send->childAt((differs.center() / dpr));
+        qInfo() << "SEND_INPUTS classic picture differs in" << differs << "at" << (there ? there->objectName() : QString("nothing"))
+                << (there && there->parentWidget() ? there->parentWidget()->objectName() : QString());
+        if (!output.isEmpty()) {
+            QVERIFY(QDir().mkpath(output));
+            classic.save(QDir(output).filePath("Light-send-inputs-before.png"));
+            again.save(QDir(output).filePath("Light-send-inputs-after.png"));
+        }
+    }
+    QCOMPARE(again, classic);
+}
+
+void AbyssTests::overviewDiscreetHeader()
+{
+    // Discreet mode hides the recent transactions, and their card's title row
+    // was then given the whole card: the title sat in its middle and the "out of
+    // sync" chip ran its full height. In Abyss the row keeps to the top, as
+    // with the list shown; the classic themes keep the form's layout.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    QWidget host;
+    auto* page = new OverviewPage(&host);
+    page->setClientModel(fixture.client.get());
+    page->setWalletModel(fixture.model.get());
+    host.resize(1280, 850); page->setGeometry(0, 0, 1280, 850);
+    host.show(); Settle();
+    page->showOutOfSyncWarning(true); Settle();
+    auto* card = page->findChild<QFrame*>("frame_2");
+    auto* title = page->findChild<QLabel*>("label_4");
+    auto* chip = page->findChild<QLabel*>("labelTransactionsStatus");
+    auto* list = page->findChild<QWidget*>("listTransactions");
+    auto* layout = page->findChild<QVBoxLayout*>("verticalLayout");
+    QVERIFY(card && title && chip && list && layout);
+    QVERIFY(chip->isVisible());
+    page->setPrivacy(false); Settle();
+    const QRect title_shown = OnPage(*page, title);
+    const QRect chip_shown = OnPage(*page, chip);
+    page->setPrivacy(true); Settle();
+    QVERIFY(!list->isVisible());
+    const QRect title_hidden = OnPage(*page, title);
+    const QRect chip_hidden = OnPage(*page, chip);
+    qInfo() << "DISCREET_HEADER card" << OnPage(*page, card) << "title" << title_shown << title_hidden << "chip" << chip_shown << chip_hidden;
+    QVERIFY2(std::abs(title_hidden.top() - title_shown.top()) <= 1 && std::abs(title_hidden.height() - title_shown.height()) <= 1,
+             "the title moves when the list is hidden");
+    QVERIFY2(std::abs(chip_hidden.top() - chip_shown.top()) <= 1 && std::abs(chip_hidden.height() - chip_shown.height()) <= 1,
+             "the out-of-sync chip changes when the list is hidden");
+    QVERIFY2(title_hidden.top() - OnPage(*page, card).top() < 40, "the title is not at the card's top");
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    if (!output.isEmpty()) {
+        QVERIFY(QDir().mkpath(output));
+        QVERIFY(PageImage(*page).save(QDir(output).filePath("Abyss-overview-discreet.png")));
+    }
+    // The classic themes: the form's layout.
+    Theme("Light"); Settle();
+    QCOMPARE(layout->itemAt(0)->alignment(), Qt::Alignment());
+    Theme("Abyss"); Settle();
+    QCOMPARE(layout->itemAt(0)->alignment(), Qt::Alignment(Qt::AlignTop));
+    page->setPrivacy(false);
+}
+
+void AbyssTests::sidebarLogoCentred()
+{
+    // The wordmark sits in the middle of its gap: as much room above its ink,
+    // to the bar's top under the menu, as below it to the next box -- the
+    // wallet selector's frame with two wallets, the first page's button with
+    // one. It had 6 above and 20 below (28 with two wallets). Measured on what
+    // the bar draws. The window is sized again after each wallet: the minimal
+    // platform's small screen would otherwise fold the bar under the wordmark.
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    NodeContext& context = *m_node.context();
+    auto second = std::make_shared<CWallet>(context.chain.get(), context.coinjoin_loader.get(), "second", CreateMockWalletDatabase());
+    AddWallet(second);
+    second->LoadWallet();
+    second->GetOrCreateLegacyScriptPubKeyMan();
+    const auto forget = interfaces::MakeHandler([&] { RemoveWallet(second, std::nullopt); });
+    WalletModel second_model(interfaces::MakeWallet(second), *fixture.client);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.resize(1280, 850);
+    window.show(); Settle();
+    window.addWallet(fixture.model.get()); Settle();
+    window.gotoOverviewPage();
+    window.resize(1280, 850); Settle();
+    auto* bar = window.findChild<QToolBar*>("navigationToolBar");
+    QVERIFY(bar);
+    auto* logo = bar->findChild<QLabel*>("lblToolbarLogo");
+    QVERIFY(logo);
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    const auto gaps = [&](const char* what) {
+        const QImage shot = bar->grab().toImage().convertToFormat(QImage::Format_RGB32);
+        const qreal dpr = shot.devicePixelRatio();
+        if (!output.isEmpty()) {
+            QDir().mkpath(output);
+            shot.save(QDir(output).filePath(QString("Abyss-sidebar-logo-%1.png").arg(what)));
+        }
+        // The bar's own colour: its top-left corner is padding.
+        const QRgb backdrop = shot.pixel(2, 2);
+        const auto drawn = [&](int x, int y) {
+            const QRgb p = shot.pixel(x, y);
+            return std::abs(qRed(p) - qRed(backdrop)) + std::abs(qGreen(p) - qGreen(backdrop)) + std::abs(qBlue(p) - qBlue(backdrop)) > 24;
+        };
+        const QRect label(logo->mapTo(bar, QPoint()) * dpr, logo->size() * dpr);
+        int top = -1, bottom = -1;
+        for (int y = std::max(0, label.top()); y <= std::min(shot.height() - 1, label.bottom()); ++y) {
+            for (int x = std::max(0, label.left()); x <= std::min(shot.width() - 1, label.right()); ++x) {
+                if (drawn(x, y)) {
+                    if (top < 0) top = y;
+                    bottom = y;
+                    break;
+                }
+            }
+        }
+        // The next box: the first row under the ink drawn across the bar's middle.
+        int next = -1;
+        const int middle = shot.width() / 2;
+        for (int y = bottom + 1; y < shot.height() && next < 0; ++y) {
+            for (int x = middle - 40; x <= middle + 40; ++x) {
+                if (drawn(x, y)) { next = y; break; }
+            }
+        }
+        const qreal above = top / dpr;
+        const qreal below = (next - bottom - 1) / dpr;
+        qInfo() << "SIDEBAR_LOGO" << what << "ink" << top << bottom << "next" << next << "above" << above << "below" << below << "DPR" << dpr;
+        return std::make_tuple(top >= 0 && next > bottom, above, below);
+    };
+    for (const char* what : {"one", "two"}) {
+        if (QString(what) == "two") {
+            window.addWallet(&second_model); Settle();
+            window.resize(1280, 850); Settle();
+        }
+        const auto [found, above, below] = gaps(what);
+        QVERIFY2(found, qPrintable(QString("%1 wallet(s): the wordmark or the box under it draws nothing").arg(what)));
+        QVERIFY2(std::abs(above - below) <= 2,
+                 qPrintable(QString("%1 wallet(s): %2 px above the wordmark, %3 px below").arg(what).arg(above).arg(below)));
+    }
+    window.removeWallet(&second_model); Settle();
 }

@@ -86,12 +86,18 @@ void ReceiveCoinsDialog::buildAddressCard()
     content->setObjectName("abyssReceiveContent");
     m_abyss_column = new QVBoxLayout(content);
     m_abyss_column->setContentsMargins(0, 0, 0, 0);
-    m_abyss_column->setSpacing(12);
+    // Tighter than the other pages' 12, as the address card's and the form's
+    // padding: the card, the open form and the folded history fit the height the
+    // unlocked Overview takes with room to spare (receiveFits). At 175% on a
+    // 1600-pixel display the history line hung some 20 pixels short with the
+    // form open. The QR stays as large: it sets the card's height, so the
+    // toast under the buttons never moves it.
+    m_abyss_column->setSpacing(8);
 
     m_address_card = new QFrame(content);
     m_address_card->setObjectName("abyssReceiveCard");
     auto* row = new QHBoxLayout(m_address_card);
-    row->setContentsMargins(16, 14, 16, 14);
+    row->setContentsMargins(16, 10, 16, 10);
     row->setSpacing(20);
     m_address_qr = new QRImageWidget(m_address_card);
     m_address_qr->setObjectName("abyssReceiveQR");
@@ -497,9 +503,10 @@ void ReceiveCoinsDialog::updateThemePresentation()
         m_modern_header = GUIUtil::createPageHeader(this, tr("Receive DeFCoN"), tr("Share this address to get paid."));
         m_modern_form = new QWidget(ui->frame2);
         auto* grid = new QGridLayout(m_modern_form);
-        grid->setContentsMargins(6, 6, 6, 6);
+        // No margin of its own above and below: the card's layout pads it.
+        grid->setContentsMargins(6, 0, 6, 0);
         grid->setHorizontalSpacing(16);
-        grid->setVerticalSpacing(8);
+        grid->setVerticalSpacing(6);
         // No title of its own: it opens from the card's "Request a specific amount".
         buildAddressCard();
     }

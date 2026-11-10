@@ -28,6 +28,7 @@ namespace Ui {
 
 QT_BEGIN_NAMESPACE
 class QUrl;
+class QGridLayout;
 class QLabel;
 class QScrollArea;
 QT_END_NAMESPACE
@@ -36,6 +37,7 @@ QT_END_NAMESPACE
 class SendCoinsDialog : public QDialog
 {
     Q_OBJECT
+    friend class AbyssTests; // Presentation-state regression tests, no runtime test hooks.
 
 public:
     explicit SendCoinsDialog(bool fCoinJoin = false, QWidget* parent = nullptr);
@@ -67,6 +69,9 @@ protected:
     //! Only to catch the theme change: the scroll area's minimum belongs to
     //! the modern theme and has to be handed back when another one takes over.
     void changeEvent(QEvent* event) override;
+    //! The column's width and the figures' own size decide how the coin
+    //! control figures are arranged in Abyss (arrangeCoinControlFigures).
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     Ui::SendCoinsDialog *ui;
@@ -117,6 +122,13 @@ private:
     QSize m_original_control_spacer;
     QSizePolicy m_original_control_spacer_policy;
     Qt::ScrollBarPolicy m_original_recipient_scroll_policy{Qt::ScrollBarAsNeeded};
+    QSizePolicy m_original_control_policy;
+    //! Abyss: the coin control figures in two columns, or one in a narrow column.
+    void arrangeCoinControlFigures();
+    QGridLayout* m_coin_figures{nullptr};
+    //! 0 while the figures are in the form's own row (the classic themes).
+    int m_coin_figure_columns{0};
+    bool m_arranging_figures{false};
 
 private Q_SLOTS:
     void sendButtonClicked(bool checked);

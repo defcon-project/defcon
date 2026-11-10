@@ -35,7 +35,9 @@
 #include <memory>
 
 #include <QFontMetrics>
+#include <QFormLayout>
 #include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QScopedValueRollback>
 #include <QScrollBar>
@@ -662,6 +664,15 @@ void SendCoinsDialog::updateThemePresentation()
             m_original_spacing = ui->verticalLayout->spacing();
             m_original_recipient_scroll_policy = ui->scrollArea->verticalScrollBarPolicy();
             m_original_scroll_stretch = ui->verticalLayout->stretch(ui->verticalLayout->indexOf(ui->scrollArea));
+            m_original_control_policy = ui->frameCoinControl->sizePolicy();
+            // Empty while the figures sit in the form's row, and an empty layout
+            // takes no room or spacing in the classic card.
+            m_coin_figures = new QGridLayout;
+            m_coin_figures->setContentsMargins(0, 0, 0, 10);
+            m_coin_figures->setHorizontalSpacing(20);
+            m_coin_figures->setVerticalSpacing(14);
+            ui->horizontalLayoutCoinControl5->addLayout(m_coin_figures);
+            ui->widgetCoinControl->installEventFilter(this);
             m_modern_header = GUIUtil::createPageHeader(this, tr("Send DeFCoN"), tr("Send to one or more recipients."));
             m_modern_body = new QWidget(this);
             auto* body = new QHBoxLayout(m_modern_body);
@@ -678,6 +689,7 @@ void SendCoinsDialog::updateThemePresentation()
             field_scroll->setFrameShape(QFrame::NoFrame);
             field_scroll->setWidgetResizable(true);
             field_scroll->setWidget(fields);
+            field_scroll->viewport()->installEventFilter(this);
             auto* summary = new QFrame(m_modern_body);
             m_modern_summary = summary;
             summary->setObjectName("abyssSendSummary");
@@ -770,11 +782,18 @@ void SendCoinsDialog::updateThemePresentation()
             ui->verticalLayout->removeWidget(ui->frameFee);
             ui->verticalLayout->removeWidget(ui->frameCoinControl);
             ui->scrollArea->hide();
+            // Coin control first, as in the classic form: it is used often, and
+            // under the recipients and the fee it was a scroll away. At its own
+            // height -- the form lets it expand, which at the top would push the
+            // recipient down by whatever room the column has to spare.
+            left->addWidget(ui->frameCoinControl);
+            QSizePolicy control_policy = m_original_control_policy;
+            control_policy.setVerticalPolicy(QSizePolicy::Fixed);
+            ui->frameCoinControl->setSizePolicy(control_policy);
             left->addWidget(ui->scrollAreaWidgetContents);
             ui->scrollAreaWidgetContents->show();
             left->addWidget(ui->addButton, 0, Qt::AlignLeft);
             left->addWidget(ui->frameFee);
-            left->addWidget(ui->frameCoinControl);
             ui->scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
             if (ui->sendButton->parentWidget() != m_modern_summary) right->addWidget(ui->sendButton);
             // Mirror the formatted balance without moving the classic labels.
@@ -782,8 +801,6 @@ void SendCoinsDialog::updateThemePresentation()
             ui->labelBalance->hide();
             ui->verticalLayout->insertWidget(0, m_modern_header);
             ui->verticalLayout->insertWidget(1, m_modern_body, 1);
-            ui->horizontalLayoutCoinControl3->setDirection(QBoxLayout::TopToBottom);
-            ui->horizontalLayoutCoinControl4->setDirection(QBoxLayout::TopToBottom);
             ui->horizontalLayoutSmartFee->setDirection(QBoxLayout::TopToBottom);
             ui->horizontalLayoutFee1->setDirection(QBoxLayout::TopToBottom);
             ui->horizontalLayoutFee9->setDirection(QBoxLayout::TopToBottom);
@@ -800,10 +817,9 @@ void SendCoinsDialog::updateThemePresentation()
             m_modern_header->hide();
             m_modern_body->hide();
             left->removeWidget(ui->frameCoinControl);
+            ui->frameCoinControl->setSizePolicy(m_original_control_policy);
             ui->verticalLayout->insertWidget(0, ui->frameCoinControl);
             ui->scrollArea->setVerticalScrollBarPolicy(m_original_recipient_scroll_policy);
-            ui->horizontalLayoutCoinControl3->setDirection(QBoxLayout::LeftToRight);
-            ui->horizontalLayoutCoinControl4->setDirection(QBoxLayout::LeftToRight);
             left->removeWidget(ui->scrollAreaWidgetContents);
             ui->scrollArea->setWidget(ui->scrollAreaWidgetContents);
             ui->scrollArea->show();
@@ -829,6 +845,7 @@ void SendCoinsDialog::updateThemePresentation()
             ui->verticalLayout->setSpacing(m_original_spacing);
         }
         m_modern_layout = modern;
+        arrangeCoinControlFigures();
     }
     for (int i = 0; i < ui->entries->count(); ++i) {
         if (auto* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(i)->widget())) {
@@ -853,6 +870,72 @@ void SendCoinsDialog::updateThemePresentation()
         if (!active_focus) focus->show();
         focus->setFocus(Qt::OtherFocusReason);
     }
+}
+
+//! The coin control figures: the classic form shows its four groups in one
+//! row. Abyss's column is narrower, and the groups used to stand one under the
+//! other there, seven rows -- which, with the card now above the recipient,
+//! would push the recipient down whenever coins are chosen. So two columns
+//! where the column has the width for them, one where it has not; the groups
+//! keep their order either way. The custom change address follows: its box
+//! beside the check box in a wide column, under it in a narrow one. Decided on
+//! the width the scroll area shows, which does not depend on the arrangement,
+//! so it cannot flip back and forth.
+void SendCoinsDialog::arrangeCoinControlFigures()
+{
+    if (!m_coin_figures || m_arranging_figures) return;
+    QScopedValueRollback<bool> guard(m_arranging_figures, true);
+    const std::array<QFormLayout*, 4> groups{ui->formLayoutCoinControl1, ui->formLayoutCoinControl2,
+                                             ui->formLayoutCoinControl3, ui->formLayoutCoinControl4};
+    int columns{0};
+    if (m_modern_layout && m_modern_scroll) {
+        const auto wider = [](QLayout* a, QLayout* b) { return std::max(a->sizeHint().width(), b->sizeHint().width()); };
+        int two = wider(groups[0], groups[2]) + m_coin_figures->horizontalSpacing() + wider(groups[1], groups[3]);
+        // The custom change address in one row: the check box, the address box
+        // and its note, at the least the layout would give each.
+        QBoxLayout* change = ui->horizontalLayoutCoinControl4;
+        int change_row = change->contentsMargins().left() + change->contentsMargins().right();
+        int shown{0};
+        for (QWidget* part : {static_cast<QWidget*>(ui->checkBoxCoinControlChange), static_cast<QWidget*>(ui->lineEditCoinControlChange),
+                              static_cast<QWidget*>(ui->labelCoinControlChangeLabel)}) {
+            if (part->isHidden()) continue;
+            change_row += (shown++ ? change->spacing() : 0) + QWidgetItem(part).minimumSize().width();
+        }
+        two = std::max(two, change_row);
+        const QMargins around = ui->verticalLayoutCoinControl2->contentsMargins() + ui->verticalLayoutCoinControl->contentsMargins() +
+                                ui->horizontalLayoutCoinControl5->contentsMargins();
+        const int frame = ui->frameCoinControl->width() - ui->frameCoinControl->contentsRect().width();
+        const int room = m_modern_scroll->viewport()->width() - frame - around.left() - around.right();
+        columns = two <= room ? 2 : 1;
+    }
+    if (columns == m_coin_figure_columns) return;
+    m_coin_figure_columns = columns;
+    ui->horizontalLayoutCoinControl4->setDirection(columns == 1 ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    for (QFormLayout* group : groups) {
+        if (group->parent() == ui->horizontalLayoutCoinControl3) {
+            ui->horizontalLayoutCoinControl3->removeItem(group);
+        } else {
+            m_coin_figures->removeItem(group);
+        }
+        group->setParent(nullptr);
+    }
+    for (int i = 0; i < int(groups.size()); ++i) {
+        if (columns == 0) {
+            // As the form has it: the last group takes the row's spare width.
+            ui->horizontalLayoutCoinControl3->addLayout(groups[i], i == 3 ? 1 : 0);
+        } else {
+            m_coin_figures->addLayout(groups[i], columns == 2 ? i / 2 : i, columns == 2 ? i % 2 : 0);
+        }
+    }
+}
+
+bool SendCoinsDialog::eventFilter(QObject* watched, QEvent* event)
+{
+    if ((m_modern_scroll && watched == m_modern_scroll->viewport() && event->type() == QEvent::Resize) ||
+        (watched == ui->widgetCoinControl && event->type() == QEvent::LayoutRequest)) {
+        arrangeCoinControlFigures();
+    }
+    return QDialog::eventFilter(watched, event);
 }
 
 void SendCoinsDialog::updatePaymentSummary()
