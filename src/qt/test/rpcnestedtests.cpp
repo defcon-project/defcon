@@ -344,10 +344,11 @@ void RPCNestedTests::rpcNestedTests()
         }
         checked.insert(name);
     }
-    // The walk reaches subcommands, and both node and wallet commands.
-    QVERIFY(checked.count("bls fromsecret") && checked.count("protx revoke") && checked.count("signrawtransactionwithkey"));
+    // The walk reaches subcommands, and both node and wallet commands. The
+    // protx subcommands that take a key exist only with the wallet built in.
+    QVERIFY(checked.count("bls fromsecret") && checked.count("signrawtransactionwithkey"));
 #ifdef ENABLE_WALLET
-    QVERIFY(checked.count("importblsprivkey") && checked.count("createwallet") && checked.count("upgradetohd"));
+    QVERIFY(checked.count("protx revoke") && checked.count("importblsprivkey") && checked.count("createwallet") && checked.count("upgradetohd"));
 #endif
 
     RPCConsole::RPCExecuteCommandLine(m_node, result, "rpcNestedTest");
