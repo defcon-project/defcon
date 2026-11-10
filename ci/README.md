@@ -10,19 +10,28 @@ entry point.
 
 ### GitHub Actions lanes
 
-After the image and dependency prefix are ready, three jobs run on separate
+After the image and dependency prefix are ready, three lanes run on separate
 GitHub-hosted machines. The `runtime` lane builds the regular binaries and
 runs the unit and Qt/LSan gates. The `functional` lane builds the same tree the
 same way and runs the functional gate, so the longest part of a run no longer
 waits behind the unit suites. The `build-options` lane runs the configure
 checks and the wallet-disabled build and regressions. No lane removes tests or
-changes their concurrency or timeout settings.
+changes their timeout settings.
+
+The functional lane is several machines (`FUNCTIONAL_SHARDS` in the workflow),
+each with its own shard of the gate and the same four test slots the single
+machine had. The unit suites run one process each, as many at a time as the
+machine has CPUs: `ci/dash/unit_suites.py` takes the suites from the test
+binary's own listing, leaves out the named exceptions, and fails unless every
+process exits 0 and reports exactly the cases the listing holds for it.
 
 The functional gate is the list in `ci/dash/functional_gate.txt`: each test
 with the seconds all of its variants took on the hosted runner, and what it
 guards. `ci/dash/functional_gate.py order` checks that the runner knows every
 entry and starts them longest first, so a long test cannot end up starting
-last however the list grows. Adding a test to the gate needs no change to the
+last however the list grows; `--shard I/N` prints one shard, the tests dealt
+longest first to the shard with the fewest seconds so far. Adding a test to
+the gate needs no change to the
 workflow and leaves the dependency and compiler cache input identity as it was
 (only the per-commit part of the compiler cache key changes, as with any
 commit). The summary of every run that executes the gate shows the measured
