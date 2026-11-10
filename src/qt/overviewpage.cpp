@@ -608,6 +608,11 @@ void OverviewPage::updateThemePresentation()
         m_inherited_minimum_widths.clear();
         if (!modern) m_classic_widths_pending = true;
         GUIUtil::setFont({ui->label_4, ui->label_5, ui->labelCoinJoinHeader}, GUIUtil::FontWeight::Bold, modern ? 12 : 16);
+        // The card's title row keeps to the top. Discreet mode hides the list
+        // under it, and the row was then given the whole card: the title sat in
+        // its middle and the "out of sync" chip ran its full height. Abyss
+        // only; the classic themes keep the form's layout.
+        ui->verticalLayout->setAlignment(ui->horizontalLayout_2, modern ? Qt::AlignTop : Qt::Alignment());
         GUIUtil::setFont({ui->labelTotal}, GUIUtil::FontWeight::Bold, modern ? 26 : 14, false, modern);
         ui->labelTotal->setFont(GUIUtil::getFont(GUIUtil::FontWeight::Bold, false, modern ? 26 : 14));
         auto policy = m_total_size_policy;

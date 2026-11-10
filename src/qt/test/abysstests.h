@@ -84,6 +84,9 @@ private Q_SLOTS:
     void receiveWalletGone();
     void receiveToast();
     void receiveFits();
+    void sendInputsFirst();
+    void overviewDiscreetHeader();
+    void sidebarLogoCentred();
     // Last, after the window-activation checks of paymentPages: run before
     // them, its two short-lived wallet windows were followed by occasional
     // activation failures on xcb without a window manager.

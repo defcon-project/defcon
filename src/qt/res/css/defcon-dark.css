@@ -349,10 +349,16 @@ QToolBar#navigationToolBar[modern="true"] > QToolButton:disabled {
 /* The box is the wordmark's own proportion, 616:140, so nothing is letterboxed
    or stretched: 194 px wide makes it 44 px tall. It used to be 194x58, which is
    3.34:1 against artwork that is 4.4:1 -- a shape inherited from a different
-   wordmark and never reconciled with this one. */
+   wordmark and never reconciled with this one.
+
+   Vertically it sits in the middle of its gap, as the bar draws it: 11px and
+   the bar's 2px above, 9px and 4px below to the next box's edge -- the wallet
+   selector's frame (whose top margin is the buttons' 2px) or, with one
+   wallet, the first page's button. 13px each way; it was 6 above and 20
+   below, 28 above the selector. */
 QToolBar#navigationToolBar[modern="true"] QLabel#lblToolbarLogo {
     image: url(':/images/defcon_wordmark');
-    margin: 4px 10px 16px 10px;
+    margin: 11px 10px 9px 10px;
     padding: 0;
     min-width: 194px;
     max-width: 194px;
@@ -368,7 +374,9 @@ QToolBar#navigationToolBar[modern="true"] QWidget#walletSelector {
     background-color: #0b1727;
     border: 1px solid #29435f;
     border-radius: 8px;
-    margin: 10px 5px 2px 5px;
+    /* The same 2px above as the buttons have, so the wordmark's gap is one
+       size with one wallet or more (see lblToolbarLogo). */
+    margin: 2px 5px 2px 5px;
     min-width: 202px;
 }
 
