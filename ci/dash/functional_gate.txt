@@ -25,8 +25,9 @@
 # or shrunk a lot. Recorded on pull request run 42887921093 (2026-11-10), the
 # first with every test then in the gate; the nine wallet, mempool, RPC and
 # peer tests that came in once they stopped assuming Dash's coin amounts and
-# maturity on the test chains, and feature_dsl_list_change.py (SF1-L), from
-# their local runs until their first hosted run.
+# maturity on the test chains, feature_dsl_list_change.py (SF1-L), and the
+# three PSBT, mempool and peer tests that came in once the test framework took
+# DeFCoN's MAX_MONEY, from their local runs until their first hosted run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -88,7 +89,9 @@
 57   feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates
 51   feature_pos_double_sign.py             # a stake signed twice is counted once and changes nothing else
 50   feature_llmq_is_named_quorum_window.py # an InstantSend lock signed by the quorum that has just left the signing-active set, right after a new commitment
+45   rpc_psbt.py                            # PSBTs: create, update, sign, combine, finalize, analyze, and the malformed and out-of-range ones refused
 42   p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
+41   mempool_accept.py                      # testmempoolaccept: each reason a lone transaction is refused for, amounts above MAX_MONEY among them
 40   rpc_fundrawtransaction.py              # fundrawtransaction: coin selection, change position, fees and its options
 40   tool_wallet.py                         # defcon-wallet: create, info, dump and createfromdump, salvage; both wallets
 40   feature_dsl_list_change.py             # the Sentinel tick speaks from the epoch base's list: a masternode registered or revoked mid-epoch (SF1-L)
@@ -96,6 +99,7 @@
 33   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 32   rpc_verifyislock.py                    # the lock-verifying RPCs
 30   feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
+30   p2p_invalid_tx.py                      # invalid transactions from a peer: each reject reason and its disconnect, orphans and their limits
 27   feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
 27   feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
 24   rpc_rawtransaction.py                  # createrawtransaction, signing and sending, and the multisig spends
