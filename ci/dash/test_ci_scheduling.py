@@ -943,7 +943,7 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
             'feature_dsl_commit_decision_log.py',
             'feature_pos_double_sign.py',
             'wallet_combineoutputs.py',
-            'feature_dsl_dkg_isolation.py',
+            'feature_dsl_dkg_isolation.py', 'feature_dsl_list_change.py',
             'rpc_help.py', 'tool_wallet.py',
             'wallet_multiwallet.py', 'rpc_getblockstats.py',
             'wallet_basic.py', 'wallet_backup.py', 'rpc_fundrawtransaction.py', 'wallet_send.py',

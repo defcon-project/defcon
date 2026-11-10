@@ -70,6 +70,24 @@ private:
     const dsl::CPoSeServiceManager& m_dslman;
 };
 
+//! Moves a separate deterministic-MN reader's tip in each tip event, where production's CDSNotificationInterface
+//! moves the live manager's: in the event's first round, so before the tick, which runs after every subscriber's
+//! UpdatedBlockTip.
+class ReaderTipFollower final : public CValidationInterface
+{
+public:
+    explicit ReaderTipFollower(CDeterministicMNManager& dmnman) : m_dmnman(dmnman) {}
+
+protected:
+    void UpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex*, bool) override
+    {
+        m_dmnman.UpdatedBlockTip(pindexNew);
+    }
+
+private:
+    CDeterministicMNManager& m_dmnman;
+};
+
 //! The announcements read and dropped unread over the measurement window, which this takes (and so restarts).
 struct ResponseCounts {
     uint64_t read{0};
@@ -192,10 +210,13 @@ struct DSLActivationSetup : RegTestingSetup {
         peerman->InitializeNode(*peer, NODE_NETWORK);
     }
 
-    void InstallList(size_t count)
+    //! Writes the synthetic list of `count` masternodes as the snapshot of the block `block_hash` at `height`. Called
+    //! before that block connects (ConnectBase): from SF1-L on a masternode's tick reads the epoch base's list on the
+    //! base block itself, and this reader would keep whatever it found there.
+    void InstallList(const uint256& block_hash, int height, size_t count)
     {
         BOOST_REQUIRE_LE(count, std::numeric_limits<uint32_t>::max());
-        CDeterministicMNList list{base->GetBlockHash(), base->nHeight, static_cast<uint32_t>(count)};
+        CDeterministicMNList list{block_hash, height, static_cast<uint32_t>(count)};
         for (size_t i = 0; i < count; ++i) {
             if (operator_keys.size() <= i) {
                 CBLSSecretKey key;
@@ -216,22 +237,40 @@ struct DSLActivationSetup : RegTestingSetup {
             list.AddMN(mn);
         }
         operator_key = operator_keys.front();
-        // This reader has not cached the newly connected block. No component's
-        // existing manager is replaced or freed, and mining uses the original.
-        // The synthetic snapshot is shared through evodb with those managers.
-        m_node.evodb->Write(std::make_pair(CDeterministicMNManager::ListSnapshotDbKey(), base->GetBlockHash()), list);
+        // No component's existing manager is replaced or freed, and mining uses
+        // the original. The synthetic snapshot is shared through evodb with those
+        // managers; the block's own connection commits it.
+        m_node.evodb->Write(std::make_pair(CDeterministicMNManager::ListSnapshotDbKey(), block_hash), list);
+    }
+
+    //! A block on the tip, solved but not connected (MineBlock without its ProcessNewBlock).
+    std::shared_ptr<CBlock> SolvedBlock(const CScript& script)
+    {
+        auto block = PrepareBlock(m_node, script);
+        while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) {
+            ++block->nNonce;
+            BOOST_REQUIRE(block->nNonce != 0);
+        }
+        return block;
+    }
+
+    //! Connects `block` as the epoch base at `height` with its synthetic list of `count` masternodes in place first.
+    void ConnectBase(const std::shared_ptr<CBlock>& block, int height, size_t count)
+    {
+        // ActivateBestChain would wait for the blocked queue above ten callbacks.
+        BOOST_REQUIRE_LE(GetMainSignals().CallbacksPending(), 10);
+        InstallList(block->GetHash(), height, count);
+        BOOST_REQUIRE(m_node.chainman->ProcessNewBlock(Params(), block, true, nullptr));
+        base = WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip());
+        BOOST_REQUIRE_EQUAL(base->nHeight, height);
+        BOOST_REQUIRE(base->GetBlockHash() == block->GetHash());
         dmnman->UpdatedBlockTip(base); // production CDSNotificationInterface's synchronous update
         BOOST_REQUIRE_EQUAL(dmnman->GetListForBlock(base).GetAllMNsCount(), count);
     }
 
     void ConnectActivationBlock(size_t count = 1, const CScript& script = CScript{} << OP_TRUE)
     {
-        // ActivateBestChain would wait for the blocked queue above ten callbacks.
-        BOOST_REQUIRE_LE(GetMainSignals().CallbacksPending(), 10);
-        MineBlock(m_node, script);
-        base = WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip());
-        BOOST_REQUIRE_EQUAL(base->nHeight, ACTIVATION_HEIGHT);
-        InstallList(count);
+        ConnectBase(SolvedBlock(script), ACTIVATION_HEIGHT, count);
     }
 
     dsl::CPoSeServiceResponse Response(const uint256& hash) const
@@ -270,23 +309,10 @@ struct DSLActivationSetup : RegTestingSetup {
             SyncWithValidationInterfaceQueue();
         }
         BOOST_REQUIRE_EQUAL(dslman->CurrentEpoch(), 10U);
-        auto block = PrepareBlock(m_node, CScript{} << OP_TRUE);
-        while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) {
-            ++block->nNonce;
-            BOOST_REQUIRE(block->nNonce != 0);
-        }
-        return block;
+        return SolvedBlock(CScript{} << OP_TRUE);
     }
 
-    void ConnectNextEpochBase(const std::shared_ptr<CBlock>& block)
-    {
-        BOOST_REQUIRE_LE(GetMainSignals().CallbacksPending(), 10);
-        BOOST_REQUIRE(m_node.chainman->ProcessNewBlock(Params(), block, true, nullptr));
-        base = WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip());
-        BOOST_REQUIRE_EQUAL(base->nHeight, NEXT_EPOCH_HEIGHT);
-        BOOST_REQUIRE(base->GetBlockHash() == block->GetHash());
-        InstallList(2);
-    }
+    void ConnectNextEpochBase(const std::shared_ptr<CBlock>& block) { ConnectBase(block, NEXT_EPOCH_HEIGHT, 2); }
 
     dsl::CPoSeServiceResponse NextEpochResponse(const uint256& hash, size_t mn_index) const
     {
@@ -753,6 +779,38 @@ BOOST_AUTO_TEST_CASE(the_last_tick_relays_the_signed_commitment_across_a_sync_re
     BOOST_CHECK(observer.last.back() == std::make_pair(NEXT_EPOCH_HEIGHT - 1, uint32_t{10}));
     m_node.mn_sync->SwitchToNextAsset();
     BOOST_CHECK(m_node.mn_sync->IsBlockchainSynced());
+}
+
+// SF1-L: on every block of the epoch the tick speaks for it from the epoch base's list, the one the receivers and
+// the aggregation judge against. Until SF1-L it took the chain tip's list, which from the block after the base on is
+// another block's list (and, after a PoSe ban, ProUpRevTx, a revival, a new confirmation or a spent collateral, names
+// other sentinels). Here the base's tick is skipped (masternode sync not finished), so this node's first
+// announcement comes on the next block; the manager refuses any list but the base's, so a tick on the tip's list
+// would announce nothing that is kept.
+BOOST_AUTO_TEST_CASE(the_tick_speaks_from_the_epoch_base_s_list)
+{
+    BecomeMasternode(); // MN#1 of the lists installed below
+    m_node.mn_sync->Reset(/*fForce=*/true, /*fNotifyReset=*/false);
+    ConnectActivationBlock(2);
+    SyncWithValidationInterfaceQueue();
+    const uint256 me{uint256S("1")};
+    BOOST_REQUIRE(!dslman->HasResponded(me)); // the base's tick did not run
+    m_node.mn_sync->SwitchToNextAsset();
+    BOOST_REQUIRE(m_node.mn_sync->IsBlockchainSynced());
+
+    ReaderTipFollower follower{*dmnman};
+    RegisterValidationInterface(&follower);
+    MineBlock(m_node, CScript{} << OP_TRUE); // position 1 of epoch 10: this node's first tick of the epoch
+    SyncWithValidationInterfaceQueue();
+    UnregisterValidationInterface(&follower);
+
+    const auto* tip = WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip());
+    BOOST_REQUIRE_EQUAL(tip->nHeight, ACTIVATION_HEIGHT + 1);
+    // the reader's tip followed the chain, so the tip's list is the next block's, not the base's
+    BOOST_REQUIRE(dmnman->GetListAtChainTip().GetBlockHash() == tip->GetBlockHash());
+    BOOST_CHECK(dmnman->GetListForBlock(base).GetBlockHash() == base->GetBlockHash());
+    BOOST_CHECK_EQUAL(dslman->CurrentEpoch(), 10U);
+    BOOST_CHECK(dslman->HasResponded(me)); // announced, and kept, against the base's list
 }
 
 // The record of a held announcement is its serialization's hash (dsl::ResponseWireHash): the bytes that read back to
