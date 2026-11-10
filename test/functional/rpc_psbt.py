@@ -442,7 +442,8 @@ class PSBTTest(BitcoinTestFramework):
         assert_equal(analysis['error'], 'PSBT is not valid. Input 0 spends unspendable output')
 
         self.log.info("PSBT with invalid values should have error message and Creator as next")
-        analysis = self.nodes[0].analyzepsbt('cHNidP8BAHECAAAAAQXbPuwX0yi0oRvSfIXqeruM5+ibuXvP92RCdIEsJR6jAAAAAAD/////AgD5ApUAAAAAFgAUKNw0x8HRctAgmvoevm4u1SbN7XL87QKVAAAAABYAFPck4gF7iL4NL4wtfRAKgQbghiTUAAAAAAABABMCAAAAAAEBQAda8HUHAAAAAAAAAQcCagABAR8AgIFq49AHABYAFJUDtxf2PHo641HEOBOAIvFMNTr2AAAA')
+        # The input's UTXO pays MAX_MONEY + 1 (500,000,000.00000001; the fixture had Bitcoin's 21,000,000.00000001)
+        analysis = self.nodes[0].analyzepsbt('cHNidP8BAHECAAAAAbEaNufNHzs+9SyVa3oaDWXs9AA/3dbBdcEpC6QbB1MoAAAAAAD/////AgD5ApUAAAAAFgAUKNw0x8HRctAgmvoevm4u1SbN7XL87QKVAAAAABYAFPck4gF7iL4NL4wtfRAKgQbghiTUAAAAAAABABMCAAAAAAEBAMUuvKKxAAAAAAAAAQcCagABAR8AgIFq49AHABYAFJUDtxf2PHo641HEOBOAIvFMNTr2AAAA')
         assert_equal(analysis['next'], 'creator')
         assert_equal(analysis['error'], 'PSBT is not valid. Input 0 has invalid value')
 
@@ -453,7 +454,8 @@ class PSBTTest(BitcoinTestFramework):
         # currently it fails at `verify pubkey` for signer
         # assert_equal(analysis['next'], 'finalizer')
 
-        analysis = self.nodes[0].analyzepsbt('cHNidP8BAHECAAAAAbmNr2X0Nc+2AtaXYjPu3kIFc3Cmj1aYy5WQs5yaUfRvAAAAAAD/////AgCAgWrj0AcAFgAUKNw0x8HRctAgmvoevm4u1SbN7XL87QKVAAAAABYAFPck4gF7iL4NL4wtfRAKgQbghiTUAAAAAAABABQCAAAAAAGghgEAAAAAAAFRAAAAAAEBHwDyBSoBAAAAFgAUlQO3F/Y8ejrjUcQ4E4Ai8Uw1OvYAAAA=')
+        # Output 0 pays 501,000,000, above MAX_MONEY (the fixture had 22,000,000, above Bitcoin's)
+        analysis = self.nodes[0].analyzepsbt('cHNidP8BAHECAAAAAbmNr2X0Nc+2AtaXYjPu3kIFc3Cmj1aYy5WQs5yaUfRvAAAAAAD/////AgBAPz+v/bEAFgAUKNw0x8HRctAgmvoevm4u1SbN7XL87QKVAAAAABYAFPck4gF7iL4NL4wtfRAKgQbghiTUAAAAAAABABQCAAAAAAGghgEAAAAAAAFRAAAAAAEBHwDyBSoBAAAAFgAUlQO3F/Y8ejrjUcQ4E4Ai8Uw1OvYAAAA=')
         assert_equal(analysis['next'], 'creator')
         assert_equal(analysis['error'], 'PSBT is not valid. Output amount invalid')
 
