@@ -48,6 +48,15 @@ uint256 TaggedHash(uint64_t a, uint64_t b, std::string_view tag)
     return w.GetHash();
 }
 
+// SF1-L: the store and the manager take only the epoch base's own list (its block hash is the base's). The
+// fixture's list is shared by every base a test names, so each call gets a copy stamped with that base.
+CDeterministicMNList BaseList(const CDeterministicMNList& list, const uint256& base)
+{
+    CDeterministicMNList out{list};
+    out.SetBlockHash(base);
+    return out;
+}
+
 struct Fixture {
     CDeterministicMNList list{uint256(), 1, 0};
     std::map<uint256, CBLSSecretKey> opKeys; // proTxHash -> operator secret key
@@ -111,15 +120,15 @@ BOOST_AUTO_TEST_CASE(accepts_relays_and_dedups)
 
     auto r = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]);
     // first sight is accepted (and would be relayed)
-    BOOST_CHECK(store.AddReport(r, fx.list, fx.epoch, params));
+    BOOST_CHECK(store.AddReport(r, BaseList(fx.list, fx.epoch), fx.epoch, params));
     // a second sight of the same (epoch, target, sentinel) is not
-    BOOST_CHECK(!store.AddReport(r, fx.list, fx.epoch, params));
+    BOOST_CHECK(!store.AddReport(r, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK_EQUAL(store.Size(), 1u);
     BOOST_CHECK(store.HaveReport(500, target, sentinels[0]));
 
     // a second sentinel for the same target is a distinct report
     auto r2 = SignedReport(500, target, sentinels[1], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[1]]);
-    BOOST_CHECK(store.AddReport(r2, fx.list, fx.epoch, params));
+    BOOST_CHECK(store.AddReport(r2, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK_EQUAL(store.GetReportsForEpoch(500).size(), 2u);
 }
 
@@ -137,11 +146,11 @@ BOOST_AUTO_TEST_CASE(rejects_unassigned_and_wrong_key)
     const uint256 outsider = TaggedHash(29, 0, "protx");
     BOOST_REQUIRE(std::find(sentinels.begin(), sentinels.end(), outsider) == sentinels.end());
     auto bad = SignedReport(500, target, outsider, dsl::ServiceStatus::MISSED, fx.opKeys[outsider]);
-    BOOST_CHECK(!store.AddReport(bad, fx.list, fx.epoch, params));
+    BOOST_CHECK(!store.AddReport(bad, BaseList(fx.list, fx.epoch), fx.epoch, params));
 
     // an assigned sentinel, but the report is signed with the wrong key
     auto forged = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[outsider]);
-    BOOST_CHECK(!store.AddReport(forged, fx.list, fx.epoch, params));
+    BOOST_CHECK(!store.AddReport(forged, BaseList(fx.list, fx.epoch), fx.epoch, params));
 
     BOOST_CHECK_EQUAL(store.Size(), 0u);
 }
@@ -180,7 +189,7 @@ BOOST_AUTO_TEST_CASE(a_target_that_is_not_a_masternode_is_refused)
     // Correctly signed, by a real masternode this epoch really did assign to
     // that hash -- and still refused, because the hash is nobody.
     auto minted = SignedReport(500, ghost, attacker, dsl::ServiceStatus::MISSED, fx.opKeys[attacker]);
-    BOOST_CHECK(!store.AddReport(minted, fx.list, fx.epoch, params));
+    BOOST_CHECK(!store.AddReport(minted, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK_EQUAL(store.Size(), 0u);
 
     // The same sentinel reporting on a real target it is assigned to still
@@ -189,7 +198,7 @@ BOOST_AUTO_TEST_CASE(a_target_that_is_not_a_masternode_is_refused)
     const auto real_sentinels = dsl::CalcSentinelsForMN(fx.list, real, fx.epoch, 7);
     auto honest = SignedReport(500, real, real_sentinels[0], dsl::ServiceStatus::MISSED,
                                fx.opKeys[real_sentinels[0]]);
-    BOOST_CHECK(store.AddReport(honest, fx.list, fx.epoch, params));
+    BOOST_CHECK(store.AddReport(honest, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK_EQUAL(store.Size(), 1u);
 }
 
@@ -231,7 +240,7 @@ BOOST_AUTO_TEST_CASE(assignment_memo_does_not_outlive_its_epoch_base)
     // epoch 500 on base A: accepted, and the memo for this target is now filled
     auto seed = SignedReportOn(baseA, 500, target, assignedA[0], dsl::ServiceStatus::ONLINE,
                                fx.opKeys[assignedA[0]]);
-    BOOST_CHECK(store.AddReport(seed, fx.list, baseA, params));
+    BOOST_CHECK(store.AddReport(seed, BaseList(fx.list, baseA), baseA, params));
 
     // epoch 501 on base B, same target: the memo must have been discarded
     store.SetCurrentEpoch(501);
@@ -240,13 +249,13 @@ BOOST_AUTO_TEST_CASE(assignment_memo_does_not_outlive_its_epoch_base)
     // would have accepted it
     auto stale = SignedReportOn(baseB, 501, target, onlyA[0], dsl::ServiceStatus::MISSED,
                                 fx.opKeys[onlyA[0]]);
-    BOOST_CHECK(!store.AddReport(stale, fx.list, baseB, params));
+    BOOST_CHECK(!store.AddReport(stale, BaseList(fx.list, baseB), baseB, params));
 
     // and a sentinel base B appointed is accepted -- a stale memo would have
     // refused it, which is the quieter half of the same bug
     auto fresh = SignedReportOn(baseB, 501, target, onlyB[0], dsl::ServiceStatus::MISSED,
                                 fx.opKeys[onlyB[0]]);
-    BOOST_CHECK(store.AddReport(fresh, fx.list, baseB, params));
+    BOOST_CHECK(store.AddReport(fresh, BaseList(fx.list, baseB), baseB, params));
 
     BOOST_CHECK_EQUAL(store.GetReportsForEpoch(501).size(), 1u);
 }
@@ -263,16 +272,16 @@ BOOST_AUTO_TEST_CASE(rejects_out_of_window_and_prunes)
 
     // a report from the future is refused
     auto future = SignedReport(501, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]);
-    BOOST_CHECK(!store.AddReport(future, fx.list, fx.epoch, params));
+    BOOST_CHECK(!store.AddReport(future, BaseList(fx.list, fx.epoch), fx.epoch, params));
     // one older than the window is refused
     auto ancient = SignedReport(490, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]);
-    BOOST_CHECK(!store.AddReport(ancient, fx.list, fx.epoch, params));
+    BOOST_CHECK(!store.AddReport(ancient, BaseList(fx.list, fx.epoch), fx.epoch, params));
 
     // two in-window reports for different epochs are accepted
     auto r495 = SignedReport(495, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]);
     auto r500 = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]);
-    BOOST_CHECK(store.AddReport(r495, fx.list, fx.epoch, params));
-    BOOST_CHECK(store.AddReport(r500, fx.list, fx.epoch, params));
+    BOOST_CHECK(store.AddReport(r495, BaseList(fx.list, fx.epoch), fx.epoch, params));
+    BOOST_CHECK(store.AddReport(r500, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK_EQUAL(store.Size(), 2u);
 
     // advancing the epoch past the window drops both
@@ -293,7 +302,7 @@ BOOST_AUTO_TEST_CASE(assignment_cache_retains_only_the_report_window)
         const auto target = TaggedHash(target_id, 0, "protx");
         const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, base, params.nDSLSentinelCount);
         return store.AddReport(SignedReportOn(base, epoch, target, sentinels.at(sender),
-            dsl::ServiceStatus::ONLINE, fx.opKeys.at(sentinels.at(sender))), fx.list, base, params);
+            dsl::ServiceStatus::ONLINE, fx.opKeys.at(sentinels.at(sender))), BaseList(fx.list, base), base, params);
     };
     // Alternate epochs and targets, then send a second distinct report for
     // every pair. Earlier assignments must survive these interleaved reports.
@@ -359,7 +368,7 @@ BOOST_AUTO_TEST_CASE(assignment_cache_replaces_a_base_or_count_within_one_epoch)
     store.SetCurrentEpoch(500);
     const auto add = [&](const auto& base, const auto& sender) {
         return store.AddReport(SignedReportOn(base, 500, target, sender,
-            dsl::ServiceStatus::ONLINE, fx.opKeys.at(sender)), fx.list, base, params);
+            dsl::ServiceStatus::ONLINE, fx.opKeys.at(sender)), BaseList(fx.list, base), base, params);
     };
     BOOST_REQUIRE(add(baseA, seed));
     BOOST_CHECK(!add(baseB, *onlyA)); // New base must not use the old assignment.
@@ -392,24 +401,24 @@ BOOST_AUTO_TEST_CASE(cache_hits_do_not_bypass_admission_and_parallel_dedup)
     std::atomic<int> accepted{0};
     std::vector<std::thread> workers;
     for (int i = 0; i < 8; ++i) workers.emplace_back([&] {
-        if (store.AddReport(good, fx.list, fx.epoch, params)) ++accepted;
+        if (store.AddReport(good, BaseList(fx.list, fx.epoch), fx.epoch, params)) ++accepted;
     });
     for (auto& worker : workers) worker.join();
     BOOST_CHECK_EQUAL(accepted.load(), 1);
     BOOST_CHECK_EQUAL(store.Size(), 1u);
     store.DropEpoch(500);
-    BOOST_CHECK(!store.AddReport(good, fx.list, TaggedHash(501, 0, "epoch"), params));
-    BOOST_CHECK(store.AddReport(good, fx.list, fx.epoch, params));
+    BOOST_CHECK(!store.AddReport(good, BaseList(fx.list, TaggedHash(501, 0, "epoch")), TaggedHash(501, 0, "epoch"), params));
+    BOOST_CHECK(store.AddReport(good, BaseList(fx.list, fx.epoch), fx.epoch, params));
     store.SetCurrentEpoch(600);
     BOOST_CHECK(good.VerifySig(pk, fx.epoch)); // still a true crypto fact
-    BOOST_CHECK(!store.AddReport(good, fx.list, fx.epoch, params)); // aged out
+    BOOST_CHECK(!store.AddReport(good, BaseList(fx.list, fx.epoch), fx.epoch, params)); // aged out
 
     store.SetCurrentEpoch(500);
     auto unknown = good;
     unknown.targetProTxHash = TaggedHash(123456, 0, "unknown");
     unknown.Sign(fx.opKeys.at(sentinels[0]), fx.epoch);
     BOOST_REQUIRE(unknown.VerifySig(pk, fx.epoch));
-    BOOST_CHECK(!store.AddReport(unknown, fx.list, fx.epoch, params));
+    BOOST_CHECK(!store.AddReport(unknown, BaseList(fx.list, fx.epoch), fx.epoch, params));
     const auto outsider = std::find_if(fx.opKeys.begin(), fx.opKeys.end(), [&](const auto& entry) {
         return std::find(sentinels.begin(), sentinels.end(), entry.first) == sentinels.end();
     });
@@ -418,7 +427,7 @@ BOOST_AUTO_TEST_CASE(cache_hits_do_not_bypass_admission_and_parallel_dedup)
     unassigned.sentinelProTxHash = outsider->first;
     unassigned.Sign(outsider->second, fx.epoch);
     BOOST_REQUIRE(unassigned.VerifySig(outsider->second.GetPublicKey(), fx.epoch));
-    BOOST_CHECK(!store.AddReport(unassigned, fx.list, fx.epoch, params));
+    BOOST_CHECK(!store.AddReport(unassigned, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK_EQUAL(store.Size(), 0u);
 }
 
@@ -456,7 +465,7 @@ BOOST_AUTO_TEST_CASE(a_held_report_is_recognised_from_its_bytes_and_only_by_all_
     const auto bytes = WireOf(report);
     BOOST_REQUIRE_EQUAL(bytes.size(), dsl::CPoSeServiceReport::WIRE_SIZE);
     BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(bytes))); // nothing held yet
-    BOOST_REQUIRE(store.AddReport(report, fx.list, fx.epoch, params));
+    BOOST_REQUIRE(store.AddReport(report, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
 
     // one bit of any of the 165 bytes, and it is not the same report
@@ -497,7 +506,7 @@ BOOST_AUTO_TEST_CASE(a_held_report_is_recognised_only_inside_the_epoch_window)
     store.SetCurrentEpoch(500);
     const auto report = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]);
     const auto bytes = WireOf(report);
-    BOOST_REQUIRE(store.AddReport(report, fx.list, fx.epoch, params));
+    BOOST_REQUIRE(store.AddReport(report, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
 
     // the store behind the report's epoch (a rewind): held, but AddReport would
@@ -505,7 +514,7 @@ BOOST_AUTO_TEST_CASE(a_held_report_is_recognised_only_inside_the_epoch_window)
     store.SetCurrentEpoch(499);
     BOOST_CHECK(store.HaveReport(500, target, sentinels[0]));
     BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(bytes)));
-    BOOST_CHECK(!store.AddReport(report, fx.list, fx.epoch, params)); // refused as from the future
+    BOOST_CHECK(!store.AddReport(report, BaseList(fx.list, fx.epoch), fx.epoch, params)); // refused as from the future
 
     store.SetCurrentEpoch(500);
     BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
@@ -517,11 +526,11 @@ BOOST_AUTO_TEST_CASE(a_held_report_is_recognised_only_inside_the_epoch_window)
 
     // dropping an epoch (a reorg of its base) forgets what was held in it
     store.SetCurrentEpoch(500);
-    BOOST_REQUIRE(store.AddReport(report, fx.list, fx.epoch, params));
+    BOOST_REQUIRE(store.AddReport(report, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
     store.DropEpoch(500);
     BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(bytes)));
-    BOOST_CHECK(store.AddReport(report, fx.list, fx.epoch, params)); // new again
+    BOOST_CHECK(store.AddReport(report, BaseList(fx.list, fx.epoch), fx.epoch, params)); // new again
     BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
 }
 
@@ -537,7 +546,7 @@ BOOST_AUTO_TEST_CASE(recognising_a_held_report_is_safe_beside_changes_to_the_sto
     store.SetCurrentEpoch(500);
     const auto report = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]);
     const auto bytes = WireOf(report);
-    BOOST_REQUIRE(store.AddReport(report, fx.list, fx.epoch, params));
+    BOOST_REQUIRE(store.AddReport(report, BaseList(fx.list, fx.epoch), fx.epoch, params));
 
     // The askers and the modifier must overlap for the test to mean anything, and no scheduler
     // guarantees that on its own: the modifier could finish before an asker's first loop, or the
@@ -562,7 +571,7 @@ BOOST_AUTO_TEST_CASE(recognising_a_held_report_is_safe_beside_changes_to_the_sto
         while (asked.load() < asked_before_round + kAskers) std::this_thread::yield();
         asked_before_round = asked.load();
         store.DropEpoch(500);
-        all_added = store.AddReport(report, fx.list, fx.epoch, params) && all_added;
+        all_added = store.AddReport(report, BaseList(fx.list, fx.epoch), fx.epoch, params) && all_added;
         store.SetCurrentEpoch(499); // the window moves under the askers, and back
         store.SetCurrentEpoch(500);
     }
@@ -571,6 +580,31 @@ BOOST_AUTO_TEST_CASE(recognising_a_held_report_is_safe_beside_changes_to_the_sto
     BOOST_CHECK(all_added);
     BOOST_CHECK_GE(asked.load(), static_cast<uint64_t>(kAskers) * kRounds);
     BOOST_CHECK(store.HaveIdenticalReport(PeekOf(bytes)));
+    BOOST_CHECK_EQUAL(store.Size(), 1u);
+}
+
+// SF1-L: the assignment memo is keyed by the epoch and its base hash, not by the
+// list it is derived from. A list of any other block -- the tick passed the chain
+// tip's until SF1-L -- is refused before it can fill the memo for the whole
+// epoch, even when it holds the same masternodes; the base's own list is then
+// judged on its own.
+BOOST_AUTO_TEST_CASE(refuses_a_list_that_is_not_the_epoch_base_s)
+{
+    auto fx = MakeFixture(30);
+    Consensus::Params params;
+    const uint256 target = TaggedHash(9, 0, "protx");
+    const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, fx.epoch, 7);
+
+    dsl::CServiceReportStore store;
+    store.SetCurrentEpoch(500);
+    const auto report = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::ONLINE, fx.opKeys[sentinels[0]]);
+
+    const uint256 tip = TaggedHash(500, 1, "tip"); // a block after the base, in the same epoch
+    BOOST_CHECK(!store.AddReport(report, BaseList(fx.list, tip), fx.epoch, params));
+    BOOST_CHECK(dsl::CServiceReportStoreTestAccess::CachedTargets(store).empty());
+    BOOST_CHECK_EQUAL(store.Size(), 0u);
+
+    BOOST_CHECK(store.AddReport(report, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK_EQUAL(store.Size(), 1u);
 }
 

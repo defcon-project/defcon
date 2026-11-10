@@ -163,6 +163,22 @@ CPoSeServiceResponse CPoSeServiceManager::AnnounceLiveness(const uint256& myProT
     return resp;
 }
 
+std::optional<CPoSeServiceResponse> CPoSeServiceManager::AnnounceLivenessFor(uint32_t nEpoch,
+                                                                            const uint256& epochBlockHash,
+                                                                            const uint256& myProTxHash,
+                                                                            const SignerFn& signer) const
+{
+    {
+        LOCK(m_mutex);
+        if (m_epoch != nEpoch || m_epochBlockHash != epochBlockHash) return std::nullopt;
+    }
+    CPoSeServiceResponse resp;
+    resp.nEpoch = nEpoch;
+    resp.proTxHash = myProTxHash;
+    resp.sig = signer(ServiceChallengeNonce(epochBlockHash, myProTxHash));
+    return resp;
+}
+
 bool CPoSeServiceManager::ProcessResponse(const CPoSeServiceResponse& resp, const CDeterministicMNList& list,
                                           const uint256& epochBaseHash)
 {
@@ -184,6 +200,13 @@ bool CPoSeServiceManager::ProcessResponse(const CPoSeServiceResponse& resp, cons
         // seen -- do not re-relay. Not logged: on a gossip mesh every announcement
         // arrives many times over, and a line per copy would drown the rest.
         if (it != m_responded.end() && it->second.count(resp.proTxHash)) return false;
+    }
+    // Who may announce, and with which key, is the epoch base's list: the same
+    // one every report and the aggregation are judged against.
+    if (list.GetBlockHash() != epochBaseHash) {
+        LogPrint(BCLog::DSL, "DSL -- announcement by %s for epoch %u refused: the list is not the epoch base's\n",
+                 resp.proTxHash.ToString(), resp.nEpoch);
+        return false;
     }
     const auto dmn = list.GetMN(resp.proTxHash);
     if (!dmn) {

@@ -43,6 +43,12 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
     if (report.nEpoch > m_currentEpoch) return refuse("future epoch");
     if (report.nEpoch < OldestKeptEpoch()) return refuse("epoch aged out");
 
+    // The list has to be the epoch base's own. The assignment memo below is
+    // keyed by the epoch and its base hash, not by the list it is derived from,
+    // so a list of any other block would fill it for the whole epoch and every
+    // later report would be judged against that list's sentinels.
+    if (epochList.GetBlockHash() != epochBlockHash) return refuse("the list is not the epoch base's");
+
     const Key key{report.nEpoch, report.targetProTxHash, report.sentinelProTxHash};
     if (m_reports.count(key)) {
         RecordPerf(report.nEpoch, epochBlockHash, PerfMetric::DUPLICATE);

@@ -34,6 +34,15 @@ uint256 TaggedHash(uint64_t a, uint64_t b, std::string_view tag)
     return w.GetHash();
 }
 
+// SF1-L: the store and the manager take only the epoch base's own list (its block hash is the base's). The
+// fixture's list is shared by every base a test names, so each call gets a copy stamped with that base.
+CDeterministicMNList BaseList(const CDeterministicMNList& list, const uint256& base)
+{
+    CDeterministicMNList out{list};
+    out.SetBlockHash(base);
+    return out;
+}
+
 struct Fixture {
     CDeterministicMNList list{uint256(), 1, 0};
     std::map<uint256, CBLSSecretKey> opKeys; // proTxHash -> operator secret key
@@ -229,7 +238,7 @@ BOOST_AUTO_TEST_CASE(repeated_candidate_cost_and_measurement_equivalence)
         dsl::SetPerfEnabled(false);
         dsl::CServiceReportStore store;
         store.SetCurrentEpoch(500);
-        for (const auto& report : reports) BOOST_REQUIRE(store.AddReport(report, fx.list, fx.epoch, params));
+        for (const auto& report : reports) BOOST_REQUIRE(store.AddReport(report, BaseList(fx.list, fx.epoch), fx.epoch, params));
         const auto pooled = store.GetReportsForEpoch(500);
         BOOST_REQUIRE_EQUAL(pooled.size(), population * 7);
         const auto build = [&] {

@@ -6877,10 +6877,20 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
     // The epoch first: resolving our identity may walk the masternode list, and
     // a challenge naming the wrong epoch must not pay for that walk.
     if (challenge.nEpoch != m_dslman->CurrentEpoch()) return;
-    const uint256 myProTxHash = dsl::ResolveOwnProTxHash(m_dmnman->GetListAtChainTip(),
-                                                         m_mn_activeman->GetProTxHash(),
+    // The re-announcement speaks for the epoch, so who we are comes from the
+    // epoch base's list, as in ProcessDSLTick: the list the asker checks it
+    // against. On it, or the epoch has nothing for us; and still registered at
+    // the tip. The answer is signed for that same epoch and base or not at all
+    // (AnnounceLivenessFor, below): the tick's BeginEpoch may move the manager
+    // on meanwhile, from the validation thread.
+    const CBlockIndex* const challenge_base = epoch_base(challenge.nEpoch);
+    if (challenge_base == nullptr) return;
+    const uint256 challenge_base_hash = challenge_base->GetBlockHash();
+    const auto base_list = m_dmnman->GetListForBlock(challenge_base);
+    const uint256 myProTxHash = dsl::ResolveOwnProTxHash(base_list, m_mn_activeman->GetProTxHash(),
                                                          m_mn_activeman->GetPubKey());
-    if (myProTxHash.IsNull()) return;
+    if (myProTxHash.IsNull() || !base_list.HasMN(myProTxHash)) return;
+    if (!m_dmnman->GetListAtChainTip().HasMN(myProTxHash)) return;
     {
         // a node holding its announcement back must not leak it through a
         // targeted re-request either
@@ -6893,16 +6903,18 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
             return;
         }
     }
-    const auto ann = m_dslman->AnnounceLiveness(myProTxHash, [this](const uint256& hash) {
-        return m_mn_activeman->Sign(hash, /*is_legacy=*/false);
-    });
+    const auto ann = m_dslman->AnnounceLivenessFor(challenge.nEpoch, challenge_base_hash, myProTxHash,
+                                                   [this](const uint256& hash) {
+                                                       return m_mn_activeman->Sign(hash, /*is_legacy=*/false);
+                                                   });
+    if (!ann) return; // the manager is no longer on that epoch and base: no answer for another one
     const CNetMsgMaker msgMaker(pfrom.GetCommonVersion());
-    m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::POSERESPONSE, ann));
+    m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::POSERESPONSE, *ann));
     // the bytes just sent: the DSL serializers do not depend on the stream version, so they are the key's; noted with
     // the generation read before the send
     CDataStream wire{SER_NETWORK, PROTOCOL_VERSION};
-    wire << ann;
-    m_dsl_seen.NoteSent(dsl::SeenTable::Key(NetMsgType::POSERESPONSE, MakeUCharSpan(wire)), ann.nEpoch, {pfrom.GetId()},
+    wire << *ann;
+    m_dsl_seen.NoteSent(dsl::SeenTable::Key(NetMsgType::POSERESPONSE, MakeUCharSpan(wire)), ann->nEpoch, {pfrom.GetId()},
                         seen_generation);
 }
 
@@ -7345,7 +7357,15 @@ try
     }
     // only a listed masternode announces and reports
     if (m_mn_activeman == nullptr) return;
-    const auto mn_list = m_dmnman->GetListAtChainTip();
+    // Every epoch-bound step below -- our own identity, our announcement, the
+    // targets we probe and our reports -- works from the epoch base's list, the
+    // one the receivers (ProcessDSLMessage) and the aggregation judge against.
+    // The assignment counts only the valid, confirmed masternodes of a list, so
+    // a tip list that moved since the base (a PoSe ban, ProUpRevTx, a revival, a
+    // new confirmation, a spent collateral) names other sentinels than the ones
+    // the network checks for: an assigned sentinel would stay silent and its
+    // target lose the observation, an unassigned one would be refused.
+    const auto mn_list = m_dmnman->GetListForBlock(pindexBase);
     const uint256 myProTxHash = dsl::ResolveOwnProTxHash(mn_list, m_mn_activeman->GetProTxHash(),
                                                          m_mn_activeman->GetPubKey());
     if (myProTxHash.IsNull()) {
@@ -7353,7 +7373,15 @@ try
                  pindexNew->nHeight);
         return;
     }
-    if (!mn_list.HasMN(myProTxHash)) return;
+    // On the base's list, or the epoch has nothing for us (a masternode
+    // registered since speaks from the next epoch on); and still registered at
+    // the tip, or we no longer speak for the epoch.
+    if (!mn_list.HasMN(myProTxHash)) {
+        LogPrint(BCLog::DSL, "DSL -- tick at height %d skipped, not on epoch %d's base list\n", pindexNew->nHeight,
+                 epoch);
+        return;
+    }
+    if (!m_dmnman->GetListAtChainTip().HasMN(myProTxHash)) return;
     const auto signer = [this](const uint256& hash) {
         return m_mn_activeman->Sign(hash, /*is_legacy=*/false);
     };

@@ -25,8 +25,8 @@
 # or shrunk a lot. Recorded on pull request run 42887921093 (2026-11-10), the
 # first with every test then in the gate; the nine wallet, mempool, RPC and
 # peer tests that came in once they stopped assuming Dash's coin amounts and
-# maturity on the test chains, from their local runs until their first hosted
-# run.
+# maturity on the test chains, and feature_dsl_list_change.py (SF1-L), from
+# their local runs until their first hosted run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -91,6 +91,7 @@
 42   p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
 40   rpc_fundrawtransaction.py              # fundrawtransaction: coin selection, change position, fees and its options
 40   tool_wallet.py                         # defcon-wallet: create, info, dump and createfromdump, salvage; both wallets
+40   feature_dsl_list_change.py             # the Sentinel tick speaks from the epoch base's list: a masternode registered or revoked mid-epoch (SF1-L)
 34   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
 33   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 32   rpc_verifyislock.py                    # the lock-verifying RPCs
