@@ -520,6 +520,13 @@ class SendHeadersTest(BitcoinTestFramework):
         [test_node.send_message(msg_block(x)) for x in blocks]
 
         self.log.info("Part 5: Testing handling of unconnecting headers")
+        # The blocks of the parts above, one second or more apart, are nearly three minutes past the node's clock,
+        # the most DeFCoN accepts (MAX_FUTURE_BLOCK_TIME): bring the clocks up to the next block's time, once node 0
+        # has processed the blocks just delivered and node 1 has them too (a block download still under way would
+        # look overdue and drop the peer).
+        test_node.sync_with_ping()
+        self.sync_blocks()
+        self.bump_mocktime(max(block_time - self.mocktime, 0))
         # First we test that receipt of an unconnecting header doesn't prevent
         # chain sync.
         for i in range(10):

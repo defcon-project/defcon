@@ -30,9 +30,10 @@
 # DeFCoN's MAX_MONEY, the three chain and mining tests that came in once they
 # counted DeFCoN's one unit of work per proof-of-work block, the three block
 # tests that came in once the test framework claimed DeFCoN's block reward and
-# never left a proof-of-work block at nonce 0, p2p_coinjoin_inputs.py and
-# feature_import_corrupt_pos_block.py, from their local runs until their first
-# hosted run.
+# never left a proof-of-work block at nonce 0, p2p_coinjoin_inputs.py,
+# feature_import_corrupt_pos_block.py, and the eight tests that came in once
+# their blocks kept within DeFCoN's three minutes of the node's clock, from
+# their local runs until their first hosted run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -107,29 +108,35 @@
 33   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 32   rpc_verifyislock.py                    # the lock-verifying RPCs
 32   p2p_coinjoin_inputs.py                 # a masternode checks a mixing request's collateral: a missing output, a short fee or an amount out of range is refused, and it keeps serving
+31   interface_zmq.py                       # the ZMQ notifications: block and transaction hashes and raw data, the sequence topic over the mempool and reorgs
 30   feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
 30   p2p_invalid_tx.py                      # invalid transactions from a peer: each reject reason and its disconnect, orphans and their limits
 27   feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
 27   feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
+26   p2p_sendheaders.py                     # headers announcements: sendheaders, the inv fallback, reorgs, and unconnecting headers until the peer is dropped
 24   rpc_rawtransaction.py                  # createrawtransaction, signing and sending, and the multisig spends
 24   wallet_balance.py                      # getbalance and getbalances with unconfirmed, untrusted and watch-only coins
 24   wallet_txn_doublespend.py              # the wallet's accounting when a double-spend of its funding transactions confirms instead
 24   feature_csv_activation.py              # BIP68, BIP112 and BIP113 (relative locktime, CHECKSEQUENCEVERIFY, median-time locktime) in blocks
+24   p2p_sendheaders_compressed.py          # the same with compressed headers (sendheaders2)
 23   wallet_combineoutputs.py               # combineoutputs: previews, batches smallest first, exactly the reported inputs and no change; both wallets
 23   feature_llmq_q60_proto_floor.py        # the peer protocol floor from the formation lead, against the real predecessor version
 22   wallet_send.py                         # the send call: given inputs, change address and position, fee rates, locktime
 22   feature_addressindex.py                # the address index end to end, and the same hash as P2PKH and as P2SH among other P2SH outputs (#328)
 22   feature_evodb_reconcile.py             # an evodb that stopped short of the coins tip is rebuilt at startup, with its log line
 21   feature_llmq_is_nonrotation.py         # an InstantSend lock on a quorum that does not rotate
+20   p2p_blockfilters.py                    # BIP157 compact block filters over the peer protocol: getcfilters, getcfheaders and getcfcheckpt, across a reorg
 19   feature_v23_bundle_heights.py          # the v23 bundle's own regtest name on a running chain: three of its heights observed where the one number puts them
 19   rpc_verifychainlock.py                 # the lock-verifying RPCs
 16   rpc_bls.py                             # BLS key persistence and the empty staking registry, both wallet formats
+16   feature_bip68_sequence.py              # BIP68 relative locktime: sequence locks in the mempool and in blocks, across a reorg, and before activation
 15   interface_bitcoin_cli.py               # defcon-cli: -getinfo with one and several wallets, -generate, -stdin, -rpcwait
 15   wallet_txn_clone.py                    # the wallet's accounting when a malleated clone of its transaction confirms instead
 15   rpc_createmultisig.py                  # createmultisig and addmultisigaddress, a spend from each kind of multisig, the balances after them
 14   mining_basic.py                        # getmininginfo, getblocktemplate proposals and submitblock, with valid and invalid blocks
 14   feature_minchainwork.py                # -minimumchainwork: below it a node relays no blocks and answers no getheaders, until the chain passes it
 13   feature_coinstatsindex.py              # the coin statistics index agrees with the UTXO set, by height, across restarts and reorgs
+12   p2p_v2_encrypted.py                    # the BIP324 v2 transport: inbound, outbound and downgrade, block relay across a rekey, decoy messages
 11   feature_evodb_reconcile_below_dip3.py  # the evodb reconcile below DIP0003, where an empty evodb is current
 11   feature_evodb_repair_startup.py        # -evodbrepair finishes before the import, the network and the end of RPC warmup
 9    feature_llmq_q60_regtest.py            # the Q60 ChainLock profile (llmq_defcon) on regtest
@@ -142,6 +149,8 @@
 6    mempool_reorg.py                       # coinbase spends leave the mempool when a reorg makes their coinbase immature again
 6    interface_rest.py                      # the REST interface: transactions, UTXOs with and without the mempool, blocks, headers, chain info
 6    p2p_invalid_block.py                   # invalid blocks: a mutated merkle tree, duplicate inputs, too much coinbase reward, a timestamp too far ahead
+6    feature_versionbits_warning.py         # blocks signalling an unknown version bit: the warning in getmininginfo, getnetworkinfo and the alert file
+6    p2p_unrequested_blocks.py              # unrequested blocks: kept only with more work or from a whitelisted peer, and at most 288 blocks ahead
 5    wallet_orphanedreward.py               # a block reward the wallet spent is orphaned, and its other coins stay spendable
 4    feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
 4    mempool_spend_coinbase.py              # a coinbase spend enters the mempool only once the next block may include it

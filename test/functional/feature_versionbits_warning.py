@@ -43,6 +43,9 @@ class VersionBitsWarningTest(BitcoinTestFramework):
         height = self.nodes[0].getblockcount()
         block_time = self.nodes[0].getblockheader(tip)["time"] + 1
         tip = int(tip, 16)
+        # DeFCoN refuses a block more than three minutes ahead of the node's clock (MAX_FUTURE_BLOCK_TIME), so the
+        # clock moves along with these blocks, one second each.
+        self.bump_mocktime(numblocks)
 
         for _ in range(numblocks):
             block = create_block(tip, create_coinbase(height + 1), block_time)

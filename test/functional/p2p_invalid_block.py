@@ -13,7 +13,6 @@ re-requested.
 becomes valid.
 """
 import copy
-import time
 
 from test_framework.blocktools import BLOCK_SUBSIDY, MAX_FUTURE_BLOCK_TIME, create_block, create_coinbase, create_tx_with_script
 from test_framework.messages import COIN
@@ -132,7 +131,9 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
         peer.send_blocks_and_test([block4], node, success=False,  reject_reason='bad-txns-inputs-duplicate')
 
         self.log.info("Test accepting identical block after rejecting it due to a future timestamp.")
-        t = int(time.time())
+        # The node's own clock, not the real time: a jump of years makes a block the node asked for and has not
+        # got yet look overdue, and the node drops the peer for it (the block download timeout runs on mocktime).
+        t = self.mocktime
         node.setmocktime(t)
         # Set block time +1 second past max future validity
         block = create_block(tip, create_coinbase(height), t + MAX_FUTURE_BLOCK_TIME + 1)

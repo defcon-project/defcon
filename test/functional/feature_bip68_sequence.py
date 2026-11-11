@@ -21,6 +21,7 @@ from test_framework.util import (
     assert_equal,
     assert_greater_than,
     assert_raises_rpc_error,
+    set_node_times,
     softfork_active,
 )
 from test_framework.script_util import DUMMY_P2SH_SCRIPT
@@ -269,10 +270,13 @@ class BIP68Test(BitcoinTestFramework):
         # Now mine some blocks, but make sure tx2 doesn't get mined.
         # Use prioritisetransaction to lower the effective feerate to 0
         self.nodes[0].prioritisetransaction(tx2.hash, int(-self.relayfee*COIN))
+        # Every node's clock moves: DeFCoN refuses a block more than three minutes ahead of the node's clock
+        # (MAX_FUTURE_BLOCK_TIME), so node 1 would refuse these blocks at the next sync. Node 1 has each block
+        # before the next move: a download still under way would look overdue and drop the peer.
         cur_time = self.mocktime
         for _ in range(10):
-            self.nodes[0].setmocktime(cur_time + 600)
-            self.generate(self.nodes[0], 1, sync_fun=self.no_op)
+            set_node_times(self.nodes, cur_time + 600)
+            self.generate(self.nodes[0], 1, sync_fun=self.sync_blocks)
             cur_time += 600
 
         assert tx2.hash in self.nodes[0].getrawmempool()
@@ -284,7 +288,7 @@ class BIP68Test(BitcoinTestFramework):
         self.nodes[0].prioritisetransaction(tx2.hash, int(self.relayfee*COIN))
 
         # Advance the time on the node so that we can test timelocks
-        self.nodes[0].setmocktime(cur_time+600)
+        set_node_times(self.nodes, cur_time + 600)
         # Save block template now to use for the reorg later
         tmpl = self.nodes[0].getblocktemplate(NORMAL_GBT_REQUEST_PARAMS)
         self.generate(self.nodes[0], 1)
@@ -345,7 +349,7 @@ class BIP68Test(BitcoinTestFramework):
         assert tx2.hash in mempool
 
         # Reset the chain and get rid of the mocktimed-blocks
-        self.nodes[0].setmocktime(self.mocktime)
+        set_node_times(self.nodes, self.mocktime)
         self.nodes[0].invalidateblock(self.nodes[0].getblockhash(cur_height+1))
         self.generate(self.nodes[0], 10, sync_fun=self.no_op)
 
