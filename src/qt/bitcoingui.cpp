@@ -63,6 +63,7 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QProgressDialog>
+#include <QScopeGuard>
 #include <QScreen>
 #include <QSettings>
 #include <QShortcut>
@@ -948,6 +949,59 @@ private:
     QToolBar* const m_tb;
 };
 
+#ifdef ENABLE_WALLET
+/** Tells BitcoinGUI when an Abyss quick button is pointed at or reached with
+ *  the keyboard. Kept as two properties on the button, so that leaving with
+ *  the pointer does not close a button the keyboard is still on, and the other
+ *  way round. Focus that comes from a click, a popup or the window turning
+ *  active again is not the keyboard asking for a name. */
+class QuickButtonWatcher final : public QObject
+{
+public:
+    QuickButtonWatcher(QObject* parent, std::function<void()> changed) : QObject(parent), m_changed(std::move(changed)) {}
+    bool eventFilter(QObject* object, QEvent* event) override
+    {
+        const char* key{nullptr};
+        bool on{false};
+        switch (event->type()) {
+        case QEvent::Enter: key = "abyssPointed"; on = true; break;
+        case QEvent::Leave: key = "abyssPointed"; break;
+        case QEvent::FocusIn: {
+            const Qt::FocusReason reason = static_cast<QFocusEvent*>(event)->reason();
+            key = "abyssKeyboard";
+            on = reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason;
+            break;
+        }
+        case QEvent::FocusOut: key = "abyssKeyboard"; break;
+        default: return false;
+        }
+        if (object->property(key).toBool() != on) {
+            object->setProperty(key, on);
+            m_changed();
+        }
+        return false;
+    }
+
+private:
+    const std::function<void()> m_changed;
+};
+
+/** What an open quick button says: its accessible name, which is its action's
+ *  text, without the ellipsis or full stop a menu entry or a sentence ends in. */
+QString QuickButtonLabel(QString name)
+{
+    name = name.trimmed();
+    if (name.endsWith(QChar(0x2026))) {
+        name.chop(1);
+    } else if (name.endsWith(QLatin1String("..."))) {
+        name.chop(3);
+    } else if (name.endsWith(QLatin1Char('.'))) {
+        name.chop(1);
+    }
+    return name.trimmed();
+}
+#endif // ENABLE_WALLET
+
 } // namespace
 
 void BitcoinGUI::createToolBars()
@@ -1038,6 +1092,39 @@ void BitcoinGUI::createToolBars()
             }
         }
 
+        // Abyss folds the pages used less often under one header, right above
+        // the first of them (updateMoreGroup). Not a page: it is outside the
+        // tab group, so it is never the checked one and takes no Alt+N.
+        moreButton = new QToolButton(this);
+        moreButton->setObjectName("abyssMoreButton");
+        moreButton->setText(tr("More"));
+        moreButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        moreButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        moreButton->setIconSize(QSize(22, 22));
+        moreToolbarAction = toolbar->insertWidget(coinJoinToolbarAction, moreButton);
+        moreToolbarAction->setVisible(false);
+        m_more_open = settings.value("fSidebarMoreOpen", false).toBool();
+        connect(moreButton, &QToolButton::clicked, this, [this] { setMoreGroupOpen(!m_more_open); });
+        for (QToolButton* page : moreGroupPages()) {
+            auto* folded = new QShortcut(this);
+            folded->setEnabled(false);
+            // Opened first: hiding a toolbar action disables its button as well
+            // (QAction::setVisible, QWidgetAction), and a disabled button ignores
+            // click(). Then the page's own click, through its goto slot.
+            connect(folded, &QShortcut::activated, page, [this, page] {
+                setMoreGroupOpen(true);
+                page->click();
+            });
+            m_folded_shortcuts.insert(page, folded);
+        }
+        // A page made current in any way, in any theme, ends a closing of the
+        // header on the page before it; updateMoreGroup then opens the header
+        // over the new page.
+        connect(tabGroup, qOverload<QAbstractButton*, bool>(&QButtonGroup::buttonToggled), this, [this](QAbstractButton*, bool checked) {
+            if (checked) m_more_closed_on_current = false;
+            updateMoreGroup();
+        });
+
         overviewButton->setChecked(true);
         GUIUtil::updateFonts();
 
@@ -1100,9 +1187,14 @@ void BitcoinGUI::createToolBars()
         auto* quickLayout = new QHBoxLayout(abyssQuickControls);
         quickLayout->setContentsMargins(4, 2, 4, 2);
         quickLayout->setSpacing(4);
-        const auto addQuickAction = [this, quickLayout](QAction* action, const char* name) {
+        auto* quickWatcher = new QuickButtonWatcher(this, [this] { updateQuickButtonLabels(); });
+        // The padlock joins the row in Abyss only; outside the row it never
+        // opens (updateQuickButtonLabels).
+        if (walletLockButton) walletLockButton->installEventFilter(quickWatcher);
+        const auto addQuickAction = [this, quickLayout, quickWatcher](QAction* action, const char* name) {
             auto* button = new QToolButton(abyssQuickControls);
             button->setObjectName(name);
+            button->installEventFilter(quickWatcher);
             button->setAutoRaise(true);
             button->setFocusPolicy(Qt::StrongFocus);
             button->setToolButtonStyle(Qt::ToolButtonIconOnly);
@@ -1341,6 +1433,11 @@ void BitcoinGUI::applyThemeLayout()
         child->style()->unpolish(child);
         child->style()->polish(child);
     }
+    // The More header exists in Abyss only; a classic bar shows every page.
+    // After the polish above, which put back the header's first font: its
+    // state is set again, weight included.
+    if (moreButton) moreButton->setProperty("currentInside", QVariant());
+    updateMoreGroup();
     if (!vertical) {
         // Coming from (or racing with) the vertical layout, a stale fixed
         // width can survive on the toolbar and squeeze the whole horizontal
@@ -1370,7 +1467,201 @@ void BitcoinGUI::updateQuickControls()
     set("abyssOptionsButton", "settings");
     set("abyssPrivacyButton", m_mask_values_action->isChecked() ? "eye-off" : "eye");
     set("abyssConsoleButton", "terminal-2");
+    updateQuickButtonLabels();
 #endif
+}
+
+void BitcoinGUI::updateQuickButtonLabels()
+{
+#ifdef ENABLE_WALLET
+    if (!abyssQuickControls) return;
+    const bool modern = GUIUtil::isModernTheme();
+    QList<QToolButton*> buttons = abyssQuickControls->findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly);
+    // In a classic theme the padlock is back in the wallet selector, and closes.
+    if (walletLockButton && !buttons.contains(walletLockButton)) buttons << walletLockButton;
+    bool resized{false};
+    for (QToolButton* button : buttons) {
+        if (!modern) {
+            // Nothing opens outside Abyss; the row starts closed when Abyss shows it again.
+            button->setProperty("abyssPointed", false);
+            button->setProperty("abyssKeyboard", false);
+        }
+        const bool in_row = modern && button->parentWidget() == abyssQuickControls;
+        const bool wanted = in_row && (button->property("abyssPointed").toBool() || button->property("abyssKeyboard").toBool() ||
+                                       button->property("abyssPinned").toBool());
+        const QString label = wanted ? QuickButtonLabel(button->accessibleName()) : QString();
+        const bool expanded = !label.isEmpty();
+        if (button->property("expanded").toBool() == expanded && button->text() == label) continue;
+        button->setText(label);
+        button->setToolButtonStyle(expanded ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonIconOnly);
+        // The stylesheet lifts the 40 px cap of an open button (defcon-dark.css).
+        button->setProperty("expanded", expanded);
+        button->style()->unpolish(button);
+        button->style()->polish(button);
+        resized = true;
+    }
+    // A wider button widens the row, which grows to the left: the button under
+    // the pointer keeps its right edge, so it stays under the pointer. In the
+    // menu bar's corner the row is placed again when the bar itself changes --
+    // resized, an action added, a corner widget shown or hidden -- but not when
+    // the row's size hint does (qmenubar.cpp), so without this it would keep
+    // its old width and squeeze its buttons.
+    if (resized && !abyssQuickControlsBar && appMenuBar && appMenuBar->cornerWidget(Qt::TopRightCorner) == abyssQuickControls) {
+        QResizeEvent relayout(appMenuBar->size(), appMenuBar->size());
+        QCoreApplication::sendEvent(appMenuBar, &relayout);
+    }
+#endif
+}
+
+QList<QToolButton*> BitcoinGUI::moreGroupPages() const
+{
+    QList<QToolButton*> pages;
+    for (QToolButton* page : {coinJoinCoinsButton, multisigButton, masternodeButton, governanceButton}) {
+        if (page) pages << page;
+    }
+    return pages;
+}
+
+QAction* BitcoinGUI::navigationAction(QAbstractButton* page) const
+{
+    if (!appToolBar) return nullptr;
+    for (QAction* action : appToolBar->actions()) {
+        if (appToolBar->widgetForAction(action) == page) return action;
+    }
+    return nullptr;
+}
+
+void BitcoinGUI::setPageUsable(QAbstractButton* page, bool usable)
+{
+    // Through the bar's action as well as the button: showing a hidden
+    // toolbar action enables it, and its button with it, unless the action
+    // itself was disabled (QAction::setVisible, QWidgetAction). Without this,
+    // opening the More header or a classic theme would make a page that needs
+    // a wallet clickable without one. The property tells a folded page's
+    // shortcut the same (updateNavigationShortcuts). Whoever changes an input
+    // of a page's usability calls this again: the state is kept, not derived.
+    page->setEnabled(usable);
+    page->setProperty("abyssUsable", usable);
+    if (QAction* action = navigationAction(page)) action->setEnabled(usable);
+}
+
+QToolButton* BitcoinGUI::currentMorePage() const
+{
+    if (!tabGroup) return nullptr;
+    auto* current = qobject_cast<QToolButton*>(tabGroup->checkedButton());
+    if (!moreGroupPages().contains(current)) return nullptr;
+    // CoinJoin's page, current while CoinJoin is turned off, is not offered.
+    return current != coinJoinCoinsButton || m_coinjoin_tab_enabled ? current : nullptr;
+}
+
+void BitcoinGUI::setMoreGroupOpen(bool open)
+{
+    if (!moreButton) return;
+    // Closed on one of its pages, the header leaves that page folded away
+    // until a page is chosen again (revealMorePage, the tab group's toggle).
+    m_more_closed_on_current = !open && currentMorePage() != nullptr;
+    if (m_more_open != open) {
+        m_more_open = open;
+        QSettings().setValue("fSidebarMoreOpen", open);
+    }
+    updateMoreGroup();
+}
+
+void BitcoinGUI::revealMorePage()
+{
+    // Chosen again -- its menu entry, its Alt+N -- the page shows even when it
+    // is already the current one and was folded away by hand.
+    m_more_closed_on_current = false;
+    updateMoreGroup();
+}
+
+void BitcoinGUI::updateMoreGroup()
+{
+    if (!appToolBar || !tabGroup) return;
+    const bool modern = GUIUtil::isModernTheme();
+    // The page on display is folded away only when the header was closed on it
+    // by hand. Otherwise -- the page was reached while the header was closed,
+    // chosen in a classic theme, or CoinJoin came back on under it -- the
+    // header opens, and the choice is kept as if it had been clicked.
+    if (modern && moreButton && !m_more_open && !m_more_closed_on_current && currentMorePage()) {
+        m_more_open = true;
+        QSettings().setValue("fSidebarMoreOpen", true);
+    }
+    bool offered{false};
+    bool current_folded{false};
+    for (QToolButton* page : moreGroupPages()) {
+        const bool available = page != coinJoinCoinsButton || m_coinjoin_tab_enabled;
+        const bool shown = available && (!modern || !moreButton || m_more_open);
+        // As CoinJoin always did: hiding the toolbar's action is what hides the
+        // button in the bar, and the button is hidden with it at once, because
+        // the bar applies the action's state only on its next layout. Touched
+        // only on a change: a short window's bar hides the pages that do not
+        // fit by itself, and showing one on every page switch would fight it.
+        QAction* action = navigationAction(page);
+        if (action && action->isVisible() != shown) {
+            action->setVisible(shown);
+            page->setVisible(shown);
+        }
+        offered = offered || available;
+        current_folded = current_folded || (available && !shown && page->isChecked());
+    }
+    if (moreButton && moreToolbarAction) {
+        // Without a page to fold -- CoinJoin off and no optional page -- there is no header.
+        moreToolbarAction->setVisible(modern && offered);
+        if (modern) {
+            GUIUtil::setTintedSvgIcon(moreButton, QString(":/icons/tabler/") + (m_more_open ? "chevron-down" : "chevron-right") + ".svg",
+                QSize(22, 22), GUIUtil::getThemedQColor(GUIUtil::ThemedColor::BLUE), true);
+            moreButton->setToolTip(m_more_open ? tr("Hide the pages below") : tr("Show more pages"));
+            const QVariant was_inside = moreButton->property("currentInside");
+            if (!was_inside.isValid() || was_inside.toBool() != current_folded) {
+                moreButton->setProperty("currentInside", current_folded);
+                moreButton->style()->unpolish(moreButton);
+                moreButton->style()->polish(moreButton);
+                // After the polish: unpolishing puts back the font the widget
+                // had when it was first polished (QStyleSheetStyle::unsetPalette),
+                // so a weight set before it would be lost.
+                GUIUtil::setFont({moreButton}, current_folded ? GUIUtil::FontWeight::Bold : GUIUtil::FontWeight::Normal, 12);
+                GUIUtil::updateFonts();
+            }
+        }
+    }
+    updateNavigationShortcuts();
+}
+
+void BitcoinGUI::updateNavigationShortcuts()
+{
+    if (!tabGroup) return;
+#ifdef Q_OS_MAC
+    const char* modifier = "Ctrl";
+#else
+    const char* modifier = "Alt";
+#endif
+    const bool folding = GUIUtil::isModernTheme() && moreButton && !m_more_open;
+    // Numbered in sidebar order. A page folded under the header keeps the
+    // number an open header would give it; the header folds the sidebar's
+    // last pages, so no page in the bar comes after one and no number shifts.
+    // A page counts when its action is in the bar -- what the wallet means to
+    // show -- not when its button is on screen at this moment: the bar hides
+    // the buttons it has no room for on its own, and a theme switch renumbers
+    // while the bar is still laid out for the old theme.
+    int key{1};
+    for (QAbstractButton* button : tabGroup->buttons()) {
+        auto* page = qobject_cast<QToolButton*>(button);
+        const bool folded = folding && moreGroupPages().contains(page) && (page != coinJoinCoinsButton || m_coinjoin_tab_enabled);
+        const QAction* action = navigationAction(button);
+        const bool numbered = folded || (action && action->isVisible());
+        const QKeySequence sequence = numbered ? QKeySequence(QString("%1+%2").arg(modifier).arg(key++)) : QKeySequence();
+        button->setShortcut(folded ? QKeySequence() : sequence);
+        if (QShortcut* shortcut = m_folded_shortcuts.value(button)) {
+            // A disabled button's own shortcut does not fire; neither does a
+            // folded page's that needs a wallet when there is none
+            // (setWalletActionsEnabled). Its number is kept, as for a button.
+            const QVariant usable = button->property("abyssUsable");
+            const bool live = folded && (!usable.isValid() || usable.toBool());
+            shortcut->setKey(folded ? sequence : QKeySequence());
+            shortcut->setEnabled(live);
+        }
+    }
 }
 
 void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndHeaderTipInfo* tip_info)
@@ -1617,11 +1908,14 @@ void BitcoinGUI::setWalletActionsEnabled(bool enabled)
 #ifdef ENABLE_WALLET
     if (walletFrame != nullptr) {
         // NOTE: overviewButton is always enabled
-        sendCoinsButton->setEnabled(enabled);
-        coinJoinCoinsButton->setEnabled(enabled && clientModel->coinJoinOptions().isEnabled());
-        receiveCoinsButton->setEnabled(enabled);
-        historyButton->setEnabled(enabled);
-        if (multisigButton) multisigButton->setEnabled(enabled);
+        setPageUsable(sendCoinsButton, enabled);
+        // CoinJoin's page also needs CoinJoin on; updateCoinJoinVisibility
+        // sets it again when that changes.
+        setPageUsable(coinJoinCoinsButton, enabled && clientModel->coinJoinOptions().isEnabled());
+        setPageUsable(receiveCoinsButton, enabled);
+        setPageUsable(historyButton, enabled);
+        if (multisigButton) setPageUsable(multisigButton, enabled);
+        updateNavigationShortcuts();
     }
 #endif // ENABLE_WALLET
 
@@ -1813,6 +2107,7 @@ void BitcoinGUI::gotoGovernancePage()
     QSettings settings;
     if (settings.value("fShowGovernanceTab").toBool() && governanceButton) {
         governanceButton->setChecked(true);
+        revealMorePage();
         if (walletFrame) walletFrame->gotoGovernancePage();
     }
 }
@@ -1834,6 +2129,7 @@ void BitcoinGUI::gotoMultisigPage()
     QSettings settings;
     if (settings.value("fShowMultisigTab", false).toBool() && multisigButton) {
         multisigButton->setChecked(true);
+        revealMorePage();
         if (walletFrame) walletFrame->gotoMultisigPage();
     }
 }
@@ -1843,6 +2139,7 @@ void BitcoinGUI::gotoMasternodePage()
     QSettings settings;
     if (settings.value("fShowMasternodesTab").toBool() && masternodeButton) {
         masternodeButton->setChecked(true);
+        revealMorePage();
         if (walletFrame) walletFrame->gotoMasternodePage();
     }
 }
@@ -1862,6 +2159,7 @@ void BitcoinGUI::gotoSendCoinsPage(QString addr)
 void BitcoinGUI::gotoCoinJoinCoinsPage(QString addr)
 {
     coinJoinCoinsButton->setChecked(true);
+    revealMorePage();
     if (walletFrame) walletFrame->gotoCoinJoinCoinsPage(addr);
 }
 
@@ -2038,15 +2336,13 @@ void BitcoinGUI::updateCoinJoinVisibility()
 #else
     bool fEnabled = false;
 #endif
-    // CoinJoin button is the third QToolButton, show/hide the underlying QAction
-    // Hiding the QToolButton itself doesn't work for the GUI part
-    // but is still needed for shortcuts to work properly.
+    // The CoinJoin page shows or hides with the More header's state in Abyss,
+    // and the Alt+N numbers follow (updateMoreGroup). Its usability has two
+    // inputs, a wallet and CoinJoin on, and this is where the second changes.
     if (appToolBar != nullptr) {
-        if (coinJoinToolbarAction) {
-            coinJoinToolbarAction->setVisible(fEnabled);
-        }
-        coinJoinCoinsButton->setVisible(fEnabled);
-        GUIUtil::updateButtonGroupShortcuts(tabGroup);
+        m_coinjoin_tab_enabled = fEnabled;
+        setPageUsable(coinJoinCoinsButton, m_wallet_actions_enabled && fEnabled);
+        updateMoreGroup();
     }
     coinJoinCoinsMenuAction->setVisible(fEnabled);
     showCoinJoinHelpAction->setVisible(fEnabled);
@@ -2718,6 +3014,11 @@ void BitcoinGUI::updateWalletLockButton(int status)
     if (walletLockButton == nullptr) return;
     const bool modern = GUIUtil::isModernTheme();
     if (modern && !m_wallet_actions_enabled) status = -1;
+    // In Abyss a locked wallet keeps the padlock open on its name, the way to
+    // unlock it, for as long as it stays locked. Relabelled on every way out,
+    // because the name it shows is set below.
+    walletLockButton->setProperty("abyssPinned", modern && status == WalletModel::Locked);
+    const auto relabel = qScopeGuard([this] { updateQuickButtonLabels(); });
 
     // The icon is the state, and the tooltip is the consequence of a click.
     // The colours are the ones the status bar icon already uses, so the two

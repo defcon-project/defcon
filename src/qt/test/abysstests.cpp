@@ -101,6 +101,7 @@
 #include <QMessageBox>
 #include <QLineEdit>
 #include <QSettings>
+#include <QShortcut>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QScreen>
@@ -6458,4 +6459,533 @@ void AbyssTests::sidebarLogoCentred()
                  qPrintable(QString("%1 wallet(s): %2 px above the wordmark, %3 px below").arg(what).arg(above).arg(below)));
     }
     window.removeWallet(&second_model); Settle();
+}
+
+namespace {
+QKeySequence PageKey(int n)
+{
+#ifdef Q_OS_MAC
+    return QKeySequence(QString("Ctrl+%1").arg(n));
+#else
+    return QKeySequence(QString("Alt+%1").arg(n));
+#endif
+}
+//! What the window does when a QShortcut's key is pressed, without depending
+//! on the platform delivering a key to an active window.
+void PressShortcut(QShortcut* shortcut)
+{
+    QShortcutEvent press(shortcut->key(), shortcut->id());
+    QCoreApplication::sendEvent(shortcut, &press);
+    Settle();
+}
+} // namespace
+
+void AbyssTests::sidebarMoreGroup()
+{
+    // Abyss folds CoinJoin, Multisig, Masternodes and Governance under one
+    // "More" header right under Transactions. It starts closed, a click opens
+    // and closes it, QSettings keeps the choice, a page reached while it is
+    // closed opens it, and a folded page keeps its Alt+N. Without CoinJoin its
+    // page is neither shown nor numbered. The classic themes have no header.
+    RestoreAppearance restore;
+    QSettings settings;
+    std::map<QString, QVariant> saved;
+    for (const char* key : {"fShowMultisigTab", "fShowMasternodesTab", "fShowGovernanceTab", "fSidebarMoreOpen"}) {
+        saved.emplace(key, settings.value(key));
+    }
+    const auto restore_keys = interfaces::MakeHandler([saved] {
+        QSettings settings;
+        for (const auto& [key, value] : saved) {
+            if (value.isValid()) settings.setValue(key, value); else settings.remove(key);
+        }
+    });
+    for (const char* tab : {"fShowMultisigTab", "fShowMasternodesTab", "fShowGovernanceTab"}) settings.setValue(tab, true);
+    settings.remove("fSidebarMoreOpen");
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.resize(1280, 850);
+    window.show(); Settle();
+    window.addWallet(fixture.model.get()); Settle();
+    window.gotoOverviewPage();
+    window.resize(1280, 850); Settle();
+    // CoinJoin's page follows the node's option; the test sets it both ways.
+    window.m_coinjoin_tab_enabled = true;
+    window.updateMoreGroup(); Settle();
+
+    auto* bar = window.findChild<QToolBar*>("navigationToolBar");
+    auto* more = window.findChild<QToolButton*>("abyssMoreButton");
+    QVERIFY(bar && more);
+    QVERIFY(!more->group()); // Not a page: never the checked one, no Alt+N of its own.
+    const QList<QToolButton*> top{window.overviewButton, window.sendCoinsButton, window.receiveCoinsButton, window.historyButton};
+    const QList<QToolButton*> pages{window.coinJoinCoinsButton, window.multisigButton, window.masternodeButton, window.governanceButton};
+    for (QToolButton* page : pages) QVERIFY(page);
+    QVERIFY(window.moreGroupPages() == pages);
+    const auto folded = [&window](QToolButton* page) { return window.m_folded_shortcuts.value(page); };
+    for (QToolButton* page : pages) QVERIFY(folded(page));
+    const auto view_shows = [&window](const char* type) {
+        QWidget* current = window.walletFrame->currentWalletView()->currentWidget();
+        return current && current->inherits(type);
+    };
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    const auto save = [&](const char* name) {
+        return output.isEmpty() || (QDir().mkpath(output) && bar->grab().save(QDir(output).filePath(name)));
+    };
+    const auto arrow = [&] { return more->icon().pixmap(window.windowHandle(), more->iconSize()).toImage(); };
+
+    // Closed at first: the header right under Transactions, its pages hidden;
+    // Alt+1 to Alt+4 on the pages in the bar, Alt+5 on through the window.
+    QVERIFY(!window.m_more_open);
+    QVERIFY(more->isVisible());
+    QVERIFY(OnPage(window, more).top() > OnPage(window, window.historyButton).bottom());
+    for (int i = 0; i < top.size(); ++i) {
+        QVERIFY(top[i]->isVisible());
+        QCOMPARE(top[i]->shortcut(), PageKey(i + 1));
+    }
+    for (int i = 0; i < pages.size(); ++i) {
+        QVERIFY2(pages[i]->isHidden(), qPrintable(pages[i]->text()));
+        QVERIFY(pages[i]->shortcut().isEmpty());
+        QVERIFY(folded(pages[i])->isEnabled());
+        QCOMPARE(folded(pages[i])->key(), PageKey(5 + i));
+    }
+    const QImage closed_arrow = arrow();
+    QVERIFY(!closed_arrow.isNull());
+    QVERIFY(save("Abyss-sidebar-more-closed.png"));
+
+    // Open: the four pages under the header, in order, with their own Alt+N.
+    more->click(); Settle();
+    QVERIFY(window.m_more_open);
+    QVERIFY(QSettings().contains("fSidebarMoreOpen"));
+    QCOMPARE(QSettings().value("fSidebarMoreOpen").toBool(), true);
+    QVERIFY2(arrow() != closed_arrow, "the arrow does not say the header is open");
+    int above = OnPage(window, more).bottom();
+    for (int i = 0; i < pages.size(); ++i) {
+        QVERIFY2(pages[i]->isVisible(), qPrintable(pages[i]->text()));
+        QVERIFY(OnPage(window, pages[i]).top() > above);
+        above = OnPage(window, pages[i]).bottom();
+        QCOMPARE(pages[i]->shortcut(), PageKey(5 + i));
+        QVERIFY(!folded(pages[i])->isEnabled());
+    }
+    QVERIFY(save("Abyss-sidebar-more-open.png"));
+
+    // Closed again by a click, and that is remembered too.
+    more->click(); Settle();
+    QVERIFY(!window.m_more_open);
+    QVERIFY(QSettings().contains("fSidebarMoreOpen"));
+    QCOMPARE(QSettings().value("fSidebarMoreOpen").toBool(), false);
+    for (QToolButton* page : pages) QVERIFY(page->isHidden());
+    QCOMPARE(arrow(), closed_arrow);
+
+    // A folded page's Alt+N opens the header and the page.
+    PressShortcut(folded(window.masternodeButton));
+    QVERIFY(window.m_more_open);
+    QVERIFY(window.masternodeButton->isChecked());
+    QVERIFY(window.masternodeButton->isVisible());
+    QVERIFY(view_shows("MasternodeList"));
+
+    // Closing it on such a page is allowed; the header then says, in bold,
+    // that it holds the page on display. Alt+N still opens it, although the
+    // page is already the current one.
+    more->click(); Settle();
+    QVERIFY(!window.m_more_open);
+    QVERIFY(window.masternodeButton->isHidden());
+    QVERIFY(more->property("currentInside").toBool());
+    // GUIUtil sets fonts only once they are loaded, in the weights it is set to.
+    if (GUIUtil::fontsLoaded()) QCOMPARE(more->font().weight(), int(GUIUtil::getFontWeightBold()));
+    QVERIFY(save("Abyss-sidebar-more-current.png"));
+    // A theme switch polishes the bar again, which puts back each widget's first
+    // font; the header keeps its weight through it. The minimal platform's small
+    // screen folds the bar after a switch, so the window is sized again.
+    Theme("Light"); Settle();
+    Theme("Abyss"); Settle();
+    window.resize(1280, 850); Settle();
+    QVERIFY(window.masternodeButton->isHidden() && window.masternodeButton->isChecked());
+    QVERIFY(more->property("currentInside").toBool());
+    if (GUIUtil::fontsLoaded()) QCOMPARE(more->font().weight(), int(GUIUtil::getFontWeightBold()));
+    PressShortcut(folded(window.masternodeButton));
+    QVERIFY(window.m_more_open);
+    QVERIFY(window.masternodeButton->isVisible());
+    QVERIFY(!more->property("currentInside").toBool());
+    if (GUIUtil::fontsLoaded()) QCOMPARE(more->font().weight(), int(GUIUtil::getFontWeightNormal()));
+
+    // A page reached another way -- the slot its sidebar button or menu entry calls -- opens it as well.
+    window.gotoOverviewPage(); Settle();
+    more->click(); Settle();
+    QVERIFY(!window.m_more_open);
+    QVERIFY(!more->property("currentInside").toBool());
+    window.gotoGovernancePage(); Settle();
+    QVERIFY(window.m_more_open);
+    QVERIFY(window.governanceButton->isChecked() && window.governanceButton->isVisible());
+    QVERIFY(view_shows("GovernanceList"));
+
+    // Astra r1 R1: the current page, folded away by closing the header on it,
+    // chosen again from its menu entry (the same slot, the checked page does not
+    // change) shows again.
+    window.gotoMultisigPage(); Settle();
+    more->click(); Settle();
+    QVERIFY(!window.m_more_open && window.multisigButton->isHidden());
+    QVERIFY(more->property("currentInside").toBool());
+    window.gotoMultisigPage(); Settle();
+    QVERIFY(window.m_more_open);
+    QVERIFY(window.multisigButton->isVisible() && window.multisigButton->isChecked());
+    QVERIFY(!more->property("currentInside").toBool());
+    QVERIFY(view_shows("MultisigPage"));
+    // Astra r1 R1: a page chosen in a classic theme, with the header closed on
+    // another page, is not folded away when Abyss comes back.
+    window.gotoOverviewPage(); Settle();
+    more->click(); Settle();
+    QVERIFY(!window.m_more_open);
+    Theme("Light"); Settle();
+    QVERIFY(window.masternodeButton->isVisible());
+    window.masternodeButton->click(); Settle();
+    Theme("Abyss"); Settle();
+    window.resize(1280, 850); Settle();
+    QVERIFY(window.m_more_open);
+    QVERIFY(window.masternodeButton->isVisible() && window.masternodeButton->isChecked());
+    QVERIFY(!more->property("currentInside").toBool());
+    QVERIFY(view_shows("MasternodeList"));
+    window.gotoOverviewPage(); Settle();
+
+    // Without CoinJoin its page is neither shown nor numbered, folded or not.
+    window.m_coinjoin_tab_enabled = false;
+    window.updateMoreGroup(); Settle();
+    QVERIFY(window.coinJoinCoinsButton->isHidden());
+    for (int i = 1; i < pages.size(); ++i) QCOMPARE(pages[i]->shortcut(), PageKey(4 + i));
+    more->click(); Settle();
+    QVERIFY(!folded(window.coinJoinCoinsButton)->isEnabled());
+    QVERIFY(folded(window.coinJoinCoinsButton)->key().isEmpty());
+    for (int i = 1; i < pages.size(); ++i) QCOMPARE(folded(pages[i])->key(), PageKey(4 + i));
+    window.m_coinjoin_tab_enabled = true;
+    window.updateMoreGroup(); Settle();
+    QCOMPARE(folded(window.coinJoinCoinsButton)->key(), PageKey(5));
+
+    // The classic themes: no header, every page in the bar, numbered in order,
+    // whatever the header's state.
+    for (const char* classic : {"Light", "Dark", "Traditional"}) {
+        Theme(classic); Settle();
+        QVERIFY2(more->isHidden(), classic);
+        int n = 1;
+        for (QToolButton* page : top + pages) {
+            QVERIFY2(page->isVisible(), qPrintable(QString("%1: %2").arg(classic, page->text())));
+            QCOMPARE(page->shortcut(), PageKey(n++));
+        }
+        for (QToolButton* page : pages) QVERIFY(!folded(page)->isEnabled());
+    }
+    Theme("Abyss"); Settle();
+    window.resize(1280, 850); Settle();
+    QVERIFY(more->isVisible());
+    QVERIFY(!window.m_more_open);
+    for (QToolButton* page : pages) QVERIFY(page->isHidden());
+
+    // The choice outlives the window. With no page to fold there is no header.
+    more->click(); Settle();
+    for (const char* tab : {"fShowMultisigTab", "fShowMasternodesTab", "fShowGovernanceTab"}) QSettings().setValue(tab, false);
+    {
+        BitcoinGUI reopened(m_node, style.get());
+        QVERIFY(reopened.m_more_open);
+        QVERIFY(reopened.moreGroupPages() == QList<QToolButton*>{reopened.coinJoinCoinsButton});
+        QVERIFY(reopened.moreToolbarAction->isVisible());
+        reopened.m_coinjoin_tab_enabled = false;
+        reopened.updateMoreGroup();
+        QVERIFY(!reopened.moreToolbarAction->isVisible());
+    }
+}
+
+void AbyssTests::sidebarMoreWalletGate()
+{
+    // Astra r2 R3: a page that needs a wallet (Multisig; CoinJoin, which needs
+    // CoinJoin on as well) stays disabled without one, however it comes into
+    // view -- the More header opening, a classic theme -- and its folded
+    // shortcut does not fire, as a disabled button's own does not. Showing a
+    // hidden toolbar action enables it, and its button, unless the action was
+    // disabled itself. Masternodes and Governance need no wallet. Checked
+    // before the first wallet, with it (the positive control), and after the
+    // last one is closed.
+    RestoreAppearance restore;
+    QSettings settings;
+    std::map<QString, QVariant> saved;
+    for (const char* key : {"fShowMultisigTab", "fShowMasternodesTab", "fShowGovernanceTab", "fSidebarMoreOpen"}) {
+        saved.emplace(key, settings.value(key));
+    }
+    const auto restore_keys = interfaces::MakeHandler([saved] {
+        QSettings settings;
+        for (const auto& [key, value] : saved) {
+            if (value.isValid()) settings.setValue(key, value); else settings.remove(key);
+        }
+    });
+    for (const char* tab : {"fShowMultisigTab", "fShowMasternodesTab", "fShowGovernanceTab"}) settings.setValue(tab, true);
+    settings.remove("fSidebarMoreOpen");
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.resize(1280, 850);
+    window.show(); Settle();
+    window.resize(1280, 850); Settle();
+    // CoinJoin through the node's own option, as the Options dialog sets it.
+    interfaces::CoinJoin::Options& coinjoin_option = fixture.client->coinJoinOptions();
+    const bool coinjoin_was = coinjoin_option.isEnabled();
+    const auto restore_coinjoin = interfaces::MakeHandler([&coinjoin_option, coinjoin_was] { coinjoin_option.setEnabled(coinjoin_was); });
+    const auto set_coinjoin = [&](bool on) {
+        coinjoin_option.setEnabled(on);
+        window.updateCoinJoinVisibility(); Settle();
+        QCOMPARE(window.m_coinjoin_tab_enabled, on);
+    };
+    set_coinjoin(true);
+
+    auto* more = window.findChild<QToolButton*>("abyssMoreButton");
+    QVERIFY(more);
+    QToolButton* multisig = window.multisigButton;
+    QToolButton* coinjoin = window.coinJoinCoinsButton;
+    QVERIFY(multisig && coinjoin && window.masternodeButton && window.governanceButton);
+    const auto folded = [&window](QToolButton* page) { return window.m_folded_shortcuts.value(page); };
+    // What a wallet decides, page by page; the rest of the bar as the base has it.
+    const auto gate = [&](bool wallet, const QString& when) {
+        QVERIFY2(multisig->isEnabled() == wallet, qPrintable(when + ": Multisig"));
+        QVERIFY2(coinjoin->isEnabled() == wallet, qPrintable(when + ": CoinJoin"));
+        QVERIFY2(window.masternodeButton->isEnabled(), qPrintable(when + ": Masternodes"));
+        QVERIFY2(window.governanceButton->isEnabled(), qPrintable(when + ": Governance"));
+        QVERIFY2(window.sendCoinsButton->isEnabled() == wallet, qPrintable(when + ": Send"));
+    };
+    // The folded shortcuts, with the header closed: numbered as ever, live only where the page is usable.
+    const auto folded_live = [&](bool wallet, const QString& when) {
+        QVERIFY2(!window.m_more_open && multisig->isHidden(), qPrintable(when));
+        QVERIFY2(!folded(multisig)->key().isEmpty(), qPrintable(when + ": Multisig keeps its number"));
+        QVERIFY2(folded(multisig)->isEnabled() == wallet, qPrintable(when + ": Multisig's folded shortcut"));
+        QVERIFY2(folded(coinjoin)->isEnabled() == wallet, qPrintable(when + ": CoinJoin's folded shortcut"));
+        QVERIFY2(folded(window.masternodeButton)->isEnabled(), qPrintable(when + ": Masternodes' folded shortcut"));
+        QVERIFY2(folded(window.governanceButton)->isEnabled(), qPrintable(when + ": Governance's folded shortcut"));
+    };
+
+    // Before the first wallet: the header opens over disabled wallet pages,
+    // in Abyss and in a classic theme, and closes again with dead shortcuts.
+    QVERIFY(!window.m_wallet_actions_enabled);
+    folded_live(false, "no wallet, closed");
+    more->click(); Settle();
+    QVERIFY(window.m_more_open && multisig->isVisible() && coinjoin->isVisible());
+    gate(false, "no wallet, header opened");
+    more->click(); Settle();
+    folded_live(false, "no wallet, closed again");
+    Theme("Light"); Settle();
+    QVERIFY(multisig->isVisible());
+    gate(false, "no wallet, Light");
+    Theme("Abyss"); Settle();
+    window.resize(1280, 850); Settle();
+    folded_live(false, "no wallet, back in Abyss");
+    more->click(); Settle();
+    gate(false, "no wallet, opened after a theme switch");
+    more->click(); Settle();
+
+    // The positive control: with a wallet, the same ways bring the pages
+    // enabled. Astra r3 R5: the first wallet loads with CoinJoin off, and
+    // CoinJoin turned on afterwards brings its page enabled too.
+    set_coinjoin(false);
+    window.addWallet(fixture.model.get()); Settle();
+    window.resize(1280, 850); Settle();
+    QVERIFY(window.m_wallet_actions_enabled);
+    QVERIFY(!coinjoin->isEnabled());
+    QVERIFY(!folded(coinjoin)->isEnabled() && folded(coinjoin)->key().isEmpty());
+    set_coinjoin(true);
+    folded_live(true, "a wallet, CoinJoin turned on, closed");
+    more->click(); Settle();
+    gate(true, "a wallet, header opened");
+    more->click(); Settle();
+    Theme("Light"); Settle();
+    gate(true, "a wallet, Light");
+    Theme("Abyss"); Settle();
+    window.resize(1280, 850); Settle();
+    folded_live(true, "a wallet, back in Abyss");
+
+    // The last wallet closed: disabled again, through every way into view.
+    window.removeWallet(fixture.model.get()); Settle();
+    window.resize(1280, 850); Settle();
+    QVERIFY(!window.m_wallet_actions_enabled);
+    folded_live(false, "last wallet closed");
+    more->click(); Settle();
+    gate(false, "last wallet closed, header opened");
+    more->click(); Settle();
+    Theme("Light"); Settle();
+    gate(false, "last wallet closed, Light");
+    Theme("Abyss"); Settle();
+}
+
+void AbyssTests::quickButtonsExpand()
+{
+    // In Abyss the four quick buttons say their name while pointed at or
+    // reached with Tab. They open to the left, so the one under the pointer
+    // keeps its right edge, and the row stays clear of the menus; they close
+    // when the pointer and the keyboard have left. Focus from a click opens
+    // nothing. The padlock of a locked wallet stays open on "Unlock Wallet";
+    // a classic theme's padlock never opens.
+    const bool high_dpi = QCoreApplication::testAttribute(Qt::AA_UseHighDpiPixmaps);
+    QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+    const auto restore_dpi = interfaces::MakeHandler([high_dpi] { QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, high_dpi); });
+    if (!GUIUtil::fontsLoaded()) QSKIP("Quick-button widths require minimal:enable_fonts or a native platform");
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.resize(1280, 850);
+    window.show(); Settle();
+    auto* row = window.findChild<QWidget*>("abyssQuickControls");
+    auto* lock = window.findChild<QToolButton*>("walletLockButton");
+    auto* selector = window.findChild<QWidget*>("walletSelector");
+    QVERIFY(row && lock && selector);
+    QMenuBar* menus = window.menuBar();
+    const auto send = [](QWidget* widget, QEvent::Type type) {
+        QEvent event(type);
+        QCoreApplication::sendEvent(widget, &event);
+        Settle();
+    };
+    const auto focus = [](QWidget* widget, QEvent::Type type, Qt::FocusReason reason) {
+        QFocusEvent event(type, reason);
+        QCoreApplication::sendEvent(widget, &event);
+        Settle();
+    };
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    const auto save = [&](const QString& name) {
+        const QRect top(0, 0, window.width(), OnPage(window, row).bottom() + 6);
+        return output.isEmpty() || (QDir().mkpath(output) && window.grab(top).save(QDir(output).filePath(name + ".png")));
+    };
+    // The row inside the window, clear of the menus, every button whole: as wide
+    // as it asks to be, or as its stylesheet cap allows (a closed button's 40 px).
+    const auto fits = [&](const QString& what) {
+        const QRect place = OnPage(window, row);
+        QVERIFY2(place.left() >= 0 && place.right() < window.width(), qPrintable(what));
+        if (!window.abyssQuickControlsBar) {
+            for (QAction* action : menus->actions()) {
+                if (action->isVisible()) QVERIFY2(!row->geometry().intersects(menus->actionGeometry(action)), qPrintable(what));
+            }
+            QWidget* left = menus->cornerWidget(Qt::TopLeftCorner);
+            if (left && left->isVisible()) QVERIFY2(!row->geometry().intersects(left->geometry()), qPrintable(what));
+        }
+        for (QToolButton* button : row->findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly)) {
+            if (!button->isVisible()) continue;
+            QVERIFY2(row->rect().contains(button->geometry()), qPrintable(what + ": " + button->objectName()));
+            const int whole = std::min(button->sizeHint().width(), button->maximumWidth());
+            QVERIFY2(button->width() >= whole,
+                     qPrintable(QString("%1: %2 squeezed to %3 of %4").arg(what, button->objectName()).arg(button->width()).arg(whole)));
+        }
+    };
+
+    // Without a wallet the padlock opens on what it says.
+    send(lock, QEvent::Enter);
+    QCOMPARE(lock->text(), QString("No wallet loaded"));
+    send(lock, QEvent::Leave);
+    QVERIFY(lock->text().isEmpty());
+    window.addWallet(fixture.model.get()); Settle();
+    window.resize(1280, 850); Settle();
+
+    const std::vector<std::pair<const char*, QString>> names{
+        {"abyssOptionsButton", "Options"}, {"abyssPrivacyButton", "Discreet mode"},
+        {"walletLockButton", "Encrypt Wallet"}, {"abyssConsoleButton", "Debug console"}};
+    for (int width : {1280, 958}) {
+        window.resize(width, 850); Settle();
+        for (const auto& [object, name] : names) {
+            auto* button = row->findChild<QToolButton*>(object);
+            QVERIFY(button && button->isVisible());
+            const QString what = QString("%1 at %2 px").arg(object).arg(width);
+            const QRect closed = OnPage(window, button);
+            QVERIFY2(closed.width() <= 44, qPrintable(what));
+            QVERIFY(button->text().isEmpty());
+            send(button, QEvent::Enter);
+            QCOMPARE(button->text(), name);
+            QCOMPARE(button->toolButtonStyle(), Qt::ToolButtonTextBesideIcon);
+            const QRect open = OnPage(window, button);
+            QVERIFY2(open.width() >= closed.width() + 30, qPrintable(what));
+            QVERIFY2(std::abs(open.right() - closed.right()) <= 1, qPrintable(what + ": the button under the pointer moved"));
+            QCOMPARE(open.top(), closed.top());
+            fits(what);
+            if (width == 1280) QVERIFY(save(QString("Abyss-quick-open-%1").arg(object)));
+            send(button, QEvent::Leave);
+            QVERIFY(button->text().isEmpty());
+            QCOMPARE(button->toolButtonStyle(), Qt::ToolButtonIconOnly);
+            QCOMPARE(OnPage(window, button), closed);
+        }
+    }
+    window.resize(1280, 850); Settle();
+
+    // The keyboard opens one with Tab; the pointer passing over does not close
+    // it then, and focus from a click opens nothing.
+    auto* options = row->findChild<QToolButton*>("abyssOptionsButton");
+    auto* console = row->findChild<QToolButton*>("abyssConsoleButton");
+    focus(options, QEvent::FocusIn, Qt::TabFocusReason);
+    QCOMPARE(options->text(), QString("Options"));
+    send(options, QEvent::Enter);
+    send(options, QEvent::Leave);
+    QCOMPARE(options->text(), QString("Options"));
+    focus(options, QEvent::FocusOut, Qt::TabFocusReason);
+    QVERIFY(options->text().isEmpty());
+    focus(console, QEvent::FocusIn, Qt::BacktabFocusReason);
+    QCOMPARE(console->text(), QString("Debug console"));
+    focus(console, QEvent::FocusOut, Qt::MouseFocusReason);
+    for (Qt::FocusReason reason : {Qt::MouseFocusReason, Qt::ActiveWindowFocusReason, Qt::PopupFocusReason, Qt::OtherFocusReason}) {
+        focus(console, QEvent::FocusIn, reason);
+        QVERIFY2(console->text().isEmpty(), qPrintable(QString("focus reason %1").arg(static_cast<int>(reason))));
+        focus(console, QEvent::FocusOut, reason);
+    }
+
+    // A locked wallet keeps the padlock open on the way to unlock it, through
+    // the pointer passing, at the narrowest window too, with another button open.
+    window.setEncryptionStatus(WalletModel::Locked); Settle();
+    QCOMPARE(lock->text(), QString("Unlock Wallet"));
+    QVERIFY(lock->property("expanded").toBool());
+    fits("locked");
+    send(lock, QEvent::Enter);
+    send(lock, QEvent::Leave);
+    QCOMPARE(lock->text(), QString("Unlock Wallet"));
+    QVERIFY(save("Abyss-quick-locked"));
+    window.resize(958, 850); Settle();
+    send(console, QEvent::Enter);
+    fits("locked, console open, 958 px");
+    QVERIFY(save("Abyss-quick-locked-console-958"));
+    send(console, QEvent::Leave);
+    window.resize(1280, 850); Settle();
+    window.setEncryptionStatus(WalletModel::Unlocked); Settle();
+    QVERIFY(lock->text().isEmpty());
+    send(lock, QEvent::Enter);
+    QCOMPARE(lock->text(), QString("Lock Wallet"));
+    send(lock, QEvent::Leave);
+    QVERIFY(lock->text().isEmpty());
+
+    // A classic theme takes the padlock back into the wallet selector, closed
+    // and without a name, even while the wallet is locked. A theme switch reads
+    // the fixture's real, unencrypted state again, so it is locked once more.
+    for (const char* classic : {"Light", "Dark", "Traditional"}) {
+        Theme(classic); Settle();
+        window.setEncryptionStatus(WalletModel::Locked); Settle();
+        QCOMPARE(lock->parentWidget(), selector);
+        QVERIFY2(lock->text().isEmpty(), classic);
+        QCOMPARE(lock->toolButtonStyle(), Qt::ToolButtonIconOnly);
+        QVERIFY(!lock->property("expanded").toBool());
+        send(lock, QEvent::Enter);
+        QVERIFY2(lock->text().isEmpty(), classic);
+        send(lock, QEvent::Leave);
+    }
+    Theme("Abyss"); Settle();
+    QCOMPARE(lock->parentWidget(), row);
+    window.setEncryptionStatus(WalletModel::Locked); Settle();
+    QCOMPARE(lock->text(), QString("Unlock Wallet"));
+    window.setEncryptionStatus(fixture.model->getEncryptionStatus()); Settle();
+    QVERIFY(lock->text().isEmpty());
 }

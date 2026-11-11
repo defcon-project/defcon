@@ -44,6 +44,8 @@
         <file alias="key.svg">res/icons/tabler/key.svg</file>
         <file alias="topology-star-3.svg">res/icons/tabler/topology-star-3.svg</file>
         <file alias="gavel.svg">res/icons/tabler/gavel.svg</file>
+        <file alias="chevron-down.svg">res/icons/tabler/chevron-down.svg</file>
+        <file alias="chevron-right.svg">res/icons/tabler/chevron-right.svg</file>
         <file alias="cube.svg">res/icons/tabler/cube.svg</file>
         <file alias="clock.svg">res/icons/tabler/clock.svg</file>
         <file alias="circle-check.svg">res/icons/tabler/circle-check.svg</file>
