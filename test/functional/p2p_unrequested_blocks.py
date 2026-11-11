@@ -152,6 +152,9 @@ class AcceptBlockTest(BitcoinTestFramework):
             next_block.solve()
             all_blocks.append(next_block)
             tip = next_block
+        # DeFCoN refuses a block more than three minutes ahead of the node's clock (MAX_FUTURE_BLOCK_TIME), so the
+        # clocks move along with these blocks, one second each.
+        self.bump_mocktime(len(all_blocks))
 
         # Now send the block at height 5 and check that it wasn't accepted (missing header)
         test_node.send_and_ping(msg_block(all_blocks[1]))

@@ -731,6 +731,9 @@ class FullBlockTest(BitcoinTestFramework):
         #                                                                                   \-> b54 (15)
         #                                                                        -> b44 (14)\-> b48 () -> b48p ()
         self.log.info("Accept a previously rejected future block at a later time")
+        # The clock jumps years ahead here: no block the node asked for may still be on its way, or it would look
+        # overdue and the node would drop the peer (the block download timeout runs on mocktime).
+        self.wait_until(lambda: all(not peer['inflight'] for peer in node.getpeerinfo()))
         node.setmocktime(int(time.time()) + 2*60*60)
         self.move_tip(48)
         self.block_heights[b48.sha256] = self.block_heights[b44.sha256] + 1 # b48 is a parent of b44
