@@ -311,9 +311,6 @@ private:
     /** Apply the selected theme's navigation orientation and sizing. */
     void applyThemeLayout();
     void updateQuickControls();
-    /** Abyss quick buttons name themselves while pointed at or reached with
-        Tab; the padlock keeps its name while the wallet is locked. */
-    void updateQuickButtonLabels();
     /** The pages under the More header that this wallet has, in sidebar order. */
     QList<QToolButton*> moreGroupPages() const;
     /** The navigation bar's action that holds a page's button. */

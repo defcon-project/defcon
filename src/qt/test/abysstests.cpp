@@ -8146,14 +8146,15 @@ void AbyssTests::sidebarMoreWalletGate()
     Theme("Abyss"); Settle();
 }
 
-void AbyssTests::quickButtonsExpand()
+void AbyssTests::quickButtonsCompact()
 {
-    // In Abyss the four quick buttons say their name while pointed at or
-    // reached with Tab. They open to the left, so the one under the pointer
-    // keeps its right edge, and the row stays clear of the menus; they close
-    // when the pointer and the keyboard have left. Focus from a click opens
-    // nothing. The padlock of a locked wallet stays open on "Unlock Wallet";
-    // a classic theme's padlock never opens.
+    // In Abyss the four quick buttons (options, discreet mode, padlock,
+    // console) stay small and show only their icon: pointed at, reached with
+    // Tab or with the wallet locked, none of them grows, moves or writes its
+    // name beside the icon, and the row keeps its size. What a button does is
+    // in its tooltip. The row stays inside the window and clear of the menus
+    // at the narrowest width; a classic theme takes the padlock back into the
+    // wallet selector, without a name, as before.
     const bool high_dpi = QCoreApplication::testAttribute(Qt::AA_UseHighDpiPixmaps);
     QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
     const auto restore_dpi = interfaces::MakeHandler([high_dpi] { QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, high_dpi); });
@@ -8176,9 +8177,13 @@ void AbyssTests::quickButtonsExpand()
     auto* selector = window.findChild<QWidget*>("walletSelector");
     QVERIFY(row && lock && selector);
     QMenuBar* menus = window.menuBar();
-    const auto send = [](QWidget* widget, QEvent::Type type) {
-        QEvent event(type);
-        QCoreApplication::sendEvent(widget, &event);
+    // The pointer over a button, as Qt marks it: under the mouse (what the
+    // stylesheet's :hover reads) and told so with Enter; and off it again.
+    const auto point = [](QToolButton* button, bool on) {
+        button->setAttribute(Qt::WA_UnderMouse, on);
+        QEvent event(on ? QEvent::Enter : QEvent::Leave);
+        QCoreApplication::sendEvent(button, &event);
+        button->update();
         Settle();
     };
     const auto focus = [](QWidget* widget, QEvent::Type type, Qt::FocusReason reason) {
@@ -8192,7 +8197,7 @@ void AbyssTests::quickButtonsExpand()
         return output.isEmpty() || (QDir().mkpath(output) && window.grab(top).save(QDir(output).filePath(name + ".png")));
     };
     // The row inside the window, clear of the menus, every button whole: as wide
-    // as it asks to be, or as its stylesheet cap allows (a closed button's 40 px).
+    // as it asks to be, or as its stylesheet cap allows (40 px).
     const auto fits = [&](const QString& what) {
         const QRect place = OnPage(window, row);
         QVERIFY2(place.left() >= 0 && place.right() < window.width(), qPrintable(what));
@@ -8212,87 +8217,144 @@ void AbyssTests::quickButtonsExpand()
         }
     };
 
-    // Without a wallet the padlock opens on what it says.
-    send(lock, QEvent::Enter);
-    QCOMPARE(lock->text(), QString("No wallet loaded"));
-    send(lock, QEvent::Leave);
-    QVERIFY(lock->text().isEmpty());
+    // A button small, icon-only and nameless, exactly where it was, and the row
+    // asking for the size it asked for before.
+    const auto compact = [&](QToolButton* button, const QRect& place, const QSize& row_hint, const QString& what) {
+        const QString who = what + ": " + button->objectName();
+        QVERIFY2(button->text().isEmpty(), qPrintable(who + " says \"" + button->text() + "\""));
+        QVERIFY2(button->toolButtonStyle() == Qt::ToolButtonIconOnly, qPrintable(who + " is not icon-only"));
+        QVERIFY2(button->width() <= 44, qPrintable(QString("%1 is %2 px wide").arg(who).arg(button->width())));
+        QVERIFY2(OnPage(window, button) == place, qPrintable(who + " moved or changed size"));
+        QVERIFY2(row->sizeHint() == row_hint, qPrintable(what + ": the row asks for another size"));
+    };
+    // Back in Abyss from a classic theme. On a desktop screen the window keeps
+    // its size, and the row must already sit right for all four buttons, the
+    // padlock back in it. The minimal platform's 240x320 screen holds the
+    // window to it on a theme switch (updateWidth); there the window gets its
+    // size back first.
+    const auto after_switch = [&](const QString& what) {
+        qInfo() << "AFTER_SWITCH" << what << "window" << window.size() << "row" << row->geometry() << "hint" << row->sizeHint()
+                << "bar" << menus->size();
+        if (window.width() == 1280) fits(what + ", as the switch left it");
+        window.resize(1280, 850); Settle();
+        fits(what);
+    };
+
+    // Without a wallet the padlock is in the row, disabled, and pointing at it
+    // changes nothing.
+    QCOMPARE(lock->parentWidget(), row);
+    QVERIFY(lock->isVisible() && !lock->isEnabled());
+    {
+        const QRect place = OnPage(window, lock);
+        const QSize hint = row->sizeHint();
+        compact(lock, place, hint, "no wallet");
+        point(lock, true);
+        compact(lock, place, hint, "no wallet, pointed at");
+        point(lock, false);
+        compact(lock, place, hint, "no wallet, left");
+        // A classic theme hides the padlock while there is no wallet; back in
+        // Abyss it joins the row, shown, after the row was placed in the corner.
+        Theme("Light"); Settle();
+        Theme("Abyss"); Settle();
+        QCOMPARE(lock->parentWidget(), row);
+        after_switch("no wallet, back in Abyss");
+        // Where the bar puts the row in a window given its size back is the
+        // bar's business; the padlock keeps its size and stays compact.
+        QCOMPARE(OnPage(window, lock).size(), place.size());
+        compact(lock, OnPage(window, lock), hint, "no wallet, back in Abyss");
+        if (QTest::currentTestFailed()) return;
+    }
     window.addWallet(fixture.model.get()); Settle();
     window.resize(1280, 850); Settle();
 
-    const std::vector<std::pair<const char*, QString>> names{
-        {"abyssOptionsButton", "Options"}, {"abyssPrivacyButton", "Discreet mode"},
-        {"walletLockButton", "Encrypt Wallet"}, {"abyssConsoleButton", "Debug console"}};
+    // What each button does stays in its tooltip, as before.
+    const std::vector<std::pair<const char*, QString>> tips{
+        {"abyssOptionsButton", window.findChild<QAction*>("optionsAction")->statusTip()},
+        {"abyssPrivacyButton", window.findChild<QAction*>("m_mask_values_action")->statusTip()},
+        {"walletLockButton", BitcoinGUI::tr("Wallet is <b>unencrypted</b>. Click to encrypt it.")},
+        {"abyssConsoleButton", window.findChild<QAction*>("openRPCConsoleAction")->statusTip()}};
+    QList<QToolButton*> buttons;
+    for (const auto& [object, tip] : tips) {
+        auto* button = row->findChild<QToolButton*>(object);
+        QVERIFY2(button && button->isVisible(), object);
+        QVERIFY2(!tip.isEmpty(), object);
+        QCOMPARE(button->toolTip(), tip);
+        buttons << button;
+    }
+    const auto places = [&] {
+        std::map<QToolButton*, QRect> where;
+        for (QToolButton* button : buttons) where[button] = OnPage(window, button);
+        return where;
+    };
+    const auto all_compact = [&](const std::map<QToolButton*, QRect>& where, const QSize& row_hint, const QString& what) {
+        for (QToolButton* button : buttons) compact(button, where.at(button), row_hint, what);
+        fits(what);
+    };
+
+    // Pointed at, one after the other, at the usual and the narrowest width.
     for (int width : {1280, 958}) {
         window.resize(width, 850); Settle();
-        for (const auto& [object, name] : names) {
-            auto* button = row->findChild<QToolButton*>(object);
-            QVERIFY(button && button->isVisible());
-            const QString what = QString("%1 at %2 px").arg(object).arg(width);
-            const QRect closed = OnPage(window, button);
-            QVERIFY2(closed.width() <= 44, qPrintable(what));
-            QVERIFY(button->text().isEmpty());
-            send(button, QEvent::Enter);
-            QCOMPARE(button->text(), name);
-            QCOMPARE(button->toolButtonStyle(), Qt::ToolButtonTextBesideIcon);
-            const QRect open = OnPage(window, button);
-            QVERIFY2(open.width() >= closed.width() + 30, qPrintable(what));
-            QVERIFY2(std::abs(open.right() - closed.right()) <= 1, qPrintable(what + ": the button under the pointer moved"));
-            QCOMPARE(open.top(), closed.top());
-            fits(what);
-            if (width == 1280) QVERIFY(save(QString("Abyss-quick-open-%1").arg(object)));
-            send(button, QEvent::Leave);
-            QVERIFY(button->text().isEmpty());
-            QCOMPARE(button->toolButtonStyle(), Qt::ToolButtonIconOnly);
-            QCOMPARE(OnPage(window, button), closed);
+        const auto rest = places();
+        const QSize hint = row->sizeHint();
+        all_compact(rest, hint, QString("at rest, %1 px").arg(width));
+        for (QToolButton* button : buttons) {
+            const QString what = QString("%1 pointed at, %2 px").arg(button->objectName()).arg(width);
+            point(button, true);
+            all_compact(rest, hint, what);
+            if (width == 1280) QVERIFY(save(QString("Abyss-quick-pointed-%1").arg(button->objectName())));
+            point(button, false);
+            all_compact(rest, hint, what + ", left");
+            if (QTest::currentTestFailed()) return;
         }
     }
     window.resize(1280, 850); Settle();
+    const auto rest = places();
+    const QSize hint = row->sizeHint();
 
-    // The keyboard opens one with Tab; the pointer passing over does not close
-    // it then, and focus from a click opens nothing.
-    auto* options = row->findChild<QToolButton*>("abyssOptionsButton");
-    auto* console = row->findChild<QToolButton*>("abyssConsoleButton");
-    focus(options, QEvent::FocusIn, Qt::TabFocusReason);
-    QCOMPARE(options->text(), QString("Options"));
-    send(options, QEvent::Enter);
-    send(options, QEvent::Leave);
-    QCOMPARE(options->text(), QString("Options"));
-    focus(options, QEvent::FocusOut, Qt::TabFocusReason);
-    QVERIFY(options->text().isEmpty());
-    focus(console, QEvent::FocusIn, Qt::BacktabFocusReason);
-    QCOMPARE(console->text(), QString("Debug console"));
-    focus(console, QEvent::FocusOut, Qt::MouseFocusReason);
-    for (Qt::FocusReason reason : {Qt::MouseFocusReason, Qt::ActiveWindowFocusReason, Qt::PopupFocusReason, Qt::OtherFocusReason}) {
-        focus(console, QEvent::FocusIn, reason);
-        QVERIFY2(console->text().isEmpty(), qPrintable(QString("focus reason %1").arg(static_cast<int>(reason))));
-        focus(console, QEvent::FocusOut, reason);
+    // Reached with Tab or Shift+Tab, or focused by a click, and pointed at then.
+    for (QToolButton* button : buttons) {
+        for (Qt::FocusReason reason : {Qt::TabFocusReason, Qt::BacktabFocusReason, Qt::MouseFocusReason}) {
+            const QString what = QString("%1 focused (reason %2)").arg(button->objectName()).arg(static_cast<int>(reason));
+            focus(button, QEvent::FocusIn, reason);
+            all_compact(rest, hint, what);
+            point(button, true);
+            all_compact(rest, hint, what + ", pointed at");
+            point(button, false);
+            focus(button, QEvent::FocusOut, reason);
+            all_compact(rest, hint, what + ", left");
+            if (QTest::currentTestFailed()) return;
+        }
     }
 
-    // A locked wallet keeps the padlock open on the way to unlock it, through
-    // the pointer passing, at the narrowest window too, with another button open.
+    // Locked, unlocked, unlocked for mixing and staking: the padlock changes its
+    // icon and its tooltip, nothing else, pointed at or not.
+    for (int status : {int(WalletModel::Locked), int(WalletModel::Unlocked), int(WalletModel::UnlockedForMixingOnly)}) {
+        window.setEncryptionStatus(status); Settle();
+        const QString what = QString("encryption status %1").arg(status);
+        all_compact(rest, hint, what);
+        point(lock, true);
+        all_compact(rest, hint, what + ", padlock pointed at");
+        point(lock, false);
+        all_compact(rest, hint, what + ", padlock left");
+        if (QTest::currentTestFailed()) return;
+    }
     window.setEncryptionStatus(WalletModel::Locked); Settle();
-    QCOMPARE(lock->text(), QString("Unlock Wallet"));
-    QVERIFY(lock->property("expanded").toBool());
-    fits("locked");
-    send(lock, QEvent::Enter);
-    send(lock, QEvent::Leave);
-    QCOMPARE(lock->text(), QString("Unlock Wallet"));
+    QCOMPARE(lock->toolTip(), BitcoinGUI::tr("Wallet is <b>locked</b>. Click to unlock it."));
     QVERIFY(save("Abyss-quick-locked"));
     window.resize(958, 850); Settle();
-    send(console, QEvent::Enter);
-    fits("locked, console open, 958 px");
-    QVERIFY(save("Abyss-quick-locked-console-958"));
-    send(console, QEvent::Leave);
+    {
+        const auto narrow = places();
+        QCOMPARE(row->sizeHint(), hint);
+        all_compact(narrow, hint, "locked, 958 px");
+        point(lock, true);
+        all_compact(narrow, hint, "locked, 958 px, padlock pointed at");
+        QVERIFY(save("Abyss-quick-locked-958"));
+        point(lock, false);
+        if (QTest::currentTestFailed()) return;
+    }
     window.resize(1280, 850); Settle();
-    window.setEncryptionStatus(WalletModel::Unlocked); Settle();
-    QVERIFY(lock->text().isEmpty());
-    send(lock, QEvent::Enter);
-    QCOMPARE(lock->text(), QString("Lock Wallet"));
-    send(lock, QEvent::Leave);
-    QVERIFY(lock->text().isEmpty());
 
-    // A classic theme takes the padlock back into the wallet selector, closed
+    // A classic theme takes the padlock back into the wallet selector, icon-only
     // and without a name, even while the wallet is locked. A theme switch reads
     // the fixture's real, unencrypted state again, so it is locked once more.
     for (const char* classic : {"Light", "Dark", "Traditional"}) {
@@ -8301,15 +8363,21 @@ void AbyssTests::quickButtonsExpand()
         QCOMPARE(lock->parentWidget(), selector);
         QVERIFY2(lock->text().isEmpty(), classic);
         QCOMPARE(lock->toolButtonStyle(), Qt::ToolButtonIconOnly);
-        QVERIFY(!lock->property("expanded").toBool());
-        send(lock, QEvent::Enter);
+        point(lock, true);
         QVERIFY2(lock->text().isEmpty(), classic);
-        send(lock, QEvent::Leave);
+        QCOMPARE(lock->toolButtonStyle(), Qt::ToolButtonIconOnly);
+        point(lock, false);
     }
     Theme("Abyss"); Settle();
     QCOMPARE(lock->parentWidget(), row);
+    after_switch("back in Abyss");
     window.setEncryptionStatus(WalletModel::Locked); Settle();
-    QCOMPARE(lock->text(), QString("Unlock Wallet"));
+    const auto again = places();
+    for (QToolButton* button : buttons) QCOMPARE(again.at(button).size(), rest.at(button).size());
+    all_compact(again, hint, "locked, back in Abyss");
+    point(lock, true);
+    all_compact(again, hint, "locked, back in Abyss, padlock pointed at");
+    point(lock, false);
     window.setEncryptionStatus(fixture.model->getEncryptionStatus()); Settle();
-    QVERIFY(lock->text().isEmpty());
+    all_compact(again, hint, "back in Abyss");
 }
