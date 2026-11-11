@@ -35,6 +35,10 @@ private Q_SLOTS:
     void quickControls();
     void topMenus_data();
     void topMenus();
+    void menuPairs();
+    void hoverMenus();
+    void topMenuPairs();
+    void topMenusHover();
     void paymentPages();
     void paymentSummaryLifecycle();
     void networkModelLifecycle();

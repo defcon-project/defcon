@@ -1355,6 +1355,12 @@ QWidget#abyssMenuControls QToolButton:focus {
     border-color: #1d3f60;
 }
 
+/* The divider between the two cells of a paired menu row (Tools, Wallet). */
+QMenu QFrame#abyssMenuPairDivider {
+    background-color: #20344c;
+    border: none;
+}
+
 /* Stage 3: empty and loading states. Only Abyss shows them. */
 QFrame#emptyState,
 QFrame#emptyState QWidget#emptyStateMessage,

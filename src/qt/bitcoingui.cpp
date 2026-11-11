@@ -5,6 +5,7 @@
 
 #include <qt/bitcoingui.h>
 
+#include <qt/abyssmenus.h>
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
 #include <qt/createwalletdialog.h>
@@ -583,34 +584,7 @@ void BitcoinGUI::createActions()
         connect(usedSendingAddressesAction, &QAction::triggered, walletFrame, &WalletFrame::usedSendingAddresses);
         connect(usedReceivingAddressesAction, &QAction::triggered, walletFrame, &WalletFrame::usedReceivingAddresses);
         connect(openAction, &QAction::triggered, this, &BitcoinGUI::openClicked);
-        connect(m_open_wallet_menu, &QMenu::aboutToShow, [this] {
-            m_open_wallet_menu->clear();
-            for (const std::pair<const std::string, bool>& i : m_wallet_controller->listWalletDir()) {
-                const std::string& path = i.first;
-                QString name = path.empty() ? QString("["+tr("default wallet")+"]") : QString::fromStdString(path);
-                // An single ampersand in the menu item's text sets a shortcut for this item.
-                // Single & are shown when && is in the string. So replace & with &&.
-                name.replace(QChar('&'), QString("&&"));
-                QAction* action = m_open_wallet_menu->addAction(name);
-
-                if (i.second) {
-                    // This wallet is already loaded
-                    action->setEnabled(false);
-                    continue;
-                }
-
-                connect(action, &QAction::triggered, [this, path] {
-                    auto activity = new OpenWalletActivity(m_wallet_controller, this);
-                    connect(activity, &OpenWalletActivity::opened, this, &BitcoinGUI::setCurrentWallet);
-                    connect(activity, &OpenWalletActivity::finished, activity, &QObject::deleteLater);
-                    activity->open(path);
-                });
-            }
-            if (m_open_wallet_menu->isEmpty()) {
-                QAction* action = m_open_wallet_menu->addAction(tr("No wallets available"));
-                action->setEnabled(false);
-            }
-        });
+        connect(m_open_wallet_menu, &QMenu::aboutToShow, [this] { fillOpenWalletMenu(m_open_wallet_menu); });
         connect(m_close_wallet_action, &QAction::triggered, [this] {
             m_wallet_controller->closeWallet(walletFrame->currentWalletModel(), this);
         });
@@ -628,6 +602,38 @@ void BitcoinGUI::createActions()
     }
 #endif // ENABLE_WALLET
 }
+
+#ifdef ENABLE_WALLET
+void BitcoinGUI::fillOpenWalletMenu(QMenu* menu)
+{
+    menu->clear();
+    for (const std::pair<const std::string, bool>& i : m_wallet_controller->listWalletDir()) {
+        const std::string& path = i.first;
+        QString name = path.empty() ? QString("["+tr("default wallet")+"]") : QString::fromStdString(path);
+        // An single ampersand in the menu item's text sets a shortcut for this item.
+        // Single & are shown when && is in the string. So replace & with &&.
+        name.replace(QChar('&'), QString("&&"));
+        QAction* action = menu->addAction(name);
+
+        if (i.second) {
+            // This wallet is already loaded
+            action->setEnabled(false);
+            continue;
+        }
+
+        connect(action, &QAction::triggered, [this, path] {
+            auto activity = new OpenWalletActivity(m_wallet_controller, this);
+            connect(activity, &OpenWalletActivity::opened, this, &BitcoinGUI::setCurrentWallet);
+            connect(activity, &OpenWalletActivity::finished, activity, &QObject::deleteLater);
+            activity->open(path);
+        });
+    }
+    if (menu->isEmpty()) {
+        QAction* action = menu->addAction(tr("No wallets available"));
+        action->setEnabled(false);
+    }
+}
+#endif // ENABLE_WALLET
 
 namespace {
 /** A console glyph the icon set does not carry: a prompt chevron and the dot
@@ -817,16 +823,33 @@ void BitcoinGUI::createMenuBar()
     // Abyss menus share those actions, including their shortcuts and state.
     classicMenus = {file, settings, window_menu, help};
     if (walletFrame) {
+        // In-window menus put related pairs side by side, each in a cell of its
+        // own (AbyssMenus::addPair); native menus cannot show such rows.
+        const bool pairs = !nativeMenuBar();
         abyssWalletMenu = new QMenu(tr("&Wallet"), this);
         abyssWalletMenu->setObjectName("abyssWalletMenu");
-        for (QAction* action : {m_create_wallet_action, m_open_wallet_action,
-                m_close_wallet_action, m_close_all_wallets_action}) {
-            abyssWalletMenu->addAction(action);
+        if (pairs) {
+            abyssOpenWalletMenu = new QMenu(this);
+            abyssOpenWalletMenu->setObjectName("abyssOpenWalletMenu");
+#ifdef ENABLE_WALLET
+            connect(abyssOpenWalletMenu, &QMenu::aboutToShow, this, [this] { fillOpenWalletMenu(abyssOpenWalletMenu); });
+#endif
+            AbyssMenus::addPair(abyssWalletMenu, m_create_wallet_action, m_open_wallet_action, abyssOpenWalletMenu);
+            AbyssMenus::addPair(abyssWalletMenu, m_close_wallet_action, m_close_all_wallets_action);
+        } else {
+            for (QAction* action : {m_create_wallet_action, m_open_wallet_action,
+                    m_close_wallet_action, m_close_all_wallets_action}) {
+                abyssWalletMenu->addAction(action);
+            }
         }
         abyssWalletMenu->addSeparator();
         abyssWalletMenu->addAction(openAction);
-        abyssWalletMenu->addAction(backupWalletAction);
-        abyssWalletMenu->addAction(showBackupsAction);
+        if (pairs) {
+            AbyssMenus::addPair(abyssWalletMenu, backupWalletAction, showBackupsAction);
+        } else {
+            abyssWalletMenu->addAction(backupWalletAction);
+            abyssWalletMenu->addAction(showBackupsAction);
+        }
         auto* security = abyssWalletMenu->addMenu(tr("&Security"));
         security->setObjectName("abyssSecurityMenu");
         for (QAction* action : {encryptWalletAction, changePassphraseAction,
@@ -838,8 +861,13 @@ void BitcoinGUI::createMenuBar()
 
         abyssToolsMenu = new QMenu(tr("&Tools"), this);
         abyssToolsMenu->setObjectName("abyssToolsMenu");
-        for (QAction* action : {usedSendingAddressesAction, usedReceivingAddressesAction,
-                signMessageAction, verifyMessageAction}) abyssToolsMenu->addAction(action);
+        if (pairs) {
+            AbyssMenus::addPair(abyssToolsMenu, usedSendingAddressesAction, usedReceivingAddressesAction);
+            AbyssMenus::addPair(abyssToolsMenu, signMessageAction, verifyMessageAction);
+        } else {
+            for (QAction* action : {usedSendingAddressesAction, usedReceivingAddressesAction,
+                    signMessageAction, verifyMessageAction}) abyssToolsMenu->addAction(action);
+        }
         if (file->actions().contains(multisigAction)) abyssToolsMenu->addAction(multisigAction);
         abyssToolsMenu->addAction(m_load_psbt_action);
         abyssToolsMenu->addAction(m_load_psbt_clipboard_action);
@@ -881,18 +909,25 @@ void BitcoinGUI::createMenuBar()
         addMenuButton(abyssToolsMenu, "abyssToolsMenuButton", "tools");
         addMenuButton(help, "abyssHelpMenuButton", "help");
         abyssMenuControls->hide();
+        // Only these three: the quick buttons on the right act on a click.
+        abyssMenuHover = new AbyssMenus::HoverMenus(abyssMenuControls->findChildren<QToolButton*>(), this);
     }
+}
+
+bool BitcoinGUI::nativeMenuBar() const
+{
+#ifdef Q_OS_MAC
+    return true;
+#else
+    return appMenuBar->isNativeMenuBar();
+#endif
 }
 
 void BitcoinGUI::updateAbyssMenus()
 {
     if (!abyssMenuControls) return;
     const bool modern = GUIUtil::isModernTheme();
-#ifdef Q_OS_MAC
-    const bool native = true;
-#else
-    const bool native = appMenuBar->isNativeMenuBar();
-#endif
+    const bool native = nativeMenuBar();
     // Close popups before switching their owners' presentation.
     for (QMenu* menu : classicMenus) {
         menu->close();
