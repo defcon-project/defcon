@@ -158,6 +158,7 @@ BASE_SCRIPTS = [
     'feature_pos_header_only.py --descriptors',
     'feature_pos_header_only.py --legacy-wallet',
     'p2p_unbacked_pos_headers.py',
+    'feature_pos_staking_refusal_log.py --descriptors',
     'feature_pos_mixingonly_unlock.py --descriptors',
     'feature_pos_mixingonly_unlock.py --legacy-wallet',
     'feature_pos_stake_combine.py --descriptors',

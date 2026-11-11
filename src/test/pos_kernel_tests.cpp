@@ -511,6 +511,42 @@ BOOST_AUTO_TEST_CASE(expected_stake_time_does_not_wrap)
                       std::numeric_limits<int64_t>::max());
 }
 
+// The network stake weight turns kernel attempts per second into weight with the seconds between valid coinstake
+// timestamps. With the mask 5 a valid time comes every 4 seconds (2 in every 8), not every 6 (mask + 1, right only for a
+// mask of contiguous low bits), which made netstakeweight, expectedtime and the stake target size 1.5 times too high.
+BOOST_AUTO_TEST_CASE(network_stake_weight_uses_the_timestamp_spacing)
+{
+    Consensus::Params params;
+    // The spacing against the validity rule itself, for masks of every shape.
+    for (const uint32_t mask : {0u, 1u, 3u, 5u, 7u, 15u, 0x11u, 0x55u}) {
+        params.posTimestampMask = mask;
+        int valid{0};
+        for (int t = 0; t < (1 << 16); ++t) valid += CheckCoinStakeTimestamp(t, params) ? 1 : 0;
+        BOOST_CHECK_EQUAL((1 << 16) / valid, static_cast<int>(PoSTimestampSpacing(mask)));
+    }
+    BOOST_CHECK_EQUAL(PoSTimestampSpacing(5), 4U);
+    BOOST_CHECK_EQUAL(PoSTimestampSpacing(15), 16U);
+    // The ends: no bit, the top bit alone, and all 32 bits, which a 32-bit result could not hold.
+    BOOST_CHECK_EQUAL(PoSTimestampSpacing(0), 1U);
+    BOOST_CHECK_EQUAL(PoSTimestampSpacing(0x80000000U), 2U);
+    BOOST_CHECK_EQUAL(PoSTimestampSpacing(0xffffffffU), uint64_t{1} << 32);
+
+    // GetPoSKernelPS on a run of proof-of-stake entries a block interval apart, at one difficulty: the attempts per
+    // second, times 4.
+    params.posTimestampMask = 5;
+    constexpr int spacing{150};
+    std::vector<CBlockIndex> run(20);
+    for (size_t i = 0; i < run.size(); ++i) {
+        run[i].nHeight = static_cast<int>(i);
+        run[i].nTime = 1700000000 + spacing * static_cast<uint32_t>(i);
+        run[i].nBits = 0x1d00ffff;
+        run[i].nNonce = 0; // proof of stake (CBlockIndex::IsProofOfStake)
+        run[i].pprev = i > 0 ? &run[i - 1] : nullptr;
+    }
+    const double attempts_per_second{GetDifficulty(&run.back()) * 4294967296.0 / spacing};
+    BOOST_CHECK_CLOSE(GetPoSKernelPS(&run.back(), params), attempts_per_second * 4, 1e-9);
+}
+
 BOOST_AUTO_TEST_CASE(kernel_v2_activation_heights_are_pinned)
 {
     const auto& args = *m_node.args;

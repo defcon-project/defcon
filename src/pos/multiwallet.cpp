@@ -80,6 +80,7 @@ bool ToggleWalletStaking(const std::string& name)
     for (int y = 0; y < stakable_sz; y++) {
         if (name == stakable_wallets[y].GetName()) return SetWalletStaking(name, !stakable_wallets[y].CanStake());
     }
+    LogPrintf("%s - wallet '%s' is not in the staking list; its staking switch is unchanged\n", __func__, name);
     return false;
 }
 
@@ -100,7 +101,7 @@ bool SetWalletStaking(const std::string& name, bool enable)
                 // keeps the switch off.
                 const std::shared_ptr<CWallet> this_wallet = stakable_wallets[y].GetWallet();
                 if (this_wallet == nullptr || !EnsureCoinstakeDescriptors(*this_wallet)) {
-                    LogPrint(BCLog::POS, "%s - not enabling staking for wallet '%s': coinstake descriptors unavailable\n", __func__, name);
+                    LogPrintf("%s - not enabling staking for wallet '%s': coinstake descriptors unavailable\n", __func__, name);
                     return false;
                 }
                 stakable_wallets[y].StakingEnabled();
@@ -111,6 +112,11 @@ bool SetWalletStaking(const std::string& name, bool enable)
             LogPrint(BCLog::POS, "%s - disabling staking for wallet '%s'\n", __func__, name);
             return false;
         }
+    }
+    // The list is the minter's: the GUI shows a wallet as soon as it is loaded, the list has it only after the
+    // minter's next pass over the wallets. Switching off a wallet that is not there refuses nothing.
+    if (enable) {
+        LogPrintf("%s - not enabling staking for wallet '%s': it is not in the staking list (a wallet loaded just now is added on the minter's next pass)\n", __func__, name);
     }
     return false;
 }
