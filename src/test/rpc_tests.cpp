@@ -13,6 +13,7 @@
 #include <node/context.h>
 #include <rpc/blockchain.h>
 #include <rpc/client.h>
+#include <rpc/commandflags.h>
 #include <rpc/server.h>
 #include <rpc/util.h>
 #include <test/util/setup_common.h>
@@ -20,6 +21,12 @@
 #include <util/strencodings.h>
 #include <util/string.h>
 #include <util/time.h>
+#ifdef ENABLE_WALLET
+#include <wallet/rpcwallet.h>
+#endif
+#if ENABLE_ZMQ
+#include <zmq/zmqrpc.h>
+#endif
 
 #include <algorithm>
 #include <set>
@@ -656,6 +663,112 @@ BOOST_AUTO_TEST_CASE(rpc_command_lists)
         BOOST_CHECK_MESSAGE(!is_listed(name), name);
         BOOST_CHECK_MESSAGE(CallRPC("help " + name).get_str().rfind(name, 0) == 0, name);
     }
+}
+
+BOOST_AUTO_TEST_CASE(rpc_command_flags)
+{
+    // The flag table (rpc/commandflags.h) has a row for exactly the commands the
+    // command lists offer: the node's, the wallet's and the ZMQ ones, as this
+    // build registers them. A listed command without a row fails here, and so
+    // does a row whose command is gone or no longer listed.
+    std::set<std::string> listed;
+    for (const std::string& name : tableRPC.listedCommands()) listed.insert(name);
+#if ENABLE_ZMQ
+    {
+        // init.cpp registers these when the node starts; this fixture does not.
+        CRPCTable zmq;
+        RegisterZMQRPCCommands(zmq);
+        for (const std::string& name : zmq.listedCommands()) listed.insert(name);
+    }
+#endif
+    std::set<std::string> wallet_listed;
+#ifdef ENABLE_WALLET
+    for (const CRPCCommand& command : GetWalletRPCCommands()) {
+        if (command.listed()) wallet_listed.insert(command.name);
+    }
+    listed.insert(wallet_listed.begin(), wallet_listed.end());
+#endif
+
+    const std::vector<std::pair<std::string, uint8_t>> table{RPCCommandFlagTable()};
+    std::set<std::string> rows;
+    for (size_t i = 0; i < table.size(); ++i) {
+        // In name order without repeats, which the lookup's binary search needs.
+        if (i > 0) BOOST_CHECK_MESSAGE(table[i - 1].first < table[i].first, table[i].first);
+        rows.insert(table[i].first);
+    }
+    std::string missing, stale;
+    for (const std::string& name : listed) {
+        if (rows.count(name) == 0) missing += " " + name;
+    }
+    for (const std::string& name : rows) {
+        if (listed.count(name) == 0) stale += " " + name;
+    }
+    BOOST_CHECK_MESSAGE(missing.empty(), "listed without a row:" + missing);
+    BOOST_CHECK_MESSAGE(stale.empty(), "rows without a listed command:" + stale);
+
+    for (const auto& [name, flags] : table) {
+        BOOST_CHECK_MESSAGE(GetRPCCommandFlags(name) == flags, name);
+        // A parent is exactly a command with listed subcommands, and says nothing else.
+        const bool parent = std::any_of(listed.begin(), listed.end(), [&name = name](const std::string& other) { return other.rfind(name + " ", 0) == 0; });
+        BOOST_CHECK_MESSAGE(((flags & CMDFLAG_SUBCOMMANDS) != 0) == parent, name);
+        if (flags & CMDFLAG_SUBCOMMANDS) BOOST_CHECK_MESSAGE(flags == CMDFLAG_SUBCOMMANDS, name);
+        if (flags & CMDFLAG_UNLOCK) BOOST_CHECK_MESSAGE((flags & CMDFLAG_WALLET) != 0, name);
+        if (flags & CMDFLAG_BEFORE_POS) BOOST_CHECK_MESSAGE((flags & CMDFLAG_CHANGES) != 0, name);
+        if (flags & CMDFLAG_MASTERNODE_NO_WALLET) BOOST_CHECK_MESSAGE((flags & CMDFLAG_WALLET) != 0, name);
+    }
+    BOOST_CHECK(!GetRPCCommandFlags("nosuchcommand"));
+    BOOST_CHECK(!GetRPCCommandFlags("protx "));
+
+#ifdef ENABLE_WALLET
+    // The wallet's commands need a loaded wallet, except the five that manage
+    // wallets and work with none loaded.
+    std::set<std::string> without_wallet;
+    for (const std::string& name : wallet_listed) {
+        const std::optional<uint8_t> flags{GetRPCCommandFlags(name)};
+        if (flags && (*flags & CMDFLAG_WALLET) == 0) without_wallet.insert(name);
+    }
+    const std::set<std::string> wallet_management{"createwallet", "listwalletdir", "listwallets", "loadwallet", "restorewallet"};
+    BOOST_CHECK(without_wallet == wallet_management);
+#endif
+
+    // The rows with the rarer flags, by name, so that a change to them is deliberate.
+    std::set<std::string> before_pos, masternode_no_wallet;
+    for (const auto& [name, flags] : table) {
+        if (flags & CMDFLAG_BEFORE_POS) before_pos.insert(name);
+        if (flags & CMDFLAG_MASTERNODE_NO_WALLET) masternode_no_wallet.insert(name);
+    }
+    std::set<std::string> expected_before_pos;
+#if ENABLE_MINER
+    for (const char* name : {"generateblock", "generatetoaddress", "generatetodescriptor"}) expected_before_pos.insert(name);
+#endif
+    BOOST_CHECK(before_pos == expected_before_pos);
+#ifdef ENABLE_WALLET
+    BOOST_CHECK(masternode_no_wallet == std::set<std::string>{"getcoinjoininfo"});
+#else
+    BOOST_CHECK(masternode_no_wallet.empty());
+#endif
+
+    BOOST_CHECK(GetRPCCommandFlags("getblockcount") == uint8_t{0});
+    BOOST_CHECK(GetRPCCommandFlags("stop") == uint8_t{CMDFLAG_CHANGES});
+    BOOST_CHECK(GetRPCCommandFlags("protx") == uint8_t{CMDFLAG_SUBCOMMANDS});
+    // Changes that are easy to miss: "gobject list" and "gobject diff" set where
+    // the next "gobject diff" starts, "scantxoutset abort" stops another
+    // caller's scan, getblocktemplate keeps its template for later calls (and
+    // is not "before proof of stake": its proposal mode checks a given block).
+    BOOST_CHECK(GetRPCCommandFlags("gobject list") == uint8_t{CMDFLAG_CHANGES});
+    BOOST_CHECK(GetRPCCommandFlags("gobject diff") == uint8_t{CMDFLAG_CHANGES});
+    BOOST_CHECK(GetRPCCommandFlags("scantxoutset") == uint8_t{CMDFLAG_CHANGES});
+    BOOST_CHECK(GetRPCCommandFlags("getblocktemplate") == uint8_t{CMDFLAG_CHANGES});
+    // Housekeeping the node also does on its own is not a change: listbanned
+    // drops expired bans, savemempool writes mempool.dat.
+    BOOST_CHECK(GetRPCCommandFlags("listbanned") == uint8_t{0});
+    BOOST_CHECK(GetRPCCommandFlags("savemempool") == uint8_t{0});
+#ifdef ENABLE_WALLET
+    // A node that is not a masternode refuses without a loaded wallet; a masternode answers without one.
+    BOOST_CHECK(GetRPCCommandFlags("getcoinjoininfo") == uint8_t{CMDFLAG_WALLET | CMDFLAG_MASTERNODE_NO_WALLET});
+#else
+    BOOST_CHECK(GetRPCCommandFlags("getcoinjoininfo") == uint8_t{0});
+#endif
 }
 
 BOOST_AUTO_TEST_SUITE_END()

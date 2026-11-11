@@ -468,6 +468,8 @@ jobs:
           ./src/test/test_defcon \
             --run_test=crypto_tests,hash_tests,pos_kernel_tests,pos_coinbase_bound_tests,pos_reorg_maturity_tests,pos_coinstake_fee_tests,pos_dirty_index_tests \
             --catch_system_errors=no -l test_suite
+          # The command flag table against this build's command lists (no wallet).
+          ./src/test/test_defcon --run_test=rpc_tests/rpc_command_flags --catch_system_errors=no -l test_suite
           QT_QPA_PLATFORM=minimal XDG_CONFIG_HOME="$(mktemp -d)" ./src/qt/test/test_defcon-qt
           python3 "$source_dir/test/functional/rpc_bls.py" \
             --configfile="$nowallet_build/test/config.ini" --timeout-factor="$TEST_RUNNER_TIMEOUT_FACTOR"

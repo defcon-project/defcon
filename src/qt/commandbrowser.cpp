@@ -6,6 +6,7 @@
 
 #include <interfaces/node.h>
 #include <qt/guiutil.h>
+#include <rpc/commandflags.h>
 
 #include <univalue.h>
 
@@ -102,6 +103,10 @@ CommandBrowser::CommandBrowser(interfaces::Node& node, QWidget* parent)
     m_topic = new QLabel(m_details);
     m_topic->setObjectName("commandTopic");
     details->addWidget(m_topic);
+    m_flags = new QLabel(m_details);
+    m_flags->setObjectName("commandFlags");
+    m_flags->setWordWrap(true);
+    details->addWidget(m_flags);
     details->addSpacing(8);
     m_console_title = new QLabel(tr("In this console:"), m_details);
     details->addWidget(m_console_title);
@@ -167,6 +172,56 @@ QStringList CommandBrowser::featuredTopics()
     return {QStringLiteral("Staking"), QStringLiteral("Sentinel"), QStringLiteral("Masternodes")};
 }
 
+namespace {
+//! The labels of a command's flags, each with what it means, in the order the line shows them.
+std::vector<std::pair<QString, QString>> FlagTexts(uint8_t flags)
+{
+    if (flags & CMDFLAG_SUBCOMMANDS) {
+        return {{CommandBrowser::tr("Depends on the subcommand"),
+                 CommandBrowser::tr("What it does depends on the subcommand given: choose one in the list to see its own line.")}};
+    }
+    std::vector<std::pair<QString, QString>> texts;
+    if (flags & CMDFLAG_CHANGES) {
+        texts.emplace_back(CommandBrowser::tr("Can change the wallet, the node or the network"),
+                           CommandBrowser::tr("With some arguments it changes the wallet, the node's state or settings, or sends something to the network."));
+    } else {
+        texts.emplace_back(CommandBrowser::tr("Only reads"),
+                           CommandBrowser::tr("It changes neither the wallet nor the node and sends nothing to the network; it may write a file."));
+    }
+    if ((flags & CMDFLAG_WALLET) && (flags & CMDFLAG_MASTERNODE_NO_WALLET)) {
+        texts.emplace_back(CommandBrowser::tr("Needs a loaded wallet, except on a masternode"),
+                           CommandBrowser::tr("It works on a loaded wallet and refuses without one; a masternode answers it from its own state, without a wallet."));
+    } else if (flags & CMDFLAG_WALLET) {
+        texts.emplace_back(CommandBrowser::tr("Needs a loaded wallet"),
+                           CommandBrowser::tr("It works on a loaded wallet; without one it refuses or finds nothing to act on."));
+    }
+    if (flags & CMDFLAG_UNLOCK) {
+        texts.emplace_back(CommandBrowser::tr("May ask to unlock the wallet"),
+                           CommandBrowser::tr("On an encrypted wallet, some of its uses refuse until the wallet is unlocked."));
+    }
+    if (flags & CMDFLAG_BEFORE_POS) {
+        texts.emplace_back(CommandBrowser::tr("Only on a new network, before proof of stake begins"),
+                           CommandBrowser::tr("It makes proof-of-work blocks, which the chain accepts only up to its last proof-of-work block "
+                                              "(999 on mainnet, 5000 on regtest): on mainnet it fails."));
+    }
+    return texts;
+}
+} // namespace
+
+QString CommandBrowser::flagsLine(uint8_t flags)
+{
+    QStringList labels;
+    for (const auto& text : FlagTexts(flags)) labels << text.first;
+    return labels.join(QStringLiteral(" · "));
+}
+
+QString CommandBrowser::flagsToolTip(uint8_t flags)
+{
+    QStringList lines;
+    for (const auto& text : FlagTexts(flags)) lines << tr("%1: %2").arg(text.first, text.second);
+    return lines.join('\n');
+}
+
 void CommandBrowser::ensureLoaded()
 {
     if (!m_loaded) load();
@@ -198,8 +253,10 @@ void CommandBrowser::load()
             if (space != std::string::npos) params.push_back(name.substr(space + 1));
             const UniValue help = m_node.executeRpc("help", params, "");
             const auto it = topic_of.find(parent);
-            entries.push_back(parseHelp(QString::fromStdString(name), it == topic_of.end() ? QString() : it->second,
-                                        QString::fromStdString(help.get_str())));
+            Entry entry = parseHelp(QString::fromStdString(name), it == topic_of.end() ? QString() : it->second,
+                                    QString::fromStdString(help.get_str()));
+            entry.flags = m_node.getRpcCommandFlags(name);
+            entries.push_back(std::move(entry));
         }
     } catch (...) {
         // While the node starts, every call answers that RPC is warming up; the page asks again next time.
@@ -303,6 +360,9 @@ void CommandBrowser::showEntry(const Entry* entry)
     m_summary->setVisible(!entry->summary.isEmpty());
     m_topic->setText(tr("Topic: %1").arg(entry->topic));
     m_topic->setVisible(!entry->topic.isEmpty());
+    m_flags->setVisible(entry->flags.has_value());
+    m_flags->setText(entry->flags ? flagsLine(*entry->flags) : QString());
+    m_flags->setToolTip(entry->flags ? flagsToolTip(*entry->flags) : QString());
     for (const QString& example : entry->console) {
         auto* row = new QWidget(m_console_rows);
         auto* line = new QHBoxLayout(row);
