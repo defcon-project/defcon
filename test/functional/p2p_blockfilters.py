@@ -50,13 +50,24 @@ class CompactFiltersTest(BitcoinTestFramework):
             ["-blockfilterindex"],
         ]
 
+    def generate_with_clock(self, node, count, sync_fun):
+        """Mine count blocks, moving the node clocks along. Once the median of the last eleven blocks passes the
+        clock, the miner stamps each block one second past it, a second every six blocks, and DeFCoN refuses a block
+        more than three minutes ahead of the clock (MAX_FUTURE_BLOCK_TIME). sync_fun runs after each step, before
+        the clocks move: a block download between connected nodes still under way would look overdue."""
+        while count > 0:
+            step = min(count, 500)
+            self.generate(node, step, sync_fun=sync_fun)
+            self.bump_mocktime(step // 6 + 1)
+            count -= step
+
     def run_test(self):
         # Node 0 supports COMPACT_FILTERS, node 1 does not.
         peer_0 = self.nodes[0].add_p2p_connection(FiltersClient())
         peer_1 = self.nodes[1].add_p2p_connection(FiltersClient())
 
         # Nodes 0 & 1 share the same first 999 blocks in the chain.
-        self.generate(self.nodes[0], 999)
+        self.generate_with_clock(self.nodes[0], 999, lambda: self.sync_blocks(timeout=600))
         self.sync_blocks(timeout=600)
 
         # Stale blocks by disconnecting nodes 0 & 1, mining, then reconnecting
@@ -66,7 +77,7 @@ class CompactFiltersTest(BitcoinTestFramework):
         self.nodes[0].syncwithvalidationinterfacequeue()
         assert_equal(self.nodes[0].getblockcount(), 1000)
 
-        self.generate(self.nodes[1], 1001, sync_fun=self.no_op)
+        self.generate_with_clock(self.nodes[1], 1001, self.no_op)
         assert_equal(self.nodes[1].getblockcount(), 2000)
 
         # Check that nodes have signalled NODE_COMPACT_FILTERS correctly.

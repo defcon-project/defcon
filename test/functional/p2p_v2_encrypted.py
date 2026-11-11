@@ -36,6 +36,9 @@ class P2PEncrypted(BitcoinTestFramework):
         tip = int(last_block, 16)
         tipheight = node.getblockcount()
         last_block_time = node.getblock(last_block)['time']
+        # DeFCoN refuses a block more than three minutes ahead of the node's clock (MAX_FUTURE_BLOCK_TIME), so the
+        # clocks move along with these blocks, one second each.
+        self.bump_mocktime(number)
         for _ in range(number):
             # Create some blocks
             block = create_block(tip, create_coinbase(tipheight + 1), last_block_time + 1)
