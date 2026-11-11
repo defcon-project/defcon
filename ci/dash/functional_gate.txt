@@ -27,9 +27,11 @@
 # peer tests that came in once they stopped assuming Dash's coin amounts and
 # maturity on the test chains, feature_dsl_list_change.py (SF1-L), and the
 # three PSBT, mempool and peer tests that came in once the test framework took
-# DeFCoN's MAX_MONEY, and the three chain and mining tests that came in once
-# they counted DeFCoN's one unit of work per proof-of-work block, from their
-# local runs until their first hosted run.
+# DeFCoN's MAX_MONEY, the three chain and mining tests that came in once they
+# counted DeFCoN's one unit of work per proof-of-work block, and the three
+# block tests that came in once the test framework claimed DeFCoN's block
+# reward and never left a proof-of-work block at nonce 0, from their local
+# runs until their first hosted run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -82,6 +84,7 @@
 149  wallet_multiwallet.py                  # several wallets on one node: wallet directories, loading and unloading, each its own balance and calls
 127  feature_pos_mixingonly_unlock.py       # a wallet unlocked for mixing only stakes, and still refuses to send or export keys
 96   wallet_basic.py                        # the wallet's basic calls: balances, sends, locked outputs, fee rates, rescan and reindex
+88   feature_block.py                       # block validity over the peer protocol: invalid transactions, reorgs, coinbase reward and maturity, sigops, size, a long reorg
 87   feature_dsl_sign_wait.py               # wait for late Sentinel reports, with a signing deadline
 81   feature_dsl_commitment_v2.py           # the Sentinel commitment's second bitfield: who the pool judged at all (#231)
 64   wallet_backup.py                       # backupwallet, restorewallet, dumpwallet and importwallet give back the same balances
@@ -108,6 +111,7 @@
 24   rpc_rawtransaction.py                  # createrawtransaction, signing and sending, and the multisig spends
 24   wallet_balance.py                      # getbalance and getbalances with unconfirmed, untrusted and watch-only coins
 24   wallet_txn_doublespend.py              # the wallet's accounting when a double-spend of its funding transactions confirms instead
+24   feature_csv_activation.py              # BIP68, BIP112 and BIP113 (relative locktime, CHECKSEQUENCEVERIFY, median-time locktime) in blocks
 23   wallet_combineoutputs.py               # combineoutputs: previews, batches smallest first, exactly the reported inputs and no change; both wallets
 23   feature_llmq_q60_proto_floor.py        # the peer protocol floor from the formation lead, against the real predecessor version
 22   wallet_send.py                         # the send call: given inputs, change address and position, fee rates, locktime
@@ -134,6 +138,7 @@
 6    wallet_coinbase_category.py            # a coinbase is immature, then generate once it matures, then orphan once its block is invalidated
 6    mempool_reorg.py                       # coinbase spends leave the mempool when a reorg makes their coinbase immature again
 6    interface_rest.py                      # the REST interface: transactions, UTXOs with and without the mempool, blocks, headers, chain info
+6    p2p_invalid_block.py                   # invalid blocks: a mutated merkle tree, duplicate inputs, too much coinbase reward, a timestamp too far ahead
 5    wallet_orphanedreward.py               # a block reward the wallet spent is orphaned, and its other coins stay spendable
 4    feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
 4    mempool_spend_coinbase.py              # a coinbase spend enters the mempool only once the next block may include it

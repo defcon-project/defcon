@@ -8,6 +8,8 @@ import struct
 import time
 
 from test_framework.blocktools import (
+    BLOCK_SUBSIDY,
+    COINBASE_MATURITY,
     create_block,
     create_coinbase,
     create_tx_with_script,
@@ -139,6 +141,11 @@ class FullBlockTest(BitcoinTestFramework):
             blocks.append(self.next_block(f"maturitybuffer.{i}"))
             self.save_spendable_output()
         self.send_blocks(blocks)
+
+        # DeFCoN's coinbases mature after COINBASE_MATURITY blocks, not Bitcoin's 100: spend the last
+        # COINBASE_MATURITY of them first, so that each lies as deep below b1 as on Bitcoin (out[6] and out[7]
+        # one block short below), and the older ones after them.
+        self.spendable_outputs = self.spendable_outputs[-COINBASE_MATURITY:] + self.spendable_outputs[:-COINBASE_MATURITY]
 
         # collect spendable outputs now to avoid cluttering the code later on
         out = []
@@ -825,7 +832,7 @@ class FullBlockTest(BitcoinTestFramework):
         self.log.info("Reject a block with a transaction with outputs > inputs")
         self.move_tip(57)
         b59 = self.next_block(59)
-        tx = self.create_and_sign_transaction(out[17], 510 * COIN)
+        tx = self.create_and_sign_transaction(out[17], BLOCK_SUBSIDY * COIN + 1)
         b59 = self.update_block(59, [tx])
         self.send_blocks([b59], success=False, reject_reason='bad-txns-in-belowout', reconnect=True)
 

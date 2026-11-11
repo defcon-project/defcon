@@ -717,6 +717,9 @@ class CBlock(CBlockHeader):
         return True
 
     def solve(self):
+        # DeFCoN reads a header with nonce 0 as proof of stake, which counts more chain work (IsProofOfStake in
+        # src/primitives/block.h), so a proof-of-work block starts at nonce 1, as the node's miner does.
+        self.nNonce = max(self.nNonce, 1)
         self.rehash()
         target = uint256_from_compact(self.nBits)
         while self.sha256 > target:
