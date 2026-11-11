@@ -16,6 +16,18 @@
 bool CheckCoinStakeTimestamp(int nTimeBlock, const Consensus::Params& params);
 
 /**
+ * The seconds between valid coinstake timestamps, on average (CheckCoinStakeTimestamp): a time is valid when the
+ * mask's bits are clear in it, so one in 2^(set bits) is. 4 for this chain's mask 5 (two valid times in every 8
+ * seconds); mask + 1 is right only for a mask of contiguous low bits. 64 bits wide: all 32 bits set give 2^32.
+ */
+constexpr uint64_t PoSTimestampSpacing(uint32_t mask)
+{
+    uint64_t spacing{1};
+    for (; mask != 0; mask &= mask - 1) spacing <<= 1;
+    return spacing;
+}
+
+/**
  * Calculate PoS kernel weight for an interval of prior blocks
  */
 double GetPoSKernelPS(CBlockIndex *pindex, const Consensus::Params& params);

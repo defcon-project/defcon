@@ -32,9 +32,9 @@
 # tests that came in once the test framework claimed DeFCoN's block reward and
 # never left a proof-of-work block at nonce 0, p2p_coinjoin_inputs.py,
 # feature_import_corrupt_pos_block.py, the eight tests that came in once their
-# blocks kept within DeFCoN's three minutes of the node's clock, and
-# p2p_blocksonly_peer_messages.py, from their local runs until their first
-# hosted run.
+# blocks kept within DeFCoN's three minutes of the node's clock,
+# p2p_blocksonly_peer_messages.py and feature_pos_staking_refusal_log.py, from
+# their local runs until their first hosted run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -154,6 +154,7 @@
 6    feature_versionbits_warning.py         # blocks signalling an unknown version bit: the warning in getmininginfo, getnetworkinfo and the alert file
 6    p2p_unrequested_blocks.py              # unrequested blocks: kept only with more work or from a whitelisted peer, and at most 288 blocks ahead
 5    wallet_orphanedreward.py               # a block reward the wallet spent is orphaned, and its other coins stay spendable
+5    feature_pos_staking_refusal_log.py     # why staking does not go on for a wallet (here: locked) is in the log without -debug=pos
 4    feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
 4    mempool_spend_coinbase.py              # a coinbase spend enters the mempool only once the next block may include it
 4    rpc_packages.py                        # testmempoolaccept on packages: chains, several parents or children, conflicts, fees
