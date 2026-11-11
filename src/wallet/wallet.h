@@ -955,6 +955,10 @@ private:
     bool MigrateLegacyBLSKeys() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     bool LoadCryptedBLSKeys() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     void ClearBLSKeyCache() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! A BLS key of this wallet by its public key alone, as an encrypted wallet knows it before it is unlocked.
+    bool LoadBLSPubKeyToMemory(const CPubKey& pubkey, int64_t record_id) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! Forget the BLS secrets and keep the public keys: what locking does.
+    void ClearBLSSecrets() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
 public:
     /**

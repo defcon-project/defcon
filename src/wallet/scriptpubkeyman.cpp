@@ -70,8 +70,10 @@ bool HaveKeys(const std::vector<valtype>& pubkeys, const LegacyScriptPubKeyMan& 
 {
     for (const valtype& pubkey : pubkeys) {
         CKeyID keyID = CPubKey(pubkey).GetID();
-        // This wallet's BLS keys are kept apart from its other keys.
-        if (!keystore.HaveKey(keyID) && !keystore.HaveBLSKey(keyID)) return false;
+        // This wallet's BLS keys are kept apart from its other keys. Like HaveKey, which also
+        // answers for a key whose secret is encrypted, this asks whether the key is the wallet's,
+        // not whether its secret is in memory: a locked wallet's own script stays its own.
+        if (!keystore.HaveKey(keyID) && !keystore.HaveBLSPubKey(keyID)) return false;
     }
     return true;
 }
@@ -1888,11 +1890,30 @@ bool LegacyScriptPubKeyMan::AddBLSEntries(CPubKey& pubkey, CKey& key)
     return true;
 }
 
+bool LegacyScriptPubKeyMan::AddBLSPubKey(const CPubKey& pubkey)
+{
+    LOCK(cs_KeyStore);
+    const CKeyID key_id = pubkey.GetID();
+    for (const auto& entry : blsPubKeyVector) {
+        if (entry.first == key_id) {
+            return true;
+        }
+    }
+    blsPubKeyVector.emplace_back(key_id, pubkey);
+    return true;
+}
+
 void LegacyScriptPubKeyMan::ClearBLSEntries()
 {
     LOCK(cs_KeyStore);
     blsKeyVector.clear();
     blsPubKeyVector.clear();
+}
+
+void LegacyScriptPubKeyMan::ClearBLSSecrets()
+{
+    LOCK(cs_KeyStore);
+    blsKeyVector.clear();
 }
 
 bool DescriptorScriptPubKeyMan::GetNewDestination(CTxDestination& dest, bilingual_str& error)

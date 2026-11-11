@@ -277,6 +277,7 @@ BASE_SCRIPTS = [
     'rpc_addressindex_bls.py',
     'wallet_dumpwallet_bls.py',
     'wallet_importmulti_bls.py',
+    'wallet_bls_locked.py',
     'feature_timestampindex.py',
     'feature_spentindex.py',
     'rpc_decodescript.py',

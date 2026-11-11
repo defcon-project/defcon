@@ -6,7 +6,9 @@
 #include <pubkey.h>
 
 /** A BLS key held by one wallet (CWallet::blsKeyRecords). There is no
- *  process-wide BLS key store: each wallet signs with its own keys only. */
+ *  process-wide BLS key store: each wallet signs with its own keys only.
+ *  An encrypted wallet keeps the entry while it is locked, without the secret
+ *  (sk is not valid then): the public key is how it recognises its outputs. */
 struct BlsWalletEntry {
     unsigned int id;
     CKeyID keyID;
