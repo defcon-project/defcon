@@ -27,7 +27,9 @@
 # peer tests that came in once they stopped assuming Dash's coin amounts and
 # maturity on the test chains, feature_dsl_list_change.py (SF1-L), and the
 # three PSBT, mempool and peer tests that came in once the test framework took
-# DeFCoN's MAX_MONEY, from their local runs until their first hosted run.
+# DeFCoN's MAX_MONEY, and the three chain and mining tests that came in once
+# they counted DeFCoN's one unit of work per proof-of-work block, from their
+# local runs until their first hosted run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -95,6 +97,7 @@
 40   rpc_fundrawtransaction.py              # fundrawtransaction: coin selection, change position, fees and its options
 40   tool_wallet.py                         # defcon-wallet: create, info, dump and createfromdump, salvage; both wallets
 40   feature_dsl_list_change.py             # the Sentinel tick speaks from the epoch base's list: a masternode registered or revoked mid-epoch (SF1-L)
+35   rpc_blockchain.py                      # the chain calls: chain info, transaction statistics, the UTXO set summary, headers, block verbosity, the hash rate
 34   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
 33   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 32   rpc_verifyislock.py                    # the lock-verifying RPCs
@@ -117,6 +120,8 @@
 15   interface_bitcoin_cli.py               # defcon-cli: -getinfo with one and several wallets, -generate, -stdin, -rpcwait
 15   wallet_txn_clone.py                    # the wallet's accounting when a malleated clone of its transaction confirms instead
 15   rpc_createmultisig.py                  # createmultisig and addmultisigaddress, a spend from each kind of multisig, the balances after them
+14   mining_basic.py                        # getmininginfo, getblocktemplate proposals and submitblock, with valid and invalid blocks
+14   feature_minchainwork.py                # -minimumchainwork: below it a node relays no blocks and answers no getheaders, until the chain passes it
 13   feature_coinstatsindex.py              # the coin statistics index agrees with the UTXO set, by height, across restarts and reorgs
 11   feature_evodb_reconcile_below_dip3.py  # the evodb reconcile below DIP0003, where an empty evodb is current
 11   feature_evodb_repair_startup.py        # -evodbrepair finishes before the import, the network and the end of RPC warmup

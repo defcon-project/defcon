@@ -52,6 +52,10 @@ COINBASE_MATURITY = 25
 # create_coinbase below still defaults to 500, which is valid: a coinbase may claim less than the subsidy.
 BLOCK_SUBSIDY = 11000000
 
+# A proof-of-work block counts one unit of chain work on DeFCoN (GetBlockProof in src/chain.cpp; a proof-of-stake
+# block counts its target), not the two a regtest block counts on Bitcoin and Dash.
+POW_BLOCK_WORK = 1
+
 NORMAL_GBT_REQUEST_PARAMS = {"rules": []} # type: ignore[var-annotated]
 
 VERSIONBITS_LAST_OLD_BLOCK_VERSION = 4

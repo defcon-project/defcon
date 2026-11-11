@@ -17,12 +17,13 @@ only succeeds past a given node once its nMinimumChainWork has been exceeded.
 
 import time
 
+from test_framework.blocktools import POW_BLOCK_WORK
 from test_framework.p2p import P2PInterface, msg_getheaders
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
-# 2 hashes required per regtest block (with no difficulty adjustment)
-REGTEST_WORK_PER_BLOCK = 2
+# One unit of work per regtest proof-of-work block (Bitcoin and Dash count two)
+REGTEST_WORK_PER_BLOCK = POW_BLOCK_WORK
 
 class MinimumChainWorkTest(BitcoinTestFramework):
     def set_test_params(self):
@@ -55,7 +56,8 @@ class MinimumChainWorkTest(BitcoinTestFramework):
 
         starting_blockcount = self.nodes[2].getblockcount()
 
-        num_blocks_to_generate = int((self.node_min_work[1] - starting_chain_work) / REGTEST_WORK_PER_BLOCK)
+        # End one unit below node1's minchainwork: a chain at the minimum itself is no longer low-work
+        num_blocks_to_generate = int((self.node_min_work[1] - starting_chain_work - 1) / REGTEST_WORK_PER_BLOCK)
         self.log.info(f"Generating {num_blocks_to_generate} blocks on node0")
         hashes = self.generatetoaddress(self.nodes[0], num_blocks_to_generate,
                                         self.nodes[0].get_deterministic_priv_key().address, sync_fun=self.no_op)

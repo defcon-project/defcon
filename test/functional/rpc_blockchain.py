@@ -29,6 +29,7 @@ import subprocess
 from test_framework.address import ADDRESS_BCRT1_P2SH_OP_TRUE
 from test_framework.blocktools import (
     BLOCK_SUBSIDY,
+    POW_BLOCK_WORK,
     MAX_FUTURE_BLOCK_TIME,
     TIME_GENESIS_BLOCK,
     create_block,
@@ -366,8 +367,8 @@ class BlockchainTest(BitcoinTestFramework):
     def _test_getnetworkhashps(self):
         self.log.info("Test getnetworkhashps")
         hashes_per_second = self.nodes[0].getnetworkhashps()
-        # This should be 2 hashes every 2.6 minutes (156 seconds) or 1/78
-        assert abs(hashes_per_second * 78 - 1) < 0.0001
+        # This should be POW_BLOCK_WORK hashes every 2.6 minutes (156 seconds): 1/156 (Dash: 2/156 = 1/78)
+        assert abs(hashes_per_second * 156 / POW_BLOCK_WORK - 1) < 0.0001
 
     def _test_stopatheight(self):
         assert_equal(self.nodes[0].getblockcount(), HEIGHT)
