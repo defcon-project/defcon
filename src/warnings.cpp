@@ -16,6 +16,7 @@
 static Mutex g_warnings_mutex;
 static bilingual_str g_misc_warnings GUARDED_BY(g_warnings_mutex);
 static bool fLargeWorkInvalidChainFound GUARDED_BY(g_warnings_mutex) = false;
+static bool g_deep_fork GUARDED_BY(g_warnings_mutex) = false;
 
 void SetMiscWarning(const bilingual_str& warning)
 {
@@ -27,6 +28,14 @@ void SetfLargeWorkInvalidChainFound(bool flag)
 {
     LOCK(g_warnings_mutex);
     fLargeWorkInvalidChainFound = flag;
+}
+
+bool SetDeepForkWarning(bool flag)
+{
+    LOCK(g_warnings_mutex);
+    const bool changed{g_deep_fork != flag};
+    g_deep_fork = flag;
+    return changed;
 }
 
 bilingual_str GetWarnings(bool verbose)
@@ -45,6 +54,11 @@ bilingual_str GetWarnings(bool verbose)
     // Misc warnings like out of disk space and clock is wrong
     if (!g_misc_warnings.empty()) {
         warnings_concise = g_misc_warnings;
+        warnings_verbose.emplace_back(warnings_concise);
+    }
+
+    if (g_deep_fork) {
+        warnings_concise = _("Warning: Outbound peers offer a chain that branches off this node's chain too far below its tip to follow automatically. If this node was upgraded late or cut off from the network, add a trusted, up-to-date peer with addnode.");
         warnings_verbose.emplace_back(warnings_concise);
     }
 

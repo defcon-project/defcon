@@ -33,8 +33,8 @@
 # never left a proof-of-work block at nonce 0, p2p_coinjoin_inputs.py,
 # feature_import_corrupt_pos_block.py, the eight tests that came in once their
 # blocks kept within DeFCoN's three minutes of the node's clock,
-# p2p_blocksonly_peer_messages.py and feature_dsl_aged_out_before_list.py, from
-# their local runs until their first hosted run.
+# p2p_blocksonly_peer_messages.py, feature_dsl_aged_out_before_list.py and
+# every test added since, from their local runs until their first hosted run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -85,6 +85,7 @@
 213  feature_v231_no_payee.py               # from the v23.1 height a staked block with no payable masternode carries no payout at all (#354)
 210  feature_import_corrupt_pos_block.py    # a damaged copy of a staked block on -loadblock or -reindex (bad signature, damaged coinstake, signature past the size limit) leaves the header unmarked, and the good block comes in
 182  feature_pos_header_only.py             # headers with no block behind them hold neither masternode sync nor staking
+180  p2p_unbacked_deep_fork.py              # headers on a branch too deep to take: taken from a peer added by hand or with noban; an outbound peer offering such a chain raises a warning
 149  wallet_multiwallet.py                  # several wallets on one node: wallet directories, loading and unloading, each its own balance and calls
 127  feature_pos_mixingonly_unlock.py       # a wallet unlocked for mixing only stakes, and still refuses to send or export keys
 96   wallet_basic.py                        # the wallet's basic calls: balances, sends, locked outputs, fee rates, rescan and reindex

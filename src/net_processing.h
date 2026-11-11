@@ -43,6 +43,13 @@ static const bool DEFAULT_PEERBLOCKFILTERS = false;
 static const int DISCOURAGEMENT_THRESHOLD{100};
 /** Maximum number of outstanding CMPCTBLOCK requests for the same block. */
 static const unsigned int MAX_CMPCTBLOCKS_INFLIGHT_PER_BLOCK = 3;
+/** A header without its block is not taken if it branches off the active chain more than this many blocks below
+ *  the tip: a node on the real chain is not reorganised that deep (with ChainLocks it cannot be), and a branch
+ *  can then hold at most this many plus the height limit's worth of entries. Except from a peer the operator trusts
+ *  (added by hand, or with the noban permission): the way back for a node left on a branch the network abandoned
+ *  deeper than this (one upgraded late, or cut off), and such a peer can add a longer branch without blocks than
+ *  others can. Regtest takes another depth (-testunbackedforkdepth). */
+static constexpr int MAX_UNBACKED_FORK_DEPTH{100};
 
 struct CNodeStateStats {
     int m_misbehavior_score = 0;

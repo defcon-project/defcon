@@ -932,6 +932,7 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
             'feature_dsl_sign_wait.py', 'feature_dsl_commitment_v2.py',
             'feature_addressindex_coinstake.py', 'feature_addressindex.py', 'feature_addressindex_type_boundary.py',
             'p2p_instantsend.py', 'rpc_verifyislock.py', 'rpc_bls.py',
+            'p2p_unbacked_deep_fork.py',
             'feature_pos_mixingonly_unlock.py',
             'feature_dsl_service.py', 'feature_dsl_perf.py', 'feature_dsl_perf_burst.py',
             'feature_llmq_is_nonrotation.py', 'feature_llmq_is_nonrotated_verify.py',

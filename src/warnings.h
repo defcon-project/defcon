@@ -12,6 +12,9 @@ struct bilingual_str;
 
 void SetMiscWarning(const bilingual_str& warning);
 void SetfLargeWorkInvalidChainFound(bool flag);
+/** Outbound peers serve headers on a branch too deep to take without a trusted peer (net_processing.cpp,
+ *  MaybeWarnDeepFork). Returns whether the flag changed. */
+bool SetDeepForkWarning(bool flag);
 /** Format a string that describes several potential problems detected by the core.
  * @param[in] verbose bool
  * - if true, get all warnings separated by <hr />
