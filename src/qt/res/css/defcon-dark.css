@@ -463,17 +463,6 @@ QWidget#abyssQuickControls QToolButton:checked {
     background: #0d5da5;
     border-color: #168fea;
 }
-/* Pointed at, reached with Tab, or the padlock of a locked wallet: the button
-   opens to the left and says its name beside its icon (bitcoingui.cpp). */
-QWidget#abyssQuickControls QToolButton[expanded="true"] {
-    color: #cbd8e7;
-    max-width: 16777215px;
-    padding: 0 10px 0 8px;
-}
-QWidget#abyssQuickControls QToolButton[expanded="true"]:hover:enabled,
-QWidget#abyssQuickControls QToolButton[expanded="true"]:checked {
-    color: #ffffff;
-}
 
 /******************************************************
 Overview dashboard

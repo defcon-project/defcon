@@ -64,7 +64,6 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QProgressDialog>
-#include <QScopeGuard>
 #include <QScreen>
 #include <QSettings>
 #include <QShortcut>
@@ -984,59 +983,6 @@ private:
     QToolBar* const m_tb;
 };
 
-#ifdef ENABLE_WALLET
-/** Tells BitcoinGUI when an Abyss quick button is pointed at or reached with
- *  the keyboard. Kept as two properties on the button, so that leaving with
- *  the pointer does not close a button the keyboard is still on, and the other
- *  way round. Focus that comes from a click, a popup or the window turning
- *  active again is not the keyboard asking for a name. */
-class QuickButtonWatcher final : public QObject
-{
-public:
-    QuickButtonWatcher(QObject* parent, std::function<void()> changed) : QObject(parent), m_changed(std::move(changed)) {}
-    bool eventFilter(QObject* object, QEvent* event) override
-    {
-        const char* key{nullptr};
-        bool on{false};
-        switch (event->type()) {
-        case QEvent::Enter: key = "abyssPointed"; on = true; break;
-        case QEvent::Leave: key = "abyssPointed"; break;
-        case QEvent::FocusIn: {
-            const Qt::FocusReason reason = static_cast<QFocusEvent*>(event)->reason();
-            key = "abyssKeyboard";
-            on = reason == Qt::TabFocusReason || reason == Qt::BacktabFocusReason;
-            break;
-        }
-        case QEvent::FocusOut: key = "abyssKeyboard"; break;
-        default: return false;
-        }
-        if (object->property(key).toBool() != on) {
-            object->setProperty(key, on);
-            m_changed();
-        }
-        return false;
-    }
-
-private:
-    const std::function<void()> m_changed;
-};
-
-/** What an open quick button says: its accessible name, which is its action's
- *  text, without the ellipsis or full stop a menu entry or a sentence ends in. */
-QString QuickButtonLabel(QString name)
-{
-    name = name.trimmed();
-    if (name.endsWith(QChar(0x2026))) {
-        name.chop(1);
-    } else if (name.endsWith(QLatin1String("..."))) {
-        name.chop(3);
-    } else if (name.endsWith(QLatin1Char('.'))) {
-        name.chop(1);
-    }
-    return name.trimmed();
-}
-#endif // ENABLE_WALLET
-
 } // namespace
 
 void BitcoinGUI::createToolBars()
@@ -1222,14 +1168,9 @@ void BitcoinGUI::createToolBars()
         auto* quickLayout = new QHBoxLayout(abyssQuickControls);
         quickLayout->setContentsMargins(4, 2, 4, 2);
         quickLayout->setSpacing(4);
-        auto* quickWatcher = new QuickButtonWatcher(this, [this] { updateQuickButtonLabels(); });
-        // The padlock joins the row in Abyss only; outside the row it never
-        // opens (updateQuickButtonLabels).
-        if (walletLockButton) walletLockButton->installEventFilter(quickWatcher);
-        const auto addQuickAction = [this, quickLayout, quickWatcher](QAction* action, const char* name) {
+        const auto addQuickAction = [this, quickLayout](QAction* action, const char* name) {
             auto* button = new QToolButton(abyssQuickControls);
             button->setObjectName(name);
-            button->installEventFilter(quickWatcher);
             button->setAutoRaise(true);
             button->setFocusPolicy(Qt::StrongFocus);
             button->setToolButtonStyle(Qt::ToolButtonIconOnly);
@@ -1502,49 +1443,6 @@ void BitcoinGUI::updateQuickControls()
     set("abyssOptionsButton", "settings");
     set("abyssPrivacyButton", m_mask_values_action->isChecked() ? "eye-off" : "eye");
     set("abyssConsoleButton", "terminal-2");
-    updateQuickButtonLabels();
-#endif
-}
-
-void BitcoinGUI::updateQuickButtonLabels()
-{
-#ifdef ENABLE_WALLET
-    if (!abyssQuickControls) return;
-    const bool modern = GUIUtil::isModernTheme();
-    QList<QToolButton*> buttons = abyssQuickControls->findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly);
-    // In a classic theme the padlock is back in the wallet selector, and closes.
-    if (walletLockButton && !buttons.contains(walletLockButton)) buttons << walletLockButton;
-    bool resized{false};
-    for (QToolButton* button : buttons) {
-        if (!modern) {
-            // Nothing opens outside Abyss; the row starts closed when Abyss shows it again.
-            button->setProperty("abyssPointed", false);
-            button->setProperty("abyssKeyboard", false);
-        }
-        const bool in_row = modern && button->parentWidget() == abyssQuickControls;
-        const bool wanted = in_row && (button->property("abyssPointed").toBool() || button->property("abyssKeyboard").toBool() ||
-                                       button->property("abyssPinned").toBool());
-        const QString label = wanted ? QuickButtonLabel(button->accessibleName()) : QString();
-        const bool expanded = !label.isEmpty();
-        if (button->property("expanded").toBool() == expanded && button->text() == label) continue;
-        button->setText(label);
-        button->setToolButtonStyle(expanded ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonIconOnly);
-        // The stylesheet lifts the 40 px cap of an open button (defcon-dark.css).
-        button->setProperty("expanded", expanded);
-        button->style()->unpolish(button);
-        button->style()->polish(button);
-        resized = true;
-    }
-    // A wider button widens the row, which grows to the left: the button under
-    // the pointer keeps its right edge, so it stays under the pointer. In the
-    // menu bar's corner the row is placed again when the bar itself changes --
-    // resized, an action added, a corner widget shown or hidden -- but not when
-    // the row's size hint does (qmenubar.cpp), so without this it would keep
-    // its old width and squeeze its buttons.
-    if (resized && !abyssQuickControlsBar && appMenuBar && appMenuBar->cornerWidget(Qt::TopRightCorner) == abyssQuickControls) {
-        QResizeEvent relayout(appMenuBar->size(), appMenuBar->size());
-        QCoreApplication::sendEvent(appMenuBar, &relayout);
-    }
 #endif
 }
 
@@ -3049,11 +2947,6 @@ void BitcoinGUI::updateWalletLockButton(int status)
     if (walletLockButton == nullptr) return;
     const bool modern = GUIUtil::isModernTheme();
     if (modern && !m_wallet_actions_enabled) status = -1;
-    // In Abyss a locked wallet keeps the padlock open on its name, the way to
-    // unlock it, for as long as it stays locked. Relabelled on every way out,
-    // because the name it shows is set below.
-    walletLockButton->setProperty("abyssPinned", modern && status == WalletModel::Locked);
-    const auto relabel = qScopeGuard([this] { updateQuickButtonLabels(); });
 
     // The icon is the state, and the tooltip is the consequence of a click.
     // The colours are the ones the status bar icon already uses, so the two
