@@ -1845,6 +1845,46 @@ class msg_dstx:
         return "msg_dstx(dstx=%s)" % (repr(self.dstx))
 
 
+class CCoinJoinAccept:
+    __slots__ = ("nDenom", "txCollateral")
+
+    def __init__(self, nDenom=0, txCollateral=None):
+        self.nDenom = nDenom
+        self.txCollateral = txCollateral or CTransaction()
+
+    def deserialize(self, f):
+        self.nDenom = struct.unpack("<i", f.read(4))[0]
+        self.txCollateral = CTransaction()
+        self.txCollateral.deserialize(f)
+
+    def serialize(self):
+        r = b""
+        r += struct.pack("<i", self.nDenom)
+        r += self.txCollateral.serialize()
+        return r
+
+    def __repr__(self):
+        return "CCoinJoinAccept(nDenom=%d txCollateral=%s)" % (self.nDenom, repr(self.txCollateral))
+
+
+class msg_dsa:
+    __slots__ = ("dsa",)
+    msgtype = b"dsa"
+
+    def __init__(self, dsa=None):
+        self.dsa = dsa or CCoinJoinAccept()
+
+    def deserialize(self, f):
+        self.dsa = CCoinJoinAccept()
+        self.dsa.deserialize(f)
+
+    def serialize(self):
+        return self.dsa.serialize()
+
+    def __repr__(self):
+        return "msg_dsa(dsa=%s)" % (repr(self.dsa))
+
+
 class msg_block:
     __slots__ = ("block",)
     msgtype = b"block"
