@@ -393,7 +393,8 @@ bool WalletModel::setWalletLocked(bool locked, const SecureString &passPhrase, b
 
 bool WalletModel::changePassphrase(const SecureString &oldPass, const SecureString &newPass)
 {
-    m_wallet->lock(); // Make sure wallet is locked before attempting pass change
+    // The wallet locks for the change and restores its unlock mode itself (CWallet::ChangeWalletPassphrase): locked
+    // here first, a wallet unlocked for mixing and staking only, or fully, came out of the change locked.
     return m_wallet->changeWalletPassphrase(oldPass, newPass);
 }
 

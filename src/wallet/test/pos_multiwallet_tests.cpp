@@ -471,6 +471,39 @@ BOOST_AUTO_TEST_CASE(mixing_only_unlock_signs_no_psbt)
     BOOST_CHECK(fill_and_sign()); // fully unlocked: signed, so the checks above can tell
 }
 
+// A passphrase change keeps the unlock mode, through the interface the GUI calls (WalletModel::changePassphrase
+// forwards to it and no longer locks first): locked, unlocked for mixing and staking only, or fully unlocked, after a
+// change and after a wrong old passphrase alike. Before, the second came out fully unlocked from a change and locked
+// from a wrong old passphrase.
+BOOST_AUTO_TEST_CASE(passphrase_change_keeps_the_unlock_mode)
+{
+    const EncryptedWalletWithCoin setup = MakeEncryptedWalletWithCoin(m_node, "pos-passphrase-change-test");
+    CWallet& wallet = *setup.wallet;
+    const std::unique_ptr<interfaces::Wallet> iwallet = interfaces::MakeWallet(setup.wallet);
+    enum Mode { LOCKED, MIXING_ONLY, FULL };
+    const auto mode = [&] { return wallet.IsLocked(/*fForMixing=*/true) ? LOCKED : wallet.IsLocked() ? MIXING_ONLY : FULL; };
+    const SecureString first{PASSPHRASE};
+    const SecureString second{"another passphrase"};
+    SecureString current{first};
+    for (const Mode start : {LOCKED, MIXING_ONLY, FULL}) {
+        BOOST_REQUIRE(wallet.Lock());
+        if (start != LOCKED) BOOST_REQUIRE(wallet.Unlock(current, /*fForMixingOnly=*/start == MIXING_ONLY));
+        BOOST_REQUIRE_EQUAL(mode(), start);
+        // A wrong old passphrase: refused, the mode as it was.
+        BOOST_CHECK(!iwallet->changeWalletPassphrase(SecureString{"not the passphrase"}, second));
+        BOOST_CHECK_EQUAL(mode(), start);
+        // The change: made, the mode as it was.
+        const SecureString next{current == first ? second : first};
+        BOOST_CHECK(iwallet->changeWalletPassphrase(current, next));
+        BOOST_CHECK_EQUAL(mode(), start);
+        // The new passphrase unlocks, the old one no longer does.
+        BOOST_REQUIRE(wallet.Lock());
+        BOOST_CHECK(!wallet.Unlock(current, /*fForMixingOnly=*/true));
+        BOOST_CHECK(wallet.Unlock(next, /*fForMixingOnly=*/true));
+        current = next;
+    }
+}
+
 // The signing guard reads the mode under the wallet lock, which unlocking takes too. The wallet is
 // locked when the call starts and is unlocked for mixing only while the call waits for that lock:
 // the call signs nothing.
