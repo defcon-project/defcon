@@ -7,7 +7,10 @@
 The collateral of a DSACCEPT may spend an output of an InstantSend-locked
 transaction that is still in the mempool. The masternode looks the input up and
 rejects the request when the output does not exist or the collateral does not
-pay its fee, and keeps serving either way.
+pay its fee, and keeps serving either way. The amounts of a collateral come from
+the peer as well: an output amount out of range, outputs or inputs that add up
+past the money range (the same coin named many times) are refused before they
+are added up.
 """
 
 from test_framework.messages import (
@@ -17,6 +20,7 @@ from test_framework.messages import (
     CTransaction,
     CTxIn,
     CTxOut,
+    MAX_MONEY,
     msg_dsa,
 )
 from test_framework.p2p import P2PInterface
@@ -40,10 +44,10 @@ class P2PCoinJoinInputsTest(DashTestFramework):
         # -whitelist avoids the trickling logic on node0; the masternodes log their CoinJoin decisions.
         self.set_dash_test_params(6, 5, [["-whitelist=127.0.0.1"]] + [["-debug=coinjoin"]] * 5)
 
-    def collateral(self, txid, n, value):
+    def collateral(self, txid, n, *values):
         tx = CTransaction()
         tx.vin = [CTxIn(COutPoint(int(txid, 16), n))]
-        tx.vout = [CTxOut(nValue=value, scriptPubKey=P2PKH)]
+        tx.vout = [CTxOut(nValue=value, scriptPubKey=P2PKH) for value in values]
         tx.nLockTime = 0
         return tx
 
@@ -78,6 +82,31 @@ class P2PCoinJoinInputsTest(DashTestFramework):
         self.log.info("Collateral spending a real output of the locked transaction but paying out more than it has")
         with mn.assert_debug_log(["did not include enough fees", "collateral not valid"]):
             peer.send_and_ping(msg_dsa(CCoinJoinAccept(DENOM, self.collateral(txid, payment, 2 * COIN))))
+
+        self.log.info("Collateral whose output amounts add up past the largest 64-bit amount")
+        with mn.assert_debug_log(["output amount out of range", "collateral not valid"]):
+            peer.send_and_ping(msg_dsa(CCoinJoinAccept(DENOM, self.collateral(txid, payment, 2**63 - 1, 1))))
+
+        self.log.info("Collateral whose output amounts are each in range but add up past the money range")
+        with mn.assert_debug_log(["output amount out of range", "collateral not valid"]):
+            peer.send_and_ping(msg_dsa(CCoinJoinAccept(DENOM, self.collateral(txid, payment, MAX_MONEY, 1))))
+
+        self.log.info("Collateral paying out a negative amount")
+        with mn.assert_debug_log(["output amount out of range", "collateral not valid"]):
+            peer.send_and_ping(msg_dsa(CCoinJoinAccept(DENOM, self.collateral(txid, payment, -1))))
+
+        self.log.info("Collateral naming the same confirmed coin until its inputs add up past the largest 64-bit amount")
+        coin = max(node.listunspent(), key=lambda utxo: utxo["amount"])
+        value = int(coin["amount"] * COIN)
+        repeats = (2**63 - 1) // value + 1
+        assert repeats <= 20000, "the largest coin, %s, is too small for a collateral of a sane size" % coin["amount"]
+        assert repeats * value > MAX_MONEY
+        tx = CTransaction()
+        tx.vin = [CTxIn(COutPoint(int(coin["txid"], 16), coin["vout"]))] * repeats
+        tx.vout = [CTxOut(nValue=COIN // 1000, scriptPubKey=P2PKH)]
+        tx.nLockTime = 0
+        with mn.assert_debug_log(["input amount out of range", "collateral not valid"]):
+            peer.send_and_ping(msg_dsa(CCoinJoinAccept(DENOM, tx)))
 
         self.log.info("The masternode keeps serving")
         assert_equal(mn.getbestblockhash(), node.getbestblockhash())

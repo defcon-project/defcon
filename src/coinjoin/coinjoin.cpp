@@ -7,6 +7,7 @@
 #include <bls/bls.h>
 #include <chain.h>
 #include <chainparams.h>
+#include <consensus/amount.h>
 #include <consensus/validation.h>
 #include <governance/common.h>
 #include <llmq/chainlocks.h>
@@ -327,6 +328,11 @@ bool CoinJoin::IsCollateralValid(ChainstateManager& chainman, const llmq::CInsta
     CAmount nValueOut = 0;
 
     for (const auto& txout : txCollateral.vout) {
+        // The amounts come from the peer: check each one and the running sum before adding, so it cannot overflow.
+        if (!MoneyRange(txout.nValue) || !MoneyRange(nValueOut + txout.nValue)) {
+            LogPrint(BCLog::COINJOIN, "CoinJoin::IsCollateralValid -- output amount out of range, txCollateral=%s", txCollateral.ToString()); /* Continued */
+            return false;
+        }
         nValueOut += txout.nValue;
 
         if (!txout.scriptPubKey.IsPayToPublicKeyHash() && !txout.scriptPubKey.IsUnspendable()) {
@@ -343,6 +349,11 @@ bool CoinJoin::IsCollateralValid(ChainstateManager& chainman, const llmq::CInsta
         if (!viewMemPool.GetCoin(txin.prevout, coin) || coin.IsSpent() ||
             (coin.nHeight == MEMPOOL_HEIGHT && !isman.IsLocked(txin.prevout.hash))) {
             LogPrint(BCLog::COINJOIN, "CoinJoin::IsCollateralValid -- missing, spent or non-locked mempool input! txin=%s\n", txin.ToString());
+            return false;
+        }
+        // The peer may name the same coin many times; the duplicate is refused later, so bound the sum here.
+        if (!MoneyRange(coin.out.nValue) || !MoneyRange(nValueIn + coin.out.nValue)) {
+            LogPrint(BCLog::COINJOIN, "CoinJoin::IsCollateralValid -- input amount out of range! txin=%s\n", txin.ToString());
             return false;
         }
         nValueIn += coin.out.nValue;
