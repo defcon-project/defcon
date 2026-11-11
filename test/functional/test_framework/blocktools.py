@@ -49,11 +49,12 @@ COINBASE_MATURITY = 25
 
 # A regtest proof-of-work block pays DeFCoN's 11,000,000 coins (GetBlockSubsidyHelper in src/validation.cpp, flat
 # up to lastPowBlock, 5000 on regtest), not Dash's 500; with no masternode to pay, the miner gets all of it.
-# create_coinbase below still defaults to 500, which is valid: a coinbase may claim less than the subsidy.
+# create_coinbase below claims it by default, so a block that claims more is refused (bad-cb-amount).
 BLOCK_SUBSIDY = 11000000
 
 # A proof-of-work block counts one unit of chain work on DeFCoN (GetBlockProof in src/chain.cpp; a proof-of-stake
-# block counts its target), not the two a regtest block counts on Bitcoin and Dash.
+# block counts its target), not the two a regtest block counts on Bitcoin and Dash. A header with nonce 0 counts
+# as proof of stake, so CBlock.solve() never leaves a block there.
 POW_BLOCK_WORK = 1
 
 NORMAL_GBT_REQUEST_PARAMS = {"rules": []} # type: ignore[var-annotated]
@@ -193,18 +194,17 @@ def script_BIP34_coinbase_height(height):
     return CScript([CScriptNum(height)])
 
 
-def create_coinbase(height, pubkey=None, dip4_activated=False, v20_activated=False, nValue=500):
+def create_coinbase(height, pubkey=None, dip4_activated=False, v20_activated=False, nValue=None):
     """Create a coinbase transaction, assuming no miner fees.
 
+    Unless nValue is given, it claims the whole regtest proof-of-work subsidy, BLOCK_SUBSIDY: DeFCoN's is flat up to
+    lastPowBlock, without the halving every 150 blocks this used to apply to Dash's 500.
     If pubkey is passed in, the coinbase output will be a P2PK output;
     otherwise an anyone-can-spend output."""
     coinbase = CTransaction()
     coinbase.vin.append(CTxIn(COutPoint(0, 0xffffffff), script_BIP34_coinbase_height(height), SEQUENCE_FINAL))
     coinbaseoutput = CTxOut()
-    coinbaseoutput.nValue = nValue * COIN
-    if nValue == 500:
-        halvings = int(height / 150)  # regtest
-        coinbaseoutput.nValue >>= halvings
+    coinbaseoutput.nValue = (BLOCK_SUBSIDY if nValue is None else nValue) * COIN
     if (pubkey is not None):
         coinbaseoutput.scriptPubKey = key_to_p2pk_script(pubkey)
     else:

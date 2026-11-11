@@ -15,7 +15,7 @@ becomes valid.
 import copy
 import time
 
-from test_framework.blocktools import MAX_FUTURE_BLOCK_TIME, create_block, create_coinbase, create_tx_with_script
+from test_framework.blocktools import BLOCK_SUBSIDY, MAX_FUTURE_BLOCK_TIME, create_block, create_coinbase, create_tx_with_script
 from test_framework.messages import COIN
 from test_framework.p2p import P2PDataStore
 from test_framework.test_framework import BitcoinTestFramework
@@ -97,7 +97,7 @@ class InvalidBlockRequestTest(BitcoinTestFramework):
 
         block3 = create_block(tip, create_coinbase(height), block_time)
         block_time += 1
-        block3.vtx[0].vout[0].nValue = 1000 * COIN  # Too high!
+        block3.vtx[0].vout[0].nValue = BLOCK_SUBSIDY * COIN + 1  # Too high!
         block3.vtx[0].sha256 = None
         block3.vtx[0].calc_sha256()
         block3.hashMerkleRoot = block3.calc_merkle_root()
