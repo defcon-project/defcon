@@ -17,12 +17,15 @@
 #include <hash.h>
 #include <index/blockfilterindex.h>
 #include <validation.h>
+#include <warnings.h>
 #include <merkleblock.h>
 #include <netmessagemaker.h>
 #include <netbase.h>
 #include <net_types.h>
 #include <node/blockstorage.h>
+#include <node/interface_ui.h>
 #include <node/txreconciliation.h>
+#include <node/unbacked_headers.h>
 #include <policy/policy.h>
 #include <policy/settings.h>
 #include <primitives/block.h>
@@ -172,10 +175,13 @@ static const int MAX_UNCONNECTING_HEADERS = 10;
  *  of it. */
 static constexpr int UNBACKED_HEADER_AHEAD{24};
 static constexpr int UNBACKED_HEADER_AHEAD_PER_SPACING{4};
-/** A header without its block is not taken if it branches off the active chain more than this many blocks below
- *  the tip: a node on the real chain is not reorganised that deep (with ChainLocks it cannot be), and a branch
- *  can then hold at most this many plus the height limit's worth of entries. */
-static constexpr int MAX_UNBACKED_FORK_DEPTH{100};
+// MAX_UNBACKED_FORK_DEPTH (net_processing.h): how far below the tip a branch of headers without their blocks may
+// leave the active chain (m_unbacked_fork_depth).
+/** Headers an outbound peer serves on a branch too deep to take, offering a chain worth following (MaybeWarnDeepFork),
+ *  are logged at most once per DEEP_FORK_LOG_INTERVAL, and the node's warning about them clears
+ *  DEEP_FORK_WARNING_EXPIRY after the last such headers. */
+static constexpr auto DEEP_FORK_LOG_INTERVAL{1h};
+static constexpr auto DEEP_FORK_WARNING_EXPIRY{24h};
 /** Of the new branches a peer opened within UNBACKED_FORK_WINDOW -- a header without its block, or a block it was
  *  not asked for, on a block that already has a child, at a proof-of-stake height -- at most this many may be on a
  *  block never connected; past it the peer's further new branches are not taken until the window has moved on.
@@ -932,10 +938,10 @@ private:
 
     void ProcessOrphanTx(std::set<uint256>& orphan_work_set) EXCLUSIVE_LOCKS_REQUIRED(cs_main, g_cs_orphans)
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
-    /** Process a single headers message from a peer. */
+    /** Process a single headers message from a peer (`compressed`: a headers2 message). */
     void ProcessHeadersMessage(CNode& pfrom, Peer& peer,
                                const std::vector<CBlockHeader>& headers,
-                               bool via_compact_block)
+                               bool via_compact_block, bool compressed)
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, g_msgproc_mutex);
     /** Various helpers for headers processing, invoked by ProcessHeadersMessage() */
     /** Deal with state tracking and headers sync for peers that send the
@@ -958,6 +964,15 @@ private:
     /** Notes that the limits on headers without blocks (or validation, for a block not asked for) dropped something
      *  from this peer now (see CNodeState::m_unbacked_dropped_at) */
     void NoteUnbackedDrop(NodeId nodeid) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /** A peer the depth limit on headers without blocks does not apply to (MAX_UNBACKED_FORK_DEPTH): one added by
+     *  hand, or with the noban permission */
+    static bool TrustedWithDeepFork(const CNode& pfrom) { return pfrom.IsManualConn() || pfrom.HasPermission(NetPermissionFlags::NoBan); }
+    /** The depth limit dropped headers from this peer: `branch`, the new ones, on `parent`, `count` of the message's
+     *  own `limit`. From an outbound peer, when they offer more work than the tip or fill the message
+     *  (node::DeepForkWarrants): a log line without -debug (at most once per DEEP_FORK_LOG_INTERVAL) and the node's
+     *  warning on (cleared in CheckForStaleTipAndEvictPeers) */
+    void MaybeWarnDeepFork(const CNode& pfrom, const CBlockIndex& parent, Span<const CBlockHeader> branch,
+                           size_t count, size_t limit) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     /** Request further headers from this peer with a given locator.
      * We don't issue a getheaders message if we have a recent one outstanding.
      * This returns true if a getheaders is actually sent, and false otherwise.
@@ -1124,6 +1139,14 @@ private:
 
     /** Whether this node is running in -blocksonly mode */
     const bool m_ignore_incoming_txs;
+
+    /** The depth limit on headers without their blocks (MAX_UNBACKED_FORK_DEPTH; regtest: -testunbackedforkdepth) */
+    const int m_unbacked_fork_depth;
+
+    /** While the node's deep-fork warning is on: when an outbound peer last served headers that warrant it
+     *  (MaybeWarnDeepFork); and when such headers were last logged */
+    std::optional<std::chrono::seconds> m_deep_fork_seen_at GUARDED_BY(cs_main);
+    std::optional<std::chrono::seconds> m_deep_fork_logged_at GUARDED_BY(cs_main);
 
     bool RejectIncomingTxs(const CNode& peer) const;
 
@@ -2458,7 +2481,8 @@ PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& conn
       m_mn_activeman(mn_activeman),
       m_dslman(dslman),
       m_faultinjector(faultinjector),
-      m_ignore_incoming_txs(ignore_incoming_txs)
+      m_ignore_incoming_txs(ignore_incoming_txs),
+      m_unbacked_fork_depth{static_cast<int>(gArgs.GetArg("-testunbackedforkdepth", MAX_UNBACKED_FORK_DEPTH))}
 {
     m_dsl_chain_height.store(WITH_LOCK(cs_main, return m_chainman.ActiveChain().Height()), std::memory_order_relaxed);
     // The seen table holds nothing at capacity 0, and RefreshDSLBudgetEpoch sizes it only at the first Sentinel
@@ -3531,7 +3555,7 @@ void PeerManagerImpl::ClassifyUnbackedHeader(const CBlockIndex& parent, bool& to
     if (parent.nHeight + 1 <= m_chainparams.GetConsensus().lastPowBlock) return;
     const CChain& active{m_chainman.ActiveChain()};
     const CBlockIndex* fork{active.FindFork(&parent)};
-    too_deep = fork != nullptr && active.Height() - fork->nHeight > MAX_UNBACKED_FORK_DEPTH;
+    too_deep = fork != nullptr && active.Height() - fork->nHeight > m_unbacked_fork_depth;
     opens_branch = m_chainman.m_blockman.m_prev_block_index.count(parent.GetBlockHash()) != 0;
 }
 
@@ -3567,6 +3591,27 @@ void PeerManagerImpl::NoteUnbackedDrop(NodeId nodeid)
 {
     AssertLockHeld(cs_main);
     if (CNodeState* state{State(nodeid)}) state->m_unbacked_dropped_at = GetTime<std::chrono::seconds>();
+}
+
+void PeerManagerImpl::MaybeWarnDeepFork(const CNode& pfrom, const CBlockIndex& parent, Span<const CBlockHeader> branch,
+                                        size_t count, size_t limit)
+{
+    AssertLockHeld(cs_main);
+    // Anyone can open an inbound connection: only the peers this node chose speak for the network here.
+    if (!pfrom.IsOutboundOrBlockRelayConn()) return;
+    arith_uint256 work{parent.nChainWork};
+    for (const CBlockHeader& header : branch) work += GetBlockProof(CBlockIndex{header});
+    const CChain& active{m_chainman.ActiveChain()};
+    if (!node::DeepForkWarrants(work > active.Tip()->nChainWork, count, limit)) return;
+    const auto now{GetTime<std::chrono::seconds>()};
+    m_deep_fork_seen_at = now;
+    if (!m_deep_fork_logged_at || now - *m_deep_fork_logged_at >= DEEP_FORK_LOG_INTERVAL) {
+        m_deep_fork_logged_at = now;
+        const CBlockIndex* fork{active.FindFork(&parent)};
+        LogPrintf("Warning: outbound peer=%d serves headers on a branch off this node's chain at height %d, more than %d blocks below its tip at %d, which it does not take. If this node is on a chain the network has left (it was upgraded late, or cut off), add a trusted, up-to-date peer with addnode\n",
+                  pfrom.GetId(), fork != nullptr ? fork->nHeight : -1, m_unbacked_fork_depth, active.Height());
+    }
+    if (SetDeepForkWarning(true)) uiInterface.NotifyAlertChanged();
 }
 
 bool PeerManagerImpl::MaybeSendGetHeaders(CNode& pfrom, const std::string& msg_type, const CBlockLocator& locator, Peer& peer)
@@ -3714,7 +3759,7 @@ void PeerManagerImpl::UpdatePeerStateForReceivedHeaders(CNode& pfrom,
 
 void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
                                             const std::vector<CBlockHeader>& headers,
-                                            bool via_compact_block)
+                                            bool via_compact_block, bool compressed)
 {
     const CNetMsgMaker msgMaker(pfrom.GetCommonVersion());
     size_t nCount = headers.size();
@@ -3749,7 +3794,8 @@ void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
 
     // Headers without their blocks (see UNBACKED_HEADER_AHEAD): taken only so far above the active tip, the rest
     // asked for again once the limit has moved (m_headers_cut_at); not taken at all if they branch off the active
-    // chain too deep (MAX_UNBACKED_FORK_DEPTH) or open a new branch past the peer's count (MAX_UNBACKED_FORKS_PER_PEER);
+    // chain too deep (MAX_UNBACKED_FORK_DEPTH, except from a peer added by hand or with noban) or open a new branch
+    // past the peer's count (MAX_UNBACKED_FORKS_PER_PEER);
     // and a header opening a new branch counts against the peer, whatever becomes of the rest of the message.
     std::vector<CBlockHeader> taken{headers};
     uint256 opened; // the header new to the index that opens a new branch, if any
@@ -3790,9 +3836,10 @@ void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
             bool too_deep, opens_branch;
             ClassifyUnbackedHeader(*parent, too_deep, opens_branch);
             bool refused{false}; // the new headers are not taken: nothing to ask on for
-            if (too_deep) {
+            if (too_deep && !TrustedWithDeepFork(pfrom)) {
                 LogPrint(BCLog::NET, "peer=%d: headers without blocks branching off at height %d, more than %d below the tip, dropped\n",
-                         pfrom.GetId(), parent->nHeight, MAX_UNBACKED_FORK_DEPTH);
+                         pfrom.GetId(), parent->nHeight, m_unbacked_fork_depth);
+                MaybeWarnDeepFork(pfrom, *parent, Span<const CBlockHeader>{headers}.subspan(first_new), nCount, GetHeadersLimit(pfrom, compressed));
                 refused = true;
             } else if (opens_branch && !UnbackedForkRoom(pfrom.GetId())) {
                 LogPrint(BCLog::NET, "peer=%d: headers without blocks opening a new branch at height %d, past %u such branches within %d s, dropped\n",
@@ -5468,14 +5515,17 @@ void PeerManagerImpl::ProcessMessage(
             // Until the block is rebuilt this is a header without its block: the same limits as for headers.
             bool too_deep;
             ClassifyUnbackedHeader(*prev, too_deep, opens_branch);
-            // As for headers: no height limit on a parent below the minimum chain work.
+            // As for headers: the depth limit not for a peer added by hand or with noban, and no height limit on a
+            // parent below the minimum chain work.
+            const bool deep{too_deep && !TrustedWithDeepFork(pfrom)};
             const bool above{prev->nHeight + 1 > MaxUnbackedHeaderHeight() && prev->nChainWork >= nMinimumChainWork};
-            const bool past_count{!too_deep && opens_branch && !UnbackedForkRoom(pfrom.GetId())};
-            if (above || too_deep || past_count) {
+            const bool past_count{!deep && opens_branch && !UnbackedForkRoom(pfrom.GetId())};
+            if (above || deep || past_count) {
                 LogPrint(BCLog::NET, "peer=%d: cmpctblock %s at height %d is above the height taken without blocks, branches off too deep, or opens a new branch past the peer's count, dropped\n",
                          pfrom.GetId(), blockhash.ToString(), prev->nHeight + 1);
+                if (deep) MaybeWarnDeepFork(pfrom, *prev, Span<const CBlockHeader>{&cmpctblock.header, 1}, 1, GetHeadersLimit(pfrom, /*compressed=*/false));
                 NoteUnbackedDrop(pfrom.GetId());
-                if (!too_deep && !past_count) {
+                if (!deep && !past_count) {
                     // As for a cut headers reply: asked on from the block it builds on once the limit has moved.
                     if (CNodeState* nodestate{State(pfrom.GetId())}) nodestate->m_headers_cut_at = prev;
                     UpdateBlockAvailability(pfrom.GetId(), prev->GetBlockHash());
@@ -5666,7 +5716,7 @@ void PeerManagerImpl::ProcessMessage(
             // the peer if the header turns out to be for an invalid block.
             // Note that if a peer tries to build on an invalid chain, that
             // will be detected and the peer will be disconnected/discouraged.
-            return ProcessHeadersMessage(pfrom, *peer, {cmpctblock.header}, /*via_compact_block=*/true);
+            return ProcessHeadersMessage(pfrom, *peer, {cmpctblock.header}, /*via_compact_block=*/true, /*compressed=*/false);
         }
 
         if (fBlockReconstructed) {
@@ -5748,7 +5798,7 @@ void PeerManagerImpl::ProcessMessage(
             }
         }
 
-        return ProcessHeadersMessage(pfrom, *peer, headers, /*via_compact_block=*/false);
+        return ProcessHeadersMessage(pfrom, *peer, headers, /*via_compact_block=*/false, /*compressed=*/msg_type == NetMsgType::HEADERS2);
     }
 
     if (msg_type == NetMsgType::BLOCK)
@@ -7901,6 +7951,12 @@ void PeerManagerImpl::CheckForStaleTipAndEvictPeers()
     auto now{GetTime<std::chrono::seconds>()};
 
     EvictExtraOutboundPeers(now);
+
+    // The deep-fork warning clears a day after an outbound peer last served headers that warrant it.
+    if (m_deep_fork_seen_at && now - *m_deep_fork_seen_at >= DEEP_FORK_WARNING_EXPIRY) {
+        m_deep_fork_seen_at.reset();
+        if (SetDeepForkWarning(false)) uiInterface.NotifyAlertChanged();
+    }
 
     if (now > m_stale_tip_check_time) {
         // Check whether our tip is stale, and if so, allow using an extra

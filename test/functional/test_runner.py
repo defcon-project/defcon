@@ -155,6 +155,7 @@ BASE_SCRIPTS = [
     'feature_dsl_message_budget.py',
     'feature_pos_staking.py --descriptors',
     'feature_pos_staking.py --legacy-wallet',
+    'p2p_unbacked_deep_fork.py',
     'feature_pos_header_only.py --descriptors',
     'feature_pos_header_only.py --legacy-wallet',
     'p2p_unbacked_pos_headers.py',

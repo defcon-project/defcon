@@ -292,6 +292,7 @@ BITCOIN_CORE_H = \
   node/storage_error.h \
   node/transaction.h \
   node/txreconciliation.h \
+  node/unbacked_headers.h \
   node/interface_ui.h \
   node/utxo_snapshot.h \
   noui.h \

@@ -522,6 +522,7 @@ void SetupServerArgs(ArgsManager& argsman)
     argsman.AddArg("-assumevalid=<hex>", strprintf("If this block is in the chain assume that it and its ancestors are valid and potentially skip their script verification (0 to verify all, default: %s, testnet: %s)", defaultChainParams->GetConsensus().defaultAssumeValid.GetHex(), testnetChainParams->GetConsensus().defaultAssumeValid.GetHex()), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-blocksdir=<dir>", "Specify directory to hold blocks subdirectory for *.dat files (default: <datadir>)", ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     argsman.AddArg("-fastprune", "Use smaller block files and lower minimum prune height for testing purposes", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-testunbackedforkdepth=<n>", strprintf("Take headers without their blocks only on a branch off the active chain at most <n> blocks below the tip (regtest only; startup is refused elsewhere; 1 to %d; default: %d)", MAX_UNBACKED_FORK_DEPTH, MAX_UNBACKED_FORK_DEPTH), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-dslsignwait", "Wait for complete Sentinel verdicts before signing until the last epoch block (regtest only; default: 1)", ArgsManager::ALLOW_BOOL | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-dslperf", "Log bounded per-epoch Sentinel cost summaries (default: 0)", ArgsManager::ALLOW_BOOL | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-dsltestprocessdelay=<ms>", strprintf("Make this a slow node for tests: wait <ms> milliseconds after reading each Sentinel report or liveness announcement, after checking each held announcement and after signing each own report (devnet and regtest only; startup is refused elsewhere; at most %d; default: 0)", dsl::MAX_TEST_PROCESS_DELAY_MS), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
@@ -1331,6 +1332,15 @@ bool AppInitParameterInteraction(const ArgsManager& args)
     }
     if (args.IsArgSet("-dslsignwait") && chainparams.NetworkIDString() != CBaseChainParams::REGTEST) {
         return InitError(Untranslated("-dslsignwait is only supported on regtest"));
+    }
+    if (args.IsArgSet("-testunbackedforkdepth")) {
+        if (chainparams.NetworkIDString() != CBaseChainParams::REGTEST) {
+            return InitError(Untranslated("-testunbackedforkdepth is only supported on regtest"));
+        }
+        const int64_t depth{args.GetArg("-testunbackedforkdepth", MAX_UNBACKED_FORK_DEPTH)};
+        if (depth < 1 || depth > MAX_UNBACKED_FORK_DEPTH) {
+            return InitError(Untranslated(strprintf("-testunbackedforkdepth must be from 1 to %d", MAX_UNBACKED_FORK_DEPTH)));
+        }
     }
     // A shorter staking pace is a test facility in the same way.
     if (const auto refusal = pos::StakingPaceRefusal(chainparams, args)) {
