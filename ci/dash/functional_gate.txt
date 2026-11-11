@@ -113,6 +113,7 @@
 31   interface_zmq.py                       # the ZMQ notifications: block and transaction hashes and raw data, the sequence topic over the mempool and reorgs
 30   feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
 30   p2p_invalid_tx.py                      # invalid transactions from a peer: each reject reason and its disconnect, orphans and their limits
+30   feature_masternode_connect_race.py     # a restarted masternode another node reached first: connect_nodes closes that connection, and its own one stays
 27   feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
 27   feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
 26   p2p_sendheaders.py                     # headers announcements: sendheaders, the inv fallback, reorgs, and unconnecting headers until the peer is dropped

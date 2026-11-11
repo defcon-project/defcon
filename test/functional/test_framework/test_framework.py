@@ -1184,8 +1184,43 @@ class DashTestFramework(BitcoinTestFramework):
             if node.running:
                 node.setmnthreadactive(active)
 
+    def drop_mn_thread_connections(self, a, b):
+        """Close what the masternode threads connected between nodes a and b, either way.
+
+        Pausing the threads stops new connections, not one a thread made before the pause: a node that was just
+        restarted is dialled as soon as it listens. Such a connection relays no blocks or transactions, and once
+        it has authenticated a masternode, mnauth drops the test's own connection to the same node as its
+        duplicate, which connect_nodes then waits for in vain. The threads make theirs again once they run."""
+        for src, dst in ((a, b), (b, a)):
+            node, other = self.nodes[src], self.nodes[dst]
+            addr = "127.0.0.1:%d" % p2p_port(dst)
+
+            def by_thread():
+                return [p for p in node.getpeerinfo()
+                        if p["addr"] == addr and not p["inbound"] and p["connection_type"] != "manual"]
+            if not by_thread():
+                continue
+            # Past the version handshake (or gone), so that the other side can tell whose connection it is.
+            self.wait_until(lambda: all(p["version"] != 0 for p in by_thread()))
+            subver = node.getnetworkinfo()["subversion"]
+
+            def at_other():
+                return sum(1 for p in other.getpeerinfo() if p["inbound"] and p["subver"] == subver)
+            dropped, before = by_thread(), at_other()
+            for peer in dropped:
+                self.log.debug("node %d: closing its masternode thread's connection to node %d (peer %d)", src, dst, peer["id"])
+                try:
+                    node.disconnectnode(nodeid=peer["id"])
+                except JSONRPCException:
+                    pass  # gone meanwhile
+            self.wait_until(lambda: not by_thread())
+            self.wait_until(lambda: at_other() <= max(0, before - len(dropped)))
+
     def connect_nodes(self, a, b, *, peer_advertises_v2=None):
+        # Threads first, then whatever they connected between the two nodes before that, then the connection.
         self.set_mn_threads_active(False)
+        if a != b:
+            self.drop_mn_thread_connections(a, b)
         super().connect_nodes(a, b, peer_advertises_v2=peer_advertises_v2)
         self.set_mn_threads_active(True)
 
