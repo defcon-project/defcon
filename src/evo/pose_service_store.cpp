@@ -20,6 +20,12 @@ uint32_t CServiceReportStore::OldestKeptEpoch() const
     return m_currentEpoch - m_keepEpochs + 1;
 }
 
+bool CServiceReportStore::ReportAgedOut(uint32_t nEpoch) const
+{
+    LOCK(m_mutex);
+    return nEpoch < OldestKeptEpoch();
+}
+
 bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDeterministicMNList& epochList,
                                     const uint256& epochBlockHash, const Consensus::Params& params)
 {

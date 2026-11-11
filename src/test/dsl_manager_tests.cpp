@@ -9,6 +9,7 @@
 #include <evo/pose_service_manager.h>
 #include <evo/pose_service_sentinels.h>
 #include <hash.h>
+#include <logging.h>
 #include <primitives/transaction.h>
 #include <streams.h>
 #include <test/util/setup_common.h>
@@ -21,8 +22,10 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
+#include <string>
 #include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(dsl_manager_tests, BasicTestingSetup)
@@ -700,6 +703,55 @@ BOOST_AUTO_TEST_CASE(announcement_for_an_epoch_and_base_is_bound_to_them)
     dsl::CPoSeServiceManager receiver2;
     receiver2.BeginEpoch(500, fx.epoch);
     BOOST_CHECK(receiver2.ProcessResponse(*moved, BaseList(fx.list, fx.epoch), fx.epoch));
+}
+
+// net_processing asks ResponseAgedOut / ReportAgedOut before it builds the list of a message's epoch base, so each
+// must be exactly its handler's own "aged out" refusal. On a grid of window sizes, current epochs and message epochs,
+// each predicate holds exactly when the handler logs that refusal.
+BOOST_AUTO_TEST_CASE(aged_out_predicates_are_the_handlers_refusals)
+{
+    auto fx = MakeFixture(12);
+    Consensus::Params params;
+    std::mutex lines_mutex;
+    std::vector<std::string> lines;
+    const auto callback = LogInstance().PushBackCallback([&](const std::string& line) {
+        std::lock_guard<std::mutex> lock(lines_mutex);
+        lines.push_back(line);
+    });
+    const auto clear = [&] {
+        std::lock_guard<std::mutex> lock(lines_mutex);
+        lines.clear();
+    };
+    const auto logged = [&](const std::string& needle) {
+        std::lock_guard<std::mutex> lock(lines_mutex);
+        return std::any_of(lines.begin(), lines.end(), [&](const std::string& l) { return l.find(needle) != std::string::npos; });
+    };
+    for (const uint32_t keep : {1u, 2u, 8u}) {
+        for (uint32_t current = 0; current <= 20; ++current) {
+            dsl::CPoSeServiceManager mgr{keep};
+            mgr.BeginEpoch(current, fx.epoch);
+            for (uint32_t n = 0; n <= 30; ++n) {
+                dsl::CPoSeServiceResponse resp;
+                resp.nEpoch = n;
+                resp.proTxHash = uint256::ONE;
+                clear();
+                BOOST_CHECK(!mgr.ProcessResponse(resp, BaseList(fx.list, fx.epoch), fx.epoch));
+                BOOST_CHECK_MESSAGE(mgr.ResponseAgedOut(n) == logged(strprintf("for epoch %u refused: aged out", n)),
+                                    strprintf("response keep=%u current=%u epoch=%u", keep, current, n));
+
+                dsl::CPoSeServiceReport rep;
+                rep.nEpoch = n;
+                rep.targetProTxHash = uint256::ONE;
+                rep.sentinelProTxHash = uint256::ONE;
+                clear();
+                BOOST_CHECK(!mgr.ProcessReport(rep, BaseList(fx.list, fx.epoch), fx.epoch, params));
+                BOOST_CHECK_MESSAGE(mgr.ReportAgedOut(n) == logged(strprintf("for epoch %u refused: epoch aged out", n)),
+                                    strprintf("report keep=%u current=%u epoch=%u", keep, current, n));
+                BOOST_CHECK_EQUAL(mgr.ReportAgedOut(n), mgr.Store().ReportAgedOut(n));
+            }
+        }
+    }
+    LogInstance().DeleteCallback(callback);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

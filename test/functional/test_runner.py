@@ -149,6 +149,7 @@ BASE_SCRIPTS = [
     'feature_superblock_retirement.py',
     'feature_v23_bundle_heights.py',
     'feature_dsl_early_announcement_hold.py',
+    'feature_dsl_aged_out_before_list.py',
     'feature_dsl_early_announcement_hold_flood.py',
     'feature_dsl_early_announcement_hold_crowd.py',
     'feature_dsl_message_budget.py',

@@ -6777,8 +6777,15 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
                 return;
             }
         }
+        // The retention window before the list of the epoch's base: ProcessResponse refuses an aged-out epoch anyway,
+        // and building an old list replays diffs back to a snapshot. Asked of the manager's own epoch, not the tip's.
+        const bool aged_out = base != nullptr && m_dslman->ResponseAgedOut(resp.nEpoch);
+        if (aged_out) {
+            LogPrint(BCLog::DSL, "DSL -- announcement by %s for epoch %u refused before the list build: aged out\n",
+                     resp.proTxHash.ToString(), resp.nEpoch);
+        }
         // the duplicate check inside ProcessResponse is what terminates the flood
-        const bool accepted = base != nullptr &&
+        const bool accepted = base != nullptr && !aged_out &&
             m_dslman->ProcessResponse(resp, m_dmnman->GetListForBlock(base), base->GetBlockHash());
         LogPrint(BCLog::NET, "DSL -- poseresp epoch=%d proTx=%s accepted=%d, peer=%d\n",
                  resp.nEpoch, resp.proTxHash.ToString(), accepted, pfrom.GetId());
@@ -6822,7 +6829,14 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
         note_seen(report.nEpoch);
         const CBlockIndex* base = epoch_base(report.nEpoch);
         if (base == nullptr) dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::BASE_REFUSED);
-        const bool accepted = base != nullptr &&
+        // The retention window before the list, as for the announcement above; refused the way the store refuses it.
+        const bool aged_out = base != nullptr && m_dslman->ReportAgedOut(report.nEpoch);
+        if (aged_out) {
+            dsl::RecordPerf(report.nEpoch, base->GetBlockHash(), dsl::PerfMetric::REFUSED);
+            LogPrint(BCLog::DSL, "DSL -- report by %s on %s for epoch %u refused before the list build: epoch aged out\n",
+                     report.sentinelProTxHash.ToString(), report.targetProTxHash.ToString(), report.nEpoch);
+        }
+        const bool accepted = base != nullptr && !aged_out &&
             m_dslman->ProcessReport(report, m_dmnman->GetListForBlock(base), base->GetBlockHash(), consensus);
         LogPrint(BCLog::NET, "DSL -- posereport epoch=%d target=%s accepted=%d, peer=%d\n",
                  report.nEpoch, report.targetProTxHash.ToString(), accepted, pfrom.GetId());
