@@ -44,6 +44,7 @@ struct CJContext {
 #ifdef ENABLE_WALLET
     // The main object for accessing mixing
     const std::unique_ptr<CoinJoinWalletManager> walletman;
+    // Null when the node does not relay transactions (-blocksonly): check it before every use
     const std::unique_ptr<CCoinJoinClientQueueManager> queueman;
 #endif // ENABLE_WALLET
     const std::unique_ptr<CCoinJoinServer> server;
