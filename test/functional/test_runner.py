@@ -297,6 +297,7 @@ BASE_SCRIPTS = [
     'p2p_nobloomfilter_messages.py',
     'p2p_filter.py',
     'p2p_blocksonly.py',
+    'p2p_blocksonly_peer_messages.py',
     'p2p_dstx.py',
     'rpc_setban.py --v1transport',
     'rpc_setban.py --v2transport',

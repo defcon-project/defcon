@@ -2764,7 +2764,7 @@ bool PeerManagerImpl::AlreadyHave(const CInv& inv)
         return m_llmq_ctx->isman->AlreadyHave(inv);
     case MSG_DSQ:
 #ifdef ENABLE_WALLET
-        return m_cj_ctx->server->HasQueue(inv.hash) || m_cj_ctx->queueman->HasQueue(inv.hash);
+        return m_cj_ctx->server->HasQueue(inv.hash) || (m_cj_ctx->queueman && m_cj_ctx->queueman->HasQueue(inv.hash));
 #else
         return m_cj_ctx->server->HasQueue(inv.hash);
 #endif
@@ -3391,7 +3391,7 @@ void PeerManagerImpl::ProcessGetData(CNode& pfrom, Peer& peer, const std::atomic
         if (!push && inv.type == MSG_DSQ) {
             auto opt_dsq = m_cj_ctx->server->GetQueueFromHash(inv.hash);
 #ifdef ENABLE_WALLET
-            if (!opt_dsq.has_value()) {
+            if (!opt_dsq.has_value() && m_cj_ctx->queueman) {
                 opt_dsq = m_cj_ctx->queueman->GetQueueFromHash(inv.hash);
             }
 #endif
@@ -6152,7 +6152,9 @@ void PeerManagerImpl::ProcessMessage(
     {
         //probably one the extensions
 #ifdef ENABLE_WALLET
-        ProcessPeerMsgRet(m_cj_ctx->queueman->ProcessMessage(pfrom, m_connman, *this, msg_type, vRecv), pfrom);
+        if (m_cj_ctx->queueman) {
+            ProcessPeerMsgRet(m_cj_ctx->queueman->ProcessMessage(pfrom, m_connman, *this, msg_type, vRecv), pfrom);
+        }
         m_cj_ctx->walletman->ForEachCJClientMan([this, &pfrom, &msg_type, &vRecv](std::unique_ptr<CCoinJoinClientManager>& clientman) {
             clientman->ProcessMessage(pfrom, m_chainman.ActiveChainstate(), m_connman, m_mempool, msg_type, vRecv);
         });

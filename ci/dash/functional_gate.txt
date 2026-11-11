@@ -31,9 +31,10 @@
 # counted DeFCoN's one unit of work per proof-of-work block, the three block
 # tests that came in once the test framework claimed DeFCoN's block reward and
 # never left a proof-of-work block at nonce 0, p2p_coinjoin_inputs.py,
-# feature_import_corrupt_pos_block.py, and the eight tests that came in once
-# their blocks kept within DeFCoN's three minutes of the node's clock, from
-# their local runs until their first hosted run.
+# feature_import_corrupt_pos_block.py, the eight tests that came in once their
+# blocks kept within DeFCoN's three minutes of the node's clock, and
+# p2p_blocksonly_peer_messages.py, from their local runs until their first
+# hosted run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -136,6 +137,7 @@
 14   mining_basic.py                        # getmininginfo, getblocktemplate proposals and submitblock, with valid and invalid blocks
 14   feature_minchainwork.py                # -minimumchainwork: below it a node relays no blocks and answers no getheaders, until the chain passes it
 13   feature_coinstatsindex.py              # the coin statistics index agrees with the UTXO set, by height, across restarts and reorgs
+12   p2p_blocksonly_peer_messages.py        # a -blocksonly node of a wallet build, which has no mixing queue: getcoinjoininfo, a DSQ getdata and inv, getsporks, a spork and a relaying peer's sync, and it keeps running
 12   p2p_v2_encrypted.py                    # the BIP324 v2 transport: inbound, outbound and downgrade, block relay across a rekey, decoy messages
 11   feature_evodb_reconcile_below_dip3.py  # the evodb reconcile below DIP0003, where an empty evodb is current
 11   feature_evodb_repair_startup.py        # -evodbrepair finishes before the import, the network and the end of RPC warmup
