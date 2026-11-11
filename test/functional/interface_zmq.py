@@ -394,7 +394,11 @@ class ZMQTest (BitcoinTestFramework):
 
             raw_tx = self.nodes[0].getrawtransaction(orig_txid)
             # Mine the tx
-            block = create_block(int(self.nodes[0].getbestblockhash(), 16), create_coinbase(self.nodes[0].getblockcount()+1))
+            # one second after the tip: create_block's default is ten minutes after now (this test runs without
+            # mocktime), and DeFCoN refuses a block more than three minutes ahead of the node's clock
+            # (MAX_FUTURE_BLOCK_TIME)
+            tip_time = self.nodes[0].getblockheader(self.nodes[0].getbestblockhash())['time']
+            block = create_block(int(self.nodes[0].getbestblockhash(), 16), create_coinbase(self.nodes[0].getblockcount()+1), tip_time + 1)
             tx = tx_from_hex(raw_tx)
             block.vtx.append(tx)
             for txid in more_tx:
