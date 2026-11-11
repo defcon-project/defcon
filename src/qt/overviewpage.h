@@ -264,6 +264,10 @@ private:
     void updateNetworkState();
     //! The amount as the active theme wants it drawn.
     QString formatBalance(int unit, const CAmount& amount) const;
+    //! A balance label's text and tooltip for the active theme.
+    void setBalanceText(QLabel* label, int unit, const CAmount& amount);
+    //! The balance labels' tooltips from the form, kept for setBalanceText.
+    std::map<QLabel*, QString> m_form_tooltips;
     //! Every label on the balances card that carries an amount.
     std::vector<QLabel*> balanceLabels() const;
     //! Let the amounts decide how narrow the balances card may become.

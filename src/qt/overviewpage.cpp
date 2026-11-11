@@ -6,6 +6,7 @@
 #include <qt/overviewpage.h>
 #include <qt/forms/ui_overviewpage.h>
 
+#include <qt/abyssunits.h>
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
 #include <qt/emptystatewidget.h>
@@ -38,9 +39,11 @@
 #include <cmath>
 
 #include <QAbstractItemDelegate>
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QDateTime>
 #include <QEvent>
+#include <QHelpEvent>
 #include <QIcon>
 #include <QLabel>
 #include <QPaintEvent>
@@ -51,6 +54,7 @@
 #include <QStatusTipEvent>
 #include <QStyle>
 #include <QTimer>
+#include <QToolTip>
 #include <QVBoxLayout>
 
 #define ITEM_HEIGHT 54
@@ -114,7 +118,10 @@ public:
         colorForeground = qvariant_cast<QColor>(indexAmount.data(Qt::ForegroundRole));
         // Note: do NOT use Qt::DisplayRole, have format properly here
         qint64 nAmount = index.data(TransactionTableModel::AmountRole).toLongLong();
-        QString strAmount = BitcoinUnits::floorWithUnit(unit, nAmount, true, BitcoinUnits::SeparatorStyle::ALWAYS);
+        // Abyss: without trailing zeros (U3-C); the exact amount is in the row's tooltip.
+        QString strAmount = GUIUtil::isModernTheme()
+            ? AbyssUnits::format(unit, nAmount, true, true)
+            : BitcoinUnits::floorWithUnit(unit, nAmount, true, BitcoinUnits::SeparatorStyle::ALWAYS);
         painter->setPen(colorForeground);
         QRect amount_bounding_rect;
         painter->drawText(rectTopHalf, Qt::AlignRight | Qt::AlignVCenter, strAmount, &amount_bounding_rect);
@@ -156,6 +163,24 @@ public:
         return {ITEM_HEIGHT + 8 + minimum_text_width, ITEM_HEIGHT};
     }
 
+    //! The row's tooltip is the model's (status, type, address) and has no
+    //! amount, while Abyss may show the amount cut to the "digits" setting:
+    //! there the tooltip gets one more line, the exact amount (U3-C). The list
+    //! is hidden in discreet mode, so no help event reaches it then.
+    bool helpEvent(QHelpEvent* event, QAbstractItemView* view, const QStyleOptionViewItem& option,
+                   const QModelIndex& index) override
+    {
+        if (event == nullptr || view == nullptr || event->type() != QEvent::ToolTip || !index.isValid() ||
+            !GUIUtil::isModernTheme()) {
+            return QAbstractItemDelegate::helpEvent(event, view, option, index);
+        }
+        const qint64 amount = index.data(TransactionTableModel::AmountRole).toLongLong();
+        const QString line = tr("Amount: %1").arg(AbyssUnits::exact(unit, amount, true));
+        const QString own = index.data(Qt::ToolTipRole).toString();
+        QToolTip::showText(event->globalPos(), own.isEmpty() ? line : own + QLatin1Char('\n') + line, view);
+        return true;
+    }
+
     int unit;
 
 Q_SIGNALS:
@@ -178,6 +203,11 @@ OverviewPage::OverviewPage(QWidget* parent) :
     txdelegate(new TxViewDelegate(this))
 {
     ui->setupUi(this);
+
+    // The balance labels' own explanations (the form's tooltips): Abyss puts
+    // the exact amount above them, a classic theme shows them as they are.
+    for (QLabel* label : balanceLabels()) m_form_tooltips[label] = label->toolTip();
+    m_form_tooltips[ui->labelAnonymized] = ui->labelAnonymized->toolTip();
 
     // Under the total, in Abyss: where the next sky level starts. It is part
     // of the balances card and so of the maps below; it never widens the
@@ -857,8 +887,10 @@ void OverviewPage::updateSkyBadge()
             tip += QLatin1Char('\n') + tr("The highest level.");
         } else if (tier > 0 && walletModel != nullptr && walletModel->getOptionsModel() != nullptr) {
             const int unit = walletModel->getOptionsModel()->getDisplayUnit();
+            const CAmount next = SkyTiers::threshold(tier + 1);
             tip += QLatin1Char('\n') + tr("Next: %1 from %2").arg(SkyTiers::name(tier + 1),
-                BitcoinUnits::formatWithUnit(unit, SkyTiers::threshold(tier + 1), false, BitcoinUnits::SeparatorStyle::ALWAYS));
+                GUIUtil::isModernTheme() ? AbyssUnits::format(unit, next)
+                                         : BitcoinUnits::formatWithUnit(unit, next, false, BitcoinUnits::SeparatorStyle::ALWAYS));
         }
         m_net_sky.widget->setToolTip(tip);
         fitNetworkWords();
@@ -883,11 +915,8 @@ void OverviewPage::updateNextLevel()
             m_next_level->setText(tr("Top level"));
         } else {
             const int unit = walletModel->getOptionsModel()->getDisplayUnit();
-            // The thresholds are whole coins: no decimals, as the CoinJoin amount is shown.
-            QString amount = BitcoinUnits::formatWithUnit(unit, SkyTiers::threshold(m_sky_tier + 1), false, BitcoinUnits::SeparatorStyle::ALWAYS);
-            const int dot = amount.indexOf('.');
-            if (dot >= 0) amount.remove(dot, BitcoinUnits::decimals(unit) + 1);
-            m_next_level->setText(tr("Next level at %1").arg(amount));
+            // The thresholds are whole coins: Abyss's amounts show no decimals for them.
+            m_next_level->setText(tr("Next level at %1").arg(AbyssUnits::format(unit, SkyTiers::threshold(m_sky_tier + 1))));
         }
         m_next_level->setToolTip(tr("The night sky behind the wallet grows with the balance: %1 now.").arg(SkyTiers::name(m_sky_tier)));
     }
@@ -1083,12 +1112,34 @@ std::vector<QLabel*> OverviewPage::balanceLabels() const
 //! It buys a second thing the layout needs. A rich-text label's width is an
 //! estimate taken from a QTextDocument; a plain one's comes from the font's own
 //! metrics, and that is the number the caps below are raised to.
+//!
+//! Abyss leaves out the trailing zeros (U3-C: "0.5 DFCN", "935 000 000 DFCN");
+//! discreet mode keeps the usual mask, which does not tell how many digits an
+//! amount has.
 QString OverviewPage::formatBalance(int unit, const CAmount& amount) const
 {
     if (GUIUtil::isModernTheme()) {
-        return BitcoinUnits::floorWithPrivacy(unit, amount, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy);
+        if (m_privacy) return BitcoinUnits::floorWithPrivacy(unit, amount, BitcoinUnits::SeparatorStyle::ALWAYS, true);
+        return AbyssUnits::format(unit, amount, false, true);
     }
     return BitcoinUnits::floorHtmlWithPrivacy(unit, amount, BitcoinUnits::SeparatorStyle::ALWAYS, m_privacy);
+}
+
+//! The amount, and the tooltip that goes with it: in Abyss the exact amount
+//! above the form's explanation (only the amount where the form has none);
+//! in discreet mode the explanation alone; in a classic theme exactly the
+//! form's tooltip, so that a switch back restores it.
+void OverviewPage::setBalanceText(QLabel* label, int unit, const CAmount& amount)
+{
+    label->setText(formatBalance(unit, amount));
+    const auto form = m_form_tooltips.find(label);
+    const QString explanation = form == m_form_tooltips.end() ? QString() : form->second;
+    if (!GUIUtil::isModernTheme() || m_privacy) {
+        label->setToolTip(explanation);
+        return;
+    }
+    const QString exact = AbyssUnits::exact(unit, amount);
+    label->setToolTip(explanation.isEmpty() ? exact : exact + QLatin1Char('\n') + explanation);
 }
 
 // Coalesced after style/font/layout changes. Qt's qSmartMinSize uses explicit
@@ -1264,27 +1315,27 @@ void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
     updateCoinJoinCard();
     if (walletModel->wallet().isLegacy()) {
         if (walletModel->wallet().privateKeysDisabled()) {
-            ui->labelBalance->setText(formatBalance(unit, balances.watch_only_balance));
-            ui->labelUnconfirmed->setText(formatBalance(unit, balances.unconfirmed_watch_only_balance));
-            ui->labelImmature->setText(formatBalance(unit, balances.immature_watch_only_balance));
-            ui->labelTotal->setText(formatBalance(unit, balances.watch_only_balance + balances.unconfirmed_watch_only_balance + balances.immature_watch_only_balance));
+            setBalanceText(ui->labelBalance, unit, balances.watch_only_balance);
+            setBalanceText(ui->labelUnconfirmed, unit, balances.unconfirmed_watch_only_balance);
+            setBalanceText(ui->labelImmature, unit, balances.immature_watch_only_balance);
+            setBalanceText(ui->labelTotal, unit, balances.watch_only_balance + balances.unconfirmed_watch_only_balance + balances.immature_watch_only_balance);
         } else {
-            ui->labelBalance->setText(formatBalance(unit, balances.balance));
-            ui->labelUnconfirmed->setText(formatBalance(unit, balances.unconfirmed_balance));
-            ui->labelImmature->setText(formatBalance(unit, balances.immature_balance));
-            ui->labelAnonymized->setText(formatBalance(unit, balances.anonymized_balance));
-            ui->labelTotal->setText(formatBalance(unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance));
-            ui->labelWatchAvailable->setText(formatBalance(unit, balances.watch_only_balance));
-            ui->labelWatchPending->setText(formatBalance(unit, balances.unconfirmed_watch_only_balance));
-            ui->labelWatchImmature->setText(formatBalance(unit, balances.immature_watch_only_balance));
-            ui->labelWatchTotal->setText(formatBalance(unit, balances.watch_only_balance + balances.unconfirmed_watch_only_balance + balances.immature_watch_only_balance));
+            setBalanceText(ui->labelBalance, unit, balances.balance);
+            setBalanceText(ui->labelUnconfirmed, unit, balances.unconfirmed_balance);
+            setBalanceText(ui->labelImmature, unit, balances.immature_balance);
+            setBalanceText(ui->labelAnonymized, unit, balances.anonymized_balance);
+            setBalanceText(ui->labelTotal, unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance);
+            setBalanceText(ui->labelWatchAvailable, unit, balances.watch_only_balance);
+            setBalanceText(ui->labelWatchPending, unit, balances.unconfirmed_watch_only_balance);
+            setBalanceText(ui->labelWatchImmature, unit, balances.immature_watch_only_balance);
+            setBalanceText(ui->labelWatchTotal, unit, balances.watch_only_balance + balances.unconfirmed_watch_only_balance + balances.immature_watch_only_balance);
         }
     } else {
-            ui->labelBalance->setText(formatBalance(unit, balances.balance));
-            ui->labelUnconfirmed->setText(formatBalance(unit, balances.unconfirmed_balance));
-            ui->labelImmature->setText(formatBalance(unit, balances.immature_balance));
-            ui->labelAnonymized->setText(formatBalance(unit, balances.anonymized_balance));
-            ui->labelTotal->setText(formatBalance(unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance));
+            setBalanceText(ui->labelBalance, unit, balances.balance);
+            setBalanceText(ui->labelUnconfirmed, unit, balances.unconfirmed_balance);
+            setBalanceText(ui->labelImmature, unit, balances.immature_balance);
+            setBalanceText(ui->labelAnonymized, unit, balances.anonymized_balance);
+            setBalanceText(ui->labelTotal, unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance);
     }
     // only show immature (newly mined) balance if it's non-zero, so as not to complicate things
     // for the non-mining users
