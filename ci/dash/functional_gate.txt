@@ -116,6 +116,7 @@
 27   feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
 27   feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
 26   p2p_sendheaders.py                     # headers announcements: sendheaders, the inv fallback, reorgs, and unconnecting headers until the peer is dropped
+25   wallet_bls_locked.py                   # an encrypted wallet records the payments to its own BLS addresses while it is locked or unlocked for mixing only, and after a restart; spending them needs the full unlock
 24   rpc_rawtransaction.py                  # createrawtransaction, signing and sending, and the multisig spends
 24   wallet_balance.py                      # getbalance and getbalances with unconfirmed, untrusted and watch-only coins
 24   wallet_txn_doublespend.py              # the wallet's accounting when a double-spend of its funding transactions confirms instead

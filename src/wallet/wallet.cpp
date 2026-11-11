@@ -5870,7 +5870,7 @@ bool CWallet::Lock(bool fAllowMixing)
                 memory_cleanse(vMasterKey.data(), vMasterKey.size() * sizeof(decltype(vMasterKey)::value_type));
                 vMasterKey.clear();
             }
-            ClearBLSKeyCache();
+            ClearBLSSecrets();
         }
         // Under the same lock as the key. Written after it was released, an unlock for mixing only
         // that completed in between kept its key but lost its restriction: the wallet was then fully
@@ -6340,6 +6340,54 @@ void CWallet::ClearBLSKeyCache()
     }
 }
 
+void CWallet::ClearBLSSecrets()
+{
+    LOCK(cs_wallet);
+    // The entries stay, with their public keys: a locked wallet still has to recognise what is
+    // paid to them.
+    for (auto& entry : blsKeyRecords) {
+        entry.sk.Reset();
+    }
+
+    auto spk_man = GetLegacyScriptPubKeyMan();
+    if (spk_man) {
+        spk_man->ClearBLSSecrets();
+    }
+}
+
+bool CWallet::LoadBLSPubKeyToMemory(const CPubKey& pubkey, int64_t record_id)
+{
+    LOCK(cs_wallet);
+
+    if (!pubkey.IsBLS() || record_id < 0) {
+        return false;
+    }
+    const std::vector<uint8_t> pubBytes(pubkey.begin(), pubkey.end());
+    BlsWalletEntry entry;
+    entry.pk.SetBytes(pubBytes, false);
+    // The key ID is the hash of the stored bytes, which is how an output is matched to it: only
+    // the bytes a key serializes to stand for that key.
+    if (!entry.pk.IsValid() || entry.pk.ToByteVector(false) != pubBytes) {
+        return false;
+    }
+    entry.keyID = pubkey.GetID();
+
+    for (const auto& existing : blsKeyRecords) {
+        if (existing.keyID == entry.keyID) {
+            return true;
+        }
+    }
+
+    entry.id = static_cast<unsigned int>(record_id);
+    blsKeyRecords.push_back(entry);
+
+    auto spk_man = GetLegacyScriptPubKeyMan();
+    if (spk_man) {
+        spk_man->AddBLSPubKey(pubkey);
+    }
+    return true;
+}
+
 bool CWallet::LoadBLSKeyToMemory(const std::string& keydata, int64_t record_id, BlsWalletEntry* loaded_entry)
 {
     LOCK(cs_wallet);
@@ -6351,8 +6399,25 @@ bool CWallet::LoadBLSKeyToMemory(const std::string& keydata, int64_t record_id, 
     entry.pk = entry.sk.GetPublicKey();
     entry.keyID = CPubKey(entry.pk.ToByteVector(false)).GetID();
 
-    for (const auto& existing : blsKeyRecords) {
+    std::vector<uint8_t> pubBytes = entry.pk.ToByteVector(false);
+    CPubKey pubkey;
+    pubkey.Set(pubBytes.begin(), pubBytes.end());
+
+    std::vector<uint8_t> privBytes = entry.sk.ToByteVector(false);
+    CKey key;
+    key.Set(privBytes.begin(), privBytes.end(), false);
+
+    auto spk_man = GetLegacyScriptPubKeyMan();
+
+    for (auto& existing : blsKeyRecords) {
         if (existing.keyID == entry.keyID) {
+            if (!existing.sk.IsValid()) {
+                // Known by its public key alone until now (the wallet was locked): the secret joins it.
+                existing.sk = entry.sk;
+                if (spk_man) {
+                    spk_man->AddBLSEntries(pubkey, key);
+                }
+            }
             if (loaded_entry) {
                 *loaded_entry = existing;
             }
@@ -6366,15 +6431,6 @@ bool CWallet::LoadBLSKeyToMemory(const std::string& keydata, int64_t record_id, 
 
     blsKeyRecords.push_back(entry);
 
-    std::vector<uint8_t> pubBytes = entry.pk.ToByteVector(false);
-    CPubKey pubkey;
-    pubkey.Set(pubBytes.begin(), pubBytes.end());
-
-    std::vector<uint8_t> privBytes = entry.sk.ToByteVector(false);
-    CKey key;
-    key.Set(privBytes.begin(), privBytes.end(), false);
-
-    auto spk_man = GetLegacyScriptPubKeyMan();
     if (spk_man) {
         spk_man->AddBLSEntries(pubkey, key);
     }
@@ -6451,15 +6507,23 @@ bool CWallet::LoadCryptedBLSKeys()
         return true;
     }
 
-    ClearBLSKeyCache();
+    ClearBLSSecrets();
     for (const auto& [record_id, record] : cryptedBLSKeyRecords) {
         std::string bls_private_key;
         if (!DecryptBLSKeySecret(vMasterKey, record.first, record.second, bls_private_key)) {
+            ClearBLSSecrets();
             return false;
         }
-        const bool loaded = LoadBLSKeyToMemory(bls_private_key, record_id);
+        // The record's public key is what the locked wallet knows its outputs by, so it has to be
+        // this secret's own; one that is not is no more usable than one that does not decrypt.
+        CBLSSecretKey sk;
+        const bool matches = sk.SetHexStr(bls_private_key, false) &&
+                             CPubKey(sk.GetPublicKey().ToByteVector(false)) == record.first;
+        sk.Reset();
+        const bool loaded = matches && LoadBLSKeyToMemory(bls_private_key, record_id);
         CleanseString(bls_private_key);
         if (!loaded) {
+            ClearBLSSecrets();
             return false;
         }
     }
@@ -6557,6 +6621,8 @@ FlatSigningProvider CWallet::GetBLSSigningProvider() const
     LOCK(cs_wallet);
     FlatSigningProvider provider;
     for (const auto& entry : blsKeyRecords) {
+        // A locked wallet keeps the entry without its secret.
+        if (!entry.sk.IsValid()) continue;
         std::vector<uint8_t> secret = entry.sk.ToByteVector(false);
         CKey key;
         key.Set(secret.begin(), secret.end(), false);
@@ -6583,6 +6649,28 @@ bool CWallet::BLSWalletInit()
     }
 
     if (IsCrypted()) {
+        // The public keys need no passphrase, and the wallet has to know its BLS outputs from the
+        // moment it opens, locked or not. An encrypted record carries its public key in the clear.
+        for (const auto& [record_id, record] : cryptedBLSKeyRecords) {
+            if (!LoadBLSPubKeyToMemory(record.first, record_id)) {
+                WalletLogPrintf("%s: encrypted BLS key record %d has no valid public key.\n", __func__, record_id);
+            }
+        }
+        // A key an older version left in plaintext stays so until the next full unlock moves it
+        // (MigrateLegacyBLSKeys); its public key comes from the secret, which is not kept here.
+        for (unsigned int i = 0;; ++i) {
+            std::string bls_private_key;
+            if (!batch.ReadBLSKey(i, bls_private_key)) {
+                break;
+            }
+            CBLSSecretKey sk;
+            if (sk.SetHexStr(bls_private_key, false)) {
+                LoadBLSPubKeyToMemory(CPubKey(sk.GetPublicKey().ToByteVector(false)), i);
+            }
+            sk.Reset();
+            CleanseString(bls_private_key);
+        }
+
         if (!IsLocked()) {
             if (!MigrateLegacyBLSKeys() || !LoadCryptedBLSKeys()) {
                 return false;
@@ -6634,6 +6722,7 @@ bool CWallet::ContainsExistingBLSPrivKey(std::string& rpcBlsKey)
     LOCK(cs_wallet);
     std::string importAttempt = ToLower(rpcBlsKey);
     for (unsigned int i = 0; i < blsKeyRecords.size(); i++) {
+        if (!blsKeyRecords[i].sk.IsValid()) continue; // no secret to compare with
         std::string blsPrivateKey = blsKeyRecords[i].sk.ToString();
         const bool match = blsPrivateKey == importAttempt;
         CleanseString(blsPrivateKey);

@@ -498,7 +498,11 @@ public:
     bool AddBLSKeyPair(CKey& key, CPubKey& pubkey);
     bool AddBLSPubKeyPair(CKey& key, CPubKey& pubkey);
     bool AddBLSEntries(CPubKey& pubkey, CKey& key);
+    //! A BLS key of this wallet by its public key alone: what a locked wallet knows of it.
+    bool AddBLSPubKey(const CPubKey& pubkey);
     void ClearBLSEntries();
+    //! Forget the BLS secrets and keep the public keys, by which the wallet recognises its outputs.
+    void ClearBLSSecrets();
     //BLS//////////////////////////////////////////////////////////////////////////////////
 };
 
