@@ -928,7 +928,7 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
         self.assertEqual(sorted([
             'feature_llmq_chainlocks.py', 'feature_pos_staking.py', 'feature_pos_stake_combine.py',
             'feature_pos_verifychain.py', 'feature_pos_header_only.py',
-            'p2p_unbacked_pos_headers.py',
+            'p2p_unbacked_pos_headers.py', 'feature_pos_staking_refusal_log.py',
             'feature_dsl_sign_wait.py', 'feature_dsl_commitment_v2.py',
             'feature_addressindex_coinstake.py', 'feature_addressindex.py', 'feature_addressindex_type_boundary.py',
             'p2p_instantsend.py', 'rpc_verifyislock.py', 'rpc_bls.py',

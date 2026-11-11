@@ -59,7 +59,8 @@ double GetPoSKernelPS(CBlockIndex *pindex, const Consensus::Params& params)
         result = dStakeKernelsTriedAvg / nStakesTime;
     }
 
-    result *= params.posTimestampMask + 1;
+    // Kernel attempts per second are a weight times one attempt per valid timestamp.
+    result *= static_cast<double>(PoSTimestampSpacing(params.posTimestampMask));
 
     return result;
 }

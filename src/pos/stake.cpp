@@ -623,7 +623,7 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
     // success let the switch go on for a wallet that cannot produce a block,
     // and getstakinginfo then said it was staking.
     if (wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
-        LogPrint(BCLog::POS, "%s: wallet holds no private keys and cannot stake\n", __func__);
+        LogPrintf("%s: wallet holds no private keys and cannot stake\n", __func__);
         return false;
     }
 
@@ -648,7 +648,7 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
         // mixing only, the keys are there and the descriptors render, so that
         // unlock is enough to stake.
         if (wallet.IsLocked(/*fForMixing=*/true)) {
-            LogPrint(BCLog::POS, "%s: wallet is locked; unlock it before enabling staking\n", __func__);
+            LogPrintf("%s: wallet is locked; unlock it before enabling staking\n", __func__);
             return false;
         }
         for (ScriptPubKeyMan* spk_man : wallet.GetAllScriptPubKeyMans()) {
@@ -685,7 +685,7 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
         std::string error;
         std::unique_ptr<Descriptor> parsed = Parse(item.expression, provider, error, /*require_checksum=*/false);
         if (!parsed) {
-            LogPrint(BCLog::POS, "%s: could not build coinstake descriptor: %s\n", __func__, error);
+            LogPrintf("%s: could not build coinstake descriptor: %s\n", __func__, error);
             ok = false;
             continue;
         }
@@ -705,14 +705,14 @@ bool EnsureCoinstakeDescriptors(CWallet& wallet)
             if (!ranged || existing->GetRange().second >= item.range_end) continue;
             std::string update_error;
             if (!existing->CanUpdateToWalletDescriptor(wdesc, update_error)) {
-                LogPrint(BCLog::POS, "%s: could not extend coinstake descriptor: %s\n", __func__, update_error);
+                LogPrintf("%s: could not extend coinstake descriptor: %s\n", __func__, update_error);
                 ok = false;
                 continue;
             }
         }
 
         if (wallet.AddWalletDescriptor(wdesc, provider, /*label=*/"", /*internal=*/false) == nullptr) {
-            LogPrint(BCLog::POS, "%s: could not register coinstake descriptor\n", __func__);
+            LogPrintf("%s: could not register coinstake descriptor\n", __func__);
             ok = false;
             continue;
         }

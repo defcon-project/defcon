@@ -5,6 +5,7 @@
 #include <chainparams.h>
 #include <context.h>
 #include <interfaces/wallet.h>
+#include <logging.h>
 #include <pos/minter.h>
 #include <pos/stake.h>
 #include <pos/multiwallet.h>
@@ -19,11 +20,15 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <future>
 #include <memory>
+#include <mutex>
+#include <string>
 #include <thread>
+#include <vector>
 
 extern RecursiveMutex stakable_mutex;
 
@@ -261,6 +266,42 @@ BOOST_AUTO_TEST_CASE(reinitialize_preserves_staking_switch)
     RemoveWallet(wallet, std::nullopt);
     // Leave clean process-global state for whatever test runs next.
     MultiwalletInitialize();
+}
+
+// Why a staking switch stays off is in the log at the default level, also for a wallet the staking list does not
+// carry: the GUI shows a wallet as soon as it is loaded and points to the log when the switch is refused, while the
+// list has the wallet only after the minter's next pass. With the pos category off, only lines logged without it show.
+BOOST_AUTO_TEST_CASE(refused_switch_for_an_unlisted_wallet_is_logged_by_default)
+{
+    MultiwalletInitialize();
+    const bool pos_was_on{LogInstance().WillLogCategory(BCLog::POS)};
+    LogInstance().DisableCategory(BCLog::POS);
+    std::mutex mutex;
+    std::vector<std::string> lines;
+    const auto connection = LogInstance().PushBackCallback([&](const std::string& line) {
+        const std::lock_guard<std::mutex> lock{mutex};
+        lines.push_back(line);
+    });
+    // Whether a line with the text was logged since the last call.
+    const auto logged = [&](const std::string& text) {
+        const std::lock_guard<std::mutex> lock{mutex};
+        const bool found{std::any_of(lines.begin(), lines.end(), [&](const std::string& line) { return line.find(text) != std::string::npos; })};
+        lines.clear();
+        return found;
+    };
+
+    BOOST_CHECK(!SetWalletStaking("no-such-wallet", /*enable=*/true));
+    BOOST_CHECK(logged("SetWalletStaking - not enabling staking for wallet 'no-such-wallet': it is not in the staking list"));
+
+    BOOST_CHECK(!ToggleWalletStaking("no-such-wallet"));
+    BOOST_CHECK(logged("ToggleWalletStaking - wallet 'no-such-wallet' is not in the staking list"));
+
+    // Switching off a wallet that is not there refuses nothing: no line.
+    BOOST_CHECK(!SetWalletStaking("no-such-wallet", /*enable=*/false));
+    BOOST_CHECK(!logged("no-such-wallet"));
+
+    LogInstance().DeleteCallback(connection);
+    if (pos_was_on) LogInstance().EnableCategory(BCLog::POS);
 }
 
 // Whether a wallet is switched on for staking and whether anything is actually
