@@ -30,8 +30,9 @@
 # DeFCoN's MAX_MONEY, the three chain and mining tests that came in once they
 # counted DeFCoN's one unit of work per proof-of-work block, the three block
 # tests that came in once the test framework claimed DeFCoN's block reward and
-# never left a proof-of-work block at nonce 0, and p2p_coinjoin_inputs.py,
-# from their local runs until their first hosted run.
+# never left a proof-of-work block at nonce 0, p2p_coinjoin_inputs.py and
+# feature_import_corrupt_pos_block.py, from their local runs until their first
+# hosted run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -80,6 +81,7 @@
 269  p2p_unbacked_pos_headers.py            # how many headers without their blocks a node takes, from one peer and above its tip
 215  feature_pos_staking.py                 # real proof-of-stake blocks on regtest; descriptor and legacy wallet
 213  feature_v231_no_payee.py               # from the v23.1 height a staked block with no payable masternode carries no payout at all (#354)
+210  feature_import_corrupt_pos_block.py    # a damaged copy of a staked block on -loadblock or -reindex (bad signature, damaged coinstake, signature past the size limit) leaves the header unmarked, and the good block comes in
 182  feature_pos_header_only.py             # headers with no block behind them hold neither masternode sync nor staking
 149  wallet_multiwallet.py                  # several wallets on one node: wallet directories, loading and unloading, each its own balance and calls
 127  feature_pos_mixingonly_unlock.py       # a wallet unlocked for mixing only stakes, and still refuses to send or export keys
