@@ -85,6 +85,7 @@ BITCOIN_TESTS =\
   test/bech32_tests.cpp \
   test/bip32_tests.cpp \
   test/bip324_tests.cpp \
+  test/block_import_check_tests.cpp \
   test/block_reward_reallocation_tests.cpp \
   test/blockchain_tests.cpp \
   test/blockencodings_fill_tests.cpp \

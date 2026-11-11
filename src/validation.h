@@ -366,6 +366,15 @@ void InitScriptExecutionCache();
 /** Context-independent validity checks */
 bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true, bool fCheckMerkleRoot = true, bool fCheckSignature = true);
 
+/** The serialized size of the part of a block that its hash commits to: the block with an empty signature.
+ *  A proof-of-stake block's signature is committed to neither by the header hash nor by the merkle root. */
+size_t GetCommittedBlockSize(const CBlock& block);
+
+/** The block size limits as one check. A block that is too large only because of its signature fails as
+ *  BLOCK_MUTATED, so that its header is not marked invalid (the same hash may come with a shorter signature);
+ *  any other size failure is BLOCK_CONSENSUS. */
+bool CheckBlockSize(const CBlock& block, unsigned int max_size, BlockValidationState& state);
+
 /** Detect a block body that does not match its merkle root, including duplicate-transaction and
  *  64-byte-transaction malleation. This does not replace full block/PoS validation. */
 bool IsBlockMutated(const CBlock& block);

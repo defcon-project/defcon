@@ -3944,6 +3944,35 @@ static bool CheckMerkleRoot(const CBlock& block, BlockValidationState& state)
     return true;
 }
 
+size_t GetCommittedBlockSize(const CBlock& block)
+{
+    // CBlock serializes a proof-of-stake block's signature after its
+    // transactions, but neither the header hash nor the merkle root commits to
+    // it: count it as empty.
+    size_t size{::GetSerializeSize(block, PROTOCOL_VERSION)};
+    if (block.vtx.size() > 1 && block.vtx[1]->IsCoinStake()) {
+        size -= ::GetSerializeSize(block.vchBlockSig, PROTOCOL_VERSION);
+        size += ::GetSerializeSize(std::vector<unsigned char>{}, PROTOCOL_VERSION);
+    }
+    return size;
+}
+
+bool CheckBlockSize(const CBlock& block, unsigned int max_size, BlockValidationState& state)
+{
+    if (block.vtx.empty() || block.vtx.size() > max_size) {
+        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-length", "size limits failed");
+    }
+    if (::GetSerializeSize(block, PROTOCOL_VERSION) > max_size) {
+        // Too large only because of the signature the hash does not commit to:
+        // the same block may come with a shorter one, so the header must not be
+        // marked invalid.
+        const auto result{GetCommittedBlockSize(block) <= max_size ? BlockValidationResult::BLOCK_MUTATED
+                                                                   : BlockValidationResult::BLOCK_CONSENSUS};
+        return state.Invalid(result, "bad-blk-length", "size limits failed");
+    }
+    return true;
+}
+
 bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSignature)
 {
     // These are checks that are independent of context.
@@ -3953,14 +3982,27 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     if (block.fChecked)
         return true;
 
+    // The hash commits to the header, whose nNonce says whether the block is
+    // proof of stake (CBlockHeader::IsProofOfStake), but the proof-of-work
+    // check below is chosen by the body (a coinstake in vtx[1]). If the two
+    // disagree, check first that the body is the one the header commits to: a
+    // damaged body is then reported as mutated instead of failing the proof of
+    // work, which would mark the header invalid.
+    if (fCheckMerkleRoot && block.IsProofOfStake() != static_cast<const CBlockHeader&>(block).IsProofOfStake() &&
+        !CheckMerkleRoot(block, state)) {
+        return false;
+    }
+
     // Check that the header is valid (particularly PoW).  This is mostly
     // redundant with the call in AcceptBlockHeader.
     if (!CheckBlockHeader(block, block.GetHash(), state, consensusParams, fCheckPOW && !block.IsProofOfStake()))
         return false;
 
-    // check block signature
+    // check block signature; neither the header hash nor the merkle root
+    // commits to it, so a bad one is reported as mutated and does not mark the
+    // header invalid
     if (fCheckMerkleRoot && fCheckSignature && (block.IsProofOfStake() && !CheckBlockSignature(block)))
-        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-sign", "bad block signature");
+        return state.Invalid(BlockValidationResult::BLOCK_MUTATED, "bad-blk-sign", "bad block signature");
 
     // Check the merkle root.
     if (fCheckMerkleRoot && !CheckMerkleRoot(block, state)) {
@@ -3972,8 +4014,7 @@ bool CheckBlock(const CBlock& block, BlockValidationState& state, const Consensu
     // because we receive the wrong transactions for it.
 
     // Size limits (relaxed)
-    if (block.vtx.empty() || block.vtx.size() > MaxBlockSize() || ::GetSerializeSize(block, PROTOCOL_VERSION) > MaxBlockSize())
-        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-length", "size limits failed");
+    if (!CheckBlockSize(block, MaxBlockSize(), state)) return false;
 
     // First transaction must be coinbase, the rest must not be
     if (block.vtx.empty() || !block.vtx[0]->IsCoinBase())
@@ -4181,8 +4222,7 @@ static bool ContextualCheckBlock(const CBlock& block, BlockValidationState& stat
 
     // Size limits
     unsigned int nMaxBlockSize = MaxBlockSize(fDIP0001Active_context);
-    if (block.vtx.empty() || block.vtx.size() > nMaxBlockSize || ::GetSerializeSize(block, PROTOCOL_VERSION) > nMaxBlockSize)
-        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-blk-length", "size limits failed");
+    if (!CheckBlockSize(block, nMaxBlockSize, state)) return false;
 
     // Check that all transactions are finalized and not over-sized
     // Also count sigops
