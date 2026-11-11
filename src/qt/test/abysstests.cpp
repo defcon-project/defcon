@@ -4,6 +4,7 @@
 #include <config/bitcoin-config.h>
 #endif
 #include <qt/test/abysstests.h>
+#include <qt/abyssmenus.h>
 #include <qt/abysstoast.h>
 #include <qt/editaddressdialog.h>
 #include <qt/receiverequestdialog.h>
@@ -76,6 +77,9 @@
 #include <QToolButton>
 #include <QToolBar>
 #include <QTranslator>
+#include <QCursor>
+#include <QThread>
+#include <QWidgetAction>
 #include <QWindow>
 #if defined(Q_OS_LINUX)
 #include <time.h>
@@ -254,6 +258,127 @@ bool AmountFits(QLabel* label)
 {
     const int padding = 2 * label->margin() + std::max(0, label->indent());
     return QFontMetricsF(label->font()).horizontalAdvance(label->text()) <= label->contentsRect().width() - padding;
+}
+//! Closes every open popup, the innermost first.
+void CloseMenus()
+{
+    for (int i = 0; i < 16 && QApplication::activePopupWidget(); ++i) QApplication::activePopupWidget()->close();
+}
+QPoint Centre(const QWidget* widget) { return widget->mapToGlobal(widget->rect().center()); }
+//! Moves the pointer the way the window system does (QTest's QWindow path):
+//! enter and leave between widgets, every move to the open popup while one is.
+//! It arrives with a one-pixel step, as a real pointer does: a menu ignores the
+//! first move after its Enter (Qt 5.15 QMenu::enterEvent sets motions to -1).
+void PointAt(QWidget* widget, const QPoint& global)
+{
+    QWindow* handle = widget->window()->windowHandle();
+    QTest::mouseMove(handle, handle->mapFromGlobal(global + QPoint(1, 0)));
+    QTest::mouseMove(handle, handle->mapFromGlobal(global));
+}
+//! Steps a test through the event loops of open menus. A menu opened by
+//! QToolButton::showMenu() runs its own exec(), so the test cannot wait in its
+//! own code for what happens while that menu is open. Each step waits until
+//! it is ready, then acts, from a ticking timer that runs in whatever loop is
+//! current; a step's action must not block (one that opens a menu with exec()
+//! goes through post()). A step not ready within its time fails the run, and
+//! every popup is closed then, so a failure never leaves an exec() running.
+class MenuScript
+{
+public:
+    using Ready = std::function<bool(qint64 ms_in_step)>;
+    void step(const QString& name, Ready ready, std::function<void()> act = {}, int timeout_ms = 5000)
+    {
+        m_steps.push_back({name, std::move(ready), std::move(act), timeout_ms});
+    }
+    void then(const QString& name, std::function<void()> act) { step(name, [](qint64) { return true; }, std::move(act)); }
+    void until(const QString& name, std::function<bool()> condition, int timeout_ms = 5000)
+    {
+        step(name, [condition = std::move(condition)](qint64) { return condition(); }, {}, timeout_ms);
+    }
+    void pause(const QString& name, int ms) { step(name, [ms](qint64 elapsed) { return elapsed >= ms; }, {}, ms + 5000); }
+    static void post(std::function<void()> act) { QTimer::singleShot(0, std::move(act)); }
+    //! What a failed step reports besides its name (the state it was waiting on).
+    void describe(std::function<QString()> state) { m_describe = std::move(state); }
+    //! Runs the steps; returns the failure, empty when every step was reached.
+    QString run()
+    {
+        QEventLoop loop;
+        QTimer ticker;
+        ticker.setInterval(10);
+        size_t index = 0;
+        QElapsedTimer clock;
+        clock.start();
+        QString failure;
+        bool done = false;
+        const auto finish = [&](const QString& why) {
+            if (done) return;
+            done = true;
+            failure = why;
+            ticker.stop();
+            CloseMenus();
+            loop.quit();
+        };
+        // A step's action blocked in a nested loop (a menu's exec() it should
+        // not have run) stalls the ticker, whose slot cannot run again while it
+        // is on the stack; the watchdog, another timer, still fires there.
+        bool in_action = false;
+        const auto tick = [&] {
+            if (done) return;
+            if (in_action) {
+                if (clock.elapsed() > 10000) finish(QString("step %1 \"%2\": its action did not return").arg(index - 1).arg(m_steps[index - 1].name));
+                return;
+            }
+            if (index >= m_steps.size()) return finish(QString());
+            Step& current = m_steps[index];
+            if (current.ready(clock.elapsed())) {
+                ++index;
+                clock.restart();
+                if (current.act) {
+                    in_action = true;
+                    current.act();
+                    in_action = false;
+                }
+            } else if (clock.elapsed() > current.timeout_ms) {
+                finish(QString("step %1 \"%2\" not reached in %3 ms%4").arg(index).arg(current.name).arg(current.timeout_ms)
+                           .arg(m_describe ? "; " + m_describe() : QString()));
+            }
+        };
+        QTimer watchdog;
+        watchdog.setInterval(100);
+        QObject::connect(&ticker, &QTimer::timeout, tick);
+        QObject::connect(&watchdog, &QTimer::timeout, tick);
+        ticker.start();
+        watchdog.start();
+        loop.exec();
+        watchdog.stop();
+        m_steps.clear();
+        return failure;
+    }
+
+private:
+    struct Step {
+        QString name;
+        Ready ready;
+        std::function<void()> act;
+        int timeout_ms;
+    };
+    std::vector<Step> m_steps;
+    std::function<QString()> m_describe;
+};
+//! The pointer's state as Qt sees it, for a failed step's report.
+QString PointerState(QWidget* window)
+{
+    const QPoint pointer = QCursor::pos();
+    QWidget* under = QApplication::widgetAt(pointer);
+    QWidget* popup = QApplication::activePopupWidget();
+    QWidget* active = QApplication::activeWindow();
+    const auto name = [](QWidget* w) -> QString { return w ? w->metaObject()->className() + QString("#") + w->objectName() : QString("none"); };
+    return QString("pointer %1,%2 under %3 popup %4 active %5 (%6) tracking %7")
+        .arg(pointer.x()).arg(pointer.y())
+        .arg(name(under), name(popup))
+        .arg(window->isActiveWindow() ? 1 : 0)
+        .arg(name(active))
+        .arg(popup && popup->hasMouseTracking() ? 1 : 0);
 }
 } // namespace
 
@@ -3852,6 +3977,10 @@ void AbyssTests::topMenus()
         std::function<bool(QMenu*)> find = [&](QMenu* current) {
             for (QAction* action : current->actions()) {
                 if (action == target || (action->menu() && find(action->menu()))) return true;
+                // A paired row reaches both of its actions (U3-B).
+                for (const auto* cell : AbyssMenus::pairCells(action)) {
+                    if (cell->action() == target) return true;
+                }
             }
             return false;
         };
@@ -3941,6 +4070,887 @@ void AbyssTests::topMenus()
     window.removeWallet(fixture.model.get()); Settle();
     QVERIFY(!window.encryptWalletAction->isEnabled());
     QVERIFY(!window.backupWalletAction->isEnabled());
+}
+
+void AbyssTests::menuPairs()
+{
+    // AbyssMenus::addPair on a menu of its own: two actions side by side in
+    // one row, each a cell that highlights and triggers alone (U3-B). Short
+    // texts, so that the menu and its list fit minimal's 240x320 screen.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    QWidget host;
+    host.setGeometry(0, 0, 240, 300);
+    host.show();
+    QApplication::setActiveWindow(&host);
+    Settle();
+    QMenu menu(&host);
+    QMenu list(&host);
+    QAction before("&Be"), a("&Al"), b("&Bo"), c("&Ch"), d("De"), after("&Zu"), e("&Ec"), f("Fo"), l1("L1"), l2("L2");
+    a.setStatusTip("alpha tip");
+    b.setStatusTip("bravo tip");
+    list.addAction(&l1);
+    list.addAction(&l2);
+    menu.addAction(&before);
+    QWidgetAction* r1 = AbyssMenus::addPair(&menu, &a, &b);
+    menu.addSeparator();
+    QWidgetAction* r2 = AbyssMenus::addPair(&menu, &c, &d, &list);
+    menu.addAction(&after);
+    QWidgetAction* r3 = AbyssMenus::addPair(&menu, &e, &f);
+    f.setEnabled(false);
+    std::map<QAction*, std::unique_ptr<QSignalSpy>> spies;
+    for (QAction* action : {&before, &a, &b, &c, &d, &after, &e, &f, &l1}) {
+        spies[action] = std::make_unique<QSignalSpy>(action, &QAction::triggered);
+    }
+    const auto counts = [&] {
+        std::map<QAction*, int> now;
+        for (const auto& [action, spy] : spies) now[action] = spy->count();
+        return now;
+    };
+    // Exactly `only` fired since `was` (none with nullptr).
+    const auto fired = [&](const std::map<QAction*, int>& was, QAction* only) {
+        for (const auto& [action, count] : counts()) {
+            if (count != was.at(action) + (action == only ? 1 : 0)) return false;
+        }
+        return true;
+    };
+    const auto open = [&] {
+        CloseMenus();
+        // Away from where the menu opens: QMenu takes a move as a move only
+        // once the pointer has left where it was when the menu opened.
+        PointAt(&host, host.mapToGlobal(QPoint(230, 290)));
+        menu.popup(host.mapToGlobal(QPoint(0, 0)));
+        Settle();
+        return menu.isVisible();
+    };
+    // The entry on display: a plain action, a row's current cell, or nothing.
+    const auto current = [&]() -> QAction* {
+        QAction* active = menu.activeAction();
+        const auto cells = AbyssMenus::pairCells(active);
+        if (cells.isEmpty()) return active;
+        for (const auto* cell : cells) {
+            if (cell->isSelected()) return cell->action();
+        }
+        return nullptr;
+    };
+    const auto local = [&](QWidget* widget) { return menu.windowHandle()->mapFromGlobal(Centre(widget)); };
+    const auto move = [&](QWidget* widget) { PointAt(&menu, Centre(widget)); };
+    const auto click = [&](QWidget* widget) { QTest::mouseClick(menu.windowHandle(), Qt::LeftButton, {}, local(widget)); };
+    const auto key = [&](QWidget* target, Qt::Key k) { QTest::keyClick(target, k); };
+
+    // Layout: one line per row, equal halves, cells of all rows lined up.
+    QVERIFY(open());
+    const auto cells1 = AbyssMenus::pairCells(r1);
+    const auto cells2 = AbyssMenus::pairCells(r2);
+    const auto cells3 = AbyssMenus::pairCells(r3);
+    QCOMPARE(cells1.size(), 2);
+    QCOMPARE(cells2.size(), 2);
+    QCOMPARE(cells3.size(), 2);
+    QVERIFY(AbyssMenus::pairCells(&before).isEmpty());
+    const auto on_menu = [&](QWidget* widget) { return QRect(widget->mapTo(&menu, QPoint()), widget->size()); };
+    for (const auto& cells : {cells1, cells2, cells3}) {
+        QCOMPARE(on_menu(cells[0]).top(), on_menu(cells[1]).top());
+        QCOMPARE(cells[0]->height(), cells[1]->height());
+        QVERIFY(on_menu(cells[0]).right() < on_menu(cells[1]).left());
+        QVERIFY(std::abs(cells[0]->width() - cells[1]->width()) <= 1);
+        for (auto* cell : cells) {
+            QVERIFY(cell->width() >= cell->sizeHint().width());
+            QVERIFY(menu.rect().contains(on_menu(cell)));
+        }
+    }
+    QCOMPARE(on_menu(cells1[1]).left(), on_menu(cells2[1]).left());
+    QCOMPARE(cells1[0]->accessibleName(), QString("Al"));
+    QCOMPARE(cells1[1]->accessibleName(), QString("Bo"));
+    QCOMPARE(cells2[1]->accessibleName(), QString("De"));
+    QCOMPARE(cells1[0]->accessibleDescription(), QString("alpha tip"));
+    QVERIFY(!cells1[0]->hasSubmenu() && !cells2[0]->hasSubmenu() && cells2[1]->hasSubmenu());
+    // The row stands for its actions; they are not in the menu themselves.
+    for (QAction* shared : {&a, &b, &c, &d, &e, &f}) QVERIFY(!menu.actions().contains(shared));
+    QVERIFY(r1->isEnabled() && r2->isEnabled() && r3->isEnabled());
+
+    // Keyboard: up/down between rows, left/right between cells; a disabled
+    // cell is passed over; the list's cell opens nothing until asked.
+    QList<QAction*> seen;
+    const auto press = [&](Qt::Key k) {
+        key(&menu, k);
+        seen << current();
+    };
+    for (Qt::Key k : {Qt::Key_Down, Qt::Key_Down, Qt::Key_Right, Qt::Key_Left, Qt::Key_Right, Qt::Key_Right, Qt::Key_Down, Qt::Key_Right}) press(k);
+    QVERIFY(!list.isVisible());
+    for (Qt::Key k : {Qt::Key_Down, Qt::Key_Down, Qt::Key_Right}) press(k);
+    QCOMPARE(seen, (QList<QAction*>{&before, &a, &b, &a, &b, &b, &c, &d, &after, &e, &e}));
+    QVERIFY(menu.isVisible());
+    QVERIFY(fired({{&before, 0}, {&a, 0}, {&b, 0}, {&c, 0}, {&d, 0}, {&after, 0}, {&e, 0}, {&f, 0}, {&l1, 0}}, nullptr));
+
+    // Enter triggers the current cell's action, only that one, once, and closes the menu.
+    struct Route {
+        std::vector<Qt::Key> keys;
+        QAction* target;
+    };
+    for (const Route& route : {Route{{Qt::Key_Down, Qt::Key_Down}, &a}, Route{{Qt::Key_Down, Qt::Key_Down, Qt::Key_Right}, &b},
+                               Route{{Qt::Key_Down, Qt::Key_Down, Qt::Key_Down}, &c},
+                               Route{{Qt::Key_Down, Qt::Key_Down, Qt::Key_Down, Qt::Key_Down, Qt::Key_Down}, &e}}) {
+        QVERIFY(open());
+        for (Qt::Key k : route.keys) key(&menu, k);
+        QCOMPARE(current(), route.target);
+        const auto was = counts();
+        key(&menu, Qt::Key_Return);
+        QVERIFY2(fired(was, route.target), qPrintable(route.target->text()));
+        QVERIFY(!menu.isVisible());
+    }
+
+    // The list's cell: Right opens the list with its first entry active, Left
+    // in the list comes back to the cell, Enter opens it and triggers nothing.
+    QVERIFY(open());
+    for (Qt::Key k : {Qt::Key_Down, Qt::Key_Down, Qt::Key_Down, Qt::Key_Right}) key(&menu, k);
+    QCOMPARE(current(), &d);
+    QVERIFY(!list.isVisible());
+    key(&menu, Qt::Key_Right);
+    QVERIFY(list.isVisible());
+    QCOMPARE(list.activeAction(), &l1);
+    key(&list, Qt::Key_Left);
+    QVERIFY(!list.isVisible() && menu.isVisible());
+    QCOMPARE(current(), &d);
+    key(&menu, Qt::Key_Left);
+    QCOMPARE(current(), &c);
+    QCOMPARE(r2->menu(), nullptr); // the list hangs on the row only while its cell is current
+    key(&menu, Qt::Key_Right);
+    {
+        const auto was = counts();
+        key(&menu, Qt::Key_Return);
+        QVERIFY(list.isVisible());
+        QVERIFY(fired(was, nullptr));
+    }
+    key(&list, Qt::Key_Escape);
+    QVERIFY(!list.isVisible() && menu.isVisible());
+    key(&menu, Qt::Key_Escape);
+    QVERIFY(!menu.isVisible());
+
+    // Mouse: the cell under the pointer is current, with its text and status
+    // tip on the row; a click triggers it; a disabled cell does nothing.
+    QVERIFY(open());
+    QVERIFY2(menu.hasMouseTracking(), qPrintable(QString("menu without mouse tracking; style %1, hint %2")
+                                                     .arg(menu.style()->metaObject()->className())
+                                                     .arg(menu.style()->styleHint(QStyle::SH_Menu_MouseTracking, nullptr, &menu))));
+    move(cells1[0]);
+    QCOMPARE(menu.activeAction(), r1);
+    QCOMPARE(current(), &a);
+    QCOMPARE(r1->text(), QString("Al"));
+    QCOMPARE(r1->statusTip(), QString("alpha tip"));
+    move(cells1[1]);
+    QCOMPARE(current(), &b);
+    QCOMPARE(r1->text(), QString("Bo"));
+    QCOMPARE(r1->statusTip(), QString("bravo tip"));
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    if (!output.isEmpty()) {
+        QVERIFY(QDir().mkpath(output));
+        QVERIFY(menu.grab().save(QDir(output).filePath("Abyss-menu-pairs.png")));
+    }
+    {
+        const auto was = counts();
+        click(cells1[1]);
+        QVERIFY(fired(was, &b));
+        QVERIFY(!menu.isVisible());
+    }
+    QVERIFY(open());
+    move(cells3[1]);
+    QCOMPARE(menu.activeAction(), r3);
+    QCOMPARE(current(), nullptr);
+    {
+        const auto was = counts();
+        click(cells3[1]);
+        QVERIFY(menu.isVisible());
+        QVERIFY(fired(was, nullptr));
+    }
+    // The list opens on hover over its cell, closes when the pointer moves to
+    // the other cell (that move reaches the menu through the open list), and
+    // a click on the other cell with the list open triggers that cell.
+    move(cells2[1]);
+    QCOMPARE(current(), &d);
+    QTRY_VERIFY(list.isVisible());
+    move(cells2[0]);
+    QVERIFY(!list.isVisible());
+    QCOMPARE(current(), &c);
+    QCOMPARE(r2->menu(), nullptr);
+    move(cells2[1]);
+    QTRY_VERIFY(list.isVisible());
+    if (!output.isEmpty()) QVERIFY(list.grab().save(QDir(output).filePath("Abyss-menu-pairs-list.png")));
+    {
+        const auto was = counts();
+        click(cells2[0]);
+        QVERIFY(fired(was, &c));
+        QVERIFY(!menu.isVisible() && !list.isVisible());
+    }
+    // A press on the list's cell opens the list; the release keeps it.
+    QVERIFY(open());
+    QTest::mousePress(menu.windowHandle(), Qt::LeftButton, {}, local(cells2[1]));
+    QTRY_VERIFY(list.isVisible());
+    QTest::mouseRelease(menu.windowHandle(), Qt::LeftButton, {}, local(cells2[1]));
+    QVERIFY(list.isVisible() && menu.isVisible());
+    QCOMPARE(spies[&d]->count(), 0);
+
+    // Mnemonics: a letter that is one cell's triggers it; a plain entry's
+    // stays QMenu's; "B" is two entries' (Be, and the cell Bo): each press
+    // visits the next, nothing fires.
+    struct Letter {
+        Qt::Key key;
+        QAction* fires;
+    };
+    for (const Letter& letter : {Letter{Qt::Key_A, &a}, Letter{Qt::Key_C, &c}, Letter{Qt::Key_E, &e}, Letter{Qt::Key_Z, &after}}) {
+        QVERIFY(open());
+        const auto was = counts();
+        key(&menu, letter.key);
+        QVERIFY2(fired(was, letter.fires), qPrintable(letter.fires->text()));
+        QVERIFY(!menu.isVisible());
+    }
+    QVERIFY(open());
+    {
+        const auto was = counts();
+        key(&menu, Qt::Key_B);
+        QCOMPARE(current(), &before);
+        key(&menu, Qt::Key_B);
+        QCOMPARE(current(), &b);
+        key(&menu, Qt::Key_B);
+        QCOMPARE(current(), &before);
+        QVERIFY(menu.isVisible());
+        QVERIFY(fired(was, nullptr));
+    }
+    // Only enabled entries match (Astra r1 R1: with every wallet closed,
+    // Wallet's "B" met the disabled "Backup Wallet…" first and never reached
+    // "Show Automatic Backups"). A disabled first match, the reverse order,
+    // and a cell against a plain entry: the one enabled match acts.
+    struct Disabled {
+        QAction* off;
+        QAction* fires;
+    };
+    a.setText("&Qa");
+    b.setText("&Qb");
+    before.setText("&Qe");
+    for (const Disabled& combo : {Disabled{&a, &b}, Disabled{&b, &a}}) {
+        before.setEnabled(false);
+        combo.off->setEnabled(false);
+        QVERIFY(open());
+        const auto was = counts();
+        key(&menu, Qt::Key_Q);
+        QVERIFY2(fired(was, combo.fires), qPrintable(combo.fires->text()));
+        QVERIFY(!menu.isVisible());
+        combo.off->setEnabled(true);
+        before.setEnabled(true);
+    }
+    // The cell disabled, the plain entry enabled: the plain entry is the one match.
+    b.setText("&Bo");
+    a.setEnabled(false);
+    QVERIFY(open());
+    {
+        const auto was = counts();
+        key(&menu, Qt::Key_Q);
+        QVERIFY(fired(was, &before));
+        QVERIFY(!menu.isVisible());
+    }
+    // The plain entry disabled, the cell enabled: the cell is the one match.
+    a.setEnabled(true);
+    before.setEnabled(false);
+    QVERIFY(open());
+    {
+        const auto was = counts();
+        key(&menu, Qt::Key_Q);
+        QVERIFY(fired(was, &a));
+        QVERIFY(!menu.isVisible());
+    }
+    before.setEnabled(true);
+    a.setText("&Al");
+    before.setText("&Be");
+
+    // The cells follow their actions: enabled, text.
+    f.setEnabled(true);
+    QVERIFY(open());
+    for (Qt::Key k : {Qt::Key_Down, Qt::Key_Down, Qt::Key_Down, Qt::Key_Down, Qt::Key_Down, Qt::Key_Right}) key(&menu, k);
+    QCOMPARE(current(), &f);
+    {
+        const auto was = counts();
+        key(&menu, Qt::Key_Return);
+        QVERIFY(fired(was, &f));
+    }
+    a.setEnabled(false);
+    QVERIFY(open());
+    key(&menu, Qt::Key_Down);
+    key(&menu, Qt::Key_Down);
+    QCOMPARE(current(), &b);
+    key(&menu, Qt::Key_Left);
+    QCOMPARE(current(), &b);
+    b.setEnabled(false);
+    QVERIFY(!r1->isEnabled());
+    QVERIFY(open());
+    key(&menu, Qt::Key_Down);
+    key(&menu, Qt::Key_Down);
+    if (menu.style()->styleHint(QStyle::SH_Menu_AllowActiveAndDisabled, nullptr, &menu)) {
+        QCOMPARE(menu.activeAction(), r1);
+        QCOMPARE(current(), nullptr);
+    } else {
+        QCOMPARE(current(), &c);
+    }
+    a.setEnabled(true);
+    b.setEnabled(true);
+    QVERIFY(r1->isEnabled());
+    a.setText("&Alpha");
+    QCOMPARE(cells1[0]->accessibleName(), QString("Alpha"));
+
+    // The cells paint in their menu's font, as QMenu paints its own entries,
+    // also when that is not the cells' own font: where a desktop gives menus a
+    // font of their own (Windows, macOS, KDE), a cell's own font is the
+    // application's (the native trial found the cells larger, the right one
+    // cut off). The same text in a plain entry and in a cell leaves the same ink.
+    CloseMenus();
+    {
+        QMenu font_menu(&host);
+        const QFont app_font = QApplication::font();
+        QFont menu_font = app_font;
+        QFont cell_font = app_font;
+        cell_font.setFamily(app_font.family());
+        if (app_font.pointSizeF() > 0) {
+            menu_font.setPointSizeF(app_font.pointSizeF() / 2);
+            cell_font.setPointSizeF(app_font.pointSizeF());
+        } else {
+            menu_font.setPixelSize(std::max(4, app_font.pixelSize() / 2));
+            cell_font.setPixelSize(app_font.pixelSize());
+        }
+        font_menu.setFont(menu_font);
+        QAction plain("WWW"), left("WWW"), right("Ww");
+        font_menu.addAction(&plain);
+        const auto font_cells = AbyssMenus::pairCells(AbyssMenus::addPair(&font_menu, &left, &right));
+        QCOMPARE(font_cells.size(), 2);
+        for (auto* cell : font_cells) cell->setFont(cell_font);
+        PointAt(&host, host.mapToGlobal(QPoint(230, 290)));
+        font_menu.popup(host.mapToGlobal(QPoint(0, 0)));
+        Settle();
+        QVERIFY(font_menu.isVisible());
+        const QImage image = font_menu.grab().toImage();
+        // The width of what is drawn in a rectangle of the menu: the columns
+        // holding a pixel unlike the rectangle's right end, where no text is.
+        const auto ink = [&](const QRect& logical) {
+            const qreal dpr = image.devicePixelRatio();
+            const QRect r = QRectF(logical.x() * dpr, logical.y() * dpr, logical.width() * dpr, logical.height() * dpr).toAlignedRect() & image.rect();
+            const QRgb ground = image.pixel(r.right() - 1, r.center().y());
+            int first = -1, last = -1;
+            for (int x = r.left(); x <= r.right(); ++x) {
+                for (int y = r.top(); y <= r.bottom(); ++y) {
+                    const QRgb pixel = image.pixel(x, y);
+                    if (std::abs(qRed(pixel) - qRed(ground)) + std::abs(qGreen(pixel) - qGreen(ground)) + std::abs(qBlue(pixel) - qBlue(ground)) > 96) {
+                        if (first < 0) first = x;
+                        last = x;
+                        break;
+                    }
+                }
+            }
+            return first < 0 ? 0 : last - first + 1;
+        };
+        const int plain_ink = ink(font_menu.actionGeometry(&plain));
+        const int cell_ink = ink(QRect(font_cells[0]->mapTo(&font_menu, QPoint()), font_cells[0]->size()));
+        // The font-less minimal run draws no text at all: there the ink says nothing.
+        if (GUIUtil::fontsLoaded() || plain_ink > 0) {
+            QVERIFY2(plain_ink > 0 && std::abs(cell_ink - plain_ink) <= 2, qPrintable(QString("ink: plain %1, cell %2").arg(plain_ink).arg(cell_ink)));
+        }
+        font_menu.hide();
+    }
+    CloseMenus();
+}
+
+void AbyssTests::hoverMenus()
+{
+    // AbyssMenus::HoverMenus on buttons of its own, small enough for minimal's
+    // 240x320 screen, so that every menu opens below its button, clear of the
+    // others (on the real window there, the menus cover the bar: see
+    // topMenusHover). Pointer moves take the window system's path.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    QWidget host;
+    host.setGeometry(0, 0, 240, 300);
+    auto* layout = new QHBoxLayout(&host);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+    layout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    QAction a1("A1"), a2("A2"), b1("B1"), c1("C1"), s1("S1"), other_action("Ot");
+    QMenu first(&host), second(&host), third(&host), sub(&host);
+    sub.setTitle("Su");
+    first.addAction(&a1);
+    first.addMenu(&sub);
+    first.addAction(&a2);
+    second.addAction(&b1);
+    third.addAction(&c1);
+    sub.addAction(&s1);
+    QList<QToolButton*> buttons;
+    for (QMenu* menu : {&first, &second, &third}) {
+        auto* button = new QToolButton(&host);
+        button->setText(QString("M%1").arg(buttons.size() + 1));
+        button->setPopupMode(QToolButton::InstantPopup);
+        button->setFocusPolicy(Qt::StrongFocus);
+        button->setMenu(menu);
+        layout->addWidget(button);
+        buttons << button;
+    }
+    // Not watched, as the quick buttons of the real window are not.
+    auto* other = new QToolButton(&host);
+    other->setDefaultAction(&other_action);
+    layout->addWidget(other);
+    QSignalSpy other_spy(&other_action, &QAction::triggered);
+    AbyssMenus::HoverMenus hover(buttons, &host);
+    QCOMPARE(hover.buttons(), buttons);
+    host.show();
+    QApplication::setActiveWindow(&host);
+    Settle();
+    QVERIFY(host.isActiveWindow());
+
+    QElapsedTimer clock;
+    clock.start();
+    std::map<const QMenu*, std::vector<qint64>> shown, hidden;
+    std::vector<int> levels;
+    for (QMenu* menu : {&first, &second, &third, &sub}) {
+        QObject::connect(menu, &QMenu::aboutToShow, [&, menu] {
+            shown[menu].push_back(clock.elapsed());
+            if (menu != &sub) levels.push_back(QThread::currentThread()->loopLevel());
+        });
+        QObject::connect(menu, &QMenu::aboutToHide, [&, menu] { hidden[menu].push_back(clock.elapsed()); });
+    }
+    const QPoint away = host.mapToGlobal(QPoint(200, 280));
+    const QPoint away2 = host.mapToGlobal(QPoint(210, 270));
+    const int open_delay = AbyssMenus::HoverMenus::OPEN_DELAY_MS;
+    const int close_delay = AbyssMenus::HoverMenus::CLOSE_DELAY_MS;
+    const auto local = [&](const QPoint& global) { return host.windowHandle()->mapFromGlobal(global); };
+    // On minimal a closed popup leaves no active window at all
+    // (QApplication::activeWindow() is null afterwards); a desktop keeps the
+    // main window active. Hover opens only in an active window, so the steps
+    // that hover-open after a close make the window active again.
+    const auto activate = [&] { QApplication::setActiveWindow(&host); };
+    const bool virtual_pointer = QGuiApplication::platformName() == QLatin1String("minimal") ||
+                                 QGuiApplication::platformName() == QLatin1String("offscreen");
+    // Clear of the buttons and of where the pointer goes.
+    QWidget elsewhere;
+    elsewhere.setGeometry(205, 5, 30, 30);
+    QStringList problems;
+    const auto expect = [&](bool ok, const char* what) {
+        if (!ok) problems << what;
+    };
+    qint64 mark = 0;
+    MenuScript script;
+    script.describe([&]() -> QString {
+        return PointerState(&host) + QString(" first: tracking %1 active %2 style %3 hint %4")
+            .arg(first.hasMouseTracking())
+            .arg(first.activeAction() ? first.activeAction()->text() : QString("none"))
+            .arg(first.style()->metaObject()->className())
+            .arg(first.style()->styleHint(QStyle::SH_Menu_MouseTracking, nullptr, &first));
+    });
+    // 1. A sweep across a button opens nothing; resting on it opens its menu
+    //    after the delay; moving onto a neighbour switches at once, again and again.
+    script.then("start away", [&] { PointAt(&host, away); });
+    script.then("sweep across the first button", [&] {
+        PointAt(&host, Centre(buttons[0]));
+        PointAt(&host, away2);
+    });
+    script.pause("after the sweep", 3 * open_delay);
+    script.then("rest on the first button", [&] {
+        expect(shown[&first].empty(), "a sweep opened the menu");
+        mark = clock.elapsed();
+        PointAt(&host, Centre(buttons[0]));
+    });
+    script.until("first menu open", [&] { return first.isVisible(); });
+    script.then("switch to the second", [&] {
+        expect(!shown[&first].empty() && shown[&first].back() - mark >= open_delay * 9 / 10, "opened before its delay");
+        expect(hover.openButton() == buttons[0] && hover.mouseSession(), "a hover-opened menu is not a mouse session");
+        for (int i : {1, 2}) {
+            expect(!first.frameGeometry().intersects(QRect(buttons[i]->mapToGlobal(QPoint()), buttons[i]->size())), "a menu covers a button");
+        }
+        // No move after this one: only the switch can open the second menu (an
+        // Enter, and with it the hover delay, needs a move once a popup closed).
+        PointAt(&host, Centre(buttons[1]));
+        expect(!first.isVisible(), "the first menu stayed open on the switch");
+    });
+    script.until("second menu open", [&] { return second.isVisible(); });
+    script.then("switch to the third", [&] { PointAt(&host, Centre(buttons[2])); });
+    script.until("third menu open", [&] { return third.isVisible() && !second.isVisible(); });
+    script.then("back to the first", [&] { PointAt(&host, Centre(buttons[0])); });
+    script.until("first menu open again", [&] { return first.isVisible() && !third.isVisible(); });
+    // 2. An open submenu keeps the menu open; leaving closes both after the delay.
+    script.then("onto the submenu's entry", [&] { PointAt(&host, first.mapToGlobal(first.actionGeometry(sub.menuAction()).center())); });
+    script.until("submenu open", [&] { return sub.isVisible(); });
+    script.then("into the submenu", [&] { PointAt(&host, sub.mapToGlobal(sub.actionGeometry(&s1).center())); });
+    script.pause("resting in the submenu", 3 * close_delay);
+    script.then("leave", [&] {
+        expect(first.isVisible() && sub.isVisible(), "the submenu did not keep the menu open");
+        mark = clock.elapsed();
+        PointAt(&host, away);
+    });
+    script.until("closed after the pointer left", [&] { return !first.isVisible() && !sub.isVisible(); });
+    script.then("not before its delay", [&] {
+        expect(!hidden[&first].empty() && hidden[&first].back() - mark >= close_delay * 9 / 10, "closed before its delay");
+    });
+    // 3. A click on the open menu's button closes it; it opens again on hover
+    //    only after the pointer has left the button once.
+    script.then("rest on the first button", [&] {
+        activate();
+        PointAt(&host, Centre(buttons[0]));
+    });
+    script.until("open", [&] { return first.isVisible(); });
+    script.then("click its button", [&] { QTest::mouseClick(host.windowHandle(), Qt::LeftButton, {}, local(Centre(buttons[0]))); });
+    script.until("closed by the click", [&] { return !first.isVisible(); });
+    script.then("move on the button", [&] {
+        activate();
+        PointAt(&host, Centre(buttons[0]) + QPoint(1, 1));
+    });
+    script.pause("resting on it", 3 * open_delay);
+    script.then("leave and come back", [&] {
+        // Where the menu closed is QCursor::pos(): minimal's is the last
+        // position its window system saw, these moves; a desktop's is the real
+        // pointer (Windows: GetCursorPos), which they leave where it was.
+        if (virtual_pointer) expect(!first.isVisible(), "the menu opened again under the pointer that closed it");
+        PointAt(&host, away2);
+        PointAt(&host, Centre(buttons[0]));
+    });
+    script.until("opens again", [&] { return first.isVisible(); });
+    script.then("escape", [&] { QTest::keyClick(&first, Qt::Key_Escape); });
+    script.until("closed by escape", [&] { return !first.isVisible(); });
+    // 4. A click-opened menu is a mouse session; switching from it takes the
+    //    queued path, twice over (Astra note R2).
+    script.then("press on the second button", [&] {
+        PointAt(&host, away);
+        MenuScript::post([&] { QTest::mousePress(host.windowHandle(), Qt::LeftButton, {}, local(Centre(buttons[1]))); });
+    });
+    script.until("second open by the press", [&] { return second.isVisible(); });
+    script.then("release; switch to the third", [&] {
+        QTest::mouseRelease(host.windowHandle(), Qt::LeftButton, {}, local(Centre(buttons[1])));
+        expect(second.isVisible(), "the release closed the click-opened menu");
+        expect(hover.mouseSession(), "a click-opened menu is not a mouse session");
+        PointAt(&host, Centre(buttons[2]));
+    });
+    script.until("third open", [&] { return third.isVisible() && !second.isVisible(); });
+    script.then("switch to the first", [&] { PointAt(&host, Centre(buttons[0])); });
+    script.until("first open", [&] { return first.isVisible() && !third.isVisible(); });
+    script.then("leave", [&] { PointAt(&host, away2); });
+    script.until("closed after leaving", [&] { return !first.isVisible(); });
+    // 5. A keyboard-opened menu stays when the pointer leaves.
+    script.then("open the first with Space", [&] {
+        buttons[0]->setFocus();
+        MenuScript::post([&] { QTest::keyClick(buttons[0], Qt::Key_Space); });
+    });
+    script.until("first open by the keyboard", [&] { return first.isVisible(); });
+    script.then("pointer away", [&] {
+        expect(!hover.mouseSession(), "a keyboard-opened menu is a mouse session");
+        PointAt(&host, away);
+    });
+    script.pause("pointer away", 3 * close_delay);
+    script.then("still open; escape", [&] {
+        expect(first.isVisible(), "the pointer closed a keyboard-opened menu");
+        QTest::keyClick(&first, Qt::Key_Escape);
+    });
+    script.until("closed", [&] { return !first.isVisible(); });
+    // 6. A key pressed in a mouse session makes it a keyboard one (Astra note R1).
+    script.then("rest on the first button again", [&] {
+        activate();
+        PointAt(&host, Centre(buttons[0]));
+    });
+    script.until("open on hover", [&] { return first.isVisible(); });
+    script.then("leave, and press a key at once", [&] {
+        expect(hover.mouseSession(), "a hover-opened menu is not a mouse session");
+        PointAt(&host, away2);
+        QTest::keyClick(&first, Qt::Key_Down);
+        expect(!hover.mouseSession(), "a key press left it a mouse session");
+    });
+    script.pause("pointer away after the key", 3 * close_delay);
+    script.then("still open after the key; escape", [&] {
+        expect(first.isVisible(), "the pointer closed a menu in which a key was pressed");
+        QTest::keyClick(&first, Qt::Key_Escape);
+    });
+    script.until("closed again", [&] { return !first.isVisible(); });
+    // 7. The button that is not watched: resting on it opens and triggers nothing.
+    script.then("rest on the other button", [&] { PointAt(&host, Centre(other)); });
+    script.pause("resting on the other", 3 * open_delay);
+    script.then("nothing from it", [&] {
+        expect(!QApplication::activePopupWidget(), "a popup opened over the other button");
+        expect(other_spy.isEmpty(), "the other button triggered");
+    });
+    // 8. Nothing opens on hover while the window is not active: another window
+    //    is. (QApplication::setActiveWindow(nullptr) would do on minimal only;
+    //    on a desktop QWidget::isActiveWindow() also asks the window system.)
+    script.then("activate another window", [&] {
+        elsewhere.show();
+        elsewhere.activateWindow();
+        QApplication::setActiveWindow(&elsewhere);
+    });
+    script.until("the window inactive", [&] { return !host.isActiveWindow(); });
+    script.then("rest on the second button", [&] {
+        PointAt(&host, away);
+        PointAt(&host, Centre(buttons[1]));
+    });
+    script.pause("resting while inactive", 3 * open_delay);
+    script.then("nothing while inactive", [&] {
+        expect(!second.isVisible(), "a menu opened in an inactive window");
+        elsewhere.hide();
+        QApplication::setActiveWindow(&host);
+    });
+    const QString failure = script.run();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
+    QVERIFY2(problems.isEmpty(), qPrintable(problems.join("; ")));
+    // Every menu opened at the same loop level: none inside another's exec() (Astra note R2).
+    QVERIFY(levels.size() >= 8);
+    QVERIFY2(std::all_of(levels.begin(), levels.end(), [&](int level) { return level == levels.front(); }),
+             qPrintable(QString("loop levels %1").arg([&] { QStringList l; for (int v : levels) l << QString::number(v); return l.join(','); }())));
+}
+
+void AbyssTests::topMenuPairs()
+{
+    // The real Abyss Wallet and Tools menus: the pairs of the roadmap, the
+    // wallet list of its own, the rows following their actions' state.
+    RestoreAppearance restore;
+    QSettings().setValue("fShowMultisigTab", false);
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    WalletFixture fixture(m_node);
+    NodeContext& context = *m_node.context();
+    const auto loader = interfaces::MakeWalletLoader(*context.chain, context.coinjoin_loader, *Assert(context.args));
+    context.wallet_loader = loader.get();
+    const auto forget = interfaces::MakeHandler([&] {
+        context.wallet_loader = nullptr;
+        RemoveWallet(fixture.wallet, std::nullopt);
+    });
+    Theme("Abyss");
+    {
+        BitcoinGUI window(m_node, style.get());
+        interfaces::BlockAndHeaderTipInfo tip{};
+        window.setClientModel(fixture.client.get(), &tip);
+        WalletController controller(*fixture.client, nullptr);
+        const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+        window.setWalletController(&controller);
+        window.resize(1280, 850);
+        window.show();
+        Settle();
+        if (window.nativeMenuBar()) QSKIP("A native menu bar keeps single rows");
+        QMenu* wallet = window.abyssWalletMenu;
+        QMenu* tools = window.abyssToolsMenu;
+        QVERIFY(wallet && tools && window.abyssOpenWalletMenu);
+        using Pair = std::pair<QAction*, QAction*>;
+        const auto pair = [](QAction* row) {
+            const auto cells = AbyssMenus::pairCells(row);
+            return cells.size() == 2 ? Pair{cells[0]->action(), cells[1]->action()} : Pair{nullptr, nullptr};
+        };
+        const QList<QAction*> w = wallet->actions();
+        QCOMPARE(w.size(), 9);
+        QVERIFY(pair(w[0]) == Pair(window.m_create_wallet_action, window.m_open_wallet_action));
+        QVERIFY(pair(w[1]) == Pair(window.m_close_wallet_action, window.m_close_all_wallets_action));
+        QVERIFY(w[2]->isSeparator());
+        QCOMPARE(w[3], window.openAction);
+        QVERIFY(pair(w[4]) == Pair(window.backupWalletAction, window.showBackupsAction));
+        QCOMPARE(w[5]->menu(), window.findChild<QMenu*>("abyssSecurityMenu"));
+        QVERIFY(w[6]->menu() && w[6]->menu()->actions().contains(window.toggleStakingAction));
+        QVERIFY(w[7]->isSeparator());
+        QCOMPARE(w[8], window.quitAction);
+        const QList<QAction*> t = tools->actions();
+        QVERIFY(pair(t[0]) == Pair(window.usedSendingAddressesAction, window.usedReceivingAddressesAction));
+        QVERIFY(pair(t[1]) == Pair(window.signMessageAction, window.verifyMessageAction));
+        QCOMPARE(t[2], window.m_load_psbt_action);
+        QCOMPARE(t[3], window.m_load_psbt_clipboard_action);
+        QCOMPARE(t[4], window.openConfEditorAction);
+        QVERIFY(t[5]->isSeparator());
+        const QList<QAction*> paired{window.m_create_wallet_action, window.m_open_wallet_action, window.m_close_wallet_action,
+                                     window.m_close_all_wallets_action, window.backupWalletAction, window.showBackupsAction,
+                                     window.usedSendingAddressesAction, window.usedReceivingAddressesAction,
+                                     window.signMessageAction, window.verifyMessageAction};
+        for (QAction* shared : paired) {
+            QVERIFY(!wallet->actions().contains(shared) && !tools->actions().contains(shared));
+            QVERIFY(shared->isVisible());
+            QVERIFY(std::any_of(window.classicMenus.begin(), window.classicMenus.end(), [&](QMenu* m) { return m->actions().contains(shared); }));
+        }
+        QCOMPARE(AbyssMenus::pairCells(w[4]).at(0)->accessibleName(), QString("Backup Wallet…"));
+        QCOMPARE(AbyssMenus::pairCells(t[1]).at(0)->accessibleName(), QString("Sign message…"));
+        const auto rows_follow = [&] {
+            for (QAction* row : {w[0], w[1], w[4], t[0], t[1]}) {
+                const Pair p = pair(row);
+                if (row->isEnabled() != (p.first->isEnabled() || p.second->isEnabled())) return false;
+            }
+            return true;
+        };
+        QVERIFY(rows_follow());
+
+        // The list cell has a menu of its own; the classic Open Wallet keeps
+        // its own, and its menu stays its own (Astra note R3).
+        const auto cells = AbyssMenus::pairCells(w[0]);
+        QVERIFY(cells[1]->hasSubmenu());
+        QVERIFY(window.abyssOpenWalletMenu != window.m_open_wallet_menu);
+        const auto classic_intact = [&] {
+            return window.m_open_wallet_action->menu() == window.m_open_wallet_menu &&
+                   window.m_open_wallet_menu->menuAction() == window.m_open_wallet_action;
+        };
+        QVERIFY(classic_intact());
+        QVERIFY(window.m_open_wallet_action->isEnabled() && window.m_create_wallet_action->isEnabled());
+        wallet->popup(window.mapToGlobal(QPoint(0, 0)));
+        Settle();
+        QTest::keyClick(wallet, Qt::Key_Down);
+        QCOMPARE(wallet->activeAction(), w[0]);
+        QVERIFY(cells[0]->isSelected());
+        QTest::keyClick(wallet, Qt::Key_Right);
+        QVERIFY(cells[1]->isSelected());
+        QVERIFY(classic_intact());
+        QTest::keyClick(wallet, Qt::Key_Right);
+        QTRY_VERIFY(window.abyssOpenWalletMenu->isVisible());
+        QVERIFY(classic_intact());
+        window.fillOpenWalletMenu(window.m_open_wallet_menu);
+        const auto entries = [](QMenu* menu) {
+            QStringList list;
+            for (QAction* action : menu->actions()) list << action->text() + (action->isEnabled() ? "" : " (disabled)");
+            return list;
+        };
+        QVERIFY(!entries(window.abyssOpenWalletMenu).isEmpty());
+        QCOMPARE(entries(window.abyssOpenWalletMenu), entries(window.m_open_wallet_menu));
+        const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+        if (!output.isEmpty()) {
+            QVERIFY(QDir().mkpath(output));
+            QVERIFY(wallet->grab().save(QDir(output).filePath("Abyss-wallet-menu-pairs.png")));
+            QVERIFY(window.abyssOpenWalletMenu->grab().save(QDir(output).filePath("Abyss-wallet-open-list.png")));
+        }
+        QTest::keyClick(window.abyssOpenWalletMenu, Qt::Key_Left);
+        QVERIFY(!window.abyssOpenWalletMenu->isVisible());
+        QTest::keyClick(wallet, Qt::Key_Left);
+        QVERIFY(cells[0]->isSelected());
+        QCOMPARE(w[0]->menu(), nullptr);
+        QTest::keyClick(wallet, Qt::Key_Escape);
+        QVERIFY(!wallet->isVisible());
+        QVERIFY(classic_intact());
+        if (!output.isEmpty()) {
+            tools->popup(window.mapToGlobal(QPoint(0, 0)));
+            Settle();
+            for (Qt::Key k : {Qt::Key_Down, Qt::Key_Down, Qt::Key_Right}) QTest::keyClick(tools, k);
+            QVERIFY(AbyssMenus::pairCells(t[1]).at(1)->isSelected());
+            QVERIFY(tools->grab().save(QDir(output).filePath("Abyss-tools-menu-pairs.png")));
+            tools->close();
+        }
+
+        // The rows follow their actions as wallets come and go.
+        const std::vector<WalletModel*> models = controller.getOpenWallets();
+        QVERIFY(!models.empty());
+        QVERIFY(window.backupWalletAction->isEnabled());
+        for (WalletModel* model : models) Q_EMIT model->unload();
+        Settle();
+        QVERIFY(controller.getOpenWallets().empty());
+        QVERIFY(!window.backupWalletAction->isEnabled());
+        QVERIFY(rows_follow());
+    }
+}
+
+void AbyssTests::topMenusHover()
+{
+    // The real window: the hover watcher has the three Abyss menu buttons and
+    // none of the quick buttons; resting on Wallet opens its menu; the shared
+    // classic Help menu, opened from the classic menu bar, is none of its own.
+    // The finer paths (switch, close, sessions) are hoverMenus': on minimal's
+    // 240x320 screen the real menus cover the bar.
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    WalletFixture fixture(m_node);
+    Theme("Abyss");
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.addWallet(fixture.model.get());
+    window.show();
+    Settle();
+    // The window holds itself to minimal's screen when shown; widened again,
+    // the quick buttons on the right are clear of the menu buttons (as in topMenus).
+    window.resize(1280, 850);
+    Settle();
+    QApplication::setActiveWindow(&window);
+    Settle();
+    QVERIFY(window.isActiveWindow());
+    if (window.nativeMenuBar()) QSKIP("A native menu bar belongs to the platform");
+    auto* bar = window.findChild<QWidget*>("abyssMenuControls");
+    QVERIFY(bar && bar->isVisible());
+    QList<QToolButton*> buttons;
+    for (const char* name : {"abyssWalletMenuButton", "abyssToolsMenuButton", "abyssHelpMenuButton"}) {
+        buttons << bar->findChild<QToolButton*>(name);
+        QVERIFY(buttons.last());
+    }
+    auto* quick_row = window.findChild<QWidget*>("abyssQuickControls");
+    QVERIFY(quick_row);
+    QVERIFY(!QRect(bar->mapToGlobal(QPoint()), bar->size()).intersects(QRect(quick_row->mapToGlobal(QPoint()), quick_row->size())));
+    QCOMPARE(QApplication::widgetAt(Centre(buttons[0])), buttons[0]);
+    QVERIFY(window.abyssMenuHover);
+    QCOMPARE(window.abyssMenuHover->buttons(), buttons);
+    for (const char* name : {"abyssOptionsButton", "abyssPrivacyButton", "walletLockButton", "abyssConsoleButton"}) {
+        auto* quick = window.findChild<QToolButton*>(name);
+        QVERIFY(quick);
+        QVERIFY(!window.abyssMenuHover->buttons().contains(quick));
+    }
+    const QPoint away = window.mapToGlobal(QPoint(900, 700));
+    QStringList problems;
+    const auto expect = [&](bool ok, const char* what) {
+        if (!ok) problems << what;
+    };
+    MenuScript script;
+    script.describe([&]() -> QString {
+        return PointerState(&window) + QString(" wallet button at %1,%2 %3x%4 under-mouse %5 enabled %6 open %7")
+            .arg(Centre(buttons[0]).x()).arg(Centre(buttons[0]).y()).arg(buttons[0]->width()).arg(buttons[0]->height())
+            .arg(buttons[0]->underMouse()).arg(buttons[0]->isEnabled())
+            .arg(window.abyssMenuHover->openButton() ? window.abyssMenuHover->openButton()->objectName() : QString("none"));
+    });
+    script.then("away", [&] { PointAt(&window, away); });
+    script.then("rest on Wallet", [&] { PointAt(&window, Centre(buttons[0])); });
+    script.until("the Wallet menu opens", [&] { return window.abyssWalletMenu->isVisible(); });
+    script.then("as a mouse session of the watcher's", [&] {
+        expect(window.abyssMenuHover->openButton() == buttons[0], "the watcher does not have the Wallet menu");
+        expect(window.abyssMenuHover->mouseSession(), "not a mouse session");
+    });
+    QString failure = script.run();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
+    QVERIFY(!window.abyssWalletMenu->isVisible());
+
+    // On a desktop-sized screen the real menus open below the bar: the walk on
+    // the real window, and a hover-open after a close without making the window
+    // active again (a desktop keeps it active; minimal does not, see hoverMenus).
+    // The native Windows trial runs this part; minimal skips it.
+    if (QGuiApplication::platformName() != QLatin1String("minimal")) {
+        QMenu* help_menu = window.classicMenus.last();
+        script.then("away first", [&] { PointAt(&window, away + QPoint(3, 3)); });
+        script.then("rest on Wallet once more", [&] { PointAt(&window, Centre(buttons[0])); });
+        script.until("Wallet open", [&] { return window.abyssWalletMenu->isVisible(); });
+        script.then("onto Tools", [&] { PointAt(&window, Centre(buttons[1])); });
+        script.until("Tools open", [&] { return window.abyssToolsMenu->isVisible() && !window.abyssWalletMenu->isVisible(); });
+        script.then("onto Help", [&] { PointAt(&window, Centre(buttons[2])); });
+        script.until("Help open", [&] { return help_menu->isVisible() && !window.abyssToolsMenu->isVisible(); });
+        script.then("away from the menus", [&] { PointAt(&window, away); });
+        script.until("closed after the pointer left", [&] { return !help_menu->isVisible(); });
+        script.then("rest on Tools after the close", [&] {
+            expect(window.isActiveWindow(), "the window is not active after a menu closed");
+            PointAt(&window, Centre(buttons[1]));
+        });
+        script.until("Tools open again", [&] { return window.abyssToolsMenu->isVisible(); });
+        failure = script.run();
+        QVERIFY2(failure.isEmpty(), qPrintable(failure));
+        QVERIFY2(problems.isEmpty(), qPrintable(problems.join("; ")));
+    }
+
+    Theme("Light");
+    Settle();
+    for (auto* button : buttons) QVERIFY(!button->isVisible());
+    QMenu* help = window.classicMenus.last();
+    QVERIFY(help->menuAction()->isVisible());
+    script.then("away again", [&] { PointAt(&window, away + QPoint(5, 5)); });
+    script.then("open Help from the menu bar", [&] {
+        const QRect item = window.appMenuBar->actionGeometry(help->menuAction());
+        QTest::mouseClick(window.windowHandle(), Qt::LeftButton, {}, window.windowHandle()->mapFromGlobal(window.appMenuBar->mapToGlobal(item.center())));
+    });
+    script.until("Help open", [&] { return help->isVisible(); });
+    script.then("pointer away from it", [&] {
+        expect(!window.abyssMenuHover->openButton(), "the watcher took the classic Help menu");
+        PointAt(&window, away);
+    });
+    script.pause("pointer away", 3 * AbyssMenus::HoverMenus::CLOSE_DELAY_MS);
+    script.then("still open", [&] { expect(help->isVisible(), "the classic Help menu closed when the pointer left"); });
+    failure = script.run();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
+    QVERIFY2(problems.isEmpty(), qPrintable(problems.join("; ")));
 }
 
 void AbyssTests::skyGeometry()

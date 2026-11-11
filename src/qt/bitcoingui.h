@@ -64,6 +64,10 @@ class ClickableLabel;
 class ClickableProgressBar;
 }
 
+namespace AbyssMenus {
+class HoverMenus;
+}
+
 /**
   Bitcoin GUI main class. This class represents the main window of the Bitcoin UI. It communicates with both the client and
   wallet models to give the user an up-to-date view of the current core state.
@@ -160,7 +164,17 @@ private:
     QWidget* abyssMenuControls = nullptr;
     QMenu* abyssWalletMenu = nullptr;
     QMenu* abyssToolsMenu = nullptr;
+    //! The wallet list behind the Abyss Wallet menu's "Open Wallet" cell. Its
+    //! own menu, filled like m_open_wallet_menu: that one belongs to
+    //! m_open_wallet_action, which the classic File menu and the no-wallet page
+    //! share, and a paired row must not take it over (AbyssMenus::addPair).
+    QMenu* abyssOpenWalletMenu = nullptr;
+    //! The Abyss Wallet, Tools and Help buttons open their menus on hover.
+    AbyssMenus::HoverMenus* abyssMenuHover = nullptr;
     QList<QMenu*> classicMenus;
+    //! The menus belong to the platform (macOS, a Linux global menu): the
+    //! Abyss menus are native menus there, with no buttons and no paired rows.
+    bool nativeMenuBar() const;
     void updateAbyssMenus();
     bool m_wallet_actions_enabled{false};
     //! The last value handed to setEncryptionStatus, kept so a theme change can
@@ -285,6 +299,11 @@ private:
 
     /** Create the main UI actions. */
     void createActions();
+#ifdef ENABLE_WALLET
+    /** Fill a wallet list with the wallets of the wallet directory, those
+        already loaded disabled (m_open_wallet_menu and abyssOpenWalletMenu). */
+    void fillOpenWalletMenu(QMenu* menu);
+#endif
     /** Create the menu bar and sub-menus. */
     void createMenuBar();
     /** Create the toolbars */
