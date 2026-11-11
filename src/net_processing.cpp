@@ -194,9 +194,18 @@ static constexpr auto DEEP_FORK_WARNING_EXPIRY{24h};
  *  sent unasked is stored), and its signature is its own coinstake key's. Whether a branch is the best one does not
  *  matter either: anyone can make a branch the best header for nothing. This bounds a rate, not the life of a
  *  connection: the entries stay, and a window later the peer may open as many again (a bound would need headers
- *  that prove their stake). */
+ *  that prove their stake).
+ *
+ *  Whose count: an inbound connection is opened by the peer, as often as it likes, so a count kept with the
+ *  connection starts again at every reconnect. Inbound peers without the noban permission are therefore counted
+ *  together by network group (CNode::nKeyedNetGroup; node::UnbackedForkBudget), which a reconnect does not change;
+ *  at most MAX_UNBACKED_FORK_GROUPS groups are held. The price: honest inbound peers of a group share its count with
+ *  anyone else in it, and a real block on a tip that already has a child may be refused from them while the count is
+ *  used up. Outbound peers (this node chose them, from different groups, and they cannot reconnect at will), peers
+ *  added by hand and peers with noban keep the count of their own connection, so such a block still comes in. */
 static constexpr size_t MAX_UNBACKED_FORKS_PER_PEER{32};
 static constexpr auto UNBACKED_FORK_WINDOW{24h};
+static constexpr size_t MAX_UNBACKED_FORK_GROUPS{4096};
 /** Minimum blocks required to signal NODE_NETWORK_LIMITED */
 static const unsigned int NODE_NETWORK_LIMITED_MIN_BLOCKS = 288;
 /** Average delay between local address broadcasts */
@@ -588,7 +597,8 @@ struct CNodeState {
     int nUnconnectingHeaders{0};
     //! The new branches this peer opened within UNBACKED_FORK_WINDOW (headers without blocks, or blocks not asked
     //! for), when, and their first entry; dropped once that has been connected (see MAX_UNBACKED_FORKS_PER_PEER), so
-    //! at most that many. Entries are never freed.
+    //! at most that many. Entries are never freed. Not used for a peer counted by its network group
+    //! (PeerManagerImpl::CountsUnbackedForksByGroup).
     std::deque<std::pair<std::chrono::seconds, const CBlockIndex*>> m_unbacked_forks;
     //! Headers from this peer above the height taken without blocks were dropped: the last one taken, or the block
     //! the dropped ones build on if none was. Asked on from there once the limit has moved past it (see
@@ -956,11 +966,15 @@ private:
     /** Of a header without its block about to be taken: whether it branches off too deep to take, and whether it
      *  opens a new branch (its parent already has a child), at a proof-of-stake height */
     void ClassifyUnbackedHeader(const CBlockIndex& parent, bool& too_deep, bool& opens_branch) const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /** Whether this peer's new branches count against its network group instead of its connection: inbound, without
+     *  the noban permission (see MAX_UNBACKED_FORKS_PER_PEER) */
+    static bool CountsUnbackedForksByGroup(const CNode& pfrom) { return pfrom.IsInboundConn() && !pfrom.HasPermission(NetPermissionFlags::NoBan); }
     /** Whether this peer may open another new branch now: fewer than MAX_UNBACKED_FORKS_PER_PEER of the branches it
-     *  opened within UNBACKED_FORK_WINDOW are on a block never connected (the others are forgotten here) */
-    bool UnbackedForkRoom(NodeId nodeid) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+     *  (or, for a peer counted by group, its network group) opened within UNBACKED_FORK_WINDOW are on a block never
+     *  connected (the others are forgotten here) */
+    bool UnbackedForkRoom(const CNode& pfrom) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     /** Notes that this peer opened a new branch with `hash`, if that is now an index entry never connected */
-    void NoteUnbackedFork(NodeId nodeid, const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    void NoteUnbackedFork(const CNode& pfrom, const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     /** Notes that the limits on headers without blocks (or validation, for a block not asked for) dropped something
      *  from this peer now (see CNodeState::m_unbacked_dropped_at) */
     void NoteUnbackedDrop(NodeId nodeid) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
@@ -1142,6 +1156,10 @@ private:
 
     /** The depth limit on headers without their blocks (MAX_UNBACKED_FORK_DEPTH; regtest: -testunbackedforkdepth) */
     const int m_unbacked_fork_depth;
+
+    /** The new branches inbound peers opened, by network group (see MAX_UNBACKED_FORKS_PER_PEER). In memory only: a
+     *  restart starts the counts again, as it does the connections'. */
+    node::UnbackedForkBudget m_unbacked_group_forks GUARDED_BY(cs_main){MAX_UNBACKED_FORKS_PER_PEER, UNBACKED_FORK_WINDOW, MAX_UNBACKED_FORK_GROUPS};
 
     /** While the node's deep-fork warning is on: when an outbound peer last served headers that warrant it
      *  (MaybeWarnDeepFork); and when such headers were last logged */
@@ -3559,12 +3577,20 @@ void PeerManagerImpl::ClassifyUnbackedHeader(const CBlockIndex& parent, bool& to
     opens_branch = m_chainman.m_blockman.m_prev_block_index.count(parent.GetBlockHash()) != 0;
 }
 
-bool PeerManagerImpl::UnbackedForkRoom(NodeId nodeid)
+bool PeerManagerImpl::UnbackedForkRoom(const CNode& pfrom)
 {
     AssertLockHeld(cs_main);
-    CNodeState* state{State(nodeid)};
-    if (state == nullptr) return true;
     const auto now{GetTime<std::chrono::seconds>()};
+    if (CountsUnbackedForksByGroup(pfrom)) {
+        const bool room{m_unbacked_group_forks.Room(pfrom.nKeyedNetGroup, now)};
+        if (!room && !m_unbacked_group_forks.Holds(pfrom.nKeyedNetGroup)) {
+            // Not the group's own count: the table of groups is full, and a group not in it gets no room.
+            LogPrint(BCLog::NET, "peer=%d: no new branch is taken from its network group, %u groups are counted already\n", pfrom.GetId(), MAX_UNBACKED_FORK_GROUPS);
+        }
+        return room;
+    }
+    CNodeState* state{State(pfrom.GetId())};
+    if (state == nullptr) return true;
     auto& forks{state->m_unbacked_forks};
     for (auto it{forks.begin()}; it != forks.end();) {
         if (it->first + UNBACKED_FORK_WINDOW <= now || it->second->IsValid(BLOCK_VALID_SCRIPTS)) {
@@ -3576,15 +3602,22 @@ bool PeerManagerImpl::UnbackedForkRoom(NodeId nodeid)
     return forks.size() < MAX_UNBACKED_FORKS_PER_PEER;
 }
 
-void PeerManagerImpl::NoteUnbackedFork(NodeId nodeid, const uint256& hash)
+void PeerManagerImpl::NoteUnbackedFork(const CNode& pfrom, const uint256& hash)
 {
     AssertLockHeld(cs_main);
-    CNodeState* state{State(nodeid)};
-    if (state == nullptr) return;
     const CBlockIndex* pindex{m_chainman.m_blockman.LookupBlockIndex(hash)};
     // Nothing kept (refused, e.g. as invalid or conflicting with a ChainLock), or kept and connected: no cost.
     if (pindex == nullptr || pindex->IsValid(BLOCK_VALID_SCRIPTS)) return;
-    state->m_unbacked_forks.emplace_back(GetTime<std::chrono::seconds>(), pindex);
+    const auto now{GetTime<std::chrono::seconds>()};
+    if (CountsUnbackedForksByGroup(pfrom)) {
+        if (!m_unbacked_group_forks.Note(pfrom.nKeyedNetGroup, now, pindex)) {
+            LogPrint(BCLog::NET, "peer=%d: its new branch is not counted, %u network groups are counted already\n", pfrom.GetId(), MAX_UNBACKED_FORK_GROUPS);
+        }
+        return;
+    }
+    CNodeState* state{State(pfrom.GetId())};
+    if (state == nullptr) return;
+    state->m_unbacked_forks.emplace_back(now, pindex);
 }
 
 void PeerManagerImpl::NoteUnbackedDrop(NodeId nodeid)
@@ -3841,7 +3874,7 @@ void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
                          pfrom.GetId(), parent->nHeight, m_unbacked_fork_depth);
                 MaybeWarnDeepFork(pfrom, *parent, Span<const CBlockHeader>{headers}.subspan(first_new), nCount, GetHeadersLimit(pfrom, compressed));
                 refused = true;
-            } else if (opens_branch && !UnbackedForkRoom(pfrom.GetId())) {
+            } else if (opens_branch && !UnbackedForkRoom(pfrom)) {
                 LogPrint(BCLog::NET, "peer=%d: headers without blocks opening a new branch at height %d, past %u such branches within %d s, dropped\n",
                          pfrom.GetId(), parent->nHeight + 1, MAX_UNBACKED_FORKS_PER_PEER, count_seconds(UNBACKED_FORK_WINDOW));
                 refused = true;
@@ -3875,7 +3908,7 @@ void PeerManagerImpl::ProcessHeadersMessage(CNode& pfrom, Peer& peer,
     BlockValidationState state;
     const bool processed{m_chainman.ProcessNewBlockHeaders(taken, state, m_chainparams, &pindexLast)};
     // Noted first: an invalid header after the new branch must not undo its count.
-    if (!opened.IsNull()) WITH_LOCK(cs_main, NoteUnbackedFork(pfrom.GetId(), opened));
+    if (!opened.IsNull()) WITH_LOCK(cs_main, NoteUnbackedFork(pfrom, opened));
     if (!processed && state.GetResult() == BlockValidationResult::BLOCK_CHAINLOCK) {
         // Refused for a ChainLock, without an entry: a peer that has not seen the lock yet may announce more on
         // top of it, which cannot connect here, as after any header dropped above.
@@ -5519,7 +5552,7 @@ void PeerManagerImpl::ProcessMessage(
             // parent below the minimum chain work.
             const bool deep{too_deep && !TrustedWithDeepFork(pfrom)};
             const bool above{prev->nHeight + 1 > MaxUnbackedHeaderHeight() && prev->nChainWork >= nMinimumChainWork};
-            const bool past_count{!deep && opens_branch && !UnbackedForkRoom(pfrom.GetId())};
+            const bool past_count{!deep && opens_branch && !UnbackedForkRoom(pfrom)};
             if (above || deep || past_count) {
                 LogPrint(BCLog::NET, "peer=%d: cmpctblock %s at height %d is above the height taken without blocks, branches off too deep, or opens a new branch past the peer's count, dropped\n",
                          pfrom.GetId(), blockhash.ToString(), prev->nHeight + 1);
@@ -5538,7 +5571,7 @@ void PeerManagerImpl::ProcessMessage(
         const CBlockIndex *pindex = nullptr;
         BlockValidationState state;
         const bool processed{m_chainman.ProcessNewBlockHeaders({cmpctblock.header}, state, m_chainparams, &pindex)};
-        if (opens_branch) WITH_LOCK(cs_main, NoteUnbackedFork(pfrom.GetId(), blockhash));
+        if (opens_branch) WITH_LOCK(cs_main, NoteUnbackedFork(pfrom, blockhash));
         if (!processed) {
             if (state.GetResult() == BlockValidationResult::BLOCK_CHAINLOCK) {
                 // As for headers: refused for a ChainLock without an entry, more may come on top of it.
@@ -5843,7 +5876,7 @@ void PeerManagerImpl::ProcessMessage(
                 if (const CBlockIndex* prev{m_chainman.m_blockman.LookupBlockIndex(pblock->hashPrevBlock)}) {
                     bool too_deep; // not applied: a block not asked for is kept only with at least the tip's work (AcceptBlock)
                     ClassifyUnbackedHeader(*prev, too_deep, opens_branch);
-                    if (opens_branch && !UnbackedForkRoom(pfrom.GetId())) {
+                    if (opens_branch && !UnbackedForkRoom(pfrom)) {
                         LogPrint(BCLog::NET, "peer=%d: block %s not asked for opens a new branch at height %d, past %u such branches within %d s, dropped\n",
                                  pfrom.GetId(), hash.ToString(), prev->nHeight + 1, MAX_UNBACKED_FORKS_PER_PEER, count_seconds(UNBACKED_FORK_WINDOW));
                         NoteUnbackedDrop(pfrom.GetId());
@@ -5857,7 +5890,7 @@ void PeerManagerImpl::ProcessMessage(
             mapBlockSource.emplace(hash, std::make_pair(pfrom.GetId(), true));
         }
         ProcessBlock(pfrom, pblock, forceProcessing);
-        if (opens_branch) WITH_LOCK(cs_main, NoteUnbackedFork(pfrom.GetId(), hash));
+        if (opens_branch) WITH_LOCK(cs_main, NoteUnbackedFork(pfrom, hash));
         if (!forceProcessing) {
             LOCK(cs_main);
             // A block not asked for, on a known block, that validation dropped before indexing it (AcceptBlock: less
