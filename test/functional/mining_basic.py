@@ -12,6 +12,7 @@ import copy
 from decimal import Decimal
 
 from test_framework.blocktools import (
+    POW_BLOCK_WORK,
     create_coinbase,
     filter_tip_keys,
     NORMAL_GBT_REQUEST_PARAMS,
@@ -89,7 +90,7 @@ class MiningTest(BitcoinTestFramework):
         assert 'currentblocksize' not in mining_info
         assert 'currentblocktx' not in mining_info
         assert_equal(mining_info['difficulty'], Decimal('4.656542373906925E-10'))
-        assert_equal(mining_info['networkhashps'], Decimal('0.01282051282051282'))
+        assert_equal(mining_info['networkhashps'], Decimal(str(POW_BLOCK_WORK / 156)))  # blocks 156 s apart (Dash: 2/156)
         assert_equal(mining_info['pooledtx'], 0)
 
         # Mine a block to leave initial block download
