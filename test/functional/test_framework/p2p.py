@@ -148,6 +148,7 @@ MESSAGEMAP = {
     b"version": msg_version,
     # Dash Specific
     b"clsig": msg_clsig,
+    b"dssu": None,
     b"getmnlistd": msg_getmnlistd,
     b"getsporks": None,
     b"govsync": None,
