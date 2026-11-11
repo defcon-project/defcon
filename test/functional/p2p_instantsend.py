@@ -3,6 +3,8 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+from test_framework.messages import COutPoint, msg_isdlock
+from test_framework.p2p import P2PInterface
 from test_framework.test_framework import DashTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 
@@ -27,6 +29,23 @@ class InstantSendTest(DashTestFramework):
 
         self.test_mempool_doublespend()
         self.test_block_doublespend()
+        self.test_oversized_lock()
+
+    def test_oversized_lock(self):
+        # CInstantSendLock::MAX_INPUTS = MaxBlockSize() / 41. An honest v23.0.0 node relays a lock it cannot read without
+        # checking it, so one this large costs its sender nothing: it is dropped, and the connection stays.
+        self.log.info("An islock with more inputs than any transaction can have is dropped without a penalty")
+        node = self.nodes[0]
+        peer = node.add_p2p_connection(P2PInterface())
+        peer_id = node.getpeerinfo()[-1]['id']
+        max_inputs = 2000000 // 41
+        inputs = [COutPoint(i + 1, 0) for i in range(max_inputs + 1)]
+        islock = msg_isdlock(1, inputs, 0x1234, int(node.getbestblockhash(), 16))
+        with node.assert_debug_log(expected_msgs=[f"{max_inputs + 1} inputs, more than {max_inputs}, dropping islock, peer={peer_id}"],
+                                   unexpected_msgs=[f"Misbehaving: peer={peer_id} "]):
+            peer.send_message(islock)
+            peer.sync_with_ping()
+        node.disconnect_p2ps()
 
     def test_block_doublespend(self):
         sender = self.nodes[self.sender_idx]

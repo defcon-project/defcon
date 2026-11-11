@@ -30,10 +30,15 @@ struct InstantSendQueueTest {
     static void Seed(CInstantSendManager& manager, bool no_tx, size_t count)
     {
         LOCK(manager.cs_pendingLocks);
-        auto& queue = no_tx ? manager.pendingNoTxInstantSendLocks : manager.pendingInstantSendLocks;
         for (size_t i = 0; i < count; ++i) {
             auto lock = MakeLock(i + 1);
-            queue.emplace(lock->txid, std::make_pair(NodeId{1}, lock));
+            if (no_tx) {
+                BOOST_REQUIRE(manager.pendingNoTxInstantSendLocks.Add(lock->txid, std::make_pair(NodeId{1}, lock),
+                                                                      GetTime<std::chrono::seconds>()) ==
+                              NoTxLockQueue::AddResult::ADDED);
+            } else {
+                manager.pendingInstantSendLocks.emplace(lock->txid, std::make_pair(NodeId{1}, lock));
+            }
         }
     }
 
@@ -51,7 +56,7 @@ struct InstantSendQueueTest {
     static size_t Size(const CInstantSendManager& manager, bool no_tx)
     {
         LOCK(manager.cs_pendingLocks);
-        return no_tx ? manager.pendingNoTxInstantSendLocks.size() : manager.pendingInstantSendLocks.size();
+        return no_tx ? manager.pendingNoTxInstantSendLocks.Size() : manager.pendingInstantSendLocks.size();
     }
 
     static PeerMsgRet Receive(CInstantSendManager& manager, const CNode& peer, PeerManager& peerman,
@@ -86,7 +91,7 @@ struct InstantSendQueueTest {
         const auto hash = SerializeHash(*lock);
         LOCK(manager.cs_pendingLocks);
         manager.pendingInstantSendLocks.emplace(hash, std::make_pair(NodeId{1}, lock));
-        manager.pendingNoTxInstantSendLocks.emplace(hash, std::make_pair(NodeId{1}, lock));
+        manager.pendingNoTxInstantSendLocks.Add(hash, std::make_pair(NodeId{1}, lock), GetTime<std::chrono::seconds>());
     }
 
     static void Verified(CInstantSendManager& manager, PeerManager& peerman, const CInstantSendLockPtr& lock)
@@ -103,7 +108,7 @@ struct InstantSendQueueTest {
     static bool HasNoTx(const CInstantSendManager& manager, const uint256& hash)
     {
         LOCK(manager.cs_pendingLocks);
-        return manager.pendingNoTxInstantSendLocks.count(hash) != 0;
+        return manager.pendingNoTxInstantSendLocks.Contains(hash);
     }
 
     using Batch = std::unordered_map<uint256, std::pair<NodeId, CInstantSendLockPtr>, StaticSaltedHasher>;
@@ -126,7 +131,8 @@ struct InstantSendQueueTest {
     //! `first`, if given, receives the hash of the lock the batch visits first.
     static std::unordered_set<uint256, StaticSaltedHasher> VerifyBatch(CInstantSendManager& manager, PeerManager& peerman,
                                                                        const std::vector<CInstantSendLockPtr>& locks,
-                                                                       uint256* first = nullptr)
+                                                                       uint256* first = nullptr, int sign_offset = 0,
+                                                                       bool ban = false)
     {
         std::unordered_map<uint256, std::pair<NodeId, CInstantSendLockPtr>, StaticSaltedHasher> pend;
         for (const auto& lock : locks) {
@@ -135,7 +141,15 @@ struct InstantSendQueueTest {
         if (first != nullptr) *first = pend.begin()->first;
         const auto llmq_params = Params().GetLLMQ(manager.GetLLMQType());
         BOOST_REQUIRE(llmq_params);
-        return manager.ProcessPendingInstantSendLocks(*llmq_params, peerman, /*signOffset=*/0, pend, /*ban=*/false);
+        return manager.ProcessPendingInstantSendLocks(*llmq_params, peerman, sign_offset, pend, ban);
+    }
+
+    //! The DKG interval of the InstantSend profile: the second pass's signOffset.
+    static int DkgInterval(const CInstantSendManager& manager)
+    {
+        const auto llmq_params = Params().GetLLMQ(manager.GetLLMQType());
+        BOOST_REQUIRE(llmq_params);
+        return llmq_params->dkgInterval;
     }
 
     //! Queue a lock from peer 1 in the received queue, as ProcessMessageInstantSendLock does.
@@ -423,6 +437,157 @@ BOOST_AUTO_TEST_CASE(batch_returns_to_queue_on_history_read_error)
     BOOST_CHECK_EQUAL(pend.size(), 2U);
     InstantSendQueueTest::RunBatch(manager, pend, [] {});
     BOOST_CHECK_EQUAL(InstantSendQueueTest::Size(manager, false), 0U);
+}
+
+// A lock with no quorum to verify against (here: the genesis cycle, with no quorum on this chain) is dropped alone.
+// Before, the batch returned at it and lost every lock of the batch, the checked ones too, whichever came first.
+BOOST_AUTO_TEST_CASE(batch_survives_lock_without_quorum)
+{
+    using llmq::InstantSendQueueTest;
+    auto& manager = *m_node.llmq_ctx->isman;
+    const bool legacy{bls::bls_legacy_scheme.load()};
+    CBLSSecretKey sk;
+    sk.MakeNewKey();
+    bool seen_good_first{false};
+    bool seen_bad_first{false};
+    for (uint64_t i = 0; i < 64 && !(seen_good_first && seen_bad_first); ++i) {
+        const auto good = InstantSendQueueTest::MakeLock(6000 + 2 * i);
+        good->sig.Set(sk.Sign(uint256::ONE, legacy), legacy);
+        InstantSendQueueTest::CoverWithRecoveredSig(manager, *m_node.llmq_ctx->sigman, *m_node.peerman, good);
+        const auto no_quorum = InstantSendQueueTest::MakeLock(6001 + 2 * i);
+        no_quorum->sig.Set(sk.Sign(uint256::ONE, legacy), legacy);
+        const std::vector<llmq::CInstantSendLockPtr> locks = (i % 2 == 0) ? std::vector{good, no_quorum} : std::vector{no_quorum, good};
+        uint256 first;
+        BOOST_CHECK(InstantSendQueueTest::VerifyBatch(manager, *m_node.peerman, locks, &first).empty());
+        (first == SerializeHash(*good) ? seen_good_first : seen_bad_first) = true;
+        BOOST_CHECK(InstantSendQueueTest::HasNoTx(manager, SerializeHash(*good)));
+        BOOST_CHECK(!InstantSendQueueTest::HasNoTx(manager, SerializeHash(*no_quorum)));
+    }
+    BOOST_CHECK(seen_good_first);
+    BOOST_CHECK(seen_bad_first);
+}
+
+// Neither pass scores the source of a lock with no quorum, the one that scores (ban) included: the second pass selects
+// with another signOffset and can miss a quorum the first one found. An unreadable lock on the same pass is scored, so
+// the score is seen to move.
+BOOST_AUTO_TEST_CASE(missing_quorum_is_not_scored)
+{
+    using llmq::InstantSendQueueTest;
+    auto& manager = *m_node.llmq_ctx->isman;
+    const bool legacy{bls::bls_legacy_scheme.load()};
+    const int dkg_interval{InstantSendQueueTest::DkgInterval(manager)};
+    CNode peer{1, nullptr, CAddress{CService{}, NODE_NONE}, 0, 0, CAddress{}, std::string{},
+               ConnectionType::INBOUND, false};
+    m_node.peerman->InitializeNode(peer, NODE_NETWORK);
+    const auto score = [&] {
+        CNodeStateStats stats;
+        BOOST_REQUIRE(m_node.peerman->GetNodeStateStats(peer.GetId(), stats));
+        return stats.m_misbehavior_score;
+    };
+    CBLSSecretKey sk;
+    sk.MakeNewKey();
+    const auto no_quorum = InstantSendQueueTest::MakeLock(6101);
+    no_quorum->sig.Set(sk.Sign(uint256::ONE, legacy), legacy);
+    for (const int sign_offset : {0, dkg_interval}) {
+        BOOST_CHECK(InstantSendQueueTest::VerifyBatch(manager, *m_node.peerman, {no_quorum}, nullptr, sign_offset, /*ban=*/true).empty());
+        BOOST_CHECK_EQUAL(score(), 0);
+    }
+    BOOST_CHECK(!InstantSendQueueTest::HasNoTx(manager, SerializeHash(*no_quorum)));
+    BOOST_CHECK(InstantSendQueueTest::VerifyBatch(manager, *m_node.peerman, {InstantSendQueueTest::MakeLock(6102)}, nullptr,
+                                                  dkg_interval, /*ban=*/true).empty());
+    BOOST_CHECK_EQUAL(score(), 20);
+    m_node.peerman->FinalizeNode(peer);
+}
+
+// A lock with more inputs than any transaction can have is invalid, but an honest v23.0.0 node can relay one it could
+// not read: it is dropped without a penalty (before: 100 points), and not queued.
+BOOST_AUTO_TEST_CASE(oversized_lock_is_dropped_without_penalty)
+{
+    using llmq::InstantSendQueueTest;
+    auto& manager = *m_node.llmq_ctx->isman;
+    CNode peer{1, nullptr, CAddress{CService{}, NODE_NONE}, 0, 0, CAddress{}, std::string{},
+               ConnectionType::INBOUND, false};
+    auto lock = InstantSendQueueTest::MakeLock(6201);
+    lock->inputs.resize(llmq::CInstantSendLock::MAX_INPUTS + 1, lock->inputs.front());
+    BOOST_CHECK(InstantSendQueueTest::Receive(manager, peer, *m_node.peerman, lock));
+    BOOST_CHECK_EQUAL(InstantSendQueueTest::Size(manager, false), 0U);
+}
+
+// Variants of one lock for one transaction (other bytes, so another hash; a covering recovered sig passes each without
+// a check of its own signature) take one place in the no-tx queue, not one each: they cannot fill it.
+BOOST_AUTO_TEST_CASE(no_tx_queue_keeps_one_lock_per_txid)
+{
+    using llmq::InstantSendQueueTest;
+    auto& manager = *m_node.llmq_ctx->isman;
+    const auto first = InstantSendQueueTest::MakeLock(6301);
+    auto variant = std::make_shared<llmq::CInstantSendLock>(*first);
+    variant->cycleHash = uint256::ONE;
+    BOOST_REQUIRE(SerializeHash(*first) != SerializeHash(*variant));
+    InstantSendQueueTest::Verified(manager, *m_node.peerman, first);
+    InstantSendQueueTest::Verified(manager, *m_node.peerman, variant);
+    BOOST_CHECK_EQUAL(InstantSendQueueTest::Size(manager, true), 1U);
+    BOOST_CHECK(InstantSendQueueTest::HasNoTx(manager, SerializeHash(*first)));
+    BOOST_CHECK(!InstantSendQueueTest::HasNoTx(manager, SerializeHash(*variant)));
+    // Kept nowhere, so a later announcement can bring it again.
+    BOOST_CHECK(!manager.AlreadyHave(CInv(MSG_ISDLOCK, SerializeHash(*variant))));
+}
+
+// A lock whose transaction never comes makes room after an hour: the sweep of a later Add drops it, so the queue
+// cannot stay full for good. While it is full a new lock is refused and no live one is pushed out.
+BOOST_AUTO_TEST_CASE(no_tx_queue_expires_after_an_hour)
+{
+    using llmq::InstantSendQueueTest;
+    auto& manager = *m_node.llmq_ctx->isman;
+    const int64_t start{GetTime<std::chrono::seconds>().count()};
+    SetMockTime(start);
+    InstantSendQueueTest::Seed(manager, true, 1024);
+    const auto early = InstantSendQueueTest::MakeLock(6401);
+    SetMockTime(start + 60 * 60 - 1);
+    InstantSendQueueTest::Verified(manager, *m_node.peerman, early);
+    BOOST_CHECK(!InstantSendQueueTest::HasNoTx(manager, SerializeHash(*early)));
+    BOOST_CHECK_EQUAL(InstantSendQueueTest::Size(manager, true), 1024U);
+    const auto late = InstantSendQueueTest::MakeLock(6402);
+    SetMockTime(start + 60 * 60);
+    InstantSendQueueTest::Verified(manager, *m_node.peerman, late);
+    BOOST_CHECK(InstantSendQueueTest::HasNoTx(manager, SerializeHash(*late)));
+    BOOST_CHECK_EQUAL(InstantSendQueueTest::Size(manager, true), 1U);
+    SetMockTime(0);
+}
+
+// The queue type alone, small: one lock per txid, a full queue refuses, an expired lock makes room.
+BOOST_AUTO_TEST_CASE(no_tx_lock_queue_bounds)
+{
+    using llmq::NoTxLockQueue;
+    using namespace std::chrono_literals;
+    NoTxLockQueue queue{2, 10s};
+    const auto entry = [](uint64_t id) { return std::make_pair(NodeId{1}, llmq::InstantSendQueueTest::MakeLock(id)); };
+    const auto hash = [](const NoTxLockQueue::Entry& e) { return SerializeHash(*e.second); };
+    const auto a = entry(1);
+    const auto b = entry(2);
+    const auto c = entry(3);
+    BOOST_CHECK(queue.Add(hash(a), a, 0s) == NoTxLockQueue::AddResult::ADDED);
+    BOOST_CHECK(queue.Add(hash(b), b, 1s) == NoTxLockQueue::AddResult::ADDED);
+    BOOST_CHECK(queue.Add(hash(c), c, 2s) == NoTxLockQueue::AddResult::FULL);
+    auto a2 = entry(1);
+    a2.second->cycleHash = uint256::ONE;
+    BOOST_REQUIRE(hash(a2) != hash(a));
+    BOOST_CHECK(queue.Add(hash(a2), a2, 2s) == NoTxLockQueue::AddResult::HAVE_TXID);
+    BOOST_CHECK_EQUAL(queue.Size(), 2U);
+    BOOST_REQUIRE(queue.FindTxid(a.second->txid) != nullptr);
+    BOOST_CHECK(*queue.FindTxid(a.second->txid) == hash(a));
+    const auto taken = queue.TakeByTxid(a.second->txid);
+    BOOST_REQUIRE(taken);
+    BOOST_CHECK(taken->first == hash(a));
+    BOOST_CHECK(!queue.TakeByTxid(a.second->txid));
+    BOOST_CHECK(queue.FindTxid(a.second->txid) == nullptr);
+    BOOST_CHECK(queue.Add(hash(c), c, 3s) == NoTxLockQueue::AddResult::ADDED);
+    BOOST_CHECK(queue.Get(hash(c)) == c.second);
+    // b (added at 1s) expires at 11s, c (added at 3s) at 13s.
+    BOOST_CHECK(queue.Add(hash(a), a, 11s) == NoTxLockQueue::AddResult::ADDED);
+    BOOST_CHECK(!queue.Contains(hash(b)));
+    BOOST_CHECK(queue.FindTxid(b.second->txid) == nullptr);
+    BOOST_CHECK(queue.Contains(hash(c)));
+    BOOST_CHECK_EQUAL(queue.Size(), 2U);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

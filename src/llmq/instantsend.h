@@ -20,6 +20,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -198,6 +199,46 @@ public:
     std::vector<uint256> RemoveChainedInstantSendLocks(const uint256& islockHash, const uint256& txid, int nHeight) EXCLUSIVE_LOCKS_REQUIRED(!cs_db);
 };
 
+/**
+ * Verified locks whose transaction has not arrived: at most one per txid, at most `limit` in all. A lock older than
+ * `max_age` is dropped by the sweep in Add, which runs when the queue is full or a minute after the last one, so an
+ * old lock stays until a later Add sweeps it. A full queue refuses a new lock and never pushes out a live one: each
+ * was acted on when it came in (relayed, the recovered sigs of its inputs dropped, block conflicts resolved). Not
+ * thread safe: the owner locks it.
+ */
+class NoTxLockQueue
+{
+public:
+    using Entry = std::pair<NodeId, CInstantSendLockPtr>;
+    enum class AddResult { ADDED, HAVE_TXID, FULL };
+
+    NoTxLockQueue(size_t limit, std::chrono::seconds max_age) : m_limit{limit}, m_max_age{max_age} {}
+
+    //! Add a lock that is not in the queue (the caller checks Contains first).
+    AddResult Add(const uint256& hash, const Entry& entry, std::chrono::seconds now);
+    //! Remove and return the lock waiting for this transaction, if any.
+    std::optional<std::pair<uint256, Entry>> TakeByTxid(const uint256& txid);
+    //! The hash of the lock waiting for this transaction, or nullptr.
+    const uint256* FindTxid(const uint256& txid) const;
+    //! The lock with this hash, or nullptr.
+    CInstantSendLockPtr Get(const uint256& hash) const;
+    bool Contains(const uint256& hash) const { return m_locks.count(hash) != 0; }
+    size_t Size() const { return m_locks.size(); }
+
+private:
+    struct Item {
+        Entry entry;
+        std::chrono::seconds added;
+    };
+    void Expire(std::chrono::seconds now);
+
+    const size_t m_limit;
+    const std::chrono::seconds m_max_age;
+    std::chrono::seconds m_last_expire{0};
+    std::unordered_map<uint256, Item, StaticSaltedHasher> m_locks;
+    std::unordered_map<uint256, uint256, StaticSaltedHasher> m_hash_by_txid;
+};
+
 class CInstantSendManager : public CRecoveredSigsListener
 {
     friend struct InstantSendQueueTest;
@@ -239,11 +280,13 @@ private:
 
     // Bound both unverified locks and verified locks whose transaction has not arrived.
     static constexpr size_t MAX_PENDING_INSTANTSEND_LOCKS{1024};
+    // A lock in the no-tx queue older than this is dropped by the queue's next sweep (NoTxLockQueue::Add).
+    static constexpr std::chrono::seconds NO_TX_ISLOCK_MAX_AGE{std::chrono::hours{1}};
     mutable Mutex cs_pendingLocks;
     // Incoming and not verified yet
     std::unordered_map<uint256, std::pair<NodeId, CInstantSendLockPtr>, StaticSaltedHasher> pendingInstantSendLocks GUARDED_BY(cs_pendingLocks);
     // Tried to verify but there is no tx yet
-    std::unordered_map<uint256, std::pair<NodeId, CInstantSendLockPtr>, StaticSaltedHasher> pendingNoTxInstantSendLocks GUARDED_BY(cs_pendingLocks);
+    NoTxLockQueue pendingNoTxInstantSendLocks GUARDED_BY(cs_pendingLocks){MAX_PENDING_INSTANTSEND_LOCKS, NO_TX_ISLOCK_MAX_AGE};
 
     // TXs which are neither IS locked nor ChainLocked. We use this to determine for which TXs we need to retry IS locking
     // of child TXs
