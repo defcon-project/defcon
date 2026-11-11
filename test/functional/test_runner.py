@@ -191,6 +191,7 @@ BASE_SCRIPTS = [
     'feature_governance_cl.py --legacy-wallet',
     'feature_governance_cl.py --descriptors',
     'rpc_verifyislock.py',
+    'p2p_coinjoin_inputs.py',
     'feature_notifications.py',
     # vv Tests less than 60s vv
     'p2p_sendheaders.py', # NOTE: needs dash_hash to pass
