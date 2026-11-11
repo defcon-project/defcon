@@ -941,6 +941,7 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
             'rpc_verifychainlock.py', 'feature_evodb_reconcile_below_dip3.py', 'feature_evodb_repair_startup.py',
             'feature_llmq_q60_regtest.py', 'feature_llmq_switchover_config.py', 'p2p_headers_uncompressed.py',
             'feature_dsl_commit_decision_log.py',
+            'feature_dsl_aged_out_before_list.py',
             'feature_pos_double_sign.py',
             'wallet_combineoutputs.py',
             'feature_dsl_dkg_isolation.py', 'feature_dsl_list_change.py',
