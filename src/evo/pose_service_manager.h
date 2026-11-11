@@ -81,6 +81,10 @@ public:
     /** The epoch and epoch-base hash currently being probed. */
     uint32_t CurrentEpoch() const;
     uint256 CurrentEpochHash() const;
+    //! ProcessResponse's own "aged out" refusal and the store's (ProcessReport), asked ahead of them, so the
+    //! caller can refuse an aged-out epoch before it builds the list of the epoch's base block.
+    bool ResponseAgedOut(uint32_t nEpoch) const;
+    bool ReportAgedOut(uint32_t nEpoch) const { return m_store.ReportAgedOut(nEpoch); }
 
     /**
      * The targets this node still owes a challenge this epoch: its probe set

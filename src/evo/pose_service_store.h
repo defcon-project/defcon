@@ -82,6 +82,9 @@ public:
 
     /** Advance the current epoch and drop everything older than the window. */
     void SetCurrentEpoch(uint32_t nEpoch);
+    //! AddReport's own "epoch aged out" refusal, asked ahead of it: true for an epoch older than the retained
+    //! window. The caller checks it before it builds the list of the epoch's base block.
+    bool ReportAgedOut(uint32_t nEpoch) const;
 
     /**
      * Discard every report for one epoch. Used when a reorg swaps that epoch's

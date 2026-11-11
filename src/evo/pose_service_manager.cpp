@@ -102,6 +102,13 @@ CPoSeServiceManager::EpochChange CPoSeServiceManager::BeginEpoch(uint32_t nEpoch
     return result;
 }
 
+bool CPoSeServiceManager::ResponseAgedOut(uint32_t nEpoch) const
+{
+    LOCK(m_mutex);
+    // the same expression as ProcessResponse's refusal
+    return nEpoch + m_keepEpochs <= m_epoch;
+}
+
 uint32_t CPoSeServiceManager::CurrentEpoch() const
 {
     LOCK(m_mutex);
