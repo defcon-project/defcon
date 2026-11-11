@@ -4,6 +4,7 @@
 
 #include <qt/transactiontablemodel.h>
 
+#include <qt/abyssunits.h>
 #include <qt/clientmodel.h>
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
@@ -661,6 +662,17 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
         case ToAddress:
             return formatTxToAddress(rec, false);
         case Amount:
+            if (GUIUtil::isModernTheme()) {
+                // Abyss (U3-C): every decimal the amount has, without the
+                // trailing zeros; the exact text is the cell's tooltip. The
+                // view asks at paint time, and a theme change repaints it
+                // (QWidget::changeEvent, StyleChange). No brackets: the ones
+                // formatTxAmount means for an amount that does not count yet
+                // never show, because its test reads the MasternodeReward
+                // enumerator, not the record's type; Abyss shows what the
+                // classic table shows.
+                return AbyssUnits::number(walletModel->getOptionsModel()->getDisplayUnit(), rec->credit + rec->debit);
+            }
             return formatTxAmount(rec, true, BitcoinUnits::SeparatorStyle::ALWAYS);
         } // no default case, so the compiler can warn about missing cases
         assert(false);
@@ -682,6 +694,9 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
         } // no default case, so the compiler can warn about missing cases
         assert(false);
     case Qt::ToolTipRole:
+        if (column == Amount && GUIUtil::isModernTheme()) {
+            return AbyssUnits::exact(walletModel->getOptionsModel()->getDisplayUnit(), rec->credit + rec->debit);
+        }
         return formatTooltip(rec);
     case Qt::TextAlignmentRole:
         return column_alignments[index.column()];

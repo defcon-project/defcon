@@ -89,6 +89,11 @@ private Q_SLOTS:
     void receiveToast();
     void receiveFits();
     void sendInputsFirst();
+    void abyssUnitsFormat_data();
+    void abyssUnitsFormat();
+    void overviewPlainAmounts();
+    void overviewRecentTooltip();
+    void transactionsPlainAmounts();
     void overviewDiscreetHeader();
     void sidebarLogoCentred();
     void sidebarMoreGroup();

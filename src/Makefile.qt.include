@@ -124,6 +124,7 @@ QT_QRC_LOCALE = qt/dash_locale.qrc
 BITCOIN_QT_H = \
   qt/abyssmenus.h \
   qt/abysstoast.h \
+  qt/abyssunits.h \
   qt/addressbookpage.h \
   qt/addresstablemodel.h \
   qt/appearancewidget.h \
@@ -276,6 +277,7 @@ RES_ICONS = \
 
 BITCOIN_QT_BASE_CPP = \
   qt/abyssmenus.cpp \
+  qt/abyssunits.cpp \
   qt/appearancewidget.cpp \
   qt/bantablemodel.cpp \
   qt/bitcoin.cpp \

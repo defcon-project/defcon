@@ -6,6 +6,7 @@
 #include <qt/test/abysstests.h>
 #include <qt/abyssmenus.h>
 #include <qt/abysstoast.h>
+#include <qt/abyssunits.h>
 #include <qt/editaddressdialog.h>
 #include <qt/receiverequestdialog.h>
 #include <qt/transactiontablemodel.h>
@@ -97,6 +98,7 @@
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QHelpEvent>
 #include <QKeySequence>
 #include <QLabel>
 #include <QListView>
@@ -125,6 +127,7 @@
 #include <QTextDocument>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QToolTip>
 #include <QtMath>
 #include <algorithm>
 #include <array>
@@ -203,6 +206,9 @@ QRect OnPage(QWidget& page, QWidget* child)
 {
     return {child->mapTo(&page, {}), child->size()};
 }
+//! The text with thin spaces where the test writes plain ones, as amounts group
+//! their thousands.
+QString Thin(const char* text) { return QString::fromUtf8(text).replace(QLatin1Char(' '), QChar(THIN_SP_CP)); }
 // A translation with three plural forms, as Russian has them: 1 and 21 take
 // the first, 2 to 4 the second, 5 to 20 the third. Only the network bar's age
 // strings are translated; everything else falls through untranslated.
@@ -3442,7 +3448,9 @@ void AbyssTests::skyBadge()
     QCOMPARE(changed.last().at(0).toInt(), 4);
     QVERIFY(badge->toolTip().contains(SkyTiers::name(4)));
     QVERIFY(badge->toolTip().contains(SkyTiers::name(5)));
-    QVERIFY(badge->toolTip().contains(BitcoinUnits::formatWithUnit(fixture.options->getDisplayUnit(), 2000000 * COIN, false, BitcoinUnits::SeparatorStyle::ALWAYS)));
+    // Abyss's amounts (U3-C): "2 000 000 DFCN", no decimals.
+    QVERIFY2(badge->toolTip().contains(Thin("2 000 000") + QLatin1Char(' ') + BitcoinUnits::name(fixture.options->getDisplayUnit())), qPrintable(badge->toolTip()));
+    QVERIFY2(!badge->toolTip().contains(".00000000"), qPrintable(badge->toolTip()));
     // Pending and immature count towards the level; watch-only amounts do not.
     balances.balance = 0;
     balances.unconfirmed_balance = 600000 * COIN;
@@ -6327,16 +6335,322 @@ QStringList ReceivingAddresses(AddressTableModel* table)
     }
     return found;
 }
-//! A payment of one coin to `address` from nowhere in particular: the wallet's
-//! transaction list names the address from then on.
-bool PayTo(CWallet& wallet, const QString& address, uint32_t n)
+//! A payment of one coin (or `amount`) to `address` from nowhere in particular:
+//! the wallet's transaction list names the address from then on. Unconfirmed,
+//! so it does not count towards the balance yet.
+bool PayTo(CWallet& wallet, const QString& address, uint32_t n, CAmount amount = COIN)
 {
     CMutableTransaction payment;
     payment.vin.emplace_back(COutPoint(uint256S("0100000000000000000000000000000000000000000000000000000000000000"), n));
-    payment.vout.emplace_back(COIN, GetScriptForDestination(DecodeDestination(address.toStdString())));
+    payment.vout.emplace_back(amount, GetScriptForDestination(DecodeDestination(address.toStdString())));
     return wallet.AddToWallet(MakeTransactionRef(std::move(payment)), CWalletTx::Confirmation{}) != nullptr;
 }
+//! The "digits" setting for one test, put back afterwards.
+struct Digits {
+    QVariant before{QSettings().value("digits")};
+    explicit Digits(int digits) { QSettings().setValue("digits", QString::number(digits)); }
+    ~Digits()
+    {
+        if (before.isValid()) QSettings().setValue("digits", before); else QSettings().remove("digits");
+    }
+};
 } // namespace
+
+void AbyssTests::abyssUnitsFormat_data()
+{
+    QTest::addColumn<int>("unit");
+    QTest::addColumn<qint64>("amount");
+    QTest::addColumn<bool>("plus");
+    QTest::addColumn<bool>("floor");
+    QTest::addColumn<int>("digits");
+    QTest::addColumn<QString>("number");
+    const int D = BitcoinUnits::DASH, M = BitcoinUnits::mDASH, U = BitcoinUnits::uDASH, S = BitcoinUnits::duffs;
+    const auto row = [](const char* name, int unit, qint64 amount, bool plus, bool floor, int digits, const char* number) {
+        QTest::newRow(name) << unit << amount << plus << floor << digits << Thin(number);
+    };
+    row("zero", D, 0, false, true, 2, "0");
+    row("half", D, COIN / 2, false, true, 2, "0.5");
+    row("one", D, COIN, false, true, 2, "1");
+    row("twelve point three", D, 1230000000, false, true, 2, "12.3");
+    row("one and a duff, floored", D, COIN + 1, false, true, 2, "1");
+    row("below the floor, exact", D, 300000, false, true, 2, "0.003");
+    row("935 million", D, 935000000 * COIN, false, true, 2, "935 000 000");
+    row("plus sign", D, COIN / 2, true, true, 2, "+0.5");
+    row("negative", D, -COIN / 2, true, true, 2, "-0.5");
+    row("negative below the floor", D, -300000, false, true, 2, "-0.003");
+    row("cut, not rounded", D, 129900000, false, true, 2, "1.29");
+    row("digits 8", D, COIN + 1, false, true, 8, "1.00000001");
+    row("digits 8, half", D, COIN / 2, false, true, 8, "0.5");
+    row("digits 0", D, 3 * COIN / 2, false, true, 0, "1");
+    row("digits 0, below", D, COIN / 2, false, true, 0, "0.5");
+    row("no floor", D, COIN + 1, false, false, 2, "1.00000001");
+    row("no floor, whole", D, -COIN, false, false, 2, "-1");
+    row("no floor, zero", D, 0, false, false, 2, "0");
+    row("mDFCN", M, COIN, false, true, 2, "1 000");
+    row("mDFCN, half", M, 150000, false, true, 2, "1.5");
+    row("mDFCN, below the floor", M, 123, false, true, 2, "0.00123");
+    row("uDFCN", U, 150, false, true, 2, "1.5");
+    row("uDFCN, whole", U, 100, false, true, 2, "1");
+    row("uDFCN, smallest", U, 1, false, true, 2, "0.01");
+    row("duffs", S, 100, false, true, 2, "100");
+    row("duffs, thousands", S, 1000, false, true, 2, "1 000");
+    row("duffs, zero", S, 0, false, true, 2, "0");
+}
+
+void AbyssTests::abyssUnitsFormat()
+{
+    // Abyss's amounts (U3-C): no trailing zeros, no decimal point left alone,
+    // cut to the "digits" setting where asked as BitcoinUnits::floorWithUnit
+    // cuts, but a non-zero amount never cut to zero; the tooltip's text is
+    // BitcoinUnits' own, every decimal.
+    QFETCH(int, unit);
+    QFETCH(qint64, amount);
+    QFETCH(bool, plus);
+    QFETCH(bool, floor);
+    QFETCH(int, digits);
+    QFETCH(QString, number);
+    Digits setting(digits);
+    QCOMPARE(AbyssUnits::number(unit, amount, plus, floor), number);
+    QCOMPARE(AbyssUnits::format(unit, amount, plus, floor), number + QLatin1Char(' ') + BitcoinUnits::name(unit));
+    QCOMPARE(AbyssUnits::exact(unit, amount, plus), BitcoinUnits::formatWithUnit(unit, amount, plus, BitcoinUnits::SeparatorStyle::ALWAYS));
+    if (qstrcmp(QTest::currentDataTag(), "one and a duff, floored") == 0) {
+        QCOMPARE(AbyssUnits::exact(unit, amount), QString("1.00000001 ") + BitcoinUnits::name(unit));
+    }
+}
+
+void AbyssTests::overviewPlainAmounts()
+{
+    // The Overview's nine amounts in Abyss: no trailing zeros, cut to the
+    // "digits" setting as before but never to zero; each tooltip has the exact
+    // amount above the form's explanation (labelAnonymized has none). Discreet
+    // mode masks as before and leaves only the explanation. A classic theme
+    // shows exactly what it showed, text and tooltip, and a switch back to
+    // Abyss formats both again.
+    RestoreAppearance restore;
+    Digits digits(2);
+    Theme("Light");
+    WalletFixture fixture(m_node);
+    OverviewPage page;
+    page.setWalletModel(fixture.model.get());
+    page.resize(1280, 850);
+    page.show(); Settle();
+    const int unit = fixture.options->getDisplayUnit();
+    interfaces::WalletBalances balances;
+    balances.balance = 935000000 * COIN;
+    balances.unconfirmed_balance = COIN / 2;
+    balances.immature_balance = COIN + 1;
+    balances.anonymized_balance = 300000;
+    balances.watch_only_balance = 2 * COIN;
+    balances.unconfirmed_watch_only_balance = 0;
+    balances.immature_watch_only_balance = COIN / 4;
+    struct Amount { const char* label; CAmount amount; const char* abyss; };
+    const std::vector<Amount> amounts{
+        {"labelBalance", balances.balance, "935 000 000"},
+        {"labelUnconfirmed", balances.unconfirmed_balance, "0.5"},
+        {"labelImmature", balances.immature_balance, "1"},
+        {"labelAnonymized", balances.anonymized_balance, "0.003"},
+        {"labelTotal", balances.balance + balances.unconfirmed_balance + balances.immature_balance, "935 000 001.5"},
+        {"labelWatchAvailable", balances.watch_only_balance, "2"},
+        {"labelWatchPending", balances.unconfirmed_watch_only_balance, "0"},
+        {"labelWatchImmature", balances.immature_watch_only_balance, "0.25"},
+        {"labelWatchTotal", balances.watch_only_balance + balances.unconfirmed_watch_only_balance + balances.immature_watch_only_balance, "2.25"}};
+    page.setBalance(balances); Settle();
+
+    // The classic theme first: today's text, and the form's tooltip, which
+    // the checks below compare against.
+    std::map<QString, QString> form;
+    const auto classic = [&](const QString& what) {
+        for (const Amount& a : amounts) {
+            auto* label = page.findChild<QLabel*>(a.label);
+            QVERIFY2(label, a.label);
+            QCOMPARE(label->text(), BitcoinUnits::floorHtmlWithPrivacy(unit, a.amount, BitcoinUnits::SeparatorStyle::ALWAYS, false));
+            if (form.count(a.label)) QVERIFY2(label->toolTip() == form[a.label], qPrintable(what + ": " + a.label + " " + label->toolTip()));
+            form[a.label] = label->toolTip();
+        }
+    };
+    classic("Light");
+    QCOMPARE(form["labelBalance"], QString("Your current spendable balance"));
+    QVERIFY(form["labelAnonymized"].isEmpty());
+    const auto abyss = [&](const QString& what) {
+        for (const Amount& a : amounts) {
+            auto* label = page.findChild<QLabel*>(a.label);
+            QVERIFY2(label->text() == Thin(a.abyss) + QLatin1Char(' ') + BitcoinUnits::name(unit),
+                     qPrintable(what + ": " + a.label + " reads " + label->text()));
+            const QString exact = BitcoinUnits::formatWithUnit(unit, a.amount, false, BitcoinUnits::SeparatorStyle::ALWAYS);
+            const QString tip = form[a.label].isEmpty() ? exact : exact + QLatin1Char('\n') + form[a.label];
+            QVERIFY2(label->toolTip() == tip, qPrintable(what + ": " + a.label + " tooltip " + label->toolTip()));
+        }
+    };
+    Theme("Abyss"); Settle();
+    abyss("Abyss");
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    if (!output.isEmpty()) QVERIFY(QDir().mkpath(output) && page.grab().save(QDir(output).filePath("Abyss-overview-plain.png")));
+
+    // Discreet mode: the mask as before, and the explanation alone.
+    page.setPrivacy(true); Settle();
+    for (const Amount& a : amounts) {
+        auto* label = page.findChild<QLabel*>(a.label);
+        QCOMPARE(label->text(), BitcoinUnits::floorWithPrivacy(unit, a.amount, BitcoinUnits::SeparatorStyle::ALWAYS, true));
+        QCOMPARE(label->toolTip(), form[a.label]);
+    }
+    page.setPrivacy(false); Settle();
+    abyss("discreet mode off");
+
+    Theme("Light"); Settle();
+    classic("back in Light");
+    Theme("Abyss"); Settle();
+    abyss("back in Abyss");
+}
+
+void AbyssTests::overviewRecentTooltip()
+{
+    // A recent-transactions row shows its amount cut to the "digits" setting.
+    // In Abyss its tooltip is the model's own text with one more line, the
+    // exact amount. Discreet mode hides the list. A classic theme shows the
+    // model's tooltip alone.
+    RestoreAppearance restore;
+    Digits digits(2);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    const QString own = fixture.model->getAddressTableModel()->addRow(AddressTableModel::Receive, "", "");
+    QVERIFY(!own.isEmpty());
+    QVERIFY(PayTo(*fixture.wallet, own, 0, COIN + 1));
+    OverviewPage page;
+    // The recent list is set up from the client model's CoinJoin state.
+    page.setClientModel(fixture.client.get());
+    page.setWalletModel(fixture.model.get());
+    page.resize(1280, 850);
+    page.show(); Settle();
+    auto* list = page.findChild<QListView*>("listTransactions");
+    QVERIFY(list && list->isVisible());
+    QVERIFY(list->model() && list->model()->rowCount() == 1);
+    const QModelIndex row = list->model()->index(0, list->modelColumn());
+    QCOMPARE(row.data(TransactionTableModel::AmountRole).toLongLong(), COIN + 1);
+    const QString name = BitcoinUnits::name(fixture.options->getDisplayUnit());
+    // What the row's tooltip says, read as soon as the view has handled the
+    // help event: on minimal no window is active and there is no pointer, so
+    // a tooltip may close again on the next pass of the event loop.
+    const auto tip = [&] {
+        QToolTip::hideText(); Settle();
+        const QPoint at = list->visualRect(row).center();
+        QHelpEvent help(QEvent::ToolTip, at, list->viewport()->mapToGlobal(at));
+        QCoreApplication::sendEvent(list->viewport(), &help);
+        const QString shown = QToolTip::text();
+        QToolTip::hideText();
+        return shown;
+    };
+    const auto own_tip = [&] { return row.data(Qt::ToolTipRole).toString(); };
+    const auto says = [&](const QString& expected, const char* what) {
+        const QString shown = tip();
+        QVERIFY2(shown == expected, qPrintable(QString("%1: shown \"%2\", expected \"%3\"").arg(what, shown, expected)));
+    };
+    QVERIFY(!own_tip().isEmpty() && !own_tip().contains("Amount"));
+    says(own_tip() + QString("\nAmount: +1.00000001 ") + name, "Abyss");
+    if (QTest::currentTestFailed()) return;
+
+    page.setPrivacy(true); Settle();
+    QVERIFY(!list->isVisible());
+    page.setPrivacy(false); Settle();
+    QVERIFY(list->isVisible());
+
+    Theme("Light"); Settle();
+    says(own_tip(), "Light");
+    Theme("Abyss"); Settle();
+    says(own_tip() + QString("\nAmount: +1.00000001 ") + name, "back in Abyss");
+    Settle();
+}
+
+void AbyssTests::transactionsPlainAmounts()
+{
+    // The Transactions table's Amount column in Abyss: every decimal the
+    // amount has, without the trailing zeros, the brackets of an amount that
+    // does not count yet kept, the exact text in the cell's tooltip. What
+    // leaves the screen (copy, export, sorting, the amount filter) stays
+    // exact. A classic theme shows all eight decimals; a theme switch changes
+    // what the view shows without resetting the model.
+    RestoreAppearance restore;
+    Theme("Light");
+    WalletFixture fixture(m_node);
+    const QString own = fixture.model->getAddressTableModel()->addRow(AddressTableModel::Receive, "", "");
+    QVERIFY(!own.isEmpty());
+    struct Case { CAmount amount; const char* abyss; };
+    const std::vector<Case> cases{{COIN + 1, "1.00000001"}, {2 * COIN, "2"}, {COIN / 2, "0.5"}, {1000 * COIN, "1 000"}};
+    for (uint32_t n = 0; n < cases.size(); ++n) QVERIFY(PayTo(*fixture.wallet, own, n, cases[n].amount));
+    Settle();
+    TransactionTableModel* model = fixture.model->getTransactionTableModel();
+    QCOMPARE(model->rowCount({}), int(cases.size()));
+    const int unit = fixture.options->getDisplayUnit();
+    TransactionView view;
+    view.setModel(fixture.model.get());
+    view.resize(1280, 700);
+    view.show(); Settle();
+    auto* table = view.findChild<QTableView*>("transactionView");
+    QVERIFY(table && table->model());
+    QSignalSpy reset(model, &QAbstractItemModel::modelReset);
+    // A row of the view and of the model, by amount.
+    const auto cell = [](QAbstractItemModel* m, CAmount amount) {
+        for (int r = 0; r < m->rowCount({}); ++r) {
+            const QModelIndex index = m->index(r, TransactionTableModel::Amount);
+            if (index.data(TransactionTableModel::AmountRole).toLongLong() == amount) return index;
+        }
+        return QModelIndex();
+    };
+    // A text without the brackets formatTxAmount would put around an amount
+    // that does not count yet (they never show today: its test reads the
+    // MasternodeReward enumerator), and the classic text without the trailing
+    // zeros of its fraction, brackets kept: what Abyss must show.
+    const auto unbracketed = [](const QString& text) {
+        return text.startsWith(QLatin1Char('[')) && text.endsWith(QLatin1Char(']')) ? text.mid(1, text.size() - 2) : text;
+    };
+    const auto trimmed = [&](const QString& classic_text) {
+        QString number = unbracketed(classic_text);
+        const bool bracketed = number.size() != classic_text.size();
+        if (number.contains(QLatin1Char('.'))) {
+            while (number.endsWith(QLatin1Char('0'))) number.chop(1);
+            if (number.endsWith(QLatin1Char('.'))) number.chop(1);
+        }
+        return bracketed ? QLatin1Char('[') + number + QLatin1Char(']') : number;
+    };
+    std::map<CAmount, QString> classic_texts;
+    const auto shows = [&](bool modern, const QString& what) {
+        for (const Case& c : cases) {
+            const QModelIndex index = cell(model, c.amount);
+            const QModelIndex shown = cell(table->model(), c.amount);
+            QVERIFY2(index.isValid() && shown.isValid(), qPrintable(what));
+            const QString plain = BitcoinUnits::format(unit, c.amount, false, BitcoinUnits::SeparatorStyle::ALWAYS);
+            const QString text = index.data(Qt::DisplayRole).toString();
+            if (modern) {
+                QVERIFY2(classic_texts.count(c.amount), qPrintable(what));
+                QVERIFY2(text == trimmed(classic_texts[c.amount]) && unbracketed(text) == Thin(c.abyss), qPrintable(what + ": " + text));
+            } else {
+                QVERIFY2(unbracketed(text) == plain, qPrintable(what + ": " + text));
+                classic_texts[c.amount] = text;
+            }
+            QCOMPARE(shown.data(Qt::DisplayRole).toString(), text);
+            const QString row_tip = index.sibling(index.row(), TransactionTableModel::Date).data(Qt::ToolTipRole).toString();
+            QVERIFY(!row_tip.isEmpty());
+            const QString exact = BitcoinUnits::formatWithUnit(unit, c.amount, false, BitcoinUnits::SeparatorStyle::ALWAYS);
+            QCOMPARE(index.data(Qt::ToolTipRole).toString(), modern ? exact : row_tip);
+            QCOMPARE(shown.data(Qt::ToolTipRole).toString(), modern ? exact : row_tip);
+            // What leaves the screen does not change with the theme.
+            const QString unseparated = BitcoinUnits::format(unit, c.amount, false, BitcoinUnits::SeparatorStyle::NEVER);
+            QCOMPARE(index.data(TransactionTableModel::FormattedAmountRole).toString(), unseparated);
+            QVERIFY(index.data(TransactionTableModel::TxPlainTextRole).toString().contains(unseparated));
+            QCOMPARE(index.data(TransactionTableModel::AmountRole).toLongLong(), qint64(c.amount));
+            QCOMPARE(index.data(Qt::EditRole).toLongLong(), qint64(c.amount));
+        }
+    };
+    shows(false, "Light");
+    Theme("Abyss"); Settle();
+    shows(true, "Abyss");
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    if (!output.isEmpty()) QVERIFY(QDir().mkpath(output) && view.grab().save(QDir(output).filePath("Abyss-transactions-plain.png")));
+    Theme("Dark"); Settle();
+    shows(false, "Dark");
+    Theme("Abyss"); Settle();
+    shows(true, "back in Abyss");
+    QCOMPARE(reset.count(), 0);
+}
 
 void AbyssTests::receiveAddressFirst()
 {
