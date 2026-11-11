@@ -28,8 +28,8 @@
 # maturity on the test chains, feature_dsl_list_change.py (SF1-L), and the
 # three PSBT, mempool and peer tests that came in once the test framework took
 # DeFCoN's MAX_MONEY, and the three chain and mining tests that came in once
-# they counted DeFCoN's one unit of work per proof-of-work block, from their
-# local runs until their first hosted run.
+# they counted DeFCoN's one unit of work per proof-of-work block, and
+# p2p_coinjoin_inputs.py, from their local runs until their first hosted run.
 #
 # Until the gate existed the workflow ran zero functional tests: the inherited
 # integration runner was never wired into the workflow. Every regression that
@@ -101,6 +101,7 @@
 34   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
 33   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 32   rpc_verifyislock.py                    # the lock-verifying RPCs
+32   p2p_coinjoin_inputs.py                 # a masternode looks up a mixing request's collateral inputs: a missing output or a short fee is refused, and it keeps serving
 30   feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
 30   p2p_invalid_tx.py                      # invalid transactions from a peer: each reject reason and its disconnect, orphans and their limits
 27   feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
