@@ -55,6 +55,7 @@ class QComboBox;
 class QDateTime;
 class QProgressBar;
 class QProgressDialog;
+class QShortcut;
 class QToolButton;
 QT_END_NAMESPACE
 
@@ -178,6 +179,22 @@ private:
     QAction* devnetBadgeAction = nullptr;
     QLabel* devnetBadgeLabel = nullptr;
     QAction* coinJoinToolbarAction = nullptr;
+    //! Abyss folds the pages used less often (CoinJoin, Multisig, Masternodes,
+    //! Governance) under one "More" header in the sidebar. It starts closed and
+    //! QSettings keeps the last choice. The classic themes have no header and
+    //! show every page, as before.
+    QToolButton* moreButton = nullptr;
+    QAction* moreToolbarAction = nullptr;
+    bool m_more_open{false};
+    //! The header was closed by hand on the page on display, which therefore
+    //! stays folded away: the only way an offered page on display is hidden
+    //! (updateMoreGroup).
+    bool m_more_closed_on_current{false};
+    //! The CoinJoin page is offered only while CoinJoin is enabled.
+    bool m_coinjoin_tab_enabled{true};
+    //! A hidden button's own shortcut does not fire, so a page folded under the
+    //! header keeps its Alt+N through one of these, which the window owns.
+    QMap<QAbstractButton*, QShortcut*> m_folded_shortcuts;
     QAction* quitAction = nullptr;
     QAction* sendCoinsMenuAction = nullptr;
     QAction* coinJoinCoinsMenuAction = nullptr;
@@ -275,6 +292,26 @@ private:
     /** Apply the selected theme's navigation orientation and sizing. */
     void applyThemeLayout();
     void updateQuickControls();
+    /** Abyss quick buttons name themselves while pointed at or reached with
+        Tab; the padlock keeps its name while the wallet is locked. */
+    void updateQuickButtonLabels();
+    /** The pages under the More header that this wallet has, in sidebar order. */
+    QList<QToolButton*> moreGroupPages() const;
+    /** The navigation bar's action that holds a page's button. */
+    QAction* navigationAction(QAbstractButton* page) const;
+    /** Enable or disable a page that needs a wallet (or CoinJoin) in the bar:
+        its button, its action and what a folded page's shortcut reads. */
+    void setPageUsable(QAbstractButton* page, bool usable);
+    /** The page on display, when it is one the More header holds and offers. */
+    QToolButton* currentMorePage() const;
+    /** Open or close the More header and remember the choice. */
+    void setMoreGroupOpen(bool open);
+    /** A page under the header was chosen: show it, current or not. */
+    void revealMorePage();
+    /** Show the pages that the theme, the More header and CoinJoin allow. */
+    void updateMoreGroup();
+    /** Alt+1 to Alt+N in sidebar order, a page folded under More included. */
+    void updateNavigationShortcuts();
     /** One slow pulse of the console button, if anyone is there to see it. */
     /** Create system tray icon and notification */
     void createTrayIcon();

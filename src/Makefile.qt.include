@@ -240,6 +240,8 @@ RES_ICONS = \
   qt/res/icons/tabler/clock.svg \
   qt/res/icons/tabler/cube.svg \
   qt/res/icons/tabler/gavel.svg \
+  qt/res/icons/tabler/chevron-down.svg \
+  qt/res/icons/tabler/chevron-right.svg \
   qt/res/icons/tabler/history.svg \
   qt/res/icons/tabler/home.svg \
   qt/res/icons/tabler/key.svg \

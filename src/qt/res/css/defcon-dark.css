@@ -346,6 +346,22 @@ QToolBar#navigationToolBar[modern="true"] > QToolButton:disabled {
     color: #4f647d;
 }
 
+/* The header the pages used less often fold under. It names a group, not a
+   page: shorter and quieter than a page button, never filled as the current
+   page is, and its arrow says whether it is open. It turns bold and white
+   (bitcoingui.cpp) while it hides the page on display. */
+QToolBar#navigationToolBar[modern="true"] > QToolButton#abyssMoreButton {
+    color: #8ea3bb;
+    margin: 8px 4px 2px 4px;
+    min-height: 36px;
+    max-height: 36px;
+}
+
+QToolBar#navigationToolBar[modern="true"] > QToolButton#abyssMoreButton:hover,
+QToolBar#navigationToolBar[modern="true"] > QToolButton#abyssMoreButton[currentInside="true"] {
+    color: #ffffff;
+}
+
 /* The box is the wordmark's own proportion, 616:140, so nothing is letterboxed
    or stretched: 194 px wide makes it 44 px tall. It used to be 194x58, which is
    3.34:1 against artwork that is 4.4:1 -- a shape inherited from a different
@@ -446,6 +462,17 @@ QWidget#abyssQuickControls QToolButton:focus {
 QWidget#abyssQuickControls QToolButton:checked {
     background: #0d5da5;
     border-color: #168fea;
+}
+/* Pointed at, reached with Tab, or the padlock of a locked wallet: the button
+   opens to the left and says its name beside its icon (bitcoingui.cpp). */
+QWidget#abyssQuickControls QToolButton[expanded="true"] {
+    color: #cbd8e7;
+    max-width: 16777215px;
+    padding: 0 10px 0 8px;
+}
+QWidget#abyssQuickControls QToolButton[expanded="true"]:hover:enabled,
+QWidget#abyssQuickControls QToolButton[expanded="true"]:checked {
+    color: #ffffff;
 }
 
 /******************************************************
