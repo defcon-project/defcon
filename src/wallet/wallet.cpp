@@ -451,10 +451,35 @@ void CWallet::UpgradeDescriptorCache()
 
 bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase, const SecureString& strNewWalletPassphrase)
 {
-    bool fWasLocked = IsLocked(true);
-
     {
         LOCK(cs_wallet);
+        // The unlock mode before the change is back on every way out, an exception included, whether the passphrase
+        // changed or not: locked, unlocked for mixing and staking only, or fully unlocked (read and restored under
+        // cs_wallet, which Lock and Unlock change it under; the master key itself does not change). If it cannot be
+        // restored, the wallet ends locked. Before, a wallet unlocked for mixing and staking only came out of a change
+        // fully unlocked, and out of a wrong old passphrase locked, not staking.
+        const bool was_locked{IsLocked(/*fForMixing=*/true)};
+        const bool was_mixing_only{!was_locked && IsLocked()};
+        const CKeyingMaterial previous_key{vMasterKey};
+        const auto restore = [&]() noexcept {
+            try {
+                Lock();
+                if (!was_locked && !Unlock(previous_key, /*fForMixingOnly=*/was_mixing_only)) {
+                    Lock();
+                    WalletLogPrintf("%s: the wallet could not be unlocked again after the passphrase change; it stays locked\n", __func__);
+                }
+            } catch (...) {
+                try {
+                    Lock();
+                    WalletLogPrintf("%s: restoring the unlock mode after the passphrase change failed; the wallet stays locked\n", __func__);
+                } catch (...) {
+                }
+            }
+        };
+        struct RestoreOnExit {
+            decltype(restore)& f;
+            ~RestoreOnExit() { f(); }
+        } restore_on_exit{restore};
         Lock();
 
         CCrypter crypter;
@@ -485,9 +510,6 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
                 if (!crypter.Encrypt(_vMasterKey, pMasterKey.second.vchCryptedKey))
                     return false;
                 WalletBatch(GetDatabase()).WriteMasterKey(pMasterKey.first, pMasterKey.second);
-                if (fWasLocked)
-                    Lock();
-
                 return true;
             }
         }

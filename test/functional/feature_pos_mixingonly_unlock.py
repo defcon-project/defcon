@@ -22,7 +22,14 @@ What it does, in order:
    (dumpprivkey and dumpwallet on a legacy wallet, listdescriptors with
    private keys on a descriptor wallet); `send`, which never asked for the
    strict lock, hands the transaction back unsigned instead of sending it;
-4. after a restart the wallet is locked again, and the minter stakes nothing.
+4. while unlocked for mixing only, a passphrase change keeps that mode (staking goes on, sending and key export
+   stay refused), and so does a change with a wrong old passphrase (before, the first left the wallet fully
+   unlocked and the second locked it);
+5. after a restart the wallet is locked again, and the minter stakes nothing.
+
+getwalletinfo's unlock_mode is checked at each stage of a full run: absent before the encryption, then "locked" or
+"mixing_staking_only". --case runs one part of step 4 (after steps 1 to 3) without those checks: the negative control
+on a build without the change (with --legacy-wallet, whose locked wallet fails on `send`).
 """
 
 import os
@@ -56,13 +63,21 @@ POW_CHUNK = 500
 POW_CHUNK_CLOCK_STEP = 100
 
 PASSPHRASE = "staking only"
+NEW_PASSPHRASE = "still staking only"
 UNLOCK_SECONDS = 100000
+# RPC_WALLET_PASSPHRASE_INCORRECT
+PASSPHRASE_INCORRECT = -14
+PASSPHRASE_INCORRECT_MSG = "The wallet passphrase entered was incorrect"
+CASES = ["change", "wrong"]
 # EnsureWalletIsUnlocked(), wallet/rpcwallet.cpp
 UNLOCK_NEEDED = -13
 UNLOCK_NEEDED_MSG = "Please enter the wallet passphrase with walletpassphrase first"
 
 
 class PosMixingOnlyUnlockTest(BitcoinTestFramework):
+    def add_options(self, parser):
+        parser.add_argument("--case", choices=CASES, default=None, help="run one part of step 4, without the mode checks")
+
     def set_test_params(self):
         self.num_nodes = 1
         self.extra_args = [["-staking=1", "-debug=pos"]]
@@ -176,6 +191,23 @@ class PosMixingOnlyUnlockTest(BitcoinTestFramework):
             assert_raises_rpc_error(UNLOCK_NEEDED, UNLOCK_NEEDED_MSG, node.dumpwallet,
                                     os.path.join(self.options.tmpdir, "mixingonly.dump"))
 
+    def assert_mode(self, node, mode):
+        """getwalletinfo's unlock_mode (a full run only: the controls run on a build without it)."""
+        if self.options.case is None:
+            info = node.getwalletinfo()
+            if mode is None:
+                assert "unlock_mode" not in info
+            else:
+                assert_equal(info["unlock_mode"], mode)
+
+    def stake_one(self, node, wallet_id):
+        """The next block, staked by the wallet as it is unlocked now; returns the settled height."""
+        height = node.getblockcount()
+        assert_equal(node.setstaking(wallet_id), True)
+        self.stake_to_height(node, height + 1)
+        assert_equal(node.setstaking(wallet_id), False)
+        return self.settled_height(node)
+
     def run_test(self):
         node = self.nodes[0]
         if self.mocktime == 0:
@@ -193,9 +225,12 @@ class PosMixingOnlyUnlockTest(BitcoinTestFramework):
         wallet_id = self.wallet_id(node)
         self.wait_until(lambda: self.staking_info(node, wallet_id)["minter_running"], timeout=30)
 
+        self.assert_mode(node, None)
+
         self.log.info("Encrypted and locked: no block")
         node.encryptwallet(PASSPHRASE)
         assert_equal(node.getwalletinfo()["unlocked_until"], 0)
+        self.assert_mode(node, "locked")
         self.switch_staking_on_locked(node, wallet_id)
         self.assert_no_block_staked(node, wallet_id, LAST_POW_BLOCK)
         # A staked block carries the time the minter read at the start of the attempt that
@@ -210,6 +245,7 @@ class PosMixingOnlyUnlockTest(BitcoinTestFramework):
         node.walletpassphrase(PASSPHRASE, UNLOCK_SECONDS, True)
         self.advance_clock(STAKE_CLOCK_STEP)
         assert_greater_than(node.getwalletinfo()["unlocked_until"], 0)
+        self.assert_mode(node, "mixing_staking_only")
         # The switch is off (gone off, or refused, while locked): nothing has staked since
         # the locked check, so the next block is staked unlocked for mixing only.
         assert_equal(self.staking_info(node, wallet_id)["staking"], False)
@@ -229,11 +265,27 @@ class PosMixingOnlyUnlockTest(BitcoinTestFramework):
         self.log.info("Still unlocked for mixing only: sending, signing and key export are refused")
         self.assert_refuses_keys_and_sending(node, address, change, mixing_only=True)
 
+        case = self.options.case
+        if case in (None, "change"):
+            self.log.info("A passphrase change while unlocked for mixing only keeps that mode")
+            node.walletpassphrasechange(PASSPHRASE, NEW_PASSPHRASE)
+            self.assert_refuses_keys_and_sending(node, address, change, mixing_only=True)
+            height = self.stake_one(node, wallet_id)
+            self.assert_mode(node, "mixing_staking_only")
+        if case in (None, "wrong"):
+            self.log.info("A change with a wrong old passphrase changes nothing, the mode included")
+            assert_raises_rpc_error(PASSPHRASE_INCORRECT, PASSPHRASE_INCORRECT_MSG, node.walletpassphrasechange,
+                                    "not the passphrase", "another passphrase")
+            self.assert_refuses_keys_and_sending(node, address, change, mixing_only=True)
+            height = self.stake_one(node, wallet_id)
+            self.assert_mode(node, "mixing_staking_only")
+
         self.log.info("After a restart the wallet is locked again: no block")
         self.restart_node(0)
         set_node_times(self.nodes, self.mocktime)
         force_finish_mnsync(node)
         assert_equal(node.getwalletinfo()["unlocked_until"], 0)
+        self.assert_mode(node, "locked")
         wallet_id = self.wallet_id(node)
         self.wait_until(lambda: self.staking_info(node, wallet_id)["minter_running"], timeout=30)
         self.switch_staking_on_locked(node, wallet_id)

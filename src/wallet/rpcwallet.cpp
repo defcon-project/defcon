@@ -2956,6 +2956,7 @@ static RPCHelpMan getwalletinfo()
                             {RPCResult::Type::NUM, "keypoolsize_hd_internal", "how many new keys are pre-generated for internal use (used for change outputs, only appears if the wallet is using this feature, otherwise external keys are used)"},
                             {RPCResult::Type::NUM, "keys_left", "how many new keys are left since last automatic backup"},
                             {RPCResult::Type::NUM_TIME, "unlocked_until", /* optional */ true, "the " + UNIX_EPOCH_TIME + " until which the wallet is unlocked for transfers, or 0 if the wallet is locked (only present for passphrase-encrypted wallets)"},
+                            {RPCResult::Type::STR, "unlock_mode", /* optional */ true, "how far the wallet is unlocked: \"locked\", \"mixing_staking_only\" (it mixes and stakes, but does not send, sign or export keys) or \"full\" (only present for passphrase-encrypted wallets)"},
                             {RPCResult::Type::STR_AMOUNT, "paytxfee", "the transaction fee configuration, set in " + CURRENCY_UNIT + "/kB"},
                             {RPCResult::Type::STR_HEX, "hdchainid", "the ID of the HD chain"},
                             {RPCResult::Type::NUM, "hdaccountcount", "how many accounts of the HD chain are in this wallet"},
@@ -3019,8 +3020,10 @@ static RPCHelpMan getwalletinfo()
     obj.pushKV("keypoolsize",   (int64_t)kpExternalSize);
     obj.pushKV("keypoolsize_hd_internal",   (int64_t)(pwallet->GetKeyPoolSize() - kpExternalSize));
     obj.pushKV("keys_left",     pwallet->nKeysLeftSinceAutoBackup);
-    if (pwallet->IsCrypted())
+    if (pwallet->IsCrypted()) {
         obj.pushKV("unlocked_until", pwallet->nRelockTime);
+        obj.pushKV("unlock_mode", pwallet->IsLocked(/*fForMixing=*/true) ? "locked" : pwallet->IsLocked() ? "mixing_staking_only" : "full");
+    }
     obj.pushKV("paytxfee",      ValueFromAmount(pwallet->m_pay_tx_fee.GetFeePerK()));
     if (fHDEnabled) {
         obj.pushKV("hdchainid", hdChainCurrent.GetID().GetHex());
