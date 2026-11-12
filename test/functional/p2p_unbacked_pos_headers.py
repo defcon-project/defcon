@@ -13,13 +13,19 @@ branches a peer opens (a header without its block, or a block it was not asked f
 child) at most MAX_UNBACKED_FORKS_PER_PEER may be on a block never connected (that a block is stored is not
 enough: one never connected has not had its stake checked), counted over a day (a rate, not a bound for life), and
 past that its further new branches are not taken -- nothing else happens to the peer: a real block that loses here
-is, to this node, the same as one made for nothing; for a day after the limits (or validation, for an unrequested
+is, to this node, the same as one made for nothing; the count is kept for the network group of an inbound peer (a
+reconnect does not start it again; steps 3b and 13) and for the connection of an outbound one; for a day after the
+limits (or validation, for an unrequested
 block) dropped anything from a peer, its headers that do not connect here are not counted as such, whatever they
 build on (steps 2, 3, 5, 6, 9, 9b and 10 send MAX_UNCONNECTING_HEADERS times as many in a row; step 11 checks that
 the count is back a day later); below the minimum chain work the height limit does not apply; and an unrequested
 block it would drop anyway leaves no index entry.
 
 Each step logs its numbers before it checks them, so a run on a node without the limits measures it as well.
+
+Every test peer connects from 127.0.0.1, one network group, and the group's count lives in the node's memory. So the
+first node is restarted before each step that uses the count up or depends on it (3, 4, 6, 9, 9b, 10 and 11): the
+step then starts with the whole count, and the block index, with every header taken so far, comes back from disk.
 
  0. A node following the chain while a peer puts a header without its block on each new tip before the real
     block is announced: every real block opens a new branch, more than MAX_UNBACKED_FORKS_PER_PEER of them, and
@@ -32,10 +38,12 @@ Each step logs its numbers before it checks them, so a run on a node without the
     a branch not taken, more often than MAX_UNCONNECTING_HEADERS would punish: (a) one announcement on the other,
     with no reply in between, and (b) after another branch was dropped, back on the first one: not punished.
     (c) A peer sending headers that do not connect, on nothing dropped from it, still is.
+3b. The count is the group's: one more new branch from a new connection is not taken, nor after the first peer has
+    left; after a restart of the node (the count is in memory) the same header is taken.
  4. The same with an invalid (too far in the future) header after each sibling: still counted.
  5. Siblings branching off 101 blocks below the tip: not taken, no punishment.
- 6. An unrequested block on a lower-work branch, signed with the sender's own key: no index entry; the sender's
-    announcements on it are not punished.
+ 6. An unrequested block on a lower-work branch, signed with the sender's own key: validation drops it (its log
+    line says so), with no index entry; the sender's announcements on it are not punished.
  7. The limit grows with the tip's age: the 200-header branch again, 450 s later, is taken 12 heights further.
  8. A third node syncs from scratch.
  9. Copies of the tip with the same work, signed with the sender's own key, header first: their blocks are stored
@@ -52,6 +60,10 @@ Each step logs its numbers before it checks them, so a run on a node without the
     more within that window is not taken; and a day after that drop its headers that do not connect count again.
 12. Below the minimum chain work the height limit does not apply: a node behind more blocks than it allows syncs
     without the clock moving.
+13. The price of the group's count, and the way out. On the second node an inbound peer puts a header on the tip
+    and uses up the group's count with siblings of it. The real next block then opens a new branch: from another
+    inbound peer of the group it is not taken, as a header or as a block; from an outbound peer, counted by its own
+    connection, it is taken and becomes the tip.
 """
 
 import time
@@ -139,7 +151,7 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 3
         self.setup_clean_chain = True
-        self.extra_args = [["-staking=1", "-debug=net", FAST_STAKING_ARG], ["-debug=net"], []]
+        self.extra_args = [["-staking=1", "-debug=net", "-debug=validation", FAST_STAKING_ARG], ["-debug=net"], []]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -151,6 +163,16 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
     def advance_clock(self, seconds):
         self.mocktime += seconds
         set_node_times(self.nodes, self.mocktime)
+
+    def whole_count(self):
+        """Restart the first node, so that the next step has the whole count of new branches: every test peer is in
+        one network group, whose count the node keeps in memory. Headers and blocks taken so far are on disk."""
+        node = self.nodes[0]
+        entries = self.entries(node)
+        node.disconnect_p2ps()
+        self.restart_node(0)
+        node.setmocktime(self.mocktime)
+        assert_equal(self.entries(node), entries)
 
     def tail(self, node, block_hash):
         entries = []
@@ -361,6 +383,7 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
         self.announce_on_dropped(node, long_peer, long_branch[-1], tag=0xa1, what="cut at the height limit")
 
         self.log.info("3. Single sibling headers on the tip, from one peer")
+        self.whole_count()
         grown, flood_peer = self.flood_siblings(node, tip_hash, tag=0x1000)
         assert_equal(grown, MAX_UNBACKED_FORKS_PER_PEER)
         # The first branch not taken and a chain of announcements on it (none of which connects here), and another
@@ -393,7 +416,33 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
         broken.wait_for_disconnect()
         self.log.info("a peer sending %d headers that do not connect, on nothing dropped from it: disconnected", UNCONNECTING_ROUNDS)
 
+        self.log.info("3b. One more new branch from a new connection of the same network group, then again after the "
+                      "first peer has left, then after a restart of the node")
+        again = self.branch(node, tip_hash, 1, tag=0x1800)[0]
+        reconnected = node.add_p2p_connection(P2PInterface())
+        reconnected.send_and_ping(msg_headers([again]))
+        self.log.info("from a new connection: taken %s, connected=%s",
+                      again.hash in [t["hash"] for t in node.getchaintips()], reconnected.is_connected)
+        assert_raises_rpc_error(-5, "Block not found", node.getblockheader, again.hash)
+        assert reconnected.is_connected
+        flood_peer.peer_disconnect()
+        flood_peer.wait_for_disconnect()
+        reconnected.peer_disconnect()
+        reconnected.wait_for_disconnect()
+        alone = node.add_p2p_connection(P2PInterface())
+        alone.send_and_ping(msg_headers([again]))
+        self.log.info("from the group's only connection, the others gone: taken %s, connected=%s",
+                      again.hash in [t["hash"] for t in node.getchaintips()], alone.is_connected)
+        assert_raises_rpc_error(-5, "Block not found", node.getblockheader, again.hash)
+        assert alone.is_connected
+        self.whole_count()
+        restarted = node.add_p2p_connection(P2PInterface())
+        restarted.send_and_ping(msg_headers([again]))
+        self.log.info("after a restart: taken %s", again.hash in [t["hash"] for t in node.getchaintips()])
+        assert_equal(node.getblockheader(again.hash)["height"], tip["height"] + 1)
+
         self.log.info("4. The same, each followed by a header too far in the future")
+        self.whole_count()
         grown, _ = self.flood_siblings(node, tip_hash, tag=0x2000, invalid_child=True)
         assert_equal(grown, MAX_UNBACKED_FORKS_PER_PEER)
 
@@ -416,8 +465,14 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
         key = ECKey()
         key.generate()
         forged = self.copy_signed_by(node, node.getblockhash(tip["height"] - 1), key, tag=0x6)
+        # It opens a new branch, so with the group's count used up (steps 3 to 4) the count would drop it before
+        # validation saw it: the step starts with the whole count, and asks for validation's own line.
+        self.whole_count()
         block_peer = node.add_p2p_connection(P2PInterface())
-        block_peer.send_and_ping(msg_block(forged))
+        with node.assert_debug_log(expected_msgs=["block %s at height %d not asked for is dropped before its header is indexed: less work than the tip"
+                                                  % (forged.hash, tip["height"] - 1)],
+                                   unexpected_msgs=["block %s not asked for opens a new branch" % forged.hash]):
+            block_peer.send_and_ping(msg_block(forged))
         known = forged.hash in [t["hash"] for t in node.getchaintips()]
         self.log.info("block %s at height %d sent; an index entry for it: %s", forged.hash, tip["height"] - 1, known)
         assert_raises_rpc_error(-5, "Block not found", node.getblockheader, forged.hash)
@@ -444,6 +499,7 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
         self.log.info("9. Copies of the tip with the same work, signed with the sender's own key: each opens a "
                       "branch and its block comes, but it is never connected (its stake never checked); an honest "
                       "peer's real blocks that lose here come the same way")
+        self.whole_count()
         copy_peer = node.add_p2p_connection(P2PInterface())
         stored = 0
         for i in range(MAX_UNBACKED_FORKS_PER_PEER):
@@ -475,6 +531,7 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
         self.announce_on_dropped(node, copy_peer, via_cmpct, tag=0x9fff, what="a compact block past the count")
 
         self.log.info("9b. The same copies block first, not asked for: stored, never connected, each a new branch")
+        self.whole_count()
         block_first = node.add_p2p_connection(P2PInterface())
         stored = 0
         for i in range(MAX_UNBACKED_FORKS_PER_PEER):
@@ -495,6 +552,7 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
 
         self.log.info("10. Headers above the limit, cut: each peer is asked again from where its reply was cut, not "
                       "from its best known block (none, or another branch), also after a compact block")
+        self.whole_count()
         limit_now = self.limit(node)
         room = limit_now - tip["height"]
         cut_branch = self.branch(node, tip_hash, room + 3, tag=0xc)
@@ -544,6 +602,7 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
         # Branches below the tip's work: the node fetches no block for them, so no download is in flight while the
         # clock moves a day (it would time out and drop the peer).
         rate_parent = node.getblockhash(tip["height"] - 2)
+        self.whole_count()
         rate_peer = node.add_p2p_connection(P2PInterface())
         before = self.entries(node)
         for i in range(MAX_UNBACKED_FORKS_PER_PEER):
@@ -580,6 +639,7 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
         self.log.info("12. Below the minimum chain work the height limit does not hold a node back: one %d blocks "
                       "behind syncs without the clock moving", MIN_WORK_BLOCKS)
         force_finish_mnsync(node)  # the clock jumped a day: the node restarted its sync
+        wallet_id = int(next(iter(node.liststakingwallets())))  # the node was restarted since
         assert_equal(node.setstaking(wallet_id), True)
         self.stake_to(node, node.getblockcount() + 1, POS_TARGET_SPACING)  # a fresh tip for both
         if not [p for p in fresh.getpeerinfo() if not p["inbound"]]:
@@ -604,6 +664,35 @@ class UnbackedPosHeadersTest(BitcoinTestFramework):
         self.log.info("synced to %d in %.0f s, the clock still at %d (unchanged: %s)",
                       fresh.getblockcount(), time.time() - started, self.mocktime, self.mocktime == clock)
         assert_equal(self.mocktime, clock)
+
+        self.log.info("13. The second node, still at %d: an inbound peer puts a header on its tip and uses up its "
+                      "network group's count; the real block at %d then opens a new branch", TIP, TIP + 1)
+        assert_equal(behind_node.getbestblockhash(), tip_hash)
+        real_hash = node.getblockhash(TIP + 1)
+        real = from_hex(CBlock(), node.getblock(real_hash, 0))
+        crowd = behind_node.add_p2p_connection(P2PInterface())
+        crowd.send_and_ping(msg_headers(self.branch(behind_node, tip_hash, 1, tag=0xd000)))  # the tip's first child: no new branch
+        before = self.entries(behind_node)
+        for i in range(MAX_UNBACKED_FORKS_PER_PEER):
+            crowd.send_and_ping(msg_headers(self.branch(behind_node, tip_hash, 1, tag=0xd001 + i)))
+        self.log.info("%d siblings of it: index entries added %d", MAX_UNBACKED_FORKS_PER_PEER, self.entries(behind_node) - before)
+        assert_equal(self.entries(behind_node) - before, MAX_UNBACKED_FORKS_PER_PEER)
+        # (a) Another inbound peer of the group: the real block is not taken, as a header or as a block.
+        honest_inbound = behind_node.add_p2p_connection(P2PInterface())
+        with behind_node.assert_debug_log(expected_msgs=["headers without blocks opening a new branch at height %d, past" % (TIP + 1)]):
+            honest_inbound.send_and_ping(msg_headers([CBlockHeader(real)]))
+        with behind_node.assert_debug_log(expected_msgs=["block %s not asked for opens a new branch at height %d, past" % (real_hash, TIP + 1)]):
+            honest_inbound.send_and_ping(msg_block(real))
+        self.log.info("the real block from an inbound peer of the group: the tip is still %s, connected=%s",
+                      behind_node.getbestblockhash() == tip_hash, honest_inbound.is_connected)
+        assert_raises_rpc_error(-5, "Block not found", behind_node.getblockheader, real_hash)
+        assert_equal(behind_node.getbestblockhash(), tip_hash)
+        assert honest_inbound.is_connected
+        # (b) An outbound peer is counted by its own connection: the block comes in and becomes the tip.
+        honest_outbound = behind_node.add_outbound_p2p_connection(P2PInterface(), p2p_idx=0)
+        honest_outbound.send_and_ping(msg_block(real))
+        self.wait_until(lambda: behind_node.getbestblockhash() == real_hash, timeout=60)
+        self.log.info("the same block from an outbound peer: the tip is now %s at %d", real_hash, behind_node.getblockcount())
 
 
 if __name__ == '__main__':

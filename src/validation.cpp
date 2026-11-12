@@ -4447,8 +4447,13 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
         if (prev != nullptr && prev->nHeight + 1 > m_params.GetConsensus().lastPowBlock) {
             const CBlockIndex header_only{block};
             const arith_uint256 work{prev->nChainWork + GetBlockProof(header_only)};
-            if (work < m_chain.Tip()->nChainWork || prev->nHeight + 1 > m_chain.Height() + int(MIN_BLOCKS_TO_KEEP) ||
-                work < nMinimumChainWork) {
+            const bool less_work{work < m_chain.Tip()->nChainWork};
+            const bool too_far_ahead{prev->nHeight + 1 > m_chain.Height() + int(MIN_BLOCKS_TO_KEEP)};
+            const bool below_minimum{work < nMinimumChainWork};
+            if (less_work || too_far_ahead || below_minimum) {
+                LogPrint(BCLog::VALIDATION, "%s: block %s at height %d not asked for is dropped before its header is indexed: %s\n", __func__,
+                         block.GetHash().ToString(), prev->nHeight + 1,
+                         less_work ? "less work than the tip" : too_far_ahead ? "too far ahead of the tip" : "below the minimum chain work");
                 return true;
             }
         }
