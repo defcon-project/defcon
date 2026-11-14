@@ -854,7 +854,8 @@ void OverviewPage::paintNetworkIcons()
 
 int OverviewPage::skyTier() const
 {
-    return (m_privacy || walletModel == nullptr) ? 0 : m_sky_tier;
+    // A resting sky has no level to show: no badge, and the window keeps the plain backdrop.
+    return (SkyTiers::dormant() || m_privacy || walletModel == nullptr) ? 0 : m_sky_tier;
 }
 
 void OverviewPage::placeSkyBadge()
@@ -911,14 +912,20 @@ void OverviewPage::updateNextLevel()
     const bool shown = GUIUtil::isModernTheme() && !m_privacy && walletModel != nullptr &&
                        walletModel->getOptionsModel() != nullptr && !walletModel->wallet().privateKeysDisabled();
     if (shown) {
-        if (m_sky_tier >= SkyTiers::COUNT - 1) {
+        if (SkyTiers::dormant()) {
+            // The sky rests and has no level to name. The line stays, blank,
+            // with its height: the pages were fitted to the Overview's height
+            // with it (the Receive page's first view, U2), and are not refitted.
+            m_next_level->setText(QStringLiteral(" "));
+            m_next_level->setToolTip(QString());
+        } else if (m_sky_tier >= SkyTiers::COUNT - 1) {
             m_next_level->setText(tr("Top level"));
         } else {
             const int unit = walletModel->getOptionsModel()->getDisplayUnit();
             // The thresholds are whole coins: Abyss's amounts show no decimals for them.
             m_next_level->setText(tr("Next level at %1").arg(AbyssUnits::format(unit, SkyTiers::threshold(m_sky_tier + 1))));
         }
-        m_next_level->setToolTip(tr("The night sky behind the wallet grows with the balance: %1 now.").arg(SkyTiers::name(m_sky_tier)));
+        if (!SkyTiers::dormant()) m_next_level->setToolTip(tr("The night sky behind the wallet grows with the balance: %1 now.").arg(SkyTiers::name(m_sky_tier)));
     }
     if (m_next_level->isHidden() == shown) m_next_level->setVisible(shown);
 }

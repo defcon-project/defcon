@@ -184,6 +184,7 @@ BITCOIN_QT_H = \
   qt/starfieldwidget.h \
   qt/trafficgraphdata.h \
   qt/trafficgraphwidget.h \
+  qt/wavebackdrop.h \
   qt/transactiondesc.h \
   qt/transactiondescdialog.h \
   qt/transactionfilterproxy.h \
@@ -305,6 +306,7 @@ BITCOIN_QT_BASE_CPP = \
   qt/starfieldwidget.cpp \
   qt/trafficgraphdata.cpp \
   qt/trafficgraphwidget.cpp \
+  qt/wavebackdrop.cpp \
   qt/utilitydialog.cpp
 
 BITCOIN_QT_WINDOWS_CPP = \

@@ -1274,8 +1274,10 @@ void BitcoinGUI::applyThemeLayout()
     const bool modern = GUIUtil::isModernTheme();
     const bool vertical = modern;
 
-    // Abyss is the only theme that asks for a sky behind the wallet.
+    // Abyss is the only theme that asks for a backdrop behind the wallet:
+    // the waves while the night sky rests, else the sky.
     if (auto* sky = qobject_cast<StarfieldWidget*>(centralWidget())) {
+        sky->setWaves(SkyTiers::dormant());
         sky->setSkyVisible(modern);
         sky->setAnimated(QSettings().value("fAnimateNightSky", true).toBool());
     }

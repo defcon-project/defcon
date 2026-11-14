@@ -10,6 +10,7 @@
 
 #include <qt/appearancewidget.h>
 #include <qt/optionsmodel.h>
+#include <qt/starfieldwidget.h>
 
 #include <util/system.h>
 
@@ -44,6 +45,9 @@ AppearanceWidget::AppearanceWidget(QWidget* parent) :
     // same way the theme and the fonts are put back.
     prevAnimateNightSky = QSettings().value("fAnimateNightSky", true).toBool();
     ui->animateNightSky->setChecked(prevAnimateNightSky);
+    // The night sky rests: its option is kept, with its stored value, and not shown.
+    ui->lblNightSky->setVisible(!SkyTiers::dormant());
+    ui->animateNightSky->setVisible(!SkyTiers::dormant());
 
     mapper = new QDataWidgetMapper(this);
     mapper->setSubmitPolicy(QDataWidgetMapper::ManualSubmit);

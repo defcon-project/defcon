@@ -37,6 +37,12 @@ CAmount threshold(int tier);
 int tierForBalance(CAmount balance, int current);
 //! The level's name as the badge shows it.
 QString name(int tier);
+/** The night sky rests: Abyss shows the wave backdrop in its place, and the
+ *  level, its badge and the sky's option stay out of sight. Nothing a user
+ *  can set wakes it; the sky's own code and tests stay as they are. */
+bool dormant();
+//! Only the tests wake the sky, to keep the resting code honest.
+void setDormantForTests(bool dormant);
 } // namespace SkyTiers
 
 /**
@@ -53,6 +59,10 @@ QString name(int tier);
  * for the current sidereal time and quietly redrawn every ten minutes. Only
  * the few twinkling stars, a rare shooting star and the comet of one level
  * are painted live, through regional repaints.
+ *
+ * While the sky rests (SkyTiers::dormant) the widget shows the wave backdrop
+ * instead: one still picture (WaveBackdrop) for the area beside the sidebar,
+ * no star field, no timer.
  */
 class StarfieldWidget : public QWidget
 {
@@ -62,6 +72,10 @@ public:
     explicit StarfieldWidget(QWidget* parent = nullptr);
 
     void setSkyVisible(bool visible);
+    /** The wave backdrop in the sky's place while the widget is visible. The
+     *  sky's level and animation settings are kept and not shown. */
+    void setWaves(bool waves);
+    bool waves() const { return m_waves; }
     /** Off freezes motion and settles twinkle, and the sky keeps the time it
      *  had. On resumes continuously; the sky and the Moon catch up to the
      *  current date on the next tick. */
@@ -119,6 +133,11 @@ private:
     void updateRefreshTimer();
     void onRefresh();
     bool wantsAnimation() const;
+    //! The sky itself is on show: visible, and not replaced by the waves.
+    bool skyShown() const { return m_skyVisible && !m_waves; }
+    void dropField();
+    /** What the wave backdrop covers: the widget without the opaque sidebar. */
+    QRect waveArea() const;
     bool hasRealSky() const;
     bool hasShootingStars() const;
     qint64 motionMilliseconds() const;
@@ -150,6 +169,9 @@ private:
     QVector<int> m_twinklers; //!< Visible stars painted live.
     QPixmap m_steady;         //!< Everything that stands still, for this size, DPR and level.
     QPixmap m_moon;
+    QPixmap m_wave;           //!< The wave backdrop for m_wave_area's size and the pixel ratio.
+    QRect m_wave_area;        //!< Where the wave backdrop was last painted.
+    int m_wave_redraws{0};    //!< How often the wave backdrop was computed; tests watch it.
     QImage m_nebula;          //!< The level 7 cloud at its quarter resolution, computed once.
     qint64 m_clock_reference_ms{0};
     QTimer* m_timer{nullptr};
@@ -169,6 +191,7 @@ private:
     int m_tier{0};
     int m_steady_redraws{0}; //!< How often the cache was rebuilt; tests watch it.
     bool m_skyVisible{false};
+    bool m_waves{false};
     bool m_animated{true};
 };
 

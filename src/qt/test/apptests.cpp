@@ -770,9 +770,34 @@ void TestAbyssSidebar(BitcoinGUI* window)
     QCOMPARE(sky_timers.size(), 1);
     QApplication::setActiveWindow(window);
     QApplication::processEvents();
+    // The night sky rests: the window shows the wave backdrop, which has no
+    // frames, in Abyss and after every return to it.
+    QVERIFY(SkyTiers::dormant());
+    QVERIFY(sky->waves());
+    QVERIFY(!sky_timers.front()->isActive());
+    if (!output.isEmpty()) QVERIFY(sky->grab().save(QDir(output).filePath("Abyss-central-waves.png")));
+    if (!output.isEmpty()) QVERIFY(window->grab().save(QDir(output).filePath("Abyss-window.png")));
+    for (const char* classic : {"Light", "Dark", "Traditional"}) {
+        theme(classic);
+        QVERIFY(!sky_timers.front()->isActive());
+        theme("Abyss");
+        QApplication::setActiveWindow(window);
+        QApplication::processEvents();
+        QVERIFY(sky->waves());
+        QVERIFY(!sky_timers.front()->isActive());
+    }
+    // Woken (only a test can), the same theme route starts and stops the sky's frames.
+    struct WakeSky {
+        WakeSky() { SkyTiers::setDormantForTests(false); }
+        ~WakeSky() { SkyTiers::setDormantForTests(true); }
+    } wake;
+    theme("Light");
+    theme("Abyss");
+    QApplication::setActiveWindow(window);
+    QApplication::processEvents();
+    QVERIFY(!sky->waves());
     QVERIFY(sky_timers.front()->isActive());
     if (!output.isEmpty()) QVERIFY(sky->grab().save(QDir(output).filePath("Abyss-central-sky.png")));
-    if (!output.isEmpty()) QVERIFY(window->grab().save(QDir(output).filePath("Abyss-window.png")));
     for (const char* classic : {"Light", "Dark", "Traditional"}) {
         theme(classic);
         QVERIFY(!sky_timers.front()->isActive());
