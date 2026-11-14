@@ -809,6 +809,8 @@ public:
         ChainstateManager& chainman, BuildListFromBlockFunc build_list_func,
         bool repair, bool stop_at_shutdown = true) EXCLUSIVE_LOCKS_REQUIRED(!cs);
     [[nodiscard]] bool IsRepaired() const;
+    //! Sets the mark IsRepaired reads, in the database itself: the evodb
+    //! transactions, and whatever they hold, are left as they are.
     void CompleteRepair();
 
     //! The startup check of the stored history, DIP0003 to the tip: verify,

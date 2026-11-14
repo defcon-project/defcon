@@ -147,6 +147,7 @@
 9    feature_llmq_q60_regtest.py            # the Q60 ChainLock profile (llmq_defcon) on regtest
 9    feature_llmq_switchover_config.py      # the startup guards on the Q60 switchover heights, the v23@N alias
 8    feature_superblock_retirement.py       # a test chain with the superblock spork on: getblocktemplate at the retirement height, and the regtest alias
+7    feature_init_error_stops_import.py     # a start that fails after the block import has begun (here on -bind) asks the import to stop, and the node then starts as usual
 6    wallet_labels.py                       # address labels, address groupings and the label calls
 6    rpc_help.py                            # defcon-cli converts each argument the way the server names it, and the help categories
 6    feature_txindex.py                     # getrawtransaction from the transaction index, on nodes without the transaction in a wallet
