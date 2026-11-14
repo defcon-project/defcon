@@ -384,13 +384,16 @@ static RPCHelpMan masternode_payments()
     }
 
     int64_t nCount = request.params.size() > 1 ? ParseInt64V(request.params[1], "count") : 1;
+    // How many blocks, in either direction. Negated as unsigned: the smallest count has no
+    // positive int64_t, and std::abs of it is undefined.
+    const uint64_t blocks_wanted{nCount < 0 ? uint64_t{0} - static_cast<uint64_t>(nCount) : static_cast<uint64_t>(nCount)};
 
     // A temporary vector which is used to sort results properly (there is no "reverse" in/for UniValue)
     std::vector<UniValue> vecPayments;
 
     CHECK_NONFATAL(node.chain_helper);
     CHECK_NONFATAL(node.dmnman);
-    while (vecPayments.size() < uint64_t(std::abs(nCount)) && pindex != nullptr) {
+    while (vecPayments.size() < blocks_wanted && pindex != nullptr) {
         // Genesis pays no masternode and has no predecessor to fill a payment
         // template from: FillBlockPayments takes pindex->pprev as not-null and
         // terminates the daemon on it. An indexer walking a fresh chain from
@@ -429,6 +432,12 @@ static RPCHelpMan masternode_payments()
             for (const auto& txin : tx->vin) {
                 uint256 blockHashTmp;
                 CTransactionRef txPrev = GetTransaction(/* block_index */ nullptr, &mempool, txin.prevout.hash, Params().GetConsensus(), blockHashTmp);
+                if (!txPrev) {
+                    // Without -txindex a transaction is found only while it is in the mempool.
+                    throw JSONRPCError(RPC_MISC_ERROR,
+                                       strprintf("Transaction %s, spent in block %s, was not found: masternode payments needs -txindex for this block",
+                                                 txin.prevout.hash.ToString(), pindex->GetBlockHash().ToString()));
+                }
                 nValueIn += txPrev->vout[txin.prevout.n].nValue;
             }
             nBlockFees += nValueIn - tx->GetValueOut();
