@@ -43,6 +43,7 @@
 #include <qt/qrdialog.h>
 #include <qt/transactionview.h>
 #include <qt/masternodelist.h>
+#include <qt/multisigpage.h>
 #include <qt/receivecoinsdialog.h>
 #include <qt/recentrequeststablemodel.h>
 #include <qt/rpcconsole.h>
@@ -111,10 +112,12 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QScreen>
+#include <QSpinBox>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QStyle>
+#include <QStyleOption>
 #include <QStyleOptionButton>
 #include <QStatusBar>
 #include <QPainter>
@@ -260,6 +263,133 @@ public:
         return image;
     }
 };
+//! An image to paint a widget's part on, at the widget's device pixel ratio
+//! (text drawn at another ratio has another size), in logical coordinates.
+QImage Canvas(const QWidget* widget, const QSize& logical, const QColor& fill)
+{
+    const qreal dpr = widget->devicePixelRatioF();
+    QImage image((QSizeF(logical) * dpr).toSize(), QImage::Format_RGB32);
+    image.setDevicePixelRatio(dpr);
+    image.fill(fill);
+    return image;
+}
+//! The logical rectangle an image covers.
+QRect Logical(const QImage& image) { return QRect(QPoint(), (QSizeF(image.size()) / image.devicePixelRatio()).toSize()); }
+// The same for a menu entry: QMenu makes a disabled entry current only where
+// the style allows it (Windows: a pointer on it), so that state is painted.
+class StateMenu : public QMenu {
+public:
+    using QMenu::QMenu;
+    QImage paintedEntry(QAction* action, bool selected, const QColor& behind)
+    {
+        QStyleOptionMenuItem option;
+        initStyleOption(&option, action);
+        option.state.setFlag(QStyle::State_Selected, selected);
+        option.rect = QRect(QPoint(), actionGeometry(action).size());
+        QImage image = Canvas(this, option.rect.size(), behind);
+        QPainter painter(&image);
+        style()->drawControl(QStyle::CE_MenuItem, &option, &painter, this);
+        return image;
+    }
+};
+// A combo box and a spin box painted with one part active in `extra` (hover:
+// State_MouseOver, press: State_Sunken) or disabled; `part` is that part's
+// rectangle in the image.
+class StateCombo : public QComboBox {
+public:
+    using QComboBox::QComboBox;
+    QImage paintedArrow(QStyle::State extra, bool enabled, QRect& part)
+    {
+        QStyleOptionComboBox option;
+        initStyleOption(&option);
+        option.state |= extra;
+        option.state.setFlag(QStyle::State_Enabled, enabled);
+        option.activeSubControls = QStyle::SC_ComboBoxArrow;
+        QImage image = Canvas(this, size(), Qt::black);
+        QPainter painter(&image);
+        style()->drawComplexControl(QStyle::CC_ComboBox, &option, &painter, this);
+        part = style()->subControlRect(QStyle::CC_ComboBox, &option, QStyle::SC_ComboBoxArrow, this);
+        return image;
+    }
+};
+class StateSpin : public QSpinBox {
+public:
+    using QSpinBox::QSpinBox;
+    QImage paintedArrow(QStyle::SubControl button, QStyle::State extra, bool enabled, QRect& part)
+    {
+        QStyleOptionSpinBox option;
+        initStyleOption(&option);
+        option.state |= extra;
+        option.state.setFlag(QStyle::State_Enabled, enabled);
+        option.activeSubControls = button;
+        QImage image = Canvas(this, size(), Qt::black);
+        QPainter painter(&image);
+        style()->drawComplexControl(QStyle::CC_SpinBox, &option, &painter, this);
+        part = style()->subControlRect(QStyle::CC_SpinBox, &option, button, this);
+        return image;
+    }
+};
+// A header section painted with the pointer on it or not.
+class StateHeader : public QHeaderView {
+public:
+    explicit StateHeader(QWidget* parent) : QHeaderView(Qt::Horizontal, parent) {}
+    QImage paintedSection(const QString& text, bool hover)
+    {
+        QStyleOptionHeader option;
+        initStyleOption(&option);
+        option.rect = QRect(0, 0, 160, 36);
+        option.section = 0;
+        option.text = text;
+        option.position = QStyleOptionHeader::OnlyOneSection;
+        option.state.setFlag(QStyle::State_MouseOver, hover);
+        QImage image = Canvas(this, option.rect.size(), Qt::black);
+        QPainter painter(&image);
+        style()->drawControl(QStyle::CE_Header, &option, &painter, this);
+        return image;
+    }
+};
+// A scroll bar's part as the style places it.
+class StateScroll : public QScrollBar {
+public:
+    using QScrollBar::QScrollBar;
+    QRect part(QStyle::SubControl sub)
+    {
+        QStyleOptionSlider option;
+        initStyleOption(&option);
+        return style()->subControlRect(QStyle::CC_ScrollBar, &option, sub, this);
+    }
+};
+//! A logical rectangle of a picture in the picture's own pixels.
+QRect Pixels(const QImage& image, const QRect& logical)
+{
+    const qreal dpr = image.devicePixelRatio();
+    return QRectF(logical.x() * dpr, logical.y() * dpr, logical.width() * dpr, logical.height() * dpr).toAlignedRect() & image.rect();
+}
+//! The colour behind a part: the one most of its pixels have (text and
+//! rounded corners cover few).
+QColor Ground(const QImage& image, const QRect& logical)
+{
+    const QRect r = Pixels(image, logical);
+    std::map<QRgb, int> count;
+    for (int y = r.top(); y <= r.bottom(); ++y) {
+        for (int x = r.left(); x <= r.right(); ++x) ++count[image.pixel(x, y)];
+    }
+    if (count.empty()) return QColor();
+    return QColor(std::max_element(count.begin(), count.end(), [](const auto& a, const auto& b) { return a.second < b.second; })->first);
+}
+//! Whether some pixel of a part is exactly `ink` (a font-capable platform
+//! draws the declared text colour in full somewhere; a scaled arrow image its
+//! colour inside the shape).
+bool Inked(const QImage& image, const QRect& logical, const QColor& ink)
+{
+    const QRect r = Pixels(image, logical);
+    for (int y = r.top(); y <= r.bottom(); ++y) {
+        for (int x = r.left(); x <= r.right(); ++x) {
+            if (image.pixelColor(x, y) == ink) return true;
+        }
+    }
+    return false;
+}
 bool AmountFits(QLabel* label)
 {
     const int padding = 2 * label->margin() + std::max(0, label->indent());
@@ -4461,6 +4591,293 @@ void AbyssTests::menuPairs()
         font_menu.hide();
     }
     CloseMenus();
+}
+
+void AbyssTests::menuColors()
+{
+    // Abyss menu entries: #e6edf7 text, a #12375b highlight with white text,
+    // #526780 text and no highlight when disabled. dark.css loads underneath
+    // with QMenu::item rules that used to outrank these (the highlight stayed
+    // grey). A paired row's cells are drawn as entries and follow. Dark keeps
+    // its own colours.
+    RestoreAppearance restore;
+    QWidget host;
+    host.setGeometry(0, 0, 240, 300);
+    host.show();
+    QApplication::setActiveWindow(&host);
+    Settle();
+    const QString shots = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    int pass = 0;
+    for (const char* theme : {"Abyss", "Dark", "Abyss"}) {
+        Theme(theme);
+        ++pass;
+        const bool abyss = qstrcmp(theme, "Abyss") == 0;
+        const QColor menu_ground = abyss ? QColor("#0b1727") : QColor("#39393b");
+        const QColor highlight = abyss ? QColor("#12375b") : QColor("#585858");
+        const QColor text = abyss ? QColor("#e6edf7") : QColor("#c7c7c7");
+        const QColor selected_text = abyss ? QColor("#ffffff") : QColor("#c7c7c7");
+        const QColor disabled_text = abyss ? QColor("#526780") : QColor("#585858");
+        // Few, short entries per menu (the paired row in a menu of its own):
+        // each menu fits minimal's 240x320 screen also at a device pixel ratio
+        // of 2 (the pictures' run), where the screen is 120x160.
+        StateMenu menu(&host), rows(&host);
+        QAction plain("HHH"), chosen("HHH"), off("HHH"), left("HHH"), right("HHH");
+        off.setEnabled(false);
+        menu.addAction(&plain);
+        menu.addAction(&chosen);
+        menu.addAction(&off);
+        // Rows are Abyss's own (the classic menus have none).
+        QWidgetAction* row = abyss ? AbyssMenus::addPair(&rows, &left, &right) : nullptr;
+        const auto open = [&](QMenu& m) {
+            CloseMenus();
+            PointAt(&host, host.mapToGlobal(QPoint(230, 290)));
+            m.popup(host.mapToGlobal(QPoint(0, 0)));
+            Settle();
+            return m.isVisible();
+        };
+        // Down to `target`; whether Down stops on a disabled entry is the style's choice.
+        const auto down_to = [&](QMenu& m, QAction* target) {
+            for (int i = 0; i < 6 && m.activeAction() != target; ++i) QTest::keyClick(&m, Qt::Key_Down);
+            Settle();
+            return m.activeAction() == target;
+        };
+        QVERIFY(open(menu));
+        // Empty when the entry at `entry` of `image` has the ground and the text wanted.
+        const auto check = [&](const QImage& image, const QRect& entry, const QColor& want_ground, const QColor& want_text, const QString& what) {
+            const QColor actual = Ground(image, entry);
+            if (actual != want_ground) return QString("%1 pass %2, %3: ground %4, want %5").arg(theme).arg(pass).arg(what, actual.name(), want_ground.name());
+            if (GUIUtil::fontsLoaded() && !Inked(image, entry, want_text)) return QString("%1 pass %2, %3: no %4 text").arg(theme).arg(pass).arg(what, want_text.name());
+            return QString();
+        };
+        QString failure;
+        QVERIFY(down_to(menu, &chosen));
+        QImage image = menu.grab().toImage();
+        if (!shots.isEmpty()) QVERIFY(image.save(QDir(shots).filePath(QString("menu-colors-%1-%2.png").arg(pass).arg(theme))));
+        failure = check(image, menu.actionGeometry(&chosen), highlight, selected_text, "selected entry");
+        QVERIFY2(failure.isEmpty(), qPrintable(failure));
+        failure = check(image, menu.actionGeometry(&plain), menu_ground, text, "plain entry");
+        QVERIFY2(failure.isEmpty(), qPrintable(failure));
+        failure = check(image, menu.actionGeometry(&off), menu_ground, disabled_text, "disabled entry");
+        QVERIFY2(failure.isEmpty(), qPrintable(failure));
+        // Painted with the selected state: an enabled entry is highlighted, a
+        // disabled one (under the pointer on Windows) is not.
+        const QImage painted_on = menu.paintedEntry(&chosen, true, menu_ground);
+        failure = check(painted_on, Logical(painted_on), highlight, selected_text, "entry painted selected");
+        QVERIFY2(failure.isEmpty(), qPrintable(failure));
+        const QImage painted_off = menu.paintedEntry(&off, true, menu_ground);
+        failure = check(painted_off, Logical(painted_off), menu_ground, disabled_text, "disabled entry painted selected");
+        QVERIFY2(failure.isEmpty(), qPrintable(failure));
+        menu.hide();
+        if (row) {
+            QVERIFY(open(rows));
+            QVERIFY(down_to(rows, row));
+            const auto cells = AbyssMenus::pairCells(row);
+            QCOMPARE(cells.size(), 2);
+            const auto on_menu = [&](QWidget* cell) { return QRect(cell->mapTo(&rows, QPoint()), cell->size()); };
+            for (int current : {0, 1}) {
+                if (current == 1) QTest::keyClick(&rows, Qt::Key_Right);
+                Settle();
+                QVERIFY(cells[current]->isSelected() && !cells[1 - current]->isSelected());
+                image = rows.grab().toImage();
+                if (!shots.isEmpty()) QVERIFY(image.save(QDir(shots).filePath(QString("menu-colors-%1-%2-cell%3.png").arg(pass).arg(theme).arg(current))));
+                failure = check(image, on_menu(cells[current]), highlight, selected_text, QString("cell %1, current").arg(current));
+                QVERIFY2(failure.isEmpty(), qPrintable(failure));
+                failure = check(image, on_menu(cells[1 - current]), menu_ground, text, QString("cell %1").arg(1 - current));
+                QVERIFY2(failure.isEmpty(), qPrintable(failure));
+            }
+            rows.hide();
+        }
+    }
+    CloseMenus();
+}
+
+void AbyssTests::darkStateRules()
+{
+    // Abyss loads general.css and dark.css under defcon-dark.css. Where one of
+    // those has a stronger rule for a state, Abyss names that state too, so its
+    // own look stays (the menus: menuColors). A focused button keeps its
+    // border; an input keeps its 1px border and its padding when pointed at or
+    // focused (the text does not move); an open combo box takes the focus
+    // look, also one that takes no focus; the combo and spin box arrows stay
+    // Abyss's when pointed at or pressed, dimmed when disabled; a
+    // pointed header section takes an Abyss hover; scroll bars have no step
+    // buttons. Dark keeps its own look, and its values show that each state is
+    // really reached.
+    RestoreAppearance restore;
+    const QString shots = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    const auto shot = [&](const QString& name, const QImage& image) {
+        return shots.isEmpty() || image.save(QDir(shots).filePath(name + ".png"));
+    };
+    // The pixel at a logical point of a widget's picture.
+    const auto at = [](const QImage& image, qreal x, qreal y) {
+        const qreal dpr = image.devicePixelRatio();
+        return image.pixelColor(int(x * dpr), int(y * dpr));
+    };
+    // The first column (in logical pixels, inside the border) holding text: a
+    // pixel far from the ground.
+    const auto text_left = [](const QImage& image) {
+        const qreal dpr = image.devicePixelRatio();
+        const QRect inner = image.rect().adjusted(int(3 * dpr), int(3 * dpr), -int(3 * dpr), -int(3 * dpr));
+        const QRgb ground = Ground(image, QRect(QPoint(), image.size() / dpr)).rgb();
+        for (int x = inner.left(); x <= inner.right(); ++x) {
+            for (int y = inner.top(); y <= inner.bottom(); ++y) {
+                const QRgb p = image.pixel(x, y);
+                if (std::abs(qRed(p) - qRed(ground)) + std::abs(qGreen(p) - qGreen(ground)) + std::abs(qBlue(p) - qBlue(ground)) > 96) return x / dpr;
+            }
+        }
+        return -1.0;
+    };
+    QString failure;
+    for (const char* theme : {"Abyss", "Dark"}) {
+        Theme(theme);
+        const bool abyss = qstrcmp(theme, "Abyss") == 0;
+        const auto want = [&](const char* abyss_value, const char* dark_value) { return QColor(abyss ? abyss_value : dark_value); };
+        const auto name = [&](const char* part) { return QString("dark-states-%1-%2").arg(theme, part); };
+        QDialog page;
+        // An open list is closed also when a check returns early, before its
+        // combo box goes (a list left open upset the next case natively).
+        struct ClosePopups { ~ClosePopups() { CloseMenus(); } } close_popups;
+        auto* layout = new QVBoxLayout(&page);
+        auto* button = new QPushButton("HHH", &page);
+        auto* plain_edit = new QLineEdit("HHH", &page);
+        auto* focus_edit = new QLineEdit("HHH", &page);
+        auto* combo = new QComboBox(&page);
+        auto* arrows = new StateCombo(&page);
+        auto* spin = new StateSpin(&page);
+        auto* header = new StateHeader(&page);
+        auto* vertical = new StateScroll(Qt::Vertical, &page);
+        auto* horizontal = new StateScroll(Qt::Horizontal, &page);
+        plain_edit->setFixedWidth(200);
+        focus_edit->setFixedWidth(200);
+        combo->setFocusPolicy(Qt::NoFocus);
+        combo->addItems({"HHH", "HHH", "HHH"});
+        arrows->addItem("HHH");
+        spin->setRange(0, 100);
+        spin->setValue(50);
+        vertical->setRange(0, 100);
+        vertical->setFixedSize(10, 200);
+        horizontal->setRange(0, 100);
+        horizontal->setFixedSize(200, 10);
+        for (QWidget* w : std::initializer_list<QWidget*>{button, plain_edit, focus_edit, combo, arrows, spin, header, vertical, horizontal}) layout->addWidget(w);
+        page.resize(240, 300);
+        page.show();
+        QApplication::setActiveWindow(&page);
+        Settle();
+
+        // A focused button keeps its border (general.css and dark.css: border: none).
+        button->setFocus(Qt::OtherFocusReason);
+        Settle();
+        QVERIFY(button->hasFocus());
+        QImage image = button->grab().toImage();
+        QVERIFY(shot(name("button-focus"), image));
+        QVERIFY2(at(image, button->width() / 2.0, 0.5) == want("#1297ff", "#00599a"),
+                 qPrintable(QString("%1 focused button top: %2").arg(theme, at(image, button->width() / 2.0, 0.5).name())));
+
+        // Inputs: 1px border and the same text position plain, pointed at and
+        // focused (general.css: 2px and its own padding). Dark has the 2px.
+        const QImage plain_image = plain_edit->grab().toImage();
+        plain_edit->setAttribute(Qt::WA_UnderMouse, true);
+        QEvent enter(QEvent::Enter);
+        QApplication::sendEvent(plain_edit, &enter);
+        plain_edit->update();
+        focus_edit->setFocus(Qt::OtherFocusReason);
+        Settle();
+        QVERIFY(focus_edit->hasFocus() && !plain_edit->hasFocus());
+        const QImage hover_image = plain_edit->grab().toImage();
+        const QImage focus_image = focus_edit->grab().toImage();
+        QVERIFY(shot(name("edit-hover"), hover_image) && shot(name("edit-focus"), focus_image));
+        struct Edge { const char* what; const QImage& image; QColor border; QColor inside; };
+        for (const Edge& edge : {Edge{"pointed input", hover_image, want("#3a5e82", "#27507a"), want("#0d1c2e", "#27507a")},
+                                 Edge{"focused input", focus_image, want("#1297ff", "#27507a"), want("#102137", "#27507a")}}) {
+            const qreal x = edge.image.width() / edge.image.devicePixelRatio() / 2;
+            const QColor border = at(edge.image, x, 0.5), inside = at(edge.image, x, 1.5);
+            QVERIFY2(border == edge.border && inside == edge.inside, qPrintable(QString("%1 %2: rows %3 %4, want %5 %6")
+                .arg(theme, edge.what, border.name(), inside.name(), edge.border.name(), edge.inside.name())));
+        }
+        if (abyss && GUIUtil::fontsLoaded()) {
+            const qreal plain_left = text_left(plain_image), hover_left = text_left(hover_image), focus_left = text_left(focus_image);
+            QVERIFY2(plain_left > 0 && hover_left == plain_left && focus_left == plain_left,
+                     qPrintable(QString("text starts at %1 plain, %2 pointed, %3 focused").arg(plain_left).arg(hover_left).arg(focus_left)));
+        }
+
+        // An open combo box without focus (dark.css: QComboBox:checked grey).
+        // Windows slides the list open (UI_AnimateCombo): wait for it.
+        combo->showPopup();
+        QTRY_VERIFY(combo->view()->isVisible());
+        Settle();
+        QVERIFY(!combo->hasFocus());
+        image = combo->grab().toImage();
+        QVERIFY(shot(name("combo-open"), image));
+        QVERIFY2(Ground(image, combo->rect()) == want("#102137", "#39393b"), qPrintable(QString("%1 open combo: %2").arg(theme, Ground(image, combo->rect()).name())));
+        combo->hidePopup();
+        QTRY_VERIFY(!combo->view()->isVisible());
+        Settle();
+
+        // Arrows in each state. Dark's own images: dark blue, blue when
+        // pointed at, grey when disabled.
+        struct ArrowState { const char* what; QStyle::State extra; bool enabled; QColor ink; };
+        const std::vector<ArrowState> states{
+            {"plain", QStyle::State_None, true, want("#e6edf7", "#005387")},
+            {"pointed", QStyle::State_MouseOver, true, want("#e6edf7", "#008de4")},
+            {"pressed", QStyle::State_Sunken, true, want("#e6edf7", "#005387")},
+            {"disabled", QStyle::State_None, false, want("#526780", "#787878")}};
+        for (const ArrowState& state : states) {
+            QRect part;
+            const QImage combo_arrow = arrows->paintedArrow(state.extra, state.enabled, part);
+            QVERIFY(shot(name(qPrintable(QString("combo-arrow-%1").arg(state.what))), combo_arrow));
+            QVERIFY2(Inked(combo_arrow, part.adjusted(-2, -2, 2, 2), state.ink), qPrintable(QString("%1 %2 combo arrow: no %3").arg(theme, state.what, state.ink.name())));
+            for (QStyle::SubControl button_part : {QStyle::SC_SpinBoxUp, QStyle::SC_SpinBoxDown}) {
+                const QImage spin_arrow = spin->paintedArrow(button_part, state.extra, state.enabled, part);
+                QVERIFY(shot(name(qPrintable(QString("spin-%1-%2").arg(button_part == QStyle::SC_SpinBoxUp ? "up" : "down", state.what))), spin_arrow));
+                QVERIFY2(Inked(spin_arrow, part, state.ink), qPrintable(QString("%1 %2 spin %3 arrow: no %4").arg(theme, state.what)
+                    .arg(button_part == QStyle::SC_SpinBoxUp ? "up" : "down", state.ink.name())));
+            }
+        }
+
+        // A header section, plain and pointed at.
+        for (const bool hover : {false, true}) {
+            const QImage section = header->paintedSection("HHH", hover);
+            QVERIFY(shot(name(hover ? "header-hover" : "header"), section));
+            const QRect all = Logical(section);
+            const QColor ground = hover ? want("#10263e", "#27507a") : want("#0d1c2e", "#00599a");
+            const QColor ink = hover ? want("#e6edf7", "#c7c7c7") : want("#91a5bc", "#c7c7c7");
+            QVERIFY2(Ground(section, all) == ground, qPrintable(QString("%1 header hover=%2: ground %3").arg(theme).arg(hover).arg(Ground(section, all).name())));
+            if (GUIUtil::fontsLoaded()) QVERIFY2(Inked(section, all, ink), qPrintable(QString("%1 header hover=%2: no %3 text").arg(theme).arg(hover).arg(ink.name())));
+        }
+
+        // Scroll bars: no step buttons in Abyss; general.css's are 18px.
+        for (StateScroll* bar : {vertical, horizontal}) {
+            for (QStyle::SubControl step : {QStyle::SC_ScrollBarAddLine, QStyle::SC_ScrollBarSubLine}) {
+                const QRect r = bar->part(step);
+                QVERIFY2(abyss ? r.isEmpty() : !r.isEmpty(), qPrintable(QString("%1 %2 scroll bar step %3: %4x%5").arg(theme)
+                    .arg(bar == vertical ? "vertical" : "horizontal").arg(step == QStyle::SC_ScrollBarAddLine ? "add" : "sub").arg(r.width()).arg(r.height())));
+            }
+        }
+
+        // MultisigPage's own buttons are weaker than the generic focus rule:
+        // their focus border stays their own colour.
+        if (abyss) {
+            MultisigPage multisig;
+            multisig.resize(480, 360);
+            multisig.show();
+            QApplication::setActiveWindow(&multisig);
+            Settle();
+            QPushButton* own = nullptr;
+            for (auto* candidate : multisig.findChildren<QPushButton*>(QString(), Qt::FindDirectChildrenOnly)) {
+                if (candidate->objectName().isEmpty() && candidate->isEnabled() && candidate->isVisible()) {
+                    own = candidate;
+                    break;
+                }
+            }
+            QVERIFY(own);
+            own->setFocus(Qt::OtherFocusReason);
+            Settle();
+            QVERIFY(own->hasFocus());
+            image = own->grab().toImage();
+            QVERIFY(shot(name("multisig-button-focus"), image));
+            QVERIFY2(at(image, own->width() / 2.0, 0.5) == QColor("#29435f"), qPrintable(QString("multisig focused button top: %1").arg(at(image, own->width() / 2.0, 0.5).name())));
+        }
+    }
 }
 
 void AbyssTests::hoverMenus()

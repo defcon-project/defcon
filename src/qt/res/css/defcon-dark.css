@@ -95,14 +95,21 @@ QMenu {
     padding: 6px;
 }
 
+/* dark.css loads underneath with QMenu::item rules of its own; each rule here
+   is at least as specific as the one it replaces, so these colours win. */
 QMenu::item {
     border-radius: 5px;
+    color: #e6edf7;
     padding: 7px 24px 7px 10px;
 }
 
-QMenu::item:selected {
+QMenu::item:selected:!disabled {
     background-color: #12375b;
     color: #ffffff;
+}
+
+QMenu::item:disabled {
+    color: #526780;
 }
 
 QMenu::separator {
@@ -129,6 +136,8 @@ QTextEdit {
     padding: 3px 9px;
 }
 
+/* general.css gives these states a 2px border and its own padding, which
+   moved the text; the width and padding are repeated here so they stay. */
 BitcoinAmountField:hover:!focus,
 QAbstractSpinBox:hover:!focus,
 QComboBox:hover:!focus,
@@ -137,16 +146,23 @@ QLineEdit:hover:!focus,
 QTextEdit:hover:!focus {
     background-color: #0d1c2e;
     border-color: #3a5e82;
+    border-width: 1px;
+    padding: 3px 9px;
 }
 
+/* An open list counts as focus, also for a combo box that takes none
+   (dark.css greys QComboBox:checked). */
 BitcoinAmountField:focus,
 QAbstractSpinBox:focus,
 QComboBox:focus,
+QComboBox:checked,
 QPlainTextEdit:focus,
 QLineEdit:focus,
 QTextEdit:focus {
     background-color: #102137;
     border-color: #1297ff;
+    border-width: 1px;
+    padding: 3px 9px;
 }
 
 QComboBox::drop-down {
@@ -155,17 +171,37 @@ QComboBox::drop-down {
 }
 
 /* Without an explicit image Qt falls back to the Fusion style's own
-   steel-blue triangle, which belongs to no palette of ours. */
-QComboBox::down-arrow {
+   steel-blue triangle, which belongs to no palette of ours. dark.css swaps
+   in its own blue and grey arrows on hover, press and disabled, so those
+   states are named here too. */
+QComboBox::down-arrow,
+QComboBox::down-arrow:hover,
+QComboBox::down-arrow:pressed {
     image: url(':/images/arrow_down_abyss');
 }
 
-QAbstractSpinBox::up-arrow {
+QComboBox::down-arrow:disabled {
+    image: url(':/images/arrow_down_abyss_disabled');
+}
+
+QAbstractSpinBox::up-arrow,
+QAbstractSpinBox::up-arrow:hover,
+QAbstractSpinBox::up-arrow:pressed {
     image: url(':/images/arrow_up_abyss');
 }
 
-QAbstractSpinBox::down-arrow {
+QAbstractSpinBox::up-arrow:disabled {
+    image: url(':/images/arrow_up_abyss_disabled');
+}
+
+QAbstractSpinBox::down-arrow,
+QAbstractSpinBox::down-arrow:hover,
+QAbstractSpinBox::down-arrow:pressed {
     image: url(':/images/arrow_down_abyss');
+}
+
+QAbstractSpinBox::down-arrow:disabled {
+    image: url(':/images/arrow_down_abyss_disabled');
 }
 
 QComboBox QAbstractItemView {
@@ -187,6 +223,13 @@ QPushButton {
     min-height: 34px;
     max-height: 34px;
     padding: 3px 16px;
+}
+
+/* general.css and dark.css take the border off a focused button (border:
+   none); before :hover, so that a pointed focused button takes the hover
+   colour. */
+QPushButton:focus {
+    border: 1px solid #1297ff;
 }
 
 QPushButton:hover {
@@ -251,6 +294,12 @@ QHeaderView::section {
     border-bottom: 1px solid #29435f;
     color: #91a5bc;
     padding: 7px;
+}
+
+/* In place of dark.css's hover colours. */
+QHeaderView::section:hover {
+    background-color: #10263e;
+    color: #e6edf7;
 }
 
 QTabWidget::pane {
@@ -801,10 +850,24 @@ QScrollBar::handle:horizontal:hover {
     background-color: #3a5878;
 }
 
+/* No step buttons. general.css and dark.css size and colour them per
+   orientation and state (18px, grey), so those selectors are named too. */
 QScrollBar::add-line,
 QScrollBar::sub-line,
 QScrollBar::add-page,
-QScrollBar::sub-page {
+QScrollBar::sub-page,
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical,
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal,
+QScrollBar::add-line:vertical:hover,
+QScrollBar::sub-line:vertical:hover,
+QScrollBar::add-line:horizontal:hover,
+QScrollBar::sub-line:horizontal:hover,
+QScrollBar::add-line:vertical:pressed,
+QScrollBar::sub-line:vertical:pressed,
+QScrollBar::add-line:horizontal:pressed,
+QScrollBar::sub-line:horizontal:pressed {
     background: none;
     border: none;
     height: 0;
@@ -926,6 +989,13 @@ QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM {
     background-color: #0b1727;
     border: 1px solid #29435f;
     color: #e6edf7;
+}
+
+/* These two are weaker than QPushButton:focus (general.css and dark.css:
+   border: none; Abyss: its blue border); the ID rules above are stronger. */
+MultisigPage > QPushButton:focus,
+MultisigPage > QGroupBox QPushButton:focus {
+    border: 1px solid #29435f;
 }
 
 QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin:hover,
