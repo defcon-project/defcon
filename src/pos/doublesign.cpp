@@ -4,6 +4,7 @@
 
 #include <pos/doublesign.h>
 
+#include <chain.h>
 #include <logging.h>
 #include <primitives/block.h>
 #include <pubkey.h>
@@ -79,8 +80,24 @@ bool StakeDoubleSignMonitor::SignerOwnsKernel(const CScript& signer, const CScri
     }
 }
 
+StakeDoubleSignMonitor::StakeVerdict StakeDoubleSignMonitor::Judge(const StakeContext& context, const COutPoint& kernel,
+                                                                   const KernelCoin& coin)
+{
+    const CBlockIndex* parent = context.settled_parent;
+    if (parent == nullptr || context.params == nullptr || context.rule == nullptr) return StakeVerdict::UNDECIDED;
+    // An output created above the parent does not exist on this branch yet.
+    if (coin.height > parent->nHeight) return StakeVerdict::FAILS;
+    const CBlockIndex* funding = coin.height >= 0 ? parent->GetAncestor(coin.height) : nullptr;
+    if (funding == nullptr || funding->GetBlockHash() != coin.funding) return StakeVerdict::UNDECIDED;
+    return context.rule(parent, *context.params, kernel, coin.value, coin.height, funding->GetBlockTime(), context.time,
+                        context.bits)
+               ? StakeVerdict::QUALIFIES
+               : StakeVerdict::FAILS;
+}
+
 bool StakeDoubleSignMonitor::Observe(int tip_height, int height, const uint256& hash, const COutPoint& kernel,
-                                     const CScript& signer, const std::optional<CScript>& kernel_script)
+                                     const CScript& signer, const std::optional<KernelCoin>& coin,
+                                     const StakeCheck& could_stake)
 {
     LOCK(m_mutex);
     // The window follows the active chain, not the highest block offered.
@@ -90,15 +107,29 @@ bool StakeDoubleSignMonitor::Observe(int tip_height, int height, const uint256& 
 
     const Key key{height, kernel};
     auto it = m_slots.find(key);
-    const CScript* owner = it != m_slots.end() ? &it->second.owner : (kernel_script ? &*kernel_script : nullptr);
-    if (owner == nullptr) {
+    const KernelCoin* known = it != m_slots.end() ? &it->second.coin : (coin ? &*coin : nullptr);
+    if (known == nullptr) {
         LogPrint(BCLog::POS, "%s: block %s at height %d: kernel %s cannot be read; not tracked\n",
                  __func__, hash.ToString(), height, KernelText(kernel));
         return false;
     }
     // Only the owner's blocks are kept: what anyone can write takes no room.
-    if (!SignerOwnsKernel(signer, *owner)) {
+    if (!SignerOwnsKernel(signer, known->script)) {
         LogPrint(BCLog::POS, "%s: block %s at height %d names kernel %s under another key; not counted\n",
+                 __func__, hash.ToString(), height, KernelText(kernel));
+        return false;
+    }
+    // Nor what the owner can sign on an output that could not stake this block, or that cannot be judged here:
+    // judged by the output as the active chain has it now if it can still be read, else as first recorded.
+    switch (could_stake(kernel, coin ? *coin : *known)) {
+    case StakeVerdict::QUALIFIES:
+        break;
+    case StakeVerdict::FAILS:
+        LogPrint(BCLog::POS, "%s: block %s at height %d: kernel %s does not meet the stake rules for it; not counted\n",
+                 __func__, hash.ToString(), height, KernelText(kernel));
+        return false;
+    case StakeVerdict::UNDECIDED:
+        LogPrint(BCLog::POS, "%s: block %s at height %d: kernel %s cannot be judged here (parent or funding block off the active chain); not counted\n",
                  __func__, hash.ToString(), height, KernelText(kernel));
         return false;
     }
@@ -108,7 +139,7 @@ bool StakeDoubleSignMonitor::Observe(int tip_height, int height, const uint256& 
                      __func__, hash.ToString(), height, KernelText(kernel));
             return false;
         }
-        it = m_slots.emplace(key, Slot{*owner, {}, false}).first;
+        it = m_slots.emplace(key, Slot{*known, {}, false}).first;
     }
     Slot& slot = it->second;
     if (Holds(slot.blocks, hash)) return false; // this block again
@@ -146,7 +177,8 @@ StakeDoubleSignMonitor& GetStakeDoubleSignMonitor()
 }
 
 void ObserveStakeDoubleSign(const CBlock& block, int height, const uint256& hash, int tip_height,
-                            const std::function<std::optional<CScript>(const COutPoint&)>& read_kernel)
+                            const std::function<std::optional<StakeDoubleSignMonitor::KernelCoin>(const COutPoint&)>& read_kernel,
+                            const StakeDoubleSignMonitor::StakeContext& stake)
 {
     if (!block.IsProofOfStake() || block.vtx[1]->vin.empty() || block.vtx[1]->vout.size() < 2) return;
     // Observation must never cost a block its acceptance: whatever fails here,
@@ -154,7 +186,13 @@ void ObserveStakeDoubleSign(const CBlock& block, int height, const uint256& hash
     // memory too), stays here.
     try {
         const COutPoint& kernel = block.vtx[1]->vin[0].prevout;
-        GetStakeDoubleSignMonitor().Observe(tip_height, height, hash, kernel, block.vtx[1]->vout[1].scriptPubKey, read_kernel(kernel));
+        // Built here, inside the guard: making a std::function may allocate.
+        const StakeDoubleSignMonitor::StakeCheck could_stake{
+            [&stake](const COutPoint& k, const StakeDoubleSignMonitor::KernelCoin& coin) {
+                return StakeDoubleSignMonitor::Judge(stake, k, coin);
+            }};
+        GetStakeDoubleSignMonitor().Observe(tip_height, height, hash, kernel, block.vtx[1]->vout[1].scriptPubKey,
+                                            read_kernel(kernel), could_stake);
     } catch (const std::exception& e) {
         ReportFailure(e.what());
     } catch (...) {

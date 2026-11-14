@@ -13,6 +13,10 @@ then offered to node 1 by hand:
   3  two copies whose coinstake pays another key and is signed by it: anyone
      can write those about somebody else's kernel, as often as they like, and
      neither is signed by the kernel's owner, so they are not counted -- not even as a pair.
+  4  two copies on an output too young to stake (the newest coinbase), each paying
+     and signed by that output's own key, so its owner: blocks are observed before
+     their kernel is checked, so anyone with a coin can sign such pairs, and they
+     are not counted.
 
 None of them replaces node 1's tip, node 0 counts nothing, and the chain goes on.
 The staker's key is read with dumpprivkey, so this runs on a legacy wallet.
@@ -22,7 +26,7 @@ import time
 
 from test_framework.address import base58_to_byte, key_to_p2pkh
 from test_framework.key import ECKey
-from test_framework.messages import CBlock, from_hex, ser_uint256
+from test_framework.messages import CBlock, COutPoint, from_hex, ser_uint256
 from test_framework.script import CScript, OP_CHECKSIG
 from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import assert_equal, force_finish_mnsync, set_node_times
@@ -89,10 +93,12 @@ class PosDoubleSignTest(BitcoinTestFramework):
         assert_equal(key.get_pubkey().get_bytes(), pubkey)
         return key
 
-    def copy(self, node, block_hash, tag, other_key=None):
+    def copy(self, node, block_hash, tag, other_key=None, kernel=None):
         """The staked block with `tag` pushed onto its coinbase scriptSig (a proof-of-stake
         header keeps nNonce at 0), signed again by the staker -- or, with other_key, with the
-        coinstake paying that key and signed by it."""
+        coinstake paying that key and signed by it; with kernel (txid, vout), the coinstake
+        names that output instead (its input signature, checked only when the block is
+        connected, no longer fits)."""
         block = from_hex(CBlock(), node.getblock(block_hash, 0))
         assert block.is_proof_of_stake()
         key = self.staker_key(node, block)
@@ -103,10 +109,30 @@ class PosDoubleSignTest(BitcoinTestFramework):
             block.vtx[1].vout[1].scriptPubKey = CScript([other_key.get_pubkey().get_bytes(), OP_CHECKSIG])
             block.vtx[1].rehash()
             key = other_key
+        if kernel is not None:
+            block.vtx[1].vin[0].prevout = COutPoint(int(kernel[0], 16), kernel[1])
+            block.vtx[1].rehash()
         block.hashMerkleRoot = block.calc_merkle_root()
         block.rehash()
         block.vchBlockSig = key.sign_ecdsa(ser_uint256(block.sha256))
         return block
+
+    def key_of(self, node, address):
+        """The private key of one of node's pay-to-pubkey-hash addresses."""
+        secret, _ = base58_to_byte(node.dumpprivkey(address))
+        key = ECKey()
+        key.set(secret[:32], True)
+        assert_equal(key_to_p2pkh(key.get_pubkey().get_bytes()), address)
+        return key
+
+    def newest_coinbase_output(self, node, address):
+        """The output of the last proof-of-work block's coinbase that pays `address`, as (txid, vout)."""
+        coinbase = node.getblock(node.getblockhash(LAST_POW_BLOCK), 2)["tx"][0]
+        for out in coinbase["vout"]:
+            spk = out["scriptPubKey"]
+            if spk.get("address") == address or address in spk.get("addresses", []):
+                return coinbase["txid"], out["n"]
+        raise AssertionError("no output of block %d's coinbase pays %s" % (LAST_POW_BLOCK, address))
 
     # ---- the test -----------------------------------------------------------
 
@@ -167,6 +193,18 @@ class PosDoubleSignTest(BitcoinTestFramework):
             forged = self.copy(staker, staked, tag, other_key=other)
             with observer.assert_debug_log(["block %s at height %d names kernel %s under another key; not counted" % (forged.hash, LAST_POW_BLOCK + 1, kernel)]):
                 assert_equal(observer.submitblock(forged.serialize().hex()), "inconclusive")
+            assert_equal(observer.getblockchaininfo()["stake_double_signs"], expected)
+        assert_equal(observer.getbestblockhash(), staked)
+
+        self.log.info("4: two blocks by the staker on an output of its own too young to stake are not counted")
+        young = self.newest_coinbase_output(staker, mine_to)
+        # The pair pays and is signed by the key the young output pays, so the monitor sees its owner.
+        young_key = self.key_of(staker, mine_to)
+        for tag in (5, 6):
+            unfit = self.copy(staker, staked, tag, other_key=young_key, kernel=young)
+            with observer.assert_debug_log(["block %s at height %d: kernel %s:%d does not meet the stake rules for it; not counted"
+                                            % (unfit.hash, LAST_POW_BLOCK + 1, young[0], young[1])]):
+                assert_equal(observer.submitblock(unfit.serialize().hex()), "inconclusive")
             assert_equal(observer.getblockchaininfo()["stake_double_signs"], expected)
         assert_equal(observer.getbestblockhash(), staked)
 

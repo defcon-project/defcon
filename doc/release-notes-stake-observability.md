@@ -5,7 +5,10 @@ RPC changes
   node started it has seen a staker sign twice: two different blocks at one height that spend the
   same kernel and are both signed by that kernel's owner (the key the kernel's output pays), most
   often one wallet staking on two nodes at once. Blocks that name somebody else's kernel under a
-  key of their own, which anyone can write, are not kept and never count. The latest one is
+  key of their own, which anyone can write, are not kept and never count; nor are blocks on a
+  kernel that could not have staked them (too young, its value or age out of range, or its hash
+  over the target), which the owner of any coin could sign, or on a parent that is not on the
+  node's active chain, where the node cannot judge the stake yet. The latest one is
   named by `last_height`, `last_kernel` and `last_blocks`, and logged once. This is observation
   only: nothing is refused or penalised. Limits: a second block is seen only if the node accepts
   it, which in practice means one that arrives before the next block does; the record is kept in

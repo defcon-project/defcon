@@ -5,6 +5,7 @@
 #ifndef BITCOIN_POS_DOUBLESIGN_H
 #define BITCOIN_POS_DOUBLESIGN_H
 
+#include <consensus/amount.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <sync.h>
@@ -19,6 +20,10 @@
 #include <vector>
 
 class CBlock;
+class CBlockIndex;
+namespace Consensus {
+struct Params;
+} // namespace Consensus
 
 /**
  * Notices the owner of a kernel signing two different blocks with it at the
@@ -36,13 +41,28 @@ class CBlock;
  * kernel, each signed by that kernel's owner. Blocks signed by any other key
  * are not kept, so no number of them can hide or fake one.
  *
+ * The owner, though, can sign a block on any output of their own, and blocks
+ * are observed when they are accepted, before their kernel is checked
+ * (CheckProofOfStake runs when a block is connected). A block counts only if
+ * its kernel meets the stake rules for it on its own branch: the depth, value
+ * and age of the kernel's output and the kernel hash under the block's nBits
+ * and nTime, the checks CheckProofOfStake makes but the coinstake's signature.
+ * That is decided only where it can be: the block's parent is on the active
+ * chain (a parent not yet connected still carries the stake modifier its
+ * header gave it), and the block that created the kernel's output is an
+ * ancestor of that parent (its height and time are this branch's). A block
+ * that fails, or cannot be judged, is kept nowhere, so a count needs two
+ * blocks that could each have been staked.
+ *
  * What it does not see: a second block this node does not accept (an
  * unrequested block needs at least the tip's work, so in practice only a
  * sibling of the tip that arrives before the next block does); a kernel whose
  * output it cannot read when the first block on it arrives (already spent,
  * for example after a restart), which is not tracked at all; a kernel that is
- * neither pay-to-pubkey nor pay-to-pubkey-hash, which has no owner key; heights
- * more than WINDOW below the tip; and new pairs once MAX_KERNELS are held.
+ * neither pay-to-pubkey nor pay-to-pubkey-hash, which has no owner key; a
+ * block whose parent is not on the active chain, or whose kernel was created
+ * on another branch than the one recorded, which is not judged; heights more
+ * than WINDOW below the tip; and new pairs once MAX_KERNELS are held.
  */
 class StakeDoubleSignMonitor
 {
@@ -66,16 +86,54 @@ public:
         std::optional<Event> last;
     };
 
+    /** What is known of a kernel's output, read from the UTXO set with the first block on it. */
+    struct KernelCoin {
+        CScript script;       //!< whom it pays
+        CAmount value{0};
+        int height{0};        //!< of the block that created it, on the active chain when read
+        uint256 funding;      //!< that block's hash
+        // NOLINTNEXTLINE(google-explicit-constructor): a script alone is a coin of unknown value and origin
+        KernelCoin(CScript script_in = {}, CAmount value_in = 0, int height_in = 0, const uint256& funding_in = {})
+            : script{std::move(script_in)}, value{value_in}, height{height_in}, funding{funding_in} {}
+    };
+
+    /** Whether the block being observed could stake on its kernel (see the class comment). */
+    enum class StakeVerdict { QUALIFIES, FAILS, UNDECIDED };
+    using StakeCheck = std::function<StakeVerdict(const COutPoint& kernel, const KernelCoin& coin)>;
+
+    /** The kernel rule applied (StakeKernelQualifies in pos/kernel.h; a stand-in in tests). */
+    using KernelRule = bool (*)(const CBlockIndex* pindexPrev, const Consensus::Params& params, const COutPoint& prevout,
+                                CAmount value, int coin_height, int64_t nBlockFromTime, int64_t nTime, unsigned int nBits);
+
+    /** What the stake rules need of the block being observed. Plain data: building it cannot fail. */
+    struct StakeContext {
+        //! The block's parent if it is on the active chain, else nullptr: then the block is not judged.
+        const CBlockIndex* settled_parent{nullptr};
+        uint32_t time{0};
+        uint32_t bits{0};
+        const Consensus::Params* params{nullptr};
+        KernelRule rule{nullptr};
+    };
+
+    /**
+     * The stake rules on the block's own branch: UNDECIDED without a settled parent, or when the
+     * block that created the output (`coin.funding` at `coin.height`) is not an ancestor of it;
+     * otherwise the context's kernel rule, with that block's time.
+     */
+    static StakeVerdict Judge(const StakeContext& context, const COutPoint& kernel, const KernelCoin& coin);
+
     /**
      * Record an accepted block whose block signature has been checked.
      * `tip_height` is the active chain's height, which sets the window.
-     * `kernel_script` is the kernel output's script if the caller could read it;
-     * without it, a pair not already held is not tracked.
+     * `coin` is the kernel's output if the caller could read it; without it, a
+     * pair not already held is not tracked, and a pair held is judged by the
+     * output recorded with its first block. `could_stake` judges this block,
+     * by `coin` when there is one.
      * Returns true when this completes a double signature not counted before;
      * each height and kernel pair is counted once.
      */
     bool Observe(int tip_height, int height, const uint256& hash, const COutPoint& kernel, const CScript& signer,
-                 const std::optional<CScript>& kernel_script) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
+                 const std::optional<KernelCoin>& coin, const StakeCheck& could_stake) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
     Summary GetSummary() const EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
     /** Height and kernel pairs held now (for tests of the bound). */
     size_t KernelsTracked() const EXCLUSIVE_LOCKS_REQUIRED(!m_mutex);
@@ -94,7 +152,7 @@ private:
         CScript signer;
     };
     struct Slot {
-        CScript owner;            //!< the kernel output's script
+        KernelCoin coin;          //!< the kernel's output; its script names the owner
         std::vector<Seen> blocks; //!< blocks its owner signed
         bool counted{false};
     };
@@ -110,12 +168,14 @@ StakeDoubleSignMonitor& GetStakeDoubleSignMonitor();
 
 /**
  * Feed an accepted block to the node's monitor (block acceptance, after
- * CheckBlock verified its block signature). `read_kernel` returns the kernel
- * output's script if it can. Proof-of-work blocks are ignored, and a failure
- * here, the read included, is logged and never reaches the caller; neither
- * does a failure to log it.
+ * CheckBlock verified its block signature). `read_kernel` returns the kernel's
+ * output if it can; `stake` is what judging the block needs (Judge). Proof-of-
+ * work blocks are ignored, and a failure here, the read and the judgement
+ * included, is logged and never reaches the caller; neither does a failure to
+ * log it.
  */
 void ObserveStakeDoubleSign(const CBlock& block, int height, const uint256& hash, int tip_height,
-                            const std::function<std::optional<CScript>(const COutPoint&)>& read_kernel);
+                            const std::function<std::optional<StakeDoubleSignMonitor::KernelCoin>(const COutPoint&)>& read_kernel,
+                            const StakeDoubleSignMonitor::StakeContext& stake);
 
 #endif // BITCOIN_POS_DOUBLESIGN_H
