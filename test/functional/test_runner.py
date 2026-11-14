@@ -195,6 +195,7 @@ BASE_SCRIPTS = [
     'feature_governance_cl.py --legacy-wallet',
     'feature_governance_cl.py --descriptors',
     'rpc_verifyislock.py',
+    'rpc_masternode_lists_unconnected.py',
     'p2p_coinjoin_inputs.py',
     'feature_import_corrupt_pos_block.py',
     'feature_notifications.py',

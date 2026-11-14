@@ -2069,4 +2069,40 @@ BOOST_AUTO_TEST_CASE(undo_block_missing_diff_stops)
     FuncUndoBlockMissingDiffStops(setup);
 }
 
+//! The lists GetListForBlock can build: genesis and the blocks before DIP0003 always, any other
+//! block once connected, an invalidated one included; also with DIP0003 active from genesis, as
+//! regtest's -dip3params=0:<n> allows.
+BOOST_FIXTURE_TEST_CASE(masternode_list_available, BasicTestingSetup)
+{
+    Consensus::Params params{Params().GetConsensus()};
+    params.DIP0003Height = 10;
+    LOCK(cs_main);
+    CBlockIndex genesis;
+    genesis.nHeight = 0;
+    genesis.nStatus = BLOCK_VALID_TRANSACTIONS | BLOCK_HAVE_DATA;
+    CBlockIndex early;
+    early.nHeight = 5;
+    early.pprev = &genesis;
+    CBlockIndex late;
+    late.nHeight = 20;
+    late.pprev = &early;
+    BOOST_CHECK(CDeterministicMNManager::ListAvailable(genesis, params));
+    BOOST_CHECK(CDeterministicMNManager::ListAvailable(early, params));
+    // stored, never connected
+    late.nStatus = BLOCK_VALID_TRANSACTIONS | BLOCK_HAVE_DATA;
+    BOOST_CHECK(!CDeterministicMNManager::ListAvailable(late, params));
+    // connected, then invalidated
+    late.nStatus = BLOCK_VALID_SCRIPTS | BLOCK_HAVE_DATA | BLOCK_HAVE_UNDO;
+    BOOST_CHECK(CDeterministicMNManager::ListAvailable(late, params));
+    late.nStatus |= BLOCK_FAILED_VALID;
+    BOOST_CHECK(CDeterministicMNManager::ListAvailable(late, params));
+    // failed before it was ever connected
+    late.nStatus = BLOCK_VALID_TRANSACTIONS | BLOCK_HAVE_DATA | BLOCK_FAILED_VALID;
+    BOOST_CHECK(!CDeterministicMNManager::ListAvailable(late, params));
+    // DIP0003 from genesis: genesis keeps its starting list, an unconnected later block has none
+    params.DIP0003Height = 0;
+    BOOST_CHECK(CDeterministicMNManager::ListAvailable(genesis, params));
+    BOOST_CHECK(!CDeterministicMNManager::ListAvailable(early, params));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

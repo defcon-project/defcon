@@ -1177,6 +1177,16 @@ void CDeterministicMNManager::HandleQuorumCommitment(const llmq::CFinalCommitmen
     }
 }
 
+bool CDeterministicMNManager::ListAvailable(const CBlockIndex& block, const Consensus::Params& params)
+{
+    AssertLockHeld(::cs_main);
+    // What GetListForBlockInternal answers without a stored diff: a block before DIP0003, and genesis
+    // (whose missing diff is the start of the list). Then the validity level alone: IsValid would also
+    // refuse a block marked failed after it was connected.
+    return block.pprev == nullptr || !DeploymentActiveAt(block, params, Consensus::DEPLOYMENT_DIP0003) ||
+           (block.nStatus & BLOCK_VALID_MASK) >= BLOCK_VALID_SCRIPTS;
+}
+
 CDeterministicMNList CDeterministicMNManager::GetListForBlockInternal(gsl::not_null<const CBlockIndex*> pindex)
 {
     CDeterministicMNList snapshot;

@@ -137,12 +137,12 @@ constexpr CommandFlags ROWS[] = {
     {"getnetworkhashps", 0},
     {"getnetworkinfo", 0},
 #ifdef ENABLE_WALLET
-    {"getnewaddress", CMDFLAG_CHANGES | CMDFLAG_WALLET},
+    {"getnewaddress", CMDFLAG_CHANGES | CMDFLAG_WALLET | CMDFLAG_UNLOCK},
 #endif
     {"getnodeaddresses", 0},
     {"getpeerinfo", 0},
 #ifdef ENABLE_WALLET
-    {"getrawchangeaddress", CMDFLAG_CHANGES | CMDFLAG_WALLET},
+    {"getrawchangeaddress", CMDFLAG_CHANGES | CMDFLAG_WALLET | CMDFLAG_UNLOCK},
 #endif
     {"getrawmempool", 0},
     {"getrawtransaction", 0},
@@ -242,7 +242,11 @@ constexpr CommandFlags ROWS[] = {
     {"protx", CMDFLAG_SUBCOMMANDS},
     {"protx diff", 0},
     {"protx info", 0},
+#ifdef ENABLE_WALLET
+    {"protx list", CMDFLAG_WALLET},
+#else
     {"protx list", 0},
+#endif
     {"protx listdiff", 0},
 #ifdef ENABLE_WALLET
     {"protx register", CMDFLAG_CHANGES | CMDFLAG_WALLET | CMDFLAG_UNLOCK},
