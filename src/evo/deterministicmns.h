@@ -754,6 +754,11 @@ public:
         return GetListForBlockInternal(pindex);
     };
     CDeterministicMNList GetListAtChainTip() EXCLUSIVE_LOCKS_REQUIRED(!cs);
+    //! Whether GetListForBlock can build the list of `block` from what is stored: genesis has the
+    //! starting list (it never reaches BLOCK_VALID_SCRIPTS), a block before DIP0003 an empty one by
+    //! rule; any other block once it has been connected, whatever happened to it since
+    //! (invalidateblock marks it failed, and UndoBlock keeps its diff).
+    static bool ListAvailable(const CBlockIndex& block, const Consensus::Params& params) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     // Test if given TX is a ProRegTx which also contains the collateral at index n
     static bool IsProTxWithCollateral(const CTransactionRef& tx, uint32_t n);

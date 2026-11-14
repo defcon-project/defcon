@@ -80,13 +80,13 @@
 
 617  feature_pos_stake_combine.py           # continuous consolidation, both wallets and key-only scope
 291  feature_llmq_chainlocks.py             # ChainLocks, with a masternode added dynamically
-269  p2p_unbacked_pos_headers.py            # how many headers without their blocks a node takes, from one peer and above its tip
+279  p2p_unbacked_pos_headers.py            # how many headers without their blocks a node takes, from one peer and above its tip
 215  feature_pos_staking.py                 # real proof-of-stake blocks on regtest; descriptor and legacy wallet
 213  feature_v231_no_payee.py               # from the v23.1 height a staked block with no payable masternode carries no payout at all (#354)
-210  feature_import_corrupt_pos_block.py    # a damaged copy of a staked block on -loadblock or -reindex (bad signature, damaged coinstake, signature past the size limit) leaves the header unmarked, and the good block comes in
 182  feature_pos_header_only.py             # headers with no block behind them hold neither masternode sync nor staking
-180  p2p_unbacked_deep_fork.py              # headers on a branch too deep to take: taken from a peer added by hand or with noban; an outbound peer offering such a chain raises a warning
 149  wallet_multiwallet.py                  # several wallets on one node: wallet directories, loading and unloading, each its own balance and calls
+134  feature_import_corrupt_pos_block.py    # a damaged copy of a staked block on -loadblock or -reindex (bad signature, damaged coinstake, signature past the size limit) leaves the header unmarked, and the good block comes in
+132  p2p_unbacked_deep_fork.py              # headers on a branch too deep to take: taken from a peer added by hand or with noban; an outbound peer offering such a chain raises a warning
 127  feature_pos_mixingonly_unlock.py       # a wallet unlocked for mixing only stakes, and still refuses to send or export keys
 96   wallet_basic.py                        # the wallet's basic calls: balances, sends, locked outputs, fee rates, rescan and reindex
 88   feature_block.py                       # block validity over the peer protocol: invalid transactions, reorgs, coinbase reward and maturity, sigops, size, a long reorg
@@ -105,6 +105,7 @@
 40   rpc_fundrawtransaction.py              # fundrawtransaction: coin selection, change position, fees and its options
 40   tool_wallet.py                         # defcon-wallet: create, info, dump and createfromdump, salvage; both wallets
 40   feature_dsl_list_change.py             # the Sentinel tick speaks from the epoch base's list: a masternode registered or revoked mid-epoch (SF1-L)
+40   feature_masternode_connect_race.py     # a restarted masternode another node reached first: connect_nodes closes that connection, and its own one stays
 35   rpc_blockchain.py                      # the chain calls: chain info, transaction statistics, the UTXO set summary, headers, block verbosity, the hash rate
 34   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
 33   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
@@ -113,11 +114,9 @@
 31   interface_zmq.py                       # the ZMQ notifications: block and transaction hashes and raw data, the sequence topic over the mempool and reorgs
 30   feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
 30   p2p_invalid_tx.py                      # invalid transactions from a peer: each reject reason and its disconnect, orphans and their limits
-30   feature_masternode_connect_race.py     # a restarted masternode another node reached first: connect_nodes closes that connection, and its own one stays
 27   feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
 27   feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
 26   p2p_sendheaders.py                     # headers announcements: sendheaders, the inv fallback, reorgs, and unconnecting headers until the peer is dropped
-25   wallet_bls_locked.py                   # an encrypted wallet records the payments to its own BLS addresses while it is locked or unlocked for mixing only, and after a restart; spending them needs the full unlock
 24   rpc_rawtransaction.py                  # createrawtransaction, signing and sending, and the multisig spends
 24   wallet_balance.py                      # getbalance and getbalances with unconfirmed, untrusted and watch-only coins
 24   wallet_txn_doublespend.py              # the wallet's accounting when a double-spend of its funding transactions confirms instead
@@ -137,6 +136,7 @@
 15   interface_bitcoin_cli.py               # defcon-cli: -getinfo with one and several wallets, -generate, -stdin, -rpcwait
 15   wallet_txn_clone.py                    # the wallet's accounting when a malleated clone of its transaction confirms instead
 15   rpc_createmultisig.py                  # createmultisig and addmultisigaddress, a spend from each kind of multisig, the balances after them
+15   rpc_masternode_lists_unconnected.py    # the masternode-list calls on a stored block never connected say so (protx info, diff, listdiff; masternode payments by the parent), and connected blocks are answered as before
 14   mining_basic.py                        # getmininginfo, getblocktemplate proposals and submitblock, with valid and invalid blocks
 14   feature_minchainwork.py                # -minimumchainwork: below it a node relays no blocks and answers no getheaders, until the chain passes it
 13   feature_coinstatsindex.py              # the coin statistics index agrees with the UTXO set, by height, across restarts and reorgs
@@ -146,6 +146,7 @@
 11   feature_evodb_repair_startup.py        # -evodbrepair finishes before the import, the network and the end of RPC warmup
 9    feature_llmq_q60_regtest.py            # the Q60 ChainLock profile (llmq_defcon) on regtest
 9    feature_llmq_switchover_config.py      # the startup guards on the Q60 switchover heights, the v23@N alias
+8    wallet_bls_locked.py                   # an encrypted wallet records the payments to its own BLS addresses while it is locked or unlocked for mixing only, and after a restart; spending them needs the full unlock
 8    feature_superblock_retirement.py       # a test chain with the superblock spork on: getblocktemplate at the retirement height, and the regtest alias
 7    feature_init_error_stops_import.py     # a start that fails after the block import has begun (here on -bind) asks the import to stop, and the node then starts as usual
 6    wallet_labels.py                       # address labels, address groupings and the label calls
@@ -157,9 +158,9 @@
 6    p2p_invalid_block.py                   # invalid blocks: a mutated merkle tree, duplicate inputs, too much coinbase reward, a timestamp too far ahead
 6    feature_versionbits_warning.py         # blocks signalling an unknown version bit: the warning in getmininginfo, getnetworkinfo and the alert file
 6    p2p_unrequested_blocks.py              # unrequested blocks: kept only with more work or from a whitelisted peer, and at most 288 blocks ahead
+6    feature_pos_staking_refusal_log.py     # why staking does not go on for a wallet (here: locked) is in the log without -debug=pos
 5    feature_dsl_aged_out_before_list.py    # a Sentinel announcement and report for an epoch past the retained window are refused before the list of its base block is built
 5    wallet_orphanedreward.py               # a block reward the wallet spent is orphaned, and its other coins stay spendable
-5    feature_pos_staking_refusal_log.py     # why staking does not go on for a wallet (here: locked) is in the log without -debug=pos
 4    feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
 4    mempool_spend_coinbase.py              # a coinbase spend enters the mempool only once the next block may include it
 4    rpc_packages.py                        # testmempoolaccept on packages: chains, several parents or children, conflicts, fees

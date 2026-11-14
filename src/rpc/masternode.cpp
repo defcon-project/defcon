@@ -397,6 +397,14 @@ static RPCHelpMan masternode_payments()
         // height 0 asked exactly this and took the node down with it, so the
         // walk stops here -- there is nothing before genesis to report.
         if (pindex->pprev == nullptr) break;
+        // A block is paid from its parent's masternode list, which exists once the parent has been
+        // connected (the parents of a connected block all have been). Checked where a list is about
+        // to be read, so a count of 0 still answers with nothing.
+        if (WITH_LOCK(cs_main, return !CDeterministicMNManager::ListAvailable(*pindex->pprev, Params().GetConsensus()))) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER,
+                               strprintf("The parent of block %s has not been connected, so there is no masternode list to pay from",
+                                         pindex->GetBlockHash().ToString()));
+        }
         CBlock block;
         if (!ReadBlockFromDisk(block, pindex, Params().GetConsensus())) {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Can't read block from disk");

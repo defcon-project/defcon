@@ -1453,6 +1453,17 @@ static RPCHelpMan protx_list()
     };
 }
 
+//! For a block never connected there is no masternode list to build
+//! (CDeterministicMNManager::ListAvailable); say so instead of failing on the missing list.
+static void EnsureMasternodeListKnown(const CBlockIndex* pindex, const std::string& what) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
+{
+    AssertLockHeld(cs_main);
+    if (pindex != nullptr && !CDeterministicMNManager::ListAvailable(*pindex, Params().GetConsensus())) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, strprintf("%s %s has not been connected, so it has no masternode list",
+                                                         what, pindex->GetBlockHash().ToString()));
+    }
+}
+
 static RPCHelpMan protx_info()
 {
     return RPCHelpMan{"protx info",
@@ -1504,6 +1515,7 @@ static RPCHelpMan protx_info()
         if (pindex == nullptr) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
         }
+        EnsureMasternodeListKnown(pindex, "Block");
     }
 
     auto mnList = dmnman.GetListForBlock(pindex);
@@ -1619,6 +1631,8 @@ static RPCHelpMan protx_listdiff()
     if (pTargetBlockIndex == nullptr) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Block not found");
     }
+    EnsureMasternodeListKnown(pBaseBlockIndex, "Base block");
+    EnsureMasternodeListKnown(pTargetBlockIndex, "Block");
 
     ret.pushKV("baseHeight", pBaseBlockIndex->nHeight);
     ret.pushKV("blockHeight", pTargetBlockIndex->nHeight);

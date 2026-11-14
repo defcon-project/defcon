@@ -57,6 +57,11 @@ class BLSRPCTest(BitcoinTestFramework):
             self.restart_node(0)
             assert_equal(len(node.listblsaddresses()), 3)
 
+        # A configuration written for a wallet build does not stop a build without
+        # one: both accept the wallet's staking and HD options.
+        self.restart_node(0, extra_args=["-stakecombinescope=key", "-mnemonicbits=256"])
+        assert_equal(node.getblockcount(), 0)
+
 
 if __name__ == "__main__":
     BLSRPCTest().main()

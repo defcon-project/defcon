@@ -717,6 +717,15 @@ BOOST_AUTO_TEST_CASE(rpc_command_flags)
         if (flags & CMDFLAG_MASTERNODE_NO_WALLET) BOOST_CHECK_MESSAGE((flags & CMDFLAG_WALLET) != 0, name);
     }
     BOOST_CHECK(!GetRPCCommandFlags("nosuchcommand"));
+#ifdef ENABLE_WALLET
+    // A locked wallet whose key pool is empty refuses new addresses until it is unlocked;
+    // "protx list wallet" refuses without a wallet (a doubtful case errs towards caution).
+    BOOST_CHECK(GetRPCCommandFlags("getnewaddress") == (CMDFLAG_CHANGES | CMDFLAG_WALLET | CMDFLAG_UNLOCK));
+    BOOST_CHECK(GetRPCCommandFlags("getrawchangeaddress") == (CMDFLAG_CHANGES | CMDFLAG_WALLET | CMDFLAG_UNLOCK));
+    BOOST_CHECK(GetRPCCommandFlags("protx list") == CMDFLAG_WALLET);
+#else
+    BOOST_CHECK(GetRPCCommandFlags("protx list") == 0);
+#endif
     BOOST_CHECK(!GetRPCCommandFlags("protx "));
 
 #ifdef ENABLE_WALLET
