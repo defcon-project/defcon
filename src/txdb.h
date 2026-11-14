@@ -56,9 +56,17 @@ protected:
     bool m_is_memory;
     //! Cache size of the open database, used to reopen it if a resize fails.
     size_t m_cache_size;
+    //! Set once a BatchWrite failed. The coins it had already dropped from the
+    //! cache it flushed are on disk only in part, so no later BatchWrite may
+    //! mark the database consistent again: each refuses, and the disk keeps
+    //! what the failure left (the old best block, or the head-blocks marker
+    //! that makes the next start replay the blocks).
+    bool m_write_failed{false};
 
     //! The open database. Throws dbwrapper_error if a failed resize left it closed.
     CDBWrapper& DB() const;
+    //! BatchWrite's write: the head-blocks marker first, the coins, then the best block.
+    bool WriteTransition(CCoinsMap &mapCoins, const uint256 &hashBlock, bool erase);
 public:
     /**
      * @param[in] ldb_path    Location in the filesystem where leveldb data will be stored.

@@ -1149,4 +1149,36 @@ BOOST_AUTO_TEST_CASE(coins_resource_is_used)
     PoolResourceTester::CheckAllDataAccountedFor(resource);
 }
 
+//! A Sync whose write does not take keeps the dirty entries dirty, so a later
+//! Sync writes them.
+BOOST_AUTO_TEST_CASE(sync_that_fails_keeps_entries_dirty)
+{
+    struct Refusing : public CCoinsView {
+        CCoinsViewCache* below{nullptr};
+        bool refuse{true};
+        bool BatchWrite(CCoinsMap& map, const uint256& hash, bool erase) override
+        {
+            return refuse ? false : below->BatchWrite(map, hash, erase);
+        }
+    };
+    CCoinsView empty;
+    CCoinsViewCache bottom{&empty};
+    Refusing middle;
+    middle.below = &bottom;
+    CCoinsViewCache top{&middle};
+    const COutPoint outpoint{InsecureRand256(), 0};
+    Coin coin;
+    coin.out.nValue = 1;
+    coin.out.scriptPubKey = CScript() << OP_TRUE;
+    coin.nHeight = 1;
+    top.AddCoin(outpoint, std::move(coin), /*possible_overwrite=*/false);
+    top.SetBestBlock(InsecureRand256());
+
+    BOOST_CHECK(!top.Sync());
+    BOOST_CHECK(!bottom.HaveCoinInCache(outpoint));
+    middle.refuse = false;
+    BOOST_CHECK(top.Sync());
+    BOOST_CHECK(bottom.HaveCoinInCache(outpoint));
+}
+
 BOOST_AUTO_TEST_SUITE_END()

@@ -333,21 +333,21 @@ bool BlockManager::LoadBlockIndex(const Consensus::Params& consensus_params)
 bool BlockManager::WriteBlockIndexDB()
 {
     AssertLockHeld(::cs_main);
+    // The dirty entries stay dirty until a write has put them down: one that
+    // fails, by returning false or throwing, leaves them for the next attempt.
     std::vector<std::pair<int, const CBlockFileInfo*>> vFiles;
     vFiles.reserve(m_dirty_fileinfo.size());
-    for (std::set<int>::iterator it = m_dirty_fileinfo.begin(); it != m_dirty_fileinfo.end();) {
-        vFiles.push_back(std::make_pair(*it, &m_blockfile_info[*it]));
-        m_dirty_fileinfo.erase(it++);
+    for (const int file : m_dirty_fileinfo) {
+        vFiles.push_back(std::make_pair(file, &m_blockfile_info[file]));
     }
-    std::vector<const CBlockIndex*> vBlocks;
-    vBlocks.reserve(m_dirty_blockindex.size());
-    for (std::set<CBlockIndex*>::iterator it = m_dirty_blockindex.begin(); it != m_dirty_blockindex.end();) {
-        vBlocks.push_back(*it);
-        m_dirty_blockindex.erase(it++);
-    }
+    std::vector<const CBlockIndex*> vBlocks(m_dirty_blockindex.begin(), m_dirty_blockindex.end());
+    LogPrint(BCLog::BLOCKSTORE, "Writing %u block file entries and %u block index entries\n", vFiles.size(), vBlocks.size());
     if (!m_block_tree_db->WriteBatchSync(vFiles, m_last_blockfile, vBlocks)) {
         return false;
     }
+    // cs_main has been held since the sets were copied, so these are the entries just written.
+    m_dirty_fileinfo.clear();
+    m_dirty_blockindex.clear();
     return true;
 }
 
