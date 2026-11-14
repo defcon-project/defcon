@@ -141,6 +141,21 @@ std::vector<uint256> CCoinsViewDB::GetHeadBlocks() const {
 }
 
 bool CCoinsViewDB::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlock, bool erase) {
+    if (m_write_failed) {
+        LogPrintf("Not writing the coin database: an earlier write to it failed, and the next start replays the blocks\n");
+        return false;
+    }
+    try {
+        if (WriteTransition(mapCoins, hashBlock, erase)) return true;
+    } catch (...) {
+        m_write_failed = true;
+        throw;
+    }
+    m_write_failed = true;
+    return false;
+}
+
+bool CCoinsViewDB::WriteTransition(CCoinsMap &mapCoins, const uint256 &hashBlock, bool erase) {
     CDBBatch batch(DB());
     size_t count = 0;
     size_t changed = 0;

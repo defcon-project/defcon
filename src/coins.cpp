@@ -268,6 +268,8 @@ bool CCoinsViewCache::Flush() {
 bool CCoinsViewCache::Sync()
 {
     bool fOk = base->BatchWrite(cacheCoins, hashBlock, /*erase=*/false);
+    // A write that did not take leaves every entry as it was, dirty ones dirty.
+    if (!fOk) return false;
     // Instead of clearing `cacheCoins` as we would in Flush(), just clear the
     // FRESH/DIRTY flags of any coin that isn't spent.
     for (auto it = cacheCoins.begin(); it != cacheCoins.end(); ) {

@@ -26,6 +26,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <string>
+
 // Test if a string consists entirely of null characters
 static bool is_null_key(const std::vector<unsigned char>& key) {
     bool isnull = true;
@@ -624,6 +626,101 @@ BOOST_AUTO_TEST_CASE(coinsviewdb_resize_reopen_failure)
     view.ResizeCache(1 << 21);
     BOOST_CHECK(view.GetCoin(outpoint, coin));
     BOOST_CHECK_EQUAL(view.GetBestBlock(), best);
+}
+
+//! A flush that fails partway leaves the coins it had already dropped from the
+//! cache neither in memory nor on disk. The write shutdown makes after it must not
+//! mark the database consistent: it refuses, and the head-blocks marker stays for
+//! the next start to replay the blocks.
+BOOST_AUTO_TEST_CASE(coinsviewdb_failed_write_is_never_marked_consistent)
+{
+    const fs::path path{m_args.GetDataDirBase() / "coinsviewdb_failed_write"};
+    const uint256 old_tip{InsecureRand256()};
+    const uint256 new_tip{InsecureRand256()};
+    std::vector<COutPoint> coins;
+    for (int i = 0; i < 4; ++i) coins.emplace_back(InsecureRand256(), 0);
+    CCoinsMapMemoryResource resource;
+    {
+        CCoinsViewDB view(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/true);
+        {
+            CCoinsMap map{0, CCoinsMap::hasher{}, CCoinsMap::key_equal{}, &resource};
+            map.emplace(coins[0], CCoinsCacheEntry{TestCoin(), CCoinsCacheEntry::DIRTY});
+            BOOST_REQUIRE(view.BatchWrite(map, old_tip));
+        }
+        BOOST_REQUIRE_EQUAL(view.GetBestBlock(), old_tip);
+
+        // One coin per partial batch; the second partial write fails, after its coin
+        // left the map, where a full disk would make WriteBatch throw.
+        gArgs.ForceSetArg("-dbbatchsize", "1");
+        CCoinsMap map{0, CCoinsMap::hasher{}, CCoinsMap::key_equal{}, &resource};
+        for (int i = 1; i < 4; ++i) map.emplace(coins[i], CCoinsCacheEntry{TestCoin(), CCoinsCacheEntry::DIRTY});
+        int partial{0};
+        {
+            DebugLogHelper fail{"Writing partial batch", [&partial](const std::string* line) {
+                if (line && ++partial == 2) throw std::runtime_error("injected coin write failure");
+                return false;
+            }};
+            BOOST_CHECK_EXCEPTION(view.BatchWrite(map, new_tip), std::runtime_error, HasReason("injected coin write failure"));
+        }
+        gArgs.ForceSetArg("-dbbatchsize", std::to_string(nDefaultDbBatchSize));
+        BOOST_CHECK_EQUAL(partial, 2);
+        // The first partial batch is down, the second coin is lost, the third is still in the map.
+        BOOST_REQUIRE_EQUAL(map.size(), 1u);
+        int on_disk{0};
+        for (int i = 1; i < 4; ++i) on_disk += view.HaveCoin(coins[i]) ? 1 : 0;
+        BOOST_CHECK_EQUAL(on_disk, 1);
+
+        // What shutdown does next: write the rest. Nothing is written, and the marker stays.
+        BOOST_CHECK(!view.BatchWrite(map, new_tip));
+        BOOST_CHECK(view.GetBestBlock().IsNull());
+        BOOST_CHECK(view.GetHeadBlocks() == (std::vector<uint256>{new_tip, old_tip}));
+        BOOST_REQUIRE_EQUAL(map.size(), 1u);
+        BOOST_CHECK(!view.HaveCoin(map.begin()->first));
+        BOOST_CHECK(view.HaveCoin(coins[0]));
+    }
+    // Reopened by the next start: in transition still, so it replays the blocks.
+    CCoinsViewDB reopened(path, 1 << 20, /*fMemory=*/false, /*fWipe=*/false);
+    BOOST_CHECK(reopened.GetBestBlock().IsNull());
+    BOOST_CHECK(reopened.GetHeadBlocks() == (std::vector<uint256>{new_tip, old_tip}));
+}
+
+//! A block index write that fails, before anything reaches the disk, keeps its
+//! entries dirty, so the next write puts them down.
+BOOST_FIXTURE_TEST_CASE(block_index_failed_write_keeps_the_dirty_entries, TestChain100Setup)
+{
+    ChainstateManager& chainman = *Assert(m_node.chainman);
+    CChainState& chainstate = chainman.ActiveChainstate();
+    CBlockIndex* tip = WITH_LOCK(cs_main, return chainman.ActiveChain().Tip());
+    const uint256 hash{tip->GetBlockHash()};
+    const auto failed_on_disk = [&]() {
+        CDiskBlockIndex disk;
+        LOCK(cs_main);
+        BOOST_REQUIRE(chainman.m_blockman.m_block_tree_db->Read(std::make_pair(uint8_t{'b'}, hash), disk));
+        return (disk.nStatus & BLOCK_FAILED_MASK) != 0;
+    };
+
+    // The tip invalidated, and that written down.
+    BlockValidationState state;
+    BOOST_REQUIRE(chainstate.InvalidateBlock(state, tip));
+    BOOST_REQUIRE(WITH_LOCK(cs_main, return chainman.m_blockman.WriteBlockIndexDB()));
+    BOOST_REQUIRE(failed_on_disk());
+    // Cleared again in memory, which leaves the entry dirty.
+    WITH_LOCK(cs_main, chainstate.ResetBlockFailureFlags(tip));
+
+    // The write fails before it reaches the disk ...
+    {
+        DebugLogHelper fail{"block index entries", [](const std::string* line) {
+            if (line) throw std::runtime_error("injected block index write failure");
+            return false;
+        }};
+        LOCK(cs_main);
+        BOOST_CHECK_EXCEPTION(chainman.m_blockman.WriteBlockIndexDB(), std::runtime_error,
+                              HasReason("injected block index write failure"));
+    }
+    BOOST_CHECK(failed_on_disk());
+    // ... and the next one puts the entry down.
+    BOOST_CHECK(WITH_LOCK(cs_main, return chainman.m_blockman.WriteBlockIndexDB()));
+    BOOST_CHECK(!failed_on_disk());
 }
 
 //! A failed coins DB reopen must leave the recorded cache sizes unchanged, so the
