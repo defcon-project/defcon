@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chainparams.h>
+#include <consensus/amount.h>
 #include <evo/assetlocktx.h>
 #include <evo/chainhelper.h>
 #include <evo/deterministicmns.h>
@@ -415,16 +416,25 @@ static RPCHelpMan masternode_payments()
 
         // Note: we have to actually calculate block reward from scratch instead of simply querying coinbase vout
         // because miners might collect less coins than they potentially could and this would break our calculations.
+        //
+        // The fees are added up the way connecting the block adds them up (ConnectBlock, CheckTxInputs): the
+        // coinstake pays out more than it spends and adds no fee, and every other input must exist and keep the
+        // amounts in range. A block that was stored but never connected has never had its inputs checked, so
+        // here they are checked before anything is read or added; a connected block passes all of it.
+        const auto not_valid = [&](const std::string& reason) {
+            return JSONRPCError(RPC_MISC_ERROR, strprintf("Block %s is not valid: %s", pindex->GetBlockHash().ToString(), reason));
+        };
         CAmount nBlockFees{0};
         const CTxMemPool& mempool = EnsureAnyMemPool(request.context);
         for (const auto& tx : block.vtx) {
-            if (tx->IsCoinBase()) {
+            if (tx->IsCoinBase() || tx->IsCoinStake()) {
                 continue;
             }
             if (tx->IsPlatformTransfer()) {
                 auto payload = GetTxPayload<CAssetUnlockPayload>(*tx);
                 CHECK_NONFATAL(payload);
                 nBlockFees += payload->getFee();
+                if (!MoneyRange(nBlockFees)) throw not_valid("its fees are out of range");
                 continue;
             }
 
@@ -438,9 +448,22 @@ static RPCHelpMan masternode_payments()
                                        strprintf("Transaction %s, spent in block %s, was not found: masternode payments needs -txindex for this block",
                                                  txin.prevout.hash.ToString(), pindex->GetBlockHash().ToString()));
                 }
-                nValueIn += txPrev->vout[txin.prevout.n].nValue;
+                if (txin.prevout.n >= txPrev->vout.size()) {
+                    throw not_valid(strprintf("transaction %s spends output %u of transaction %s, which does not exist",
+                                              tx->GetHash().ToString(), txin.prevout.n, txin.prevout.hash.ToString()));
+                }
+                const CAmount value{txPrev->vout[txin.prevout.n].nValue};
+                nValueIn += value;
+                if (!MoneyRange(value) || !MoneyRange(nValueIn)) {
+                    throw not_valid(strprintf("the inputs of transaction %s are out of range", tx->GetHash().ToString()));
+                }
             }
-            nBlockFees += nValueIn - tx->GetValueOut();
+            const CAmount value_out{tx->GetValueOut()};
+            if (nValueIn < value_out) {
+                throw not_valid(strprintf("transaction %s pays out more than its inputs", tx->GetHash().ToString()));
+            }
+            nBlockFees += nValueIn - value_out;
+            if (!MoneyRange(nBlockFees)) throw not_valid("its fees are out of range");
         }
 
         std::vector<CTxOut> voutMasternodePayments, voutDummy;

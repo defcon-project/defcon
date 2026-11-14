@@ -14,23 +14,72 @@ a block whose parent was connected still gets its answer, as do connected
 blocks, the blocks before DIP0003 (genesis among them, whose list is empty by
 rule), and blocks that were connected and then invalidated, whose lists stay.
 
+A stored block that was never connected has never had its inputs checked
+either -- here two blocks on the tip whose connection fails, one spending an
+output that does not exist, one paying out more than it spends. masternode
+payments adds up a block's fees from its inputs, so it checks them first, as
+connecting the block does, and says the block is not valid (RPC_MISC_ERROR)
+instead of reading past the end of a transaction's outputs.
+
 The plain framework keeps regtest's own DIP0003Height (432), so the lists are
 real from there on.
 """
 
+from test_framework.blocktools import NORMAL_GBT_REQUEST_PARAMS, create_block
+from test_framework.messages import COIN, COutPoint, CTransaction, CTxIn, CTxOut
+from test_framework.script import CScript, OP_TRUE
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal, assert_raises_rpc_error
 
 CHAIN_HEIGHT = 450  # past DIP0003 (432)
 SOME_PROTX = "00" * 32
+NO_SUCH_OUTPUT = 0xfffffffe  # far past the end of any transaction's outputs, and not the null outpoint's index
 
 
 class MasternodeListsUnconnectedTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
 
+    def spend(self, txid, n, value):
+        tx = CTransaction()
+        tx.vin = [CTxIn(COutPoint(int(txid, 16), n))]
+        tx.vout = [CTxOut(value, CScript([OP_TRUE]))]
+        tx.rehash()
+        return tx
+
+    def stored_on_tip(self, node, tx):
+        """A block on the tip with `tx` in it: the node stores it, fails to connect it and keeps its tip."""
+        tip = node.getbestblockhash()
+        block = create_block(tmpl=node.getblocktemplate(NORMAL_GBT_REQUEST_PARAMS), txlist=[tx])
+        block.solve()
+        assert node.submitblock(block.serialize().hex()) is not None  # the reason it was not connected
+        assert_equal(node.getbestblockhash(), tip)
+        node.getblock(block.hash, 0)  # fails unless the block is stored
+        return block.hash
+
     def run_test(self):
         node, other = self.nodes
+
+        self.log.info("masternode payments checks the inputs of a block never connected before adding them up")
+        # Below DIP0003 (432) a plain coinbase does, and the list the payments are read from is empty by rule.
+        assert node.getblockcount() < 432
+        first_coinbase = node.getblock(node.getblockhash(1))["tx"][0]  # found through -txindex
+        no_such_output = self.spend(first_coinbase, NO_SUCH_OUTPUT, COIN)
+        block_hash = self.stored_on_tip(node, no_such_output)
+        assert_raises_rpc_error(
+            -1, "Block %s is not valid: transaction %s spends output %d of transaction %s, which does not exist" % (
+                block_hash, no_such_output.hash, NO_SUCH_OUTPUT, first_coinbase),
+            node.masternode, "payments", block_hash)
+        second_coinbase = node.getblock(node.getblockhash(2), 2)["tx"][0]
+        paid = int(second_coinbase["vout"][0]["value"] * COIN)
+        pays_more = self.spend(second_coinbase["txid"], 0, paid + COIN)
+        block_hash = self.stored_on_tip(node, pays_more)
+        assert_raises_rpc_error(
+            -1, "Block %s is not valid: transaction %s pays out more than its inputs" % (block_hash, pays_more.hash),
+            node.masternode, "payments", block_hash)
+        # the node is still up, and its tip is answered as before
+        assert_equal(node.masternode("payments")[0]["blockhash"], node.getbestblockhash())
+
         self.generate(node, CHAIN_HEIGHT - node.getblockcount())
         fork_point = node.getblockcount()
 
