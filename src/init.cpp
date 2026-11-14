@@ -825,7 +825,11 @@ std::string LicenseInfo()
            "The source code is available at <https://github.com/defcon-project/defcon>.\n" +
            "\n" +
            "This is experimental software.\n" +
-           "Distributed under the MIT software license. See the accompanying file COPYING or <https://opensource.org/licenses/MIT>.\n";
+           // Short lines, the link on its own: the About window does not break the link in two, and
+           // -help (wrapped at 79 columns) leaves no word on a line of its own.
+           "Distributed under the MIT software license.\n" +
+           "See the accompanying file COPYING or\n" +
+           "<https://opensource.org/licenses/MIT>.\n";
 }
 
 static bool fHaveGenesis = false;
