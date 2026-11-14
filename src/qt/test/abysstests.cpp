@@ -54,6 +54,7 @@
 #include <qt/walletframe.h>
 #include <qt/walletcontroller.h>
 #include <qt/walletview.h>
+#include <qt/wavebackdrop.h>
 #include <pos/minter.h>
 #include <pos/multiwallet.h>
 #include <test/util/setup_common.h>
@@ -87,6 +88,8 @@
 #include <time.h>
 #endif
 #include <QCalendarWidget>
+#include <QRegularExpression>
+#include <QCheckBox>
 #include <QDateTimeEdit>
 #include <QClipboard>
 #include <QComboBox>
@@ -193,6 +196,12 @@ struct RestoreAppearance {
         GUIUtil::setFontScale(scale);
         GUIUtil::loadTheme(true);
     }
+};
+//! The night sky rests in the wallet (SkyTiers::dormant); a case about the
+//! sky wakes it for its own length.
+struct WakeSky {
+    WakeSky() { SkyTiers::setDormantForTests(false); }
+    ~WakeSky() { SkyTiers::setDormantForTests(true); }
 };
 void Theme(const char* theme)
 {
@@ -3541,6 +3550,7 @@ void AbyssTests::skyCatalogue()
 
 void AbyssTests::skyBadge()
 {
+    WakeSky wake;
     RestoreAppearance restore;
     Theme("Abyss");
     WalletFixture fixture(m_node);
@@ -3716,6 +3726,7 @@ void AbyssTests::skyBadge()
 
 void AbyssTests::skyWindowTier()
 {
+    WakeSky wake;
     if (!GUIUtil::fontsLoaded()) QSKIP("Window geometry requires minimal:enable_fonts or a native platform");
     RestoreAppearance restore;
     const QString app_name = QCoreApplication::applicationName();
@@ -3859,6 +3870,7 @@ void AbyssTests::coinJoinWidgetsPerPage()
 
 void AbyssTests::quickControls()
 {
+    WakeSky wake;
     const bool high_dpi = QCoreApplication::testAttribute(Qt::AA_UseHighDpiPixmaps);
     QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
     const auto restore_dpi = interfaces::MakeHandler([high_dpi] { QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, high_dpi); });
@@ -4877,6 +4889,210 @@ void AbyssTests::darkStateRules()
             QVERIFY(shot(name("multisig-button-focus"), image));
             QVERIFY2(at(image, own->width() / 2.0, 0.5) == QColor("#29435f"), qPrintable(QString("multisig focused button top: %1").arg(at(image, own->width() / 2.0, 0.5).name())));
         }
+    }
+}
+
+void AbyssTests::waveBackdrop()
+{
+    // The night sky rests: Abyss shows the wave backdrop in its place, one
+    // still picture computed for the area beside the sidebar. No level, badge
+    // or sky option shows, and the next-level line is blank (it keeps its
+    // height, which the pages were fitted with). Woken by the test (nothing a
+    // user can set does it), each of them is back: only the rest hid them.
+    RestoreAppearance restore;
+    QVERIFY(SkyTiers::dormant());
+    const QString shots = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    const auto shot = [&](const QString& name, const QImage& image) {
+        return shots.isEmpty() || image.save(QDir(shots).filePath(name + ".png"));
+    };
+    const auto close_to = [](QRgb a, QRgb b, int by) {
+        return std::abs(qRed(a) - qRed(b)) <= by && std::abs(qGreen(a) - qGreen(b)) <= by && std::abs(qBlue(a) - qBlue(b)) <= by;
+    };
+
+    // The picture: the same for the same size, a dark ground, blue light, one bright crest.
+    const QSize size(1365, 830);
+    const QImage picture = WaveBackdrop::render(size, 1.0);
+    QCOMPARE(picture.size(), size);
+    QCOMPARE(picture.format(), QImage::Format_RGB32);
+    QVERIFY(picture == WaveBackdrop::render(size, 1.0));
+    QVERIFY(shot("wave-backdrop-1365x830", picture));
+    QVERIFY(WaveBackdrop::render(QSize(0, 830), 1.0).isNull());
+    QVERIFY(WaveBackdrop::render(QSize(1365, 0), 1.0).isNull());
+    const QColor ground = picture.pixelColor(68, 83);
+    QVERIFY2(ground.red() < 12 && ground.green() < 16 && ground.blue() < 28 && ground.blue() > ground.red(), qPrintable(ground.name()));
+    QPoint brightest;
+    int most = -1;
+    for (int y = 0; y < picture.height(); ++y) {
+        const QRgb* row = reinterpret_cast<const QRgb*>(picture.constScanLine(y));
+        for (int x = 0; x < picture.width(); ++x) {
+            const QRgb p = row[x];
+            QVERIFY2(qBlue(p) >= qGreen(p) && qGreen(p) >= qRed(p), qPrintable(QString("not blue at %1,%2: %3").arg(x).arg(y).arg(QColor(p).name())));
+            const int sum = qRed(p) + qGreen(p) + qBlue(p);
+            if (sum > most) {
+                most = sum;
+                brightest = QPoint(x, y);
+            }
+        }
+    }
+    const QColor crest = picture.pixelColor(brightest);
+    QVERIFY2(crest.blue() >= 240 && crest.red() < 150, qPrintable(crest.name()));
+    QVERIFY2(brightest.x() > size.width() * 0.45 && brightest.x() < size.width() * 0.75 &&
+             brightest.y() > size.height() * 0.50 && brightest.y() < size.height() * 0.72,
+             qPrintable(QString("crest at %1,%2").arg(brightest.x()).arg(brightest.y())));
+    // The same composition at twice the pixels; away from the crest the colours agree.
+    const QImage twice = WaveBackdrop::render(size * 2, 2.0);
+    QCOMPARE(twice.size(), size * 2);
+    QCOMPARE(twice.devicePixelRatio(), 2.0);
+    for (const QPointF& at : {QPointF(0.05, 0.10), QPointF(0.90, 0.90), QPointF(0.30, 0.95), QPointF(0.70, 0.20), QPointF(0.68, 0.80)}) {
+        const QRgb one = picture.pixel(int(at.x() * size.width()), int(at.y() * size.height()));
+        const QRgb two = twice.pixel(int(at.x() * size.width() * 2), int(at.y() * size.height() * 2));
+        QVERIFY2(close_to(one, two, 3), qPrintable(QString("%1,%2: %3 and %4").arg(at.x()).arg(at.y()).arg(QColor(one).name(), QColor(two).name())));
+    }
+    // A low area keeps a crest one can see.
+    const QImage low = WaveBackdrop::render(QSize(900, 160), 1.0);
+    int low_blue = 0;
+    for (int y = 0; y < low.height(); ++y) {
+        for (int x = 0; x < low.width(); ++x) low_blue = std::max(low_blue, qBlue(low.pixel(x, y)));
+    }
+    QVERIFY2(low_blue >= 200, qPrintable(QString::number(low_blue)));
+
+    Theme("Abyss");
+    {
+        // The widget: the picture beside the sidebar, no star, no timer.
+        StarfieldWidget backdrop;
+        backdrop.setObjectName("walletContainer");
+        auto* bar = new QToolBar(&backdrop);
+        bar->setObjectName("navigationToolBar");
+        bar->setOrientation(Qt::Vertical);
+        backdrop.resize(900, 600);
+        bar->setGeometry(0, 0, 238, 600);
+        backdrop.setWaves(true);
+        backdrop.setSkyVisible(true);
+        backdrop.show();
+        QApplication::setActiveWindow(&backdrop);
+        Settle();
+        QVERIFY(backdrop.waves());
+        QVERIFY(backdrop.m_stars.isEmpty());
+        QVERIFY(!backdrop.m_timer->isActive() && !backdrop.m_refresh->isActive());
+        QCOMPARE(backdrop.waveArea(), QRect(238, 0, 662, 600));
+        const qreal dpr = backdrop.devicePixelRatioF();
+        const auto compare = [&](const QRect& area) {
+            const QImage grabbed = backdrop.grab().toImage();
+            const QSize pixels(static_cast<int>(std::ceil(area.width() * dpr)), static_cast<int>(std::ceil(area.height() * dpr)));
+            const QImage expected = WaveBackdrop::render(pixels, dpr);
+            const QPoint origin(qRound(area.left() * dpr), qRound(area.top() * dpr));
+            int checked = 0;
+            for (int y = 3; y < expected.height() - 3; y += 7) {
+                for (int x = 3; x < expected.width() - 3; x += 7) {
+                    const QRgb got = grabbed.pixel(origin.x() + x, origin.y() + y);
+                    if (!close_to(got, expected.pixel(x, y), 2)) {
+                        return QString("%1,%2: %3, the picture has %4").arg(x).arg(y).arg(QColor(got).name(), QColor(expected.pixel(x, y)).name());
+                    }
+                    ++checked;
+                }
+            }
+            return checked > 1000 ? QString() : QString("only %1 points").arg(checked);
+        };
+        QVERIFY(shot("wave-backdrop-widget", backdrop.grab().toImage()));
+        QString wrong = compare(QRect(238, 0, 662, 600));
+        QVERIFY2(wrong.isEmpty(), qPrintable(wrong));
+        QCOMPARE(backdrop.m_wave_redraws, 1);
+        // A level is kept and shows nothing; nothing is computed again.
+        backdrop.setSkyTier(5);
+        QCOMPARE(backdrop.skyTier(), 5);
+        backdrop.setAnimated(false);
+        backdrop.setAnimated(true);
+        Settle();
+        QVERIFY(backdrop.m_stars.isEmpty());
+        QVERIFY(!backdrop.m_timer->isActive() && !backdrop.m_refresh->isActive());
+        wrong = compare(QRect(238, 0, 662, 600));
+        QVERIFY2(wrong.isEmpty(), qPrintable(wrong));
+        QCOMPARE(backdrop.m_wave_redraws, 1);
+        QCOMPARE(backdrop.m_steady_redraws, 0);
+        // A new size is a new picture; without the sidebar it takes the whole
+        // widget, with the sidebar on the right the left part.
+        backdrop.resize(1000, 700);
+        bar->setGeometry(0, 0, 238, 700);
+        Settle();
+        wrong = compare(QRect(238, 0, 762, 700));
+        QVERIFY2(wrong.isEmpty(), qPrintable(wrong));
+        QCOMPARE(backdrop.m_wave_redraws, 2);
+        bar->hide();
+        Settle();
+        QCOMPARE(backdrop.waveArea(), backdrop.rect());
+        wrong = compare(backdrop.rect());
+        QVERIFY2(wrong.isEmpty(), qPrintable(wrong));
+        bar->show();
+        bar->setGeometry(762, 0, 238, 700);
+        Settle();
+        QCOMPARE(backdrop.waveArea(), QRect(0, 0, 762, 700));
+        // The sky in its place builds its field; the waves drop it again.
+        backdrop.setWaves(false);
+        Settle();
+        QVERIFY(!backdrop.m_stars.isEmpty());
+        (void)backdrop.grab();
+        QVERIFY(backdrop.m_steady_redraws > 0);
+        backdrop.setWaves(true);
+        Settle();
+        QVERIFY(backdrop.m_stars.isEmpty());
+        QVERIFY(!backdrop.m_timer->isActive() && !backdrop.m_refresh->isActive());
+        // Not visible (a classic theme): no picture.
+        bar->hide();
+        backdrop.setSkyVisible(false);
+        Settle();
+        const QImage plain = backdrop.grab().toImage();
+        for (int y = 0; y < plain.height(); y += 5) {
+            for (int x = 0; x < plain.width(); x += 5) QVERIFY2(qBlue(plain.pixel(x, y)) < 60, qPrintable(QColor(plain.pixel(x, y)).name()));
+        }
+    }
+    {
+        // The Overview: no level for any balance, so no badge, and the next-level
+        // line says nothing in the height it has when it speaks.
+        WalletFixture fixture(m_node);
+        OverviewPage page;
+        page.setWalletModel(fixture.model.get());
+        page.resize(1600, 850);
+        page.show(); Settle();
+        auto* badge = page.findChild<QWidget*>("networkSky");
+        auto* line = page.findChild<QLabel*>("nextLevelLabel");
+        QVERIFY(badge && line);
+        QSignalSpy changed(&page, &OverviewPage::skyTierChanged);
+        interfaces::WalletBalances balances;
+        balances.balance = 12000000 * COIN;
+        page.setBalance(balances); Settle();
+        QCOMPARE(page.skyTier(), 0);
+        QVERIFY(badge->isHidden());
+        QVERIFY(line->isVisible());
+        QVERIFY2(line->text().trimmed().isEmpty() && line->toolTip().isEmpty(), qPrintable(line->text() + " / " + line->toolTip()));
+        const int resting_height = line->height();
+        const int resting_minimum = page.minimumSizeHint().height();
+        for (const QList<QVariant>& arguments : changed) QCOMPARE(arguments.at(0).toInt(), 0);
+        WakeSky wake;
+        page.setBalance(balances); Settle();
+        QCOMPARE(page.skyTier(), 8);
+        QVERIFY(badge->isVisible());
+        QVERIFY(line->isVisible());
+        QVERIFY2(line->text().contains(QRegularExpression("\\d")) && !line->toolTip().isEmpty(), qPrintable(line->text()));
+        QCOMPARE(line->height(), resting_height);
+        QCOMPARE(page.minimumSizeHint().height(), resting_minimum);
+        QCOMPARE(changed.last().at(0).toInt(), 8);
+    }
+    if (GUIUtil::fontsLoaded()) {
+        // The sky's option: kept, with its stored value, and out of sight
+        // (the widget needs a font-capable platform, as appearanceFonts does).
+        const QVariant stored = QSettings().value("fAnimateNightSky");
+        {
+            AppearanceWidget appearance;
+            auto* label = appearance.findChild<QLabel*>("lblNightSky");
+            auto* box = appearance.findChild<QCheckBox*>("animateNightSky");
+            QVERIFY(label && box);
+            QVERIFY(label->isHidden() && box->isHidden());
+        }
+        QCOMPARE(QSettings().value("fAnimateNightSky"), stored);
+        WakeSky wake;
+        AppearanceWidget appearance;
+        QVERIFY(!appearance.findChild<QLabel*>("lblNightSky")->isHidden());
+        QVERIFY(!appearance.findChild<QCheckBox*>("animateNightSky")->isHidden());
     }
 }
 
@@ -6011,6 +6227,7 @@ void AbyssTests::coinJoinCardConditional()
 
 void AbyssTests::nextLevelLine()
 {
+    WakeSky wake;
     // Under the total: the balance the next sky level starts at, as the
     // badge's tooltip has it, or that this is the top. Never in discreet
     // mode, nor for a wallet whose balance does not count.
@@ -6600,6 +6817,7 @@ void AbyssTests::overviewColumnsAligned()
 
 void AbyssTests::overviewLockedFits()
 {
+    WakeSky wake;
     // The window holds the page under the screen (applyModernWindowMinimum),
     // and a page given less than its minimum is squeezed, the biggest card
     // first: at 175% on a 2560x1600 display the locked page, banner and all,

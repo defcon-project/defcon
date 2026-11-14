@@ -5,6 +5,7 @@
 #include <qt/starfieldwidget.h>
 
 #include <qt/skycatalogue.h>
+#include <qt/wavebackdrop.h>
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -23,6 +24,7 @@
 #include <QStyleOption>
 #include <QTimeZone>
 #include <QTimer>
+#include <QToolBar>
 
 #include <algorithm>
 #include <array>
@@ -41,7 +43,19 @@ namespace SkyTiers {
 namespace {
 //! Whole coins; the order is the roadmap's accepted ladder.
 constexpr std::array<CAmount, COUNT> THRESHOLDS{0, 100000, 200000, 500000, 1000000, 2000000, 4000000, 7000000, 11000000, 17000000, 25000000};
+//! No setting, argument or file is read into this: only setDormantForTests() writes it.
+bool g_dormant{true};
 } // namespace
+
+bool dormant()
+{
+    return g_dormant;
+}
+
+void setDormantForTests(bool dormant)
+{
+    g_dormant = dormant;
+}
 
 CAmount threshold(int tier)
 {
@@ -1012,6 +1026,24 @@ void StarfieldWidget::paintEvent(QPaintEvent* event)
     QPainter painter(this);
     style()->drawPrimitive(QStyle::PE_Widget, &option, &painter, this);
     if (!m_skyVisible || width() <= 0 || height() <= 0) return;
+    if (m_waves) {
+        const QRect area = waveArea();
+        if (area.isEmpty()) return;
+        const qreal dpr = devicePixelRatioF();
+        const QSize pixels(static_cast<int>(std::ceil(area.width() * dpr)), static_cast<int>(std::ceil(area.height() * dpr)));
+        if (m_wave.size() != pixels || !qFuzzyCompare(m_wave.devicePixelRatioF(), dpr)) {
+            m_wave = QPixmap::fromImage(WaveBackdrop::render(pixels, dpr));
+            ++m_wave_redraws;
+        }
+        // The sidebar moved the area (a wider wallet selector, a layout
+        // direction): this event may cover a part only, the rest follows.
+        if (area != m_wave_area) {
+            m_wave_area = area;
+            update();
+        }
+        painter.drawPixmap(area.topLeft(), m_wave);
+        return;
+    }
     if (!m_steady.isNull() && !qFuzzyCompare(m_steady.devicePixelRatioF(), devicePixelRatioF())) invalidateImages();
     if (m_steady.isNull()) redrawSteadySky();
     painter.drawPixmap(0, 0, m_steady);
@@ -1091,7 +1123,7 @@ bool StarfieldWidget::wantsAnimation() const
     // A wallet may stay open for days: stop waking the GUI when it is hidden,
     // minimized or inactive, even if the decorative clock keeps advancing.
     const QWidget* top = window();
-    return m_skyVisible && m_animated && isVisible() && top && !top->isMinimized() && top->isActiveWindow();
+    return skyShown() && m_animated && isVisible() && top && !top->isMinimized() && top->isActiveWindow();
 }
 
 void StarfieldWidget::updateTimerState()
@@ -1125,7 +1157,7 @@ void StarfieldWidget::updateRefreshTimer()
     // Hidden, minimized or still windows, and the plain field, need nothing:
     // they catch up on the first tick once they animate again.
     const QWidget* top = window();
-    if (!m_skyVisible || !m_animated || !hasRealSky() || !isVisible() || top == nullptr || top->isMinimized()) {
+    if (!skyShown() || !m_animated || !hasRealSky() || !isVisible() || top == nullptr || top->isMinimized()) {
         m_refresh->stop();
         return;
     }
@@ -1156,6 +1188,36 @@ void StarfieldWidget::invalidateImages()
     m_steady = QPixmap();
     m_moon = QPixmap();
     m_moon_phase_bucket = -1;
+    m_wave = QPixmap();
+}
+
+void StarfieldWidget::dropField()
+{
+    m_stars.clear();
+    m_stars.squeeze();
+    m_visible.clear();
+    m_visible.squeeze();
+    m_twinklers.clear();
+    m_twinklers.squeeze();
+    m_nebula = QImage();
+    m_shooting_started_ms = -1;
+}
+
+QRect StarfieldWidget::waveArea() const
+{
+    // The sidebar is opaque and the picture is composed for the pages: it
+    // starts where the sidebar ends, on whichever side that is.
+    QRect area = rect();
+    const auto* bar = findChild<QToolBar*>(QStringLiteral("navigationToolBar"), Qt::FindDirectChildrenOnly);
+    if (bar != nullptr && !bar->isHidden() && bar->orientation() == Qt::Vertical) {
+        const QRect taken = bar->geometry();
+        if (taken.center().x() < area.center().x()) {
+            area.setLeft(std::max(area.left(), taken.right() + 1));
+        } else {
+            area.setRight(std::min(area.right(), taken.left() - 1));
+        }
+    }
+    return area;
 }
 
 void StarfieldWidget::setSkyVisible(bool visible)
@@ -1163,17 +1225,25 @@ void StarfieldWidget::setSkyVisible(bool visible)
     if (m_skyVisible == visible) return;
     m_skyVisible = visible;
     invalidateImages();
-    if (visible) {
+    if (skyShown()) {
         buildField();
     } else {
-        m_stars.clear();
-        m_stars.squeeze();
-        m_visible.clear();
-        m_visible.squeeze();
-        m_twinklers.clear();
-        m_twinklers.squeeze();
-        m_nebula = QImage();
-        m_shooting_started_ms = -1;
+        dropField();
+    }
+    updateTimerState();
+    update();
+}
+
+void StarfieldWidget::setWaves(bool waves)
+{
+    if (m_waves == waves) return;
+    m_waves = waves;
+    invalidateImages();
+    // The waves need no star: the field is built only for a sky on show.
+    if (skyShown()) {
+        buildField();
+    } else {
+        dropField();
     }
     updateTimerState();
     update();
@@ -1213,7 +1283,7 @@ void StarfieldWidget::setSkyTier(int tier)
     if (m_tier == tier) return;
     m_tier = tier;
     m_shooting_started_ms = -1;
-    if (!m_skyVisible) return; // Classic themes keep nothing but the number.
+    if (!skyShown()) return; // Classic themes and the waves keep nothing but the number.
     invalidateImages();
     updateTimerState();
     update();
@@ -1222,7 +1292,7 @@ void StarfieldWidget::setSkyTier(int tier)
 void StarfieldWidget::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
-    if (m_skyVisible) updateVisibleStars();
+    if (skyShown()) updateVisibleStars();
     invalidateImages();
 }
 
