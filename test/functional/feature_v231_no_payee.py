@@ -198,6 +198,11 @@ class V231NoPayeeTest(DashTestFramework):
         self.advance_clock(TX_AGE)
         self.stake_exactly_to(staker, LAST_POW_BLOCK + 3)
         assert fund in staker.getblock(staker.getbestblockhash())["tx"]
+        # masternode payments answers for staked blocks: a coinstake pays out more than it spends and adds no
+        # fee, as on connecting the block, and the transaction beside it in the second block adds its own
+        for block_hash in (paid, staker.getbestblockhash()):
+            [row] = staker.masternode("payments", block_hash)
+            assert_equal((row["blockhash"], row["amount"]), (block_hash, 10000 * COIN))
         revoke = staker.protx("revoke", mn.proTxHash, mn.keyOperator, 1, funds)
         self.advance_clock(TX_AGE)
         self.stake_exactly_to(staker, LAST_POW_BLOCK + 4)
