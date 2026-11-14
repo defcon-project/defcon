@@ -80,6 +80,17 @@ bool CheckStakeKernelHash(const CBlockIndex *pindexPrev, const Consensus::Params
     bool fPrintProofOfStake=false);
 
 /**
+ * Whether a block on pindexPrev with nTime and nBits could stake on `prevout`: the checks
+ * CheckProofOfStake makes of the kernel -- depth, value, age and the kernel hash -- but the
+ * coinstake's signature, from what is known of the output (its value, the height of the block
+ * that created it and that block's time). For observation only (pos/doublesign.h): it decides
+ * nothing about a block, CheckProofOfStake does.
+ */
+[[nodiscard]] bool StakeKernelQualifies(const CBlockIndex* pindexPrev, const Consensus::Params& params,
+    const COutPoint& prevout, CAmount value, int coin_height, int64_t nBlockFromTime, int64_t nTime,
+    unsigned int nBits);
+
+/**
  * Check kernel hash target and coinstake signature
  * Sets hashProofOfStake on success return
  *

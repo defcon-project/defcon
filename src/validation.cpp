@@ -4508,16 +4508,25 @@ bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, Block
     }
 
     // Observation only (pos/doublesign.h): CheckBlock above verified the block
-    // signature. The kernel's own output says who owns it; the UTXO set still
+    // signature. The kernel's own output says who owns it and, with the block
+    // that created it, whether this block could stake on it; the UTXO set still
     // holds it unless a block that spent it is already connected, and the
-    // monitor keeps it from the first block it saw on that kernel.
+    // monitor keeps it from the first block it saw on that kernel. The stake
+    // rules are applied only on a parent of the active chain, whose stake
+    // modifier is final.
+    const CBlockIndex* settled_parent{pindex->pprev != nullptr && m_chain.Contains(pindex->pprev) ? pindex->pprev : nullptr};
     ObserveStakeDoubleSign(block, pindex->nHeight, pindex->GetBlockHash(), m_chain.Height(),
-                           [&](const COutPoint& kernel) -> std::optional<CScript> {
+                           [&](const COutPoint& kernel) -> std::optional<StakeDoubleSignMonitor::KernelCoin> {
                                AssertLockHeld(cs_main);
                                Coin coin;
                                if (!CoinsTip().GetCoin(kernel, coin)) return std::nullopt;
-                               return coin.out.scriptPubKey;
-                           });
+                               const CBlockIndex* funding{m_chain[coin.nHeight]};
+                               if (funding == nullptr) return std::nullopt;
+                               return StakeDoubleSignMonitor::KernelCoin{coin.out.scriptPubKey, coin.out.nValue,
+                                                                         static_cast<int>(coin.nHeight), funding->GetBlockHash()};
+                           },
+                           StakeDoubleSignMonitor::StakeContext{settled_parent, block.nTime, block.nBits, &m_params.GetConsensus(),
+                                                                &StakeKernelQualifies});
 
     // Header is valid/has work, merkle tree is good...RELAY NOW
     // (but if it does not build on our best tip, let the SendMessages loop relay it)

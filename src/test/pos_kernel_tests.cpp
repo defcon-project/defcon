@@ -277,6 +277,55 @@ BOOST_FIXTURE_TEST_CASE(an_old_coin_is_retired_under_the_original_rules, PosKern
 // (lastPowBlock is 5000 there and TestChain100Setup mines 100 blocks). Every
 // combination that matters is enumerated: below and above lastPowBlock, nonce
 // zero and not, gate reached and not.
+/**
+ * StakeKernelQualifies, the double-sign observer's kernel check, makes CheckProofOfStake's kernel
+ * checks: each bound turns a kernel away, and within them the answer is CheckStakeKernelHash's.
+ */
+BOOST_AUTO_TEST_CASE(stake_kernel_qualifies_makes_the_kernel_checks)
+{
+    Consensus::Params params = Params().GetConsensus();
+    params.stakeValueRange = {1 * COIN, 1000 * COIN};
+    params.stakeAgeRange = {10 * 60, 60 * 60 * 24};
+    params.nPosKernelV2ActivationHeight = 0;
+    CBlockIndex prev;
+    prev.nHeight = 1000;
+    prev.nStakeModifier = uint256::ONE;
+    const COutPoint prevout{uint256::ONE, 1};
+    const int deep_enough{prev.nHeight - (COINBASE_MATURITY + 1)};
+    const int64_t from{1700000000};
+    const int64_t old_enough{from + params.stakeAgeRange[0]};
+    const CAmount value{10 * COIN};
+    // Under the corrected kernel every hash meets the easiest target.
+    const unsigned int easy{0x207fffff};
+    BOOST_CHECK(StakeKernelQualifies(&prev, params, prevout, value, deep_enough, from, old_enough, easy));
+    // Each bound turns it away: depth, value at either end, age.
+    BOOST_CHECK(!StakeKernelQualifies(&prev, params, prevout, value, deep_enough + 1, from, old_enough, easy));
+    BOOST_CHECK(!StakeKernelQualifies(&prev, params, prevout, params.stakeValueRange[0] - 1, deep_enough, from, old_enough, easy));
+    BOOST_CHECK(!StakeKernelQualifies(&prev, params, prevout, params.stakeValueRange[1] + 1, deep_enough, from, old_enough, easy));
+    BOOST_CHECK(!StakeKernelQualifies(&prev, params, prevout, value, deep_enough, from, old_enough - 1, easy));
+    BOOST_CHECK(!StakeKernelQualifies(nullptr, params, prevout, value, deep_enough, from, old_enough, easy));
+    // An old coin may stake under the corrected kernel; under the old one the upper age bound holds.
+    const int64_t too_old{from + params.stakeAgeRange[1] + 1};
+    BOOST_CHECK(StakeKernelQualifies(&prev, params, prevout, value, deep_enough, from, too_old, easy));
+    params.nPosKernelV2ActivationHeight = prev.nHeight + 2;
+    BOOST_CHECK(!StakeKernelQualifies(&prev, params, prevout, value, deep_enough, from, too_old, easy));
+    params.nPosKernelV2ActivationHeight = 0;
+    // Within the bounds the answer is the kernel hash's: an unreachable target turns every time
+    // away, and at the chain's floor the answer is CheckStakeKernelHash's, time by time.
+    const unsigned int unreachable{0x03000001};
+    const unsigned int chain_floor{UintToArith256(params.posLimit).GetCompact()};
+    int passed{0};
+    for (int64_t t = old_enough; t < old_enough + 64; ++t) {
+        BOOST_CHECK(!StakeKernelQualifies(&prev, params, prevout, value, deep_enough, from, t, unreachable));
+        uint256 proof, target;
+        const bool hash_ok{CheckStakeKernelHash(&prev, params, chain_floor, from, value, prevout, t, proof, target)};
+        BOOST_CHECK_EQUAL(StakeKernelQualifies(&prev, params, prevout, value, deep_enough, from, t, chain_floor), hash_ok);
+        passed += hash_ok;
+    }
+    // Both answers occur, so the comparison above says something.
+    BOOST_CHECK(passed > 0 && passed < 64);
+}
+
 BOOST_AUTO_TEST_CASE(pos_block_nonce_rule)
 {
     Consensus::Params p;

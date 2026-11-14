@@ -266,6 +266,22 @@ bool CheckProofOfStake(CChainState& chain_state, const CCoinsViewCache& view, Bl
     return true;
 }
 
+bool StakeKernelQualifies(const CBlockIndex* pindexPrev, const Consensus::Params& params,
+    const COutPoint& prevout, CAmount value, int coin_height, int64_t nBlockFromTime, int64_t nTime,
+    unsigned int nBits)
+{
+    // CheckProofOfStake's kernel checks, in its order and with its bounds.
+    if (pindexPrev == nullptr) return false;
+    if (COINBASE_MATURITY + 1 > pindexPrev->nHeight - coin_height) return false;
+    if (value < params.stakeValueRange[0] || value > params.stakeValueRange[1]) return false;
+    const int64_t inputAge = nTime - nBlockFromTime;
+    const bool age_capped = !IsPosKernelV2(params, pindexPrev->nHeight + 1);
+    if (inputAge < params.stakeAgeRange[0] || (age_capped && inputAge > params.stakeAgeRange[1])) return false;
+    uint256 hashProofOfStake, targetProofOfStake;
+    return CheckStakeKernelHash(pindexPrev, params, nBits, nBlockFromTime, value, prevout, nTime, hashProofOfStake,
+                                targetProofOfStake);
+}
+
 // Used only when staking, not during validation
 bool CheckKernel(CChainState& chain_state, const CBlockIndex* pindexPrev, unsigned int nBits, int64_t nTime, const COutPoint& prevout, int64_t* pBlockTime)
 {
