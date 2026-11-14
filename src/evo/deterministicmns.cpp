@@ -2369,14 +2369,14 @@ bool CDeterministicMNManager::IsRepaired() const { return m_evoDb.Exists(DB_LIST
 
 void CDeterministicMNManager::CompleteRepair()
 {
-    auto dbTx = m_evoDb.BeginTransaction();
-    m_evoDb.Write(DB_LIST_REPAIRED, 1);
-    dbTx->Commit();
-    // flush it to disk
-    if (!m_evoDb.CommitRootTransaction()) {
-        LogPrintf("CDeterministicMNManager::%s -- Failed to commit to evoDB\n", __func__);
-        assert(false);
-    }
+    // Straight into the database, as WriteRepairedDiffs writes the diffs the
+    // mark vouches for. Committing the evodb transactions for it, as this used
+    // to, put whatever the connected blocks had left there on disk ahead of the
+    // coins database, so a crash before the next flush asked for another
+    // reindex; and the import thread calls this without cs_main, so it could
+    // also commit a block another thread was still connecting. A failed write
+    // throws dbwrapper_error, which the callers turn into a stop.
+    m_evoDb.GetRawDB().Write(DB_LIST_REPAIRED, 1);
 }
 
 CDeterministicMNManager::HistoryCheck CDeterministicMNManager::VerifyOrRepairDiffs(

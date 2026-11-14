@@ -425,6 +425,7 @@ BASE_SCRIPTS = [
     'rpc_wipewallettxes.py',
     'feature_uacomment.py',
     'feature_init.py',
+    'feature_init_error_stops_import.py',
     'wallet_coinbase_category.py --legacy-wallet',
     'wallet_coinbase_category.py --descriptors',
     'feature_filelock.py',

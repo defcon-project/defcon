@@ -27,6 +27,7 @@
 #include <util/translation.h>
 #include <stacktraces.h>
 #include <util/url.h>
+#include <validation.h>
 
 #include <functional>
 #include <stdio.h>
@@ -248,6 +249,11 @@ static bool AppInit(NodeContext& node, int argc, char* argv[])
 #endif
     if (fRet) {
         WaitForShutdown();
+    } else if (node.chainman && node.chainman->m_load_block.joinable()) {
+        // The start failed after the block import began. Ask the import to
+        // stop, as the GUI does on a failed start: Shutdown() waits for that
+        // thread, which otherwise runs a -reindex or -loadblock to its end.
+        StartShutdown();
     }
     Interrupt(node);
     Shutdown(node);

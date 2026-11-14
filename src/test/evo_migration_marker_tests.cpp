@@ -5,8 +5,11 @@
 #include <dbwrapper.h>
 #include <evo/deterministicmns.h>
 #include <evo/evodb.h>
+#include <sync.h>
 #include <test/util/setup_common.h>
+#include <util/check.h>
 #include <util/system.h>
+#include <validation.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -49,6 +52,49 @@ BOOST_AUTO_TEST_CASE(a_newer_database_counts_as_migrated)
     BOOST_CHECK(!CDeterministicMNManager::MigrationAlreadyDone(db2, 2));
     BOOST_CHECK(!CDeterministicMNManager::MigrationAlreadyDone(db2, 3));
     BOOST_CHECK(!CDeterministicMNManager::MigrationAlreadyDone(db2, 4));
+}
+
+// The repair mark goes into the database by itself. It used to commit the
+// evodb transactions on its way: the block a thread was still connecting, and
+// the connected blocks the root transaction holds until the next flush of the
+// coins database, reached the disk with it, ahead of the coins.
+BOOST_FIXTURE_TEST_CASE(repair_mark_leaves_the_transactions_alone, TestingSetup)
+{
+    // The node's own evodb (LoadChainstate opens it on disk) and its manager;
+    // nothing has marked the history yet.
+    CEvoDB& evodb = *Assert(m_node.evodb);
+    CDeterministicMNManager& dmnman = *Assert(m_node.dmnman);
+    const std::string committed_key{"r09_committed"};
+    const std::string open_key{"r09_open"};
+    BOOST_REQUIRE(!dmnman.IsRepaired());
+    BOOST_REQUIRE(!evodb.GetRawDB().Exists(committed_key));
+    // a connected block: committed into the root transaction, not yet flushed
+    {
+        auto tx = evodb.BeginTransaction();
+        evodb.Write(committed_key, 1);
+        tx->Commit();
+    }
+    // a block still being connected: its transaction is open
+    auto open = evodb.BeginTransaction();
+    evodb.Write(open_key, 1);
+
+    dmnman.CompleteRepair();
+    BOOST_CHECK(dmnman.IsRepaired());
+    // The database itself, which the next start reads (after a crash too),
+    // holds the mark and neither block.
+    BOOST_CHECK(evodb.GetRawDB().Exists(std::string{"dmn_R1"}));
+    BOOST_CHECK(!evodb.GetRawDB().Exists(committed_key));
+    BOOST_CHECK(!evodb.GetRawDB().Exists(open_key));
+    // The open transaction is still open, with its write in it, and rolls back.
+    BOOST_CHECK(!WITH_LOCK(evodb.cs, return evodb.GetCurTransaction().IsClean()));
+    BOOST_CHECK(evodb.Exists(open_key));
+    open->Rollback();
+    BOOST_CHECK(!evodb.Exists(open_key));
+    // The connected block is where it was, in the root transaction.
+    BOOST_CHECK(evodb.Exists(committed_key));
+    // A manager made afresh on the same database reads the mark.
+    CDeterministicMNManager fresh(m_node.chainman->ActiveChainstate(), evodb);
+    BOOST_CHECK(fresh.IsRepaired());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
