@@ -414,7 +414,11 @@ RPCHelpMan importprunedfunds()
 
     CTransactionRef tx_ref = MakeTransactionRef(tx);
     if (pwallet->IsMine(*tx_ref)) {
-        pwallet->AddToWallet(std::move(tx_ref), confirm);
+        if (!pwallet->AddToWallet(std::move(tx_ref), confirm)) {
+            // Only a failed database write returns nothing. The transaction would be gone after a restart, and
+            // the rescan of the next start does not reach back to its block.
+            throw JSONRPCError(RPC_WALLET_ERROR, "The transaction could not be written to the wallet database");
+        }
         return NullUniValue;
     }
 

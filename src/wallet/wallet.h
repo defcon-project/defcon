@@ -793,11 +793,20 @@ private:
     std::atomic<bool> fAbortRescan{false}; // reset by WalletRescanReserver::reserve()
     std::atomic<bool> fScanningWallet{false}; // controlled by WalletRescanReserver
     std::atomic<bool> m_attaching_chain{false};
-    //! Set once a block notification (blockConnected, blockDisconnected) left by exception: this wallet did not
-    //! finish that block, so the best block it records on disk (chainStateFlushed) must not move past it, and
-    //! the next start rescans from the recorded one. Never cleared: an exception that leaves a notification ends
-    //! the node (a storage error after an orderly shutdown, anything else at the thread boundary).
+    //! Set once the database is behind what this wallet has processed: a block notification (blockConnected,
+    //! blockDisconnected) left by exception, or a transaction could not be written to the database
+    //! (TxWriteFailed). The best block recorded on disk (chainStateFlushed) must not move past that, and the
+    //! next start rescans from the recorded one. Never cleared: an exception that leaves a notification ends the
+    //! node (a storage error after an orderly shutdown, anything else at the thread boundary), and after a
+    //! failed write only that rescan brings the database back in line.
     std::atomic<bool> m_block_processing_failed{false};
+    //! How many times a transaction could not be written to the database. A rescan compares it around a block
+    //! to tell whether everything it found there was saved (ScanForWalletTransactions).
+    uint64_t m_tx_write_failures GUARDED_BY(cs_wallet){0};
+    //! The transactions whose current state is in memory only, because their last write failed (TxWriteFailed).
+    //! Whatever processes one of them again writes it again, changed or not (AddToWallet, MarkConflicted), so
+    //! that a repeated rescan or import does not report a success the database does not hold.
+    std::set<uint256> m_unsaved_txs GUARDED_BY(cs_wallet);
     //! Transient CoinJoin state; stopping from NewKeyPool must not lock the client map.
     std::atomic<bool> m_mixing{false};
     std::atomic<int64_t> m_scanning_start{0};
@@ -858,6 +867,11 @@ private:
 
     /** Mark a transaction (and its in-wallet descendants) as conflicting with a particular block. */
     void MarkConflicted(const uint256& hashBlock, int conflicting_height, const uint256& hashTx);
+
+    /** A transaction's new state could not be written to the database: it is logged and remembered as unsaved
+     * (m_unsaved_txs), and the recorded best block stays where it is from here on (m_block_processing_failed),
+     * so that the next start rescans it. */
+    void TxWriteFailed(const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     /** Mark a transaction's inputs dirty, thus forcing the outputs to be recomputed */
     void MarkInputsDirty(const CTransactionRef& tx) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
@@ -1206,8 +1220,9 @@ public:
         std::optional<int> last_scanned_height;
 
         //! Height of the most recent block that could not be scanned due to
-        //! read errors or pruning. Will be set if status is FAILURE, unset if
-        //! status is SUCCESS, and may or may not be set if status is
+        //! read errors or pruning, or whose transactions could not all be
+        //! written to the wallet database. Will be set if status is FAILURE,
+        //! unset if status is SUCCESS, and may or may not be set if status is
         //! USER_ABORT.
         uint256 last_failed_block;
     };
