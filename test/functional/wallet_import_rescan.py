@@ -20,7 +20,6 @@ happened previously.
 """
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.governance import EXPECTED_STDERR_NO_GOV_PRUNE
 from test_framework.util import (
     assert_equal,
     set_node_times,
@@ -107,20 +106,22 @@ class Variant(collections.namedtuple("Variant", "call data rescan prune")):
                 assert_equal("involvesWatchonly" not in address, True)
 
 
-# List of Variants for each way a key or address could be imported.
-IMPORT_VARIANTS = [Variant(*variants) for variants in itertools.product(Call, Data, Rescan, (False, True))]
+# List of Variants for each way a key or address could be imported. None imports to a pruned node: DeFCoN does not
+# support pruning (-prune is not an option).
+IMPORT_VARIANTS = [Variant(*variants) for variants in itertools.product(Call, Data, Rescan, (False,))]
 
-# List of nodes to import keys to. Half the nodes will have pruning disabled,
-# half will have it enabled. Different nodes will be used for imports that are
+# List of nodes to import keys to, none of them pruned (DeFCoN does not support
+# pruning). Different nodes will be used for imports that are
 # expected to cause rescans, and imports that are not expected to cause
 # rescans, in order to prevent rescans during later imports picking up
 # transactions associated with earlier imports. This makes it easier to keep
 # track of expected balances and transactions.
 ImportNode = collections.namedtuple("ImportNode", "prune rescan")
-IMPORT_NODES = [ImportNode(*fields) for fields in itertools.product((False, True), repeat=2)]
+IMPORT_NODES = [ImportNode(False, rescan) for rescan in (False, True)]
 
-# Rescans start at the earliest block up to 2 hours before the key timestamp.
-TIMESTAMP_WINDOW = 2 * 60 * 60
+# Rescans start at the earliest block up to TIMESTAMP_WINDOW before the key timestamp: DeFCoN's (src/chain.h) is
+# MAX_FUTURE_BLOCK_TIME, three minutes, not two hours.
+TIMESTAMP_WINDOW = 3 * 60
 
 AMOUNT_DUST = 0.00000546
 
@@ -141,10 +142,6 @@ class ImportRescanTest(BitcoinTestFramework):
 
     def setup_network(self):
         self.extra_args = [[] for _ in range(self.num_nodes)]
-        for i, import_node in enumerate(IMPORT_NODES, 2):
-            if import_node.prune:
-                # txindex is enabled by default in Dash and needs to be disabled for import-rescan.py
-                self.extra_args[i] += ["-prune=1", "-txindex=0", "-reindex"]
 
         self.add_nodes(self.num_nodes, extra_args=self.extra_args)
 
@@ -210,9 +207,6 @@ class ImportRescanTest(BitcoinTestFramework):
             variant.expected_balance += variant.sent_amount
             variant.expected_txs += 1
             variant.check(variant.sent_txid, variant.sent_amount, variant.confirmation_height)
-        for i, import_node in enumerate(IMPORT_NODES, 2):
-            if import_node.prune:
-                self.stop_node(i, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
 
 
 

@@ -388,6 +388,9 @@ class PruneTest(BitcoinTestFramework):
         self.restart_node(5, extra_args=["-disablegovernance", "-txindex=0", "-prune=550"] + DEPLOYMENT_ARGS, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE) # restart to trigger rescan
         self.log.info("Success")
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_pruning()
+
     def run_test(self):
         self.log.info("Warning! This test requires 4GB of disk space")
 

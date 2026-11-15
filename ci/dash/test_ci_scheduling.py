@@ -967,6 +967,7 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
             'feature_versionbits_warning.py', 'interface_zmq.py', 'p2p_blockfilters.py',
             'feature_bip68_sequence.py', 'p2p_sendheaders.py', 'p2p_sendheaders_compressed.py',
             'p2p_unrequested_blocks.py', 'p2p_v2_encrypted.py',
+            'wallet_import_rescan.py',
         ]), sorted(name for name, _ in functional_gate.read_gate()))
         functional = run_script(step_text(self.checks, 'Functional tests (named gate)'))
         self.assertIn('python3 ci/dash/functional_gate.py order --shard "$shard" > "$gate" || exit 1\n', functional)
