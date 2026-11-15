@@ -1899,7 +1899,8 @@ static RPCHelpMan bls_generate()
         "bls generate",
         "\nGenerates a new BLS secret/public key pair and returns it.\n"
         "With the wallet built in, it needs a loaded wallet, unlocked if it is encrypted, and also stores the\n"
-        "new secret key in that wallet's BLS key store.\n"
+        "new secret key in that wallet's BLS key store. A descriptor wallet stores it too, but does not count\n"
+        "payments to its BLS address as its own (see listblsaddresses).\n"
         "The reply shows the secret key: anyone who has it can sign as the masternode operator, so keep it private.\n",
         {
             {"legacy", RPCArg::Type::BOOL, RPCArg::Default{false}, "Show the public key in the legacy BLS scheme, which only the\n"

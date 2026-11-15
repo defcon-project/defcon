@@ -5114,9 +5114,10 @@ static RPCHelpMan upgradewallet()
 static RPCHelpMan listblsaddresses()
 {
     return RPCHelpMan{"listblsaddresses",
-        "\nLists groups of addresses which have had their common ownership\n"
-        "made public by common use as inputs or as the resulting change\n"
-        "in past transactions\n",
+        "\nLists the addresses of the BLS keys this wallet stores.\n"
+        "A legacy wallet counts payments to these addresses as its own. A descriptor wallet keeps the keys\n"
+        "but does not: a payment to one of these addresses is not shown in its balance or transactions.\n"
+        "To receive at a BLS address, use a legacy wallet.\n",
         {},
         RPCResult{
             RPCResult::Type::ARR, "", "",

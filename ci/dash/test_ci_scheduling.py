@@ -953,6 +953,7 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
             'rpc_rawtransaction.py', 'wallet_balance.py', 'interface_bitcoin_cli.py', 'feature_coinstatsindex.py',
             'wallet_labels.py', 'wallet_orphanedreward.py', 'feature_txindex.py', 'wallet_bls_locked.py',
             'wallet_coinbase_category.py',
+            'wallet_bls_change.py',
             'p2p_tx_download.py', 'wallet_avoidreuse.py', 'wallet_txn_doublespend.py', 'wallet_txn_clone.py',
             'rpc_createmultisig.py', 'mempool_reorg.py', 'interface_rest.py', 'mempool_spend_coinbase.py',
             'rpc_packages.py',

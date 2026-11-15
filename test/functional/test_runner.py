@@ -280,6 +280,7 @@ BASE_SCRIPTS = [
     'wallet_dumpwallet_bls.py',
     'wallet_importmulti_bls.py',
     'wallet_bls_locked.py',
+    'wallet_bls_change.py',
     'feature_timestampindex.py',
     'feature_spentindex.py',
     'rpc_decodescript.py',

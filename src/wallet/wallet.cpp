@@ -3713,7 +3713,9 @@ bool CWallet::CreateTransactionInternal(
     unsigned int nSubtractFeeFromAmount = 0;
     for (const auto& recipient : vecSend)
     {
-        if (recipient.scriptPubKey.size() >= CPubKey::BLS_PUBLIC_KEY_SIZE + 2)
+        // Only a payment to a BLS public key: a size test also caught any long script, such as a
+        // data carrier or a multisig one, and sent its change to a new BLS key as well.
+        if (recipient.scriptPubKey.IsPayToBLSPublicKey())
         {
             involveBLSdest = true;
         }
@@ -3774,7 +3776,10 @@ bool CWallet::CreateTransactionInternal(
             // coin control: send change to custom address
             if (!std::get_if<CNoDestination>(&coin_control.destChange)) {
                 scriptChange = GetScriptForDestination(coin_control.destChange);
-            } else if (involveBLSdest) {
+            } else if (involveBLSdest && !IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS)) {
+                // A descriptor wallet counts only what its descriptors produce as its own, not a
+                // BLS key it stores: change sent to one would drop out of its balance. It takes
+                // the ordinary change address below.
                 scriptChange = GenerateNewBLSChangeAddress();
                 if (scriptChange.empty()) {
                     error = _("Transaction needs a BLS change address, but the wallet is locked or the BLS key could not be saved.");
