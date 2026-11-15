@@ -533,11 +533,23 @@ jobs:
       # block pays 11,000,000, not 500; and importwallet_rescan dated its key
       # Bitcoin's two-hour window after the blocks it must find, while this
       # chain's window is three minutes, so the rescan began past them.
+      #
+      # Three more came off on 2026-11-15, each read case by case. transaction_tests
+      # failed in tx_invalid alone: its two MAX_MONEY cases spent Bitcoin's
+      # 21,000,000, a valid amount under this chain's 500,000,000, so
+      # CheckTransaction let them through and every flag combination reported
+      # them; they now spend more than this chain's limit, and tx_valid gained
+      # two cases at the limit itself. denialofservice_tests
+      # failed in peer_discouragement alone: its peers kept version 0, which the
+      # protocol floor in SendMessages disconnects, so the peer below the
+      # discouragement threshold was dropped for its version, not its score; they
+      # now carry the version a handshake gives them. validation_chainstate_tests
+      # needed nothing: both its cases pass on this tree, whatever failed there
+      # when the gate was inverted (#169) has since been fixed elsewhere.
       #   still to triage:                       bip324_tests, bip39_tests,
-      #                                          denialofservice_tests, evo_utils_tests,
+      #                                          evo_utils_tests,
       #                                          governance_validators_tests,
-      #                                          transaction_tests, util_tests,
-      #                                          validation_chainstate_tests
+      #                                          util_tests
       #
       # The suites run one process each, as many at a time as the runner has
       # CPUs (ci/dash/unit_suites.py). In one process, one after another, they
@@ -559,7 +571,7 @@ jobs:
           cd "build-ci/DeFCoN-${{ matrix.build_target }}"
           make -j"$(nproc)" -C src test/test_defcon
           python3 "$GITHUB_WORKSPACE/ci/dash/unit_suites.py" run --binary ./src/test/test_defcon --jobs "$(nproc)" \
-            --exclude='bip324_tests:bip39_tests:blockencodings_tests:denialofservice_tests:descriptor_tests:dynamic_activation_thresholds_tests:evo_utils_tests:governance_validators_tests:key_io_tests:miner_tests/CreateNewBlock_validity:transaction_tests:util_tests:validation_chainstate_tests' \
+            --exclude='bip324_tests:bip39_tests:blockencodings_tests:descriptor_tests:dynamic_activation_thresholds_tests:evo_utils_tests:governance_validators_tests:key_io_tests:miner_tests/CreateNewBlock_validity:util_tests' \
             --split=dsl_service_pose_tests \
             -- --catch_system_errors=no -l test_suite
         shell: bash

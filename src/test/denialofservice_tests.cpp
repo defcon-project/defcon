@@ -337,6 +337,8 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
     const CNetAddr other_addr{ip(0xa0b0ff01)}; // Not any of addr[].
 
     std::array<CNode*, 3> nodes;
+    // Each node gets the version its handshake would have given it: SendMessages disconnects a peer below the
+    // protocol floor, and a node left at version 0 was disconnected for that rather than for its misbehavior score.
 
     banman->ClearBanned();
     NodeId id{0};
@@ -350,6 +352,7 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
                          ConnectionType::INBOUND,
                          /*inbound_onion=*/false};
     nodes[0]->SetCommonVersion(PROTOCOL_VERSION);
+    nodes[0]->nVersion = PROTOCOL_VERSION;
     peerLogic->InitializeNode(*nodes[0], NODE_NETWORK);
     nodes[0]->fSuccessfullyConnected = true;
     connman->AddTestNode(*nodes[0]);
@@ -369,6 +372,7 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
                          ConnectionType::INBOUND,
                          /*inbound_onion=*/false};
     nodes[1]->SetCommonVersion(PROTOCOL_VERSION);
+    nodes[1]->nVersion = PROTOCOL_VERSION;
     peerLogic->InitializeNode(*nodes[1], NODE_NETWORK);
     nodes[1]->fSuccessfullyConnected = true;
     connman->AddTestNode(*nodes[1]);
@@ -400,6 +404,7 @@ BOOST_AUTO_TEST_CASE(peer_discouragement)
                          ConnectionType::OUTBOUND_FULL_RELAY,
                          /*inbound_onion=*/false};
     nodes[2]->SetCommonVersion(PROTOCOL_VERSION);
+    nodes[2]->nVersion = PROTOCOL_VERSION;
     peerLogic->InitializeNode(*nodes[2], NODE_NETWORK);
     nodes[2]->fSuccessfullyConnected = true;
     connman->AddTestNode(*nodes[2]);
