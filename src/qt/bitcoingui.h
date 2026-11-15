@@ -133,6 +133,10 @@ private:
     std::unique_ptr<interfaces::Handler> m_handler_question;
     ClientModel* clientModel = nullptr;
     bool m_window_geometry_restored{false};
+    bool m_page_fit_pending{false}; //!< No saved geometry, or just switched into Abyss: the page on show is still to be fitted.
+    bool m_page_fit_centre{false}; //!< ...for a first start, which was centred: centred again when it grows.
+    bool m_theme_layout_applied{false}; //!< applyThemeLayout has laid out the wallet once.
+    bool m_theme_layout_modern{false}; //!< ...and the theme it laid it out for was Abyss.
     bool m_initial_geometry_pending{true};
     WalletFrame* walletFrame = nullptr;
 
@@ -510,6 +514,12 @@ public Q_SLOTS:
     void updateWidth();
     //! Take the window's minimum from what the wallet on display needs.
     void applyModernWindowMinimum();
+    /** The Abyss window around a page area of this size: the sidebar with
+     *  every button it shows, the menu bar and the status bar. */
+    QSize modernWindowSize(const QSize& page_area) const;
+    /** Once, for a window that had no saved geometry or was just switched into
+     *  Abyss: grow to show the page on show whole where the screen allows. */
+    void fitWalletPage();
     void fitInitialWindowGeometry();
 };
 

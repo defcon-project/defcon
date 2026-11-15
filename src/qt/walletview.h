@@ -52,6 +52,13 @@ public:
     WalletModel *getWalletModel() { return walletModel; }
     /** The sky level the Overview page asks for */
     int skyTier() const;
+    /** In Abyss the view asks for what the page on show needs, not for the
+     *  most any of its pages needs: the frame's scroll area then scrolls a
+     *  page only when that page itself does not fit. Classic themes: as before. */
+    QSize minimumSizeHint() const override;
+    /** The same for the height a page with wrapped text asks for at a width
+     *  (QStackedLayout answers for every page at once). */
+    int heightForWidth(int width) const override;
     /** Set the wallet model.
         The wallet model represents a bitcoin wallet, and offers access to the list of transactions, address book and sending
         functionality.

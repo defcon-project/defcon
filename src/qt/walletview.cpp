@@ -111,6 +111,9 @@ WalletView::WalletView(QWidget* parent) :
         addWidget(governanceListPage);
     }
 
+    // What the view asks for follows the page on show (minimumSizeHint).
+    connect(this, &QStackedWidget::currentChanged, this, [this] { updateGeometry(); });
+
     connect(overviewPage, &OverviewPage::transactionClicked, this, &WalletView::transactionClicked);
     // Clicking on a transaction on the overview pre-selects the transaction on the transaction history page
     connect(overviewPage, &OverviewPage::transactionClicked, transactionView, qOverload<const QModelIndex&>(&TransactionView::focusTransaction));
@@ -557,6 +560,20 @@ void WalletView::showProgress(const QString &title, int nProgress)
 void WalletView::trxAmount(QString amount)
 {
     transactionSum->setText(amount);
+}
+
+QSize WalletView::minimumSizeHint() const
+{
+    const QWidget* page = currentWidget();
+    if (!GUIUtil::isModernTheme() || page == nullptr) return QStackedWidget::minimumSizeHint();
+    return page->minimumSizeHint().expandedTo(page->minimumSize());
+}
+
+int WalletView::heightForWidth(int width) const
+{
+    const QWidget* page = currentWidget();
+    if (!GUIUtil::isModernTheme() || page == nullptr) return QStackedWidget::heightForWidth(width);
+    return std::max(page->heightForWidth(width), minimumSizeHint().height());
 }
 
 int WalletView::skyTier() const
