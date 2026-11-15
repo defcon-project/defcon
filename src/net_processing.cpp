@@ -956,7 +956,7 @@ private:
     /** Various helpers for headers processing, invoked by ProcessHeadersMessage() */
     /** Deal with state tracking and headers sync for peers that send the
      * occasional non-connecting header (this can happen due to BIP 130 headers
-     * announcements for blocks interacting with the 2hr (MAX_FUTURE_BLOCK_TIME) rule). */
+     * announcements for blocks interacting with the MAX_FUTURE_BLOCK_TIME rule). */
     void HandleFewUnconnectingHeaders(CNode& pfrom, Peer& peer, const std::vector<CBlockHeader>& headers)
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, g_msgproc_mutex);
     /** Return true if the headers connect to each other, false otherwise */

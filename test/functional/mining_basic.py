@@ -182,7 +182,11 @@ class MiningTest(BitcoinTestFramework):
         bad_block = copy.deepcopy(block)
         bad_block.nTime = 2**31 - 1
         assert_template(node, bad_block, 'time-too-new')
-        assert_submitblock(bad_block, 'time-too-new', 'time-too-new')
+        # The log names the limit the rule applied: the node's adjusted time plus MAX_FUTURE_BLOCK_TIME (3 minutes),
+        # not Bitcoin's two hours.
+        adjusted_time = node.mocktime + node.getnetworkinfo()['timeoffset']
+        with node.assert_debug_log([f'block timestamp too far in the future {bad_block.nTime} {adjusted_time + 3 * 60}']):
+            assert_submitblock(bad_block, 'time-too-new', 'time-too-new')
         bad_block.nTime = 0
         assert_template(node, bad_block, 'time-too-old')
         assert_submitblock(bad_block, 'time-too-old', 'time-too-old')
