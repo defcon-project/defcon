@@ -249,10 +249,18 @@ QPushButton:pressed {
 /* Keyboard focus: a white frame, as the staking button has (the normal frame
    is already blue, and blue on blue would not show). The same width, so the
    button keeps its size. After :hover and :pressed, so that it still shows
-   under the pointer. general.css and dark.css take the border off a focused
-   button (border: none); this puts it back. */
+   under the pointer. general.css takes the border off a focused button and
+   dark.css gives it Dark's own frame, taking that frame's pixel out of
+   Dark's padding; this names Abyss's frame and keeps Abyss's padding. */
 QPushButton:focus {
     border: 1px solid #ffffff;
+    padding: 3px 16px;
+}
+
+/* dark.css frames the Verify page's address book button when focused (in
+   Dark it has no border otherwise); here it stays as general.css has it. */
+QDialog#SignVerifyMessageDialog QPushButton#addressBookButton_VM:focus {
+    border: 0px solid red;
 }
 
 QPushButton:disabled {

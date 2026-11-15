@@ -718,7 +718,7 @@ QPushButton - Special case, tabbar replacement buttons
 #btnInfo:checked,
 #btnCommands:checked,
 #btnConsole:checked,
-#btnNetwork:checked,
+#btnNetTraffic:checked,
 #btnPeers:checked,
 #btnRepair:checked,
 /* Options dialog buttons */
@@ -834,6 +834,17 @@ width: 23px;
 margin-top: -5px;
 margin-bottom: -5px;
 border-radius: 11px;
+}
+
+/******************************************************
+QSplitter
+******************************************************/
+
+/* The handle between two panes shows the page behind it. Left to the
+   platform's style, the Windows one fills it with the system's window colour:
+   a white bar in the dark themes. */
+QSplitter::handle {
+    background-color: #00000000;
 }
 
 /******************************************************
