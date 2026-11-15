@@ -19,6 +19,7 @@
 #include <consensus/merkle.h>
 #include <deploymentstatus.h>
 #include <dbwrapper.h>
+#include <util/translation.h>
 #include <validation.h>
 
 
@@ -204,7 +205,12 @@ bool CalcCbTxMerkleRootQuorums(const CBlock& block, const CBlockIndex* pindexPre
 
     auto retVal = quorum_block_processor.GetQcHashes(pindexPrev);
     if (!retVal) {
-        return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "commitment-not-found");
+        // A quorum the index of mined commitments lists has no readable commitment record (GetQcHashes logged which
+        // one). That is damage to this node's own database, not a fault of the block: marking the block invalid would
+        // keep the node off the chain for good, even after the database is rebuilt. Stop in order, name the way out.
+        return AbortNode(state, "Found EvoDB inconsistency: the record of a mined quorum commitment is missing or "
+                                "unreadable. Restart with -reindex to rebuild the databases.",
+                         _("Error reading from database, shutting down."));
     }
     // The returned quorums are in reversed order, so the most recent one is at index 0
     auto qcHashes = std::move(retVal.value());
