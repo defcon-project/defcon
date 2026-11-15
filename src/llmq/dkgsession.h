@@ -25,6 +25,7 @@ class CDeterministicMN;
 class CMasternodeMetaMan;
 class CSporkManager;
 class PeerManager;
+struct DKGSessionHandlerTestAccess;
 
 using CDeterministicMNCPtr = std::shared_ptr<const CDeterministicMN>;
 
@@ -276,6 +277,7 @@ class CDKGSession
     friend class CDKGSessionHandler;
     friend class CDKGSessionManager;
     friend class CDKGLogger;
+    friend struct ::DKGSessionHandlerTestAccess;
 
 private:
     const Consensus::LLMQParams params;
