@@ -39,6 +39,8 @@ namespace llmq
 
 class CDKGSessionManager
 {
+    friend struct ::DKGSessionHandlerTestAccess;
+
     static constexpr int64_t MAX_CONTRIBUTION_CACHE_TIME = 60 * 1000;
 
 private:

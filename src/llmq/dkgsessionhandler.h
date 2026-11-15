@@ -9,6 +9,7 @@
 #include <saltedhasher.h>
 
 #include <atomic>
+#include <functional>
 #include <list>
 #include <map>
 #include <unordered_map>
@@ -30,6 +31,7 @@ class CMasternodeMetaMan;
 class CNode;
 class CSporkManager;
 class PeerManager;
+struct DKGSessionHandlerTestAccess;
 
 namespace llmq
 {
@@ -158,6 +160,7 @@ class CDKGSessionHandler
 {
 private:
     friend class CDKGSessionManager;
+    friend struct ::DKGSessionHandlerTestAccess;
 
 private:
     std::atomic<bool> stopRequested{false};
@@ -179,6 +182,9 @@ private:
     QuorumPhase phase GUARDED_BY(cs_phase_qhash) {QuorumPhase::Idle};
     uint256 quorumHash GUARDED_BY(cs_phase_qhash);
 
+    // Written only by the phase handler thread, through PublishSession() and under cs_phase_qhash, so that
+    // the thread may read it without the lock. Every other thread reaches it only under cs_phase_qhash (the
+    // getters below), and a replaced session is destroyed after that lock is released.
     std::unique_ptr<CDKGSession> curSession;
     std::thread phaseHandlerThread;
     std::string m_thread_name;
@@ -203,13 +209,20 @@ public:
     void StartThread(CConnman& connman, PeerManager& peerman);
     void StopThread();
 
-    bool GetContribution(const uint256& hash, CDKGContribution& ret) const;
-    bool GetComplaint(const uint256& hash, CDKGComplaint& ret) const;
-    bool GetJustification(const uint256& hash, CDKGJustification& ret) const;
-    bool GetPrematureCommitment(const uint256& hash, CDKGPrematureCommitment& ret) const;
+    bool GetContribution(const uint256& hash, CDKGContribution& ret) const EXCLUSIVE_LOCKS_REQUIRED(cs_phase_qhash);
+    bool GetComplaint(const uint256& hash, CDKGComplaint& ret) const EXCLUSIVE_LOCKS_REQUIRED(cs_phase_qhash);
+    bool GetJustification(const uint256& hash, CDKGJustification& ret) const EXCLUSIVE_LOCKS_REQUIRED(cs_phase_qhash);
+    bool GetPrematureCommitment(const uint256& hash, CDKGPrematureCommitment& ret) const EXCLUSIVE_LOCKS_REQUIRED(cs_phase_qhash);
 
 private:
     bool InitNewQuorum(const CBlockIndex* pQuorumBaseBlockIndex);
+    /**
+     * Prepares `session` with `prepare` and then makes it the current one on every path: when `prepare` returns
+     * false, and when it throws, in which case the same exception is rethrown after the swap. The swap is done
+     * under cs_phase_qhash, and the replaced session is destroyed after the lock is released.
+     */
+    bool PublishSession(std::unique_ptr<CDKGSession> session, const std::function<bool(CDKGSession&)>& prepare)
+        EXCLUSIVE_LOCKS_REQUIRED(!cs_phase_qhash);
 
     std::pair<QuorumPhase, uint256> GetPhaseAndQuorumHash() const;
 

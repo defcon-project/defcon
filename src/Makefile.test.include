@@ -161,6 +161,7 @@ BITCOIN_TESTS =\
   test/limitedmap_tests.cpp \
   test/llmq_blockprocessor_tests.cpp \
   test/llmq_dkg_tests.cpp \
+  test/llmq_dkgsession_handler_tests.cpp \
   test/llmq_scale_simulator_tests.cpp \
   test/chainlock_profile_resolver_tests.cpp \
   test/chainlock_finality_conflict_model_tests.cpp \

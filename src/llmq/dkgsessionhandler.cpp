@@ -25,6 +25,7 @@
 #include <util/underlying.h>
 
 #include <chrono>
+#include <exception>
 #include <thread>
 
 namespace llmq
@@ -414,26 +415,54 @@ bool CDKGSessionHandler::InitNewQuorum(const CBlockIndex* pQuorumBaseBlockIndex)
         return false;
     }
 
-    curSession = std::make_unique<CDKGSession>(pQuorumBaseBlockIndex, params, blsWorker, m_dmnman, dkgManager,
-                                               dkgDebugManager, m_mn_metaman, m_mn_activeman, m_sporkman);
+    auto session = std::make_unique<CDKGSession>(pQuorumBaseBlockIndex, params, blsWorker, m_dmnman, dkgManager,
+                                                 dkgDebugManager, m_mn_metaman, m_mn_activeman, m_sporkman);
 
-    // A type that does not form at this cycle -- never on this network, or past its formation
-    // end -- has no members by design, and that is not a failure. Same gate as the member list.
-    // The fresh session above still replaces the previous one, so a retired type keeps nothing.
-    if (!IsQuorumTypeEnabled(params.type, pQuorumBaseBlockIndex->pprev)) {
-        LogPrint(BCLog::LLMQ_DKG, "CDKGSessionManager::%s -- height[%d] %s qi[%d] does not form at this height\n", __func__,
-                 pQuorumBaseBlockIndex->nHeight, params.name, quorumIndex);
-        return false;
+    // The fresh session replaces the previous one on every path, also when it does not form or its
+    // initialization fails or throws, so a retired type keeps nothing; it is prepared before anyone else
+    // can reach it.
+    const char* const func{__func__}; // the log lines keep naming this function, not the lambda
+    return PublishSession(std::move(session), [&](CDKGSession& fresh) {
+        // A type that does not form at this cycle -- never on this network, or past its formation
+        // end -- has no members by design, and that is not a failure. Same gate as the member list.
+        if (!IsQuorumTypeEnabled(params.type, pQuorumBaseBlockIndex->pprev)) {
+            LogPrint(BCLog::LLMQ_DKG, "CDKGSessionManager::%s -- height[%d] %s qi[%d] does not form at this height\n", func,
+                     pQuorumBaseBlockIndex->nHeight, params.name, quorumIndex);
+            return false;
+        }
+
+        if (!fresh.Init(m_mn_activeman->GetProTxHash(), quorumIndex)) {
+            LogPrintf("CDKGSessionManager::%s -- height[%d] quorum initialization failed for %s qi[%d]\n", func,
+                      pQuorumBaseBlockIndex->nHeight, fresh.params.name, quorumIndex);
+            return false;
+        }
+
+        LogPrintf("CDKGSessionManager::%s -- height[%d] quorum initialization OK for %s qi[%d]\n", func, pQuorumBaseBlockIndex->nHeight, fresh.params.name, quorumIndex);
+        return true;
+    });
+}
+
+bool CDKGSessionHandler::PublishSession(std::unique_ptr<CDKGSession> session,
+                                        const std::function<bool(CDKGSession&)>& prepare)
+{
+    AssertLockNotHeld(cs_phase_qhash);
+    bool prepared{false};
+    std::exception_ptr error;
+    try {
+        prepared = prepare(*session);
+    } catch (...) {
+        error = std::current_exception();
     }
-
-    if (!curSession->Init(m_mn_activeman->GetProTxHash(), quorumIndex)) {
-        LogPrintf("CDKGSessionManager::%s -- height[%d] quorum initialization failed for %s qi[%d]\n", __func__,
-                  pQuorumBaseBlockIndex->nHeight, curSession->params.name, quorumIndex);
-        return false;
+    {
+        // The network threads read the current session under this lock (CDKGSessionManager::Get*), so
+        // none of them is inside the previous one once the swap is done.
+        LOCK(cs_phase_qhash);
+        curSession.swap(session);
     }
-
-    LogPrintf("CDKGSessionManager::%s -- height[%d] quorum initialization OK for %s qi[%d]\n", __func__, pQuorumBaseBlockIndex->nHeight, curSession->params.name, quorumIndex);
-    return true;
+    // The previous session, destroyed outside the lock.
+    session.reset();
+    if (error) std::rethrow_exception(error);
+    return prepared;
 }
 
 std::pair<QuorumPhase, uint256> CDKGSessionHandler::GetPhaseAndQuorumHash() const
@@ -884,6 +913,7 @@ void CDKGSessionHandler::PhaseHandlerThread(CConnman& connman, PeerManager& peer
 
 bool CDKGSessionHandler::GetContribution(const uint256& hash, CDKGContribution& ret) const
 {
+    AssertLockHeld(cs_phase_qhash);
     LOCK(curSession->invCs);
     auto it = curSession->contributions.find(hash);
     if (it != curSession->contributions.end()) {
@@ -895,6 +925,7 @@ bool CDKGSessionHandler::GetContribution(const uint256& hash, CDKGContribution& 
 
 bool CDKGSessionHandler::GetComplaint(const uint256& hash, CDKGComplaint& ret) const
 {
+    AssertLockHeld(cs_phase_qhash);
     LOCK(curSession->invCs);
     auto it = curSession->complaints.find(hash);
     if (it != curSession->complaints.end()) {
@@ -906,6 +937,7 @@ bool CDKGSessionHandler::GetComplaint(const uint256& hash, CDKGComplaint& ret) c
 
 bool CDKGSessionHandler::GetJustification(const uint256& hash, CDKGJustification& ret) const
 {
+    AssertLockHeld(cs_phase_qhash);
     LOCK(curSession->invCs);
     auto it = curSession->justifications.find(hash);
     if (it != curSession->justifications.end()) {
@@ -917,6 +949,7 @@ bool CDKGSessionHandler::GetJustification(const uint256& hash, CDKGJustification
 
 bool CDKGSessionHandler::GetPrematureCommitment(const uint256& hash, CDKGPrematureCommitment& ret) const
 {
+    AssertLockHeld(cs_phase_qhash);
     LOCK(curSession->invCs);
     auto it = curSession->prematureCommitments.find(hash);
     if (it != curSession->prematureCommitments.end() && curSession->validCommitments.count(hash)) {
