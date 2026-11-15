@@ -4859,7 +4859,7 @@ RPCHelpMan walletprocesspsbt()
     "       \"NONE|ANYONECANPAY\"\n"
     "       \"SINGLE|ANYONECANPAY\""},
             {"bip32derivs", RPCArg::Type::BOOL, RPCArg::Default{true}, "Include BIP 32 derivation paths for public keys if we know them"},
-            {"finalize", RPCArg::Type::BOOL, RPCArg::Default{true}, "Also finalize inputs if possible"},
+            {"finalize", RPCArg::Type::BOOL, RPCArg::Default{true}, "Also finalize inputs if possible. An input signed with a BLS key is finalized either way"},
         },
         RPCResult{
             RPCResult::Type::OBJ, "", "",

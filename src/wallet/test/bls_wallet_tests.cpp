@@ -5,11 +5,15 @@
 #include <base58.h>
 #include <bls/bls.h>
 #include <coins.h>
+#include <policy/policy.h>
 #include <psbt.h>
+#include <script/interpreter.h>
 #include <script/sign.h>
 #include <script/signingprovider.h>
 #include <script/standard.h>
+#include <streams.h>
 #include <util/translation.h>
+#include <version.h>
 #include <wallet/crypter.h>
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/test/wallet_test_fixture.h>
@@ -20,6 +24,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -283,6 +288,79 @@ BOOST_AUTO_TEST_CASE(psbt_signs_bls_inputs_only_with_the_wallets_own_keys)
     BOOST_CHECK(!FillsSignature(*other, held, /*sign=*/true, /*p2sh=*/true));
     BOOST_CHECK(!FillsSignature(*descriptor, held, /*sign=*/true, /*p2sh=*/true));
     BOOST_CHECK(!FillsSignature(*holder, descriptor_held, /*sign=*/true, /*p2sh=*/true));
+}
+
+namespace {
+// `psbtx` through its serialized form and back, as the next step of a PSBT workflow reads it.
+std::optional<PartiallySignedTransaction> ReadBack(const PartiallySignedTransaction& psbtx, std::string& error)
+{
+    CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
+    stream << psbtx;
+    PartiallySignedTransaction back;
+    if (!DecodeRawPSBT(back, MakeByteSpan(stream), error)) return std::nullopt;
+    return back;
+}
+} // namespace
+
+// walletprocesspsbt with finalize=false left a signed BLS input as a partial signature. That record holds the
+// signer's public key, and the reader takes only the 33 or 65 bytes of an ECDSA key: with the 48 of a BLS key the
+// next step refused the PSBT this node had written, its own decodepsbt, combinepsbt and finalizepsbt included. What a
+// wallet writes has to read back; an ECDSA input stays a partial signature, as before.
+BOOST_AUTO_TEST_CASE(an_unfinalized_psbt_with_bls_inputs_reads_back)
+{
+    auto descriptor = MakeWallet(m_node, "bls-roundtrip-descriptor", /*descriptors=*/true);
+    auto legacy = MakeWallet(m_node, "bls-roundtrip-legacy", /*descriptors=*/false);
+    CTxDestination dest;
+    bilingual_str error;
+    BOOST_REQUIRE(descriptor->GetNewDestination("", dest, error));
+    const CScript ecdsa = GetScriptForDestination(dest);
+    const CScript descriptor_bls = NewBLSScript(*descriptor);
+    const CScript legacy_bls = NewBLSScript(*legacy);
+
+    for (const bool p2sh : {false, true}) {
+        const std::string variant{p2sh ? "pay-to-script-hash" : "bare"};
+        const auto paid = [&](const CScript& bls) { return p2sh ? GetScriptForDestination(ScriptHash(bls)) : bls; };
+        const BLSSpend spend = MakeSpend({ecdsa, paid(descriptor_bls), paid(legacy_bls)});
+        PartiallySignedTransaction psbtx{spend.tx};
+        for (auto& input : psbtx.inputs) input.non_witness_utxo = spend.prev;
+        if (p2sh) {
+            psbtx.inputs[1].redeem_script = descriptor_bls;
+            psbtx.inputs[2].redeem_script = legacy_bls;
+        }
+
+        // Each wallet signs what it holds without finalizing, as two walletprocesspsbt calls with finalize=false,
+        // and each result is read back before the next step.
+        bool complete{false};
+        std::string read_error;
+        BOOST_REQUIRE(descriptor->FillPSBT(psbtx, complete, SIGHASH_ALL, /*sign=*/true, /*bip32derivs=*/true,
+                                           /*n_signed=*/nullptr, /*finalize=*/false) == TransactionError::OK);
+        auto first = ReadBack(psbtx, read_error);
+        BOOST_REQUIRE_MESSAGE(first, variant << ": the descriptor wallet's PSBT does not read back: " << read_error);
+        BOOST_REQUIRE(legacy->FillPSBT(*first, complete, SIGHASH_ALL, /*sign=*/true, /*bip32derivs=*/true,
+                                       /*n_signed=*/nullptr, /*finalize=*/false) == TransactionError::OK);
+        auto second = ReadBack(*first, read_error);
+        BOOST_REQUIRE_MESSAGE(second, variant << ": the legacy wallet's PSBT does not read back: " << read_error);
+
+        // The ECDSA input is a partial signature still; each BLS input is final, with no partial signature left.
+        BOOST_CHECK(!PSBTInputSigned(second->inputs[0]));
+        BOOST_CHECK_EQUAL(second->inputs[0].partial_sigs.size(), 1U);
+        for (const size_t i : {size_t{1}, size_t{2}}) {
+            BOOST_CHECK_MESSAGE(PSBTInputSigned(second->inputs[i]), variant << ": BLS input " << i << " is not final");
+            BOOST_CHECK(second->inputs[i].partial_sigs.empty());
+        }
+
+        // The finalizer completes the PSBT, and every input of the transaction it gives verifies.
+        CMutableTransaction final_tx;
+        BOOST_REQUIRE_MESSAGE(FinalizeAndExtractPSBT(*second, final_tx), variant << ": the PSBT does not finalize");
+        for (unsigned int i = 0; i < final_tx.vin.size(); ++i) {
+            const CTxOut& prev = spend.prev->vout[i];
+            ScriptError err{SCRIPT_ERR_OK};
+            BOOST_CHECK_MESSAGE(VerifyScript(final_tx.vin[i].scriptSig, prev.scriptPubKey, STANDARD_SCRIPT_VERIFY_FLAGS,
+                                             MutableTransactionSignatureChecker(&final_tx, i, prev.nValue, MissingDataBehavior::FAIL),
+                                             &err),
+                                variant << ": input " << i << ": " << ScriptErrorString(err));
+        }
+    }
 }
 
 namespace {
