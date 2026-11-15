@@ -941,7 +941,7 @@ QToolBar > QToolButton:disabled {
 }
 
 /* The white wordmark, because this rule serves Light and Dark and both put the
-   navigation on a dark or saturated bar -- Light's is #008de4. Abyss and
+   navigation on a dark or saturated bar -- Light's is #0072b9. Abyss and
    Traditional override it with the blue drawing in their own files. */
 QToolBar QLabel#lblToolbarLogo {
     padding: 12px;
