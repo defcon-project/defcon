@@ -15,6 +15,7 @@
 #include <QStyle>
 #include <QThread>
 #include <QToolButton>
+#include <QToolTip>
 #include <QWidgetAction>
 
 #include <algorithm>
@@ -125,13 +126,15 @@ public:
         return new PairedMenu(menu);
     }
 
-    QWidgetAction* add(QAction* left, QAction* right, QMenu* submenu)
+    QWidgetAction* add(QAction* left, QAction* right, QMenu* submenu, const QString& left_label, const QString& right_label)
     {
         auto pair = std::make_unique<Pair>();
         Pair* p = pair.get();
         p->action = new QWidgetAction(m_menu);
         p->action->setObjectName("abyssMenuPairAction");
         p->row = new PairRow(m_menu, left, right, submenu != nullptr);
+        p->row->cells[0]->setLabel(left_label);
+        p->row->cells[1]->setLabel(right_label);
         p->submenu = submenu;
         for (PairCell* cell : p->row->cells) cell->setRowAction(p->action);
         p->action->setDefaultWidget(p->row);
@@ -156,6 +159,8 @@ protected:
             return mouse(static_cast<QMouseEvent*>(event));
         case QEvent::KeyPress:
             return key(static_cast<QKeyEvent*>(event));
+        case QEvent::ToolTip:
+            return toolTip(static_cast<QHelpEvent*>(event));
         case QEvent::Hide:
             // A new popup starts without a current cell, as QMenu starts without a current action.
             m_take_row = nullptr;
@@ -337,6 +342,18 @@ private:
         }
     }
 
+    /** A cell with a short label of its own tells its action's full text when
+     *  the pointer rests on it; any other place in the menu is QMenu's. */
+    bool toolTip(QHelpEvent* event)
+    {
+        Pair* p = pairAt(event->pos());
+        if (!p) return false;
+        const PairCell* cell = p->row->cells[p->row->cellAt(p->row->mapFrom(m_menu, event->pos()))];
+        if (!cell->hasOwnLabel() || !cell->action()) return false;
+        QToolTip::showText(event->globalPos(), PlainText(cell->action()->text()), m_menu);
+        return true;
+    }
+
     bool key(QKeyEvent* event)
     {
         m_take_row = nullptr;
@@ -404,7 +421,8 @@ private:
             if (action->isSeparator() || !action->isVisible()) continue;
             if (Pair* p = pairOf(action)) {
                 for (int i : {0, 1}) {
-                    if (!enabled(*p, i) || MnemonicKey(cellAction(*p, i)->text()) != key) continue;
+                    // The mnemonic shown: a cell's own label carries its own.
+                    if (!enabled(*p, i) || MnemonicKey(p->row->cells[i]->label()) != key) continue;
                     if (m_menu->activeAction() == action && p->current == i) current = static_cast<int>(matches.size());
                     matches.push_back({nullptr, p, i});
                 }
@@ -450,6 +468,20 @@ PairCell::PairCell(QAction* action, QMenu* menu, bool submenu, QWidget* parent)
     setAccessibleDescription(action->statusTip());
 }
 
+QString PairCell::label() const
+{
+    if (!m_label.isEmpty()) return m_label;
+    return m_action ? m_action->text() : QString();
+}
+
+void PairCell::setLabel(const QString& label)
+{
+    if (m_label == label) return;
+    m_label = label;
+    updateGeometry();
+    update();
+}
+
 void PairCell::setSelected(bool selected)
 {
     if (m_selected == selected) return;
@@ -484,7 +516,7 @@ QStyleOptionMenuItem PairCell::option() const
     option.menuItemType = m_submenu ? QStyleOptionMenuItem::SubMenu : QStyleOptionMenuItem::Normal;
     option.checkType = QStyleOptionMenuItem::NotCheckable;
     option.menuHasCheckableItems = false;
-    QString text = m_action ? m_action->text() : QString();
+    QString text = label();
     if (m_action && !text.contains(QLatin1Char('\t')) && !m_action->shortcut().isEmpty()) {
         text += QLatin1Char('\t') + m_action->shortcut().toString(QKeySequence::NativeText);
     }
@@ -522,9 +554,9 @@ void PairCell::paintEvent(QPaintEvent*)
     m_menu->style()->drawControl(QStyle::CE_MenuItem, &option, &painter, m_menu);
 }
 
-QWidgetAction* addPair(QMenu* menu, QAction* left, QAction* right, QMenu* rightSubmenu)
+QWidgetAction* addPair(QMenu* menu, QAction* left, QAction* right, QMenu* rightSubmenu, const QString& leftLabel, const QString& rightLabel)
 {
-    return PairedMenu::of(menu)->add(left, right, rightSubmenu);
+    return PairedMenu::of(menu)->add(left, right, rightSubmenu, leftLabel, rightLabel);
 }
 
 QList<PairCell*> pairCells(QAction* row)

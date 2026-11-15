@@ -4087,6 +4087,61 @@ void AbyssTests::quickControls()
     QVERIFY(!lock->isEnabled());
 }
 
+void AbyssTests::pairCellLabels()
+{
+    // A cell given a short text of its own (U3-E): it shows that text, is
+    // measured by it and answers to its mnemonic; the action keeps its text,
+    // which stays the cell's accessible name and shows as its tooltip.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    QWidget host;
+    host.setGeometry(0, 0, 240, 300);
+    host.show();
+    QApplication::setActiveWindow(&host);
+    Settle();
+    QMenu menu(&host), plain(&host);
+    QAction a("&Al"), b("&Bravo bravo bravo"), c("&Ch");
+    const auto cells = AbyssMenus::pairCells(AbyssMenus::addPair(&menu, &a, &b, nullptr, QString(), "&Zu"));
+    const auto plain_cells = AbyssMenus::pairCells(AbyssMenus::addPair(&plain, &c, &b));
+    QCOMPARE(cells.size(), 2);
+    QVERIFY(!cells[0]->hasOwnLabel() && cells[1]->hasOwnLabel());
+    QCOMPARE(cells[0]->label(), QString("&Al"));
+    QCOMPARE(cells[1]->label(), QString("&Zu"));
+    QCOMPARE(b.text(), QString("&Bravo bravo bravo"));
+    QCOMPARE(cells[1]->accessibleName(), QString("Bravo bravo bravo"));
+    QCOMPARE(plain_cells[1]->label(), QString("&Bravo bravo bravo"));
+    QVERIFY2(cells[1]->sizeHint().width() < plain_cells[1]->sizeHint().width(),
+             qPrintable(QString("%1 and %2").arg(cells[1]->sizeHint().width()).arg(plain_cells[1]->sizeHint().width())));
+    QSignalSpy bravo(&b, &QAction::triggered);
+    const auto open = [&] {
+        CloseMenus();
+        PointAt(&host, host.mapToGlobal(QPoint(230, 290)));
+        menu.popup(host.mapToGlobal(QPoint(0, 0)));
+        Settle();
+        return menu.isVisible();
+    };
+    // The action's own mnemonic no longer reaches the cell; the label's does.
+    QVERIFY(open());
+    QTest::keyClick(&menu, Qt::Key_B);
+    Settle();
+    QCOMPARE(bravo.count(), 0);
+    CloseMenus();
+    QVERIFY(open());
+    QTest::keyClick(&menu, Qt::Key_Z);
+    Settle();
+    QCOMPARE(bravo.count(), 1);
+    QVERIFY(!menu.isVisible());
+    // A resting pointer on the labelled cell shows the action's full text.
+    QVERIFY(open());
+    QToolTip::hideText();
+    const QPoint at = cells[1]->mapTo(&menu, cells[1]->rect().center());
+    QHelpEvent help(QEvent::ToolTip, at, menu.mapToGlobal(at));
+    QApplication::sendEvent(&menu, &help);
+    QTRY_COMPARE(QToolTip::text(), QString("Bravo bravo bravo"));
+    QToolTip::hideText();
+    CloseMenus();
+}
+
 void AbyssTests::topMenus_data()
 {
     QTest::addColumn<bool>("multisig");
@@ -4114,8 +4169,9 @@ void AbyssTests::topMenus()
     auto* row = window.findChild<QWidget*>("abyssMenuControls");
     auto* wallet = window.findChild<QMenu*>("abyssWalletMenu");
     auto* tools = window.findChild<QMenu*>("abyssToolsMenu");
-    auto* security = window.findChild<QMenu*>("abyssSecurityMenu");
-    QVERIFY(row && wallet && tools && security);
+    QVERIFY(row && wallet && tools);
+    // U3-E: no Security or Staking submenu in the Abyss Wallet menu.
+    QVERIFY(!window.findChild<QMenu*>("abyssSecurityMenu"));
     QVERIFY(row->isHidden());
     QCOMPARE(window.classicMenus.size(), 4);
     const auto original_menus = window.classicMenus;
@@ -4136,13 +4192,41 @@ void AbyssTests::topMenus()
         };
         return find(menu);
     };
+    // U3-E: Open URI, encrypting, unlocking, locking and staking are left out
+    // of the Abyss menus on purpose: the padlock beside the wallet selector and
+    // the Overview's staking card do those (both checked below), and a payment
+    // link from a browser comes through the system's link handler. The
+    // classic menus keep them.
+    const QList<QAction*> elsewhere{window.openAction, window.encryptWalletAction, window.unlockWalletAction,
+                                    window.lockWalletAction, window.toggleStakingAction};
     for (QMenu* menu : original_menus) {
         for (QAction* action : menu->actions()) {
             if (action->isSeparator() || action == window.optionsAction || action == window.m_mask_values_action) continue;
+            if (elsewhere.contains(action)) {
+                QVERIFY2(!contains(wallet, action) && !contains(tools, action), qPrintable(action->text()));
+                continue;
+            }
             QVERIFY2(contains(wallet, action) || contains(tools, action) || contains(original_menus.last(), action), qPrintable(action->text()));
         }
     }
-    QCOMPARE(tools->actions().contains(window.multisigAction), multisig);
+    QVERIFY(contains(wallet, window.changePassphraseAction));
+    QCOMPARE(contains(tools, window.multisigAction), multisig);
+    if (multisig && !window.nativeMenuBar()) {
+        // With the Multisig tab: "Multisig | Wallet config file" on one row,
+        // the right cell with a short text of its own (U3-E).
+        const QList<QAction*> tool_actions = tools->actions();
+        const auto multisig_row = std::find_if(tool_actions.begin(), tool_actions.end(), [&](QAction* action) {
+            const auto cells = AbyssMenus::pairCells(action);
+            return cells.size() == 2 && cells[0]->action() == window.multisigAction;
+        });
+        QVERIFY(multisig_row != tool_actions.end());
+        const auto cells = AbyssMenus::pairCells(*multisig_row);
+        QCOMPARE(cells[1]->action(), window.openConfEditorAction);
+        QVERIFY(!cells[0]->hasOwnLabel());
+        QCOMPARE(cells[1]->label(), QString("Wallet &config file"));
+        QCOMPARE(cells[1]->accessibleName(), QString("Open Wallet Configuration File"));
+        QVERIFY(!tools->actions().contains(window.openConfEditorAction));
+    }
     auto* privacy = window.findChild<QToolButton*>("abyssPrivacyButton");
     QVERIFY(privacy);
     const bool enabled = window.encryptWalletAction->isEnabled();
@@ -4153,10 +4237,14 @@ void AbyssTests::topMenus()
     QCOMPARE(window.m_mask_values_action->isChecked(), checked);
     QCOMPARE(window.m_mask_values_action->shortcut(), shortcut);
     window.addWallet(fixture.model.get()); Settle();
+    // What the menus leave to other controls is there: the padlock (it
+    // encrypts, unlocks or locks, by the wallet's state) and the staking card.
+    auto* padlock = window.findChild<QToolButton*>("walletLockButton");
+    QVERIFY(padlock);
+    QVERIFY(window.findChild<OverviewPage*>() && window.findChild<OverviewPage*>()->findChild<QAbstractButton*>("stakingButton"));
     for (int state : {WalletModel::Unencrypted, WalletModel::Locked, WalletModel::Unlocked, WalletModel::UnlockedForMixingOnly}) {
         window.setEncryptionStatus(state);
         for (QAction* action : {window.encryptWalletAction, window.changePassphraseAction, window.unlockWalletAction, window.lockWalletAction}) {
-            QVERIFY(security->actions().contains(action));
             const bool was_enabled = action->isEnabled();
             const bool was_visible = action->isVisible();
             // A full theme change refreshes from the real fixture wallet,
@@ -5588,37 +5676,83 @@ void AbyssTests::topMenuPairs()
             const auto cells = AbyssMenus::pairCells(row);
             return cells.size() == 2 ? Pair{cells[0]->action(), cells[1]->action()} : Pair{nullptr, nullptr};
         };
+        // Wallet (U3-E): no Open URI, no Security or Staking submenu; Change
+        // Passphrase… on a row of its own.
         const QList<QAction*> w = wallet->actions();
-        QCOMPARE(w.size(), 9);
+        QCOMPARE(w.size(), 7);
         QVERIFY(pair(w[0]) == Pair(window.m_create_wallet_action, window.m_open_wallet_action));
         QVERIFY(pair(w[1]) == Pair(window.m_close_wallet_action, window.m_close_all_wallets_action));
         QVERIFY(w[2]->isSeparator());
-        QCOMPARE(w[3], window.openAction);
-        QVERIFY(pair(w[4]) == Pair(window.backupWalletAction, window.showBackupsAction));
-        QCOMPARE(w[5]->menu(), window.findChild<QMenu*>("abyssSecurityMenu"));
-        QVERIFY(w[6]->menu() && w[6]->menu()->actions().contains(window.toggleStakingAction));
-        QVERIFY(w[7]->isSeparator());
-        QCOMPARE(w[8], window.quitAction);
+        QVERIFY(pair(w[3]) == Pair(window.backupWalletAction, window.showBackupsAction));
+        QCOMPARE(w[4], window.changePassphraseAction);
+        QVERIFY(w[5]->isSeparator());
+        QCOMPARE(w[6], window.quitAction);
+        for (QAction* action : w) QVERIFY(!action->menu() || action == w[0]);
+        // Tools (U3-E): the two PSBT entries on one row, with short texts of
+        // their own; without the Multisig tab the configuration file stays alone.
         const QList<QAction*> t = tools->actions();
         QVERIFY(pair(t[0]) == Pair(window.usedSendingAddressesAction, window.usedReceivingAddressesAction));
         QVERIFY(pair(t[1]) == Pair(window.signMessageAction, window.verifyMessageAction));
-        QCOMPARE(t[2], window.m_load_psbt_action);
-        QCOMPARE(t[3], window.m_load_psbt_clipboard_action);
-        QCOMPARE(t[4], window.openConfEditorAction);
-        QVERIFY(t[5]->isSeparator());
+        QVERIFY(pair(t[2]) == Pair(window.m_load_psbt_action, window.m_load_psbt_clipboard_action));
+        QCOMPARE(t[3], window.openConfEditorAction);
+        QVERIFY(t[4]->isSeparator());
         const QList<QAction*> paired{window.m_create_wallet_action, window.m_open_wallet_action, window.m_close_wallet_action,
                                      window.m_close_all_wallets_action, window.backupWalletAction, window.showBackupsAction,
                                      window.usedSendingAddressesAction, window.usedReceivingAddressesAction,
-                                     window.signMessageAction, window.verifyMessageAction};
+                                     window.signMessageAction, window.verifyMessageAction,
+                                     window.m_load_psbt_action, window.m_load_psbt_clipboard_action};
         for (QAction* shared : paired) {
             QVERIFY(!wallet->actions().contains(shared) && !tools->actions().contains(shared));
             QVERIFY(shared->isVisible());
             QVERIFY(std::any_of(window.classicMenus.begin(), window.classicMenus.end(), [&](QMenu* m) { return m->actions().contains(shared); }));
         }
-        QCOMPARE(AbyssMenus::pairCells(w[4]).at(0)->accessibleName(), QString("Backup Wallet…"));
+        QCOMPARE(AbyssMenus::pairCells(w[3]).at(0)->accessibleName(), QString("Backup Wallet…"));
         QCOMPARE(AbyssMenus::pairCells(t[1]).at(0)->accessibleName(), QString("Sign message…"));
+        // The short texts are the cells' own: the actions keep theirs, which
+        // the classic menus show and which stay the cells' accessible names.
+        const auto psbt = AbyssMenus::pairCells(t[2]);
+        QCOMPARE(psbt.at(0)->label(), QString("&Load PSBT…"));
+        QCOMPARE(psbt.at(1)->label(), QString("P&aste PSBT…"));
+        QCOMPARE(window.m_load_psbt_action->text(), QString("&Load PSBT from file…"));
+        QCOMPARE(window.m_load_psbt_clipboard_action->text(), QString("Load PSBT from clipboard…"));
+        QCOMPARE(psbt.at(0)->accessibleName(), QString("Load PSBT from file…"));
+        QCOMPARE(psbt.at(1)->accessibleName(), QString("Load PSBT from clipboard…"));
+        QVERIFY(!AbyssMenus::pairCells(t[1]).at(0)->hasOwnLabel());
+        // The new row does not widen the menu: the Tools menu as it was (the
+        // PSBT entries and the configuration file on rows of their own, the
+        // same two pairs above) is at least as wide.
+        {
+            QMenu before(&window);
+            before.setObjectName("abyssToolsMenu");
+            AbyssMenus::addPair(&before, window.usedSendingAddressesAction, window.usedReceivingAddressesAction);
+            AbyssMenus::addPair(&before, window.signMessageAction, window.verifyMessageAction);
+            for (QAction* action : tools->actions().mid(2)) {
+                if (action == t[2]) {
+                    before.addAction(window.m_load_psbt_action);
+                    before.addAction(window.m_load_psbt_clipboard_action);
+                } else {
+                    before.addAction(action);
+                }
+            }
+            before.ensurePolished();
+            tools->ensurePolished();
+            QVERIFY2(tools->sizeHint().width() <= before.sizeHint().width(),
+                     qPrintable(QString("Tools is %1 px wide, it was %2").arg(tools->sizeHint().width()).arg(before.sizeHint().width())));
+        }
+        // A cell with a short text tells its action's full text on a resting
+        // pointer.
+        tools->popup(window.mapToGlobal(QPoint(0, 0)));
+        Settle();
+        QToolTip::hideText();
+        const QPoint at = psbt.at(1)->mapTo(tools, psbt.at(1)->rect().center());
+        QHelpEvent help(QEvent::ToolTip, at, tools->mapToGlobal(at));
+        QApplication::sendEvent(tools, &help);
+        QTRY_COMPARE(QToolTip::text(), QString("Load PSBT from clipboard…"));
+        QToolTip::hideText();
+        tools->close();
+        Settle();
         const auto rows_follow = [&] {
-            for (QAction* row : {w[0], w[1], w[4], t[0], t[1]}) {
+            for (QAction* row : {w[0], w[1], w[3], t[0], t[1], t[2]}) {
                 const Pair p = pair(row);
                 if (row->isEnabled() != (p.first->isEnabled() || p.second->isEnabled())) return false;
             }

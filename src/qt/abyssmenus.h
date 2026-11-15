@@ -31,6 +31,12 @@ class PairCell : public QWidget
 public:
     PairCell(QAction* action, QMenu* menu, bool submenu, QWidget* parent);
     QAction* action() const { return m_action; }
+    /** What the cell shows, its mnemonic included: the label it was given, or
+     *  else its action's text. A label is the cell's alone: the action keeps
+     *  its text, which stays the cell's accessible name and its tooltip. */
+    QString label() const;
+    bool hasOwnLabel() const { return !m_label.isEmpty(); }
+    void setLabel(const QString& label);
     /** Opens a list of its own (the right cell of a row given a submenu). */
     bool hasSubmenu() const { return m_submenu; }
     /** The row's current cell, drawn highlighted while its row is the menu's
@@ -53,15 +59,20 @@ private:
     QPointer<QWidgetAction> m_row;
     const bool m_submenu;
     bool m_selected{false};
+    QString m_label;
 };
 
 /** Appends to `menu` a row holding two existing actions side by side, each in
  *  a cell of its own that highlights and triggers separately. The actions are
  *  not added to the menu (and never hidden: a hidden QAction is also a
  *  disabled one, and these are shared). With `rightSubmenu`, the right cell
- *  opens that menu instead of triggering its action. Rows are meant for
- *  top-level popup menus. Returns the row's QWidgetAction. */
-QWidgetAction* addPair(QMenu* menu, QAction* left, QAction* right, QMenu* rightSubmenu = nullptr);
+ *  opens that menu instead of triggering its action. A non-empty `leftLabel`
+ *  or `rightLabel` is what that cell shows (and the mnemonic it answers to)
+ *  in place of its action's text; the action's text stays the cell's
+ *  accessible name and shows as its tooltip. Rows are meant for top-level
+ *  popup menus. Returns the row's QWidgetAction. */
+QWidgetAction* addPair(QMenu* menu, QAction* left, QAction* right, QMenu* rightSubmenu = nullptr,
+                       const QString& leftLabel = QString(), const QString& rightLabel = QString());
 
 /** A row's two cells, left then right; empty for any other action. */
 QList<PairCell*> pairCells(QAction* row);

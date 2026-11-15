@@ -36,6 +36,7 @@ private Q_SLOTS:
     void topMenus_data();
     void topMenus();
     void menuPairs();
+    void pairCellLabels();
     void menuColors();
     void darkStateRules();
     void waveBackdrop();
