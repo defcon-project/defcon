@@ -725,12 +725,14 @@ class SchedulingTest(unittest.TestCase):
         self.assertIn('tee -a "$GITHUB_STEP_SUMMARY"', report)
 
     def test_original_unit_selection_is_preserved(self):
-        # The exceptions are the ones the single process was given as '!name' filters, and nothing else selects.
+        # The exceptions are the ones the single process was given as '!name' filters, less the suites brought back
+        # since (denialofservice_tests, transaction_tests, validation_chainstate_tests: 2026-11-15), and nothing
+        # else selects.
         unit = run_script(step_text(self.checks, 'Unit suites (all but the named exceptions)'))
-        self.assertEqual(['bip324_tests:bip39_tests:blockencodings_tests:denialofservice_tests:'
+        self.assertEqual(['bip324_tests:bip39_tests:blockencodings_tests:'
                           'descriptor_tests:dynamic_activation_thresholds_tests:evo_utils_tests:'
                           'governance_validators_tests:key_io_tests:miner_tests/CreateNewBlock_validity:'
-                          'transaction_tests:util_tests:validation_chainstate_tests'],
+                          'util_tests'],
                          re.findall(r"--exclude='([^']+)'", unit))
         self.assertNotIn('--run_test', unit)
         self.assertEqual(1, unit.count('./src/test/test_defcon'))
