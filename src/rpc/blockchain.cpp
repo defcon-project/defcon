@@ -65,6 +65,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <limits>
 #include <mutex>
 
 struct CUpdatedBlock
@@ -1471,7 +1472,7 @@ RPCHelpMan getblockchaininfo()
                         {RPCResult::Type::STR_HEX, "", "block hash"},
                     }},
                 }},
-                {RPCResult::Type::OBJ, "softforks", "status of softforks in progress",
+                {RPCResult::Type::OBJ, "softforks", "status of softforks in progress. The v23.1 upgrade is listed as \"v231\", of type \"buried\", on a network that schedules its height, and is absent where it is unset",
                 {
                     {RPCResult::Type::STR, "type", "one of \"buried\", \"bip9\""},
                     {RPCResult::Type::OBJ, "bip9", "status of bip9 softforks (only for \"bip9\" type)",
@@ -1590,6 +1591,19 @@ RPCHelpMan getblockchaininfo()
                          Consensus::DEPLOYMENT_V20,
                          Consensus::DEPLOYMENT_MN_RR }) {
         SoftForkDescPushBack(&tip, softforks, consensusParams, deploy);
+    }
+    // The v23.1 bundle is one height, not a deployment of its own, so it is
+    // listed by hand in the shape of a buried one, and like one it is absent
+    // while the network has not scheduled it. That absence is how a build
+    // without the height is told from the release that carries it: both
+    // report the same version.
+    if (const int v231_height{consensusParams.nV231ActivationHeight}; v231_height != std::numeric_limits<int>::max()) {
+        UniValue rv(UniValue::VOBJ);
+        rv.pushKV("type", "buried");
+        // as for a buried deployment: active once the next block is at the height
+        rv.pushKV("active", height + 1 >= v231_height);
+        rv.pushKV("height", v231_height);
+        softforks.pushKV("v231", rv);
     }
     for (auto ehf_deploy : { /* sorted by activation block */
                              Consensus::DEPLOYMENT_WITHDRAWALS,
