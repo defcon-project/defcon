@@ -11,16 +11,15 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QSpacerItem>
 #include <QVBoxLayout>
 
-#include <tuple>
-
-EmptyStateWidget::State EmptyStateWidget::stateFor(bool modern, int rows, int unfiltered_rows, bool loading)
+EmptyStateWidget::State EmptyStateWidget::stateFor(bool modern, int rows, int unfiltered_rows, bool syncing)
 {
     if (!modern || rows > 0) return State::Hidden;
     // A filter explains an empty list better than a sync still running.
     if (unfiltered_rows > 0) return State::Filtered;
-    return loading ? State::Loading : State::Empty;
+    return syncing ? State::Syncing : State::Empty;
 }
 
 EmptyStateWidget::EmptyStateWidget(const QString& glyph, const QString& title, const QString& text,
@@ -75,7 +74,8 @@ EmptyStateWidget::EmptyStateWidget(const QString& glyph, const QString& title, c
     text_row->addWidget(m_text, 1);
     text_row->addStretch(0);
     message->addLayout(text_row);
-    message->addSpacing(16);
+    m_action_gap = new QSpacerItem(0, 16, QSizePolicy::Minimum, QSizePolicy::Fixed);
+    message->addItem(m_action_gap);
     m_action = new QPushButton(m_message);
     m_action->setObjectName("emptyStateAction");
     m_action->setMinimumWidth(150);
@@ -90,45 +90,8 @@ EmptyStateWidget::EmptyStateWidget(const QString& glyph, const QString& title, c
         }
     });
 
-    // Placeholder rows, as the list will look once its data is in.
-    m_skeleton = new QWidget(this);
-    m_skeleton->setObjectName("emptyStateSkeleton");
-    auto* skeleton = new QVBoxLayout(m_skeleton);
-    skeleton->setContentsMargins(12, 12, 12, 0);
-    skeleton->setSpacing(24);
-    for (int row = 0; row < 3; ++row) {
-        auto* line = new QHBoxLayout;
-        line->setSpacing(14);
-        auto* dot = new QFrame(m_skeleton);
-        dot->setObjectName("skeletonDot");
-        dot->setFixedSize(36, 36);
-        line->addWidget(dot);
-        auto* bars = new QVBoxLayout;
-        bars->setSpacing(9);
-        // A long bar over a short one, about three quarters and two fifths wide.
-        for (const auto& [name, width, height] : {std::tuple{"skeletonLine", 76, 11}, std::tuple{"skeletonLineShort", 42, 8}}) {
-            auto* bar_row = new QHBoxLayout;
-            bar_row->setSpacing(0);
-            auto* bar = new QFrame(m_skeleton);
-            bar->setObjectName(name);
-            bar->setFixedHeight(height);
-            bar_row->addWidget(bar, width);
-            bar_row->addStretch(100 - width);
-            bars->addLayout(bar_row);
-        }
-        line->addLayout(bars, 1);
-        skeleton->addLayout(line);
-    }
-    auto* loading = new QLabel(tr("Loading…"), m_skeleton);
-    loading->setObjectName("emptyStateLoading");
-    loading->setAlignment(Qt::AlignCenter);
-    skeleton->addSpacing(6);
-    skeleton->addWidget(loading);
-    skeleton->addStretch();
-    layout->addWidget(m_skeleton);
-
     GUIUtil::setFont({m_title}, GUIUtil::FontWeight::Bold, 16);
-    GUIUtil::setFont({m_text, loading}, GUIUtil::FontWeight::Normal, 13);
+    GUIUtil::setFont({m_text}, GUIUtil::FontWeight::Normal, 13);
     GUIUtil::updateFonts();
     paintSymbol();
     hide();
@@ -163,12 +126,24 @@ void EmptyStateWidget::setState(State state)
         return;
     }
     const bool filtered = state == State::Filtered;
-    m_title->setText(filtered ? tr("No matching results") : m_title_text);
-    m_text->setText(filtered ? tr("Try a different search or clear your filters.") : m_text_text);
+    // The wallet's rows come with the blocks it catches up on, which can take
+    // hours on a first start: that is a wait for the network, not a list
+    // being loaded, and the list says which. There is nothing to press
+    // meanwhile, so the action goes, and its gap with it.
+    const bool syncing = state == State::Syncing;
+    m_title->setText(filtered ? tr("No matching results") : syncing ? tr("Waiting for synchronization") : m_title_text);
+    m_text->setText(filtered ? tr("Try a different search or clear your filters.") :
+                    syncing ? tr("Your transactions will appear here as the wallet catches up with the network.") : m_text_text);
     m_action->setText(filtered ? tr("Clear filters") : m_action_text);
-    m_message->setVisible(state != State::Loading);
-    m_skeleton->setVisible(state == State::Loading);
-    setAccessibleName(state == State::Loading ? tr("Loading…") : m_title->text());
+    if (m_action->isHidden() != syncing) {
+        // The gap first, and both before the list is fitted below: showing
+        // the button lays the card out at once, so fitList() measures the
+        // message with its button and the room above it.
+        m_action_gap->changeSize(0, syncing ? 0 : 16, QSizePolicy::Minimum, QSizePolicy::Fixed);
+        m_message->layout()->invalidate();
+        m_action->setVisible(!syncing);
+    }
+    setAccessibleName(m_title->text());
     followViewport();
     show();
     raise();
