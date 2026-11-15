@@ -1065,6 +1065,11 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         if not self.is_zmq_compiled():
             raise SkipTest("dashd has not been built with zmq enabled.")
 
+    def skip_if_no_pruning(self):
+        """Skip the running test: DeFCoN does not support pruning (src/init.cpp never registers -prune and keeps
+        fPruneMode false)."""
+        raise SkipTest("DeFCoN does not support pruning (-prune is not an option).")
+
     def skip_if_no_wallet(self):
         """Skip the running test if wallet has not been compiled."""
         self.requires_wallet = True

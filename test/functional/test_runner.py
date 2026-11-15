@@ -88,9 +88,9 @@ TEST_FRAMEWORK_MODULES = [
 EXTENDED_SCRIPTS = [
     # These tests are not run by default.
     # Longest test should go first, to favor running tests in parallel
-    'feature_pruning.py', # NOTE: Prune mode is incompatible with -txindex, should work with governance validation disabled though.
+    'feature_pruning.py', # DeFCoN does not support pruning: skips itself (skip_if_no_pruning)
     'feature_dbcrash.py',
-    'feature_index_prune.py',
+    'feature_index_prune.py', # DeFCoN does not support pruning: skips itself (skip_if_no_pruning)
 ]
 
 BASE_SCRIPTS = [
@@ -451,8 +451,8 @@ BASE_SCRIPTS = [
     'feature_anchors.py',
     'feature_coinstatsindex.py',
     'wallet_orphanedreward.py',
-    'p2p_node_network_limited.py --v1transport',
-    'p2p_node_network_limited.py --v2transport',
+    'p2p_node_network_limited.py --v1transport', # DeFCoN does not support pruning: skips itself (skip_if_no_pruning)
+    'p2p_node_network_limited.py --v2transport', # DeFCoN does not support pruning: skips itself (skip_if_no_pruning)
     'p2p_permissions.py',
     'feature_blocksdir.py',
     'wallet_startup.py',

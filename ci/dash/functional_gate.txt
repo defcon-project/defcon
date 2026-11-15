@@ -106,6 +106,7 @@
 40   tool_wallet.py                         # defcon-wallet: create, info, dump and createfromdump, salvage; both wallets
 40   feature_dsl_list_change.py             # the Sentinel tick speaks from the epoch base's list: a masternode registered or revoked mid-epoch (SF1-L)
 40   feature_masternode_connect_race.py     # a restarted masternode another node reached first: connect_nodes closes that connection, and its own one stays
+39   wallet_import_rescan.py                # importaddress, importpubkey, importprivkey and importmulti, with and without rescan, and a key timestamp past the rescan window
 35   rpc_blockchain.py                      # the chain calls: chain info, transaction statistics, the UTXO set summary, headers, block verbosity, the hash rate
 34   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
 33   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)

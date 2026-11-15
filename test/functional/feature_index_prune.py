@@ -55,6 +55,9 @@ class FeatureIndexPruneTest(BitcoinTestFramework):
             self.restart_node(i, extra_args=["-fastprune", "-prune=1"] + DEPLOYMENT_ARGS, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
         self.reconnect_nodes()
 
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_pruning()
+
     def run_test(self):
         filter_nodes = [self.nodes[0], self.nodes[2]]
         stats_nodes = [self.nodes[1], self.nodes[2]]

@@ -14,7 +14,6 @@ try:
 except ImportError:
     pass
 from test_framework.messages import COIN
-from test_framework.governance import EXPECTED_STDERR_NO_GOV_PRUNE
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 from test_framework.wallet import MiniWallet
@@ -344,7 +343,7 @@ class UTXOCacheTracepointTest(BitcoinTestFramework):
         # we assert in the handle_* function, the AssertError doesn't propagate
         # back to Python. The exception is ignored. We manually count and assert
         # that the handle_* functions succeeded.
-        EXPECTED_HANDLE_FLUSH_SUCCESS = 3
+        EXPECTED_HANDLE_FLUSH_SUCCESS = 2  # the two flushes at shutdown; DeFCoN has no flush for pruning
         handle_flush_succeeds = 0
         possible_cache_sizes = set()
         expected_flushes = []
@@ -379,30 +378,11 @@ class UTXOCacheTracepointTest(BitcoinTestFramework):
         assert_equal(0, len(expected_flushes))
         assert_equal(0, len(possible_cache_sizes))
 
-        self.log.info("restart the node with -prune")
-        self.start_node(0, ["-fastprune=1", "-prune=1"])
-
-        BLOCKS_TO_MINE = 450
-        self.log.info(f"mine {BLOCKS_TO_MINE} blocks to be able to prune")
-        self.generate(self.wallet, BLOCKS_TO_MINE)
-        # we added BLOCKS_TO_MINE coinbase UTXOs to the cache
-        possible_cache_sizes = {BLOCKS_TO_MINE}
-        expected_flushes.append(
-            {"mode": "NONE", "for_prune": True, "size_fn": lambda x: x == BLOCKS_TO_MINE})
-
-        self.log.info(f"prune blockchain to trigger a flush for pruning")
-        self.nodes[0].pruneblockchain(415)
-
-        bpf.perf_buffer_poll(timeout=500)
+        # DeFCoN does not support pruning (-prune is not an option): no restart with -prune and no flush for pruning.
         bpf.cleanup()
 
-        self.log.info(
-            f"check that we don't expect additional flushes and that the handle_* function succeeded")
-        assert_equal(0, len(expected_flushes))
-        assert_equal(0, len(possible_cache_sizes))
+        self.log.info("check that the handle_* function succeeded")
         assert_equal(EXPECTED_HANDLE_FLUSH_SUCCESS, handle_flush_succeeds)
-
-        self.stop_node(0, expected_stderr=EXPECTED_STDERR_NO_GOV_PRUNE)
 
 if __name__ == '__main__':
     UTXOCacheTracepointTest().main()
