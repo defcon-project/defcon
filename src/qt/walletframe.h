@@ -58,6 +58,12 @@ public:
     void setOpenWalletMenu(QMenu* menu);
 
     QSize sizeHint() const override { return m_size_hint; }
+    /** What the page on show needs in Abyss; nothing in a classic theme,
+     *  where the pages take the frame's size as they always did. */
+    QSize pageMinimum() const;
+    /** The least viewport in which the page on show is seen whole: its
+     *  minimum, and the height it asks for at that width. */
+    QSize pageWhole() const;
 
 protected:
     void changeEvent(QEvent* event) override;

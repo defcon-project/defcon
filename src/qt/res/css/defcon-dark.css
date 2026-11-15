@@ -41,6 +41,14 @@ WalletFrame {
     background-color: transparent;
 }
 
+/* The pages stand in a scroll area, so the window can be made smaller than a
+   page; the backdrop has to show through it as it does through the frame. */
+WalletFrame > QScrollArea#abyssPageScroll,
+WalletFrame > QScrollArea#abyssPageScroll > QWidget {
+    background: transparent;
+    border: none;
+}
+
 /* Send and Receive are QDialog subclasses used as pages, so the flat QDialog
    rule above would have left the sky showing on four pages out of six.
    Scoping this to the wallet frame reaches exactly the pages and leaves every

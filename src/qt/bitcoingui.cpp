@@ -65,6 +65,7 @@
 #include <QMimeData>
 #include <QProgressDialog>
 #include <QScreen>
+#include <QScrollArea>
 #include <QSettings>
 #include <QShortcut>
 #include <QStackedWidget>
@@ -104,6 +105,8 @@ BitcoinGUI::BitcoinGUI(interfaces::Node& node, const NetworkStyle* networkStyle,
 
     QSettings settings;
     m_window_geometry_restored = restoreGeometry(settings.value("MainWindowGeometry").toByteArray());
+    m_page_fit_pending = !m_window_geometry_restored;
+    m_page_fit_centre = m_page_fit_pending;
     if (!m_window_geometry_restored && !GUIUtil::isModernTheme()) {
         // Keep the classic startup placement unchanged.
         move(QGuiApplication::primaryScreen()->availableGeometry().center() - frameGeometry().center());
@@ -1274,6 +1277,17 @@ void BitcoinGUI::applyThemeLayout()
     const bool modern = GUIUtil::isModernTheme();
     const bool vertical = modern;
 
+    // Into Abyss from a classic theme: the window has the classic theme's
+    // size, and the minimum no longer grows it to the page (the pages
+    // scroll), so the page on show is fitted once, as on a first start.
+    if (modern && m_theme_layout_applied && !m_theme_layout_modern) {
+        m_page_fit_pending = true;
+        m_page_fit_centre = false;
+        QTimer::singleShot(0, this, &BitcoinGUI::fitWalletPage);
+    }
+    m_theme_layout_applied = true;
+    m_theme_layout_modern = modern;
+
     // Abyss is the only theme that asks for a backdrop behind the wallet:
     // the waves while the night sky rests, else the sky.
     if (auto* sky = qobject_cast<StarfieldWidget*>(centralWidget())) {
@@ -2284,34 +2298,114 @@ void BitcoinGUI::updateCoinJoinVisibility()
     updateWidth();
 }
 
-//! The window may not be dragged smaller than the wallet it is showing.
+namespace {
+//! The least page area the Abyss window keeps beside the sidebar.
+constexpr QSize MODERN_PAGE_AREA_MINIMUM{480, 360};
+} // namespace
+
+QSize BitcoinGUI::modernWindowSize(const QSize& page_area) const
+{
+    // The sidebar stands beside the frame, as tall as its buttons need.
+    const bool sidebar = appToolBar != nullptr && !appToolBar->isHidden();
+#ifdef ENABLE_WALLET
+    // Once the window has been laid out, what stands around the page area is
+    // measured, not added up: the sidebar is often wider than its hint, and
+    // the bars taller. Across: the window less the frame's scroll area (the
+    // sidebar, the frame's padding). Down: the frame's padding, then what
+    // stands outside the central widget (the menu, tool and status bars).
+    const QWidget* central = centralWidget();
+    if (walletFrame != nullptr && central != nullptr && isVisible()) {
+        const auto* area = walletFrame->findChild<QScrollArea*>("abyssPageScroll", Qt::FindDirectChildrenOnly);
+        if (area != nullptr && area->isVisible()) {
+            int column = page_area.height() + walletFrame->height() - area->height();
+            if (sidebar) column = std::max(column, appToolBar->sizeHint().height());
+            return {page_area.width() + width() - area->width(), column + height() - central->height()};
+        }
+    }
+#endif // ENABLE_WALLET
+    // Before that, from margins and size hints (applyModernWindowMinimum asks
+    // before the first layout too). The page area stands in the wallet frame,
+    // inside its margins (the stylesheet's padding becomes the frame's
+    // contents margins) and its layout's.
+    int width = page_area.width();
+    int height = page_area.height();
+#ifdef ENABLE_WALLET
+    if (walletFrame != nullptr) {
+        QMargins around = walletFrame->contentsMargins();
+        if (const QLayout* inner = walletFrame->layout()) around += inner->contentsMargins();
+        width += around.left() + around.right();
+        height += around.top() + around.bottom();
+    }
+#endif // ENABLE_WALLET
+    if (sidebar) {
+        const QSize bar = appToolBar->sizeHint();
+        width += bar.width();
+        height = std::max(height, bar.height());
+    }
+    // Above and below: the menu bar when it is the window's own, the quick
+    // controls' bar when they stand apart from a native menu bar (macOS), and
+    // the status bar.
+    if (appMenuBar != nullptr && !appMenuBar->isNativeMenuBar() && !appMenuBar->isHidden()) height += appMenuBar->sizeHint().height();
+    if (abyssQuickControlsBar != nullptr && !abyssQuickControlsBar->isHidden()) height += abyssQuickControlsBar->sizeHint().height();
+    if (const QStatusBar* bar = findChild<QStatusBar*>(QString(), Qt::FindDirectChildrenOnly)) {
+        if (!bar->isHidden()) height += bar->sizeHint().height();
+    }
+    return {width, height};
+}
+
+void BitcoinGUI::fitWalletPage()
+{
+#ifdef ENABLE_WALLET
+    if (!m_page_fit_pending || !GUIUtil::isModernTheme() || walletFrame == nullptr || walletFrame->currentWalletView() == nullptr) return;
+    if (m_initial_geometry_pending || !isVisible() || isMinimized() || isMaximized() || isFullScreen()) return;
+    m_page_fit_pending = false;
+    QSize page_whole = modernWindowSize(walletFrame->pageWhole());
+    if (const QScreen* display = screen()) {
+        const QSize frame_extra = frameGeometry().size() - size();
+        page_whole = page_whole.boundedTo(display->availableGeometry().size() - frame_extra);
+    }
+    // Only ever grows: a window already larger keeps its size. A first start
+    // was centred at its opening size; grown, it is centred again, so that it
+    // grows to both sides. Switched into Abyss, it keeps its place.
+    const bool centre = m_page_fit_centre;
+    m_page_fit_centre = false;
+    const QSize wanted = size().expandedTo(page_whole);
+    if (wanted != size()) {
+        resize(wanted);
+        GUIUtil::fitWindowToScreen(this, centre);
+    }
+#endif // ENABLE_WALLET
+}
+
+//! The window may not be dragged smaller than the sidebar and a working page
+//! area; a page that needs more than the window gives it scrolls (the pages
+//! stand in WalletFrame's scroll area, which asks the layout for no more than
+//! a scroll area does). The pages still publish what they need: WalletFrame's
+//! pageMinimum() is what fitWalletPage grows a new window to, once.
 //!
 //! setMinimumSize() replaces the minimum the layout derives from its content
-//! rather than raising it, so the value handed to it has to BE that content
-//! minimum. An earlier version passed 0 and left the enforcing to Qt, which
-//! does enforce it -- but the figure it enforced was made of inherited caps
-//! written for another wallet's amounts at another wallet's font (see
-//! OverviewPage::applyBalanceWidths), and at that width the balances were
-//! already cut off. The pages now publish what they actually need, so asking
-//! the layout is finally worth doing, and the answer is taken in both
-//! directions: the Send form was being squeezed until its fields scrolled out
-//! of sight.
+//! rather than raising it, so the value handed to it has to include that
+//! content minimum: the sidebar with every button it shows, the menu and the
+//! status bar.
 //!
 //! Held under the screen either way. A window that cannot be resized onto the
-//! display is a worse fault than a page that has to scroll, and a page inside
-//! a scroll area degrades gracefully -- it goes back to scrolling.
+//! display is a worse fault than a page that has to scroll.
 //!
 //! Because it replaces rather than raises, the figure also goes stale: a
-//! second recipient on the Send page, or Coin Control switched on, changes what
-//! the wallet needs. That is why this is called on every layout request and
-//! not only when the theme changes. Setting the same value again is skipped, so
-//! the layout request it would itself provoke stops there.
+//! sidebar button shown or hidden changes it. That is why this is called on
+//! every layout request and not only when the theme changes. Setting the same
+//! value again is skipped, so the layout request it would itself provoke stops
+//! there.
 void BitcoinGUI::applyModernWindowMinimum()
 {
     if (!GUIUtil::isModernTheme() || walletFrame == nullptr) {
         return;
     }
-    const QSize content = layout() != nullptr ? layout()->minimumSize() : minimumSizeHint();
+    // The pages scroll (WalletFrame's scroll area), so the layout no longer
+    // asks for the page on show: the window may be made smaller than a page.
+    // What it keeps is the sidebar with every button it shows in sight,
+    // beside a page area one can still work in.
+    const QSize content = (layout() != nullptr ? layout()->minimumSize() : minimumSizeHint()).expandedTo(modernWindowSize(MODERN_PAGE_AREA_MINIMUM));
     QSize limit(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
     if (const QScreen* display = screen()) {
         const QSize frame_extra = frameGeometry().size() - size();
@@ -2335,6 +2429,10 @@ bool BitcoinGUI::event(QEvent* e)
                 if (GUIUtil::isModernTheme()) GUIUtil::fitWindowToScreen(this, false);
             });
         }
+        // The minimum no longer grows the window to its first wallet: a window
+        // opened without a saved geometry, or switched into Abyss, does that
+        // once, from the event loop, when the page has been laid out.
+        if (m_page_fit_pending) QTimer::singleShot(0, this, &BitcoinGUI::fitWalletPage);
     }
     return QMainWindow::event(e);
 }
@@ -2350,7 +2448,12 @@ void BitcoinGUI::updateWidth()
     if (GUIUtil::isModernTheme()) {
         constexpr int modernMinimumWidth{1200};
         applyModernWindowMinimum();
-        QSize wanted(std::max({width(), minimumWidth(), modernMinimumWidth}), std::max(height(), minimumHeight()));
+        // 1200 is the width a window opens at without a saved geometry. Once
+        // it is on screen it keeps the size it was given, smaller than a page
+        // too (the pages scroll): a restore from the tray (showEvent), a
+        // CoinJoin switch or a saved geometry no longer widens it.
+        const int preferred_width = m_initial_geometry_pending && !m_window_geometry_restored ? modernMinimumWidth : 0;
+        QSize wanted(std::max({width(), minimumWidth(), preferred_width}), std::max(height(), minimumHeight()));
         // The preferred width gives way to the screen, as the minimum does in
         // applyModernWindowMinimum. Below 1200 logical pixels -- a small display
         // or a high scaling factor -- every call, showEvent's included, pushed

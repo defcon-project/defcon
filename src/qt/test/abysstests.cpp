@@ -5096,6 +5096,209 @@ void AbyssTests::waveBackdrop()
     }
 }
 
+void AbyssTests::smallWindow()
+{
+    // The pages stand in a scroll area (Abyss): the window can be made much
+    // smaller than the page it shows. The page then scrolls and keeps what it
+    // needs, it is not squeezed; a page that fits does not scroll, whatever
+    // the other pages need. The classic themes give the pages the frame's
+    // size as before, never scroll here, and keep the window's minimum.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Window geometry requires minimal:enable_fonts or a native platform");
+    const QString shots = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name); // Keep this test's isolated QSettings scope.
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.addWallet(fixture.model.get());
+    window.gotoOverviewPage();
+    // Shown first: the first show holds a window under the screen, and the
+    // test platform's screen is 240x320.
+    window.show(); Settle();
+    window.resize(1500, 1200); Settle();
+    auto* frame = window.walletFrame;
+    QVERIFY(frame);
+    auto* scroll = frame->findChild<QScrollArea*>("abyssPageScroll");
+    QVERIFY(scroll && scroll->widget());
+    auto* overview = window.findChild<OverviewPage*>();
+    auto* bar = window.findChild<QToolBar*>("navigationToolBar");
+    QVERIFY(overview && bar);
+    const auto state = [&] {
+        return QString("window %1x%2 viewport %3x%4 stack %5x%6 page need %7x%8 scroll %9/%10")
+            .arg(window.width()).arg(window.height()).arg(scroll->viewport()->width()).arg(scroll->viewport()->height())
+            .arg(scroll->widget()->width()).arg(scroll->widget()->height()).arg(frame->pageMinimum().width()).arg(frame->pageMinimum().height())
+            .arg(scroll->horizontalScrollBar()->maximum()).arg(scroll->verticalScrollBar()->maximum());
+    };
+    // Only the disposable fixture's sync overlay is hidden, so that the
+    // pictures show the page; it covers the window, not a page, and stands in
+    // no layout.
+    const auto hide_overlay = [&] {
+        if (auto* overlay = window.findChild<ModalOverlay*>()) overlay->hide();
+        Settle();
+    };
+    hide_overlay();
+    const auto shot = [&](const QString& name) {
+        if (shots.isEmpty()) return true;
+        hide_overlay();
+        return QDir().mkpath(shots) && window.grab().save(QDir(shots).filePath(name + ".png"));
+    };
+
+    // With room: the page fills the viewport, nothing scrolls.
+    const QSize need = overview->minimumSizeHint().expandedTo(overview->minimumSize());
+    QVERIFY2(need.width() > 500 && need.height() > 400, qPrintable(state()));
+    QCOMPARE(frame->pageMinimum(), need);
+    QVERIFY2(scroll->viewport()->width() >= need.width() && scroll->viewport()->height() >= need.height(), qPrintable(state()));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() == 0 && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    QCOMPARE(scroll->widget()->size(), scroll->viewport()->size());
+    QCOMPARE(overview->size(), scroll->viewport()->size());
+    QVERIFY(shot("small-window-room"));
+    // The frame's stack asks for the wallet on show, not for its other pages
+    // (the "no wallet" page, another wallet's view): a hidden page that needs
+    // more than the window gives changes nothing.
+    auto* no_wallet = frame->findChild<QWidget*>("no_wallet_group");
+    QVERIFY(no_wallet && !no_wallet->isVisible());
+    const QSize no_wallet_minimum = no_wallet->minimumSize();
+    no_wallet->setMinimumSize(scroll->viewport()->size() + QSize(200, 200)); Settle();
+    // Compared with the Overview's need as it is now: its fonts may still be
+    // settling (at a device pixel ratio of 2 its need was seen to change here).
+    QCOMPARE(frame->pageMinimum(), overview->minimumSizeHint().expandedTo(overview->minimumSize()));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() == 0 && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    no_wallet->setMinimumSize(no_wallet_minimum); Settle();
+
+    // The window modernWindowSize gives for the page whole -- what a new
+    // window grows to (fitWalletPage) -- shows it whole: nothing scrolls, and
+    // the viewport has the page's need. Everything around the page counts:
+    // the frame's padding, the sidebar, the menu and status bars.
+    const QSize whole = frame->pageWhole();
+    const QSize need_now = frame->pageMinimum();
+    QVERIFY2(whole.width() == need_now.width() && whole.height() >= need_now.height(), qPrintable(QString("whole %1x%2").arg(whole.width()).arg(whole.height())));
+    window.resize(window.modernWindowSize(whole)); Settle();
+    QVERIFY2(window.size() == window.modernWindowSize(whole), qPrintable(state()));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() == 0 && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    QVERIFY2(scroll->viewport()->width() >= frame->pageMinimum().width() && scroll->viewport()->height() >= frame->pageMinimum().height(), qPrintable(state()));
+    window.resize(1500, 1200); Settle();
+
+    // The window's layout no longer asks for the page: the least it keeps is
+    // the sidebar with its buttons beside a small page area.
+    const QSize least = window.modernWindowSize(QSize(480, 360));
+    QVERIFY2(least.width() >= bar->sizeHint().width() + 480, qPrintable(QString("%1x%2").arg(least.width()).arg(least.height())));
+    QVERIFY2(least.height() >= bar->sizeHint().height() && least.height() >= 360, qPrintable(QString("%1x%2").arg(least.width()).arg(least.height())));
+    const QSize asked = window.layout()->minimumSize();
+    QVERIFY2(asked.width() < bar->sizeHint().width() + need.width() && asked.height() < need.height(),
+             qPrintable(QString("the layout asks for %1x%2; %3").arg(asked.width()).arg(asked.height()).arg(state())));
+    QVERIFY2(least.width() < bar->sizeHint().width() + need.width(), qPrintable(state()));
+
+    // Made that small, the page keeps what it needs and scrolls both ways.
+    // What it needs follows its width a little (the Total's font is fitted to
+    // the width), so it is read again at this width.
+    window.resize(least); Settle();
+    QVERIFY2(window.size() == least, qPrintable(state()));
+    // The page area beside the sidebar is the 480 x 360 asked for (taller
+    // where the sidebar's buttons need more).
+    QVERIFY2(scroll->width() == 480 && scroll->height() >= 360, qPrintable(state()));
+    const QSize need_small = frame->pageMinimum();
+    QCOMPARE(need_small, overview->minimumSizeHint().expandedTo(overview->minimumSize()));
+    QVERIFY2(need_small.width() > scroll->viewport()->width() && need_small.height() > scroll->viewport()->height(), qPrintable(state()));
+    QVERIFY2(overview->width() >= need_small.width() && overview->height() >= need_small.height(), qPrintable(state()));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() > 0 && scroll->horizontalScrollBar()->maximum() > 0, qPrintable(state()));
+    // At least: a page with wrapped text may ask for a few pixels more height
+    // at its least width (heightForWidth), and the scroll area gives them.
+    const QSize given = scroll->viewport()->size().expandedTo(need_small);
+    QVERIFY2(scroll->widget()->width() == given.width() && scroll->widget()->height() >= given.height(), qPrintable(state()));
+    QVERIFY(shot("small-window-least"));
+
+    // A page that needs less does not scroll where the Overview would: what
+    // is asked for is the page on show, not the most any page needs. Both
+    // needs and the window around the viewport are read at the width used,
+    // with room and so without scroll bars.
+    window.resize(1500, 1200); Settle();
+    QVERIFY2(scroll->verticalScrollBar()->maximum() == 0 && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    const QSize need_wide = frame->pageMinimum();
+    const int chrome_height = window.height() - scroll->viewport()->height();
+    window.gotoHistoryPage(); Settle();
+    const QSize history_need = frame->pageMinimum();
+    QVERIFY2(history_need.height() + 4 < need_wide.height(),
+             qPrintable(QString("Transactions needs %1 px, the Overview %2 px").arg(history_need.height()).arg(need_wide.height())));
+    window.resize(1500, chrome_height + (history_need.height() + need_wide.height()) / 2); Settle();
+    QVERIFY2(scroll->viewport()->height() >= history_need.height() && scroll->viewport()->height() < need_wide.height(), qPrintable(state()));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() == 0, qPrintable(state()));
+    window.gotoOverviewPage(); Settle();
+    QCOMPARE(frame->pageMinimum(), overview->minimumSizeHint().expandedTo(overview->minimumSize()));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() > 0, qPrintable(state()));
+
+    // A classic theme, as before the change: the pages take the frame's size
+    // and nothing scrolls, and the window keeps the minimum the bare stack
+    // gave it, the most any page needs: it cannot be made shorter than that.
+    Theme("Light"); Settle();
+    auto* view = frame->currentWalletView();
+    QVERIFY(view);
+    window.resize(1000, 200); Settle();
+    const QSize classic_need = view->minimumSizeHint(); // A classic theme: the most any of its pages needs.
+    QVERIFY2(classic_need.height() > 200, qPrintable(QString("classic need %1x%2").arg(classic_need.width()).arg(classic_need.height())));
+    QCOMPARE(frame->pageMinimum(), QSize(0, 0));
+    QVERIFY2(window.height() > 200 && scroll->height() >= classic_need.height(),
+             qPrintable(QString("classic need %1x%2; %3").arg(classic_need.width()).arg(classic_need.height()).arg(state())));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() == 0 && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    QCOMPARE(scroll->widget()->size(), scroll->viewport()->size());
+    QCOMPARE(scroll->viewport()->size(), scroll->size());
+    QCOMPARE(scroll->geometry(), frame->contentsRect());
+    QCOMPARE(view->size(), scroll->viewport()->size());
+    QVERIFY(shot("small-window-classic"));
+    // A page that comes to need more (a wallet loading, a second recipient)
+    // raises the classic window's minimum, as the frame's layout did.
+    const int overview_minimum = overview->minimumHeight();
+    overview->setMinimumHeight(classic_need.height() + 150); Settle();
+    window.resize(1000, 200); Settle();
+    QVERIFY2(scroll->height() >= classic_need.height() + 150, qPrintable(state()));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() == 0, qPrintable(state()));
+    overview->setMinimumHeight(overview_minimum); Settle();
+
+    // Back in Abyss the page scrolls again where the window is small.
+    Theme("Abyss"); Settle();
+    window.resize(least); Settle();
+    QVERIFY2(scroll->verticalScrollBar()->maximum() > 0, qPrintable(state()));
+    QVERIFY2(overview->height() >= frame->pageMinimum().height(), qPrintable(state()));
+
+    // What used to widen the window to 1200 px keeps the size it was given:
+    // updateWidth (a CoinJoin switch) and a hide and show (a restore from the
+    // tray). Switched into Abyss from a classic theme, the window grows once
+    // to show the page whole. Both need a desktop-sized screen (natively): on
+    // minimal's 240x320 screen updateWidth holds the window to the screen.
+    const QSize room = window.screen()->availableGeometry().size() - (window.frameGeometry().size() - window.size());
+    if (room.width() >= 1300 && room.height() >= least.height() + 50) {
+        QVERIFY2(least.width() < 1200, qPrintable(QString("the least window is %1 px wide: the check would not tell").arg(least.width())));
+        QCOMPARE(window.size(), least);
+        window.updateWidth(); Settle();
+        QVERIFY2(window.size() == least, qPrintable("after updateWidth: " + state()));
+        window.hide(); Settle();
+        window.show(); Settle();
+        QVERIFY2(window.size() == least, qPrintable("after a hide and show: " + state()));
+        Theme("Light"); Settle();
+        window.resize(1000, 200); Settle();
+        Theme("Abyss"); Settle();
+        const QSize page_whole = window.modernWindowSize(frame->pageWhole());
+        QVERIFY2(window.width() >= std::min(page_whole.width(), room.width()) && window.height() >= std::min(page_whole.height(), room.height()),
+                 qPrintable(QString("after the switch into Abyss, the page whole needs %1x%2; %3").arg(page_whole.width()).arg(page_whole.height()).arg(state())));
+        // Where the screen has room for it, the page is seen whole.
+        if (page_whole.width() <= room.width() && page_whole.height() <= room.height()) {
+            QVERIFY2(scroll->verticalScrollBar()->maximum() == 0 && scroll->horizontalScrollBar()->maximum() == 0, qPrintable("after the switch into Abyss: " + state()));
+        }
+        // A window the size of a full-HD screen's work area at 100 %: the
+        // page keeps what it needs, and a picture.
+        window.resize(QSize(1904, 1001).boundedTo(room)); Settle();
+        QVERIFY2(overview->width() >= frame->pageMinimum().width() && overview->height() >= frame->pageMinimum().height(), qPrintable(state()));
+        QVERIFY(shot("small-window-fhd"));
+    } else {
+        qInfo() << "smallWindow: the kept size and the switch into Abyss need a desktop-sized screen; this one has room for" << room;
+    }
+}
+
 void AbyssTests::hoverMenus()
 {
     // AbyssMenus::HoverMenus on buttons of its own, small enough for minimal's

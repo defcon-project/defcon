@@ -17,6 +17,7 @@
 #include <qt/walletview.h>
 #include <util/system.h>
 
+#include <algorithm>
 #include <cassert>
 #include <fstream>
 #include <string>
@@ -26,7 +27,79 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QStackedWidget>
 #include <QVBoxLayout>
+
+namespace {
+/** The frame's stack inside the frame's scroll area. In Abyss it asks for what
+ *  the page on show needs, so a page scrolls only when it does not fit the
+ *  window, and the window may be made smaller than its largest page. In a
+ *  classic theme it asks for nothing: the scroll area then always gives it the
+ *  viewport's size, exactly what the frame's layout gave it before. */
+class CurrentPageStack : public QStackedWidget
+{
+public:
+    explicit CurrentPageStack(QWidget* parent) : QStackedWidget(parent)
+    {
+        connect(this, &QStackedWidget::currentChanged, this, [this] { updateGeometry(); });
+    }
+    QSize minimumSizeHint() const override
+    {
+        const QWidget* page = currentWidget();
+        if (!GUIUtil::isModernTheme() || page == nullptr) return QSize(0, 0);
+        return page->minimumSizeHint().expandedTo(page->minimumSize());
+    }
+    /** The scroll area asks this whenever any page has a height for its width
+     *  (wrapped text), and QStackedLayout would answer for every page at once.
+     *  Abyss: the page on show only, at least its minimum. Classic: nothing,
+     *  so the page keeps the viewport's height as the frame's layout gave it. */
+    int heightForWidth(int width) const override
+    {
+        const QWidget* page = currentWidget();
+        if (!GUIUtil::isModernTheme() || page == nullptr) return 0;
+        return std::max(page->heightForWidth(width), minimumSizeHint().height());
+    }
+    //! What the bare stack asked for before it stood in a scroll area: the most any page needs.
+    QSize allPagesMinimum() const { return QStackedWidget::minimumSizeHint(); }
+
+protected:
+    void changeEvent(QEvent* event) override
+    {
+        QStackedWidget::changeEvent(event);
+        // A theme switch changes what the stack asks for.
+        if (event->type() == QEvent::StyleChange) updateGeometry();
+    }
+};
+
+/** The frame's scroll area. In Abyss it asks for no more than a scroll area
+ *  does, so the window may be made smaller than the page, which then scrolls.
+ *  In a classic theme it asks for what the bare stack asked for, the most any
+ *  page needs, so the window keeps the minimum it always had there and the
+ *  pages never scroll. */
+class PageScrollArea : public QScrollArea
+{
+public:
+    PageScrollArea(QWidget* parent, CurrentPageStack* stack) : QScrollArea(parent), m_stack(stack) {}
+    QSize minimumSizeHint() const override
+    {
+        if (GUIUtil::isModernTheme()) return QScrollArea::minimumSizeHint();
+        return m_stack->allPagesMinimum();
+    }
+
+protected:
+    bool event(QEvent* event) override
+    {
+        // A page's minimum changed (the stack's layout, through the viewport):
+        // a classic theme hands it on to the window as the frame's layout did.
+        if (event->type() == QEvent::LayoutRequest && !GUIUtil::isModernTheme()) updateGeometry();
+        return QScrollArea::event(event);
+    }
+
+private:
+    const CurrentPageStack* m_stack;
+};
+} // namespace
 
 WalletFrame::WalletFrame(QWidget* parent)
     : QFrame(parent),
@@ -35,9 +108,22 @@ WalletFrame::WalletFrame(QWidget* parent)
     // Leave HBox hook for adding a list view later
     QHBoxLayout *walletFrameLayout = new QHBoxLayout(this);
     setContentsMargins(0,0,0,0);
-    walletStack = new QStackedWidget(this);
+    auto* stack = new CurrentPageStack(this);
+    walletStack = stack;
     walletFrameLayout->setContentsMargins(0,0,0,0);
-    walletFrameLayout->addWidget(walletStack);
+    // A page that does not fit the window scrolls (Abyss): the window can be
+    // made much smaller than the Overview of a wallet with many rows.
+    auto* scroll = new PageScrollArea(this, stack);
+    scroll->setObjectName("abyssPageScroll");
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    // Not a stop of its own on the way through a page with Tab.
+    scroll->setFocusPolicy(Qt::NoFocus);
+    scroll->setWidget(walletStack);
+    // setWidget() turns the fill on; the pages draw themselves, and in Abyss
+    // the backdrop has to show between them.
+    walletStack->setAutoFillBackground(false);
+    walletFrameLayout->addWidget(scroll);
 
     // hbox for no wallet
     no_wallet_group = new QGroupBox(walletStack);
@@ -95,6 +181,20 @@ void WalletFrame::updateThemePresentation()
     m_no_wallet_text->setVisible(!modern);
     m_create_wallet_button->setVisible(!modern);
     m_no_wallet_state->setState(modern ? EmptyStateWidget::State::Empty : EmptyStateWidget::State::Hidden);
+}
+
+QSize WalletFrame::pageMinimum() const
+{
+    return walletStack->minimumSizeHint();
+}
+
+QSize WalletFrame::pageWhole() const
+{
+    QSize whole = walletStack->minimumSizeHint();
+    // A page with wrapped text may ask for more height at its least width
+    // than its minimum says; the scroll area gives it that height.
+    if (walletStack->hasHeightForWidth()) whole.setHeight(std::max(whole.height(), walletStack->heightForWidth(whole.width())));
+    return whole;
 }
 
 void WalletFrame::setClientModel(ClientModel *_clientModel)
