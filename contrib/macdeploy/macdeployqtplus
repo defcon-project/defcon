@@ -16,7 +16,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import sys, re, os, platform, shutil, stat, subprocess, os.path
+import sys, re, os, platform, plistlib, shutil, stat, subprocess, os.path
 from argparse import ArgumentParser
 from pathlib import Path
 from subprocess import PIPE, run
@@ -145,10 +145,23 @@ class FrameworkInfo(object):
 class ApplicationBundleInfo(object):
     def __init__(self, path: str):
         self.path = path
-        # for backwards compatibility reasons, this must remain as Dash-Qt
-        self.binaryPath = os.path.join(path, "Contents", "MacOS", "Dash-Qt")
+        # The binary is the one the bundle's Info.plist names: that is the file macOS starts, so a
+        # bundle whose plist and binary disagree is refused here instead of shipping an app that
+        # does not open.
+        plistPath = os.path.join(path, "Contents", "Info.plist")
+        try:
+            with open(plistPath, "rb") as f:
+                plist = plistlib.load(f)
+        except Exception as e:
+            # Only the read and parse are inside: plistlib raises whatever its parser hits on a
+            # damaged file (ExpatError, InvalidFileException, but also AttributeError, IndexError).
+            raise RuntimeError(f"Could not read {plistPath}: {type(e).__name__}: {e}")
+        executable = plist.get("CFBundleExecutable") if isinstance(plist, dict) else None
+        if not isinstance(executable, str) or not executable or "/" in executable:
+            raise RuntimeError(f"{plistPath} names no CFBundleExecutable file name")
+        self.binaryPath = os.path.join(path, "Contents", "MacOS", executable)
         if not os.path.exists(self.binaryPath):
-            raise RuntimeError(f"Could not find bundle binary for {path}")
+            raise RuntimeError(f"Could not find bundle binary {self.binaryPath}, the CFBundleExecutable of {plistPath}")
         self.resourcesPath = os.path.join(path, "Contents", "Resources")
         self.pluginPath = os.path.join(path, "Contents", "PlugIns")
 
@@ -344,13 +357,15 @@ def deployPlugins(appBundleInfo: ApplicationBundleInfo, deploymentInfo: Deployme
     for dirpath, dirnames, filenames in os.walk(deploymentInfo.pluginPath):
         pluginDirectory = os.path.relpath(dirpath, deploymentInfo.pluginPath)
 
-        if pluginDirectory not in ['styles', 'platforms']:
+        # The dynamic counterparts of the plugins a static build imports (src/qt/bitcoin.cpp): the
+        # platform and style, and the SVG image format and icon engine the logo needs.
+        if pluginDirectory not in ['styles', 'platforms', 'imageformats', 'iconengines']:
             continue
 
         for pluginName in filenames:
             pluginPath = os.path.join(pluginDirectory, pluginName)
 
-            if pluginName.split('.')[0] not in ['libqminimal', 'libqcocoa', 'libqmacstyle']:
+            if pluginName.split('.')[0] not in ['libqminimal', 'libqcocoa', 'libqmacstyle', 'libqsvg', 'libqsvgicon']:
                 continue
 
             plugins.append((pluginDirectory, pluginName))
@@ -421,7 +436,9 @@ if os.path.exists(appname + ".zip"):
 
 # ------------------------------------------------
 
-target = os.path.join("dist", "Dash-Qt.app")
+# The deployed bundle keeps the source bundle's name (Makefile.am: OSX_APP).
+bundle_name = os.path.basename(os.path.normpath(app_bundle))
+target = os.path.join("dist", bundle_name)
 
 print("+ Copying source bundle +")
 if verbose:
@@ -430,7 +447,11 @@ if verbose:
 os.mkdir("dist")
 shutil.copytree(app_bundle, target, symlinks=True)
 
-applicationBundle = ApplicationBundleInfo(target)
+try:
+    applicationBundle = ApplicationBundleInfo(target)
+except RuntimeError as e:
+    sys.stderr.write(f"Error: {str(e)}\n")
+    sys.exit(1)
 
 # ------------------------------------------------
 
@@ -498,7 +519,7 @@ if platform.system() == "Darwin":
 # ------------------------------------------------
 
 if config.zip is not None:
-    shutil.make_archive('{}'.format(appname), format='zip', root_dir='dist', base_dir='Dash-Qt.app')
+    shutil.make_archive('{}'.format(appname), format='zip', root_dir='dist', base_dir=bundle_name)
 
 # ------------------------------------------------
 
