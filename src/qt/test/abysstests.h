@@ -27,6 +27,8 @@ private Q_SLOTS:
     void cliFontDoesNotPersist();
     void appearanceFonts();
     void cssStates();
+    void buttonFocusVisible();
+    void abyssContrast();
     void zebraRows();
     void networkBar();
     void skySuspendClock();

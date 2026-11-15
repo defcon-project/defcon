@@ -225,20 +225,26 @@ QPushButton {
     padding: 3px 16px;
 }
 
-/* general.css and dark.css take the border off a focused button (border:
-   none); before :hover, so that a pointed focused button takes the hover
-   colour. */
-QPushButton:focus {
-    border: 1px solid #1297ff;
-}
-
+/* The pointer lightens the frame, not the fill: white on the lighter
+   #1488ec fell to 3.6:1, under the 4.5:1 the text needs. The fill is set
+   here all the same: general.css and dark.css give :hover a fill of their
+   own (dark.css: #27507a), which would show through otherwise. */
 QPushButton:hover {
-    background-color: #1488ec;
+    background-color: #0f75d6;
     border-color: #42aaff;
 }
 
 QPushButton:pressed {
     background-color: #0b65bb;
+}
+
+/* Keyboard focus: a white frame, as the staking button has (the normal frame
+   is already blue, and blue on blue would not show). The same width, so the
+   button keeps its size. After :hover and :pressed, so that it still shows
+   under the pointer. general.css and dark.css take the border off a focused
+   button (border: none); this puts it back. */
+QPushButton:focus {
+    border: 1px solid #ffffff;
 }
 
 QPushButton:disabled {
@@ -991,13 +997,6 @@ QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM {
     color: #e6edf7;
 }
 
-/* These two are weaker than QPushButton:focus (general.css and dark.css:
-   border: none; Abyss: its blue border); the ID rules above are stronger. */
-MultisigPage > QPushButton:focus,
-MultisigPage > QGroupBox QPushButton:focus {
-    border: 1px solid #29435f;
-}
-
 QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin:hover,
 QWidget#OverviewPage QFrame#stakingBanner QPushButton#stakingBannerUnlock:hover,
 QPushButton#exportButton:hover,
@@ -1054,6 +1053,38 @@ QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:pressed {
     background-color: #10263e;
     border: 1px solid #1297ff;
     color: #ffffff;
+}
+
+/* Keyboard focus on the dark buttons: the accent blue frame, as on the text
+   link and the quick controls; the same width as the normal frame. After
+   :hover and :pressed, so that it shows under the pointer. The ID rules
+   above would otherwise keep their normal frame on focus (MultisigPage's
+   two are weaker than QPushButton:focus and take this one too). */
+QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin:focus,
+QWidget#OverviewPage QFrame#stakingBanner QPushButton#stakingBannerUnlock:focus,
+QPushButton#exportButton:focus,
+MultisigPage > QPushButton:focus,
+MultisigPage > QGroupBox QPushButton:focus,
+QWidget#AddressBookPage QPushButton#newAddress:focus,
+QWidget#AddressBookPage QPushButton#copyAddress:focus,
+QWidget#AddressBookPage QPushButton#showAddressQRCode:focus,
+QWidget#AddressBookPage QPushButton#deleteAddress:focus,
+QDialog#OpenURIDialog QPushButton#selectFileButton:focus,
+QDialog#OptionsDialog QPushButton#resetButton:focus,
+QDialog#SendCoinsDialog .QPushButton#addButton:focus,
+QDialog#SendCoinsDialog .QPushButton#clearButton:focus,
+QDialog#SendCoinsDialog .QPushButton#pushButtonCoinControl:focus,
+QDialog#SendCoinsDialog .QPushButton#buttonChooseFee:focus,
+QDialog#SendCoinsDialog .QPushButton#buttonMinimizeFee:focus,
+QDialog#SendCoinsDialog .QPushButton#useAvailableBalanceButton:focus,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton:focus,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:focus,
+QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton:focus,
+QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#receiveButton:focus,
+QWidget#ReceiveCoinsDialog QFrame#abyssReceiveCard QPushButton#abyssReceiveNewAddress:focus,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM:focus,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:focus {
+    border-color: #1297ff;
 }
 
 QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin:disabled,
@@ -1196,7 +1227,8 @@ QCalendarWidget QToolButton {
 QCalendarWidget QAbstractItemView:enabled {
     color: #e6edf7;
     background-color: #0b1727;
-    selection-background-color: #1297ff;
+    /* The selected day in white: #1297ff gave 3.0:1, the button blue 4.6:1. */
+    selection-background-color: #0f75d6;
     selection-color: #ffffff;
 }
 
@@ -1271,13 +1303,18 @@ MultisigPage > QPushButton#multisigCreate {
     border: 1px solid #1297ff;
     color: #ffffff;
 }
+/* As every blue button: the pointer lightens the frame, not the fill, and
+   keyboard focus is a white frame (the dark buttons' focus rule above would
+   lose to this button's own frame). */
 MultisigPage > QPushButton#multisigCreate:hover {
-    background-color: #1488ec;
     border-color: #42aaff;
     color: #ffffff;
 }
 MultisigPage > QPushButton#multisigCreate:pressed {
     background-color: #0b65bb;
+}
+MultisigPage > QPushButton#multisigCreate:focus {
+    border-color: #ffffff;
 }
 /* Stage 2: presentation wrappers only; classic stylesheets are unchanged. */
 QWidget#abyssPageHeader QLabel#abyssPageTitle {
