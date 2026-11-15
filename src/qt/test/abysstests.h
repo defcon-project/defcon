@@ -27,7 +27,11 @@ private Q_SLOTS:
     void cliFontDoesNotPersist();
     void appearanceFonts();
     void cssStates();
+    void buttonFocusVisible_data();
     void buttonFocusVisible();
+    void classicTabRules();
+    void classicWalletFrame();
+    void classicRoundTrip();
     void abyssContrast();
     void zebraRows();
     void networkBar();

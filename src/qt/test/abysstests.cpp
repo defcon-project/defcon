@@ -128,6 +128,8 @@
 #include <QPointer>
 #include <QTableView>
 #include <QTableWidget>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QVBoxLayout>
 #include <QTest>
 #include <QTextStream>
@@ -277,23 +279,37 @@ public:
     }
 };
 //! A push button painted as the style paints it in a given state, the
-//! keyboard focus included (U11-A).
+//! keyboard focus included (U11-A): the focus reached with the keyboard, which
+//! is the one the platforms' own styles show.
 class RoleButton : public QPushButton {
 public:
     using QPushButton::QPushButton;
-    QImage painted(bool hover, bool pressed, bool focus)
+    QImage painted(bool hover, bool pressed, bool focus, const QColor& behind = QColor("#0b1727"))
+    {
+        QStyleOptionButton option = stateOption(hover, pressed, focus);
+        QImage image(size(), QImage::Format_RGB32);
+        image.fill(behind);
+        QPainter painter(&image);
+        style()->drawControl(QStyle::CE_PushButton, &option, &painter, this);
+        return image;
+    }
+    //! Where the style puts the button's text and icon, focused or not.
+    QRect contents(bool focus)
+    {
+        const QStyleOptionButton option = stateOption(false, false, focus);
+        return style()->subElementRect(QStyle::SE_PushButtonContents, &option, this);
+    }
+private:
+    QStyleOptionButton stateOption(bool hover, bool pressed, bool focus)
     {
         QStyleOptionButton option;
         initStyleOption(&option);
         option.state.setFlag(QStyle::State_MouseOver, hover);
         option.state.setFlag(QStyle::State_Sunken, pressed);
         option.state.setFlag(QStyle::State_HasFocus, focus);
+        option.state.setFlag(QStyle::State_KeyboardFocusChange, focus);
         option.state.setFlag(QStyle::State_Enabled, true);
-        QImage image(size(), QImage::Format_RGB32);
-        image.fill(QColor("#0b1727"));
-        QPainter painter(&image);
-        style()->drawControl(QStyle::CE_PushButton, &option, &painter, this);
-        return image;
+        return option;
     }
 };
 //! WCAG contrast of two colours (1 to 21).
@@ -1097,19 +1113,48 @@ void AbyssTests::appearanceFonts()
     }
 }
 
+void AbyssTests::buttonFocusVisible_data()
+{
+    QTest::addColumn<QString>("theme");
+    for (const char* theme : {"Abyss", "Light", "Dark", "Traditional"}) QTest::newRow(theme) << QString(theme);
+}
+
 void AbyssTests::buttonFocusVisible()
 {
-    // U11-A: keyboard focus shows on each button role of Abyss -- the blue
+    // Keyboard focus shows on a button in every theme, looks neither plain nor
+    // pointed, and a focused button keeps its size. Abyss (U11-A): the blue
     // filled button (a white frame), a dark framed one and the text link (the
-    // accent blue frame) -- and looks neither plain nor pointed; a focused
-    // button keeps its size.
+    // accent blue frame). Light and Dark (U12-A): a frame on the blue button,
+    // on a grey one and on an icon button, the last two with border rules of
+    // their own in general.css; the frame stays under the pointer and while
+    // the button is held down, and the text stays where it is. Their tabs
+    // look the same focused or not. Traditional leaves its buttons to the
+    // platform's style: a focused one differs from a plain one.
+    QFETCH(QString, theme);
     RestoreAppearance restore;
-    Theme("Abyss");
+    Theme(theme.toUtf8().constData());
+    const bool abyss = theme == "Abyss";
+    const bool classic_sheet = theme == "Light" || theme == "Dark";
     const QString shots = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
-    struct Role { const char* what; const char* page; const char* holder; const char* name; };
-    for (const Role role : {Role{"filled", "abyssFocusProbe", "", ""},
-                            Role{"framed", "SendCoinsDialog", "", "addButton"},
-                            Role{"text-link", "OverviewPage", "coinJoinRow", "coinJoinRowShow"}}) {
+    // Abyss's pictures keep the names they had; the other themes' carry the theme.
+    const QString prefix = abyss ? QString("button") : QString("button-%1").arg(theme);
+    // The page's colour behind a button without a fill of its own.
+    const QColor behind = abyss ? QColor("#0b1727") : theme == "Light" ? QColor("#f2f2f4") : theme == "Dark" ? QColor("#323233") : QApplication::palette().color(QPalette::Window);
+    // The Verify page's address book button has no frame in Abyss, focused or
+    // not (general.css's rule for it is stronger than Abyss's focus frame):
+    // there it has to look the same focused, also against Dark's frame for
+    // it, and keep its size.
+    struct Role { const char* what; const char* page; const char* holder; const char* name; bool frame; };
+    const std::vector<Role> roles = abyss ? std::vector<Role>{{"filled", "abyssFocusProbe", "", "", true},
+                                                             {"framed", "SendCoinsDialog", "", "addButton", true},
+                                                             {"text-link", "OverviewPage", "coinJoinRow", "coinJoinRowShow", true},
+                                                             {"icon", "SignVerifyMessageDialog", "", "addressBookButton_VM", false}}
+                                  : classic_sheet ? std::vector<Role>{{"filled", "focusProbe", "", "", true},
+                                                                     {"grey", "SendCoinsDialog", "", "addButton", true},
+                                                                     {"icon", "SignVerifyMessageDialog", "", "addressBookButton_VM", true}}
+                                  : std::vector<Role>{{"plain", "focusProbe", "", "", true}};
+    const auto top = [](const QImage& image) { return image.pixelColor(image.width() / 2, 0); };
+    for (const Role& role : roles) {
         QDialog page;
         page.setObjectName(role.page);
         auto* layout = new QVBoxLayout(&page);
@@ -1124,17 +1169,33 @@ void AbyssTests::buttonFocusVisible()
         page.show();
         QApplication::setActiveWindow(&page);
         Settle();
-        const QImage plain = button->painted(false, false, false);
-        const QImage pointed = button->painted(true, false, false);
-        const QImage focused = button->painted(false, false, true);
-        const auto top = [](const QImage& image) { return image.pixelColor(image.width() / 2, 0); };
-        QVERIFY2(top(focused) != top(plain) && top(focused) != top(pointed),
-                 qPrintable(QString("%1: frame plain %2, pointed %3, focused %4").arg(role.what, top(plain).name(), top(pointed).name(), top(focused).name())));
+        const QImage plain = button->painted(false, false, false, behind);
+        const QImage pointed = button->painted(true, false, false, behind);
+        const QImage focused = button->painted(false, false, true, behind);
+        if (!role.frame) {
+            QVERIFY2(focused == plain, qPrintable(QString("%1 %2: focused differs").arg(theme, role.what)));
+        } else if (abyss || classic_sheet) {
+            QVERIFY2(top(focused) != top(plain) && top(focused) != top(pointed),
+                     qPrintable(QString("%1 %2: frame plain %3, pointed %4, focused %5").arg(theme, role.what, top(plain).name(), top(pointed).name(), top(focused).name())));
+        } else {
+            QVERIFY2(focused != plain && focused != pointed, qPrintable(QString("%1 %2: a focused button looks plain or pointed").arg(theme, role.what)));
+        }
+        if (classic_sheet) {
+            const QImage pointed_focused = button->painted(true, false, true, behind);
+            const QImage held_focused = button->painted(false, true, true, behind);
+            QVERIFY2(top(pointed_focused) == top(focused) && top(held_focused) == top(focused),
+                     qPrintable(QString("%1 %2: frame focused %3, under the pointer %4, held down %5")
+                                    .arg(theme, role.what, top(focused).name(), top(pointed_focused).name(), top(held_focused).name())));
+        }
+        // The text's place, in every theme. A button caches its size hint, so
+        // the one compared below may date from before the focus: a focus rule
+        // with another padding (Dark's, without Abyss's own) shows here.
+        QCOMPARE(button->contents(true), button->contents(false));
         if (!shots.isEmpty()) {
             QVERIFY(QDir().mkpath(shots));
-            QVERIFY(plain.save(QDir(shots).filePath(QString("button-%1-plain.png").arg(role.what))));
-            QVERIFY(pointed.save(QDir(shots).filePath(QString("button-%1-pointed.png").arg(role.what))));
-            QVERIFY(focused.save(QDir(shots).filePath(QString("button-%1-focused.png").arg(role.what))));
+            QVERIFY(plain.save(QDir(shots).filePath(QString("%1-%2-plain.png").arg(prefix, role.what))));
+            QVERIFY(pointed.save(QDir(shots).filePath(QString("%1-%2-pointed.png").arg(prefix, role.what))));
+            QVERIFY(focused.save(QDir(shots).filePath(QString("%1-%2-focused.png").arg(prefix, role.what))));
         }
         // Measured without focus first: the shown dialog has given its only
         // button the focus already.
@@ -1148,6 +1209,41 @@ void AbyssTests::buttonFocusVisible()
         QCOMPARE(button->sizeHint(), hint);
         QCOMPARE(button->size(), size);
     }
+
+    if (classic_sheet) {
+        // A tab is marked by its underline and stays as it is when focused:
+        // no frame, the same size, selected or not, under the pointer or not.
+        QDialog page;
+        page.setObjectName("RPCConsole");
+        auto* layout = new QVBoxLayout(&page);
+        auto* tab = new RoleButton("Tab", &page);
+        tab->setObjectName("btnInfo");
+        tab->setCheckable(true);
+        layout->addWidget(tab);
+        page.resize(300, 180);
+        page.show();
+        QApplication::setActiveWindow(&page);
+        Settle();
+        for (const bool selected : {false, true}) {
+            tab->setChecked(selected);
+            Settle();
+            for (const bool hover : {false, true}) {
+                QVERIFY2(tab->painted(hover, false, true, behind) == tab->painted(hover, false, false, behind),
+                         qPrintable(QString("%1 tab selected=%2 pointed=%3: focused differs").arg(theme).arg(selected).arg(hover)));
+            }
+            QCOMPARE(tab->contents(true), tab->contents(false));
+            tab->clearFocus();
+            Settle();
+            QVERIFY(!tab->hasFocus());
+            const QSize size = tab->size(), hint = tab->sizeHint();
+            tab->setFocus(Qt::TabFocusReason);
+            Settle();
+            QVERIFY(tab->hasFocus());
+            QCOMPARE(tab->sizeHint(), hint);
+            QCOMPARE(tab->size(), size);
+        }
+    }
+    if (!abyss) return;
 
     // MultisigPage's blue button, with a frame rule of its own: a white frame too.
     MultisigPage multisig;
@@ -1164,6 +1260,165 @@ void AbyssTests::buttonFocusVisible()
     const QImage image = create->grab().toImage();
     const QColor frame = image.pixelColor(image.width() / 2, 0);
     QVERIFY2(frame == QColor("#ffffff"), qPrintable(QString("focused multisigCreate frame %1").arg(frame.name())));
+}
+
+void AbyssTests::classicTabRules()
+{
+    // U12-A: in Traditional a selected tab is marked whether the pointer is on
+    // it or not. The Network Traffic tab was marked under the pointer only:
+    // the :checked rule named btnNetwork twice and btnNetTraffic never. The
+    // same slip stood in general.css, where each theme's own rules cover it,
+    // so the stylesheets are read as written too: a rule that names one of a
+    // window's tabs in some state names all of them in it, each once.
+    RestoreAppearance restore;
+    Theme("Traditional");
+    const std::vector<std::pair<const char*, QStringList>> windows{
+        {"RPCConsole", {"Info", "Commands", "Console", "NetTraffic", "Peers", "Repair"}},
+        {"OptionsDialog", {"Main", "Wallet", "CoinJoin", "Network", "Display", "Appearance"}},
+        {"SignVerifyMessageDialog", {"SignMessage", "VerifyMessage"}}};
+    for (const auto& window : windows) {
+        QDialog page;
+        page.setObjectName(window.first);
+        auto* layout = new QVBoxLayout(&page);
+        for (const QString& name : window.second) {
+            StateButton button("Tab", &page);
+            button.setObjectName("btn" + name);
+            button.setCheckable(true);
+            layout->addWidget(&button);
+            page.resize(300, 180);
+            page.show();
+            Settle();
+            for (const bool selected : {false, true}) {
+                button.setChecked(selected);
+                for (const bool pointed : {false, true}) {
+                    // The underline: the bottom border, three pixels high.
+                    const QImage image = button.paintedState(pointed ? 1 : 0);
+                    const QColor line = image.pixelColor(image.width() / 2, image.height() - 2);
+                    const QColor expected = selected ? QColor("#333333") : pointed ? QColor("#047ac2") : QColor("#008de4");
+                    QVERIFY2(line == expected, qPrintable(QString("btn%1 selected=%2 pointed=%3: underline %4, expected %5")
+                                                              .arg(name).arg(selected).arg(pointed).arg(line.name(), expected.name())));
+                }
+            }
+            layout->removeWidget(&button);
+        }
+    }
+
+    for (const char* sheet : {"general", "Light", "Dark", "Abyss", "Traditional"}) {
+        QFile file(QString(":/css/%1").arg(sheet));
+        QVERIFY2(file.open(QFile::ReadOnly), sheet);
+        QString text = QString::fromLatin1(file.readAll());
+        text.remove(QRegularExpression("/\\*.*?\\*/", QRegularExpression::DotMatchesEverythingOption));
+        int rules_with_tabs = 0;
+        QRegularExpressionMatchIterator rule = QRegularExpression("([^{}]+)\\{[^{}]*\\}").globalMatch(text);
+        while (rule.hasNext()) {
+            QStringList selectors;
+            for (const QString& selector : rule.next().captured(1).split(',', Qt::SkipEmptyParts)) selectors << selector.simplified();
+            for (const auto& window : windows) {
+                // What stands before and after each tab's name: its state.
+                std::map<QString, QStringList> named;
+                for (const QString& selector : selectors) {
+                    for (const QString& name : window.second) {
+                        const QString tab = "#btn" + name;
+                        const int at = selector.indexOf(tab);
+                        if (at < 0) continue;
+                        const QString state = selector.mid(at + tab.size());
+                        if (!state.isEmpty() && !state.startsWith(':')) continue; // a longer name
+                        named[selector.left(at) + "<tab>" + state] << name;
+                    }
+                }
+                for (const auto& [state, tabs] : named) {
+                    ++rules_with_tabs;
+                    QStringList sorted = tabs, all = window.second;
+                    sorted.sort();
+                    all.sort();
+                    QVERIFY2(sorted == all, qPrintable(QString("%1: %2 names %3 of %4's tabs").arg(sheet, state, tabs.join(' '), window.first)));
+                }
+            }
+        }
+        QVERIFY2(rules_with_tabs >= 3, qPrintable(QString("%1: %2 tab rules read").arg(sheet).arg(rules_with_tabs)));
+    }
+}
+
+void AbyssTests::classicWalletFrame()
+{
+    // U12-A: Light's and Dark's rule for the windows' background reaches the
+    // wallet frame: a comma was missing after QMessageBox, so the rule spoke
+    // of a wallet frame inside a message box. In the main window the frame
+    // stands on that window's colour either way; on its own it shows which
+    // background it has.
+    RestoreAppearance restore;
+    const std::pair<const char*, const char*> themes[]{{"Light", "#f2f2f4"}, {"Dark", "#323233"}};
+    for (const auto& [theme, colour] : themes) {
+        Theme(theme);
+        WalletFrame frame(nullptr);
+        frame.resize(480, 360);
+        frame.show();
+        Settle();
+        // In the frame's top padding (general.css: 20px), above its pages.
+        const QImage image = frame.grab().toImage();
+        const QColor top = image.pixelColor(image.width() / 2, qRound(4 * image.devicePixelRatio()));
+        QVERIFY2(top == QColor(colour), qPrintable(QString("%1: the frame's own background is %2, the windows' %3").arg(theme, top.name(), colour)));
+    }
+}
+
+namespace {
+QStringList g_stylesheet_warnings;
+QtMessageHandler g_before_stylesheet_warnings = nullptr;
+void StylesheetWarnings(QtMsgType type, const QMessageLogContext& context, const QString& message)
+{
+    if (type == QtWarningMsg && message.contains("stylesheet", Qt::CaseInsensitive)) g_stylesheet_warnings << message;
+    if (g_before_stylesheet_warnings) g_before_stylesheet_warnings(type, context, message);
+}
+} // namespace
+
+void AbyssTests::classicRoundTrip()
+{
+    // U12-A: every theme's stylesheet parses (of one it cannot parse Qt only
+    // warns), and going round the themes twice with the same widgets -- Light,
+    // Dark, Traditional, Abyss -- each looks the second time as it did the
+    // first: a focused button's frame and size, a tree's selected row.
+    RestoreAppearance restore;
+    g_stylesheet_warnings.clear();
+    g_before_stylesheet_warnings = qInstallMessageHandler(StylesheetWarnings);
+    const auto restore_handler = interfaces::MakeHandler([] { qInstallMessageHandler(g_before_stylesheet_warnings); });
+    QDialog page;
+    page.setObjectName("roundTripProbe");
+    auto* layout = new QVBoxLayout(&page);
+    auto* button = new RoleButton("Action", &page);
+    auto* tree = new QTreeWidget(&page);
+    tree->setHeaderHidden(true);
+    for (int row = 0; row < 3; ++row) new QTreeWidgetItem(tree, {QString("row %1").arg(row)});
+    tree->setCurrentItem(tree->topLevelItem(1));
+    layout->addWidget(button);
+    layout->addWidget(tree);
+    page.resize(320, 260);
+    page.show();
+    QApplication::setActiveWindow(&page);
+    Settle();
+    struct Look {
+        QColor frame, row;
+        QSize size;
+        bool operator==(const Look& other) const { return frame == other.frame && row == other.row && size == other.size; }
+        QString text() const { return QString("frame %1, row %2, %3x%4").arg(frame.name(), row.name()).arg(size.width()).arg(size.height()); }
+    };
+    std::map<QString, Look> first;
+    for (int round = 0; round < 2; ++round) {
+        for (const char* theme : {"Light", "Dark", "Traditional", "Abyss"}) {
+            Theme(theme);
+            Settle();
+            const QImage focused = button->painted(false, false, true);
+            const QRect row = tree->visualItemRect(tree->topLevelItem(1));
+            const Look look{focused.pixelColor(focused.width() / 2, 0), Ground(tree->viewport()->grab().toImage(), row), button->size()};
+            if (round == 0) {
+                first[theme] = look;
+            } else {
+                QVERIFY2(look == first[theme], qPrintable(QString("%1 the second time: %2; the first: %3").arg(theme, look.text(), first[theme].text())));
+            }
+        }
+    }
+    // The four are not one look under four names.
+    QVERIFY(!(first["Light"] == first["Dark"]) && !(first["Dark"] == first["Abyss"]) && !(first["Light"] == first["Traditional"]));
+    QVERIFY2(g_stylesheet_warnings.isEmpty(), qPrintable(g_stylesheet_warnings.join("; ")));
 }
 
 void AbyssTests::abyssContrast()
@@ -4966,8 +5221,8 @@ void AbyssTests::darkStateRules()
 {
     // Abyss loads general.css and dark.css under defcon-dark.css. Where one of
     // those has a stronger rule for a state, Abyss names that state too, so its
-    // own look stays (the menus: menuColors). A focused button keeps its
-    // border; an input keeps its 1px border and its padding when pointed at or
+    // own look stays (the menus: menuColors). A focused button has its own
+    // frame; an input keeps its 1px border and its padding when pointed at or
     // focused (the text does not move); an open combo box takes the focus
     // look, also one that takes no focus; the combo and spin box arrows stay
     // Abyss's when pointed at or pressed, dimmed when disabled; a
@@ -5035,14 +5290,15 @@ void AbyssTests::darkStateRules()
         QApplication::setActiveWindow(&page);
         Settle();
 
-        // A focused button keeps a border (general.css and dark.css: border:
-        // none); in Abyss a white one, which shows on the blue button (U11-A).
+        // A focused button has a frame (general.css: border: none): in Abyss
+        // a white one, which shows on the blue button (U11-A); in Dark one in
+        // its text colour (U12-A; before, the button's own blue: no frame).
         button->setFocus(Qt::OtherFocusReason);
         Settle();
         QVERIFY(button->hasFocus());
         QImage image = button->grab().toImage();
         QVERIFY(shot(name("button-focus"), image));
-        QVERIFY2(at(image, button->width() / 2.0, 0.5) == want("#ffffff", "#00599a"),
+        QVERIFY2(at(image, button->width() / 2.0, 0.5) == want("#ffffff", "#c7c7c7"),
                  qPrintable(QString("%1 focused button top: %2").arg(theme, at(image, button->width() / 2.0, 0.5).name())));
 
         // Inputs: 1px border and the same text position plain, pointed at and

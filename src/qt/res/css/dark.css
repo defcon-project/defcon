@@ -43,7 +43,7 @@ Common stuff
 
 QDialog,
 QMainWindow,
-QMessageBox
+QMessageBox,
 WalletFrame {
     background-color: #323233;
 }
@@ -374,13 +374,19 @@ QPushButton:hover {
     background-color: #27507a;
 }
 
-QPushButton:focus {
-    border: none;
-    outline: none;
-}
-
 QPushButton:pressed {
     background-color: #00599a;
+}
+
+/* Keyboard focus: a frame in the text colour (general.css takes the border
+   off a focused button). The frame's pixel comes out of the padding, so the
+   button keeps its size and its text stays where it is. After :hover and
+   :pressed. Abyss, which loads this file too, names its own frame and
+   padding for a focused button. */
+QPushButton:focus {
+    border: 1px solid #c7c7c7;
+    padding: 3px 11px;
+    outline: none;
 }
 
 QPushButton:disabled {
@@ -444,6 +450,33 @@ QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:pressed {
     color: #585858;
 }
 
+/* The focus frame on the grey buttons, which have a border rule of their own
+   in general.css, stronger than QPushButton:focus (no border while pressed, a
+   placeholder colour under the pointer): the blue of the other buttons, as
+   the text colour would not show on their fill. After :hover and :pressed, so
+   that the frame stays under the pointer and while the button is held down. */
+QWidget#AddressBookPage QPushButton#newAddress:focus,
+QWidget#AddressBookPage QPushButton#copyAddress:focus,
+QWidget#AddressBookPage QPushButton#showAddressQRCode:focus,
+QWidget#AddressBookPage QPushButton#deleteAddress:focus,
+QDialog#OpenURIDialog QPushButton#selectFileButton:focus,
+QDialog#OptionsDialog QPushButton#resetButton:focus,
+QDialog#SendCoinsDialog .QPushButton#addButton:focus,
+QDialog#SendCoinsDialog .QPushButton#clearButton:focus,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#removeRequestButton:focus,
+QWidget#ReceiveCoinsDialog .QFrame#frame2 QPushButton#clearButton:focus,
+QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:focus,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM:focus,
+QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:focus {
+    border: 1px solid #00599a;
+}
+
+/* The same on the Verify page's address book button, which general.css gives
+   no border. */
+QDialog#SignVerifyMessageDialog QPushButton#addressBookButton_VM:focus {
+    border: 1px solid #c7c7c7;
+}
+
 QWidget#AddressBookPage QPushButton#newAddress:disabled,
 QWidget#AddressBookPage QPushButton#copyAddress:disabled,
 QWidget#AddressBookPage QPushButton#showAddressQRCode:disabled,
@@ -485,6 +518,12 @@ QPushButton - Special case, tabbar replacement buttons
 #btnVerifyMessage {
     border-color: #00599a;
     color: #818181;
+    /* The tabs keep their underline and their size when focused: no frame
+       and the plain padding, whatever QPushButton:focus sets. */
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    padding: 4px 12px;
 }
 
 /* Debug window buttons */
@@ -706,6 +745,15 @@ QTreeWidget {
     alternate-background-color: #2d2d2e;
     background-color: #2d2d2e;
     border-color: #4a4a4b;
+}
+/* The selected row in this theme's selection colours, background and text
+   together. Without a background of its own the platform's style paints the
+   row: the Windows one in its own colour, whatever the highlight is, under
+   the text in the selection colour above, which is made for the light
+   highlight. */
+QTreeWidget::item:selected {
+    background-color: #c7c7c7;
+    color: #363637;
 }
 QTreeWidget::branch::closed:has-children {
     image: url(':/images/arrow_right_dark');

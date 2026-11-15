@@ -41,14 +41,17 @@
 #include <QLineEdit>
 #include <QPainter>
 #include <QPixmap>
+#include <QProxyStyle>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScopedPointer>
 #include <QScrollArea>
 #include <QSettings>
 #include <QSignalSpy>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QString>
+#include <QStyleOptionViewItem>
 #include <QTest>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -62,6 +65,7 @@
 #include <QtTest/QtTestGui>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <map>
 #include <set>
@@ -377,6 +381,81 @@ std::string ConsoleArguments(interfaces::Node& node, const QString& rest)
     return result;
 }
 
+//! WCAG contrast of two colours (1 to 21).
+double Contrast(const QColor& a, const QColor& b)
+{
+    const auto luminance = [](const QColor& c) {
+        const auto channel = [](int value) {
+            const double v = value / 255.0;
+            return v <= 0.03928 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * channel(c.red()) + 0.7152 * channel(c.green()) + 0.0722 * channel(c.blue());
+    };
+    const double la = luminance(a), lb = luminance(b);
+    return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
+
+//! Of a picture's part (in logical pixels), the colour most of it has and the
+//! colour in it farthest from that one: a row's background and its text.
+std::pair<QColor, QColor> GroundAndInk(const QImage& image, const QRect& logical)
+{
+    const qreal dpr = image.devicePixelRatio();
+    const QRect part = QRectF(logical.x() * dpr, logical.y() * dpr, logical.width() * dpr, logical.height() * dpr).toAlignedRect() & image.rect();
+    std::map<QRgb, int> count;
+    for (int y = part.top(); y <= part.bottom(); ++y) {
+        for (int x = part.left(); x <= part.right(); ++x) ++count[image.pixel(x, y) | 0xff000000];
+    }
+    if (count.empty()) return {};
+    const QColor ground(std::max_element(count.begin(), count.end(), [](const auto& a, const auto& b) { return a.second < b.second; })->first);
+    QColor ink = ground;
+    for (const auto& entry : count) {
+        if (Contrast(ground, QColor(entry.first)) > Contrast(ground, ink)) ink = QColor(entry.first);
+    }
+    return {ground, ink};
+}
+
+//! Stands in for the Windows style in the two places where it paints in
+//! colours of its own, whatever the palette's highlight is (Qt 5.15,
+//! qwindowsvistastyle.cpp and qwindowsxpstyle.cpp). A selected row's panel:
+//! that style takes it from the system theme, this one a shade off the view's
+//! base, the colour that style puts in the palette's highlight for such a
+//! row; and where the whole row comes to the style, its text in the plain
+//! text colour. A stylesheet that styles a view's indicators draws the row
+//! itself and asks the style for the panel only (qstylesheetstyle.cpp,
+//! CE_ItemViewItem), so there the text keeps the palette's highlighted-text
+//! colour. A splitter's handle: erased with the handle's own window colour,
+//! which no theme sets.
+class WindowsLikeStyle : public QProxyStyle
+{
+public:
+    WindowsLikeStyle() : QProxyStyle(QStringLiteral("fusion")) {}
+    void drawControl(ControlElement element, const QStyleOption* option, QPainter* painter, const QWidget* widget) const override
+    {
+        if (element == CE_Splitter) {
+            painter->eraseRect(option->rect);
+            return;
+        }
+        if (element == CE_ItemViewItem) {
+            if (const auto* item = qstyleoption_cast<const QStyleOptionViewItem*>(option)) {
+                QStyleOptionViewItem adjusted(*item);
+                adjusted.palette.setColor(QPalette::All, QPalette::HighlightedText, item->palette.color(QPalette::Active, QPalette::Text));
+                adjusted.palette.setColor(QPalette::All, QPalette::Highlight, item->palette.base().color().darker(108));
+                QProxyStyle::drawControl(element, &adjusted, painter, widget);
+                return;
+            }
+        }
+        QProxyStyle::drawControl(element, option, painter, widget);
+    }
+    void drawPrimitive(PrimitiveElement element, const QStyleOption* option, QPainter* painter, const QWidget* widget) const override
+    {
+        if (element == PE_PanelItemViewItem && (option->state & State_Selected)) {
+            painter->fillRect(option->rect, option->palette.base().color().darker(108));
+            return;
+        }
+        QProxyStyle::drawPrimitive(element, option, painter, widget);
+    }
+};
+
 //! The Commands page: every command the help lists, by topic, searchable; each
 //! with its help's examples, those for this console giving exactly the
 //! arguments the defcon-cli example gives, ready to copy or to put into the
@@ -609,6 +688,27 @@ void TestCommandBrowser(RPCConsole* console, interfaces::Node& node)
             QApplication::processEvents();
             QVERIFY(console->grab().save(QDir(output).filePath(QString("Console-commands-%1.png").arg(QString::fromLatin1(theme)))));
         }
+        // In Light and Dark, a button of the page reached with the keyboard.
+        if (auto* copy = browser->findChild<QPushButton*>("commandCopyExample")) {
+            for (const char* theme : {"Light", "Dark"}) {
+                QSettings().setValue("theme", theme);
+                GUIUtil::loadTheme(true);
+                copy->setFocus(Qt::TabFocusReason);
+                QApplication::processEvents();
+                QVERIFY(copy->hasFocus());
+                QVERIFY(console->grab().save(QDir(output).filePath(QString("Console-commands-%1-focus.png").arg(QString::fromLatin1(theme)))));
+            }
+        }
+        // In Traditional, the Network Traffic tab selected, the pointer not on it.
+        if (auto* traffic = console->findChild<QPushButton*>("btnNetTraffic")) {
+            QSettings().setValue("theme", "Traditional");
+            GUIUtil::loadTheme(true);
+            traffic->click();
+            QApplication::processEvents();
+            QVERIFY(console->grab().save(QDir(output).filePath("Console-traffic-Traditional.png")));
+            button->click();
+            QApplication::processEvents();
+        }
         // The flags line at the window's smallest width, in Abyss.
         QSettings().setValue("theme", "Abyss");
         GUIUtil::loadTheme(true);
@@ -622,6 +722,79 @@ void TestCommandBrowser(RPCConsole* console, interfaces::Node& node)
         QApplication::processEvents();
         QVERIFY(console->grab().save(QDir(output).filePath("Console-commands-search.png")));
         search->clear();
+        if (saved.isValid()) QSettings().setValue("theme", saved); else QSettings().remove("theme");
+        GUIUtil::loadTheme(true);
+    }
+
+    // In Abyss, Light and Dark the selected command reads -- its text against
+    // its row at 4.5:1 or more, the list focused or not -- and the handle
+    // between the list and the details shows the page behind it. Both as the
+    // application's own style paints them and as the Windows style does
+    // (WindowsLikeStyle): under that one, Light and Dark had the selected row
+    // in the style's own colour under the theme's selection text, and every
+    // theme had the handle in the system's window colour, a white bar in the
+    // dark ones. Traditional leaves both to the platform.
+    {
+        const QVariant saved = QSettings().value("theme");
+        console->resize(1000, 700);
+        button->click();
+        QVERIFY(browser->select("getblockcount"));
+        auto* splitter = browser->findChild<QSplitter*>();
+        auto* page = console->findChild<QWidget*>("pageCommands");
+        QVERIFY(splitter && page);
+        QCOMPARE(splitter->count(), 2);
+        QTreeWidgetItem* item = list->currentItem();
+        QVERIFY(item);
+        // Heavy letters: some pixel has the text's colour in full at any scale.
+        // The item gets its own font back also when a check returns early.
+        struct ItemFont {
+            QTreeWidgetItem* item;
+            QFont font;
+            ~ItemFont() { item->setFont(0, font); }
+        } item_font{item, item->font(0)};
+        QFont heavy = item_font.font;
+        heavy.setBold(true);
+        heavy.setPixelSize(24);
+        item->setFont(0, heavy);
+        WindowsLikeStyle windows_like;
+        // The widgets go back to the application's style before the stand-in goes.
+        struct OwnStyles {
+            QWidget* list;
+            QWidget* splitter;
+            ~OwnStyles() { list->setStyle(nullptr); splitter->setStyle(nullptr); }
+        } own_styles{list, splitter};
+        for (const char* theme : {"Abyss", "Light", "Dark"}) {
+            QSettings().setValue("theme", theme);
+            GUIUtil::loadTheme(true);
+            for (const bool windows : {false, true}) {
+                list->setStyle(windows ? &windows_like : nullptr);
+                splitter->setStyle(windows ? &windows_like : nullptr);
+                const QString where = QString("%1, %2 style").arg(QString::fromLatin1(theme), windows ? "Windows-like" : "the application's");
+                for (const bool focused : {true, false}) {
+                    if (focused) list->setFocus(); else search->setFocus();
+                    QApplication::processEvents();
+                    QCOMPARE(list->hasFocus(), focused);
+                    list->scrollToItem(item);
+                    QApplication::processEvents();
+                    // Inside the row, clear of its edges.
+                    const QRect row = list->visualItemRect(item).adjusted(3, 3, -3, -3);
+                    QVERIFY(row.isValid());
+                    const auto [ground, ink] = GroundAndInk(list->viewport()->grab().toImage(), row);
+                    if (GUIUtil::fontsLoaded()) {
+                        QVERIFY2(Contrast(ground, ink) >= 4.5, qPrintable(QString("%1, list focused=%2: selected text %3 on %4 is %5:1")
+                                                                        .arg(where).arg(focused).arg(ink.name(), ground.name()).arg(Contrast(ground, ink), 0, 'f', 2)));
+                    }
+                }
+                const QImage shot = console->grab().toImage();
+                const qreal dpr = shot.devicePixelRatio();
+                const QWidget* handle = splitter->handle(1);
+                QVERIFY(handle && handle->isVisible());
+                const QColor handle_colour = GroundAndInk(shot, QRect(handle->mapTo(console, QPoint(0, 0)), handle->size())).first;
+                const QPoint margin = page->mapTo(console, QPoint(page->width() / 2, page->height() - 2));
+                const QColor page_colour = shot.pixelColor(qRound(margin.x() * dpr), qRound(margin.y() * dpr));
+                QVERIFY2(handle_colour == page_colour, qPrintable(QString("%1: handle %2, page %3").arg(where, handle_colour.name(), page_colour.name())));
+            }
+        }
         if (saved.isValid()) QSettings().setValue("theme", saved); else QSettings().remove("theme");
         GUIUtil::loadTheme(true);
     }
