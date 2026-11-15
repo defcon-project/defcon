@@ -21,8 +21,12 @@ Loaded in GUIUtil::loadStyleSheet() in guitil.cpp.
 
 #00000000
 #555
+#0072b9
 #008de4
+#0c5e91
 #0f75b5
+#3c3c3c
+#8a8a8a
 #a7a7a7
 #c7c7c7
 #d2d2d2
@@ -353,16 +357,16 @@ QPushButton
 ******************************************************/
 
 QPushButton {
-    background-color: #008de4;
+    background-color: #0072b9;
     color: #f2f2f4;
 }
 
 QPushButton:hover {
-    background-color: #0f75b5;
+    background-color: #0c5e91;
 }
 
 QPushButton:pressed {
-    background-color: #008de4;
+    background-color: #0072b9;
 }
 
 /* Keyboard focus: a frame in the text colour (general.css takes the border
@@ -414,7 +418,7 @@ QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:hover,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM:hover,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:hover {
     background-color: #a7a7a7;
-    color: #555;
+    color: #3c3c3c;
 }
 
 QWidget#AddressBookPage QPushButton#newAddress:pressed,
@@ -496,7 +500,7 @@ QPushButton - Special case, tabbar replacement buttons
 #btnSignMessage,
 #btnVerifyMessage {
     border-color: #008de4;
-    color: #a7a7a7;
+    color: #8a8a8a;
     /* The tabs keep their underline and their size when focused: no frame
        and the plain padding, whatever QPushButton:focus sets. */
     border-top: none;

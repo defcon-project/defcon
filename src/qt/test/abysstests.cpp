@@ -1421,6 +1421,139 @@ void AbyssTests::classicRoundTrip()
     QVERIFY2(g_stylesheet_warnings.isEmpty(), qPrintable(g_stylesheet_warnings.join("; ")));
 }
 
+void AbyssTests::lightControlContrast()
+{
+    // U12-A5 (U12-A's point 5): Light's working controls read. The blue
+    // button's label against its fill at 4.5:1 or more, plain, pointed, held
+    // down and focused (the plain fill gave 3.17:1, the pointed one 4.44:1),
+    // and the pointer still darkens the fill; a grey button's text under the
+    // pointer at 4.5:1 (3.10:1); an unselected tab's text at 3:1 or more
+    // (2.15:1; the roadmap's mark for these large labels), still lighter than
+    // a selected tab's, so that the selected one stands out. The text is read
+    // where the font draws it in full: of the button's contents, the pixel
+    // that stands out most against their ground. Disabled controls stay as
+    // they are.
+    RestoreAppearance restore;
+    Theme("Light");
+    const QColor page_colour("#f2f2f4"), label("#f2f2f4");
+    const bool fonts = GUIUtil::fontsLoaded();
+    const QString shots = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    const auto shot = [&](const QString& name, const QImage& image) {
+        return shots.isEmpty() || (QDir().mkpath(shots) && image.save(QDir(shots).filePath(name + ".png")));
+    };
+    struct Reading { QColor ground, ink; double contrast; };
+    const auto read = [](const QImage& image, const QRect& contents) {
+        const QColor ground = Ground(image, contents);
+        QColor ink = ground;
+        const QRect r = Pixels(image, contents);
+        for (int y = r.top(); y <= r.bottom(); ++y) {
+            for (int x = r.left(); x <= r.right(); ++x) {
+                const QColor c = image.pixelColor(x, y);
+                if (Contrast(c, ground) > Contrast(ink, ground)) ink = c;
+            }
+        }
+        return Reading{ground, ink, Contrast(ground, ink)};
+    };
+    const auto text = [](const QString& what, const Reading& r) {
+        return QString("%1: %2 on %3 is %4:1").arg(what, r.ink.name(), r.ground.name()).arg(r.contrast, 0, 'f', 2);
+    };
+
+    // The blue button (QPushButton's own rule).
+    {
+        QDialog page;
+        page.setObjectName("lightContrastProbe");
+        auto* layout = new QVBoxLayout(&page);
+        auto* button = new RoleButton("HHH", &page);
+        layout->addWidget(button);
+        page.resize(300, 180);
+        page.show();
+        QApplication::setActiveWindow(&page);
+        Settle();
+        struct State { const char* what; bool hover, pressed, focus; };
+        std::map<QString, QColor> fill;
+        for (const State state : {State{"plain", false, false, false}, State{"pointed", true, false, false},
+                                  State{"pressed", false, true, false}, State{"focused", false, false, true}}) {
+            const QImage image = button->painted(state.hover, state.pressed, state.focus, page_colour);
+            QVERIFY(shot(QString("contrast-Light-blue-%1").arg(state.what), image));
+            const Reading r = read(image, button->contents(state.focus));
+            fill[state.what] = r.ground;
+            const QString what = QString("blue button %1").arg(state.what);
+            QVERIFY2(Contrast(r.ground, label) >= 4.5, qPrintable(QString("%1: the label %2 on %3 is %4:1").arg(what, label.name(), r.ground.name()).arg(Contrast(r.ground, label), 0, 'f', 2)));
+            if (fonts) QVERIFY2(r.contrast >= 4.5, qPrintable(text(what, r)));
+        }
+        QVERIFY2(fill["pointed"].lightness() < fill["plain"].lightness(),
+                 qPrintable(QString("the pointer does not darken the fill: %1 plain, %2 pointed").arg(fill["plain"].name(), fill["pointed"].name())));
+    }
+
+    // The grey buttons under the pointer (one rule for the 13 of them).
+    struct Grey { const char* page; const char* frame; const char* name; };
+    for (const Grey spec : {
+        Grey{"AddressBookPage", "", "newAddress"}, {"AddressBookPage", "", "copyAddress"},
+        {"AddressBookPage", "", "showAddressQRCode"}, {"AddressBookPage", "", "deleteAddress"},
+        {"OpenURIDialog", "", "selectFileButton"}, {"OptionsDialog", "", "resetButton"},
+        {"SendCoinsDialog", "", "addButton"}, {"SendCoinsDialog", "", "clearButton"},
+        {"ReceiveCoinsDialog", "frame", "removeRequestButton"}, {"ReceiveCoinsDialog", "frame2", "clearButton"},
+        {"ReceiveCoinsDialog", "frame", "showRequestButton"}, {"SignVerifyMessageDialog", "", "clearButton_SM"},
+        {"SignVerifyMessageDialog", "", "clearButton_VM"}}) {
+        QDialog page;
+        page.setObjectName(spec.page);
+        auto* layout = new QVBoxLayout(&page);
+        QWidget* holder = &page;
+        if (*spec.frame) {
+            auto* frame = new QFrame(&page);
+            frame->setObjectName(spec.frame);
+            new QVBoxLayout(frame);
+            layout->addWidget(frame);
+            holder = frame;
+        }
+        auto* button = new RoleButton("HHH", holder);
+        button->setObjectName(spec.name);
+        holder->layout()->addWidget(button);
+        page.resize(300, 180);
+        page.show();
+        Settle();
+        const QImage image = button->painted(true, false, false, page_colour);
+        const QString what = QString("%1 %2 pointed").arg(spec.page, spec.name);
+        if (qstrcmp(spec.name, "clearButton_VM") == 0) QVERIFY(shot("contrast-Light-grey-pointed", image));
+        const Reading r = read(image, button->contents(false));
+        // The grey rule is the one reached (its pointed fill).
+        QVERIFY2(r.ground == QColor("#a7a7a7"), qPrintable(QString("%1: fill %2").arg(what, r.ground.name())));
+        if (fonts) QVERIFY2(r.contrast >= 4.5, qPrintable(text(what, r)));
+    }
+
+    // The tabs, unselected and selected, not pointed at.
+    const std::vector<std::pair<const char*, QStringList>> windows{
+        {"RPCConsole", {"Info", "Commands", "Console", "NetTraffic", "Peers", "Repair"}},
+        {"OptionsDialog", {"Main", "Wallet", "CoinJoin", "Network", "Display", "Appearance"}},
+        {"SignVerifyMessageDialog", {"SignMessage", "VerifyMessage"}}};
+    for (const auto& window : windows) {
+        for (const QString& name : window.second) {
+            QDialog page;
+            page.setObjectName(window.first);
+            auto* layout = new QVBoxLayout(&page);
+            auto* tab = new RoleButton("HHH", &page);
+            tab->setObjectName("btn" + name);
+            tab->setCheckable(true);
+            layout->addWidget(tab);
+            page.resize(300, 180);
+            page.show();
+            Settle();
+            const QImage unselected_image = tab->painted(false, false, false, page_colour);
+            const Reading unselected = read(unselected_image, tab->contents(false));
+            tab->setChecked(true);
+            Settle();
+            const QImage selected_image = tab->painted(false, false, false, page_colour);
+            const Reading selected = read(selected_image, tab->contents(false));
+            if (name == "Commands") QVERIFY(shot("contrast-Light-tab-unselected", unselected_image) && shot("contrast-Light-tab-selected", selected_image));
+            const QString what = QString("%1 btn%2").arg(window.first, name);
+            QVERIFY2(unselected.ground == page_colour, qPrintable(QString("%1: ground %2").arg(what, unselected.ground.name())));
+            if (!fonts) continue;
+            QVERIFY2(unselected.contrast >= 3.0, qPrintable(text(what + " unselected", unselected)));
+            QVERIFY2(selected.contrast > unselected.contrast, qPrintable(QString("%1: selected %2, unselected %3").arg(what, text("", selected), text("", unselected))));
+        }
+    }
+}
+
 void AbyssTests::abyssContrast()
 {
     // U11-A: the white text on Abyss's blue buttons reads at 4.5:1 or more in

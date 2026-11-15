@@ -32,6 +32,7 @@ private Q_SLOTS:
     void classicTabRules();
     void classicWalletFrame();
     void classicRoundTrip();
+    void lightControlContrast();
     void abyssContrast();
     void zebraRows();
     void networkBar();
