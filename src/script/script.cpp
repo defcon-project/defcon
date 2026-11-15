@@ -236,8 +236,10 @@ bool CScript::IsPayToPublicKey() const
 
 bool CScript::IsPayToBLSPublicKey() const
 {
+    // <push of the 48-byte BLS public key> OP_CHECKSIG, the form Solver() calls BLSPUBKEY. The
+    // length and the last byte alone also match other 50-byte scripts, such as a data carrier.
     if (this->size() == 50) {
-        return (*this)[49] == OP_CHECKSIG;
+        return (*this)[0] == 48 && (*this)[49] == OP_CHECKSIG;
     }
     return false;
 }
