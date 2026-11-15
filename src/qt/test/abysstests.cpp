@@ -70,6 +70,7 @@
 #ifndef WIN32
 #include <sys/resource.h>
 #endif
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -265,6 +266,9 @@ public:
         option.state.setFlag(QStyle::State_MouseOver, state == 1);
         option.state.setFlag(QStyle::State_Sunken, state == 2);
         option.state.setFlag(QStyle::State_Enabled, state != 3);
+        // The pointer's states only: a shown dialog gives its first button the
+        // focus, and Abyss shows the focus on these buttons (U11-A).
+        option.state.setFlag(QStyle::State_HasFocus, false);
         QImage image(size(), QImage::Format_RGB32);
         image.fill(QColor("#0b1727"));
         QPainter painter(&image);
@@ -272,6 +276,39 @@ public:
         return image;
     }
 };
+//! A push button painted as the style paints it in a given state, the
+//! keyboard focus included (U11-A).
+class RoleButton : public QPushButton {
+public:
+    using QPushButton::QPushButton;
+    QImage painted(bool hover, bool pressed, bool focus)
+    {
+        QStyleOptionButton option;
+        initStyleOption(&option);
+        option.state.setFlag(QStyle::State_MouseOver, hover);
+        option.state.setFlag(QStyle::State_Sunken, pressed);
+        option.state.setFlag(QStyle::State_HasFocus, focus);
+        option.state.setFlag(QStyle::State_Enabled, true);
+        QImage image(size(), QImage::Format_RGB32);
+        image.fill(QColor("#0b1727"));
+        QPainter painter(&image);
+        style()->drawControl(QStyle::CE_PushButton, &option, &painter, this);
+        return image;
+    }
+};
+//! WCAG contrast of two colours (1 to 21).
+double Contrast(const QColor& a, const QColor& b)
+{
+    const auto luminance = [](const QColor& c) {
+        const auto channel = [](int value) {
+            const double v = value / 255.0;
+            return v <= 0.03928 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * channel(c.red()) + 0.7152 * channel(c.green()) + 0.0722 * channel(c.blue());
+    };
+    const double la = luminance(a), lb = luminance(b);
+    return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
 //! An image to paint a widget's part on, at the widget's device pixel ratio
 //! (text drawn at another ratio has another size), in logical coordinates.
 QImage Canvas(const QWidget* widget, const QSize& logical, const QColor& fill)
@@ -1060,6 +1097,139 @@ void AbyssTests::appearanceFonts()
     }
 }
 
+void AbyssTests::buttonFocusVisible()
+{
+    // U11-A: keyboard focus shows on each button role of Abyss -- the blue
+    // filled button (a white frame), a dark framed one and the text link (the
+    // accent blue frame) -- and looks neither plain nor pointed; a focused
+    // button keeps its size.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    const QString shots = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    struct Role { const char* what; const char* page; const char* holder; const char* name; };
+    for (const Role role : {Role{"filled", "abyssFocusProbe", "", ""},
+                            Role{"framed", "SendCoinsDialog", "", "addButton"},
+                            Role{"text-link", "OverviewPage", "coinJoinRow", "coinJoinRowShow"}}) {
+        QDialog page;
+        page.setObjectName(role.page);
+        auto* layout = new QVBoxLayout(&page);
+        auto* holder = new QWidget(&page);
+        holder->setObjectName(role.holder);
+        auto* inner = new QVBoxLayout(holder);
+        auto* button = new RoleButton("Action", holder);
+        button->setObjectName(role.name);
+        inner->addWidget(button);
+        layout->addWidget(holder);
+        page.resize(300, 180);
+        page.show();
+        QApplication::setActiveWindow(&page);
+        Settle();
+        const QImage plain = button->painted(false, false, false);
+        const QImage pointed = button->painted(true, false, false);
+        const QImage focused = button->painted(false, false, true);
+        const auto top = [](const QImage& image) { return image.pixelColor(image.width() / 2, 0); };
+        QVERIFY2(top(focused) != top(plain) && top(focused) != top(pointed),
+                 qPrintable(QString("%1: frame plain %2, pointed %3, focused %4").arg(role.what, top(plain).name(), top(pointed).name(), top(focused).name())));
+        if (!shots.isEmpty()) {
+            QVERIFY(QDir().mkpath(shots));
+            QVERIFY(plain.save(QDir(shots).filePath(QString("button-%1-plain.png").arg(role.what))));
+            QVERIFY(pointed.save(QDir(shots).filePath(QString("button-%1-pointed.png").arg(role.what))));
+            QVERIFY(focused.save(QDir(shots).filePath(QString("button-%1-focused.png").arg(role.what))));
+        }
+        // Measured without focus first: the shown dialog has given its only
+        // button the focus already.
+        button->clearFocus();
+        Settle();
+        QVERIFY(!button->hasFocus());
+        const QSize size = button->size(), hint = button->sizeHint();
+        button->setFocus(Qt::TabFocusReason);
+        Settle();
+        QVERIFY(button->hasFocus());
+        QCOMPARE(button->sizeHint(), hint);
+        QCOMPARE(button->size(), size);
+    }
+
+    // MultisigPage's blue button, with a frame rule of its own: a white frame too.
+    MultisigPage multisig;
+    multisig.resize(480, 360);
+    multisig.show();
+    QApplication::setActiveWindow(&multisig);
+    Settle();
+    auto* create = multisig.findChild<QPushButton*>("multisigCreate");
+    QVERIFY(create && create->isVisible());
+    create->setEnabled(true);
+    create->setFocus(Qt::TabFocusReason);
+    Settle();
+    QVERIFY(create->hasFocus());
+    const QImage image = create->grab().toImage();
+    const QColor frame = image.pixelColor(image.width() / 2, 0);
+    QVERIFY2(frame == QColor("#ffffff"), qPrintable(QString("focused multisigCreate frame %1").arg(frame.name())));
+}
+
+void AbyssTests::abyssContrast()
+{
+    // U11-A: the white text on Abyss's blue buttons reads at 4.5:1 or more in
+    // the four live states -- plain, pointed, pressed, focused; the pointer
+    // used to lighten the fill to 3.6:1 -- and so does the calendar's selected
+    // day (3.0:1 before). Disabled is the usual exception.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    QDialog page;
+    page.setObjectName("abyssContrastProbe");
+    auto* layout = new QVBoxLayout(&page);
+    auto* button = new RoleButton("Action", &page);
+    layout->addWidget(button);
+    page.resize(300, 180);
+    page.show();
+    Settle();
+    const QColor white("#ffffff");
+    // The fill in the left padding, clear of the frame and the text.
+    const auto fill_of = [](const QImage& image) { return image.pixelColor(6, image.height() / 2); };
+    struct State { const char* what; bool hover, pressed, focus; };
+    for (const State state : {State{"plain", false, false, false}, State{"pointed", true, false, false},
+                              State{"pressed", false, true, false}, State{"focused", false, false, true}}) {
+        const QColor fill = fill_of(button->painted(state.hover, state.pressed, state.focus));
+        QVERIFY2(Contrast(fill, white) >= 4.5, qPrintable(QString("%1: white on %2 is %3:1").arg(state.what, fill.name()).arg(Contrast(fill, white), 0, 'f', 2)));
+    }
+    // The pointer keeps the fill as it is (only the frame lightens): not
+    // dark.css's own :hover fill either.
+    QCOMPARE(fill_of(button->painted(true, false, false)), fill_of(button->painted(false, false, false)));
+
+    // MultisigPage's blue button, pointed at.
+    MultisigPage multisig;
+    multisig.resize(480, 360);
+    multisig.show();
+    Settle();
+    auto* create = multisig.findChild<QPushButton*>("multisigCreate");
+    QVERIFY(create);
+    create->setEnabled(true);
+    // Painted through the style with the pointer's state set, as above (a
+    // grab does not reliably carry a hover set from outside).
+    QStyleOptionButton option;
+    option.initFrom(create);
+    option.text = create->text();
+    option.state |= QStyle::State_MouseOver | QStyle::State_Enabled;
+    option.state.setFlag(QStyle::State_HasFocus, false);
+    QImage pointed(create->size(), QImage::Format_RGB32);
+    pointed.fill(QColor("#0b1727"));
+    {
+        QPainter painter(&pointed);
+        create->style()->drawControl(QStyle::CE_PushButton, &option, &painter, create);
+    }
+    const QColor fill = pointed.pixelColor(6, pointed.height() / 2);
+    QVERIFY2(Contrast(fill, white) >= 4.5, qPrintable(QString("pointed multisigCreate: white on %1 is %2:1").arg(fill.name()).arg(Contrast(fill, white), 0, 'f', 2)));
+
+    // The calendar's selected day: the view's highlight colours.
+    QCalendarWidget calendar;
+    calendar.show();
+    Settle();
+    auto* view = calendar.findChild<QAbstractItemView*>("qt_calendar_calendarview");
+    QVERIFY(view);
+    const QColor day = view->palette().color(QPalette::Active, QPalette::Highlight);
+    const QColor day_text = view->palette().color(QPalette::Active, QPalette::HighlightedText);
+    QVERIFY2(Contrast(day, day_text) >= 4.5, qPrintable(QString("selected day: %1 on %2 is %3:1").arg(day_text.name(), day.name()).arg(Contrast(day, day_text), 0, 'f', 2)));
+}
+
 void AbyssTests::cssStates()
 {
     RestoreAppearance restore;
@@ -1159,7 +1329,8 @@ void AbyssTests::cssStates()
     auto* calendarView = calendar.findChild<QTableView*>("qt_calendar_calendarview");
     QVERIFY(calendarView);
     QCOMPARE(calendarView->palette().color(QPalette::AlternateBase), QColor("#10263e"));
-    QCOMPARE(calendarView->palette().color(QPalette::Highlight), QColor("#1297ff"));
+    // The selected day: the blue buttons' fill, white on it 4.6:1 (U11-A; #1297ff gave 3.0:1).
+    QCOMPARE(calendarView->palette().color(QPalette::Highlight), QColor("#0f75d6"));
     const QRect headerCell = calendarView->visualRect(calendarView->model()->index(0, 1));
     QVERIFY(headerCell.isValid());
     const QImage calendarPixels = calendarView->viewport()->grab().toImage();
@@ -4864,13 +5035,14 @@ void AbyssTests::darkStateRules()
         QApplication::setActiveWindow(&page);
         Settle();
 
-        // A focused button keeps its border (general.css and dark.css: border: none).
+        // A focused button keeps a border (general.css and dark.css: border:
+        // none); in Abyss a white one, which shows on the blue button (U11-A).
         button->setFocus(Qt::OtherFocusReason);
         Settle();
         QVERIFY(button->hasFocus());
         QImage image = button->grab().toImage();
         QVERIFY(shot(name("button-focus"), image));
-        QVERIFY2(at(image, button->width() / 2.0, 0.5) == want("#1297ff", "#00599a"),
+        QVERIFY2(at(image, button->width() / 2.0, 0.5) == want("#ffffff", "#00599a"),
                  qPrintable(QString("%1 focused button top: %2").arg(theme, at(image, button->width() / 2.0, 0.5).name())));
 
         // Inputs: 1px border and the same text position plain, pointed at and
@@ -4954,8 +5126,9 @@ void AbyssTests::darkStateRules()
             }
         }
 
-        // MultisigPage's own buttons are weaker than the generic focus rule:
-        // their focus border stays their own colour.
+        // MultisigPage's own buttons: keyboard focus shows as the dark
+        // buttons' accent frame (U11-A; before, their normal frame stayed and
+        // the focus did not show).
         if (abyss) {
             MultisigPage multisig;
             multisig.resize(480, 360);
@@ -4975,7 +5148,7 @@ void AbyssTests::darkStateRules()
             QVERIFY(own->hasFocus());
             image = own->grab().toImage();
             QVERIFY(shot(name("multisig-button-focus"), image));
-            QVERIFY2(at(image, own->width() / 2.0, 0.5) == QColor("#29435f"), qPrintable(QString("multisig focused button top: %1").arg(at(image, own->width() / 2.0, 0.5).name())));
+            QVERIFY2(at(image, own->width() / 2.0, 0.5) == QColor("#1297ff"), qPrintable(QString("multisig focused button top: %1").arg(at(image, own->width() / 2.0, 0.5).name())));
         }
     }
 }
