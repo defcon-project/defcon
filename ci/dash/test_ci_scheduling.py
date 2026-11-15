@@ -964,6 +964,7 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
             'feature_import_corrupt_pos_block.py',
             'p2p_blocksonly_peer_messages.py',
             'feature_init_error_stops_import.py',
+            'feature_utxo_set_hash.py',
             'feature_versionbits_warning.py', 'interface_zmq.py', 'p2p_blockfilters.py',
             'feature_bip68_sequence.py', 'p2p_sendheaders.py', 'p2p_sendheaders_compressed.py',
             'p2p_unrequested_blocks.py', 'p2p_v2_encrypted.py',
