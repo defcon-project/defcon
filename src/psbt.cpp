@@ -11,6 +11,7 @@
 #include <util/check.h>
 #include <util/strencodings.h>
 
+#include <algorithm>
 #include <numeric>
 
 PartiallySignedTransaction::PartiallySignedTransaction(const CMutableTransaction& tx) : tx(tx)
@@ -271,8 +272,13 @@ bool SignPSBTInput(const SigningProvider& provider, PartiallySignedTransaction& 
         sig_complete = ProduceSignature(provider, creator, utxo.scriptPubKey, sigdata);
     }
 
-    // If we are not finalizing, set sigdata.complete to false to not set the scriptSig
-    if (!finalize && sigdata.complete) sigdata.complete = false;
+    // If we are not finalizing, set sigdata.complete to false to not set the scriptSig. Not for a BLS signature: a
+    // partial signature record (PSBT_IN_PARTIAL_SIG) holds a 33- or 65-byte ECDSA key, and with the 48-byte key of a
+    // BLS signature the PSBT could not be read back, not even by this node. A BLS signature only spends a
+    // pay-to-BLS-pubkey script, which that one signature completes, so such an input is finalized instead.
+    const bool bls_signature{std::any_of(sigdata.signatures.begin(), sigdata.signatures.end(),
+                                         [](const auto& entry) { return entry.second.first.IsBLS(); })};
+    if (!finalize && sigdata.complete && !bls_signature) sigdata.complete = false;
 
     input.FromSignatureData(sigdata);
 
