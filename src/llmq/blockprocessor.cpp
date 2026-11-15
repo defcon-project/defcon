@@ -322,7 +322,10 @@ std::optional<QcHashMap> CQuorumBlockProcessor::GetQcHashes(const CBlockIndex* p
             uint256 dummyHash;
             CFinalCommitmentPtr pqc = GetMinedCommitment(llmqType, blockIndex->GetBlockHash(), dummyHash);
             if (pqc == nullptr) {
-                // this should never happen
+                // The index lists this quorum, but its commitment record is missing or does not decode: the local
+                // database is damaged (the caller stops the node). Name the record here; the caller's message cannot.
+                LogPrintf("CQuorumBlockProcessor::%s -- no readable commitment record for a mined quorum: type=%d, quorumHash=%s, quorumHeight=%d\n",
+                          __func__, ToUnderlying(llmqType), blockIndex->GetBlockHash().ToString(), blockIndex->nHeight);
                 return std::nullopt;
             }
             vec_hashes.emplace_back(::SerializeHash(*pqc));

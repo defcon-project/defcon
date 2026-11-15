@@ -7,6 +7,7 @@
 #include <bls/bls.h>
 #include <chain.h>
 #include <chainparams.h>
+#include <compat/endian.h>
 #include <consensus/validation.h>
 #include <dbwrapper.h>
 #include <deploymentstatus.h>
@@ -18,6 +19,7 @@
 #include <evo/mnhftx.h>
 #include <evo/specialtx.h>
 #include <evo/specialtxman.h>
+#include <llmq/blockprocessor.h>
 #include <llmq/chainlocks.h>
 #include <llmq/commitment.h>
 #include <llmq/context.h>
@@ -29,18 +31,50 @@
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <random.h>
+#include <shutdown.h>
 #include <streams.h>
 #include <util/check.h>
+#include <util/translation.h>
 #include <validation.h>
+#include <warnings.h>
 
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <fstream>
+#include <limits>
+#include <memory>
+#include <string>
+#include <tuple>
 
 struct QuorumHistoryReadSetup : RegTestingSetup {
     QuorumHistoryReadSetup() : RegTestingSetup({"-testactivationheight=v20@1"}) {}
 };
+
+// A chain whose next block carries a coinbase payload with a quorum merkle root (DIP0003 from height 432 on regtest).
+struct QuorumRootChainSetup : TestChainSetup {
+    QuorumRootChainSetup() : TestChainSetup(430) { CreateAndProcessBlock({}, coinbaseKey); }
+};
+
+// The two records the quorum block processor keeps for a mined commitment (llmq/blockprocessor.cpp): the index
+// entry by mined height, which lists the active quorums and holds the quorum's height, and the commitment record
+// itself, by quorum hash.
+static auto MinedCommitmentIndexKey(Consensus::LLMQType type, int mined_height)
+{
+    return std::make_tuple(std::string{"q_mcih"}, type,
+                           htobe32(std::numeric_limits<uint32_t>::max() - static_cast<uint32_t>(mined_height)));
+}
+
+static auto MinedCommitmentKey(Consensus::LLMQType type, const uint256& quorum_hash)
+{
+    return std::make_pair(std::string{"q_mc"}, std::make_pair(type, quorum_hash));
+}
+
+static bool AbortNamesTheWayOut()
+{
+    return GetWarnings(/*verbose=*/true).original.find("-reindex") != std::string::npos;
+}
 
 BOOST_FIXTURE_TEST_SUITE(evo_cbtx_tests, TestChain100Setup)
 
@@ -483,6 +517,117 @@ BOOST_FIXTURE_TEST_CASE(mnhf_replay_storage_error_passes_through, QuorumHistoryR
     BOOST_CHECK_THROW(manager.ProcessBlock(CBlock{}, &current, true, state), dbwrapper_error);
     BOOST_CHECK(!state.IsInvalid());
     BOOST_CHECK(!state.IsError());
+}
+
+// The quorum merkle root of the coinbase payload lists the active quorums from the index of mined commitments and
+// reads each one's commitment record. A record the index points to and the database does not hold, or holds in a
+// form that does not decode, is damage to this node's own database, not something a block did. It was reported as
+// a consensus failure of the block ("commitment-not-found"); it has to be a local error that stops the node in
+// order and names the way out.
+BOOST_AUTO_TEST_CASE(a_missing_quorum_commitment_record_is_a_local_error)
+{
+    auto& evodb = *Assert(m_node.evodb);
+    const auto& qblockman = *Assert(Assert(m_node.llmq_ctx)->quorum_block_processor);
+    const auto params = *Assert(Params().GetLLMQ(Params().GetConsensus().llmqTypeChainLocks));
+    // The abort requests a shutdown, which writes to the shutdown pipe.
+    BOOST_REQUIRE(InitShutdownState());
+    LOCK(cs_main);
+    const CBlockIndex* tip = m_node.chainman->ActiveTip();
+    const CBlockIndex* quorum_base = tip->GetAncestor(tip->nHeight - 4);
+    const auto index_key = MinedCommitmentIndexKey(params.type, tip->nHeight);
+    const auto record_key = MinedCommitmentKey(params.type, quorum_base->GetBlockHash());
+    // The damage goes into the database itself, below the evodb transactions, as a restart finds it.
+    BOOST_REQUIRE(evodb.CommitRootTransaction());
+    auto& db = evodb.GetRawDB();
+    BOOST_REQUIRE(!db.Exists(index_key));
+    BOOST_REQUIRE(!db.Exists(record_key));
+    const CBlock block = BlockWithCbTx(CCbTx{});
+    uint256 root;
+    {
+        // No quorum mined yet.
+        BlockValidationState state;
+        BOOST_REQUIRE(CalcCbTxMerkleRootQuorums(block, tip, qblockman, root, state));
+        BOOST_CHECK(root.IsNull());
+    }
+
+    BOOST_REQUIRE(db.Write(index_key, quorum_base->nHeight));
+    for (const bool missing : {true, false}) {
+        const std::string damage{missing ? "missing record" : "undecodable record"};
+        if (!missing) BOOST_REQUIRE(db.Write(record_key, uint8_t{0xfd}));
+        BlockValidationState state;
+        BOOST_CHECK(!CalcCbTxMerkleRootQuorums(block, tip, qblockman, root, state));
+        BOOST_CHECK_MESSAGE(state.IsError() && !state.IsInvalid(), damage << ": not a local error: " << state.ToString());
+        BOOST_CHECK_MESSAGE(ShutdownRequested(), damage << ": the node kept running on the damaged database");
+        BOOST_CHECK_MESSAGE(AbortNamesTheWayOut(), damage << ": the abort does not name -reindex: " << GetWarnings(true).original);
+        AbortShutdown();
+        SetMiscWarning(Untranslated(""));
+    }
+
+    // With its record whole the same index entry is a quorum like any other, and its commitment is the root.
+    const llmq::CFinalCommitment qc(params, quorum_base->GetBlockHash());
+    BOOST_REQUIRE(db.Write(record_key, std::make_pair(qc, tip->GetBlockHash())));
+    {
+        BlockValidationState state;
+        BOOST_CHECK(CalcCbTxMerkleRootQuorums(block, tip, qblockman, root, state));
+        BOOST_CHECK(state.IsValid());
+        BOOST_CHECK_EQUAL(root, ::SerializeHash(qc));
+        BOOST_CHECK(!ShutdownRequested());
+    }
+    BOOST_REQUIRE(db.Erase(index_key));
+    BOOST_REQUIRE(db.Erase(record_key));
+}
+
+// The same damage where it decides something: a good block arrives. It was marked invalid for good, so the node
+// stayed off the chain even after the database was rebuilt. The block has to stay as it was, the node stop, and the
+// same block connect once the database is whole again. The miner meets the damage the same way.
+BOOST_FIXTURE_TEST_CASE(a_good_block_is_not_rejected_for_a_missing_local_commitment_record, QuorumRootChainSetup)
+{
+    auto& chainman = *Assert(m_node.chainman);
+    auto& evodb = *Assert(m_node.evodb);
+    const auto params = *Assert(Params().GetLLMQ(Params().GetConsensus().llmqTypeChainLocks));
+    BOOST_REQUIRE(InitShutdownState());
+
+    // A good block, made while the database is whole.
+    const auto block = std::make_shared<const CBlock>(CreateBlock({}, coinbaseKey, chainman.ActiveChainstate()));
+    const auto cbtx = GetTxPayload<CCbTx>(*block->vtx[0]);
+    BOOST_REQUIRE(cbtx.has_value());
+    BOOST_REQUIRE(cbtx->nVersion >= CCbTx::Version::MERKLE_ROOT_QUORUMS);
+    const CBlockIndex* tip = WITH_LOCK(::cs_main, return chainman.ActiveTip());
+    BOOST_REQUIRE_EQUAL(block->hashPrevBlock, tip->GetBlockHash());
+
+    // An index entry without its record, written below the evodb transaction the block's connection opens and
+    // rolls back on failure.
+    const auto index_key = MinedCommitmentIndexKey(params.type, tip->nHeight);
+    BOOST_REQUIRE(evodb.CommitRootTransaction());
+    BOOST_REQUIRE(!evodb.GetRawDB().Exists(index_key));
+    BOOST_REQUIRE(evodb.GetRawDB().Write(index_key, tip->nHeight - 4));
+
+    chainman.ProcessNewBlock(Params(), block, /*force_processing=*/true, /*new_block=*/nullptr);
+    {
+        LOCK(cs_main);
+        BOOST_CHECK_EQUAL(chainman.ActiveTip()->GetBlockHash(), tip->GetBlockHash());
+        const CBlockIndex* index = chainman.m_blockman.LookupBlockIndex(block->GetHash());
+        BOOST_REQUIRE(index != nullptr);
+        BOOST_CHECK_MESSAGE((index->nStatus & BLOCK_FAILED_MASK) == 0, "the good block was marked invalid");
+    }
+    BOOST_CHECK_MESSAGE(ShutdownRequested(), "the node kept running on the damaged database");
+    BOOST_CHECK_MESSAGE(AbortNamesTheWayOut(), "the abort does not name -reindex: " << GetWarnings(true).original);
+    AbortShutdown();
+    SetMiscWarning(Untranslated(""));
+
+    // A block template on the damaged database fails as before, and now stops the node as well.
+    BOOST_CHECK_THROW(CreateBlock({}, coinbaseKey, chainman.ActiveChainstate()), std::runtime_error);
+    BOOST_CHECK_MESSAGE(ShutdownRequested(), "the miner kept running on the damaged database");
+    AbortShutdown();
+    SetMiscWarning(Untranslated(""));
+
+    // Once the database is whole again, the same block connects.
+    BOOST_REQUIRE(evodb.GetRawDB().Erase(index_key));
+    BlockValidationState state;
+    BOOST_CHECK(chainman.ActiveChainstate().ActivateBestChain(state, block));
+    BOOST_CHECK(state.IsValid());
+    BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return chainman.ActiveTip()->GetBlockHash()), block->GetHash());
+    BOOST_CHECK(!ShutdownRequested());
 }
 
 BOOST_AUTO_TEST_SUITE_END()
