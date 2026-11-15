@@ -5,10 +5,11 @@ DeFCoN Core can show its graphical interface in several languages. The translati
 files in `src/qt/locale/`. Their names, `dash_xx.ts` and `dash_xx_YY.ts`, are inherited from Dash Core
 and are kept so that the build and the translation tools keep working.
 
-DeFCoN Core does not run a Transifex project. Translations are contributed as pull requests, as
-described below. The `.tx/config` file and `contrib/devtools/update-translations.py` are inherited from
-Dash Core and point to the Dash Transifex project: do not use them, because they would import Dash's
-translations instead of DeFCoN's.
+DeFCoN Core translations are made in the DeFCoN Transifex project
+(https://app.transifex.com/defcon/defcon/), with `src/qt/locale/dash_en.ts` as the source file, and come
+back to the repository as pull requests. The `.tx/config` file and `contrib/devtools/update-translations.py`
+are inherited from Dash Core and point to the Dash Transifex project: do not use them, because they would
+import Dash's translations instead of DeFCoN's.
 
 ### Writing code with translations
 We use automated scripts to help extract translations in both Qt, and non-Qt source files. It is rarely necessary to manually edit the files in `src/qt/locale/`. The translation source files must adhere to the following format:
