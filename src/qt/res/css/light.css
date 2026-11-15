@@ -281,13 +281,13 @@ QHeaderView
 ******************************************************/
 
 QHeaderView::section { /* Table Header Sections */
-    background-color: #008de4;
+    background-color: #0072b9;
     border-color: #f2f2f4;
     color: #f2f2f4;
 }
 
 QHeaderView::section:hover { /* Table Header Sections */
-    background-color: #0f75b5;
+    background-color: #0c5e91;
     color: #f2f2f4;
 }
 
@@ -401,7 +401,7 @@ QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM {
     background-color: #c7c7c7;
-    color: #555;
+    color: #3c3c3c;
 }
 
 QWidget#AddressBookPage QPushButton#newAddress:hover,
@@ -435,7 +435,7 @@ QWidget#ReceiveCoinsDialog .QFrame#frame QPushButton#showRequestButton:pressed,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_SM:pressed,
 QDialog#SignVerifyMessageDialog QPushButton#clearButton_VM:pressed {
     background-color: #c7c7c7;
-    color: #555;
+    color: #3c3c3c;
 }
 
 /* The focus frame on the buttons that have a border rule of their own in
@@ -691,7 +691,7 @@ QToolBar / QToolButton
 ******************************************************/
 
 QToolBar {
-    background-color: #008de4;
+    background-color: #0072b9;
 }
 
 QToolBar > QToolButton {
@@ -700,7 +700,7 @@ QToolBar > QToolButton {
 }
 
 QToolBar > QToolButton:hover:!checked {
-    background-color: #0f75b5;
+    background-color: #0c5e91;
     color: #dcdcdc;
 }
 

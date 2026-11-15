@@ -410,6 +410,23 @@ public:
         return image;
     }
 };
+// A tool button painted with the pointer on it or not, over the colour behind
+// it (a navigation button's own background is clear: the bar's shows).
+class StateToolButton : public QToolButton {
+public:
+    using QToolButton::QToolButton;
+    QImage painted(bool hover, const QColor& behind)
+    {
+        QStyleOptionToolButton option;
+        initStyleOption(&option);
+        option.state.setFlag(QStyle::State_MouseOver, hover);
+        option.state.setFlag(QStyle::State_HasFocus, false);
+        QImage image = Canvas(this, size(), behind);
+        QPainter painter(&image);
+        style()->drawComplexControl(QStyle::CC_ToolButton, &option, &painter, this);
+        return image;
+    }
+};
 // A scroll bar's part as the style places it.
 class StateScroll : public QScrollBar {
 public:
@@ -1433,6 +1450,11 @@ void AbyssTests::lightControlContrast()
     // where the font draws it in full: of the button's contents, the pixel
     // that stands out most against their ground. Disabled controls stay as
     // they are.
+    // U12-A6 (U12-A5's review, R2 and R3): the grey buttons' text plain and
+    // held down at 4.5:1 too (4.41:1); the white text of the table header and
+    // of the navigation bar on their blue at 4.5:1 or more, plain and pointed
+    // (3.17:1; the bar's pointed text, #dcdcdc, 3.62:1), the pointer still
+    // darkening the blue.
     RestoreAppearance restore;
     Theme("Light");
     const QColor page_colour("#f2f2f4"), label("#f2f2f4");
@@ -1485,7 +1507,8 @@ void AbyssTests::lightControlContrast()
                  qPrintable(QString("the pointer does not darken the fill: %1 plain, %2 pointed").arg(fill["plain"].name(), fill["pointed"].name())));
     }
 
-    // The grey buttons under the pointer (one rule for the 13 of them).
+    // The grey buttons, plain, under the pointer and held down (one rule for
+    // the 13 of them in each state).
     struct Grey { const char* page; const char* frame; const char* name; };
     for (const Grey spec : {
         Grey{"AddressBookPage", "", "newAddress"}, {"AddressBookPage", "", "copyAddress"},
@@ -1512,13 +1535,79 @@ void AbyssTests::lightControlContrast()
         page.resize(300, 180);
         page.show();
         Settle();
-        const QImage image = button->painted(true, false, false, page_colour);
-        const QString what = QString("%1 %2 pointed").arg(spec.page, spec.name);
-        if (qstrcmp(spec.name, "clearButton_VM") == 0) QVERIFY(shot("contrast-Light-grey-pointed", image));
-        const Reading r = read(image, button->contents(false));
-        // The grey rule is the one reached (its pointed fill).
-        QVERIFY2(r.ground == QColor("#a7a7a7"), qPrintable(QString("%1: fill %2").arg(what, r.ground.name())));
-        if (fonts) QVERIFY2(r.contrast >= 4.5, qPrintable(text(what, r)));
+        struct GreyState { const char* what; bool hover, pressed; const char* fill; };
+        for (const GreyState state : {GreyState{"plain", false, false, "#c7c7c7"}, GreyState{"pointed", true, false, "#a7a7a7"},
+                                      GreyState{"pressed", false, true, "#c7c7c7"}}) {
+            const QImage image = button->painted(state.hover, state.pressed, false, page_colour);
+            const QString what = QString("%1 %2 %3").arg(spec.page, spec.name, state.what);
+            if (qstrcmp(spec.name, "clearButton_VM") == 0) QVERIFY(shot(QString("contrast-Light-grey-%1").arg(state.what), image));
+            const Reading r = read(image, button->contents(false));
+            // The grey rule is the one reached (its fill in this state).
+            QVERIFY2(r.ground == QColor(state.fill), qPrintable(QString("%1: fill %2").arg(what, r.ground.name())));
+            if (fonts) QVERIFY2(r.contrast >= 4.5, qPrintable(text(what, r)));
+        }
+    }
+
+    // A table's header section, plain and pointed at: white text on blue.
+    {
+        QDialog page;
+        page.setObjectName("lightContrastProbe");
+        auto* layout = new QVBoxLayout(&page);
+        auto* header = new StateHeader(&page);
+        layout->addWidget(header);
+        page.resize(300, 180);
+        page.show();
+        Settle();
+        std::map<bool, QColor> fill;
+        for (const bool hover : {false, true}) {
+            const QImage section = header->paintedSection("HHH", hover);
+            QVERIFY(shot(hover ? "contrast-Light-header-pointed" : "contrast-Light-header-plain", section));
+            const Reading r = read(section, Logical(section).adjusted(2, 2, -2, -2));
+            fill[hover] = r.ground;
+            const QString what = hover ? "header pointed" : "header plain";
+            QVERIFY2(Contrast(r.ground, label) >= 4.5, qPrintable(QString("%1: the text %2 on %3 is %4:1").arg(what, label.name(), r.ground.name()).arg(Contrast(r.ground, label), 0, 'f', 2)));
+            if (fonts) QVERIFY2(r.contrast >= 4.5, qPrintable(text(what, r)));
+        }
+        QVERIFY2(fill[true].lightness() < fill[false].lightness(),
+                 qPrintable(QString("the pointer does not darken the header: %1 plain, %2 pointed").arg(fill[false].name(), fill[true].name())));
+    }
+
+    // The navigation bar and a page's button on it: plain, the bar's blue
+    // shows through the button; pointed, the button's own fill under its
+    // #dcdcdc text.
+    {
+        QDialog page;
+        page.setObjectName("lightContrastProbe");
+        auto* layout = new QVBoxLayout(&page);
+        auto* bar = new QToolBar(&page);
+        bar->setObjectName("navigationToolBar");
+        bar->setMovable(false);
+        bar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        auto* button = new StateToolButton(bar);
+        button->setText("HHH");
+        button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        button->setCheckable(true);
+        bar->addWidget(button);
+        layout->addWidget(bar);
+        page.resize(400, 180);
+        page.show();
+        Settle();
+        QCOMPARE(button->parentWidget(), bar);
+        const QImage plain_image = bar->grab().toImage();
+        QVERIFY(shot("contrast-Light-toolbar-plain", plain_image));
+        const QColor bar_ground = Ground(plain_image, Logical(plain_image));
+        QVERIFY2(Contrast(bar_ground, label) >= 4.5, qPrintable(QString("navigation bar: the text %1 on %2 is %3:1").arg(label.name(), bar_ground.name()).arg(Contrast(bar_ground, label), 0, 'f', 2)));
+        const Reading plain = read(plain_image, button->geometry());
+        QVERIFY2(plain.ground == bar_ground, qPrintable(QString("navigation button plain: ground %1, the bar's %2").arg(plain.ground.name(), bar_ground.name())));
+        if (fonts) QVERIFY2(plain.contrast >= 4.5, qPrintable(text("navigation button plain", plain)));
+        const QImage pointed_image = button->painted(true, bar_ground);
+        QVERIFY(shot("contrast-Light-toolbar-pointed", pointed_image));
+        const Reading pointed = read(pointed_image, Logical(pointed_image));
+        const QColor pointed_text("#dcdcdc");
+        QVERIFY2(Contrast(pointed.ground, pointed_text) >= 4.5, qPrintable(QString("navigation button pointed: the text %1 on %2 is %3:1").arg(pointed_text.name(), pointed.ground.name()).arg(Contrast(pointed.ground, pointed_text), 0, 'f', 2)));
+        QVERIFY2(pointed.ground.lightness() < bar_ground.lightness(),
+                 qPrintable(QString("the pointer does not darken the navigation button: the bar %1, pointed %2").arg(bar_ground.name(), pointed.ground.name())));
+        if (fonts) QVERIFY2(pointed.contrast >= 4.5, qPrintable(text("navigation button pointed", pointed)));
     }
 
     // The tabs, unselected and selected, not pointed at.
