@@ -525,8 +525,9 @@ void CWallet::chainStateFlushed(const CBlockLocator& loc)
     if (m_attaching_chain) {
         return;
     }
-    // A block since the recorded best block was not processed to the end (blockConnected, blockDisconnected):
-    // the record stays where it is, and the next start rescans from there.
+    // A block since the recorded best block was not processed to the end (blockConnected, blockDisconnected), or
+    // a transaction could not be written to the database (TxWriteFailed): the record stays where it is, and the
+    // next start rescans from there.
     if (m_block_processing_failed) {
         return;
     }
@@ -923,6 +924,20 @@ bool CWallet::IsSpentKey(const uint256& hash, unsigned int n) const
     return false;
 }
 
+void CWallet::TxWriteFailed(const uint256& hash)
+{
+    AssertLockHeld(cs_wallet);
+    // What the wallet holds in memory is now ahead of its database. The recorded best block stays where it is
+    // (chainStateFlushed), so the next start rescans from it and finds the transaction again, and a rescan in
+    // progress reports the block as failed (ScanForWalletTransactions).
+    WalletLogPrintf("Error: transaction %s could not be written to the wallet database (is the disk full or failing?). "
+                    "It is kept in memory only; the wallet will rescan from its last recorded block at the next start.\n",
+                    hash.ToString());
+    m_block_processing_failed = true;
+    ++m_tx_write_failures;
+    m_unsaved_txs.insert(hash);
+}
+
 CWalletTx* CWallet::AddToWallet(CTransactionRef tx, const CWalletTx::Confirmation& confirm, const UpdateWalletTxFn& update_wtx, bool fFlushOnClose)
 {
     LOCK(cs_wallet);
@@ -987,10 +1002,16 @@ CWalletTx* CWallet::AddToWallet(CTransactionRef tx, const CWalletTx::Confirmatio
     //// debug print
     WalletLogPrintf("AddToWallet %s  %s%s\n", hash.ToString(), (fInsertedNew ? "new" : ""), (fUpdated ? "update" : ""));
 
-    // Write to disk
-    if (fInsertedNew || fUpdated)
-        if (!batch.WriteTx(wtx))
+    // Write to disk. A transaction whose last write failed is written again even when nothing changed: its
+    // record is missing or stale, and the caller takes what is returned here for "saved".
+    if (fInsertedNew || fUpdated || m_unsaved_txs.count(hash) > 0) {
+        if (!batch.WriteTx(wtx)) {
+            // Not saved, which the callers on the notification path cannot tell from "not ours".
+            TxWriteFailed(hash);
             return nullptr;
+        }
+        m_unsaved_txs.erase(hash);
+    }
 
     // Break debit/credit balance caches:
     wtx.MarkDirty();
@@ -1117,7 +1138,9 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransactionRef& ptx, CWalletTx::Co
         }
 
         bool fExisted = mapWallet.count(tx.GetHash()) != 0;
-        if (fExisted && !fUpdate) return false;
+        // A transaction whose last write failed goes on to AddToWallet without fUpdate too, to be written
+        // again: passed over here, a rescan would report a success that the database does not hold.
+        if (fExisted && !fUpdate && m_unsaved_txs.count(tx.GetHash()) == 0) return false;
         if (fExisted || IsMine(tx) || IsFromMe(tx))
         {
             /* Check if any keys in the wallet keypool that were supposed to be unused
@@ -1307,6 +1330,10 @@ void CWallet::MarkConflicted(const uint256& hashBlock, int conflicting_height, c
         assert(it != mapWallet.end());
         CWalletTx& wtx = it->second;
         int currentconfirm = wtx.GetDepthInMainChain();
+        if (conflictconfirms > currentconfirm) {
+            // Conflicted with an earlier block already: nothing changes for it, nor for what spends it.
+            continue;
+        }
         if (conflictconfirms < currentconfirm) {
             // Block is 'more conflicted' than current confirm; update.
             // Mark transaction as conflicted with this block.
@@ -1315,18 +1342,32 @@ void CWallet::MarkConflicted(const uint256& hashBlock, int conflicting_height, c
             wtx.m_confirm.block_height = conflicting_height;
             wtx.setConflicted();
             wtx.MarkDirty();
-            batch.WriteTx(wtx);
-            // Iterate over all its outputs, and mark transactions in the wallet that spend them conflicted too
-            TxSpends::const_iterator iter = mapTxSpends.lower_bound(COutPoint(now, 0));
-            while (iter != mapTxSpends.end() && iter->first.hash == now) {
-                 if (!done.count(iter->second)) {
-                     todo.insert(iter->second);
-                 }
-                 iter++;
+            if (batch.WriteTx(wtx)) {
+                m_unsaved_txs.erase(now);
+            } else {
+                TxWriteFailed(now);
             }
             // If a transaction changes 'conflicted' state, that changes the balance
             // available of the outputs it spends. So force those to be recomputed
             MarkInputsDirty(wtx.tx);
+        } else if (m_unsaved_txs.count(now) > 0) {
+            // It has this conflict already, but not in the database: written again.
+            if (batch.WriteTx(wtx)) {
+                m_unsaved_txs.erase(now);
+            } else {
+                TxWriteFailed(now);
+            }
+        }
+        // Iterate over all its outputs, and mark transactions in the wallet that spend them conflicted too. Also
+        // behind a transaction that has this conflict already: when the conflict was first met, the write of one
+        // that spends it may have failed (TxWriteFailed), and after a restart that one is unconfirmed again
+        // while this one, whose write succeeded, is not. The rescan of that start comes through here.
+        TxSpends::const_iterator iter = mapTxSpends.lower_bound(COutPoint(now, 0));
+        while (iter != mapTxSpends.end() && iter->first.hash == now) {
+            if (!done.count(iter->second)) {
+                todo.insert(iter->second);
+            }
+            iter++;
         }
     }
 
@@ -2115,8 +2156,9 @@ int64_t CWallet::RescanFromTime(int64_t startTime, const WalletRescanReserver& r
  * @return ScanResult returning scan information and indicating success or
  *         failure. Return status will be set to SUCCESS if scan was
  *         successful. FAILURE if a complete rescan was not possible (due to
- *         pruning or corruption). USER_ABORT if the rescan was aborted before
- *         it could complete.
+ *         pruning or corruption, or because a transaction it found could not
+ *         be written to the wallet database). USER_ABORT if the rescan was
+ *         aborted before it could complete.
  *
  * @pre Caller needs to make sure start_block (and the optional stop_block) are on
  * the main chain after to the addition of any new keys you want to detect
@@ -2179,12 +2221,20 @@ CWallet::ScanResult CWallet::ScanForWalletTransactions(const uint256& start_bloc
                 result.status = ScanResult::FAILURE;
                 break;
             }
+            const uint64_t write_failures{m_tx_write_failures};
             for (size_t posInBlock = 0; posInBlock < block.vtx.size(); ++posInBlock) {
                 SyncTransaction(block.vtx[posInBlock], {CWalletTx::Status::CONFIRMED, block_height, block_hash, (int)posInBlock}, batch, fUpdate);
             }
-            // scan succeeded, record block as most recent successfully scanned
-            result.last_scanned_block = block_hash;
-            result.last_scanned_height = block_height;
+            if (m_tx_write_failures != write_failures) {
+                // something found in this block is not in the database (TxWriteFailed): keep scanning,
+                // but record this block as the most recent failure
+                result.last_failed_block = block_hash;
+                result.status = ScanResult::FAILURE;
+            } else {
+                // scan succeeded, record block as most recent successfully scanned
+                result.last_scanned_block = block_hash;
+                result.last_scanned_height = block_height;
+            }
         } else {
             // could not scan block, keep scanning but record this block as the most recent failure
             result.last_failed_block = block_hash;
@@ -4267,6 +4317,7 @@ DBErrors CWallet::ZapSelectTx(std::vector<uint256>& vHashIn, std::vector<uint256
             mapTxSpends.erase(txin.prevout);
         mapWallet.erase(it);
         m_coinstakes_to_check.erase(hash);
+        m_unsaved_txs.erase(hash);
         NotifyTransactionChanged(hash, CT_DELETED);
     }
 
