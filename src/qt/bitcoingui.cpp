@@ -842,35 +842,49 @@ void BitcoinGUI::createMenuBar()
             }
         }
         abyssWalletMenu->addSeparator();
-        abyssWalletMenu->addAction(openAction);
         if (pairs) {
             AbyssMenus::addPair(abyssWalletMenu, backupWalletAction, showBackupsAction);
         } else {
             abyssWalletMenu->addAction(backupWalletAction);
             abyssWalletMenu->addAction(showBackupsAction);
         }
-        auto* security = abyssWalletMenu->addMenu(tr("&Security"));
-        security->setObjectName("abyssSecurityMenu");
-        for (QAction* action : {encryptWalletAction, changePassphraseAction,
-                unlockWalletAction, lockWalletAction}) security->addAction(action);
-        auto* staking = abyssWalletMenu->addMenu(tr("S&taking"));
-        staking->addAction(toggleStakingAction);
+        // Open URI, Security and Staking are not in the Abyss Wallet menu
+        // (frontend roadmap U3-E): the padlock beside the wallet selector
+        // encrypts, unlocks and locks, the Overview's staking card starts and
+        // stops staking, and a payment link clicked in a browser reaches the
+        // wallet through the system's link handler. Change Passphrase… has no
+        // other way in, so it stays, on a row of its own. The classic menus
+        // keep all of them.
+        abyssWalletMenu->addAction(changePassphraseAction);
         abyssWalletMenu->addSeparator();
         abyssWalletMenu->addAction(quitAction);
 
         abyssToolsMenu = new QMenu(tr("&Tools"), this);
         abyssToolsMenu->setObjectName("abyssToolsMenu");
+        const bool multisig = file->actions().contains(multisigAction);
         if (pairs) {
             AbyssMenus::addPair(abyssToolsMenu, usedSendingAddressesAction, usedReceivingAddressesAction);
             AbyssMenus::addPair(abyssToolsMenu, signMessageAction, verifyMessageAction);
+            // Short texts in these cells (U3-E), so that the rows keep the
+            // menu as wide as its longest single entry. The actions keep their
+            // texts: the classic menus show them, and here they are the cells'
+            // accessible names and tooltips.
+            AbyssMenus::addPair(abyssToolsMenu, m_load_psbt_action, m_load_psbt_clipboard_action, nullptr,
+                                tr("&Load PSBT…"), tr("P&aste PSBT…"));
+            if (multisig) {
+                AbyssMenus::addPair(abyssToolsMenu, multisigAction, openConfEditorAction, nullptr,
+                                    QString(), tr("Wallet &config file"));
+            } else {
+                abyssToolsMenu->addAction(openConfEditorAction);
+            }
         } else {
             for (QAction* action : {usedSendingAddressesAction, usedReceivingAddressesAction,
                     signMessageAction, verifyMessageAction}) abyssToolsMenu->addAction(action);
+            if (multisig) abyssToolsMenu->addAction(multisigAction);
+            abyssToolsMenu->addAction(m_load_psbt_action);
+            abyssToolsMenu->addAction(m_load_psbt_clipboard_action);
+            abyssToolsMenu->addAction(openConfEditorAction);
         }
-        if (file->actions().contains(multisigAction)) abyssToolsMenu->addAction(multisigAction);
-        abyssToolsMenu->addAction(m_load_psbt_action);
-        abyssToolsMenu->addAction(m_load_psbt_clipboard_action);
-        abyssToolsMenu->addAction(openConfEditorAction);
         abyssToolsMenu->addSeparator();
         // Includes platform-specific Zoom/Main Window and every diagnostic tab.
         for (QAction* action : window_menu->actions()) {
