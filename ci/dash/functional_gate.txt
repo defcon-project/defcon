@@ -169,3 +169,4 @@
 3    feature_addressindex_type_boundary.py  # the P2PKH and P2SH records of one hash on a sparse index, where they are neighbours on disk (#328)
 3    rpc_getblockstats.py                   # getblockstats on a replayed chain: every statistic, by height and by hash, alone and together
 3    feature_dsl_commit_decision_log.py     # the producer's Sentinel commit decision without a commitment (F-2026-140)
+3    feature_utxo_set_hash.py               # gettxoutsetinfo's hash_serialized_2 and MuHash of a fixed chain, the MuHash also against an independent Python one
