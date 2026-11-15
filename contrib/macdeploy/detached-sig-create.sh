@@ -7,8 +7,8 @@ export LC_ALL=C
 set -e
 
 ROOTDIR=dist
-BUNDLE="${ROOTDIR}/Dash-Qt.app"
-BINARY="${BUNDLE}/Contents/MacOS/Dash-Qt"
+BUNDLE="${ROOTDIR}/Defcon-Qt.app"
+BINARY="${BUNDLE}/Contents/MacOS/Defcon-Qt"
 SIGNAPPLE=signapple
 TEMPDIR=sign.temp
 ARCH=$(${SIGNAPPLE} info ${BINARY} | head -n 1 | cut -d " " -f 1)

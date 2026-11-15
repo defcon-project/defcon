@@ -343,6 +343,10 @@ jobs:
         if: needs.changes.outputs.code == 'true'
         run: python3 contrib/containers/guix/test_setup_sdk.py
 
+      - name: Check the macOS app bundle, its Info.plist and the deploy script agree on one name
+        if: needs.changes.outputs.code == 'true'
+        run: python3 contrib/macdeploy/test_macdeployqtplus.py
+
       - name: Require one successful producer transfer
         if: needs.changes.outputs.code == 'true'
         env:

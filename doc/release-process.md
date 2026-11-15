@@ -294,14 +294,14 @@ If the notarization process is successful, the notary service generates a log fi
 
 #### Notarization Validation
 
-After successfully notarizing the .dmg file, extract `Dash-Qt.app` from the .dmg.
+After successfully notarizing the .dmg file, extract `Defcon-Qt.app` from the .dmg.
 To verify that the notarization process was successful, run the following command:
 
 ```sh
-spctl -a -vv -t install Dash-Qt.app
+spctl -a -vv -t install Defcon-Qt.app
 ```
 
-Replace `Dash-Qt.app` with the path to your .app file. This command checks whether your .app file passes Gatekeeper’s
+Replace `Defcon-Qt.app` with the path to your .app file. This command checks whether your .app file passes Gatekeeper’s
 checks. If the app is successfully notarized, the command line will include a line stating `source=<Notarized Developer ID>`.
 
 ### Additional information
