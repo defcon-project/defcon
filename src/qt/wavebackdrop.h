@@ -9,15 +9,17 @@
 #include <QSize>
 
 /**
- * The Abyss backdrop: a few sheets of blue light folding over a dark ground,
- * one bright crest among them. Computed, not shipped as a picture, so it is
- * sharp at any size and pixel ratio and the same for the same size. Nothing
- * moves and nothing is read: no node, wallet, clock or setting.
+ * The Abyss backdrop: a near-black navy ground with a few wide waves in night
+ * blue and a restrained sapphire laid over each other, a faint arc in the
+ * upper right, and a thin, faint highlight on some edges; no glow. Computed,
+ * not shipped as a picture, so it is sharp at any size and pixel ratio and the
+ * same for the same size. Nothing moves and nothing is read: no node, wallet,
+ * clock or setting.
  */
 namespace WaveBackdrop {
 /** The picture for an area of `pixels` device pixels shown at `dpr`. The
- *  composition follows the area's proportions; the crest keeps a visible
- *  width on a small area. Opaque; null for an empty size. */
+ *  composition follows the area's proportions; a highlight is never thinner
+ *  than about a logical pixel. Opaque; null for an empty size. */
 QImage render(const QSize& pixels, qreal dpr);
 } // namespace WaveBackdrop
 

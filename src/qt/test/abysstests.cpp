@@ -4909,7 +4909,8 @@ void AbyssTests::waveBackdrop()
         return std::abs(qRed(a) - qRed(b)) <= by && std::abs(qGreen(a) - qGreen(b)) <= by && std::abs(qBlue(a) - qBlue(b)) <= by;
     };
 
-    // The picture: the same for the same size, a dark ground, blue light, one bright crest.
+    // The picture: the same for the same size, a near-black navy ground,
+    // layered waves in night blue and sapphire, a faint highlight, no glow.
     const QSize size(1365, 830);
     const QImage picture = WaveBackdrop::render(size, 1.0);
     QCOMPARE(picture.size(), size);
@@ -4934,12 +4935,22 @@ void AbyssTests::waveBackdrop()
             }
         }
     }
-    const QColor crest = picture.pixelColor(brightest);
-    QVERIFY2(crest.blue() >= 240 && crest.red() < 150, qPrintable(crest.name()));
-    QVERIFY2(brightest.x() > size.width() * 0.45 && brightest.x() < size.width() * 0.75 &&
-             brightest.y() > size.height() * 0.50 && brightest.y() < size.height() * 0.72,
-             qPrintable(QString("crest at %1,%2").arg(brightest.x()).arg(brightest.y())));
-    // The same composition at twice the pixels; away from the crest the colours agree.
+    // The brightest point is the sapphire wave's highlight, a restrained blue
+    // and nowhere near white: no neon.
+    const QColor highlight = picture.pixelColor(brightest);
+    QVERIFY2(highlight.blue() >= 100 && highlight.blue() <= 160 && highlight.red() < 60 && highlight.green() < highlight.blue(),
+             qPrintable(highlight.name()));
+    QVERIFY2(brightest.x() > size.width() * 0.55 && brightest.x() < size.width() * 0.75 &&
+             brightest.y() > size.height() * 0.55 && brightest.y() < size.height() * 0.75,
+             qPrintable(QString("highlight at %1,%2").arg(brightest.x()).arg(brightest.y())));
+    // Layered: the waves low in the picture are well lighter than the ground
+    // above them, and the arc lifts the upper right a little.
+    const QColor upper_left = picture.pixelColor(int(0.05 * size.width()), int(0.10 * size.height()));
+    const QColor low_left = picture.pixelColor(int(0.30 * size.width()), int(0.95 * size.height()));
+    const QColor arc = picture.pixelColor(int(0.92 * size.width()), int(0.25 * size.height()));
+    QVERIFY2(low_left.blue() >= upper_left.blue() + 25, qPrintable(upper_left.name() + " above " + low_left.name()));
+    QVERIFY2(arc.blue() > upper_left.blue(), qPrintable(upper_left.name() + " and the arc " + arc.name()));
+    // The same composition at twice the pixels; away from the edges the colours agree.
     const QImage twice = WaveBackdrop::render(size * 2, 2.0);
     QCOMPARE(twice.size(), size * 2);
     QCOMPARE(twice.devicePixelRatio(), 2.0);
@@ -4948,13 +4959,13 @@ void AbyssTests::waveBackdrop()
         const QRgb two = twice.pixel(int(at.x() * size.width() * 2), int(at.y() * size.height() * 2));
         QVERIFY2(close_to(one, two, 3), qPrintable(QString("%1,%2: %3 and %4").arg(at.x()).arg(at.y()).arg(QColor(one).name(), QColor(two).name())));
     }
-    // A low area keeps a crest one can see.
+    // A low area keeps a highlight one can see.
     const QImage low = WaveBackdrop::render(QSize(900, 160), 1.0);
     int low_blue = 0;
     for (int y = 0; y < low.height(); ++y) {
         for (int x = 0; x < low.width(); ++x) low_blue = std::max(low_blue, qBlue(low.pixel(x, y)));
     }
-    QVERIFY2(low_blue >= 200, qPrintable(QString::number(low_blue)));
+    QVERIFY2(low_blue >= 90, qPrintable(QString::number(low_blue)));
 
     Theme("Abyss");
     {
