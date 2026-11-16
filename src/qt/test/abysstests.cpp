@@ -2429,7 +2429,7 @@ void AbyssTests::emptyStates()
                empty->rect().contains(QRect(button->mapTo(empty, QPoint()), button->size()));
     };
 
-    // Overview: an empty list says so, or that it is still loading.
+    // Overview: an empty list says so, or that it waits for the sync.
     {
         Theme("Abyss");
         OverviewPage overview;
@@ -2441,10 +2441,10 @@ void AbyssTests::emptyStates()
         auto* chip = overview.findChild<QLabel*>("labelTransactionsStatus");
         QVERIFY(empty && list && chip);
         QCOMPARE(chip->text(), OverviewPage::tr("out of sync"));
-        QCOMPARE(empty->state(), EmptyStateWidget::State::Loading);
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Syncing);
         QVERIFY(empty->isVisible());
         QCOMPARE(empty->geometry(), list->viewport()->geometry());
-        QVERIFY(capture(overview, "overview-loading"));
+        QVERIFY(capture(overview, "overview-syncing"));
         overview.showOutOfSyncWarning(false); Settle();
         QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
         QCOMPARE(empty->actionButton()->text(), OverviewPage::tr("Receive"));
@@ -2467,7 +2467,7 @@ void AbyssTests::emptyStates()
         QCOMPARE(chip->text(), OverviewPage::tr("out of sync"));
     }
 
-    // Transactions: nothing yet, or still loading. The header stays visible.
+    // Transactions: nothing yet, or waiting for the sync. The header stays visible.
     {
         Theme("Light");
         TransactionView view;
@@ -2490,8 +2490,8 @@ void AbyssTests::emptyStates()
         QCOMPARE(receive.count(), 1);
         QVERIFY(capture(view, "transactions"));
         view.setOutOfSync(true); Settle();
-        QCOMPARE(empty->state(), EmptyStateWidget::State::Loading);
-        QVERIFY(capture(view, "transactions-loading"));
+        QCOMPARE(empty->state(), EmptyStateWidget::State::Syncing);
+        QVERIFY(capture(view, "transactions-syncing"));
         view.setOutOfSync(false);
         QCOMPARE(empty->state(), EmptyStateWidget::State::Empty);
         Theme("Light"); Settle();
@@ -2722,6 +2722,138 @@ void AbyssTests::emptyStates()
         QVERIFY(amount->text().isEmpty());
         QCOMPARE(table->model()->rowCount(), rows);
         QCOMPARE(empty->state(), EmptyStateWidget::State::Hidden);
+    }
+}
+
+void AbyssTests::emptyStateSyncVsLoading()
+{
+    // An empty transaction list on a wallet that is still catching up loads
+    // nothing: its rows come with the blocks, and a first synchronization
+    // takes hours. It says that it waits for the synchronization, in a title
+    // and one sentence, with nothing to press. The placeholder rows under
+    // "Loading…" that used to stand there all that time are gone.
+    using State = EmptyStateWidget::State;
+    QCOMPARE(EmptyStateWidget::stateFor(true, 0, 0, true), State::Syncing);
+    QCOMPARE(EmptyStateWidget::stateFor(true, 0, 0, false), State::Empty);
+    QCOMPARE(EmptyStateWidget::stateFor(true, 0, 3, true), State::Filtered); // A filter explains it better.
+    QCOMPARE(EmptyStateWidget::stateFor(true, 2, 3, true), State::Hidden);
+    QCOMPARE(EmptyStateWidget::stateFor(false, 0, 0, true), State::Hidden);  // The classic themes show none of it.
+
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    // What is wrong with the card of a list that waits, if anything.
+    const auto waiting = [](EmptyStateWidget* empty) -> QString {
+        auto* title = empty->findChild<QLabel*>("emptyStateTitle");
+        auto* text = empty->findChild<QLabel*>("emptyStateText");
+        if (!title || !text) return "no title or no sentence";
+        if (!empty->isVisible() || !title->isVisible() || !text->isVisible()) return "the card, its title or its sentence is hidden";
+        if (title->text() != EmptyStateWidget::tr("Waiting for synchronization")) return "title: " + title->text();
+        if (!text->text().contains("catches up with the network")) return "sentence: " + text->text();
+        if (text->height() < text->heightForWidth(text->width())) return "the sentence is cut";
+        for (QLabel* label : {title, text}) {
+            if (!empty->rect().contains(QRect(label->mapTo(empty, QPoint()), label->size()))) return "outside the card: " + label->objectName();
+        }
+        if (empty->actionButton()->isVisible()) return "a button to press while waiting";
+        // The words stand in the card's middle: the button's room went with the button.
+        auto* ring = empty->findChild<QFrame*>("emptyStateSymbol");
+        if (!ring) return "no symbol";
+        const int above = ring->mapTo(empty, QPoint()).y();
+        const int below = empty->height() - (text->mapTo(empty, QPoint()).y() + text->height());
+        if (std::abs(above - below) > 2) return QString("off the middle: %1 above, %2 below").arg(above).arg(below);
+        if (empty->accessibleName() != title->text()) return "accessible name: " + empty->accessibleName();
+        for (QWidget* child : empty->findChildren<QWidget*>()) {
+            if (child->objectName().contains("skeleton", Qt::CaseInsensitive)) return "placeholder rows: " + child->objectName();
+            auto* label = qobject_cast<QLabel*>(child);
+            if (label && label->text().contains("Loading", Qt::CaseInsensitive)) return "says: " + label->text();
+        }
+        return QString();
+    };
+
+    // Overview: a new page starts out of sync.
+    {
+        OverviewPage overview;
+        overview.setClientModel(fixture.client.get());
+        overview.setWalletModel(fixture.model.get());
+        overview.resize(1280, 820); overview.show(); Settle();
+        auto* empty = overview.findChild<EmptyStateWidget*>("emptyState");
+        QVERIFY(empty);
+        auto* title = empty->findChild<QLabel*>("emptyStateTitle");
+        QVERIFY(title);
+        QCOMPARE(empty->state(), State::Syncing);
+        QVERIFY2(waiting(empty).isEmpty(), qPrintable(waiting(empty)));
+        // In sync, the page's own words and its action.
+        overview.showOutOfSyncWarning(false); Settle();
+        QCOMPARE(empty->state(), State::Empty);
+        QCOMPARE(title->text(), OverviewPage::tr("No recent transactions"));
+        QCOMPARE(empty->accessibleName(), title->text());
+        QVERIFY(empty->actionButton()->isVisible());
+        QCOMPARE(empty->actionButton()->text(), OverviewPage::tr("Receive"));
+        const auto place = [empty](QWidget* widget) { return QRect(widget->mapTo(empty, QPoint()), widget->size()); };
+        const QRect title_in_sync = place(title), button_in_sync = place(empty->actionButton());
+        // A wallet that falls behind waits again, and catches up to the same card:
+        // the button comes back where it was, with the room above it.
+        overview.showOutOfSyncWarning(true); Settle();
+        QCOMPARE(empty->state(), State::Syncing);
+        QVERIFY2(waiting(empty).isEmpty(), qPrintable(waiting(empty)));
+        overview.showOutOfSyncWarning(false); Settle();
+        QCOMPARE(empty->state(), State::Empty);
+        QVERIFY(empty->actionButton()->isVisible());
+        QCOMPARE(place(title), title_in_sync);
+        QCOMPARE(place(empty->actionButton()), button_in_sync);
+    }
+
+    // Transactions: the same under the table's header; a classic theme shows the bare table.
+    {
+        TransactionView view;
+        view.setModel(fixture.model.get());
+        view.resize(1280, 700); view.show(); Settle();
+        auto* empty = view.findChild<EmptyStateWidget*>("emptyState");
+        auto* table = view.findChild<QTableView*>("transactionView");
+        QVERIFY(empty && table);
+        QCOMPARE(empty->state(), State::Empty);
+        view.setOutOfSync(true); Settle();
+        QCOMPARE(empty->state(), State::Syncing);
+        QVERIFY2(waiting(empty).isEmpty(), qPrintable(waiting(empty)));
+        QVERIFY(table->horizontalHeader()->isVisible());
+        QVERIFY(!empty->geometry().intersects(table->horizontalHeader()->geometry()));
+        Theme("Light"); Settle();
+        QVERIFY(!empty->isVisible());
+        Theme("Abyss"); Settle();
+        QCOMPARE(empty->state(), State::Syncing);
+        QVERIFY2(waiting(empty).isEmpty(), qPrintable(waiting(empty)));
+        view.setOutOfSync(false); Settle();
+        QCOMPARE(empty->state(), State::Empty);
+        QVERIFY(empty->actionButton()->isVisible());
+        QCOMPARE(empty->findChild<QLabel*>("emptyStateTitle")->text(), TransactionView::tr("No transactions yet"));
+    }
+
+    // A history page as short as it gets, first shown while it waits: the table
+    // makes room for the title and the sentence. Caught up, the message is
+    // taller by its button, and the table grows for it at once, not at the
+    // window's next resize.
+    {
+        TransactionView view;
+        view.setModel(fixture.model.get());
+        view.setOutOfSync(true);
+        view.resize(1280, 1); view.show(); Settle();
+        auto* empty = view.findChild<EmptyStateWidget*>("emptyState");
+        QVERIFY(empty);
+        QCOMPARE(empty->state(), State::Syncing);
+        QVERIFY2(waiting(empty).isEmpty(), qPrintable(waiting(empty)));
+        const int waiting_height = empty->height();
+        view.setOutOfSync(false); Settle();
+        QCOMPARE(empty->state(), State::Empty);
+        auto* text = empty->findChild<QLabel*>("emptyStateText");
+        auto* ring = empty->findChild<QFrame*>("emptyStateSymbol");
+        QPushButton* button = empty->actionButton();
+        QVERIFY(text && ring && button->isVisible());
+        QVERIFY2(empty->height() > waiting_height, qPrintable(QString("%1, was %2").arg(empty->height()).arg(waiting_height)));
+        QVERIFY(text->height() >= text->heightForWidth(text->width()));
+        QVERIFY2(empty->rect().contains(QRect(ring->mapTo(empty, QPoint()), ring->size())) &&
+                 empty->rect().contains(QRect(button->mapTo(empty, QPoint()), button->size())),
+                 qPrintable(QString("card %1 high, symbol at %2, button to %3").arg(empty->height())
+                            .arg(ring->mapTo(empty, QPoint()).y()).arg(button->mapTo(empty, QPoint()).y() + button->height())));
     }
 }
 
@@ -7023,8 +7155,23 @@ void AbyssTests::stakingCard()
             QVERIFY2(!detail->text().contains("mature") && detail->text().contains("None of the coins"), qPrintable(detail->text()));
             QVERIFY(detail->toolTip().contains("collateral"));
         }
-        if (QString(which.name) == "disabled") QVERIFY2(detail->text().contains("-staking=0"), qPrintable(detail->text()));
-        if (QString(which.name) == "stopped") QVERIFY2(!detail->text().contains("-staking") && detail->text().contains("not running"), qPrintable(detail->text()));
+        // Staking that is off for the whole node, and a thread that is down: the line says
+        // what is the matter and what to do, in the user's words; the option's name and
+        // the log are the tooltip's.
+        if (QString(which.name) == "disabled") {
+            QVERIFY2(detail->text().contains("turned off") && detail->text().contains("restart"), qPrintable(detail->text()));
+            QVERIFY2(detail->toolTip().contains("-staking=0"), qPrintable(detail->toolTip()));
+        }
+        if (QString(which.name) == "stopped") {
+            QVERIFY2(detail->text().contains("retry") && detail->text().contains("restart the wallet"), qPrintable(detail->text()));
+            QVERIFY2(detail->toolTip().contains("debug log file") && !detail->toolTip().contains("-staking"), qPrintable(detail->toolTip()));
+        }
+        // No state's line speaks of the node's insides, and only these three have more to say in a tooltip.
+        for (const char* word : {"thread", "debug", "-staking", "node", ".log"}) {
+            QVERIFY2(!detail->text().contains(word, Qt::CaseInsensitive), qPrintable(QString("%1: %2").arg(which.name, detail->text())));
+        }
+        const bool has_tip = QStringList{"depth", "disabled", "stopped"}.contains(which.name);
+        QVERIFY2(detail->toolTip().isEmpty() != has_tip, qPrintable(QString("%1: %2").arg(which.name, detail->toolTip())));
         widest = std::max(widest, card->minimumSizeHint().width());
         if (!output.isEmpty()) {
             QVERIFY(QDir().mkpath(output));
@@ -7640,6 +7787,104 @@ void AbyssTests::stakingUnlockFlow()
     QVERIFY(shut_down);
     QVERIFY(!outlived);
     QCOMPARE(messages.count(), 0);
+}
+
+void AbyssTests::stakingStartRefused()
+{
+    // "Start staking" on a wallet the staking thread has not listed yet (one
+    // loaded a moment ago) is refused. The message says so, offers another
+    // try first, and names the log last, as a file the user can open, not as
+    // an instruction to read debug.log.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    // The list as the thread builds it with no wallet loaded: the wallet made next is not in it.
+    MultiwalletInitialize();
+    WalletFixture fixture(m_node);
+    const std::string name = fixture.wallet->GetName();
+    const auto cleanup = interfaces::MakeHandler([&] {
+        if (IsWalletStaking(name)) ToggleWalletStaking(name);
+    });
+    WalletView view(nullptr);
+    view.setClientModel(fixture.client.get());
+    view.setWalletModel(fixture.model.get());
+    view.resize(1280, 850);
+    view.show(); Settle();
+    auto* page = view.findChild<OverviewPage*>();
+    QVERIFY(page);
+    auto* button = page->findChild<QPushButton*>("stakingButton");
+    QVERIFY(button);
+    view.setStakingStatus(OverviewPage::StakingStatus{}); Settle(); // the thread up, the chain in
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Off);
+    QCOMPARE(button->text(), QString("Start staking"));
+    QSignalSpy messages(&view, &WalletView::message);
+    button->click(); Settle();
+    QVERIFY(!IsWalletStaking(name));
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Off);
+    QCOMPARE(messages.count(), 1);
+    QCOMPARE(messages.last().at(0).toString(), QString("Staking"));
+    const QString text = messages.last().at(1).toString();
+    QVERIFY2(text.startsWith("Staking could not be started for this wallet."), qPrintable(text));
+    const int retry_at = text.indexOf("try again"), log_at = text.indexOf("debug log file");
+    QVERIFY2(retry_at > 0 && log_at > retry_at, qPrintable(text));
+    QVERIFY2(!text.contains("debug.log"), qPrintable(text));
+    QCOMPARE(messages.last().at(2).toUInt(), static_cast<unsigned int>(CClientUIInterface::MSG_WARNING));
+    // Listed, as after the thread's next pass, the same button starts it and nothing is said.
+    MultiwalletInitialize();
+    button->click(); Settle();
+    QVERIFY(IsWalletStaking(name));
+    QCOMPARE(page->stakingState(), OverviewPage::StakingState::Ready);
+    QCOMPARE(messages.count(), 1);
+}
+
+void AbyssTests::translationLink()
+{
+    // The Display tab's line for translators leads to DeFCoN's own Transifex
+    // project, in every theme and in every language. The address is part of
+    // the translated sentence, so no language's translation of the sentence
+    // may carry Dash's address; a language that does not translate it shows
+    // the form's own. The four translated languages the wallet keeps have
+    // the sentence with the new address: a language file that came back with
+    // the old sentence would lose it here.
+    const QString project = "https://app.transifex.com/defcon/defcon/";
+    const QString sentence = QString("Language missing or translation incomplete? Help contributing translations here:\n") + project;
+    const QByteArray source = sentence.toUtf8();
+    const QStringList languages = QDir(":/translations").entryList();
+    QStringList translated;
+    for (const QString& language : languages) {
+        QTranslator translator;
+        QVERIFY2(translator.load(language, ":/translations/"), qPrintable(language));
+        const QString text = translator.translate("OptionsDialog", source.constData());
+        if (text.isEmpty()) continue; // Not translated: the form's own sentence shows.
+        QVERIFY2(text.contains(project), qPrintable(QString("%1: %2").arg(language, text)));
+        QVERIFY2(!text.contains("transifex.com/dash"), qPrintable(QString("%1: %2").arg(language, text)));
+        translated << language;
+    }
+    for (const char* language : {"de", "fr", "ru", "zh_CN"}) {
+        QVERIFY2(languages.contains(language), language);
+        QVERIFY2(translated.contains(language), language);
+    }
+    // The dialog's appearance page lists the loaded family's weights and
+    // asserts without fonts (appearanceFonts skips for the same reason).
+    if (!GUIUtil::fontsLoaded()) QSKIP("The options dialog needs the application fonts; the language files were checked.");
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    for (const char* theme : {"Abyss", "Light", "Dark", "Traditional"}) {
+        Theme(theme);
+        OptionsDialog options(nullptr, true);
+        options.setModel(fixture.options.get());
+        QVERIFY(QMetaObject::invokeMethod(&options, "showPage", Q_ARG(int, 4))); // Display
+        options.show(); Settle();
+        auto* label = options.findChild<QLabel*>("label_3");
+        QVERIFY2(label && label->isVisible(), theme);
+        QCOMPARE(label->text(), sentence);
+        // The whole address is on the page, not cut at the label's edge.
+        QVERIFY2(label->height() >= label->heightForWidth(label->width()), theme);
+        if (!output.isEmpty()) {
+            QVERIFY(QDir().mkpath(output));
+            QVERIFY(options.grab().save(QDir(output).filePath(QString("%1-options-display.png").arg(theme))));
+        }
+    }
 }
 
 void AbyssTests::stakingTipTime()

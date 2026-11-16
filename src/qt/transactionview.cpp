@@ -156,7 +156,8 @@ TransactionView::TransactionView(QWidget* parent) :
     transactionView->setObjectName("transactionView");
 
     // Abyss says what an empty history means: nothing yet, nothing that
-    // matches the filters, or still loading. The header stays visible above.
+    // matches the filters, or waiting for the sync. The header stays visible
+    // above.
     m_empty_state = new EmptyStateWidget("history", tr("No transactions yet"),
                                          tr("Your incoming and outgoing transactions will appear here."), tr("Receive"), transactionView);
     m_empty_state->coverViewport(transactionView);

@@ -305,10 +305,13 @@ void WalletView::toggleStaking(bool enable)
     // card is up to a tick old, and the menu or the RPC may have moved the
     // switch meanwhile, so "Start" must never pause and "Pause" never start.
     // Enabling goes through the one path the menu and the RPC share; it
-    // refuses a wallet that cannot sign, and says why in the log.
+    // refuses a wallet that cannot sign, and says why in the log. It also
+    // refuses a wallet loaded a moment ago, until the staking thread's next
+    // pass lists it: so the message offers another try first, and names the
+    // log last.
     const bool now_on = SetWalletStaking(name, enable);
     if (enable && !now_on) {
-        Q_EMIT message(tr("Staking"), tr("Staking could not be started for this wallet. See debug.log for details."),
+        Q_EMIT message(tr("Staking"), tr("Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason."),
                        CClientUIInterface::MSG_WARNING);
         if (model.isNull()) return;
     }

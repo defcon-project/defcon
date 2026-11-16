@@ -1473,10 +1473,9 @@ QMenu QFrame#abyssMenuPairDivider {
     border: none;
 }
 
-/* Stage 3: empty and loading states. Only Abyss shows them. */
+/* Stage 3: empty lists, and lists waiting for the synchronization. Only Abyss shows them. */
 QFrame#emptyState,
 QFrame#emptyState QWidget#emptyStateMessage,
-QFrame#emptyState QWidget#emptyStateSkeleton,
 QFrame#emptyState QLabel {
     background: transparent;
     border: none;
@@ -1489,8 +1488,7 @@ QFrame#emptyState QFrame#emptyStateSymbol {
 QFrame#emptyState QLabel#emptyStateTitle {
     color: #ffffff;
 }
-QFrame#emptyState QLabel#emptyStateText,
-QFrame#emptyState QLabel#emptyStateLoading {
+QFrame#emptyState QLabel#emptyStateText {
     color: #91a5bc;
 }
 QFrame#emptyState QPushButton#emptyStateAction,
@@ -1520,21 +1518,6 @@ QFrame#emptyState QPushButton#emptyStateSecondary:pressed {
     background-color: #10263e;
     border-color: #1297ff;
     color: #ffffff;
-}
-QFrame#emptyState QFrame#skeletonDot {
-    background-color: #183048;
-    border: none;
-    border-radius: 18px;
-}
-QFrame#emptyState QFrame#skeletonLine {
-    background-color: #183048;
-    border: none;
-    border-radius: 4px;
-}
-QFrame#emptyState QFrame#skeletonLineShort {
-    background-color: #13283b;
-    border: none;
-    border-radius: 4px;
 }
 
 /* A neutral chip where the classic themes print a red "(out of sync)". */

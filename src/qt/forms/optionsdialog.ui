@@ -980,7 +980,7 @@
          </property>
          <property name="text">
           <string>Language missing or translation incomplete? Help contributing translations here:
-https://explore.transifex.com/dash/dash/</string>
+https://app.transifex.com/defcon/defcon/</string>
          </property>
          <property name="wordWrap">
           <bool>true</bool>

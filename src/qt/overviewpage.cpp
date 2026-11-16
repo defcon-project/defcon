@@ -483,7 +483,7 @@ OverviewPage::OverviewPage(QWidget* parent) :
 
     connect(ui->listTransactions, &TransactionOverviewWidget::clicked, this, &OverviewPage::handleTransactionClicked);
 
-    // Abyss says what an empty list means, or that it is still loading.
+    // Abyss says what an empty list means, or that it waits for the sync.
     m_transactions_empty = new EmptyStateWidget("history", tr("No recent transactions"),
                                                 tr("Your recent transactions will appear here."), tr("Receive"), ui->listTransactions);
     m_transactions_empty->coverViewport(ui->listTransactions);
@@ -686,7 +686,8 @@ void OverviewPage::updateEmptyState()
 {
     if (m_transactions_empty == nullptr) return;
     // Rows the overview leaves out (inactive ones, past the limit) are not a
-    // filter the user could clear, so an empty list is only empty or loading.
+    // filter the user could clear, so an empty list is only empty or waiting
+    // for the sync.
     m_transactions_empty->setState(filter == nullptr ? EmptyStateWidget::State::Hidden :
         EmptyStateWidget::stateFor(GUIUtil::isModernTheme(), filter->rowCount(), 0, m_out_of_sync));
 }
@@ -969,7 +970,10 @@ void OverviewPage::updateStakingCard()
     if (m_staking_card == nullptr) return;
     const bool modern = GUIUtil::isModernTheme();
     const StakingState state = stakingState();
-    QString word, detail, button;
+    // The line says what is the matter and what to do about it; what only a
+    // log or a command line can use (the thread, the option's name) is the
+    // line's tooltip.
+    QString word, detail, tip, button;
     GUIUtil::ThemedColor color = GUIUtil::ThemedColor::UNCONFIRMED;
     switch (state) {
     case StakingState::Unavailable:
@@ -978,10 +982,16 @@ void OverviewPage::updateStakingCard()
         break;
     case StakingState::Disabled:
         word = tr("Off");
-        // Not running while configured: the thread stopped on an error and is
-        // between retries; the log has the reason, the card must not guess one.
-        detail = m_staking.configured ? tr("The node's staking thread is not running. See debug.log.")
-                                      : tr("This node runs without staking (-staking=0).");
+        if (m_staking.configured) {
+            // Not running while configured: the thread stopped on an error and
+            // is between retries; the log has the reason, the card must not
+            // guess one.
+            detail = tr("Staking stopped and will retry soon. If it stays off, restart the wallet.");
+            tip = tr("The staking thread is not running. The debug log file has the reason.");
+        } else {
+            detail = tr("Staking is turned off in the startup settings. To stake, turn it on and restart.");
+            tip = tr("The wallet was started with -staking=0, in its configuration file or on its command line.");
+        }
         break;
     case StakingState::Locked:
         // The banner over the network bar says why and holds the unlock, so
@@ -1013,6 +1023,9 @@ void OverviewPage::updateStakingCard()
         detail = m_staking.wallet_state == NOT_STAKING_BALANCE ? tr("No spendable balance to stake.") :
                  m_staking.wallet_state == NOT_STAKING_DEPTH ? tr("None of the coins can stake right now.") :
                  tr("Looking for coins to stake.");
+        if (m_staking.wallet_state == NOT_STAKING_DEPTH) {
+            tip = tr("Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.");
+        }
         button = tr("Pause staking");
         color = GUIUtil::ThemedColor::BLUE;
         break;
@@ -1028,8 +1041,7 @@ void OverviewPage::updateStakingCard()
     m_staking_detail->setText(detail);
     // An empty line would still take a row and its spacing.
     if (m_staking_detail->isHidden() == !detail.isEmpty()) m_staking_detail->setVisible(!detail.isEmpty());
-    m_staking_detail->setToolTip(state == StakingState::Ready && m_staking.wallet_state == NOT_STAKING_DEPTH ?
-        tr("Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.") : QString());
+    m_staking_detail->setToolTip(tip);
     m_staking_button->setText(button);
     // Each tick lands here: a name that did not change is not announced again.
     if (m_staking_button->accessibleName() != button) m_staking_button->setAccessibleName(button);

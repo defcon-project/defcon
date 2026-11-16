@@ -3836,9 +3836,9 @@ Only the list entry is removed. If the address was imported into the wallet it r
     <message>
         <location line="+169"/>
         <source>Language missing or translation incomplete? Help contributing translations here:
-https://explore.transifex.com/dash/dash/</source>
+https://app.transifex.com/defcon/defcon/</source>
         <translation>Language missing or translation incomplete? Help contributing translations here:
-https://explore.transifex.com/dash/dash/</translation>
+https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <location line="+131"/>

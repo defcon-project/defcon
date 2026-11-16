@@ -12,16 +12,17 @@ QT_BEGIN_NAMESPACE
 class QAbstractScrollArea;
 class QLabel;
 class QPushButton;
+class QSpacerItem;
 class QWidget;
 QT_END_NAMESPACE
 
 /**
  * What Abyss shows where a list has nothing to show: a glyph, a title, one
  * sentence and one action. When only a filter hides the rows it offers to
- * clear the filter instead, and while the wallet is still catching up it
- * draws placeholder rows. Laid over a list's viewport, the list keeps its own
- * header. The pages decide the state; classic themes always pass Hidden, so
- * they never see it.
+ * clear the filter instead, and while the wallet is still catching up it says
+ * that it waits for the synchronization, with no action. Laid over a list's
+ * viewport, the list keeps its own header. The pages decide the state; classic
+ * themes always pass Hidden, so they never see it.
  */
 class EmptyStateWidget : public QFrame
 {
@@ -32,11 +33,12 @@ public:
         Hidden,   //!< the list has rows, or the theme is classic
         Empty,    //!< nothing yet: the page's own sentence and action
         Filtered, //!< there are rows, but the filters hide all of them
-        Loading,  //!< nothing yet, and the wallet is still synchronizing
+        Syncing,  //!< nothing yet, and the wallet is still synchronizing
     };
 
-    //! The state for a list showing `rows` of `unfiltered_rows`.
-    static State stateFor(bool modern, int rows, int unfiltered_rows, bool loading);
+    //! The state for a list showing `rows` of `unfiltered_rows`. Only the
+    //! transaction lists wait on the synchronization.
+    static State stateFor(bool modern, int rows, int unfiltered_rows, bool syncing);
 
     EmptyStateWidget(const QString& glyph, const QString& title, const QString& text,
                      const QString& action, QWidget* parent);
@@ -75,10 +77,11 @@ private:
     int m_list_minimum{0};
     int m_floor{0};
     QWidget* m_message{nullptr};
-    QWidget* m_skeleton{nullptr};
     QLabel* m_symbol{nullptr};
     QLabel* m_title{nullptr};
     QLabel* m_text{nullptr};
+    //! The room between the sentence and the action; it goes with the action.
+    QSpacerItem* m_action_gap{nullptr};
     QPushButton* m_action{nullptr};
 
     void paintSymbol();

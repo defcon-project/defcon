@@ -3052,9 +3052,9 @@ Seule l’entrée de la liste sera retirée. Si l’adresse a été importée da
     </message>
     <message>
         <source>Language missing or translation incomplete? Help contributing translations here:
-https://explore.transifex.com/dash/dash/</source>
+https://app.transifex.com/defcon/defcon/</source>
         <translation>Langue absent ou traduction incompléte ? Aidez à traduire ici :
-https://explore.transifex.com/dash/dash/</translation>
+https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>Options set in this dialog are overridden by the command line or in the configuration file:</source>

@@ -40,7 +40,7 @@ public:
     explicit TransactionView(QWidget* parent = nullptr);
 
     void setModel(WalletModel *model);
-    //! While the wallet is still catching up, an empty history is loading.
+    //! While the wallet is still catching up, an empty history waits for the sync.
     void setOutOfSync(bool out_of_sync);
 
     // Date ranges for filter
