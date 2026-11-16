@@ -697,6 +697,10 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
         if (column == Amount && GUIUtil::isModernTheme()) {
             return AbyssUnits::exact(walletModel->getOptionsModel()->getDisplayUnit(), rec->credit + rec->debit);
         }
+        if (column == Watchonly && rec->involvesWatchAddress && GUIUtil::isModernTheme()) {
+            // Abyss says what the eye stands for.
+            return tr("Watch-only address");
+        }
         return formatTooltip(rec);
     case Qt::TextAlignmentRole:
         return column_alignments[index.column()];
