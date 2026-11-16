@@ -74,12 +74,12 @@
         <translation>Адреса получения</translation>
     </message>
     <message>
-        <source>These are your Pacplatform addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
-        <translation>Это ваши адреса Pacplatform для отправки платежей. Всегда проверяйте количество и адрес получателя перед отправкой перевода.</translation>
+        <source>These are your DeFCoN addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
+        <translation>Это ваши адреса DeFCoN для отправки платежей. Всегда проверяйте сумму и адрес получателя перед отправкой монет.</translation>
     </message>
     <message>
-        <source>These are your Pacplatform addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses.</source>
-        <translation>Это ваши адреса Pacplatform для получения платежей. Используйте кнопку 'Создать новый адрес для получения' на закладке получения для создания новых адресов.</translation>
+        <source>These are your DeFCoN addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses.</source>
+        <translation>Это ваши адреса DeFCoN для получения платежей. Для создания адресов используйте кнопку «Создать новый адрес для получения» на вкладке получения.</translation>
     </message>
     <message>
         <source>&amp;Copy Address</source>
@@ -96,6 +96,18 @@
     <message>
         <source>Show address &amp;QR code</source>
         <translation>Показать QR-&amp;код адреса</translation>
+    </message>
+    <message>
+        <source>No saved addresses</source>
+        <translation>Нет сохранённых адресов</translation>
+    </message>
+    <message>
+        <source>Add an address to find it easily the next time you send.</source>
+        <translation>Добавьте адрес, чтобы легко найти его при следующей отправке.</translation>
+    </message>
+    <message>
+        <source>Add address</source>
+        <translation>Добавить адрес</translation>
     </message>
     <message>
         <source>QR code</source>
@@ -173,6 +185,18 @@
         <source>Font Weight Bold:</source>
         <translation>Толщина жирного шрифта:</translation>
     </message>
+    <message>
+        <source>Night Sky:</source>
+        <translation>Ночное небо:</translation>
+    </message>
+    <message>
+        <source>Let a few of the faintest stars in the Abyss background breathe. Turning this off keeps the sky and stops the movement.</source>
+        <translation>Плавное мерцание нескольких самых тусклых звёзд на фоне Abyss. При отключении небо сохраняется, а движение прекращается.</translation>
+    </message>
+    <message>
+        <source>Animate</source>
+        <translation>Анимация</translation>
+    </message>
 </context>
 <context>
     <name>AskPassphraseDialog</name>
@@ -237,6 +261,14 @@
         <translation>Введите новый пароль кошелька.&lt;br/&gt;Используйте пароль, состоящий из &lt;b&gt;десяти или более случайных символов&lt;/b&gt; или &lt;b&gt;восьми или более слов&lt;/b&gt;.</translation>
     </message>
     <message>
+        <source>Enter your passphrase to let this wallet stake. Sending stays locked until you unlock the wallet fully.</source>
+        <translation>Введите пароль, чтобы разрешить этому кошельку участвовать в стейкинге. Отправка останется заблокированной до полной разблокировки кошелька.</translation>
+    </message>
+    <message>
+        <source>Unlock wallet for staking</source>
+        <translation>Разблокировать кошелёк для стейкинга</translation>
+    </message>
+    <message>
         <source>Enter the old passphrase and new passphrase for the wallet.</source>
         <translation>Введите старый пароль и новый пароль для кошелька.</translation>
     </message>
@@ -250,11 +282,11 @@
     </message>
     <message>
         <source>Your wallet is about to be encrypted. </source>
-        <translation>Сейчас Ваш кошелёк будет зашифрован.</translation>
+        <translation>Сейчас ваш кошелёк будет зашифрован. </translation>
     </message>
     <message>
         <source>Your wallet is now encrypted. </source>
-        <translation>Ваш кошелёк зашифрован.</translation>
+        <translation>Ваш кошелёк зашифрован. </translation>
     </message>
     <message>
         <source>IMPORTANT: Any previous backups you have made of your wallet file should be replaced with the newly generated, encrypted wallet file. Previous backups of the unencrypted wallet file contain the same HD seed and still have full access to all your funds just like the new, encrypted wallet.</source>
@@ -297,7 +329,7 @@
     <name>BanTableModel</name>
     <message>
         <source>IP/Netmask</source>
-        <translation>IP/Netmask</translation>
+        <translation>IP/Маска сети</translation>
     </message>
     <message>
         <source>Banned Until</source>
@@ -343,10 +375,6 @@
     <message>
         <source>&amp;Send</source>
         <translation>&amp;Отправить</translation>
-    </message>
-    <message>
-        <source>Send coins to a Pacplatform address</source>
-        <translation>Отправить монеты на указанный адрес Pacplatform</translation>
     </message>
     <message>
         <source>&amp;Receive</source>
@@ -477,10 +505,6 @@
         <translation>&amp;О %1</translation>
     </message>
     <message>
-        <source>Send %1 funds to a Pacplatform address</source>
-        <translation>Отправить %1 средства на Pacplatform адрес</translation>
-    </message>
-    <message>
         <source>Modify configuration options for %1</source>
         <translation>Изменить параметры конфигурации %1</translation>
     </message>
@@ -511,14 +535,6 @@
     <message>
         <source>&amp;Lock Wallet</source>
         <translation>За&amp;блокировать кошелёк</translation>
-    </message>
-    <message>
-        <source>Sign messages with your Pacplatform addresses to prove you own them</source>
-        <translation>Подписать сообщения вашими адресами Pacplatform, чтобы доказать, что вы ими владеете</translation>
-    </message>
-    <message>
-        <source>Verify messages to ensure they were signed with specified Pacplatform addresses</source>
-        <translation>Проверить сообщения, чтобы удостовериться, что они были подписаны определёнными адресами Pacplatform</translation>
     </message>
     <message>
         <source>&amp;Information</source>
@@ -583,10 +599,6 @@
     <message>
         <source>&amp;Command-line options</source>
         <translation>&amp;Параметры командной строки</translation>
-    </message>
-    <message>
-        <source>Show the %1 help message to get a list with possible Pacplatform command-line options</source>
-        <translation>Показать справку по %1 со списком возможных параметров командной строки</translation>
     </message>
     <message>
         <source>default wallet</source>
@@ -666,18 +678,13 @@
         <source>View Governance Proposals</source>
         <translation>Посмотреть предложения по Управлению</translation>
     </message>
-    <message numerus="yes">
-        <source>%n active connection(s) to Pacplatform network</source>
-        <extracomment>A substring of the tooltip.</extracomment>
-        <translation><numerusform>%n активное соединение с сетью Pacplatform</numerusform><numerusform>%n активных соединения с сетью Pacplatform</numerusform><numerusform>%n активных соединений с сетью Pacplatform</numerusform><numerusform>%n активных соединений с сетью Pacplatform</numerusform></translation>
-    </message>
     <message>
         <source>Network activity disabled</source>
         <translation>Сетевая активность отключена</translation>
     </message>
     <message numerus="yes">
         <source>Processed %n block(s) of transaction history.</source>
-        <translation><numerusform>Обработан 1 блок из истории транзакций.</numerusform><numerusform>Обработано %n блока из истории транзакций.</numerusform><numerusform>Обработано %n блоков из истории транзакций.</numerusform><numerusform>Обработано %n блоков из истории транзакций.</numerusform></translation>
+        <translation><numerusform>Обработан %n блок из истории транзакций.</numerusform><numerusform>Обработано %n блока из истории транзакций.</numerusform><numerusform>Обработано %n блоков из истории транзакций.</numerusform></translation>
     </message>
     <message>
         <source>%1 behind</source>
@@ -686,6 +693,38 @@
     <message>
         <source>Close Wallet…</source>
         <translation>Закрыть кошелёк…</translation>
+    </message>
+    <message>
+        <source>Send coins to a DeFCoN address</source>
+        <translation>Отправить монеты на адрес DeFCoN</translation>
+    </message>
+    <message>
+        <source>Send %1 funds to a DeFCoN address</source>
+        <translation>Отправить средства %1 на адрес DeFCoN</translation>
+    </message>
+    <message>
+        <source>Toggle staking...</source>
+        <translation>Включить или выключить стейкинг...</translation>
+    </message>
+    <message>
+        <source>Toggle staking status on a given wallet</source>
+        <translation>Включить или выключить стейкинг для выбранного кошелька</translation>
+    </message>
+    <message>
+        <source>&amp;Multisig</source>
+        <translation>&amp;Мультиподпись</translation>
+    </message>
+    <message>
+        <source>Manage multisignature addresses and partially signed transactions</source>
+        <translation>Управление адресами с несколькими подписями и частично подписанными транзакциями</translation>
+    </message>
+    <message>
+        <source>Sign messages with your DeFCoN addresses to prove you own them</source>
+        <translation>Подписать сообщения своими адресами DeFCoN, чтобы подтвердить владение ими</translation>
+    </message>
+    <message>
+        <source>Verify messages to ensure they were signed with specified DeFCoN addresses</source>
+        <translation>Проверить сообщения, чтобы убедиться, что они подписаны указанными адресами DeFCoN</translation>
     </message>
     <message>
         <source>Load Partially Signed Blockchain Transaction</source>
@@ -704,12 +743,61 @@
         <translation>Закрыть все кошельки…</translation>
     </message>
     <message>
+        <source>Show the %1 help message to get a list with possible DeFCoN command-line options</source>
+        <translation>Показать справку %1 со списком доступных параметров командной строки DeFCoN</translation>
+    </message>
+    <message>
         <source>Ctrl+Shift+D</source>
         <translation>Ctrl+Shift+D</translation>
     </message>
     <message>
         <source>Ctrl+M</source>
         <translation>Ctrl+M</translation>
+    </message>
+    <message>
+        <source>&amp;Wallet</source>
+        <translation>&amp;Кошелёк</translation>
+    </message>
+    <message>
+        <source>&amp;Tools</source>
+        <translation>&amp;Инструменты</translation>
+    </message>
+    <message>
+        <source>&amp;Load PSBT…</source>
+        <translation>&amp;Загрузить PSBT…</translation>
+    </message>
+    <message>
+        <source>P&amp;aste PSBT…</source>
+        <translation>&amp;Вставить PSBT…</translation>
+    </message>
+    <message>
+        <source>Wallet &amp;config file</source>
+        <translation>Файл &amp;настроек кошелька</translation>
+    </message>
+    <message>
+        <source>M&amp;ultisig</source>
+        <translation>М&amp;ультиподпись</translation>
+    </message>
+    <message>
+        <source>More</source>
+        <translation>Ещё</translation>
+    </message>
+    <message>
+        <source>This wallet is not on mainnet.</source>
+        <translation>Этот кошелёк работает не в основной сети.</translation>
+    </message>
+    <message>
+        <source>Hide the pages below</source>
+        <translation>Скрыть страницы ниже</translation>
+    </message>
+    <message>
+        <source>Show more pages</source>
+        <translation>Показать больше страниц</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n active connection(s) to DeFCoN network</source>
+        <extracomment>A substring of the tooltip.</extracomment>
+        <translation><numerusform>%n активное соединение с сетью DeFCoN</numerusform><numerusform>%n активных соединения с сетью DeFCoN</numerusform><numerusform>%n активных соединений с сетью DeFCoN</numerusform></translation>
     </message>
     <message>
         <source>Click for more actions.</source>
@@ -862,8 +950,44 @@
         <translation>Генерация HD ключей &lt;b&gt;включена&lt;/b&gt;</translation>
     </message>
     <message>
+        <source>Staking is stalled</source>
+        <translation>Стейкинг остановлен</translation>
+    </message>
+    <message>
+        <source>Staking is inactive</source>
+        <translation>Стейкинг неактивен</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;unencrypted&lt;/b&gt;. Click to encrypt it.</source>
+        <translation>Кошелёк &lt;b&gt;не зашифрован&lt;/b&gt;. Нажмите, чтобы зашифровать его.</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;unlocked&lt;/b&gt;. Click to lock it.</source>
+        <translation>Кошелёк &lt;b&gt;разблокирован&lt;/b&gt;. Нажмите, чтобы заблокировать его.</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;unlocked for mixing and staking only&lt;/b&gt;. Click to lock it.</source>
+        <translation>Кошелёк &lt;b&gt;разблокирован только для перемешивания и стейкинга&lt;/b&gt;. Нажмите, чтобы заблокировать его.</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;unlocked for mixing only&lt;/b&gt;. Click to lock it.</source>
+        <translation>Кошелёк &lt;b&gt;разблокирован только для перемешивания&lt;/b&gt;. Нажмите, чтобы заблокировать его.</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;locked&lt;/b&gt;. Click to unlock it.</source>
+        <translation>Кошелёк &lt;b&gt;заблокирован&lt;/b&gt;. Нажмите, чтобы разблокировать его.</translation>
+    </message>
+    <message>
+        <source>No wallet loaded.</source>
+        <translation>Кошелёк не загружен.</translation>
+    </message>
+    <message>
         <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;unlocked&lt;/b&gt;</source>
         <translation>Кошелёк &lt;b&gt;зашифрован&lt;/b&gt; и в настоящее время &lt;b&gt;разблокирован&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;unlocked&lt;/b&gt; for mixing and staking only</source>
+        <translation>Кошелёк &lt;b&gt;зашифрован&lt;/b&gt; и сейчас &lt;b&gt;разблокирован&lt;/b&gt; только для перемешивания и стейкинга</translation>
     </message>
     <message>
         <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;unlocked&lt;/b&gt; for mixing only</source>
@@ -1078,6 +1202,133 @@
     </message>
 </context>
 <context>
+    <name>CommandBrowser</name>
+    <message>
+        <source>The commands appear here once the node has started.</source>
+        <translation>Команды появятся здесь после запуска узла.</translation>
+    </message>
+    <message>
+        <source>Search commands</source>
+        <translation>Поиск команд</translation>
+    </message>
+    <message>
+        <source>Commands</source>
+        <translation>Команды</translation>
+    </message>
+    <message>
+        <source>In this console:</source>
+        <translation>В этой консоли:</translation>
+    </message>
+    <message>
+        <source>With defcon-cli and over HTTP:</source>
+        <translation>Через defcon-cli и HTTP:</translation>
+    </message>
+    <message>
+        <source>Examples with defcon-cli and over HTTP</source>
+        <translation>Примеры для defcon-cli и HTTP</translation>
+    </message>
+    <message>
+        <source>Copy these examples</source>
+        <translation>Скопировать эти примеры</translation>
+    </message>
+    <message>
+        <source>The help of this command has no examples.</source>
+        <translation>В справке этой команды нет примеров.</translation>
+    </message>
+    <message>
+        <source>Show the full help</source>
+        <translation>Показать полную справку</translation>
+    </message>
+    <message>
+        <source>Full help</source>
+        <translation>Полная справка</translation>
+    </message>
+    <message>
+        <source>Hide the full help</source>
+        <translation>Скрыть полную справку</translation>
+    </message>
+    <message>
+        <source>Depends on the subcommand</source>
+        <translation>Зависит от подкоманды</translation>
+    </message>
+    <message>
+        <source>What it does depends on the subcommand given: choose one in the list to see its own line.</source>
+        <translation>Действие зависит от указанной подкоманды: выберите её в списке, чтобы увидеть отдельное описание.</translation>
+    </message>
+    <message>
+        <source>Can change the wallet, the node or the network</source>
+        <translation>Может изменять кошелёк, узел или сеть</translation>
+    </message>
+    <message>
+        <source>With some arguments it changes the wallet, the node's state or settings, or sends something to the network.</source>
+        <translation>С некоторыми аргументами команда изменяет кошелёк, состояние или настройки узла либо отправляет данные в сеть.</translation>
+    </message>
+    <message>
+        <source>Only reads</source>
+        <translation>Только чтение</translation>
+    </message>
+    <message>
+        <source>It changes neither the wallet nor the node and sends nothing to the network; it may write a file.</source>
+        <translation>Команда не изменяет кошелёк или узел и ничего не отправляет в сеть; она может записать файл.</translation>
+    </message>
+    <message>
+        <source>Needs a loaded wallet, except on a masternode</source>
+        <translation>Требуется загруженный кошелёк, если это не мастернода</translation>
+    </message>
+    <message>
+        <source>It works on a loaded wallet and refuses without one; a masternode answers it from its own state, without a wallet.</source>
+        <translation>Команда работает с загруженным кошельком и отказывается выполняться без него; мастернода отвечает на основе собственного состояния, без кошелька.</translation>
+    </message>
+    <message>
+        <source>Needs a loaded wallet</source>
+        <translation>Требуется загруженный кошелёк</translation>
+    </message>
+    <message>
+        <source>It works on a loaded wallet; without one it refuses or finds nothing to act on.</source>
+        <translation>Команда работает с загруженным кошельком; без него она отказывается выполняться или не находит объектов для обработки.</translation>
+    </message>
+    <message>
+        <source>May ask to unlock the wallet</source>
+        <translation>Может потребоваться разблокировка кошелька</translation>
+    </message>
+    <message>
+        <source>On an encrypted wallet, some of its uses refuse until the wallet is unlocked.</source>
+        <translation>Если кошелёк зашифрован, некоторые варианты использования команды недоступны до его разблокировки.</translation>
+    </message>
+    <message>
+        <source>Only on a new network, before proof of stake begins</source>
+        <translation>Только в новой сети, до перехода на доказательство доли владения</translation>
+    </message>
+    <message>
+        <source>It makes proof-of-work blocks, which the chain accepts only up to its last proof-of-work block (999 on mainnet, 5000 on regtest): on mainnet it fails.</source>
+        <translation>Команда создаёт блоки с доказательством работы, которые цепочка принимает только до последнего такого блока (999 в основной сети, 5000 в regtest): в основной сети команда завершается ошибкой.</translation>
+    </message>
+    <message>
+        <source>%1: %2</source>
+        <translation>%1: %2</translation>
+    </message>
+    <message>
+        <source>Topic: %1</source>
+        <translation>Тема: %1</translation>
+    </message>
+    <message>
+        <source>Example for this console</source>
+        <translation>Пример для этой консоли</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>Копировать</translation>
+    </message>
+    <message>
+        <source>Put in console</source>
+        <translation>Вставить в консоль</translation>
+    </message>
+    <message>
+        <source>Puts the example into the console's input line, to read or change before running it.</source>
+        <translation>Вставляет пример в строку ввода консоли, чтобы его можно было прочитать или изменить перед выполнением.</translation>
+    </message>
+</context>
+<context>
     <name>CreateWalletActivity</name>
     <message>
         <source>Create Wallet</source>
@@ -1192,10 +1443,6 @@
         <translation>Изменение адреса для отправки</translation>
     </message>
     <message>
-        <source>The entered address "%1" is not a valid Pacplatform address.</source>
-        <translation>Введённый адрес "%1" не является правильным адресом Pacplatform.</translation>
-    </message>
-    <message>
         <source>Address "%1" already exists as a receiving address with label "%2" and so cannot be added as a sending address.</source>
         <translation>Адрес "%1" уже присутствует в списке адресов получения под меткой "%2" и поэтому он не может быть добавлен в список адресов отправки.</translation>
     </message>
@@ -1208,8 +1455,31 @@
         <translation>Не удается разблокировать кошелёк.</translation>
     </message>
     <message>
+        <source>The entered address "%1" is not a valid DeFCoN address.</source>
+        <translation>Введённый адрес «%1» не является допустимым адресом DeFCoN.</translation>
+    </message>
+    <message>
         <source>New key generation failed.</source>
         <translation>Генерация нового ключа не удалась.</translation>
+    </message>
+</context>
+<context>
+    <name>EmptyStateWidget</name>
+    <message>
+        <source>Loading…</source>
+        <translation>Загрузка…</translation>
+    </message>
+    <message>
+        <source>No matching results</source>
+        <translation>Совпадений нет</translation>
+    </message>
+    <message>
+        <source>Try a different search or clear your filters.</source>
+        <translation>Попробуйте другой поисковый запрос или сбросьте фильтры.</translation>
+    </message>
+    <message>
+        <source>Clear filters</source>
+        <translation>Сбросить фильтры</translation>
     </message>
 </context>
 <context>
@@ -1281,8 +1551,8 @@
         <translation>Информация о %1</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 Basics&lt;/h3&gt; %1 gives you true financial privacy by obscuring the origins of your funds. All the Pacplatform in your wallet is comprised of different "inputs" which you can think of as separate, discrete coins.&lt;br&gt; %1 uses an innovative process to mix your inputs with the inputs of two or more other people, without having your coins ever leave your wallet. You retain control of your money at all times.&lt;hr&gt; &lt;b&gt;The %1 process works like this:&lt;/b&gt;&lt;ol type="1"&gt; &lt;li&gt;%1 begins by breaking your transaction inputs down into standard denominations. These denominations are 0.001 DFCN, 0.01 DFCN, 0.1 DFCN, 1 DFCN and 10 DFCN -- sort of like the paper money you use every day.&lt;/li&gt; &lt;li&gt;Your wallet then sends requests to specially configured software nodes on the network, called "masternodes." These masternodes are informed then that you are interested in mixing a certain denomination. No identifiable information is sent to the masternodes, so they never know "who" you are.&lt;/li&gt; &lt;li&gt;When two or more other people send similar messages, indicating that they wish to mix the same denomination, a mixing session begins. The masternode mixes up the inputs and instructs all three users' wallets to pay the now-transformed input back to themselves. Your wallet pays that denomination directly to itself, but in a different address (called a change address).&lt;/li&gt; &lt;li&gt;In order to fully obscure your funds, your wallet must repeat this process a number of times with each denomination. Each time the process is completed, it's called a "round." Each round of %1 makes it exponentially more difficult to determine where your funds originated.&lt;/li&gt; &lt;li&gt;This mixing process happens in the background without any intervention on your part. When you wish to make a transaction, your funds will already be mixed. No additional waiting is required.&lt;/li&gt; &lt;/ol&gt; &lt;hr&gt;&lt;b&gt;IMPORTANT:&lt;/b&gt; Your wallet only contains 1000 of these "change addresses." Every time a mixing event happens, up to 9 of your addresses are used up. This means those 1000 addresses last for about 100 mixing events. When 900 of them are used, your wallet must create more addresses. It can only do this, however, if you have automatic backups enabled.&lt;br&gt; Consequently, users who have backups disabled will also have %1 disabled. &lt;hr&gt;For more information, see the &lt;a style="%2" href="%3"&gt;%1 documentation&lt;/a&gt;.</source>
-        <translation>&lt;h3&gt;Основы %1&lt;/h3&gt;%1 позволяет Вам получить настоящую финансовую конфиденциальность за счет скрытия источников Ваших средств. Все Pacplatform в  Вашем кошельке состоят из различных "входов", Вы можете думать о них как об отдельных монетах.&lt;br&gt;%1 использует инновационный процесс для перемешивания Ваших входов со входами еще двоих или более человек, но при этом Ваши монеты никогда не покидают Ваш кошелек. Вы сохраняете контроль над Вашими деньгами на протяжении всего времени.&lt;hr&gt; &lt;b&gt;%1 работает так:&lt;/b&gt;&lt;ol type="1"&gt; &lt;li&gt;%1 начинается с разбиения Ваших входов транзакций на стандартные номиналы. Такими номиналами являются 0.001 DFCN, 0.01 DFCN, 0.1 DFCN, 1 DFCN и 10 DFCN -- что-то вроде купюр, которыми вы пользуетесь каждый день.&lt;/li&gt; &lt;li&gt;Ваш кошелек затем отправляет запросы к особым образом настроенным сетевым узлам, называемым "мастернодами". Эти мастерноды знают только то, что Вы хотите перемешать определенные номиналы. Никакой идентифицирующей информации мастернодам не отправляется, так что они не знают "кто" Вы конкретно.&lt;/li&gt; &lt;li&gt;Сессия перемешивания начинается тогда, когда еще двое или более человек отправляют схожее сообщение, подтверждающее, что они хотят перемешать точно такой же номинал. Мастернода перемешивает входы и просит кошельки всех пользователей осуществить платежи по ним. Ваш кошелек осуществляет выплату самому себе, но на другой адрес (тоже из вашего кошелька).&lt;/li&gt; &lt;li&gt;Для скрытия Ваших средств кошелек должен повторить этот процесс несколько раз с каждым номиналом. Каждый раз, когда такой процесс завершается, называется "раундом". С каждым раундом %1 становится экспоненциально сложнее определить откуда поступили средства.&lt;/li&gt; &lt;li&gt;Процесс перемешивания выполняется в фоне, без участия пользователя. Когда Вы захотите провести транзакцию, средства уже будут перемешаны. Дополнительно ждать не требуется.&lt;/li&gt; &lt;/ol&gt; &lt;hr&gt;&lt;b&gt;ВАЖНО:&lt;/b&gt; Ваш кошелек содержит 1000 адресов. Каждое перемешивание использует до 9 из этих адресов. Это означает, что 1000 адресов хватит примерно на 100 перемешиваний. Когда 900 адресов будут уже использованы, Ваш кошелек должен создать новые адреса. Однако, он может сделать это, только если у Вас включены автоматические резервные копии.&lt;br&gt;Соответственно, пользователям с отключенным резервным копированием %1 не доступен. &lt;hr&gt;Дополнительная информация доступна в &lt;a style="%2" href="%3"&gt; документации %1&lt;/a&gt;.</translation>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;Основы %1&lt;/h3&gt;&lt;p&gt;%1 значительно затрудняет отслеживание происхождения ваших DFCN. Ваши монеты перемешиваются с монетами других пользователей DeFCoN в общих транзакциях. Монеты никогда не покидают ваш кошелёк, и только вы можете их потратить.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Как это работает&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Кошелёк разбивает часть баланса на стандартные суммы чуть больше 0.001, 0.01, 0.1, 1 и 10 DFCN, например 10.0001 DFCN. Все используют одинаковые суммы, поэтому монеты выглядят одинаково.&lt;/li&gt;&lt;li&gt;Для одной из таких сумм кошелёк присоединяется к ожидающему сеансу перемешивания на мастерноде или просит случайно выбранную мастерноду начать новый сеанс.&lt;/li&gt;&lt;li&gt;Когда присоединятся как минимум %2 участников, мастернода объединит их монеты в одну транзакцию. Каждый кошелёк проверяет и подписывает только свою часть и получает те же суммы на свои новые адреса.&lt;/li&gt;&lt;li&gt;Каждый завершённый сеанс — это один раунд. Кошелёк повторяет этот процесс несколько раз. Количество раундов и целевой баланс можно задать в настройках.&lt;/li&gt;&lt;li&gt;Перемешивание выполняется в фоновом режиме, пока кошелёк открыт. Когда вы отправляете средства с баланса %1, ваши монеты уже перемешаны.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Полезно знать&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Стейкинг:&lt;/b&gt; в основной сети суммы перемешанных монет меньше минимальной ставки, поэтому они не приносят наград за стейкинг. При стейкинге они и залоги для перемешивания никогда не объединяются с остальными монетами. Целевой баланс в настройках задаёт примерную сумму для перемешивания.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Комиссии:&lt;/b&gt; транзакции перемешивания бесплатны. За создание стандартных сумм взимается обычная небольшая сетевая комиссия. Время от времени небольшой залог около 0.0001 DFCN передаётся сети для предотвращения злоупотреблений.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Конфиденциальность:&lt;/b&gt; мастернода, ведущая сеанс, видит участвующие в нём монеты, а остальные участники не обязательно являются разными людьми. Чем больше раундов, тем сложнее отследить ваши монеты. Отправка большого количества перемешанных монет одним платежом может снова связать их между собой.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Зашифрованный кошелёк:&lt;/b&gt; если при запуске перемешивания кошелёк заблокирован, он запросит пароль и разблокируется только для перемешивания, поэтому для отправки по-прежнему потребуется пароль.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Резервные копии:&lt;/b&gt; каждый раунд использует до 9 новых адресов. Для %1 необходимо включить автоматическое резервное копирование кошелька; по умолчанию оно включено.&lt;/li&gt;&lt;/ul&gt;</translation>
     </message>
 </context>
 <context>
@@ -1300,28 +1570,12 @@
         <translation>Так как вы впервые запустили программу, вы можете выбрать, где %1 будет хранить данные.</translation>
     </message>
     <message>
-        <source>Limit block chain storage to</source>
-        <translation>Ограничить хранение цепочки блоков</translation>
-    </message>
-    <message>
-        <source>Reverting this setting requires re-downloading the entire blockchain. It is faster to download the full chain first and prune it later. Disables some advanced features.</source>
-        <translation>Отмена этой настройки потребует скачивания всей цепочки блоков заново. Будет быстрее скачать всю цепочку блоков, а потом удалить лишнее. Отключает некоторые расширенные функции.</translation>
-    </message>
-    <message>
-        <source> GB</source>
-        <translation> ГБ</translation>
-    </message>
-    <message>
         <source>This initial synchronisation is very demanding, and may expose hardware problems with your computer that had previously gone unnoticed. Each time you run %1, it will continue downloading where it left off.</source>
         <translation>Начальная синхронизация требует много ресурсов и, возможно, обнаружит проблемы с Вашим компьютером, которых Вы ранее не замечали. Каждый раз, когда Вы запускаете %1, скачивание будет продолжено с того места, где оно было остановлено в прошлый раз.</translation>
     </message>
     <message>
         <source>When you click OK, %1 will begin to download and process the full %4 block chain (%2 GB) starting with the earliest transactions in %3 when %4 initially launched.</source>
         <translation>После нажатия OK, %1 начнет скачивать и проверять всю цепочку блоков %4 (%2 ГБ), начиная с самых ранних транзакций %3, т.е. со времени запуска проекта %4.</translation>
-    </message>
-    <message>
-        <source>If you have chosen to limit block chain storage (pruning), the historical data must still be downloaded and processed, but will be deleted afterward to keep your disk usage low.</source>
-        <translation>Если Вы выбрали ограниченное хранение цепочки блоков (удаление старых блоков), исторические данные все равно будут скачаны и проверены, после чего они будут удалены для уменьшения размера хранимых данных.</translation>
     </message>
     <message>
         <source>Use the default data directory</source>
@@ -1351,14 +1605,9 @@
         <source>Approximately %1 GB of data will be stored in this directory.</source>
         <translation>Приблизительно %1 ГБ данных будет сохранено в этой папке.</translation>
     </message>
-    <message numerus="yes">
-        <source>(sufficient to restore backups %n day(s) old)</source>
-        <extracomment>Explanatory text on the capability of the current prune target.</extracomment>
-        <translation><numerusform>(достаточно для восстановления бэкапов за %n день)</numerusform><numerusform>(достаточно для восстановления бэкапов за %n дня)</numerusform><numerusform>(достаточно для восстановления бэкапов за %n дней)</numerusform><numerusform>(достаточно для восстановления бэкапов за %n дней)</numerusform></translation>
-    </message>
     <message>
-        <source>%1 will download and store a copy of the Pacplatform block chain.</source>
-        <translation>%1 скачает и сохранит копию цепочки блоков Pacplatform.</translation>
+        <source>%1 will download and store a copy of the DeFCoN block chain.</source>
+        <translation>%1 загрузит и сохранит копию цепочки блоков DeFCoN.</translation>
     </message>
     <message>
         <source>The wallet will also be stored in this directory.</source>
@@ -1402,6 +1651,14 @@
     <message>
         <source>My masternodes only</source>
         <translation>Только мои мастерноды</translation>
+    </message>
+    <message>
+        <source>Show only the columns needed to watch a masternode: service, status, PoSe score and the payment times.</source>
+        <translation>Показывать только столбцы, необходимые для наблюдения за мастернодой: сервис, состояние, оценку PoSe и время выплат.</translation>
+    </message>
+    <message>
+        <source>Essential info only</source>
+        <translation>Только основные сведения</translation>
     </message>
     <message>
         <source>Service</source>
@@ -1465,15 +1722,15 @@
     </message>
     <message>
         <source>ENABLED</source>
-        <translation>ENABLED</translation>
+        <translation>АКТИВНА</translation>
     </message>
     <message>
         <source>POSE_BANNED</source>
-        <translation>POSE_BANNED</translation>
+        <translation>ЗАБЛОКИРОВАНА PoSe</translation>
     </message>
     <message>
         <source>UNKNOWN</source>
-        <translation>UNKNOWN</translation>
+        <translation>НЕИЗВЕСТНО</translation>
     </message>
     <message>
         <source>to %1</source>
@@ -1481,7 +1738,7 @@
     </message>
     <message>
         <source>to UNKNOWN</source>
-        <translation>на UNKNOWN</translation>
+        <translation>на неизвестный адрес</translation>
     </message>
     <message>
         <source>but not claimed</source>
@@ -1489,7 +1746,7 @@
     </message>
     <message>
         <source>NONE</source>
-        <translation>NONE</translation>
+        <translation>НЕТ</translation>
     </message>
     <message>
         <source>Filter by any property (e.g. address or protx hash)</source>
@@ -1507,14 +1764,6 @@
         <translation>Форма</translation>
     </message>
     <message>
-        <source>Recent transactions may not yet be visible, and therefore your wallet's balance might be incorrect. This information will be correct once your wallet has finished synchronizing with the Pacplatform network, as detailed below.</source>
-        <translation>Последние транзакции пока что могут быть не видны и поэтому ваш баланс может отображаться некорректно. Информация будет корректироваться по мере синхронизации с сетью Pacplatform, подробности о ходе синхронизации представлены ниже.</translation>
-    </message>
-    <message>
-        <source>Attempting to spend Pacplatform that are affected by not-yet-displayed transactions will not be accepted by the network.</source>
-        <translation>Попытка потратить средства из ещё не отображённых транзакций будет отвергнута сетью.</translation>
-    </message>
-    <message>
         <source>Number of blocks left</source>
         <translation>Количество оставшихся блоков</translation>
     </message>
@@ -1529,6 +1778,14 @@
     <message>
         <source>Last block time</source>
         <translation>Время последнего блока</translation>
+    </message>
+    <message>
+        <source>Recent transactions may not yet be visible, and therefore your wallet's balance might be incorrect. This information will be correct once your wallet has finished synchronizing with the DeFCoN network, as detailed below.</source>
+        <translation>Последние транзакции могут ещё не отображаться, поэтому баланс кошелька может быть неверным. Эти сведения станут верными после завершения синхронизации кошелька с сетью DeFCoN, как описано ниже.</translation>
+    </message>
+    <message>
+        <source>Attempting to spend DeFCoN that are affected by not-yet-displayed transactions will not be accepted by the network.</source>
+        <translation>Сеть не примет попытку потратить DeFCoN, затронутые ещё не отображаемыми транзакциями.</translation>
     </message>
     <message>
         <source>Progress</source>
@@ -1553,6 +1810,988 @@
     <message>
         <source>Unknown. Syncing Headers (%1, %2%)…</source>
         <translation>Неизвестно. Синхронизация заголовков (%1, %2%)…</translation>
+    </message>
+</context>
+<context>
+    <name>MultisigDialog</name>
+    <message>
+        <source>Create / Add Multisig</source>
+        <translation>Создать / Добавить мультиподпись</translation>
+    </message>
+    <message>
+        <source>Create a multisignature address (create-only), or add a multisignature address to the currently selected wallet.</source>
+        <translation>Создать адрес с несколькими подписями (только создание) или добавить такой адрес в выбранный кошелёк.</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>Ввод</translation>
+    </message>
+    <message>
+        <source>Create only (createmultisig)</source>
+        <translation>Только создать (createmultisig)</translation>
+    </message>
+    <message>
+        <source>Add to current wallet (addmultisigaddress)</source>
+        <translation>Добавить в текущий кошелёк (addmultisigaddress)</translation>
+    </message>
+    <message>
+        <source>Mode</source>
+        <translation>Режим</translation>
+    </message>
+    <message>
+        <source>Required signatures</source>
+        <translation>Необходимые подписи</translation>
+    </message>
+    <message>
+        <source>Paste one key per line (or separated by comma/space). Create-only mode accepts hex public keys; add-to-wallet mode also accepts addresses known to this wallet.</source>
+        <translation>Вставьте по одному ключу в строке или разделите их запятыми либо пробелами. Режим «Только создать» принимает открытые ключи в шестнадцатеричном формате; режим добавления в кошелёк также принимает известные этому кошельку адреса.</translation>
+    </message>
+    <message>
+        <source>Keys / addresses</source>
+        <translation>Ключи / адреса</translation>
+    </message>
+    <message>
+        <source>Optional profile name, e.g. "Treasury 2-of-3", shown in the wallet and on the Multisig tab</source>
+        <translation>Необязательное имя профиля, например «Казначейство 2 из 3», отображаемое в кошельке и на вкладке «Мультиподпись»</translation>
+    </message>
+    <message>
+        <source>Label</source>
+        <translation>Метка</translation>
+    </message>
+    <message>
+        <source>Track in this wallet (import as watch-only, so balance and history are shown)</source>
+        <translation>Отслеживать в этом кошельке (импортировать только для просмотра баланса и истории)</translation>
+    </message>
+    <message>
+        <source>Create multisig</source>
+        <translation>Создать мультиподпись</translation>
+    </message>
+    <message>
+        <source>Clear result</source>
+        <translation>Очистить результат</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Закрыть</translation>
+    </message>
+    <message>
+        <source>Result</source>
+        <translation>Результат</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>Копировать</translation>
+    </message>
+    <message>
+        <source>%1 copied to clipboard.</source>
+        <translation>%1: скопировано в буфер обмена.</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation>Адрес</translation>
+    </message>
+    <message>
+        <source>Descriptor</source>
+        <translation>Дескриптор</translation>
+    </message>
+    <message>
+        <source>Redeem script</source>
+        <translation>Скрипт погашения</translation>
+    </message>
+    <message>
+        <source>Export setup…</source>
+        <translation>Экспорт конфигурации…</translation>
+    </message>
+    <message>
+        <source>Save the setup (keys, address, redeem script) to a file you can share with your cosigners</source>
+        <translation>Сохранить конфигурацию (ключи, адрес, скрипт погашения) в файл, которым можно поделиться с другими подписантами</translation>
+    </message>
+    <message>
+        <source>Show raw RPC result</source>
+        <translation>Показать исходный результат RPC</translation>
+    </message>
+    <message>
+        <source>Descriptor wallets require manual import with importdescriptors.</source>
+        <translation>Для дескрипторных кошельков требуется ручной импорт через importdescriptors.</translation>
+    </message>
+    <message>
+        <source>Wallet type could not be determined, so legacy watch-only import is disabled for safety.</source>
+        <translation>Не удалось определить тип кошелька, поэтому импорт только для просмотра в старом формате отключён в целях безопасности.</translation>
+    </message>
+    <message>
+        <source>Import as watch-only so the wallet can show balance and history.</source>
+        <translation>Импортировать только для просмотра, чтобы кошелёк мог отображать баланс и историю.</translation>
+    </message>
+    <message>
+        <source>No wallet loaded.</source>
+        <translation>Кошелёк не загружен.</translation>
+    </message>
+    <message>
+        <source>Add multisig to wallet</source>
+        <translation>Добавить мультиподпись в кошелёк</translation>
+    </message>
+    <message>
+        <source>Provide at least one key.</source>
+        <translation>Укажите хотя бы один ключ.</translation>
+    </message>
+    <message>
+        <source>Entry #%1 is an address. Create-only mode needs hex public keys; use "Add to current wallet" mode for addresses.</source>
+        <translation>Запись №%1 является адресом. Режим «Только создать» требует открытых ключей в шестнадцатеричном формате; для адресов используйте режим «Добавить в текущий кошелёк».</translation>
+    </message>
+    <message>
+        <source>Entry #%1 is not a valid public key%2.</source>
+        <translation>Запись №%1 не является допустимым открытым ключом%2.</translation>
+    </message>
+    <message>
+        <source> or address</source>
+        <translation> или адресом</translation>
+    </message>
+    <message>
+        <source>Entry #%1 is a duplicate.</source>
+        <translation>Запись №%1 повторяется.</translation>
+    </message>
+    <message>
+        <source>Required signatures (%1) cannot exceed the number of keys (%2).</source>
+        <translation>Количество необходимых подписей (%1) не может превышать количество ключей (%2).</translation>
+    </message>
+    <message>
+        <source>Valid %1-of-%2 multisig configuration.</source>
+        <translation>Корректная конфигурация мультиподписи: %1 из %2.</translation>
+    </message>
+    <message>
+        <source>Client model is not available.</source>
+        <translation>Модель клиента недоступна.</translation>
+    </message>
+    <message>
+        <source>No wallet is currently selected. Select a wallet first, or use create-only mode.</source>
+        <translation>Кошелёк не выбран. Сначала выберите кошелёк или используйте режим «Только создать».</translation>
+    </message>
+    <message>
+        <source>This is a descriptor wallet; addmultisigaddress only works with legacy wallets. Use create-only mode without watch-only tracking, then import the descriptor manually with importdescriptors.</source>
+        <translation>Это дескрипторный кошелёк; addmultisigaddress работает только с кошельками старого формата. Используйте режим «Только создать» без отслеживания для просмотра, затем вручную импортируйте дескриптор через importdescriptors.</translation>
+    </message>
+    <message>
+        <source>This is a descriptor wallet. Uncheck watch-only tracking and import the generated descriptor manually with importdescriptors.</source>
+        <translation>Это дескрипторный кошелёк. Отключите отслеживание для просмотра и вручную импортируйте созданный дескриптор через importdescriptors.</translation>
+    </message>
+    <message>
+        <source>Wallet type could not be determined. No legacy multisig import will be attempted.</source>
+        <translation>Не удалось определить тип кошелька. Импорт мультиподписи в старом формате выполняться не будет.</translation>
+    </message>
+    <message>
+        <source>Unexpected RPC response type.</source>
+        <translation>Неожиданный тип ответа RPC.</translation>
+    </message>
+    <message>
+        <source>RPC result is missing the address.</source>
+        <translation>В результате RPC отсутствует адрес.</translation>
+    </message>
+    <message>
+        <source>Multisig address %1 was created, but its profile is already stored and was not changed.</source>
+        <translation>Адрес с мультиподписью %1 создан, но его профиль уже сохранён и не был изменён.</translation>
+    </message>
+    <message>
+        <source>The address is now tracked as watch-only; transactions received before now require a rescan to appear.</source>
+        <translation>Адрес теперь отслеживается только для просмотра; для отображения ранее полученных транзакций необходимо повторное сканирование.</translation>
+    </message>
+    <message>
+        <source>Multisig address %1 was created, but its profile could not be stored.</source>
+        <translation>Адрес с мультиподписью %1 создан, но сохранить его профиль не удалось.</translation>
+    </message>
+    <message>
+        <source>Multisig address %1 created.</source>
+        <translation>Адрес с мультиподписью %1 создан.</translation>
+    </message>
+    <message>
+        <source>Use "Export setup…" to share the configuration with your cosigners.</source>
+        <translation>Используйте «Экспорт конфигурации…», чтобы поделиться конфигурацией с другими подписантами.</translation>
+    </message>
+    <message>
+        <source>Export Multisig Setup</source>
+        <translation>Экспорт конфигурации мультиподписи</translation>
+    </message>
+    <message>
+        <source>Multisig Setup</source>
+        <translation>Конфигурация мультиподписи</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>Не удалось записать файл %1.</translation>
+    </message>
+    <message>
+        <source>Setup saved to %1. Share this file with your cosigners; it contains no private keys.</source>
+        <translation>Конфигурация сохранена в %1. Передайте этот файл другим подписантам; он не содержит закрытых ключей.</translation>
+    </message>
+</context>
+<context>
+    <name>MultisigPage</name>
+    <message>
+        <source>Saved multisig profiles of this wallet. Create a profile, share it with your cosigners, and spend from it with partially signed transactions.</source>
+        <translation>Сохранённые профили мультиподписи этого кошелька. Создайте профиль, поделитесь им с другими подписантами и расходуйте его средства с помощью частично подписанных транзакций.</translation>
+    </message>
+    <message>
+        <source>Create / Add…</source>
+        <translation>Создать / Добавить…</translation>
+    </message>
+    <message>
+        <source>Create a new multisignature address or add an existing one to the wallet</source>
+        <translation>Создать новый адрес с несколькими подписями или добавить существующий в кошелёк</translation>
+    </message>
+    <message>
+        <source>Import setup…</source>
+        <translation>Импорт конфигурации…</translation>
+    </message>
+    <message>
+        <source>Import a multisig setup file received from a cosigner</source>
+        <translation>Импортировать файл конфигурации мультиподписи, полученный от другого подписанта</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>Обновить</translation>
+    </message>
+    <message>
+        <source>Profile</source>
+        <translation>Профиль</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation>Адрес</translation>
+    </message>
+    <message>
+        <source>Scheme</source>
+        <translation>Схема</translation>
+    </message>
+    <message>
+        <source>Balance</source>
+        <translation>Баланс</translation>
+    </message>
+    <message>
+        <source>UTXOs</source>
+        <translation>UTXO</translation>
+    </message>
+    <message>
+        <source>No multisig profiles yet. Use "Create / Add…" to set one up, or "Import setup…" if a cosigner sent you a setup file.</source>
+        <translation>Профилей мультиподписи пока нет. Используйте «Создать / Добавить…» для создания профиля или «Импорт конфигурации…», если другой подписант прислал файл конфигурации.</translation>
+    </message>
+    <message>
+        <source>Selected profile</source>
+        <translation>Выбранный профиль</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>Копировать</translation>
+    </message>
+    <message>
+        <source>Advanced (redeem script, descriptor)</source>
+        <translation>Дополнительно (скрипт погашения, дескриптор)</translation>
+    </message>
+    <message>
+        <source>%1 copied to clipboard.</source>
+        <translation>%1: скопировано в буфер обмена.</translation>
+    </message>
+    <message>
+        <source>Redeem script</source>
+        <translation>Скрипт погашения</translation>
+    </message>
+    <message>
+        <source>Descriptor</source>
+        <translation>Дескриптор</translation>
+    </message>
+    <message>
+        <source>Edit cosigner labels…</source>
+        <translation>Изменить метки подписантов…</translation>
+    </message>
+    <message>
+        <source>Name each cosigner key (e.g. "Alice hardware wallet") so signature progress is easy to read</source>
+        <translation>Задайте имя каждому ключу подписанта (например, «Аппаратный кошелёк Алисы»), чтобы было проще следить за сбором подписей</translation>
+    </message>
+    <message>
+        <source>Import as watch-only</source>
+        <translation>Импортировать только для просмотра</translation>
+    </message>
+    <message>
+        <source>Show QR…</source>
+        <translation>Показать QR-код…</translation>
+    </message>
+    <message>
+        <source>Show the setup as a QR code so a cosigner can copy it. Scanning QR codes is not available in this build.</source>
+        <translation>Показать конфигурацию в виде QR-кода, чтобы другой подписант мог её скопировать. Сканирование QR-кодов в этой сборке недоступно.</translation>
+    </message>
+    <message>
+        <source>Spend…</source>
+        <translation>Потратить…</translation>
+    </message>
+    <message>
+        <source>Build a transaction spending from the selected multisig address</source>
+        <translation>Создать транзакцию для расходования средств с выбранного адреса с мультиподписью</translation>
+    </message>
+    <message>
+        <source>Continue transaction</source>
+        <translation>Продолжить транзакцию</translation>
+    </message>
+    <message>
+        <source>Load a partially signed transaction to sign, merge signatures or broadcast it</source>
+        <translation>Загрузить частично подписанную транзакцию, чтобы подписать её, объединить подписи или отправить в сеть</translation>
+    </message>
+    <message>
+        <source>From clipboard</source>
+        <translation>Из буфера обмена</translation>
+    </message>
+    <message>
+        <source>From file…</source>
+        <translation>Из файла…</translation>
+    </message>
+    <message>
+        <source>Export setup…</source>
+        <translation>Экспорт конфигурации…</translation>
+    </message>
+    <message>
+        <source>Save the selected setup to a file you can share with your cosigners</source>
+        <translation>Сохранить выбранную конфигурацию в файл для передачи другим подписантам</translation>
+    </message>
+    <message>
+        <source>Copy address</source>
+        <translation>Копировать адрес</translation>
+    </message>
+    <message>
+        <source>Remove from list</source>
+        <translation>Удалить из списка</translation>
+    </message>
+    <message>
+        <source>Remove the selected entry from this list. The wallet itself keeps tracking the address.</source>
+        <translation>Удалить выбранную запись из этого списка. Сам кошелёк продолжит отслеживать адрес.</translation>
+    </message>
+    <message>
+        <source>%1-of-%2</source>
+        <translation>%1 из %2</translation>
+    </message>
+    <message>
+        <source>Could not query balances: %1</source>
+        <translation>Не удалось запросить балансы: %1</translation>
+    </message>
+    <message>
+        <source>Cannot spend from this profile: %1</source>
+        <translation>Нельзя потратить средства из этого профиля: %1</translation>
+    </message>
+    <message>
+        <source>No wallet loaded.</source>
+        <translation>Кошелёк не загружен.</translation>
+    </message>
+    <message>
+        <source>Unexpected RPC response type.</source>
+        <translation>Неожиданный тип ответа RPC.</translation>
+    </message>
+    <message>
+        <source>Import Multisig Setup</source>
+        <translation>Импорт конфигурации мультиподписи</translation>
+    </message>
+    <message>
+        <source>Multisig Setup</source>
+        <translation>Конфигурация мультиподписи</translation>
+    </message>
+    <message>
+        <source>Could not open file %1.</source>
+        <translation>Не удалось открыть файл %1.</translation>
+    </message>
+    <message>
+        <source>Invalid setup file: %1</source>
+        <translation>Некорректный файл конфигурации: %1</translation>
+    </message>
+    <message>
+        <source>Setup file rejected: the address does not match the keys it contains.</source>
+        <translation>Файл конфигурации отклонён: адрес не соответствует содержащимся в нём ключам.</translation>
+    </message>
+    <message>
+        <source>Setup file verification failed: %1</source>
+        <translation>Не удалось проверить файл конфигурации: %1</translation>
+    </message>
+    <message>
+        <source>Track address</source>
+        <translation>Отслеживать адрес</translation>
+    </message>
+    <message>
+        <source>Import %1 into the wallet as watch-only so its balance and history are tracked?
+
+Note: transactions received before now will only appear after a rescan.</source>
+        <translation>Импортировать %1 в кошелёк только для просмотра, чтобы отслеживать баланс и историю?
+
+Примечание: ранее полученные транзакции появятся только после повторного сканирования.</translation>
+    </message>
+    <message>
+        <source>Watch-only tracking was not imported because this is a descriptor wallet; use importdescriptors manually.</source>
+        <translation>Отслеживание для просмотра не импортировано, поскольку кошелёк является дескрипторным; используйте importdescriptors вручную.</translation>
+    </message>
+    <message>
+        <source>Watch-only tracking was not imported because the wallet type could not be determined.</source>
+        <translation>Отслеживание для просмотра не импортировано, поскольку не удалось определить тип кошелька.</translation>
+    </message>
+    <message>
+        <source>This multisig address is already tracked.</source>
+        <translation>Этот адрес с мультиподписью уже отслеживается.</translation>
+    </message>
+    <message>
+        <source>Multisig setup %1 imported.</source>
+        <translation>Конфигурация мультиподписи %1 импортирована.</translation>
+    </message>
+    <message>
+        <source>Export Multisig Setup</source>
+        <translation>Экспорт конфигурации мультиподписи</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>Не удалось записать файл %1.</translation>
+    </message>
+    <message>
+        <source>Setup saved to %1. Share this file with your cosigners; it contains no private keys.</source>
+        <translation>Конфигурация сохранена в %1. Передайте этот файл другим подписантам; он не содержит закрытых ключей.</translation>
+    </message>
+    <message>
+        <source>Unable to decode PSBT from clipboard (invalid base64).</source>
+        <translation>Не удалось декодировать PSBT из буфера обмена (некорректный base64).</translation>
+    </message>
+    <message>
+        <source>Load Transaction Data</source>
+        <translation>Загрузить данные транзакции</translation>
+    </message>
+    <message>
+        <source>Partially Signed Transaction (*.psbt)</source>
+        <translation>Частично подписанная транзакция (*.psbt)</translation>
+    </message>
+    <message>
+        <source>PSBT file must be smaller than 100 MiB.</source>
+        <translation>Размер файла PSBT должен быть меньше 100 МиБ.</translation>
+    </message>
+    <message>
+        <source>Unable to decode PSBT: %1</source>
+        <translation>Не удалось декодировать PSBT: %1</translation>
+    </message>
+    <message>
+        <source>Address %1 copied to clipboard.</source>
+        <translation>Адрес %1 скопирован в буфер обмена.</translation>
+    </message>
+    <message>
+        <source>Remove multisig entry</source>
+        <translation>Удалить запись мультиподписи</translation>
+    </message>
+    <message>
+        <source>Remove %1 from this list?
+
+Only the list entry is removed. If the address was imported into the wallet it remains tracked there, and funds on it are not affected.</source>
+        <translation>Удалить %1 из этого списка?
+
+Будет удалена только запись в списке. Если адрес был импортирован в кошелёк, он останется отслеживаемым, а средства на нём не будут затронуты.</translation>
+    </message>
+    <message>
+        <source>%1 — %2-of-%3 multisig • %4</source>
+        <translation>%1 — мультиподпись %2 из %3 • %4</translation>
+    </message>
+    <message>
+        <source>(unnamed profile)</source>
+        <translation>(профиль без имени)</translation>
+    </message>
+    <message>
+        <source>Cosigner %1</source>
+        <translation>Подписант %1</translation>
+    </message>
+    <message>
+        <source>(key in this wallet)</source>
+        <translation>(ключ в этом кошельке)</translation>
+    </message>
+    <message>
+        <source>Import the address into this wallet as watch-only so its balance and history are tracked</source>
+        <translation>Импортировать адрес в этот кошелёк только для просмотра, чтобы отслеживать баланс и историю</translation>
+    </message>
+    <message>
+        <source>No wallet loaded</source>
+        <translation>Кошелёк не загружен</translation>
+    </message>
+    <message>
+        <source>Not available for descriptor wallets: import the profile's descriptor manually via the importdescriptors RPC instead.</source>
+        <translation>Недоступно для дескрипторных кошельков: импортируйте дескриптор профиля вручную через RPC importdescriptors.</translation>
+    </message>
+    <message>
+        <source>Wallet type could not be determined, so legacy watch-only import is disabled for safety.</source>
+        <translation>Не удалось определить тип кошелька, поэтому импорт только для просмотра в старом формате отключён в целях безопасности.</translation>
+    </message>
+    <message>
+        <source>Cosigner labels</source>
+        <translation>Метки подписантов</translation>
+    </message>
+    <message>
+        <source>Give each cosigner key a recognizable name, e.g. "Alice hardware wallet". Labels are stored locally and included in exported setup files.</source>
+        <translation>Дайте каждому ключу подписанта понятное имя, например «Аппаратный кошелёк Алисы». Метки хранятся локально и включаются в экспортируемые файлы конфигурации.</translation>
+    </message>
+    <message>
+        <source>Cosigner labels updated.</source>
+        <translation>Метки подписантов обновлены.</translation>
+    </message>
+    <message>
+        <source>Address %1 is now tracked as watch-only. Transactions received before now appear only after a rescan.</source>
+        <translation>Адрес %1 теперь отслеживается только для просмотра. Ранее полученные транзакции появятся только после повторного сканирования.</translation>
+    </message>
+    <message>
+        <source>Multisig setup as QR code</source>
+        <translation>Конфигурация мультиподписи в виде QR-кода</translation>
+    </message>
+    <message>
+        <source>Contains the profile name, public keys, address and redeem script — no private keys.</source>
+        <translation>Содержит имя профиля, открытые ключи, адрес и скрипт погашения — без закрытых ключей.</translation>
+    </message>
+</context>
+<context>
+    <name>MultisigSpendDialog</name>
+    <message>
+        <source>Spend from Multisig</source>
+        <translation>Потратить с мультиподписью</translation>
+    </message>
+    <message>
+        <source>Multisig Transaction</source>
+        <translation>Транзакция с мультиподписью</translation>
+    </message>
+    <message>
+        <source>1. Create</source>
+        <translation>1. Создать</translation>
+    </message>
+    <message>
+        <source>2. Collect signatures</source>
+        <translation>2. Собрать подписи</translation>
+    </message>
+    <message>
+        <source>3. Finalize &amp; broadcast</source>
+        <translation>3. Завершить &amp; отправить</translation>
+    </message>
+    <message>
+        <source>Transaction</source>
+        <translation>Транзакция</translation>
+    </message>
+    <message>
+        <source>From</source>
+        <translation>От</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>Доступно</translation>
+    </message>
+    <message>
+        <source>Destination address</source>
+        <translation>Адрес получателя</translation>
+    </message>
+    <message>
+        <source>Pay to</source>
+        <translation>Получатель</translation>
+    </message>
+    <message>
+        <source>Use available balance</source>
+        <translation>Использовать доступный баланс</translation>
+    </message>
+    <message>
+        <source>Amount</source>
+        <translation>Сумма</translation>
+    </message>
+    <message>
+        <source>Subtract fee from amount</source>
+        <translation>Вычесть комиссию из суммы</translation>
+    </message>
+    <message>
+        <source>Checks</source>
+        <translation>Проверки</translation>
+    </message>
+    <message>
+        <source>Build transaction</source>
+        <translation>Создать транзакцию</translation>
+    </message>
+    <message>
+        <source>Transaction preview</source>
+        <translation>Предпросмотр транзакции</translation>
+    </message>
+    <message>
+        <source>Collect signatures</source>
+        <translation>Собрать подписи</translation>
+    </message>
+    <message>
+        <source>Cosigner</source>
+        <translation>Подписант</translation>
+    </message>
+    <message>
+        <source>Public key</source>
+        <translation>Открытый ключ</translation>
+    </message>
+    <message>
+        <source>Signature</source>
+        <translation>Подпись</translation>
+    </message>
+    <message>
+        <source>Sign with this wallet</source>
+        <translation>Подписать этим кошельком</translation>
+    </message>
+    <message>
+        <source>Copy PSBT</source>
+        <translation>Копировать PSBT</translation>
+    </message>
+    <message>
+        <source>Save PSBT…</source>
+        <translation>Сохранить PSBT…</translation>
+    </message>
+    <message>
+        <source>Show QR…</source>
+        <translation>Показать QR-код…</translation>
+    </message>
+    <message>
+        <source>Show the PSBT as a QR code for transfer to another device. Only smaller transactions fit into a QR code.</source>
+        <translation>Показать PSBT в виде QR-кода для передачи на другое устройство. В QR-код помещаются только небольшие транзакции.</translation>
+    </message>
+    <message>
+        <source>Merge signatures</source>
+        <translation>Объединить подписи</translation>
+    </message>
+    <message>
+        <source>Combine a partially signed copy of this transaction received from a cosigner</source>
+        <translation>Объединить с частично подписанной копией этой транзакции, полученной от другого подписанта</translation>
+    </message>
+    <message>
+        <source>From clipboard</source>
+        <translation>Из буфера обмена</translation>
+    </message>
+    <message>
+        <source>From file…</source>
+        <translation>Из файла…</translation>
+    </message>
+    <message>
+        <source>From QR code…</source>
+        <translation>Из QR-кода…</translation>
+    </message>
+    <message>
+        <source>Finalize &amp;&amp; broadcast</source>
+        <translation>Завершить &amp;&amp; отправить</translation>
+    </message>
+    <message>
+        <source>Finalize and broadcast</source>
+        <translation>Завершить и отправить</translation>
+    </message>
+    <message>
+        <source>Combine the collected signatures into a final transaction and send it to the network</source>
+        <translation>Объединить собранные подписи в окончательную транзакцию и отправить её в сеть</translation>
+    </message>
+    <message>
+        <source>Transaction ID</source>
+        <translation>ID транзакции</translation>
+    </message>
+    <message>
+        <source>appears after broadcasting</source>
+        <translation>появится после отправки</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>Копировать</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Закрыть</translation>
+    </message>
+    <message>
+        <source>Cannot spend from this profile: %1</source>
+        <translation>Нельзя потратить средства из этого профиля: %1</translation>
+    </message>
+    <message>
+        <source>Could not query UTXOs: %1</source>
+        <translation>Не удалось запросить UTXO: %1</translation>
+    </message>
+    <message>
+        <source>%1 in %2 confirmed UTXOs</source>
+        <translation>Сумма %1; подтверждённых UTXO: %2</translation>
+    </message>
+    <message>
+        <source>This multisig address has no spendable UTXOs known to the wallet.</source>
+        <translation>Для этого адреса с мультиподписью в кошельке нет известных UTXO, доступных для расходования.</translation>
+    </message>
+    <message>
+        <source>The destination address is not valid.</source>
+        <translation>Недопустимый адрес получателя.</translation>
+    </message>
+    <message>
+        <source>The destination must be different from the source multisig address. Wallet-generated change will still return to the multisig address.</source>
+        <translation>Адрес получателя должен отличаться от исходного адреса с мультиподписью. Сдача, созданная кошельком, всё равно вернётся на адрес с мультиподписью.</translation>
+    </message>
+    <message>
+        <source>The amount to pay must be larger than 0.</source>
+        <translation>Сумма для отправки должна быть больше 0.</translation>
+    </message>
+    <message>
+        <source>The amount exceeds the available balance.</source>
+        <translation>Сумма превышает доступный баланс.</translation>
+    </message>
+    <message>
+        <source>Could not decode the created PSBT: %1</source>
+        <translation>Не удалось декодировать созданную PSBT: %1</translation>
+    </message>
+    <message>
+        <source>Transaction built. Sign it with this wallet, then pass the PSBT to your cosigners until enough signatures are collected.</source>
+        <translation>Транзакция создана. Подпишите её этим кошельком, затем передавайте PSBT другим подписантам, пока не будет собрано достаточно подписей.</translation>
+    </message>
+    <message>
+        <source>Hint: import the multisig setup (with redeem script) into this wallet so it can estimate the transaction size.</source>
+        <translation>Совет: импортируйте конфигурацию мультиподписи со скриптом погашения в этот кошелёк, чтобы он мог оценить размер транзакции.</translation>
+    </message>
+    <message>
+        <source>No transaction loaded yet.</source>
+        <translation>Транзакция ещё не загружена.</translation>
+    </message>
+    <message>
+        <source>Send %1 to %2</source>
+        <translation>Отправить %1 на %2</translation>
+    </message>
+    <message>
+        <source>unknown destination</source>
+        <translation>неизвестный получатель</translation>
+    </message>
+    <message>
+        <source>Change: %1 (back to the multisig address)</source>
+        <translation>Сдача: %1 (возврат на адрес с мультиподписью)</translation>
+    </message>
+    <message>
+        <source>Change: unknown (transaction loaded without its multisig profile)</source>
+        <translation>Сдача: неизвестна (транзакция загружена без профиля мультиподписи)</translation>
+    </message>
+    <message>
+        <source>Fee: %1</source>
+        <translation>Комиссия: %1</translation>
+    </message>
+    <message>
+        <source>Fee: unknown</source>
+        <translation>Комиссия: неизвестна</translation>
+    </message>
+    <message>
+        <source>Required signatures: %1 of %2 cosigners</source>
+        <translation>Подписей требуется: %1, подписантов всего: %2</translation>
+    </message>
+    <message>
+        <source>Required signatures: unknown</source>
+        <translation>Необходимые подписи: неизвестно</translation>
+    </message>
+    <message>
+        <source>All required signatures collected — ready to finalize.</source>
+        <translation>Все необходимые подписи собраны — можно завершить транзакцию.</translation>
+    </message>
+    <message>
+        <source>Signatures: %1 of %2 collected.</source>
+        <translation>Собрано подписей: %1 из %2.</translation>
+    </message>
+    <message>
+        <source>(%1 of %2 inputs already finalized)</source>
+        <translation>(уже завершено входов: %1 из %2)</translation>
+    </message>
+    <message>
+        <source>Missing: %1</source>
+        <translation>Отсутствуют: %1</translation>
+    </message>
+    <message>
+        <source>Signature progress is unknown: the transaction inputs are missing multisig redeem script information.</source>
+        <translation>Ход сбора подписей неизвестен: во входах транзакции отсутствуют сведения о скрипте погашения мультиподписи.</translation>
+    </message>
+    <message>
+        <source>Nothing left to sign.</source>
+        <translation>Больше нечего подписывать.</translation>
+    </message>
+    <message>
+        <source>Signed</source>
+        <translation>Подписано</translation>
+    </message>
+    <message>
+        <source>Missing</source>
+        <translation>Отсутствует</translation>
+    </message>
+    <message>
+        <source>Failed to sign transaction: %1</source>
+        <translation>Ошибка подписи транзакции: %1</translation>
+    </message>
+    <message>
+        <source>Cannot sign inputs while the wallet is locked.</source>
+        <translation>Нельзя подписать входы, пока кошелёк заблокирован.</translation>
+    </message>
+    <message>
+        <source>This wallet holds none of the missing keys — pass the PSBT to a cosigner instead.</source>
+        <translation>В этом кошельке нет ни одного из недостающих ключей — передайте PSBT другому подписанту.</translation>
+    </message>
+    <message>
+        <source>Signed with this wallet's key. Copy or save the PSBT and pass it to the next cosigner.</source>
+        <translation>Подписано ключом этого кошелька. Скопируйте или сохраните PSBT и передайте следующему подписанту.</translation>
+    </message>
+    <message>
+        <source>All required signatures collected. You can broadcast the transaction now.</source>
+        <translation>Все необходимые подписи собраны. Теперь можно отправить транзакцию в сеть.</translation>
+    </message>
+    <message>
+        <source>PSBT copied to clipboard. Send it to your cosigner.</source>
+        <translation>PSBT скопирована в буфер обмена. Отправьте её другому подписанту.</translation>
+    </message>
+    <message>
+        <source>multisig</source>
+        <translation>мультиподпись</translation>
+    </message>
+    <message>
+        <source>Save Transaction Data</source>
+        <translation>Сохранить данные транзакции</translation>
+    </message>
+    <message>
+        <source>Partially Signed Transaction (Binary)</source>
+        <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
+        <translation>Частично подписанная транзакция (двоичная)</translation>
+    </message>
+    <message>
+        <source>PSBT saved to %1.</source>
+        <translation>PSBT сохранена в %1.</translation>
+    </message>
+    <message>
+        <source>PSBT as QR code</source>
+        <translation>PSBT в виде QR-кода</translation>
+    </message>
+    <message>
+        <source>Scan this with the cosigner's device to transfer the partially signed transaction.</source>
+        <translation>Отсканируйте код устройством другого подписанта, чтобы передать частично подписанную транзакцию.</translation>
+    </message>
+    <message>
+        <source>Transaction ID copied to clipboard.</source>
+        <translation>ID транзакции скопирован в буфер обмена.</translation>
+    </message>
+    <message>
+        <source>Unable to decode PSBT from clipboard: %1</source>
+        <translation>Не удалось декодировать PSBT из буфера обмена: %1</translation>
+    </message>
+    <message>
+        <source>Load Transaction Data</source>
+        <translation>Загрузить данные транзакции</translation>
+    </message>
+    <message>
+        <source>Partially Signed Transaction (*.psbt)</source>
+        <translation>Частично подписанная транзакция (*.psbt)</translation>
+    </message>
+    <message>
+        <source>PSBT file must be smaller than 100 MiB.</source>
+        <translation>Размер файла PSBT должен быть меньше 100 МиБ.</translation>
+    </message>
+    <message>
+        <source>Unable to decode PSBT: %1</source>
+        <translation>Не удалось декодировать PSBT: %1</translation>
+    </message>
+    <message>
+        <source>Could not merge: %1 Make sure the cosigner signed the same transaction.</source>
+        <translation>Не удалось объединить: %1 Убедитесь, что другой подписант подписал ту же транзакцию.</translation>
+    </message>
+    <message>
+        <source>Signatures merged.</source>
+        <translation>Подписи объединены.</translation>
+    </message>
+    <message>
+        <source>The transaction could not be analyzed: %1</source>
+        <translation>Не удалось проанализировать транзакцию: %1</translation>
+    </message>
+    <message>
+        <source>Broadcast blocked: the exact transaction fee is unknown. Load a PSBT containing complete UTXO information.</source>
+        <translation>Отправка заблокирована: точная комиссия транзакции неизвестна. Загрузите PSBT с полными сведениями об UTXO.</translation>
+    </message>
+    <message>
+        <source>Broadcast blocked: the transaction fee is invalid.</source>
+        <translation>Отправка заблокирована: некорректная комиссия транзакции.</translation>
+    </message>
+    <message>
+        <source>The transaction could not be finalized — signatures are missing or invalid.</source>
+        <translation>Не удалось завершить транзакцию — подписи отсутствуют или недействительны.</translation>
+    </message>
+    <message>
+        <source>Output %1: %2 to %3%4</source>
+        <translation>Выход %1: %2 на %3%4</translation>
+    </message>
+    <message>
+        <source> (change)</source>
+        <translation> (сдача)</translation>
+    </message>
+    <message>
+        <source>Broadcast blocked: fee %1 exceeds the multisig safety limit. Review the selected inputs and outputs, then rebuild the transaction.</source>
+        <translation>Отправка заблокирована: комиссия %1 превышает предел безопасности для мультиподписи. Проверьте выбранные входы и выходы, затем создайте транзакцию заново.</translation>
+    </message>
+    <message>
+        <source>This transaction pays an unusually high fee of %1.</source>
+        <translation>У этой транзакции необычно высокая комиссия: %1.</translation>
+    </message>
+    <message>
+        <source>The fee is %1% of the amount being sent.</source>
+        <translation>Комиссия составляет %1% от отправляемой суммы.</translation>
+    </message>
+    <message>
+        <source>Continue only after checking every input and output.</source>
+        <translation>Продолжайте только после проверки каждого входа и выхода.</translation>
+    </message>
+    <message>
+        <source>High multisig transaction fee</source>
+        <translation>Высокая комиссия транзакции с мультиподписью</translation>
+    </message>
+    <message>
+        <source>I understand</source>
+        <translation>Я понимаю</translation>
+    </message>
+    <message>
+        <source>Change output cannot be identified</source>
+        <translation>Невозможно определить выход сдачи</translation>
+    </message>
+    <message>
+        <source>This PSBT was loaded without its multisig profile. The wallet cannot identify which output is change. Review every output in the final confirmation before broadcasting.</source>
+        <translation>Эта PSBT загружена без профиля мультиподписи. Кошелёк не может определить, какой выход является сдачей. Перед отправкой проверьте каждый выход в окне окончательного подтверждения.</translation>
+    </message>
+    <message>
+        <source>Review outputs</source>
+        <translation>Проверить выходы</translation>
+    </message>
+    <message>
+        <source>Send amount: %1</source>
+        <translation>Сумма отправки: %1</translation>
+    </message>
+    <message>
+        <source>Change: %1 to %2</source>
+        <translation>Сдача: %1 на %2</translation>
+    </message>
+    <message>
+        <source>Change: none</source>
+        <translation>Сдача: нет</translation>
+    </message>
+    <message>
+        <source>Send amount: review individual outputs below</source>
+        <translation>Сумма отправки: проверьте отдельные выходы ниже</translation>
+    </message>
+    <message>
+        <source>Change: unknown</source>
+        <translation>Сдача: неизвестна</translation>
+    </message>
+    <message>
+        <source>Signatures: %1 of %2 collected</source>
+        <translation>Собрано подписей: %1 из %2</translation>
+    </message>
+    <message>
+        <source>Signatures: transaction is complete</source>
+        <translation>Подписи: транзакция готова</translation>
+    </message>
+    <message>
+        <source>Transaction ID: %1</source>
+        <translation>ID транзакции: %1</translation>
+    </message>
+    <message>
+        <source>Confirm multisig broadcast</source>
+        <translation>Подтверждение отправки с мультиподписью</translation>
+    </message>
+    <message>
+        <source>Verify the transaction before broadcasting.</source>
+        <translation>Проверьте транзакцию перед отправкой в сеть.</translation>
+    </message>
+    <message>
+        <source>Broadcast</source>
+        <translation>Отправить в сеть</translation>
+    </message>
+    <message>
+        <source>Transaction broadcast successfully! Transaction ID: %1</source>
+        <translation>Транзакция отправлена успешно! ID транзакции: %1</translation>
+    </message>
+    <message>
+        <source>Transaction broadcast failed: %1</source>
+        <translation>Отправка транзакции не удалась: %1</translation>
     </message>
 </context>
 <context>
@@ -1684,6 +2923,14 @@
         <translation>Сохранить свой &amp;адрес для сдачи</translation>
     </message>
     <message>
+        <source>Show additional tab for multisignature addresses and partially signed transactions.</source>
+        <translation>Показывать дополнительную вкладку для адресов с несколькими подписями и частично подписанных транзакций.</translation>
+    </message>
+    <message>
+        <source>Show Multisig Tab</source>
+        <translation>Показывать вкладку «Мультиподпись»</translation>
+    </message>
+    <message>
         <source>Show additional tab listing all your masternodes in first sub-tab&lt;br/&gt;and all masternodes on the network in second sub-tab.</source>
         <translation>Показывать дополнительную вкладку со списком своих мастернод&lt;br/&gt;в одной таблице и списком всех мастернод в другой.</translation>
     </message>
@@ -1784,10 +3031,6 @@
         <translation>Максимум</translation>
     </message>
     <message>
-        <source>Automatically open the Pacplatform client port on the router. This only works when your router supports UPnP and it is enabled.</source>
-        <translation>Автоматически открыть порт для Pacplatform на роутере. Работает только в том случае, если Ваш роутер поддерживает UPnP и данная функция включена.</translation>
-    </message>
-    <message>
         <source>Map port using NA&amp;T-PMP</source>
         <translation>Пробросить порт через NA&amp;T-PMP</translation>
     </message>
@@ -1798,10 +3041,6 @@
     <message>
         <source>Allow incomin&amp;g connections</source>
         <translation>Принимать &amp;входящие подключения</translation>
-    </message>
-    <message>
-        <source>Connect to the Pacplatform network through a SOCKS5 proxy.</source>
-        <translation>Подключаться к сети Pacplatform через прокси SOCKS5.</translation>
     </message>
     <message>
         <source>&amp;Connect through SOCKS5 proxy (default proxy):</source>
@@ -1824,6 +3063,22 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Minimize instead of exit the application when the window is closed. When this option is enabled, the application will be closed only after selecting Exit in the menu.</source>
         <translation>Сворачивать вместо закрытия. Если данная настройка будет выбрана, то приложение закроется только после выбора пункта меню Завершить.</translation>
+    </message>
+    <message>
+        <source>Automatically open the DeFCoN client port on the router. This only works when your router supports UPnP and it is enabled.</source>
+        <translation>Автоматически открывать порт клиента DeFCoN на маршрутизаторе. Работает только в том случае, если маршрутизатор поддерживает UPnP и эта функция включена.</translation>
+    </message>
+    <message>
+        <source>Automatically open the DeFCoN client port on the router. This only works when your router supports NAT-PMP and it is enabled. The external port could be random.</source>
+        <translation>Автоматически открывать порт клиента DeFCoN на маршрутизаторе. Работает только в том случае, если маршрутизатор поддерживает NAT-PMP и эта функция включена. Внешний порт может быть случайным.</translation>
+    </message>
+    <message>
+        <source>Connect to the DeFCoN network through a SOCKS5 proxy.</source>
+        <translation>Подключаться к сети DeFCoN через прокси SOCKS5.</translation>
+    </message>
+    <message>
+        <source>Connect to the DeFCoN network through a separate SOCKS5 proxy for Tor onion services.</source>
+        <translation>Подключаться к сети DeFCoN через отдельный прокси SOCKS5 для onion-сервисов Tor.</translation>
     </message>
     <message>
         <source>Third party URLs (e.g. a block explorer) that appear in the transactions tab as context menu items.&lt;br/&gt;%s in the URL is replaced by transaction hash. Multiple URLs are separated by vertical bar |.</source>
@@ -1870,12 +3125,8 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Пробросить порт через &amp;UPnP</translation>
     </message>
     <message>
-        <source>Automatically open the Pacplatform client port on the router. This only works when your router supports NAT-PMP and it is enabled. The external port could be random.</source>
-        <translation>Автоматически открыть порт для Pacplatform на роутере. Работает только в том случае, если Ваш роутер поддерживает NAT-PMP и данная функция включена. Внешний порт может быть любым.</translation>
-    </message>
-    <message>
         <source>Proxy &amp;IP:</source>
-        <translation>&amp;IP Прокси: </translation>
+        <translation>&amp;IP прокси:</translation>
     </message>
     <message>
         <source>IP address of the proxy (e.g. IPv4: 127.0.0.1 / IPv6: ::1)</source>
@@ -1883,7 +3134,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>&amp;Port:</source>
-        <translation>По&amp;рт: </translation>
+        <translation>По&amp;рт:</translation>
     </message>
     <message>
         <source>Port of the proxy (e.g. 9050)</source>
@@ -1922,10 +3173,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>О&amp;тображение</translation>
     </message>
     <message>
-        <source>Connect to the Pacplatform network through a separate SOCKS5 proxy for Tor onion services.</source>
-        <translation>Подключаться к сети Pacplatform через отдельный прокси SOCKS5 для сервисов Tor.</translation>
-    </message>
-    <message>
         <source>Use separate SOCKS&amp;5 proxy to reach peers via Tor onion services:</source>
         <translation>Использовать отдельный SOCKS&amp;5 прокси для подключения через Tor:</translation>
     </message>
@@ -1939,7 +3186,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>&amp;Unit to show amounts in:</source>
-        <translation>&amp;Отображать суммы в единицах: </translation>
+        <translation>&amp;Отображать суммы в единицах:</translation>
     </message>
     <message>
         <source>Choose the default subdivision unit to show in the interface and when sending coins.</source>
@@ -2001,10 +3248,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Форма</translation>
     </message>
     <message>
-        <source>The displayed information may be out of date. Your wallet automatically synchronizes with the Pacplatform network after a connection is established, but this process has not completed yet.</source>
-        <translation>Отображаемая информация может быть устаревшей. Ваш кошелёк автоматически синхронизируется с сетью Pacplatform после подключения, но этот процесс пока не завершён.</translation>
-    </message>
-    <message>
         <source>Available:</source>
         <translation>Доступно:</translation>
     </message>
@@ -2031,6 +3274,10 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Balances</source>
         <translation>Балансы</translation>
+    </message>
+    <message>
+        <source>The displayed information may be out of date. Your wallet automatically synchronizes with the DeFCoN network after a connection is established, but this process has not completed yet.</source>
+        <translation>Отображаемые сведения могут быть устаревшими. После установления соединения кошелёк автоматически синхронизируется с сетью DeFCoN, но этот процесс ещё не завершён.</translation>
     </message>
     <message>
         <source>Unconfirmed transactions to watch-only addresses</source>
@@ -2117,6 +3364,102 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Монеты не найдены</translation>
     </message>
     <message>
+        <source>Overview</source>
+        <translation>Обзор</translation>
+    </message>
+    <message>
+        <source>Wallet overview and recent activity.</source>
+        <translation>Обзор кошелька и последних операций.</translation>
+    </message>
+    <message>
+        <source>Block</source>
+        <translation>Блок</translation>
+    </message>
+    <message>
+        <source>Synced</source>
+        <translation>Синхронизировано</translation>
+    </message>
+    <message>
+        <source>ChainLocked</source>
+        <translation>Защищён ChainLocks</translation>
+    </message>
+    <message>
+        <source>MN</source>
+        <translation>МН</translation>
+    </message>
+    <message>
+        <source>tx</source>
+        <translation>транз.</translation>
+    </message>
+    <message>
+        <source>The newest block this wallet knows of</source>
+        <translation>Самый новый блок, известный этому кошельку</translation>
+    </message>
+    <message>
+        <source>How long ago that block was made</source>
+        <translation>Сколько времени прошло с момента создания этого блока</translation>
+    </message>
+    <message>
+        <source>The blockchain and the masternode data are up to date</source>
+        <translation>Цепочка блоков и данные мастернод актуальны</translation>
+    </message>
+    <message>
+        <source>Masternodes have locked the newest block: it cannot be replaced</source>
+        <translation>Мастерноды зафиксировали самый новый блок: его нельзя заменить</translation>
+    </message>
+    <message>
+        <source>Connected peers</source>
+        <translation>Подключённые узлы</translation>
+    </message>
+    <message>
+        <source>Valid masternodes</source>
+        <translation>Действующие мастерноды</translation>
+    </message>
+    <message>
+        <source>Transactions in the memory pool</source>
+        <translation>Транзакции в пуле памяти</translation>
+    </message>
+    <message>
+        <source>Staking is paused while the wallet is locked.</source>
+        <translation>Стейкинг приостановлен, пока кошелёк заблокирован.</translation>
+    </message>
+    <message>
+        <source>Unlock</source>
+        <translation>Разблокировать</translation>
+    </message>
+    <message>
+        <source>Unlock the wallet for staking. Sending stays locked.</source>
+        <translation>Разблокировать кошелёк для стейкинга. Отправка останется заблокированной.</translation>
+    </message>
+    <message>
+        <source>Staking</source>
+        <translation>Стейкинг</translation>
+    </message>
+    <message>
+        <source>%1: off</source>
+        <translation>%1: выключено</translation>
+    </message>
+    <message>
+        <source>Show</source>
+        <translation>Показать</translation>
+    </message>
+    <message>
+        <source>Show the %1 card, where mixing is started</source>
+        <translation>Показать карточку %1, где запускается перемешивание</translation>
+    </message>
+    <message>
+        <source>No recent transactions</source>
+        <translation>Нет последних транзакций</translation>
+    </message>
+    <message>
+        <source>Your recent transactions will appear here.</source>
+        <translation>Здесь появятся ваши последние транзакции.</translation>
+    </message>
+    <message>
+        <source>Receive</source>
+        <translation>Получить</translation>
+    </message>
+    <message>
         <source>%1 Balance</source>
         <translation>Баланс %1</translation>
     </message>
@@ -2124,9 +3467,189 @@ https://app.transifex.com/defcon/defcon/</translation>
         <source>Discreet mode activated for the Overview tab. To unmask the values, uncheck Settings-&gt;Discreet mode.</source>
         <translation>На вкладке Обзор включен Осторожный режим. Чтобы открыть значения, отключите Настройки-&gt;Осторожный режим.</translation>
     </message>
+    <message>
+        <source>under a minute</source>
+        <translation>менее минуты</translation>
+    </message>
+    <message>
+        <source>1 minute</source>
+        <translation>1 минута</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minutes</source>
+        <translation><numerusform>%n минута</numerusform><numerusform>%n минуты</numerusform><numerusform>%n минут</numerusform></translation>
+    </message>
+    <message>
+        <source>1 hour</source>
+        <translation>1 час</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hours</source>
+        <translation><numerusform>%n час</numerusform><numerusform>%n часа</numerusform><numerusform>%n часов</numerusform></translation>
+    </message>
+    <message>
+        <source>1 day</source>
+        <translation>1 день</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n days</source>
+        <translation><numerusform>%n день</numerusform><numerusform>%n дня</numerusform><numerusform>%n дней</numerusform></translation>
+    </message>
+    <message>
+        <source>1 week</source>
+        <translation>1 неделя</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n weeks</source>
+        <translation><numerusform>%n неделя</numerusform><numerusform>%n недели</numerusform><numerusform>%n недель</numerusform></translation>
+    </message>
+    <message>
+        <source>1 year</source>
+        <translation>1 год</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n years</source>
+        <translation><numerusform>%n год</numerusform><numerusform>%n года</numerusform><numerusform>%n лет</numerusform></translation>
+    </message>
+    <message>
+        <source>%1 ago</source>
+        <translation>Давность: %1</translation>
+    </message>
+    <message>
+        <source>%1 behind</source>
+        <translation>Отставание: %1</translation>
+    </message>
+    <message>
+        <source>Syncing data…</source>
+        <translation>Синхронизация данных…</translation>
+    </message>
+    <message>
+        <source>Syncing %1%</source>
+        <translation>Синхронизация: %1%</translation>
+    </message>
+    <message>
+        <source>Synchronizing additional data</source>
+        <translation>Синхронизация дополнительных данных</translation>
+    </message>
+    <message>
+        <source>Catching up with the blockchain</source>
+        <translation>Загрузка недостающих блоков</translation>
+    </message>
+    <message>
+        <source>peer</source>
+        <translation>узл.</translation>
+    </message>
+    <message>
+        <source>peers</source>
+        <translation>узл.</translation>
+    </message>
+    <message>
+        <source>masternode</source>
+        <translation>мастернода</translation>
+    </message>
+    <message numerus="yes">
+        <source>masternodes</source>
+        <translation><numerusform>мастернода</numerusform><numerusform>мастерноды</numerusform><numerusform>мастернод</numerusform></translation>
+    </message>
+    <message>
+        <source>in mempool</source>
+        <translation>в пуле памяти</translation>
+    </message>
+    <message>
+        <source>Night sky level: %1</source>
+        <translation>Уровень ночного неба: %1</translation>
+    </message>
+    <message>
+        <source>The highest level.</source>
+        <translation>Наивысший уровень.</translation>
+    </message>
+    <message>
+        <source>Next: %1 from %2</source>
+        <translation>Далее: %1 от %2</translation>
+    </message>
+    <message>
+        <source>Top level</source>
+        <translation>Высший уровень</translation>
+    </message>
+    <message>
+        <source>Next level at %1</source>
+        <translation>Следующий уровень при %1</translation>
+    </message>
+    <message>
+        <source>The night sky behind the wallet grows with the balance: %1 now.</source>
+        <translation>Ночное небо на фоне кошелька меняется по мере роста баланса: сейчас — %1.</translation>
+    </message>
+    <message>
+        <source>Not available</source>
+        <translation>Недоступно</translation>
+    </message>
+    <message>
+        <source>This wallet holds no private keys, so it cannot stake.</source>
+        <translation>В этом кошельке нет закрытых ключей, поэтому он не может участвовать в стейкинге.</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>Выключено</translation>
+    </message>
+    <message>
+        <source>The node's staking thread is not running. See debug.log.</source>
+        <translation>Поток стейкинга узла не запущен. См. debug.log.</translation>
+    </message>
+    <message>
+        <source>This node runs without staking (-staking=0).</source>
+        <translation>Этот узел работает без стейкинга (-staking=0).</translation>
+    </message>
+    <message>
+        <source>Paused: wallet locked</source>
+        <translation>Пауза: кошелёк заблокирован</translation>
+    </message>
+    <message>
+        <source>Start staking to earn rewards with your balance.</source>
+        <translation>Запустите стейкинг, чтобы получать награды, используя свой баланс.</translation>
+    </message>
+    <message>
+        <source>Start staking</source>
+        <translation>Запустить стейкинг</translation>
+    </message>
+    <message>
+        <source>Waiting for sync</source>
+        <translation>Ожидание синхронизации</translation>
+    </message>
+    <message>
+        <source>Staking starts once the wallet is up to date with the network.</source>
+        <translation>Стейкинг начнётся, когда кошелёк синхронизируется с сетью.</translation>
+    </message>
+    <message>
+        <source>Pause staking</source>
+        <translation>Приостановить стейкинг</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation>Готово</translation>
+    </message>
+    <message>
+        <source>No spendable balance to stake.</source>
+        <translation>Нет доступных для расходования средств для стейкинга.</translation>
+    </message>
+    <message>
+        <source>None of the coins can stake right now.</source>
+        <translation>Сейчас ни одна монета не может участвовать в стейкинге.</translation>
+    </message>
+    <message>
+        <source>Looking for coins to stake.</source>
+        <translation>Поиск монет для стейкинга.</translation>
+    </message>
+    <message>
+        <source>This wallet is staking. A reward comes with each block it stakes.</source>
+        <translation>Этот кошелёк участвует в стейкинге. За каждый созданный им таким образом блок начисляется награда.</translation>
+    </message>
+    <message>
+        <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
+        <translation>Монеты не участвуют, пока они незрелые или слишком новые, меньше минимальной или больше максимальной ставки либо точно равны залогу мастерноды.</translation>
+    </message>
     <message numerus="yes">
         <source>%n Rounds</source>
-        <translation><numerusform>%n раунд</numerusform><numerusform>%n  раунда</numerusform><numerusform>%n раундов</numerusform><numerusform>%n раундов</numerusform></translation>
+        <translation><numerusform>%n раунд</numerusform><numerusform>%n раунда</numerusform><numerusform>%n раундов</numerusform></translation>
     </message>
     <message>
         <source>Found enough compatible inputs to mix %1</source>
@@ -2154,7 +3677,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message numerus="yes">
         <source>Denominated inputs have %5 of %n rounds on average</source>
-        <translation><numerusform>Номиналы прошли в среднем %5 из %n раундов</numerusform><numerusform>Номиналы прошли в среднем %5 из %n раундов</numerusform><numerusform>Номиналы прошли в среднем %5 из %n раундов</numerusform><numerusform>Номиналы прошли в среднем %5 из %n раундов</numerusform></translation>
+        <translation><numerusform>Номиналы прошли в среднем %5 из %n раунда</numerusform><numerusform>Номиналы прошли в среднем %5 из %n раундов</numerusform><numerusform>Номиналы прошли в среднем %5 из %n раундов</numerusform></translation>
     </message>
     <message>
         <source>keys left: %1</source>
@@ -2257,7 +3780,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>Cannot sign inputs while wallet is locked.</source>
-        <translation>Не возможно подписать входы пока кошелек заблокирован.</translation>
+        <translation>Нельзя подписать входы, пока кошелёк заблокирован.</translation>
     </message>
     <message>
         <source>Could not sign any more inputs.</source>
@@ -2314,7 +3837,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>Pays transaction fee: </source>
-        <translation>Платит комиссию:</translation>
+        <translation>Платит комиссию: </translation>
     </message>
     <message>
         <source>Total Amount</source>
@@ -2382,8 +3905,8 @@ Due to discontinued support, you should request the merchant to provide you with
 В связи с прекращением поддержки следует запросить у мерчанта URI, совместимый с BIP21, или использовать кошелек, который продолжает поддерживать BIP70.</translation>
     </message>
     <message>
-        <source>URI cannot be parsed! This can be caused by an invalid Pacplatform address or malformed URI parameters.</source>
-        <translation>Не удалось разобрать URI! Возможно указан некорректный адрес Pacplatform либо параметры URI сформированы неверно.</translation>
+        <source>URI cannot be parsed! This can be caused by an invalid DeFCoN address or malformed URI parameters.</source>
+        <translation>Не удалось разобрать URI! Причиной может быть недопустимый адрес DeFCoN или некорректные параметры URI.</translation>
     </message>
     <message>
         <source>Payment request file handling</source>
@@ -2600,8 +4123,8 @@ Due to discontinued support, you should request the merchant to provide you with
         <translation>Сумма</translation>
     </message>
     <message>
-        <source>Enter a Pacplatform address (e.g. %1)</source>
-        <translation>Введите адрес Pacplatform (например, %1)</translation>
+        <source>Enter a DeFCoN address (e.g. %1)</source>
+        <translation>Введите адрес DeFCoN (например, %1)</translation>
     </message>
     <message>
         <source>Appearance Setup</source>
@@ -2692,27 +4215,27 @@ Due to discontinued support, you should request the merchant to provide you with
     </message>
     <message numerus="yes">
         <source>%n second(s)</source>
-        <translation><numerusform>%n секунда</numerusform><numerusform>%n секунды</numerusform><numerusform>%n секунд</numerusform><numerusform>%n секунд</numerusform></translation>
+        <translation><numerusform>%n секунда</numerusform><numerusform>%n секунды</numerusform><numerusform>%n секунд</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%n minute(s)</source>
-        <translation><numerusform>%n минута</numerusform><numerusform>%n минуты</numerusform><numerusform>%n минут</numerusform><numerusform>%n минут</numerusform></translation>
+        <translation><numerusform>%n минута</numerusform><numerusform>%n минуты</numerusform><numerusform>%n минут</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%n hour(s)</source>
-        <translation><numerusform>%n час</numerusform><numerusform>%n часа</numerusform><numerusform>%n часов</numerusform><numerusform>%n часов</numerusform></translation>
+        <translation><numerusform>%n час</numerusform><numerusform>%n часа</numerusform><numerusform>%n часов</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%n day(s)</source>
-        <translation><numerusform>%n день</numerusform><numerusform>%n дня</numerusform><numerusform>%n дней</numerusform><numerusform>%n дней</numerusform></translation>
+        <translation><numerusform>%n день</numerusform><numerusform>%n дня</numerusform><numerusform>%n дней</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%n week(s)</source>
-        <translation><numerusform>%n неделя</numerusform><numerusform>%n недели</numerusform><numerusform>%n недель</numerusform><numerusform>%n недель</numerusform></translation>
+        <translation><numerusform>%n неделя</numerusform><numerusform>%n недели</numerusform><numerusform>%n недель</numerusform></translation>
     </message>
     <message numerus="yes">
         <source>%n year(s)</source>
-        <translation><numerusform>%n год</numerusform><numerusform>%n года</numerusform><numerusform>%n лет</numerusform><numerusform>%n лет</numerusform></translation>
+        <translation><numerusform>%n год</numerusform><numerusform>%n года</numerusform><numerusform>%n лет</numerusform></translation>
     </message>
     <message>
         <source>%1 and %2</source>
@@ -2737,6 +4260,162 @@ Due to discontinued support, you should request the merchant to provide you with
     <message>
         <source>unknown</source>
         <translation>неизвестно</translation>
+    </message>
+    <message>
+        <source>Descriptor wallets do not support the legacy importmulti path. Import the profile descriptor manually with importdescriptors.</source>
+        <translation>Дескрипторные кошельки не поддерживают прежний способ импорта через importmulti. Импортируйте дескриптор профиля вручную с помощью importdescriptors.</translation>
+    </message>
+    <message>
+        <source>Wallet type could not be determined. No legacy watch-only import was attempted.</source>
+        <translation>Не удалось определить тип кошелька. Импорт только для просмотра в старом формате не выполнялся.</translation>
+    </message>
+    <message>
+        <source>Wallet is locked. Unlock the wallet before importing the multisig setup.</source>
+        <translation>Кошелёк заблокирован. Разблокируйте его перед импортом конфигурации мультиподписи.</translation>
+    </message>
+    <message>
+        <source>Watch-only import failed: %1</source>
+        <translation>Не удалось импортировать только для просмотра: %1</translation>
+    </message>
+    <message>
+        <source>Not a multisig setup file (unexpected type).</source>
+        <translation>Это не файл конфигурации мультиподписи (неожиданный тип).</translation>
+    </message>
+    <message>
+        <source>Setup file was created by a newer version.</source>
+        <translation>Файл конфигурации создан более новой версией.</translation>
+    </message>
+    <message>
+        <source>Setup file is missing required fields or is inconsistent.</source>
+        <translation>В файле конфигурации отсутствуют обязательные поля или имеются противоречивые данные.</translation>
+    </message>
+    <message>
+        <source>Setup file key #%1 is not a valid hex public key.</source>
+        <translation>Ключ №%1 в файле конфигурации не является допустимым открытым ключом в шестнадцатеричном формате.</translation>
+    </message>
+    <message>
+        <source>Setup file key #%1 is a duplicate.</source>
+        <translation>Ключ №%1 в файле конфигурации повторяется.</translation>
+    </message>
+    <message>
+        <source>This setup is for %1 but this node runs on %2.</source>
+        <translation>Сеть конфигурации — %1, а сеть этого узла — %2.</translation>
+    </message>
+    <message>
+        <source>Mainnet</source>
+        <translation>Основная сеть</translation>
+    </message>
+    <message>
+        <source>Testnet</source>
+        <translation>Тестовая сеть</translation>
+    </message>
+    <message>
+        <source>Regtest</source>
+        <translation>Regtest</translation>
+    </message>
+    <message>
+        <source>Devnet</source>
+        <translation>Devnet</translation>
+    </message>
+    <message>
+        <source>Address valid</source>
+        <translation>Адрес действителен</translation>
+    </message>
+    <message>
+        <source>not a valid address on this network</source>
+        <translation>недопустимый адрес для этой сети</translation>
+    </message>
+    <message>
+        <source>Redeem script matches the address</source>
+        <translation>Скрипт погашения соответствует адресу</translation>
+    </message>
+    <message>
+        <source>Redeem script does not match the address</source>
+        <translation>Скрипт погашения не соответствует адресу</translation>
+    </message>
+    <message>
+        <source>do not use this profile</source>
+        <translation>не используйте этот профиль</translation>
+    </message>
+    <message>
+        <source>Redeem script</source>
+        <translation>Скрипт погашения</translation>
+    </message>
+    <message>
+        <source>not stored in this profile</source>
+        <translation>не сохранён в этом профиле</translation>
+    </message>
+    <message>
+        <source>Required signatures</source>
+        <translation>Необходимые подписи</translation>
+    </message>
+    <message>
+        <source>%1 of %2</source>
+        <translation>%1 из %2</translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <translation>Сеть</translation>
+    </message>
+    <message>
+        <source>not recorded in this profile</source>
+        <translation>не указана в этом профиле</translation>
+    </message>
+    <message>
+        <source>profile is for %1, this node runs on %2</source>
+        <translation>сеть профиля — %1, сеть этого узла — %2</translation>
+    </message>
+    <message>
+        <source>Wallet can sign</source>
+        <translation>Кошелёк может подписывать</translation>
+    </message>
+    <message>
+        <source>no wallet loaded</source>
+        <translation>кошелёк не загружен</translation>
+    </message>
+    <message>
+        <source>Tracked by wallet</source>
+        <translation>Отслеживается кошельком</translation>
+    </message>
+    <message>
+        <source>import as watch-only to see the balance and build spends</source>
+        <translation>импортируйте только для просмотра, чтобы видеть баланс и создавать транзакции расходования</translation>
+    </message>
+    <message>
+        <source>could not query the wallet</source>
+        <translation>не удалось запросить данные кошелька</translation>
+    </message>
+    <message>
+        <source>no — private keys are disabled</source>
+        <translation>нет — закрытые ключи отключены</translation>
+    </message>
+    <message>
+        <source>yes — holds %1 of %2 keys (%3)</source>
+        <translation>да — содержит ключи: %1 из %2 (%3)</translation>
+    </message>
+    <message>
+        <source>no cosigner key in this wallet — you can still track it and pass the PSBT on</source>
+        <translation>в этом кошельке нет ключей подписантов — вы всё равно можете отслеживать адрес и передавать PSBT</translation>
+    </message>
+    <message>
+        <source>The payload is too large for a QR code (%1 characters). Use file or clipboard transfer instead.</source>
+        <translation>Данные слишком велики для QR-кода (число символов: %1). Используйте файл или буфер обмена для передачи.</translation>
+    </message>
+    <message>
+        <source>This build was compiled without QR code support.</source>
+        <translation>Эта сборка скомпилирована без поддержки QR-кодов.</translation>
+    </message>
+    <message>
+        <source>Save image…</source>
+        <translation>Сохранить изображение…</translation>
+    </message>
+    <message>
+        <source>Copy image</source>
+        <translation>Копировать изображение</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Закрыть</translation>
     </message>
 </context>
 <context>
@@ -2873,8 +4552,16 @@ Due to discontinued support, you should request the merchant to provide you with
         <translation>Отправлено</translation>
     </message>
     <message>
+        <source>Co&amp;mmands</source>
+        <translation>Ко&amp;манды</translation>
+    </message>
+    <message>
         <source>&amp;Peers</source>
         <translation>&amp;Пиры</translation>
+    </message>
+    <message>
+        <source>Number of Masternodes</source>
+        <translation>Количество мастернод</translation>
     </message>
     <message>
         <source>Wallet:</source>
@@ -3004,14 +4691,6 @@ Due to discontinued support, you should request the merchant to provide you with
     <message>
         <source>To specify a non-default location of the blocks directory use the '%1' option.</source>
         <translation>Чтобы указать нестандартное расположение папки с блоками, используйте опцию '%1'.</translation>
-    </message>
-    <message>
-        <source>Number of regular Masternodes</source>
-        <translation>Количество обычных Мастернод</translation>
-    </message>
-    <message>
-        <source>Number of EvoNodes</source>
-        <translation>Количество нод Evo</translation>
     </message>
     <message>
         <source>Current block height</source>
@@ -3282,6 +4961,10 @@ Due to discontinued support, you should request the merchant to provide you with
         <translation>Ctrl+Shift+C</translation>
     </message>
     <message>
+        <source>Ctrl+Shift+H</source>
+        <translation>Ctrl+Shift+H</translation>
+    </message>
+    <message>
         <source>Ctrl+Shift+G</source>
         <translation>Ctrl+Shift+G</translation>
     </message>
@@ -3296,6 +4979,92 @@ Due to discontinued support, you should request the merchant to provide you with
     <message>
         <source>Executing command using "%1" wallet</source>
         <translation>Выполнение команд, используя "%1" кошелек</translation>
+    </message>
+    <message>
+        <source>lists the commands by topic</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>список команд по темам</translation>
+    </message>
+    <message>
+        <source>describes one command</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>описание одной команды</translation>
+    </message>
+    <message>
+        <source>describes one subcommand</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>описание одной подкоманды</translation>
+    </message>
+    <message>
+        <source>the state of the selected wallet</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>состояние выбранного кошелька</translation>
+    </message>
+    <message>
+        <source>the staking state of every wallet on the staking list</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>состояние стейкинга для каждого кошелька в списке стейкинга</translation>
+    </message>
+    <message>
+        <source>how far this node has synced</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>ход синхронизации этого узла</translation>
+    </message>
+    <message>
+        <source>how many masternodes this node knows of</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>количество мастернод, известных этому узлу</translation>
+    </message>
+    <message>
+        <source>what this node's Sentinel probe sees in the current epoch</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>что видит зонд Sentinel этого узла в текущей эпохе</translation>
+    </message>
+    <message>
+        <source>Getting started</source>
+        <translation>Начало работы</translation>
+    </message>
+    <message>
+        <source>A command that works on a wallet uses the wallet chosen in the Wallet list above. While only one wallet is loaded the list stays hidden, and that wallet is used.</source>
+        <translation>Команда, работающая с кошельком, использует кошелёк, выбранный в списке «Кошелёк» выше. Если загружен только один кошелёк, список скрыт и используется этот кошелёк.</translation>
+    </message>
+    <message>
+        <source>The examples in the help of a command are written for %1 and for curl. Here, type only the command and its arguments.</source>
+        <extracomment>help-console. %1 is the name of the command-line client.</extracomment>
+        <translation>Примеры в справке команды предназначены для %1 и curl. Здесь вводите только команду и её аргументы.</translation>
+    </message>
+    <message>
+        <source>How to type a command</source>
+        <translation>Как вводить команды</translation>
+    </message>
+    <message>
+        <source>example:</source>
+        <extracomment>help-console: the label in front of an example command.</extracomment>
+        <translation>пример:</translation>
+    </message>
+    <message>
+        <source>This console accepts RPC commands using the standard syntax.</source>
+        <translation>Эта консоль принимает команды RPC со стандартным синтаксисом.</translation>
+    </message>
+    <message>
+        <source>This console can also accept RPC commands using the parenthesized syntax.</source>
+        <translation>Эта консоль также принимает команды RPC с синтаксисом круглых скобок.</translation>
+    </message>
+    <message>
+        <source>Commands may be nested when specified with the parenthesized syntax.</source>
+        <translation>При использовании синтаксиса круглых скобок команды могут быть вложенными.</translation>
+    </message>
+    <message>
+        <source>A space or a comma can be used to delimit arguments for either syntax.</source>
+        <translation>В обоих вариантах синтаксиса аргументы можно разделять пробелом или запятой.</translation>
+    </message>
+    <message>
+        <source>Named results can be queried with a non-quoted key string in brackets using the parenthesized syntax.</source>
+        <translation>При использовании синтаксиса круглых скобок именованные результаты можно получить, указав строковый ключ без кавычек в квадратных скобках.</translation>
+    </message>
+    <message>
+        <source>Results without keys can be queried with an integer in brackets using the parenthesized syntax.</source>
+        <translation>При использовании синтаксиса круглых скобок результаты без ключей можно получить, указав целое число в квадратных скобках.</translation>
     </message>
     <message>
         <source>detecting: peer could be v1 or v2</source>
@@ -3349,6 +5118,11 @@ For more information on using this console, type %6.
         <translation>Выполняется…</translation>
     </message>
     <message>
+        <source>Warning: the reply below can contain private keys or a recovery phrase. Anyone who sees them can take your coins. Never share them, and press %1 to clear the console when you are done.</source>
+        <extracomment>A console warning above a reply that can show a private key, a seed or a recovery phrase. %1 is the shortcut that clears the console.</extracomment>
+        <translation>Внимание: ответ ниже может содержать закрытые ключи или фразу восстановления. Любой, кто их увидит, сможет забрать ваши монеты. Никогда не передавайте их другим и по завершении нажмите %1, чтобы очистить консоль.</translation>
+    </message>
+    <message>
         <source>(peer: %1)</source>
         <translation>(id пира: %1)</translation>
     </message>
@@ -3384,10 +5158,6 @@ For more information on using this console, type %6.
 <context>
     <name>ReceiveCoinsDialog</name>
     <message>
-        <source>An optional message to attach to the payment request, which will be displayed when the request is opened. Note: The message will not be sent with the payment over the Pacplatform network.</source>
-        <translation>Необязательное сообщение для запроса платежа, которое будет показано при открытии запроса. Обратите внимание: сообщение не будет отправлено вместе с платежом через сеть Pacplatform.</translation>
-    </message>
-    <message>
         <source>&amp;Message:</source>
         <translation>&amp;Сообщение:</translation>
     </message>
@@ -3396,12 +5166,12 @@ For more information on using this console, type %6.
         <translation>Необязательная метка для нового адреса получения.</translation>
     </message>
     <message>
-        <source>An optional message to attach to the payment request, which will be displayed when the request is opened.&lt;br&gt;Note: The message will not be sent with the payment over the Pacplatform network.</source>
-        <translation>Необязательное сообщение для запроса платежа, которое будет показано при открытии запроса.&lt;br&gt;Обратите внимание: сообщение не будет отправлено вместе с платежом через сеть Pacplatform.</translation>
-    </message>
-    <message>
         <source>An optional label to associate with the new receiving address (used by you to identify an invoice).  It is also attached to the payment request.</source>
         <translation>Необязательный ярлык, который можно связать с новым адресом получения (для идентификации счета). Он также прикреплен к платежному запросу.</translation>
+    </message>
+    <message>
+        <source>An optional message to attach to the payment request, which will be displayed when the request is opened.&lt;br&gt;Note: The message will not be sent with the payment over the DeFCoN network.</source>
+        <translation>Необязательное сообщение к запросу платежа, которое будет показано при открытии запроса.&lt;br&gt;Примечание: сообщение не будет отправлено вместе с платежом по сети DeFCoN.</translation>
     </message>
     <message>
         <source>Use this form to request payments. All fields are &lt;b&gt;optional&lt;/b&gt;.</source>
@@ -3456,6 +5226,10 @@ For more information on using this console, type %6.
         <translation>Введите метку для нового адреса получения</translation>
     </message>
     <message>
+        <source>An optional message to attach to the payment request, which will be displayed when the request is opened. Note: The message will not be sent with the payment over the DeFCoN network.</source>
+        <translation>Необязательное сообщение к запросу платежа, которое будет показано при открытии запроса. Примечание: сообщение не будет отправлено вместе с платежом по сети DeFCoN.</translation>
+    </message>
+    <message>
         <source>Enter a message to attach to the payment request</source>
         <translation>Введите сообщение для прикрепления к запросу платежа</translation>
     </message>
@@ -3480,8 +5254,64 @@ For more information on using this console, type %6.
         <translation>Скопировать &amp;сумму</translation>
     </message>
     <message>
+        <source>QR code of the receiving address</source>
+        <translation>QR-код адреса получения</translation>
+    </message>
+    <message>
+        <source>Your receiving address</source>
+        <translation>Ваш адрес получения</translation>
+    </message>
+    <message>
+        <source>Edit label</source>
+        <translation>Изменить метку</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>Копировать</translation>
+    </message>
+    <message>
+        <source>Copy the address to the clipboard</source>
+        <translation>Скопировать адрес в буфер обмена</translation>
+    </message>
+    <message>
+        <source>New address</source>
+        <translation>Новый адрес</translation>
+    </message>
+    <message>
+        <source>Get a new receiving address; the current one keeps working</source>
+        <translation>Получить новый адрес для приёма платежей; текущий продолжит работать</translation>
+    </message>
+    <message>
+        <source>Request a specific amount</source>
+        <translation>Запросить определённую сумму</translation>
+    </message>
+    <message>
+        <source>Show the form for a payment request with an amount and a label</source>
+        <translation>Показать форму запроса платежа с суммой и меткой</translation>
+    </message>
+    <message>
+        <source>No payment requests yet</source>
+        <translation>Запросов платежей пока нет</translation>
+    </message>
+    <message>
+        <source>No receiving address yet.</source>
+        <translation>Адреса получения пока нет.</translation>
+    </message>
+    <message>
+        <source>Address copied</source>
+        <translation>Адрес скопирован</translation>
+    </message>
+    <message>
         <source>Could not unlock wallet.</source>
         <translation>Не удается разблокировать кошелёк.</translation>
+    </message>
+    <message>
+        <source>Receive DeFCoN</source>
+        <translation>Получить DeFCoN</translation>
+    </message>
+    <message>
+        <source>Share this address to get paid.</source>
+        <translation>Поделитесь этим адресом, чтобы получить платёж.</translation>
     </message>
     <message>
         <source>Could not generate new address</source>
@@ -3629,10 +5459,6 @@ For more information on using this console, type %6.
         <translation>Комиссия транзакции:</translation>
     </message>
     <message>
-        <source>When there is less transaction volume than space in the blocks, miners as well as relaying nodes may enforce a minimum fee. Paying only this minimum fee is just fine, but be aware that this can result in a never confirming transaction once there is more demand for dash transactions than the network can process.</source>
-        <translation>Когда объем транзакций меньше, чем место в блоках, майнеры, а также узлы ретрансляции могут установить минимальную комиссию. Платить минимальную комиссию вполне нормально, но следует учитывать, что это может привести к тому, что транзакция никогда не будет подтверждена. В случае, если спрос на Pacplatform-транзакции будет превышать спрос, который может обработать сеть.</translation>
-    </message>
-    <message>
         <source>A too low fee might result in a never confirming transaction (read the tooltip)</source>
         <translation>Слишком низкая комиссия может привести к тому, что транзакция не будет подтверждена (читайте всплывающую подсказку)</translation>
     </message>
@@ -3646,7 +5472,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>If the custom fee is set to 1000 duffs and the transaction is only 250 bytes, then "per kilobyte" only pays 250 duffs in fee,&lt;br /&gt;while "at least" pays 1000 duffs. For transactions bigger than a kilobyte both pay by kilobyte.</source>
-        <translation>Если ручная комиссия установлена в 1000 duff, а транзакция по размеру только 250 байт, то плата "за килобайт" составит лишь 250 duff,&lt;br&gt;в то время как "минимум" будет равна 1000 duff. Для транзакций больше килобайта в любом случае идет расчет "за килобайт".</translation>
+        <translation>Если комиссия задана вручную как 1000 duffs, а размер транзакции — всего 250 байт, то при расчёте «за килобайт» комиссия составит лишь 250 duffs,&lt;br /&gt;а при расчёте «минимум» — 1000 duffs. Для транзакций больше килобайта в обоих случаях комиссия рассчитывается за килобайт.</translation>
     </message>
     <message>
         <source>per kilobyte</source>
@@ -3671,6 +5497,10 @@ For more information on using this console, type %6.
     <message>
         <source>Hide</source>
         <translation>Скрыть</translation>
+    </message>
+    <message>
+        <source>When there is less transaction volume than space in the blocks, miners as well as relaying nodes may enforce a minimum fee. Paying only this minimum fee is just fine, but be aware that this can result in a never confirming transaction once there is more demand for DeFCoN transactions than the network can process.</source>
+        <translation>Если объём транзакций меньше доступного места в блоках, майнеры и ретранслирующие узлы могут устанавливать минимальную комиссию. Обычно достаточно заплатить эту минимальную комиссию, но учтите: такая транзакция может никогда не получить подтверждения, если спрос на транзакции DeFCoN превысит пропускную способность сети.</translation>
     </message>
     <message>
         <source>Recommended:</source>
@@ -3770,11 +5600,11 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Cr&amp;eate Unsigned</source>
-        <translation>Создать неподписанную</translation>
+        <translation>&amp;Создать неподписанную</translation>
     </message>
     <message>
         <source> from wallet '%1'</source>
-        <translation>из кошелька '%1'</translation>
+        <translation> из кошелька '%1'</translation>
     </message>
     <message>
         <source>%1 to '%2'</source>
@@ -3810,15 +5640,11 @@ For more information on using this console, type %6.
     </message>
     <message numerus="yes">
         <source>This transaction will consume %n input(s)</source>
-        <translation><numerusform>Эта транзакция израсходует %n вход</numerusform><numerusform>Эта транзакция израсходует %n входов</numerusform><numerusform>Эта транзакция израсходует %n входов</numerusform><numerusform>Эта транзакция израсходует %n входов</numerusform></translation>
+        <translation><numerusform>Эта транзакция израсходует %n вход</numerusform><numerusform>Эта транзакция израсходует %n входа</numerusform><numerusform>Эта транзакция израсходует %n входов</numerusform></translation>
     </message>
     <message>
         <source>Warning: Using %1 with %2 or more inputs can harm your privacy and is not recommended</source>
         <translation>Внимание: Использование транзакции %1 с %2 и более входами может повредить вашей приватности и потому не рекомендуется</translation>
-    </message>
-    <message>
-        <source>Click to learn more</source>
-        <translation>Нажмите, чтобы узнать больше</translation>
     </message>
     <message>
         <source>Total Amount</source>
@@ -3870,6 +5696,34 @@ For more information on using this console, type %6.
         <translation>Частично подписанная транзакция (двоичная)</translation>
     </message>
     <message>
+        <source>Send DeFCoN</source>
+        <translation>Отправить DeFCoN</translation>
+    </message>
+    <message>
+        <source>Send to one or more recipients.</source>
+        <translation>Отправка одному или нескольким получателям.</translation>
+    </message>
+    <message>
+        <source>Payment summary</source>
+        <translation>Сводка платежа</translation>
+    </message>
+    <message>
+        <source>Recipients</source>
+        <translation>Получатели</translation>
+    </message>
+    <message>
+        <source>Amount entered</source>
+        <translation>Введённая сумма</translation>
+    </message>
+    <message>
+        <source>Fee rate</source>
+        <translation>Ставка комиссии</translation>
+    </message>
+    <message>
+        <source>The final transaction fee is shown in the confirmation dialog.</source>
+        <translation>Окончательная комиссия транзакции отображается в окне подтверждения.</translation>
+    </message>
+    <message>
         <source>The recipient address is not valid. Please recheck.</source>
         <translation>Адрес получателя неверный. Пожалуйста, перепроверьте.</translation>
     </message>
@@ -3899,11 +5753,11 @@ For more information on using this console, type %6.
     </message>
     <message numerus="yes">
         <source>Estimated to begin confirmation within %n block(s).</source>
-        <translation><numerusform>Будет подтверждено приблизительно в течение %n блока.</numerusform><numerusform>Будет подтверждено приблизительно в течение %n блоков.</numerusform><numerusform>Будет подтверждено приблизительно в течение %n блоков.</numerusform><numerusform>Будет подтверждено приблизительно в течение %n блоков.</numerusform></translation>
+        <translation><numerusform>Будет подтверждено приблизительно в течение %n блока.</numerusform><numerusform>Будет подтверждено приблизительно в течение %n блоков.</numerusform><numerusform>Будет подтверждено приблизительно в течение %n блоков.</numerusform></translation>
     </message>
     <message>
-        <source>Warning: Invalid Pacplatform address</source>
-        <translation>Внимание: неверный адрес Pacplatform</translation>
+        <source>Warning: Invalid DeFCoN address</source>
+        <translation>Внимание: недопустимый адрес DeFCoN</translation>
     </message>
     <message>
         <source>Warning: Unknown change address</source>
@@ -3927,10 +5781,6 @@ For more information on using this console, type %6.
     <message>
         <source>Pay &amp;To:</source>
         <translation>Полу&amp;чатель:</translation>
-    </message>
-    <message>
-        <source>The Pacplatform address to send the payment to</source>
-        <translation>Адрес Pacplatform для отправки на него монет</translation>
     </message>
     <message>
         <source>Choose previously used address</source>
@@ -3969,10 +5819,6 @@ For more information on using this console, type %6.
         <translation>Сумма к отправке в выбранных единицах</translation>
     </message>
     <message>
-        <source>The fee will be deducted from the amount being sent. The recipient will receive a lower amount of Pacplatform than you enter in the amount field. If multiple recipients are selected, the fee is split equally.</source>
-        <translation>Комиссия будет вычтена из отправляемой суммы. Получателю придет меньше Pacplatform, сем указано в поле "Сумма". Если указано несколько получателей, то комиссия будет разделена между ними поровну.</translation>
-    </message>
-    <message>
         <source>S&amp;ubtract fee from amount</source>
         <translation>&amp;Вычесть комиссию из суммы</translation>
     </message>
@@ -3983,10 +5829,6 @@ For more information on using this console, type %6.
     <message>
         <source>Message:</source>
         <translation>Сообщение:</translation>
-    </message>
-    <message>
-        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
-        <translation>К defcon: URI было прикреплено сообщение, которое будет сохранено вместе с транзакцией для вашего сведения. Обратите внимание: сообщение не будет отправлено через сеть Pacplatform.</translation>
     </message>
     <message>
         <source>This is an unauthenticated payment request.</source>
@@ -4001,8 +5843,24 @@ For more information on using this console, type %6.
         <translation>Получатель:</translation>
     </message>
     <message>
+        <source>The DeFCoN address to send the payment to</source>
+        <translation>Адрес DeFCoN для отправки платежа</translation>
+    </message>
+    <message>
+        <source>The fee will be deducted from the amount being sent. The recipient will receive a lower amount of DeFCoN than you enter in the amount field. If multiple recipients are selected, the fee is split equally.</source>
+        <translation>Комиссия будет вычтена из отправляемой суммы. Получатель получит меньше DeFCoN, чем вы указали в поле суммы. Если выбрано несколько получателей, комиссия делится между ними поровну.</translation>
+    </message>
+    <message>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the DeFCoN network.</source>
+        <translation>Сообщение, прикреплённое к URI defcon:, которое будет сохранено вместе с транзакцией для справки. Примечание: это сообщение не будет передано по сети DeFCoN.</translation>
+    </message>
+    <message>
         <source>Memo:</source>
         <translation>Примечание:</translation>
+    </message>
+    <message>
+        <source>Recipient</source>
+        <translation>Получатель</translation>
     </message>
 </context>
 <context>
@@ -4025,14 +5883,6 @@ For more information on using this console, type %6.
     <message>
         <source>&amp;Sign Message</source>
         <translation>&amp;Подписать сообщение</translation>
-    </message>
-    <message>
-        <source>You can sign messages/agreements with your addresses to prove you can receive Pacplatform sent to them. Be careful not to sign anything vague or random, as phishing attacks may try to trick you into signing your identity over to them. Only sign fully-detailed statements you agree to.</source>
-        <translation>Вы можете подписывать сообщения своими адресами, чтобы доказать, что Вы можете получать Pacplatform на них. Будьте осторожны, не подписывайте что-то неопределённое, так как фишинговые атаки могут обманным путём заставить вас подписать нежелательные сообщения. Подписывайте только те сообщения, с которыми вы согласны вплоть до мелочей.</translation>
-    </message>
-    <message>
-        <source>The Pacplatform address to sign the message with</source>
-        <translation>Адрес Pacplatform, которым Вы хотите подписать сообщение</translation>
     </message>
     <message>
         <source>Choose previously used address</source>
@@ -4063,10 +5913,6 @@ For more information on using this console, type %6.
         <translation>Скопировать текущую подпись в системный буфер обмена</translation>
     </message>
     <message>
-        <source>Sign the message to prove you own this Pacplatform address</source>
-        <translation>Подписать сообщение, чтобы доказать владение этим адресом Pacplatform</translation>
-    </message>
-    <message>
         <source>Sign &amp;Message</source>
         <translation>Подписать &amp;сообщение</translation>
     </message>
@@ -4087,20 +5933,12 @@ For more information on using this console, type %6.
         <translation>Введите ниже адрес для подписи, сообщение (убедитесь, что переводы строк, пробелы, табы и т.п. в точности скопированы) и подпись, чтобы проверить сообщение. Убедитесь, что не скопировали лишнего в подпись, кроме самого подписываемого сообщения, чтобы не стать жертвой атаки "man-in-the-middle". Обратите внимание, что это лишь подтверждает, что подписывающий может получить средства на этот адрес, это не подтверждает, что он является отправителем какой-либо транзакции!</translation>
     </message>
     <message>
-        <source>The Pacplatform address the message was signed with</source>
-        <translation>Адрес Pacplatform, которым было подписано сообщение</translation>
-    </message>
-    <message>
         <source>The signed message to verify</source>
         <translation>Проверяемое подписанное сообщение</translation>
     </message>
     <message>
         <source>The signature given when the message was signed</source>
         <translation>Подпись, полученная при подписании сообщения</translation>
-    </message>
-    <message>
-        <source>Verify the message to ensure it was signed with the specified Pacplatform address</source>
-        <translation>Проверить сообщение, чтобы убедиться, что оно было подписано указанным адресом Pacplatform</translation>
     </message>
     <message>
         <source>Verify &amp;Message</source>
@@ -4115,8 +5953,24 @@ For more information on using this console, type %6.
         <translation>Введите сообщение для подписи</translation>
     </message>
     <message>
+        <source>You can sign messages/agreements with your addresses to prove you can receive DeFCoN sent to them. Be careful not to sign anything vague or random, as phishing attacks may try to trick you into signing your identity over to them. Only sign fully-detailed statements you agree to.</source>
+        <translation>Вы можете подписывать сообщения и соглашения своими адресами, чтобы подтвердить возможность получать отправленные на них DeFCoN. Не подписывайте неопределённые или случайные тексты: при фишинговой атаке вас могут обманом заставить подписать текст, позволяющий злоумышленникам выдать себя за вас. Подписывайте только полностью изложенные заявления, с которыми вы согласны.</translation>
+    </message>
+    <message>
+        <source>The DeFCoN address to sign the message with</source>
+        <translation>Адрес DeFCoN для подписи сообщения</translation>
+    </message>
+    <message>
         <source>Click "Sign Message" to generate signature</source>
         <translation>Нажмите "Подписать сообщение" для создания подписи</translation>
+    </message>
+    <message>
+        <source>Sign the message to prove you own this DeFCoN address</source>
+        <translation>Подписать сообщение, чтобы подтвердить владение этим адресом DeFCoN</translation>
+    </message>
+    <message>
+        <source>The DeFCoN address the message was signed with</source>
+        <translation>Адрес DeFCoN, которым подписано сообщение</translation>
     </message>
     <message>
         <source>Enter a message to be verified</source>
@@ -4125,6 +5979,10 @@ For more information on using this console, type %6.
     <message>
         <source>Enter a signature for the message to be verified</source>
         <translation>Введите подпись проверяемого сообщения</translation>
+    </message>
+    <message>
+        <source>Verify the message to ensure it was signed with the specified DeFCoN address</source>
+        <translation>Проверить сообщение, чтобы убедиться, что оно подписано указанным адресом DeFCoN</translation>
     </message>
     <message>
         <source>The entered address is invalid.</source>
@@ -4180,6 +6038,53 @@ For more information on using this console, type %6.
     </message>
 </context>
 <context>
+    <name>SkyTiers</name>
+    <message>
+        <source>Starfield</source>
+        <translation>Звёздное поле</translation>
+    </message>
+    <message>
+        <source>Night Sky</source>
+        <translation>Ночное небо</translation>
+    </message>
+    <message>
+        <source>Constellations</source>
+        <translation>Созвездия</translation>
+    </message>
+    <message>
+        <source>Milky Way</source>
+        <translation>Млечный Путь</translation>
+    </message>
+    <message>
+        <source>Saturn</source>
+        <translation>Сатурн</translation>
+    </message>
+    <message>
+        <source>Jupiter</source>
+        <translation>Юпитер</translation>
+    </message>
+    <message>
+        <source>Ice Giant</source>
+        <translation>Ледяной гигант</translation>
+    </message>
+    <message>
+        <source>Nebula</source>
+        <translation>Туманность</translation>
+    </message>
+    <message>
+        <source>Galaxy</source>
+        <translation>Галактика</translation>
+    </message>
+    <message>
+        <source>Deep Space</source>
+        <translation>Дальний космос</translation>
+    </message>
+    <message>
+        <source>DeFCoN Universe</source>
+        <translation>Вселенная DeFCoN</translation>
+    </message>
+</context>
+<context>
     <name>SplashScreen</name>
     <message>
         <source>(press q to shutdown and continue later)</source>
@@ -4213,7 +6118,7 @@ For more information on using this console, type %6.
     <name>TransactionDesc</name>
     <message numerus="yes">
         <source>Open for %n more block(s)</source>
-        <translation><numerusform>Будет открыто ещё %n блок</numerusform><numerusform>Будет открыто ещё %n блока</numerusform><numerusform>Будет открыто ещё %n блоков</numerusform><numerusform>Будет открыто ещё %n блоков</numerusform></translation>
+        <translation><numerusform>Будет открыто ещё %n блок</numerusform><numerusform>Будет открыто ещё %n блока</numerusform><numerusform>Будет открыто ещё %n блоков</numerusform></translation>
     </message>
     <message>
         <source>Open until %1</source>
@@ -4256,6 +6161,150 @@ For more information on using this console, type %6.
         <translation>проверено с помощью InstantSend</translation>
     </message>
     <message>
+        <source>Staking with consolidation</source>
+        <translation>Стейкинг с объединением</translation>
+    </message>
+    <message>
+        <source>Staking details</source>
+        <translation>Подробности стейкинга</translation>
+    </message>
+    <message>
+        <source>%1 existing outputs were used and combined into 1 new output, reducing the UTXO count by %2.</source>
+        <translation>Существующие выходы (%1) использованы и объединены в 1 новый выход, что уменьшило количество UTXO на %2.</translation>
+    </message>
+    <message>
+        <source>%1 existing outputs were used and combined into %2 new outputs, reducing the UTXO count by %3.</source>
+        <translation>Существующие выходы (%1) использованы и объединены в новые выходы (%2), что уменьшило количество UTXO на %3.</translation>
+    </message>
+    <message>
+        <source>1 existing output was used to create 1 new output. The UTXO count is unchanged.</source>
+        <translation>1 существующий выход использован для создания 1 нового выхода. Количество UTXO не изменилось.</translation>
+    </message>
+    <message>
+        <source>%1 existing outputs were used to create %2 new outputs. The UTXO count is unchanged.</source>
+        <translation>Существующие выходы (%1) использованы для создания новых выходов (%2). Количество UTXO не изменилось.</translation>
+    </message>
+    <message>
+        <source>1 existing output was split into %1 new outputs, increasing the UTXO count by %2.</source>
+        <translation>1 существующий выход разделён на новые выходы (%1), что увеличило количество UTXO на %2.</translation>
+    </message>
+    <message>
+        <source>%1 existing outputs were used to create %2 new outputs, increasing the UTXO count by %3.</source>
+        <translation>Существующие выходы (%1) использованы для создания новых выходов (%2), что увеличило количество UTXO на %3.</translation>
+    </message>
+    <message>
+        <source>This transaction is not currently confirmed in the active chain. The changes below are not a confirmed consolidation.</source>
+        <translation>Эта транзакция пока не подтверждена в активной цепочке. Изменения ниже не являются подтверждённым объединением.</translation>
+    </message>
+    <message>
+        <source>Existing coins used</source>
+        <translation>Использованные существующие монеты</translation>
+    </message>
+    <message>
+        <source>Unknown: some previous outputs are unavailable in this wallet</source>
+        <translation>Неизвестно: некоторые предыдущие выходы недоступны в этом кошельке</translation>
+    </message>
+    <message>
+        <source>Staking reward</source>
+        <translation>Награда за стейкинг</translation>
+    </message>
+    <message>
+        <source>Cannot be calculated from the available input records</source>
+        <translation>Невозможно вычислить по имеющимся данным о входах</translation>
+    </message>
+    <message>
+        <source>New output total</source>
+        <translation>Общая сумма новых выходов</translation>
+    </message>
+    <message>
+        <source>No separate consolidation fee was deducted.</source>
+        <translation>Отдельная комиссия за объединение не взималась.</translation>
+    </message>
+    <message>
+        <source>The amounts below describe the whole transaction. This wallet may own or watch only part of it.</source>
+        <translation>Суммы ниже описывают транзакцию целиком. Этот кошелёк может владеть лишь частью её средств или только отслеживать эту часть.</translation>
+    </message>
+    <message>
+        <source>Multiple source addresses</source>
+        <translation>Несколько исходных адресов</translation>
+    </message>
+    <message>
+        <source>Inputs from %1 addresses were combined, linking them on the blockchain.</source>
+        <translation>Входы с разных адресов (всего %1) объединены, что связало эти адреса в цепочке блоков.</translation>
+    </message>
+    <message>
+        <source>Inputs used</source>
+        <translation>Использованные входы</translation>
+    </message>
+    <message>
+        <source>Winning stake input</source>
+        <translation>Победивший вход стейкинга</translation>
+    </message>
+    <message>
+        <source>Additional combined input</source>
+        <translation>Дополнительно объединённый вход</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation>Адрес</translation>
+    </message>
+    <message>
+        <source>Label</source>
+        <translation>Метка</translation>
+    </message>
+    <message>
+        <source>The original amount and address are unavailable in this wallet's history.</source>
+        <translation>Исходная сумма и адрес недоступны в истории этого кошелька.</translation>
+    </message>
+    <message>
+        <source>Previous transaction</source>
+        <translation>Предыдущая транзакция</translation>
+    </message>
+    <message>
+        <source>New output</source>
+        <translation>Новый выход</translation>
+    </message>
+    <message>
+        <source>New outputs</source>
+        <translation>Новые выходы</translation>
+    </message>
+    <message>
+        <source>Output %1</source>
+        <translation>Выход %1</translation>
+    </message>
+    <message>
+        <source>Destination address</source>
+        <translation>Адрес получателя</translation>
+    </message>
+    <message>
+        <source>The first input won the stake.</source>
+        <translation>Первый вход выиграл в стейкинге.</translation>
+    </message>
+    <message>
+        <source>The first input won the stake. The additional input was combined afterwards and did not affect the chance of winning this block.</source>
+        <translation>Первый вход выиграл в стейкинге. Дополнительный вход был объединён позже и не влиял на вероятность получения этого блока.</translation>
+    </message>
+    <message>
+        <source>The first input won the stake. The additional inputs were combined afterwards and did not affect the chance of winning this block.</source>
+        <translation>Первый вход выиграл в стейкинге. Дополнительные входы были объединены позже и не влияли на вероятность получения этого блока.</translation>
+    </message>
+    <message>
+        <source>1 minute</source>
+        <translation>1 минута</translation>
+    </message>
+    <message>
+        <source>%1 minutes</source>
+        <translation>%1 мин.</translation>
+    </message>
+    <message>
+        <source>The new output can stake again after at least &lt;b&gt;%1 confirmations&lt;/b&gt; and &lt;b&gt;%2&lt;/b&gt; from the block timestamp.</source>
+        <translation>Новый выход сможет снова участвовать в стейкинге после выполнения обоих условий: подтверждений — не менее &lt;b&gt;%1&lt;/b&gt;, время с момента, указанного в блоке, — &lt;b&gt;%2&lt;/b&gt; или больше.</translation>
+    </message>
+    <message>
+        <source>The new outputs can stake again after at least &lt;b&gt;%1 confirmations&lt;/b&gt; and &lt;b&gt;%2&lt;/b&gt; from the block timestamp.</source>
+        <translation>Новые выходы смогут снова участвовать в стейкинге после выполнения обоих условий: подтверждений — не менее &lt;b&gt;%1&lt;/b&gt;, время с момента, указанного в блоке, — &lt;b&gt;%2&lt;/b&gt; или больше.</translation>
+    </message>
+    <message>
         <source>Status</source>
         <translation>Статус</translation>
     </message>
@@ -4268,8 +6317,20 @@ For more information on using this console, type %6.
         <translation>Источник</translation>
     </message>
     <message>
+        <source>Masternode Reward</source>
+        <translation>Награда мастерноды</translation>
+    </message>
+    <message>
         <source>Generated</source>
-        <translation>Сгенерированно</translation>
+        <translation>Сгенерировано</translation>
+    </message>
+    <message>
+        <source>Staked (combined)</source>
+        <translation>Стейкинг (с объединением)</translation>
+    </message>
+    <message>
+        <source>Staked</source>
+        <translation>Стейкинг</translation>
     </message>
     <message>
         <source>Platform Transfer</source>
@@ -4305,7 +6366,7 @@ For more information on using this console, type %6.
     </message>
     <message numerus="yes">
         <source>matures in %n more block(s)</source>
-        <translation><numerusform>будет доступно через %n блок</numerusform><numerusform>будет доступно через %n блока</numerusform><numerusform>будет доступно через %n блоков</numerusform><numerusform>будет доступно через %n блоков</numerusform></translation>
+        <translation><numerusform>будет доступно через %n блок</numerusform><numerusform>будет доступно через %n блока</numerusform><numerusform>будет доступно через %n блоков</numerusform></translation>
     </message>
     <message>
         <source>not accepted</source>
@@ -4352,10 +6413,6 @@ For more information on using this console, type %6.
         <translation>Полный размер транзакции</translation>
     </message>
     <message>
-        <source>Generated coins must mature %1 blocks before they can be spent. When you generated this block, it was broadcast to the network to be added to the block chain. If it fails to get into the chain, its state will change to "not accepted" and it won't be spendable. This may occasionally happen if another node generates a block within a few seconds of yours.</source>
-        <translation>Сгенерированные монеты должны подождать %1 блоков, прежде чем они могут быть потрачены. Когда Вы сгенерировали этот блок, он был отправлен в сеть для добавления в цепочку блоков. Если он не попадёт в цепочку, его статус изменится на "не принят", и монеты будут недействительны. Это иногда происходит в случае, если другой узел сгенерирует блок на несколько секунд раньше вас.</translation>
-    </message>
-    <message>
         <source>Debug information</source>
         <translation>Отладочная информация</translation>
     </message>
@@ -4372,6 +6429,18 @@ For more information on using this console, type %6.
         <translation>Сумма</translation>
     </message>
     <message>
+        <source>Transaction size</source>
+        <translation>Размер транзакции</translation>
+    </message>
+    <message>
+        <source>Staked coins mature after %1 blocks before they can be spent.</source>
+        <translation>Монеты, полученные через стейкинг, можно потратить только после созревания. Необходимое количество блоков: %1.</translation>
+    </message>
+    <message>
+        <source> coins must mature %1 blocks before they can be spent. When you created this block, it was broadcast to the network to be added to the block chain. If it fails to get into the chain, its state will change to "not accepted" and it won't be spendable. This may occasionally happen if another node creates a block within a few seconds of yours.</source>
+        <translation> — монеты можно потратить только после созревания. Необходимое количество блоков: %1. При создании этого блока он был передан в сеть для добавления в цепочку блоков. Если он не попадёт в цепочку, его состояние изменится на «не принято», а монеты нельзя будет потратить. Такое иногда случается, если другой узел создаёт блок с разницей в несколько секунд от вашего.</translation>
+    </message>
+    <message>
         <source>true</source>
         <translation>истина</translation>
     </message>
@@ -4382,10 +6451,6 @@ For more information on using this console, type %6.
 </context>
 <context>
     <name>TransactionDescDialog</name>
-    <message>
-        <source>This pane shows a detailed description of the transaction</source>
-        <translation>Эта панель отображает детальное описание транзакции</translation>
-    </message>
     <message>
         <source>Details for %1</source>
         <translation>Детали для %1</translation>
@@ -4407,7 +6472,7 @@ For more information on using this console, type %6.
     </message>
     <message numerus="yes">
         <source>Open for %n more block(s)</source>
-        <translation><numerusform>Будет открыто ещё %n блок</numerusform><numerusform>Будет открыто ещё %n блока</numerusform><numerusform>Будет открыто ещё %n блоков</numerusform><numerusform>Будет открыто ещё %n блоков</numerusform></translation>
+        <translation><numerusform>Будет открыто ещё %n блок</numerusform><numerusform>Будет открыто ещё %n блока</numerusform><numerusform>Будет открыто ещё %n блоков</numerusform></translation>
     </message>
     <message>
         <source>Open until %1</source>
@@ -4439,7 +6504,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Generated but not accepted</source>
-        <translation>Сгенерированно, но не подтверждено</translation>
+        <translation>Сгенерировано, но не принято</translation>
     </message>
     <message>
         <source>verified via InstantSend</source>
@@ -4474,8 +6539,20 @@ For more information on using this console, type %6.
         <translation>Добыто</translation>
     </message>
     <message>
+        <source>Staked (combined)</source>
+        <translation>Стейкинг (с объединением)</translation>
+    </message>
+    <message>
+        <source>Staked</source>
+        <translation>Стейкинг</translation>
+    </message>
+    <message>
         <source>Platform Transfer</source>
         <translation>Перевод платформы</translation>
+    </message>
+    <message>
+        <source>Masternode Reward</source>
+        <translation>Награда мастерноды</translation>
     </message>
     <message>
         <source>%1 Mixing</source>
@@ -4609,8 +6686,16 @@ For more information on using this console, type %6.
         <translation>Перевод платформы</translation>
     </message>
     <message>
+        <source>Masternode Reward</source>
+        <translation>Награда мастерноды</translation>
+    </message>
+    <message>
         <source>Other</source>
         <translation>Другое</translation>
+    </message>
+    <message>
+        <source>Staked</source>
+        <translation>Стейкинг</translation>
     </message>
     <message>
         <source>Enter address, transaction id, or label to search</source>
@@ -4619,6 +6704,18 @@ For more information on using this console, type %6.
     <message>
         <source>Min amount</source>
         <translation>Мин. сумма</translation>
+    </message>
+    <message>
+        <source>No transactions yet</source>
+        <translation>Транзакций пока нет</translation>
+    </message>
+    <message>
+        <source>Your incoming and outgoing transactions will appear here.</source>
+        <translation>Здесь появятся ваши входящие и исходящие транзакции.</translation>
+    </message>
+    <message>
+        <source>Receive</source>
+        <translation>Получить</translation>
     </message>
     <message>
         <source>&amp;Copy address</source>
@@ -4729,6 +6826,33 @@ For more information on using this console, type %6.
         <source>to</source>
         <translation>до</translation>
     </message>
+    <message>
+        <source>Any date</source>
+        <translation>Любая дата</translation>
+    </message>
+    <message>
+        <source>Any type</source>
+        <translation>Любой тип</translation>
+    </message>
+    <message>
+        <source>Show only transactions from this period</source>
+        <translation>Показывать только транзакции за этот период</translation>
+    </message>
+    <message>
+        <source>Show only transactions of this type</source>
+        <translation>Показывать только транзакции этого типа</translation>
+    </message>
+    <message>
+        <source>Show only transactions of at least this amount</source>
+        <translation>Показывать только транзакции не меньше этой суммы</translation>
+    </message>
+</context>
+<context>
+    <name>TxViewDelegate</name>
+    <message>
+        <source>Amount: %1</source>
+        <translation>Сумма: %1</translation>
+    </message>
 </context>
 <context>
     <name>UnitDisplayStatusBarControl</name>
@@ -4773,6 +6897,18 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Create a new wallet</source>
         <translation>Создать новый кошелёк</translation>
+    </message>
+    <message>
+        <source>No wallet loaded</source>
+        <translation>Кошелёк не загружен</translation>
+    </message>
+    <message>
+        <source>Open a wallet to view its information.</source>
+        <translation>Откройте кошелёк, чтобы просмотреть сведения о нём.</translation>
+    </message>
+    <message>
+        <source>Open wallet</source>
+        <translation>Открыть кошелёк</translation>
     </message>
     <message>
         <source>Error</source>
@@ -4832,6 +6968,54 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Backup Wallet</source>
         <translation>Сделать резервную копию кошелька</translation>
+    </message>
+    <message>
+        <source>Transactions</source>
+        <translation>Транзакции</translation>
+    </message>
+    <message>
+        <source>Your incoming and outgoing payments.</source>
+        <translation>Ваши входящие и исходящие платежи.</translation>
+    </message>
+    <message>
+        <source>CoinJoin</source>
+        <translation>CoinJoin</translation>
+    </message>
+    <message>
+        <source>Send coins that have been mixed, for more privacy.</source>
+        <translation>Отправляйте перемешанные монеты для большей конфиденциальности.</translation>
+    </message>
+    <message>
+        <source>Multisig</source>
+        <translation>Мультиподпись</translation>
+    </message>
+    <message>
+        <source>Addresses that need several signatures to spend.</source>
+        <translation>Адреса, для расходования средств с которых требуется несколько подписей.</translation>
+    </message>
+    <message>
+        <source>Masternodes</source>
+        <translation>Мастерноды</translation>
+    </message>
+    <message>
+        <source>The masternodes of the network, and your own.</source>
+        <translation>Мастерноды сети и ваши собственные.</translation>
+    </message>
+    <message>
+        <source>Governance</source>
+        <translation>Управление</translation>
+    </message>
+    <message>
+        <source>Proposals on the network and how the votes stand.</source>
+        <translation>Предложения в сети и ход голосования.</translation>
+    </message>
+    <message>
+        <source>Staking</source>
+        <translation>Стейкинг</translation>
+    </message>
+    <message>
+        <source>Staking could not be started for this wallet. See debug.log for details.</source>
+        <translation>Не удалось запустить стейкинг для этого кошелька. Подробности см. в debug.log.</translation>
     </message>
     <message>
         <source>Backup Failed</source>
@@ -4937,6 +7121,26 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>установлено очень большое значение -maxtxfee! Комиссия такого размера может быть уплачена при проведении отдельной транзакции.</translation>
     </message>
     <message>
+        <source> It does NOT contain the %u BLS private key(s) this wallet holds; back up the wallet file itself to keep those.</source>
+        <translation> Он НЕ содержит закрытые ключи BLS этого кошелька (всего %u); чтобы сохранить их, сделайте резервную копию самого файла кошелька.</translation>
+    </message>
+    <message>
+        <source>%s corrupt. Try using the wallet tool defcon-wallet to salvage or restoring a backup.</source>
+        <translation>%s повреждён. Попробуйте восстановить данные с помощью инструмента defcon-wallet или восстановить резервную копию.</translation>
+    </message>
+    <message>
+        <source>%s file contains the ECDSA private keys from this wallet. Do not share it with anyone!</source>
+        <translation>Файл %s содержит закрытые ключи ECDSA этого кошелька. Никому не передавайте его!</translation>
+    </message>
+    <message>
+        <source>%s request to listen on port %u. This port is considered "bad" and thus it is unlikely that any DeFCoN peers connect to it. See doc/p2p-bad-ports.md for details and a full list.</source>
+        <translation>%s запрашивает прослушивание порта %u. Этот порт считается «плохим», поэтому другие узлы DeFCoN вряд ли будут к нему подключаться. Подробности и полный список см. в doc/p2p-bad-ports.md.</translation>
+    </message>
+    <message>
+        <source>Error: Dumpfile version is not supported. This version of defcon-wallet only supports version 1 dumpfiles. Got dumpfile with version %s</source>
+        <translation>Ошибка: версия файла дампа не поддерживается. Эта версия defcon-wallet поддерживает только файлы дампа версии 1. Получен файл дампа версии %s</translation>
+    </message>
+    <message>
         <source>Found unconfirmed denominated outputs, will wait till they confirm to continue.</source>
         <translation>Найдены неподтверждённые номиналы, процесс продолжится после их подтверждения.</translation>
     </message>
@@ -4961,12 +7165,28 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Индексирование транзакций нельзя отключить в режиме проверки данных управления. Либо запустите кошелек с опцией -disablegovernance, либо включите индексирование транзакций.</translation>
     </message>
     <message>
+        <source>Transaction needs a BLS change address, but the wallet is locked or the BLS key could not be saved.</source>
+        <translation>Транзакции нужен адрес BLS для сдачи, но кошелёк заблокирован или не удалось сохранить ключ BLS.</translation>
+    </message>
+    <message>
+        <source>Unsupported category-specific logging level -loglevel=%s. Expected -loglevel=&lt;category&gt;:&lt;loglevel&gt;. Valid categories: %s. Valid loglevels: %s.</source>
+        <translation>Неподдерживаемый уровень журналирования категории -loglevel=%s. Ожидается -loglevel=&lt;category&gt;:&lt;loglevel&gt;. Допустимые категории: %s. Допустимые уровни: %s.</translation>
+    </message>
+    <message>
+        <source>Warning: Outbound peers offer a chain that branches off this node's chain too far below its tip to follow automatically. If this node was upgraded late or cut off from the network, add a trusted, up-to-date peer with addnode.</source>
+        <translation>Внимание: узлы исходящих соединений предлагают цепочку, которая ответвляется от цепочки этого узла слишком далеко от её вершины для автоматического перехода. Если узел был обновлён с опозданием или отключён от сети, добавьте доверенный актуальный узел с помощью addnode.</translation>
+    </message>
+    <message>
         <source>Can't mix: no compatible inputs found!</source>
         <translation>Перемешивание невозможно: подходящие монеты не найдены!</translation>
     </message>
     <message>
         <source>Entry exceeds maximum size.</source>
         <translation>Запись превышает максимально допустимый размер.</translation>
+    </message>
+    <message>
+        <source>Error reading the masternode list from the Evo database</source>
+        <translation>Ошибка чтения списка мастернод из базы данных Evo</translation>
     </message>
     <message>
         <source>Error upgrading Evo database</source>
@@ -4979,6 +7199,14 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Failed to commit Evo database</source>
         <translation>Ошибка записи в базу данных Evo</translation>
+    </message>
+    <message>
+        <source>Failed to reconcile Evo database with the block chain</source>
+        <translation>Не удалось согласовать базу данных Evo с цепочкой блоков</translation>
+    </message>
+    <message>
+        <source>Failed to repair the masternode list diffs</source>
+        <translation>Не удалось исправить различия списка мастернод</translation>
     </message>
     <message>
         <source>Found enough users, signing ( waiting %s )</source>
@@ -5089,6 +7317,10 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Неизвестный ответ.</translation>
     </message>
     <message>
+        <source>Unsupported global logging level -loglevel=%s. Valid values: %s.</source>
+        <translation>Неподдерживаемый общий уровень журналирования -loglevel=%s. Допустимые значения: %s.</translation>
+    </message>
+    <message>
         <source>User Agent comment (%s) contains unsafe characters.</source>
         <translation>Комментарий User Agent  (%s) содержит небезопасные символы.</translation>
     </message>
@@ -5117,24 +7349,12 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Обнаружен некорректный скрипт.</translation>
     </message>
     <message>
-        <source>%s file contains all private keys from this wallet. Do not share it with anyone!</source>
-        <translation>%s файл содержит в себе все закрытые ключи для этого кошелька. Никому его не показывайте!</translation>
-    </message>
-    <message>
         <source>Failed to create backup, file already exists! This could happen if you restarted wallet in less than 60 seconds. You can continue if you are ok with this.</source>
         <translation>Не удалось создать резервную копию, т.к. файл уже существует! Такое могло случится, если вы перезапустили кошелек менее чем через 60 секунд после предыдущего запуска. Вы можете продолжить, если это допустимо.</translation>
     </message>
     <message>
-        <source>Make sure to encrypt your wallet and delete all non-encrypted backups after you have verified that the wallet works!</source>
-        <translation>Не забудьте зашифровать кошелек и удалить все незашифрованные резервные копии после того как убедитесь, что кошелек работает!</translation>
-    </message>
-    <message>
         <source>More than one onion bind address is provided. Using %s for the automatically created Tor onion service.</source>
         <translation>Указано более одного адреса привязки onion. Использование %s для автоматически созданной службы Tor onion.</translation>
-    </message>
-    <message>
-        <source>Prune configured below the minimum of %d MiB.  Please use a higher number.</source>
-        <translation>Удаление блоков настроено ниже допустимого предела в %d МиБ.  Пожалуйста, укажите большее число.</translation>
     </message>
     <message>
         <source>Prune: last wallet synchronisation goes beyond pruned data. You need to -reindex (download the whole blockchain again in case of pruned node)</source>
@@ -5321,10 +7541,6 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Недостаточно файловых дескрипторов.</translation>
     </message>
     <message>
-        <source>Prune cannot be configured with a negative value.</source>
-        <translation>Удаление блоков не может использовать отрицательное значение.</translation>
-    </message>
-    <message>
         <source>Prune mode is incompatible with -disablegovernance=false.</source>
         <translation>Режим удаления блоков не совместим с -disablegovernance=false.</translation>
     </message>
@@ -5366,7 +7582,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>The wallet will avoid paying less than the minimum relay fee.</source>
-        <translation>Кошелек не будет платить комиссию меньше, чем необходимо для передачи. </translation>
+        <translation>Кошелёк не будет платить комиссию ниже минимальной комиссии ретрансляции.</translation>
     </message>
     <message>
         <source>This is expected because you are running a pruned node.</source>
@@ -5497,10 +7713,6 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Невозможно обновить не-HD кошелек с версии %i до версии %i, которая также является не-HD кошельком. Используйте команду upgradetohd RPC.</translation>
     </message>
     <message>
-        <source>Distributed under the MIT software license, see the accompanying file %s or %s</source>
-        <translation>Распространяется под лицензией на программное обеспечение MIT, смотрите прилагаемый файл %s или %s.</translation>
-    </message>
-    <message>
         <source>Error loading %s: You can't enable HD on an already existing non-HD wallet</source>
         <translation>Ошибка загрузки %s: Вы не можете включить HD режим для существующего не-HD кошелька</translation>
     </message>
@@ -5519,10 +7731,6 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Error: Dumpfile identifier record is incorrect. Got "%s", expected "%s".</source>
         <translation>Ошибка: идентификатор записи файла дампа некорректен. Получено: "%s", ожидалось: "%s".</translation>
-    </message>
-    <message>
-        <source>Error: Dumpfile version is not supported. This version of bitcoin-wallet only supports version 1 dumpfiles. Got dumpfile with version %s</source>
-        <translation>Ошибка: версия файла дампа не поддерживается. Эта версия bitcoin-wallet поддерживает только файлы дампа версии 1. Получен файл дампа версии %s.</translation>
     </message>
     <message>
         <source>Failed to rename invalid peers.dat file. Please move or delete it and try again.</source>
@@ -5567,10 +7775,6 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Please check that your computer's date and time are correct! If your clock is wrong, %s will not work properly.</source>
         <translation>Пожалуйста, убедитесь что дата и время на Вашем компьютере выставлены правильно! %s не сможет работать корректно, если часы настроены неверно.</translation>
-    </message>
-    <message>
-        <source>Please contribute if you find %s useful. Visit %s for further information about the software.</source>
-        <translation>Пожалуйста, поддержите нас, если считаете %s полезным. Посетите %s для дополнительной информации.</translation>
     </message>
     <message>
         <source>Prune mode is incompatible with -reindex-chainstate. Use full -reindex instead.</source>
@@ -5651,10 +7855,6 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Cannot write to data directory '%s'; check permissions.</source>
         <translation>Не удалось осуществить запись в каталог данных '%s'; проверьте доступ.</translation>
-    </message>
-    <message>
-        <source>Copyright (C)</source>
-        <translation>Copyright (C)</translation>
     </message>
     <message>
         <source>Disk space is too low!</source>
@@ -5809,10 +8009,6 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Последняя очередь была создана слишком недавно.</translation>
     </message>
     <message>
-        <source>%s corrupt. Try using the wallet tool dash-wallet to salvage or restoring a backup.</source>
-        <translation>%s поврежден. Попробуете воспользоваться утилитой dash-wallet для восстановления.</translation>
-    </message>
-    <message>
         <source>Cannot provide specific connections and have addrman find outgoing connections at the same time.</source>
         <translation>Одновременное указание конкретных соединений и использование addrman для поиска исходящих соединений не допускается.</translation>
     </message>
@@ -5821,20 +8017,12 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Последнее успешное действие было слишком недавно.</translation>
     </message>
     <message>
-        <source>The source code is available from %s.</source>
-        <translation>Исходный код доступен по адресу %s.</translation>
-    </message>
-    <message>
         <source>The specified config file %s does not exist</source>
         <translation>Указанный файл настроек %s не существует</translation>
     </message>
     <message>
         <source>The transaction amount is too small to pay the fee</source>
         <translation>Сумма транзакции слишком мала для оплаты комиссии</translation>
-    </message>
-    <message>
-        <source>This is experimental software.</source>
-        <translation>Это экспериментальное ПО.</translation>
     </message>
     <message>
         <source>Transaction amount too small</source>

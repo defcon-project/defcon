@@ -74,12 +74,12 @@
         <translation>正在接收地址</translation>
     </message>
     <message>
-        <source>These are your Pacplatform addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
-        <translation>这些是您要付款过去的Pacplatform地址。在付款之前，务必要检查金额和收款地址是否正确。</translation>
+        <source>These are your DeFCoN addresses for sending payments. Always check the amount and the receiving address before sending coins.</source>
+        <translation>这些是您用于付款的 DeFCoN 地址。发送币之前，请务必核对金额和收款地址。</translation>
     </message>
     <message>
-        <source>These are your Pacplatform addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses.</source>
-        <translation>这些是用于接收付款的Pacplatform地址. 使用接收标签中的 '创建新接收地址' 按钮来创建新地址.</translation>
+        <source>These are your DeFCoN addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses.</source>
+        <translation>这些是您用于收款的 DeFCoN 地址。请使用收款标签页中的“创建新的收款地址”按钮创建新地址。</translation>
     </message>
     <message>
         <source>&amp;Copy Address</source>
@@ -96,6 +96,18 @@
     <message>
         <source>Show address &amp;QR code</source>
         <translation>显示地址 &amp;二维码</translation>
+    </message>
+    <message>
+        <source>No saved addresses</source>
+        <translation>没有已保存的地址</translation>
+    </message>
+    <message>
+        <source>Add an address to find it easily the next time you send.</source>
+        <translation>添加地址，以便下次发送时快速找到。</translation>
+    </message>
+    <message>
+        <source>Add address</source>
+        <translation>添加地址</translation>
     </message>
     <message>
         <source>QR code</source>
@@ -173,6 +185,18 @@
         <source>Font Weight Bold:</source>
         <translation>字体粗体:</translation>
     </message>
+    <message>
+        <source>Night Sky:</source>
+        <translation>夜空：</translation>
+    </message>
+    <message>
+        <source>Let a few of the faintest stars in the Abyss background breathe. Turning this off keeps the sky and stops the movement.</source>
+        <translation>让 Abyss 背景中几颗最暗的星星轻轻明灭。关闭后仍保留星空，但停止动画。</translation>
+    </message>
+    <message>
+        <source>Animate</source>
+        <translation>启用动画</translation>
+    </message>
 </context>
 <context>
     <name>AskPassphraseDialog</name>
@@ -222,7 +246,7 @@
     </message>
     <message>
         <source>Warning: If you encrypt your wallet and lose your passphrase, you will &lt;b&gt;LOSE ALL OF YOUR DFCN&lt;/b&gt;!</source>
-        <translation>警告:如果把钱包加​​密后又忘记密码，您就会从此&lt;b&gt;失去所有的Pacplatform&lt;/b&gt;！</translation>
+        <translation>警告：如果您加密钱包后遗失密码，就会&lt;b&gt;失去所有 DFCN&lt;/b&gt;！</translation>
     </message>
     <message>
         <source>Are you sure you wish to encrypt your wallet?</source>
@@ -235,6 +259,14 @@
     <message>
         <source>Enter the new passphrase for the wallet.&lt;br/&gt;Please use a passphrase of &lt;b&gt;ten or more random characters&lt;/b&gt;, or &lt;b&gt;eight or more words&lt;/b&gt;.</source>
         <translation>输入钱包的新密码. &lt;br/&gt;密码请用&lt;b&gt;十个或更多随机字符&lt;/b&gt;, 或&lt;b&gt;8个以上的单词&lt;/b&gt;.</translation>
+    </message>
+    <message>
+        <source>Enter your passphrase to let this wallet stake. Sending stays locked until you unlock the wallet fully.</source>
+        <translation>输入密码以允许此钱包参与质押。在您完全解锁钱包之前，发送功能仍保持锁定。</translation>
+    </message>
+    <message>
+        <source>Unlock wallet for staking</source>
+        <translation>解锁钱包以进行质押</translation>
     </message>
     <message>
         <source>Enter the old passphrase and new passphrase for the wallet.</source>
@@ -250,11 +282,11 @@
     </message>
     <message>
         <source>Your wallet is about to be encrypted. </source>
-        <translation>您的钱包即将被加密.</translation>
+        <translation>您的钱包即将被加密。 </translation>
     </message>
     <message>
         <source>Your wallet is now encrypted. </source>
-        <translation>您的钱包现已被加密.</translation>
+        <translation>您的钱包现已被加密。 </translation>
     </message>
     <message>
         <source>IMPORTANT: Any previous backups you have made of your wallet file should be replaced with the newly generated, encrypted wallet file. Previous backups of the unencrypted wallet file contain the same HD seed and still have full access to all your funds just like the new, encrypted wallet.</source>
@@ -270,7 +302,7 @@
     </message>
     <message>
         <source>Wallet encryption failed due to an internal error. Your wallet was not encrypted.</source>
-        <translation>由于一个本地错误，加密钱包的操作已经失败。您的钱包没能被加密。</translation>
+        <translation>由于内部错误，钱包加密失败。您的钱包未被加密。</translation>
     </message>
     <message>
         <source>The supplied passphrases do not match.</source>
@@ -301,7 +333,7 @@
     </message>
     <message>
         <source>Banned Until</source>
-        <translation>在此之前禁止：</translation>
+        <translation>封禁截止时间</translation>
     </message>
 </context>
 <context>
@@ -345,16 +377,12 @@
         <translation>发送(&amp;S)</translation>
     </message>
     <message>
-        <source>Send coins to a Pacplatform address</source>
-        <translation>发送币至Pacplatform地址</translation>
-    </message>
-    <message>
         <source>&amp;Receive</source>
         <translation>接收(&amp;R)</translation>
     </message>
     <message>
         <source>Request payments (generates QR codes and defcon: URIs)</source>
-        <translation>请求付款(生成二维码和Pacplatform付款协议的URI)</translation>
+        <translation>请求付款（生成二维码和 defcon: URI）</translation>
     </message>
     <message>
         <source>Ctrl+Q</source>
@@ -378,7 +406,7 @@
     </message>
     <message>
         <source>&amp;Unlock Wallet…</source>
-        <translation>解锁钱包(&amp;U)</translation>
+        <translation>解锁钱包(&amp;U)…</translation>
     </message>
     <message>
         <source>Sign &amp;message…</source>
@@ -474,11 +502,7 @@
     </message>
     <message>
         <source>&amp;About %1</source>
-        <translation>关于 %1</translation>
-    </message>
-    <message>
-        <source>Send %1 funds to a Pacplatform address</source>
-        <translation>发送%1资金至一个Pacplatform地址</translation>
+        <translation>关于 %1(&amp;A)</translation>
     </message>
     <message>
         <source>Modify configuration options for %1</source>
@@ -511,14 +535,6 @@
     <message>
         <source>&amp;Lock Wallet</source>
         <translation>锁定钱包(&amp;L)</translation>
-    </message>
-    <message>
-        <source>Sign messages with your Pacplatform addresses to prove you own them</source>
-        <translation>使用您的Pacplatform地址进行消息签名以证明对此地址的所有权</translation>
-    </message>
-    <message>
-        <source>Verify messages to ensure they were signed with specified Pacplatform addresses</source>
-        <translation>验证消息是用来确定此消息是用指定的Pacplatform地址签发的</translation>
     </message>
     <message>
         <source>&amp;Information</source>
@@ -583,10 +599,6 @@
     <message>
         <source>&amp;Command-line options</source>
         <translation>&amp;命令行选项</translation>
-    </message>
-    <message>
-        <source>Show the %1 help message to get a list with possible Pacplatform command-line options</source>
-        <translation>显示 %1 帮助信息，获取可用命令行选项列表</translation>
     </message>
     <message>
         <source>default wallet</source>
@@ -666,11 +678,6 @@
         <source>View Governance Proposals</source>
         <translation>查看治理提案</translation>
     </message>
-    <message numerus="yes">
-        <source>%n active connection(s) to Pacplatform network</source>
-        <extracomment>A substring of the tooltip.</extracomment>
-        <translation><numerusform>%n个有效的Pacplatform网络连接</numerusform></translation>
-    </message>
     <message>
         <source>Network activity disabled</source>
         <translation>网络活动已禁用</translation>
@@ -681,11 +688,51 @@
     </message>
     <message>
         <source>%1 behind</source>
-        <translation>落后 %1 </translation>
+        <translation>落后 %1</translation>
     </message>
     <message>
         <source>Close Wallet…</source>
         <translation>关闭钱包…</translation>
+    </message>
+    <message>
+        <source>Send coins to a DeFCoN address</source>
+        <translation>向 DeFCoN 地址发送币</translation>
+    </message>
+    <message>
+        <source>Send %1 funds to a DeFCoN address</source>
+        <translation>向 DeFCoN 地址发送 %1 资金</translation>
+    </message>
+    <message>
+        <source>Toggle staking...</source>
+        <translation>切换质押状态...</translation>
+    </message>
+    <message>
+        <source>Toggle staking status on a given wallet</source>
+        <translation>切换指定钱包的质押状态</translation>
+    </message>
+    <message>
+        <source>&amp;Multisig</source>
+        <translation>多重签名(&amp;M)</translation>
+    </message>
+    <message>
+        <source>Manage multisignature addresses and partially signed transactions</source>
+        <translation>管理多重签名地址和部分签名的交易</translation>
+    </message>
+    <message>
+        <source>Sign messages with your DeFCoN addresses to prove you own them</source>
+        <translation>使用您的 DeFCoN 地址签署消息，以证明您拥有这些地址</translation>
+    </message>
+    <message>
+        <source>Verify messages to ensure they were signed with specified DeFCoN addresses</source>
+        <translation>验证消息，确认其是否由指定的 DeFCoN 地址签署</translation>
+    </message>
+    <message>
+        <source>Load Partially Signed Blockchain Transaction</source>
+        <translation>加载部分签名的区块链交易</translation>
+    </message>
+    <message>
+        <source>Load Partially Signed Blockchain Transaction from clipboard</source>
+        <translation>从剪贴板加载部分签名的区块链交易</translation>
     </message>
     <message>
         <source>Create Wallet…</source>
@@ -696,12 +743,61 @@
         <translation>关闭所有钱包...</translation>
     </message>
     <message>
+        <source>Show the %1 help message to get a list with possible DeFCoN command-line options</source>
+        <translation>显示 %1 帮助信息，查看可用的 DeFCoN 命令行选项</translation>
+    </message>
+    <message>
         <source>Ctrl+Shift+D</source>
         <translation>Ctrl+Shift+D</translation>
     </message>
     <message>
         <source>Ctrl+M</source>
         <translation>Ctrl+M</translation>
+    </message>
+    <message>
+        <source>&amp;Wallet</source>
+        <translation>钱包(&amp;W)</translation>
+    </message>
+    <message>
+        <source>&amp;Tools</source>
+        <translation>工具(&amp;T)</translation>
+    </message>
+    <message>
+        <source>&amp;Load PSBT…</source>
+        <translation>加载 PSBT(&amp;L)…</translation>
+    </message>
+    <message>
+        <source>P&amp;aste PSBT…</source>
+        <translation>粘贴 PSBT(&amp;A)…</translation>
+    </message>
+    <message>
+        <source>Wallet &amp;config file</source>
+        <translation>钱包配置文件(&amp;C)</translation>
+    </message>
+    <message>
+        <source>M&amp;ultisig</source>
+        <translation>多重签名(&amp;U)</translation>
+    </message>
+    <message>
+        <source>More</source>
+        <translation>更多</translation>
+    </message>
+    <message>
+        <source>This wallet is not on mainnet.</source>
+        <translation>此钱包未在主网上运行。</translation>
+    </message>
+    <message>
+        <source>Hide the pages below</source>
+        <translation>隐藏下方页面</translation>
+    </message>
+    <message>
+        <source>Show more pages</source>
+        <translation>显示更多页面</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n active connection(s) to DeFCoN network</source>
+        <extracomment>A substring of the tooltip.</extracomment>
+        <translation><numerusform>与 DeFCoN 网络有 %n 个活跃连接</numerusform></translation>
     </message>
     <message>
         <source>Click for more actions.</source>
@@ -854,8 +950,44 @@
         <translation>HD密钥生成&lt;b&gt;启用&lt;/b&gt;</translation>
     </message>
     <message>
+        <source>Staking is stalled</source>
+        <translation>质押已停滞</translation>
+    </message>
+    <message>
+        <source>Staking is inactive</source>
+        <translation>质押未激活</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;unencrypted&lt;/b&gt;. Click to encrypt it.</source>
+        <translation>钱包&lt;b&gt;未加密&lt;/b&gt;。点击以加密。</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;unlocked&lt;/b&gt;. Click to lock it.</source>
+        <translation>钱包&lt;b&gt;已解锁&lt;/b&gt;。点击以锁定。</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;unlocked for mixing and staking only&lt;/b&gt;. Click to lock it.</source>
+        <translation>钱包&lt;b&gt;仅为混币和质押解锁&lt;/b&gt;。点击以锁定。</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;unlocked for mixing only&lt;/b&gt;. Click to lock it.</source>
+        <translation>钱包&lt;b&gt;仅为混币解锁&lt;/b&gt;。点击以锁定。</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;locked&lt;/b&gt;. Click to unlock it.</source>
+        <translation>钱包&lt;b&gt;已锁定&lt;/b&gt;。点击以解锁。</translation>
+    </message>
+    <message>
+        <source>No wallet loaded.</source>
+        <translation>未加载钱包。</translation>
+    </message>
+    <message>
         <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;unlocked&lt;/b&gt;</source>
         <translation>钱包已被&lt;b&gt;加密&lt;/b&gt;，当前为&lt;b&gt;解锁&lt;/b&gt;状态</translation>
+    </message>
+    <message>
+        <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;unlocked&lt;/b&gt; for mixing and staking only</source>
+        <translation>钱包&lt;b&gt;已加密&lt;/b&gt;，目前仅为混币和质押&lt;b&gt;解锁&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Wallet is &lt;b&gt;encrypted&lt;/b&gt; and currently &lt;b&gt;unlocked&lt;/b&gt; for mixing only</source>
@@ -1070,6 +1202,133 @@
     </message>
 </context>
 <context>
+    <name>CommandBrowser</name>
+    <message>
+        <source>The commands appear here once the node has started.</source>
+        <translation>节点启动后，命令将显示在这里。</translation>
+    </message>
+    <message>
+        <source>Search commands</source>
+        <translation>搜索命令</translation>
+    </message>
+    <message>
+        <source>Commands</source>
+        <translation>命令</translation>
+    </message>
+    <message>
+        <source>In this console:</source>
+        <translation>在此控制台中：</translation>
+    </message>
+    <message>
+        <source>With defcon-cli and over HTTP:</source>
+        <translation>通过 defcon-cli 和 HTTP：</translation>
+    </message>
+    <message>
+        <source>Examples with defcon-cli and over HTTP</source>
+        <translation>通过 defcon-cli 和 HTTP 使用的示例</translation>
+    </message>
+    <message>
+        <source>Copy these examples</source>
+        <translation>复制这些示例</translation>
+    </message>
+    <message>
+        <source>The help of this command has no examples.</source>
+        <translation>此命令的帮助中没有示例。</translation>
+    </message>
+    <message>
+        <source>Show the full help</source>
+        <translation>显示完整帮助</translation>
+    </message>
+    <message>
+        <source>Full help</source>
+        <translation>完整帮助</translation>
+    </message>
+    <message>
+        <source>Hide the full help</source>
+        <translation>隐藏完整帮助</translation>
+    </message>
+    <message>
+        <source>Depends on the subcommand</source>
+        <translation>取决于子命令</translation>
+    </message>
+    <message>
+        <source>What it does depends on the subcommand given: choose one in the list to see its own line.</source>
+        <translation>具体作用取决于所提供的子命令：在列表中选择一个子命令，查看它的说明。</translation>
+    </message>
+    <message>
+        <source>Can change the wallet, the node or the network</source>
+        <translation>可能更改钱包、节点或网络</translation>
+    </message>
+    <message>
+        <source>With some arguments it changes the wallet, the node's state or settings, or sends something to the network.</source>
+        <translation>使用某些参数时，此命令会更改钱包、节点状态或设置，或向网络发送数据。</translation>
+    </message>
+    <message>
+        <source>Only reads</source>
+        <translation>仅读取</translation>
+    </message>
+    <message>
+        <source>It changes neither the wallet nor the node and sends nothing to the network; it may write a file.</source>
+        <translation>此命令不会更改钱包或节点，也不会向网络发送数据；但可能写入文件。</translation>
+    </message>
+    <message>
+        <source>Needs a loaded wallet, except on a masternode</source>
+        <translation>需要已加载的钱包，主节点除外</translation>
+    </message>
+    <message>
+        <source>It works on a loaded wallet and refuses without one; a masternode answers it from its own state, without a wallet.</source>
+        <translation>此命令对已加载的钱包进行操作，没有钱包时会拒绝执行；主节点根据自身状态作出响应，无需钱包。</translation>
+    </message>
+    <message>
+        <source>Needs a loaded wallet</source>
+        <translation>需要已加载的钱包</translation>
+    </message>
+    <message>
+        <source>It works on a loaded wallet; without one it refuses or finds nothing to act on.</source>
+        <translation>此命令对已加载的钱包进行操作；没有钱包时会拒绝执行，或找不到可操作的对象。</translation>
+    </message>
+    <message>
+        <source>May ask to unlock the wallet</source>
+        <translation>可能要求解锁钱包</translation>
+    </message>
+    <message>
+        <source>On an encrypted wallet, some of its uses refuse until the wallet is unlocked.</source>
+        <translation>如果钱包已加密，此命令的某些用法会在钱包解锁前拒绝执行。</translation>
+    </message>
+    <message>
+        <source>Only on a new network, before proof of stake begins</source>
+        <translation>仅适用于尚未开始权益证明的新网络</translation>
+    </message>
+    <message>
+        <source>It makes proof-of-work blocks, which the chain accepts only up to its last proof-of-work block (999 on mainnet, 5000 on regtest): on mainnet it fails.</source>
+        <translation>此命令生成工作量证明区块，区块链只在最后一个工作量证明区块之前及该区块处接受此类区块（主网为 999，regtest 为 5000）：在主网上执行会失败。</translation>
+    </message>
+    <message>
+        <source>%1: %2</source>
+        <translation>%1：%2</translation>
+    </message>
+    <message>
+        <source>Topic: %1</source>
+        <translation>主题：%1</translation>
+    </message>
+    <message>
+        <source>Example for this console</source>
+        <translation>此控制台的示例</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>复制</translation>
+    </message>
+    <message>
+        <source>Put in console</source>
+        <translation>填入控制台</translation>
+    </message>
+    <message>
+        <source>Puts the example into the console's input line, to read or change before running it.</source>
+        <translation>将示例填入控制台的输入行，以便在执行前阅读或修改。</translation>
+    </message>
+</context>
+<context>
     <name>CreateWalletActivity</name>
     <message>
         <source>Create Wallet</source>
@@ -1184,10 +1443,6 @@
         <translation>编辑发送地址</translation>
     </message>
     <message>
-        <source>The entered address "%1" is not a valid Pacplatform address.</source>
-        <translation>输入的地址“%1”不是有效的Pacplatform地址。</translation>
-    </message>
-    <message>
         <source>Address "%1" already exists as a receiving address with label "%2" and so cannot be added as a sending address.</source>
         <translation>地址 "%1" 已作为带有标签 "%2" 的接收地址存在, 因此无法被添加为发送地址.</translation>
     </message>
@@ -1200,8 +1455,31 @@
         <translation>无法解锁钱包</translation>
     </message>
     <message>
+        <source>The entered address "%1" is not a valid DeFCoN address.</source>
+        <translation>输入的地址“%1”不是有效的 DeFCoN 地址。</translation>
+    </message>
+    <message>
         <source>New key generation failed.</source>
         <translation>新的密钥生成失败。</translation>
+    </message>
+</context>
+<context>
+    <name>EmptyStateWidget</name>
+    <message>
+        <source>Loading…</source>
+        <translation>正在加载…</translation>
+    </message>
+    <message>
+        <source>No matching results</source>
+        <translation>没有匹配结果</translation>
+    </message>
+    <message>
+        <source>Try a different search or clear your filters.</source>
+        <translation>请尝试其他搜索内容，或清除筛选条件。</translation>
+    </message>
+    <message>
+        <source>Clear filters</source>
+        <translation>清除筛选条件</translation>
     </message>
 </context>
 <context>
@@ -1273,8 +1551,8 @@
         <translation>%1信息</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 Basics&lt;/h3&gt; %1 gives you true financial privacy by obscuring the origins of your funds. All the Pacplatform in your wallet is comprised of different "inputs" which you can think of as separate, discrete coins.&lt;br&gt; %1 uses an innovative process to mix your inputs with the inputs of two or more other people, without having your coins ever leave your wallet. You retain control of your money at all times.&lt;hr&gt; &lt;b&gt;The %1 process works like this:&lt;/b&gt;&lt;ol type="1"&gt; &lt;li&gt;%1 begins by breaking your transaction inputs down into standard denominations. These denominations are 0.001 DFCN, 0.01 DFCN, 0.1 DFCN, 1 DFCN and 10 DFCN -- sort of like the paper money you use every day.&lt;/li&gt; &lt;li&gt;Your wallet then sends requests to specially configured software nodes on the network, called "masternodes." These masternodes are informed then that you are interested in mixing a certain denomination. No identifiable information is sent to the masternodes, so they never know "who" you are.&lt;/li&gt; &lt;li&gt;When two or more other people send similar messages, indicating that they wish to mix the same denomination, a mixing session begins. The masternode mixes up the inputs and instructs all three users' wallets to pay the now-transformed input back to themselves. Your wallet pays that denomination directly to itself, but in a different address (called a change address).&lt;/li&gt; &lt;li&gt;In order to fully obscure your funds, your wallet must repeat this process a number of times with each denomination. Each time the process is completed, it's called a "round." Each round of %1 makes it exponentially more difficult to determine where your funds originated.&lt;/li&gt; &lt;li&gt;This mixing process happens in the background without any intervention on your part. When you wish to make a transaction, your funds will already be mixed. No additional waiting is required.&lt;/li&gt; &lt;/ol&gt; &lt;hr&gt;&lt;b&gt;IMPORTANT:&lt;/b&gt; Your wallet only contains 1000 of these "change addresses." Every time a mixing event happens, up to 9 of your addresses are used up. This means those 1000 addresses last for about 100 mixing events. When 900 of them are used, your wallet must create more addresses. It can only do this, however, if you have automatic backups enabled.&lt;br&gt; Consequently, users who have backups disabled will also have %1 disabled. &lt;hr&gt;For more information, see the &lt;a style="%2" href="%3"&gt;%1 documentation&lt;/a&gt;.</source>
-        <translation>&lt;h3&gt;%1基础知识&lt;/h3&gt;%1通过隐藏您的资金来源为您提供真正的财务隐私。您的钱包中所有的Pacplatform都由不同的“输入”组成，您可以将其视为分开的离散硬币。&lt;br&gt;%1使用创新的方法将您的输入与其他两个人的输入相结合，而过程中不会让您的Pacplatform离开您的钱包。每时每刻，您仍然控制着您的钱。&lt;hr&gt;&lt;b&gt;%1的运作原理如下：&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;%1首先将您的交易分柝成多个标准面额的交易。这些标准面额分别为0.001 DFCN，0.01 DFCN，0.1 DFCN，1 DFCN和10 DFCN --有点像您每天使用的纸币。&lt;/li&gt;&lt;li&gt;您的钱包然后发送请求到网络上有专门配置的软件节点，称为“主节点”。这些主节点会收到您希望混合一些资金的通知。没有可识别的信息发送到主节点，所以他们永远不会知道您是“谁”。&lt;li&gt;当另外两个人发送类似的消息时，表示希望混合相同的面额的话，混合会话就会开始。相关的主节点会混合这些输入，并指示所有三个用户的钱包将已经转换了输入的交易支付给自己。您的钱包直接支付给自己，但是付给不同的位址（称之为找零地址）。&lt;/li&gt;&lt;li&gt;为了完全掩盖您的资金来源，您的钱包必须以每个面额来重复此过程数次。每次这个过程完成后，都称之为一个“循环”。每个循环的%1都会令确定您的资金来源的工作倍加困难。&lt;/li&gt;&lt;li&gt;这种混合过程发生在后台，而不需要您进行任何操作。当您想进行交易时，您的资金将已被混币处理。不需再花额外的时间等待。&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;重要：&lt;b&gt;您的钱包只能拥有1000个“找零地址”。每次混合事件发生时，最多会使用9个找零地址。这意味着这1000个地址可以容许100次的混合事件。当其的中900个已经被使用后，您的钱包必须创建更多的地址。如果您启用了自动备份，则只能够这样做。&lt;br&gt;因此，禁用备份的用户也将禁用%1。&lt;hr&gt;如欲了解更多信息请参阅&lt;a style="%2" href="%3"&gt;%1文档&lt;/a&gt;。</translation>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;%1 基础知识&lt;/h3&gt;&lt;p&gt;%1 可以大幅增加追踪您的 DFCN 来源的难度。它通过共同交易，将您的币与其他 DeFCoN 用户的币进行混币。您的币始终留在您的钱包中，只有您能够花费。&lt;/p&gt;&lt;hr&gt;&lt;b&gt;工作原理&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;钱包会将部分余额拆分为略高于 0.001、0.01、0.1、1 和 10 DFCN 的标准金额，例如 10.0001 DFCN。所有人使用相同金额，使这些币看起来相同。&lt;/li&gt;&lt;li&gt;对于其中一种金额，钱包会加入主节点上等待中的混币会话，或请求随机选择的主节点启动新会话。&lt;/li&gt;&lt;li&gt;当至少有 %2 名参与者加入后，主节点会将他们的币合并为一笔交易。每个钱包只检查并签署自己的部分，然后在自己的新地址上收回相同金额。&lt;/li&gt;&lt;li&gt;每完成一次会话就算一次循环。钱包会重复此过程多次。您可以在“选项”中设置循环次数和目标余额。&lt;/li&gt;&lt;li&gt;钱包打开期间，混币会在后台运行。当您从 %1 余额发送时，这些币已经完成混币。&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;须知&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;质押：&lt;/b&gt;在主网上，混币后的币小于最低质押金额，因此无法获得质押奖励；质押过程也绝不会将这些币或混币保证金与其他币合并。“选项”中的目标余额大致决定用于混币的金额。&lt;/li&gt;&lt;li&gt;&lt;b&gt;费用：&lt;/b&gt;混币交易本身免费。创建标准金额需要支付通常的小额网络费用。为防止滥用，偶尔会有约 0.0001 DFCN 的小额保证金支付给网络。&lt;/li&gt;&lt;li&gt;&lt;b&gt;隐私：&lt;/b&gt;运行会话的主节点可以看到参与该会话的币，而且无法保证其他参与者是不同的人。循环次数越多，您的币就越难追踪。将许多已混币的币合并为一笔付款，可能使它们再次产生关联。&lt;/li&gt;&lt;li&gt;&lt;b&gt;加密钱包：&lt;/b&gt;如果开始混币时钱包已锁定，它会要求输入密码，并仅为混币解锁，因此发送时仍需密码。&lt;/li&gt;&lt;li&gt;&lt;b&gt;备份：&lt;/b&gt;每次循环最多使用 9 个新地址。%1 要求开启钱包自动备份；此功能默认开启。&lt;/li&gt;&lt;/ul&gt;</translation>
     </message>
 </context>
 <context>
@@ -1292,18 +1570,6 @@
         <translation>由于这是第一次启动此程序，您可以选择%1的数据所存储的位置</translation>
     </message>
     <message>
-        <source>Limit block chain storage to</source>
-        <translation>限制区块链大小到</translation>
-    </message>
-    <message>
-        <source>Reverting this setting requires re-downloading the entire blockchain. It is faster to download the full chain first and prune it later. Disables some advanced features.</source>
-        <translation>恢复此设置需要重新下载整个区块链. 先下载完整的区块链之后进行修剪会更快. 此操作会禁用一些高级功能.</translation>
-    </message>
-    <message>
-        <source> GB</source>
-        <translation>GB</translation>
-    </message>
-    <message>
         <source>This initial synchronisation is very demanding, and may expose hardware problems with your computer that had previously gone unnoticed. Each time you run %1, it will continue downloading where it left off.</source>
         <translation>最初的同步过程是非常吃力的，同时可能会暴露您电脑上的一些硬件方面的小毛病，尽管您可能之前没有注意过。您每运行%1，它就会继续从之前中断的地方下载.</translation>
     </message>
@@ -1312,16 +1578,16 @@
         <translation>当您点击确认后, %1 将会在 %4 启动时从  %3 中最早的交易开始, 下载并处理完整的 %4 区块链 (%2 GB).</translation>
     </message>
     <message>
-        <source>If you have chosen to limit block chain storage (pruning), the historical data must still be downloaded and processed, but will be deleted afterward to keep your disk usage low.</source>
-        <translation>如果您选择限制区块链存储大小（区块链裁剪模式），程序依然会下载并处理全部历史数据，此后才会删除不必须的部分，占用最少的存储空间。</translation>
-    </message>
-    <message>
         <source>Use the default data directory</source>
         <translation>使用默认的数据目录</translation>
     </message>
     <message>
         <source>Use a custom data directory:</source>
         <translation>使用自定义的数据目录：</translation>
+    </message>
+    <message>
+        <source>%1 GB of space available</source>
+        <translation>可用空间为 %1 GB</translation>
     </message>
     <message>
         <source>(of %1 GB needed)</source>
@@ -1339,14 +1605,9 @@
         <source>Approximately %1 GB of data will be stored in this directory.</source>
         <translation>会在此目录中存储约 %1 GB 的数据。</translation>
     </message>
-    <message numerus="yes">
-        <source>(sufficient to restore backups %n day(s) old)</source>
-        <extracomment>Explanatory text on the capability of the current prune target.</extracomment>
-        <translation><numerusform>(足以恢复旧备份 %n 天)</numerusform></translation>
-    </message>
     <message>
-        <source>%1 will download and store a copy of the Pacplatform block chain.</source>
-        <translation>%1 将会下载并存储Pacplatform区块链.</translation>
+        <source>%1 will download and store a copy of the DeFCoN block chain.</source>
+        <translation>%1 将下载并保存 DeFCoN 区块链的副本。</translation>
     </message>
     <message>
         <source>The wallet will also be stored in this directory.</source>
@@ -1390,6 +1651,14 @@
     <message>
         <source>My masternodes only</source>
         <translation>仅我的主节点</translation>
+    </message>
+    <message>
+        <source>Show only the columns needed to watch a masternode: service, status, PoSe score and the payment times.</source>
+        <translation>仅显示监控主节点所需的列：服务、状态、PoSe 分数及付款时间。</translation>
+    </message>
+    <message>
+        <source>Essential info only</source>
+        <translation>仅基本信息</translation>
     </message>
     <message>
         <source>Service</source>
@@ -1457,7 +1726,7 @@
     </message>
     <message>
         <source>POSE_BANNED</source>
-        <translation>POSE_BANNED</translation>
+        <translation>已被 PoSe 封禁</translation>
     </message>
     <message>
         <source>UNKNOWN</source>
@@ -1495,14 +1764,6 @@
         <translation>表单</translation>
     </message>
     <message>
-        <source>Recent transactions may not yet be visible, and therefore your wallet's balance might be incorrect. This information will be correct once your wallet has finished synchronizing with the Pacplatform network, as detailed below.</source>
-        <translation>最近的交易可能尚未显示，因此您的钱包的余额可能不正确。一旦您的钱包完成与Pacplatform网络的同步，这个信息将会修正，如下所述。</translation>
-    </message>
-    <message>
-        <source>Attempting to spend Pacplatform that are affected by not-yet-displayed transactions will not be accepted by the network.</source>
-        <translation>假如您正在尝试花费尚未显示出来的Pacplatform，这个交易将不会被网络所接受。</translation>
-    </message>
-    <message>
         <source>Number of blocks left</source>
         <translation>剩余区块数量</translation>
     </message>
@@ -1517,6 +1778,14 @@
     <message>
         <source>Last block time</source>
         <translation>上一区块时间</translation>
+    </message>
+    <message>
+        <source>Recent transactions may not yet be visible, and therefore your wallet's balance might be incorrect. This information will be correct once your wallet has finished synchronizing with the DeFCoN network, as detailed below.</source>
+        <translation>最近的交易可能尚未显示，因此钱包余额可能不正确。钱包完成与 DeFCoN 网络的同步后，这些信息就会准确，详情如下。</translation>
+    </message>
+    <message>
+        <source>Attempting to spend DeFCoN that are affected by not-yet-displayed transactions will not be accepted by the network.</source>
+        <translation>网络不会接受花费那些受尚未显示的交易影响的 DeFCoN 的尝试。</translation>
     </message>
     <message>
         <source>Progress</source>
@@ -1536,11 +1805,993 @@
     </message>
     <message>
         <source>%1 is currently syncing.  It will download headers and blocks from peers and validate them until reaching the tip of the block chain.</source>
-        <translation>%1 当前正在同步. 它将从Pacplatform网络下载头文件和区块并验证它们, 直到获取最新的区块链数据.</translation>
+        <translation>%1 当前正在同步。它将从其他节点下载区块头和区块并进行验证，直到到达区块链顶端。</translation>
     </message>
     <message>
         <source>Unknown. Syncing Headers (%1, %2%)…</source>
         <translation>未知状态. 同步区块头部 (%1, %2%)…</translation>
+    </message>
+</context>
+<context>
+    <name>MultisigDialog</name>
+    <message>
+        <source>Create / Add Multisig</source>
+        <translation>创建 / 添加多重签名</translation>
+    </message>
+    <message>
+        <source>Create a multisignature address (create-only), or add a multisignature address to the currently selected wallet.</source>
+        <translation>创建多重签名地址（仅创建），或将多重签名地址添加到当前选中的钱包。</translation>
+    </message>
+    <message>
+        <source>Input</source>
+        <translation>输入</translation>
+    </message>
+    <message>
+        <source>Create only (createmultisig)</source>
+        <translation>仅创建 (createmultisig)</translation>
+    </message>
+    <message>
+        <source>Add to current wallet (addmultisigaddress)</source>
+        <translation>添加到当前钱包 (addmultisigaddress)</translation>
+    </message>
+    <message>
+        <source>Mode</source>
+        <translation>模式</translation>
+    </message>
+    <message>
+        <source>Required signatures</source>
+        <translation>所需签名数</translation>
+    </message>
+    <message>
+        <source>Paste one key per line (or separated by comma/space). Create-only mode accepts hex public keys; add-to-wallet mode also accepts addresses known to this wallet.</source>
+        <translation>每行粘贴一个密钥，或用逗号、空格分隔。“仅创建”模式接受十六进制公钥；添加到钱包的模式还接受此钱包已知的地址。</translation>
+    </message>
+    <message>
+        <source>Keys / addresses</source>
+        <translation>密钥 / 地址</translation>
+    </message>
+    <message>
+        <source>Optional profile name, e.g. "Treasury 2-of-3", shown in the wallet and on the Multisig tab</source>
+        <translation>可选的方案名称，例如“金库 2/3”，会显示在钱包和“多重签名”标签页中</translation>
+    </message>
+    <message>
+        <source>Label</source>
+        <translation>标签</translation>
+    </message>
+    <message>
+        <source>Track in this wallet (import as watch-only, so balance and history are shown)</source>
+        <translation>在此钱包中跟踪（以仅限查看方式导入，以显示余额和历史记录）</translation>
+    </message>
+    <message>
+        <source>Create multisig</source>
+        <translation>创建多重签名</translation>
+    </message>
+    <message>
+        <source>Clear result</source>
+        <translation>清除结果</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Result</source>
+        <translation>结果</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>复制</translation>
+    </message>
+    <message>
+        <source>%1 copied to clipboard.</source>
+        <translation>%1 已复制到剪贴板。</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation>地址</translation>
+    </message>
+    <message>
+        <source>Descriptor</source>
+        <translation>描述符</translation>
+    </message>
+    <message>
+        <source>Redeem script</source>
+        <translation>赎回脚本</translation>
+    </message>
+    <message>
+        <source>Export setup…</source>
+        <translation>导出配置…</translation>
+    </message>
+    <message>
+        <source>Save the setup (keys, address, redeem script) to a file you can share with your cosigners</source>
+        <translation>将配置（密钥、地址、赎回脚本）保存到文件，以便与其他签名方共享</translation>
+    </message>
+    <message>
+        <source>Show raw RPC result</source>
+        <translation>显示原始 RPC 结果</translation>
+    </message>
+    <message>
+        <source>Descriptor wallets require manual import with importdescriptors.</source>
+        <translation>描述符钱包需要通过 importdescriptors 手动导入。</translation>
+    </message>
+    <message>
+        <source>Wallet type could not be determined, so legacy watch-only import is disabled for safety.</source>
+        <translation>无法确定钱包类型，因此为安全起见，已禁用旧格式的仅限查看导入。</translation>
+    </message>
+    <message>
+        <source>Import as watch-only so the wallet can show balance and history.</source>
+        <translation>以仅限查看方式导入，使钱包能够显示余额和历史记录。</translation>
+    </message>
+    <message>
+        <source>No wallet loaded.</source>
+        <translation>未加载钱包。</translation>
+    </message>
+    <message>
+        <source>Add multisig to wallet</source>
+        <translation>将多重签名添加到钱包</translation>
+    </message>
+    <message>
+        <source>Provide at least one key.</source>
+        <translation>请提供至少一个密钥。</translation>
+    </message>
+    <message>
+        <source>Entry #%1 is an address. Create-only mode needs hex public keys; use "Add to current wallet" mode for addresses.</source>
+        <translation>第 %1 项是地址。“仅创建”模式需要十六进制公钥；对于地址，请使用“添加到当前钱包”模式。</translation>
+    </message>
+    <message>
+        <source>Entry #%1 is not a valid public key%2.</source>
+        <translation>第 %1 项不是有效的公钥%2。</translation>
+    </message>
+    <message>
+        <source> or address</source>
+        <translation>或地址</translation>
+    </message>
+    <message>
+        <source>Entry #%1 is a duplicate.</source>
+        <translation>第 %1 项重复。</translation>
+    </message>
+    <message>
+        <source>Required signatures (%1) cannot exceed the number of keys (%2).</source>
+        <translation>所需签名数（%1）不能超过密钥数（%2）。</translation>
+    </message>
+    <message>
+        <source>Valid %1-of-%2 multisig configuration.</source>
+        <translation>有效的 %1/%2 多重签名配置。</translation>
+    </message>
+    <message>
+        <source>Client model is not available.</source>
+        <translation>客户端模型不可用。</translation>
+    </message>
+    <message>
+        <source>No wallet is currently selected. Select a wallet first, or use create-only mode.</source>
+        <translation>当前未选择钱包。请先选择钱包，或使用“仅创建”模式。</translation>
+    </message>
+    <message>
+        <source>This is a descriptor wallet; addmultisigaddress only works with legacy wallets. Use create-only mode without watch-only tracking, then import the descriptor manually with importdescriptors.</source>
+        <translation>这是描述符钱包；addmultisigaddress 仅适用于旧格式钱包。请使用“仅创建”模式，不启用仅限查看跟踪，然后通过 importdescriptors 手动导入描述符。</translation>
+    </message>
+    <message>
+        <source>This is a descriptor wallet. Uncheck watch-only tracking and import the generated descriptor manually with importdescriptors.</source>
+        <translation>这是描述符钱包。请取消仅限查看跟踪，并通过 importdescriptors 手动导入生成的描述符。</translation>
+    </message>
+    <message>
+        <source>Wallet type could not be determined. No legacy multisig import will be attempted.</source>
+        <translation>无法确定钱包类型。不会尝试旧格式的多重签名导入。</translation>
+    </message>
+    <message>
+        <source>Unexpected RPC response type.</source>
+        <translation>RPC 响应类型异常。</translation>
+    </message>
+    <message>
+        <source>RPC result is missing the address.</source>
+        <translation>RPC 结果中缺少地址。</translation>
+    </message>
+    <message>
+        <source>Multisig address %1 was created, but its profile is already stored and was not changed.</source>
+        <translation>多重签名地址 %1 已创建，但其方案已经保存，未作更改。</translation>
+    </message>
+    <message>
+        <source>The address is now tracked as watch-only; transactions received before now require a rescan to appear.</source>
+        <translation>现在已以仅限查看方式跟踪该地址；此前收到的交易需要重新扫描才能显示。</translation>
+    </message>
+    <message>
+        <source>Multisig address %1 was created, but its profile could not be stored.</source>
+        <translation>多重签名地址 %1 已创建，但无法保存其方案。</translation>
+    </message>
+    <message>
+        <source>Multisig address %1 created.</source>
+        <translation>多重签名地址 %1 已创建。</translation>
+    </message>
+    <message>
+        <source>Use "Export setup…" to share the configuration with your cosigners.</source>
+        <translation>使用“导出配置…”与其他签名方共享配置。</translation>
+    </message>
+    <message>
+        <source>Export Multisig Setup</source>
+        <translation>导出多重签名配置</translation>
+    </message>
+    <message>
+        <source>Multisig Setup</source>
+        <translation>多重签名配置</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>无法写入文件 %1。</translation>
+    </message>
+    <message>
+        <source>Setup saved to %1. Share this file with your cosigners; it contains no private keys.</source>
+        <translation>配置已保存至 %1。请将此文件分享给其他签名方；它不包含私钥。</translation>
+    </message>
+</context>
+<context>
+    <name>MultisigPage</name>
+    <message>
+        <source>Saved multisig profiles of this wallet. Create a profile, share it with your cosigners, and spend from it with partially signed transactions.</source>
+        <translation>此钱包已保存的多重签名方案。创建方案，与其他签名方共享，并通过部分签名的交易花费其中的资金。</translation>
+    </message>
+    <message>
+        <source>Create / Add…</source>
+        <translation>创建 / 添加…</translation>
+    </message>
+    <message>
+        <source>Create a new multisignature address or add an existing one to the wallet</source>
+        <translation>创建新的多重签名地址，或将现有地址添加到钱包</translation>
+    </message>
+    <message>
+        <source>Import setup…</source>
+        <translation>导入配置…</translation>
+    </message>
+    <message>
+        <source>Import a multisig setup file received from a cosigner</source>
+        <translation>导入从其他签名方收到的多重签名配置文件</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>刷新</translation>
+    </message>
+    <message>
+        <source>Profile</source>
+        <translation>方案</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation>地址</translation>
+    </message>
+    <message>
+        <source>Scheme</source>
+        <translation>签名规则</translation>
+    </message>
+    <message>
+        <source>Balance</source>
+        <translation>余额</translation>
+    </message>
+    <message>
+        <source>UTXOs</source>
+        <translation>UTXO</translation>
+    </message>
+    <message>
+        <source>No multisig profiles yet. Use "Create / Add…" to set one up, or "Import setup…" if a cosigner sent you a setup file.</source>
+        <translation>尚无多重签名方案。使用“创建 / 添加…”建立方案；如果其他签名方发来了配置文件，请使用“导入配置…”。</translation>
+    </message>
+    <message>
+        <source>Selected profile</source>
+        <translation>选中的方案</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>复制</translation>
+    </message>
+    <message>
+        <source>Advanced (redeem script, descriptor)</source>
+        <translation>高级（赎回脚本、描述符）</translation>
+    </message>
+    <message>
+        <source>%1 copied to clipboard.</source>
+        <translation>%1 已复制到剪贴板。</translation>
+    </message>
+    <message>
+        <source>Redeem script</source>
+        <translation>赎回脚本</translation>
+    </message>
+    <message>
+        <source>Descriptor</source>
+        <translation>描述符</translation>
+    </message>
+    <message>
+        <source>Edit cosigner labels…</source>
+        <translation>编辑签名方标签…</translation>
+    </message>
+    <message>
+        <source>Name each cosigner key (e.g. "Alice hardware wallet") so signature progress is easy to read</source>
+        <translation>为每个签名方的密钥命名（例如“爱丽丝的硬件钱包”），以便查看签名进度</translation>
+    </message>
+    <message>
+        <source>Import as watch-only</source>
+        <translation>以仅限查看方式导入</translation>
+    </message>
+    <message>
+        <source>Show QR…</source>
+        <translation>显示二维码…</translation>
+    </message>
+    <message>
+        <source>Show the setup as a QR code so a cosigner can copy it. Scanning QR codes is not available in this build.</source>
+        <translation>将配置显示为二维码，以便其他签名方复制。此版本不支持扫描二维码。</translation>
+    </message>
+    <message>
+        <source>Spend…</source>
+        <translation>花费…</translation>
+    </message>
+    <message>
+        <source>Build a transaction spending from the selected multisig address</source>
+        <translation>构建一笔从选中的多重签名地址花费资金的交易</translation>
+    </message>
+    <message>
+        <source>Continue transaction</source>
+        <translation>继续处理交易</translation>
+    </message>
+    <message>
+        <source>Load a partially signed transaction to sign, merge signatures or broadcast it</source>
+        <translation>加载部分签名的交易，以签名、合并签名或广播</translation>
+    </message>
+    <message>
+        <source>From clipboard</source>
+        <translation>从剪贴板</translation>
+    </message>
+    <message>
+        <source>From file…</source>
+        <translation>从文件…</translation>
+    </message>
+    <message>
+        <source>Export setup…</source>
+        <translation>导出配置…</translation>
+    </message>
+    <message>
+        <source>Save the selected setup to a file you can share with your cosigners</source>
+        <translation>将选中的配置保存到文件，以便与其他签名方共享</translation>
+    </message>
+    <message>
+        <source>Copy address</source>
+        <translation>复制地址</translation>
+    </message>
+    <message>
+        <source>Remove from list</source>
+        <translation>从列表移除</translation>
+    </message>
+    <message>
+        <source>Remove the selected entry from this list. The wallet itself keeps tracking the address.</source>
+        <translation>从此列表移除选中的条目。钱包本身会继续跟踪该地址。</translation>
+    </message>
+    <message>
+        <source>%1-of-%2</source>
+        <translation>%1/%2</translation>
+    </message>
+    <message>
+        <source>Could not query balances: %1</source>
+        <translation>无法查询余额：%1</translation>
+    </message>
+    <message>
+        <source>Cannot spend from this profile: %1</source>
+        <translation>无法从此方案花费资金：%1</translation>
+    </message>
+    <message>
+        <source>No wallet loaded.</source>
+        <translation>未加载钱包。</translation>
+    </message>
+    <message>
+        <source>Unexpected RPC response type.</source>
+        <translation>RPC 响应类型异常。</translation>
+    </message>
+    <message>
+        <source>Import Multisig Setup</source>
+        <translation>导入多重签名配置</translation>
+    </message>
+    <message>
+        <source>Multisig Setup</source>
+        <translation>多重签名配置</translation>
+    </message>
+    <message>
+        <source>Could not open file %1.</source>
+        <translation>无法打开文件 %1。</translation>
+    </message>
+    <message>
+        <source>Invalid setup file: %1</source>
+        <translation>配置文件无效：%1</translation>
+    </message>
+    <message>
+        <source>Setup file rejected: the address does not match the keys it contains.</source>
+        <translation>配置文件已被拒绝：地址与文件中的密钥不匹配。</translation>
+    </message>
+    <message>
+        <source>Setup file verification failed: %1</source>
+        <translation>配置文件验证失败：%1</translation>
+    </message>
+    <message>
+        <source>Track address</source>
+        <translation>跟踪地址</translation>
+    </message>
+    <message>
+        <source>Import %1 into the wallet as watch-only so its balance and history are tracked?
+
+Note: transactions received before now will only appear after a rescan.</source>
+        <translation>是否以仅限查看方式将 %1 导入钱包，以跟踪其余额和历史记录？
+
+注意：此前收到的交易只有在重新扫描后才会显示。</translation>
+    </message>
+    <message>
+        <source>Watch-only tracking was not imported because this is a descriptor wallet; use importdescriptors manually.</source>
+        <translation>由于这是描述符钱包，未导入仅限查看跟踪；请手动使用 importdescriptors。</translation>
+    </message>
+    <message>
+        <source>Watch-only tracking was not imported because the wallet type could not be determined.</source>
+        <translation>由于无法确定钱包类型，未导入仅限查看跟踪。</translation>
+    </message>
+    <message>
+        <source>This multisig address is already tracked.</source>
+        <translation>此多重签名地址已在跟踪中。</translation>
+    </message>
+    <message>
+        <source>Multisig setup %1 imported.</source>
+        <translation>多重签名配置 %1 已导入。</translation>
+    </message>
+    <message>
+        <source>Export Multisig Setup</source>
+        <translation>导出多重签名配置</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>无法写入文件 %1。</translation>
+    </message>
+    <message>
+        <source>Setup saved to %1. Share this file with your cosigners; it contains no private keys.</source>
+        <translation>配置已保存至 %1。请将此文件分享给其他签名方；它不包含私钥。</translation>
+    </message>
+    <message>
+        <source>Unable to decode PSBT from clipboard (invalid base64).</source>
+        <translation>无法解码剪贴板中的 PSBT（base64 无效）。</translation>
+    </message>
+    <message>
+        <source>Load Transaction Data</source>
+        <translation>读取交易数据</translation>
+    </message>
+    <message>
+        <source>Partially Signed Transaction (*.psbt)</source>
+        <translation>部分签名的交易 (*.psbt)</translation>
+    </message>
+    <message>
+        <source>PSBT file must be smaller than 100 MiB.</source>
+        <translation>PSBT 文件必须小于 100 MiB。</translation>
+    </message>
+    <message>
+        <source>Unable to decode PSBT: %1</source>
+        <translation>无法解码 PSBT：%1</translation>
+    </message>
+    <message>
+        <source>Address %1 copied to clipboard.</source>
+        <translation>地址 %1 已复制到剪贴板。</translation>
+    </message>
+    <message>
+        <source>Remove multisig entry</source>
+        <translation>移除多重签名条目</translation>
+    </message>
+    <message>
+        <source>Remove %1 from this list?
+
+Only the list entry is removed. If the address was imported into the wallet it remains tracked there, and funds on it are not affected.</source>
+        <translation>是否从此列表移除 %1？
+
+仅会移除列表条目。如果该地址已导入钱包，钱包仍会跟踪它，地址中的资金不受影响。</translation>
+    </message>
+    <message>
+        <source>%1 — %2-of-%3 multisig • %4</source>
+        <translation>%1 — %2/%3 多重签名 • %4</translation>
+    </message>
+    <message>
+        <source>(unnamed profile)</source>
+        <translation>（未命名方案）</translation>
+    </message>
+    <message>
+        <source>Cosigner %1</source>
+        <translation>签名方 %1</translation>
+    </message>
+    <message>
+        <source>(key in this wallet)</source>
+        <translation>（密钥在此钱包中）</translation>
+    </message>
+    <message>
+        <source>Import the address into this wallet as watch-only so its balance and history are tracked</source>
+        <translation>以仅限查看方式将地址导入此钱包，以跟踪余额和历史记录</translation>
+    </message>
+    <message>
+        <source>No wallet loaded</source>
+        <translation>未加载钱包</translation>
+    </message>
+    <message>
+        <source>Not available for descriptor wallets: import the profile's descriptor manually via the importdescriptors RPC instead.</source>
+        <translation>不适用于描述符钱包：请改用 importdescriptors RPC 手动导入方案的描述符。</translation>
+    </message>
+    <message>
+        <source>Wallet type could not be determined, so legacy watch-only import is disabled for safety.</source>
+        <translation>无法确定钱包类型，因此为安全起见，已禁用旧格式的仅限查看导入。</translation>
+    </message>
+    <message>
+        <source>Cosigner labels</source>
+        <translation>签名方标签</translation>
+    </message>
+    <message>
+        <source>Give each cosigner key a recognizable name, e.g. "Alice hardware wallet". Labels are stored locally and included in exported setup files.</source>
+        <translation>为每个签名方的密钥指定易于识别的名称，例如“爱丽丝的硬件钱包”。标签保存在本地，并包含在导出的配置文件中。</translation>
+    </message>
+    <message>
+        <source>Cosigner labels updated.</source>
+        <translation>签名方标签已更新。</translation>
+    </message>
+    <message>
+        <source>Address %1 is now tracked as watch-only. Transactions received before now appear only after a rescan.</source>
+        <translation>地址 %1 现已以仅限查看方式跟踪。此前收到的交易只有在重新扫描后才会显示。</translation>
+    </message>
+    <message>
+        <source>Multisig setup as QR code</source>
+        <translation>多重签名配置二维码</translation>
+    </message>
+    <message>
+        <source>Contains the profile name, public keys, address and redeem script — no private keys.</source>
+        <translation>包含方案名称、公钥、地址和赎回脚本，不包含私钥。</translation>
+    </message>
+</context>
+<context>
+    <name>MultisigSpendDialog</name>
+    <message>
+        <source>Spend from Multisig</source>
+        <translation>花费多重签名资金</translation>
+    </message>
+    <message>
+        <source>Multisig Transaction</source>
+        <translation>多重签名交易</translation>
+    </message>
+    <message>
+        <source>1. Create</source>
+        <translation>1. 创建</translation>
+    </message>
+    <message>
+        <source>2. Collect signatures</source>
+        <translation>2. 收集签名</translation>
+    </message>
+    <message>
+        <source>3. Finalize &amp; broadcast</source>
+        <translation>3. 完成 &amp; 广播</translation>
+    </message>
+    <message>
+        <source>Transaction</source>
+        <translation>交易</translation>
+    </message>
+    <message>
+        <source>From</source>
+        <translation>来自</translation>
+    </message>
+    <message>
+        <source>Available</source>
+        <translation>可用</translation>
+    </message>
+    <message>
+        <source>Destination address</source>
+        <translation>目标地址</translation>
+    </message>
+    <message>
+        <source>Pay to</source>
+        <translation>付款给</translation>
+    </message>
+    <message>
+        <source>Use available balance</source>
+        <translation>使用可用余额</translation>
+    </message>
+    <message>
+        <source>Amount</source>
+        <translation>金额</translation>
+    </message>
+    <message>
+        <source>Subtract fee from amount</source>
+        <translation>从金额中扣除费用</translation>
+    </message>
+    <message>
+        <source>Checks</source>
+        <translation>检查</translation>
+    </message>
+    <message>
+        <source>Build transaction</source>
+        <translation>构建交易</translation>
+    </message>
+    <message>
+        <source>Transaction preview</source>
+        <translation>交易预览</translation>
+    </message>
+    <message>
+        <source>Collect signatures</source>
+        <translation>收集签名</translation>
+    </message>
+    <message>
+        <source>Cosigner</source>
+        <translation>签名方</translation>
+    </message>
+    <message>
+        <source>Public key</source>
+        <translation>公钥</translation>
+    </message>
+    <message>
+        <source>Signature</source>
+        <translation>签名</translation>
+    </message>
+    <message>
+        <source>Sign with this wallet</source>
+        <translation>使用此钱包签名</translation>
+    </message>
+    <message>
+        <source>Copy PSBT</source>
+        <translation>复制 PSBT</translation>
+    </message>
+    <message>
+        <source>Save PSBT…</source>
+        <translation>保存 PSBT…</translation>
+    </message>
+    <message>
+        <source>Show QR…</source>
+        <translation>显示二维码…</translation>
+    </message>
+    <message>
+        <source>Show the PSBT as a QR code for transfer to another device. Only smaller transactions fit into a QR code.</source>
+        <translation>将 PSBT 显示为二维码，以传输到其他设备。只有较小的交易才能放入二维码。</translation>
+    </message>
+    <message>
+        <source>Merge signatures</source>
+        <translation>合并签名</translation>
+    </message>
+    <message>
+        <source>Combine a partially signed copy of this transaction received from a cosigner</source>
+        <translation>合并从其他签名方收到的这笔交易的部分签名副本</translation>
+    </message>
+    <message>
+        <source>From clipboard</source>
+        <translation>从剪贴板</translation>
+    </message>
+    <message>
+        <source>From file…</source>
+        <translation>从文件…</translation>
+    </message>
+    <message>
+        <source>From QR code…</source>
+        <translation>从二维码…</translation>
+    </message>
+    <message>
+        <source>Finalize &amp;&amp; broadcast</source>
+        <translation>完成 &amp;&amp; 广播</translation>
+    </message>
+    <message>
+        <source>Finalize and broadcast</source>
+        <translation>完成并广播</translation>
+    </message>
+    <message>
+        <source>Combine the collected signatures into a final transaction and send it to the network</source>
+        <translation>将收集的签名组合为最终交易，并发送到网络</translation>
+    </message>
+    <message>
+        <source>Transaction ID</source>
+        <translation>交易ID</translation>
+    </message>
+    <message>
+        <source>appears after broadcasting</source>
+        <translation>广播后显示</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>复制</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Cannot spend from this profile: %1</source>
+        <translation>无法从此方案花费资金：%1</translation>
+    </message>
+    <message>
+        <source>Could not query UTXOs: %1</source>
+        <translation>无法查询 UTXO：%1</translation>
+    </message>
+    <message>
+        <source>%1 in %2 confirmed UTXOs</source>
+        <translation>%2 个已确认 UTXO 中共 %1</translation>
+    </message>
+    <message>
+        <source>This multisig address has no spendable UTXOs known to the wallet.</source>
+        <translation>钱包中没有此多重签名地址的已知可花费 UTXO。</translation>
+    </message>
+    <message>
+        <source>The destination address is not valid.</source>
+        <translation>目标地址无效。</translation>
+    </message>
+    <message>
+        <source>The destination must be different from the source multisig address. Wallet-generated change will still return to the multisig address.</source>
+        <translation>目标地址必须与来源多重签名地址不同。钱包生成的找零仍会返回多重签名地址。</translation>
+    </message>
+    <message>
+        <source>The amount to pay must be larger than 0.</source>
+        <translation>支付金额必须大于0。</translation>
+    </message>
+    <message>
+        <source>The amount exceeds the available balance.</source>
+        <translation>金额超过可用余额。</translation>
+    </message>
+    <message>
+        <source>Could not decode the created PSBT: %1</source>
+        <translation>无法解码创建的 PSBT：%1</translation>
+    </message>
+    <message>
+        <source>Transaction built. Sign it with this wallet, then pass the PSBT to your cosigners until enough signatures are collected.</source>
+        <translation>交易已构建。请使用此钱包签名，然后将 PSBT 传给其他签名方，直到收集到足够的签名。</translation>
+    </message>
+    <message>
+        <source>Hint: import the multisig setup (with redeem script) into this wallet so it can estimate the transaction size.</source>
+        <translation>提示：将多重签名配置（包含赎回脚本）导入此钱包，以便估算交易大小。</translation>
+    </message>
+    <message>
+        <source>No transaction loaded yet.</source>
+        <translation>尚未加载交易。</translation>
+    </message>
+    <message>
+        <source>Send %1 to %2</source>
+        <translation>向 %2 发送 %1</translation>
+    </message>
+    <message>
+        <source>unknown destination</source>
+        <translation>未知目标</translation>
+    </message>
+    <message>
+        <source>Change: %1 (back to the multisig address)</source>
+        <translation>找零：%1（返回多重签名地址）</translation>
+    </message>
+    <message>
+        <source>Change: unknown (transaction loaded without its multisig profile)</source>
+        <translation>找零：未知（加载交易时未加载其多重签名方案）</translation>
+    </message>
+    <message>
+        <source>Fee: %1</source>
+        <translation>费用：%1</translation>
+    </message>
+    <message>
+        <source>Fee: unknown</source>
+        <translation>费用：未知</translation>
+    </message>
+    <message>
+        <source>Required signatures: %1 of %2 cosigners</source>
+        <translation>所需签名：%2 个签名方中的 %1 个</translation>
+    </message>
+    <message>
+        <source>Required signatures: unknown</source>
+        <translation>所需签名：未知</translation>
+    </message>
+    <message>
+        <source>All required signatures collected — ready to finalize.</source>
+        <translation>已收集全部所需签名，可以完成交易。</translation>
+    </message>
+    <message>
+        <source>Signatures: %1 of %2 collected.</source>
+        <translation>已收集签名：%1/%2。</translation>
+    </message>
+    <message>
+        <source>(%1 of %2 inputs already finalized)</source>
+        <translation>（已有 %1/%2 个输入完成最终处理）</translation>
+    </message>
+    <message>
+        <source>Missing: %1</source>
+        <translation>缺少：%1</translation>
+    </message>
+    <message>
+        <source>Signature progress is unknown: the transaction inputs are missing multisig redeem script information.</source>
+        <translation>签名进度未知：交易输入缺少多重签名赎回脚本信息。</translation>
+    </message>
+    <message>
+        <source>Nothing left to sign.</source>
+        <translation>没有需要继续签名的内容。</translation>
+    </message>
+    <message>
+        <source>Signed</source>
+        <translation>已签名</translation>
+    </message>
+    <message>
+        <source>Missing</source>
+        <translation>缺失</translation>
+    </message>
+    <message>
+        <source>Failed to sign transaction: %1</source>
+        <translation>无法签名交易: %1</translation>
+    </message>
+    <message>
+        <source>Cannot sign inputs while the wallet is locked.</source>
+        <translation>钱包锁定时无法签署输入。</translation>
+    </message>
+    <message>
+        <source>This wallet holds none of the missing keys — pass the PSBT to a cosigner instead.</source>
+        <translation>此钱包不持有任何缺少的密钥，请将 PSBT 传给其他签名方。</translation>
+    </message>
+    <message>
+        <source>Signed with this wallet's key. Copy or save the PSBT and pass it to the next cosigner.</source>
+        <translation>已使用此钱包的密钥签名。请复制或保存 PSBT，并传给下一位签名方。</translation>
+    </message>
+    <message>
+        <source>All required signatures collected. You can broadcast the transaction now.</source>
+        <translation>已收集全部所需签名。现在可以广播交易。</translation>
+    </message>
+    <message>
+        <source>PSBT copied to clipboard. Send it to your cosigner.</source>
+        <translation>PSBT 已复制到剪贴板。请发送给其他签名方。</translation>
+    </message>
+    <message>
+        <source>multisig</source>
+        <translation>多重签名</translation>
+    </message>
+    <message>
+        <source>Save Transaction Data</source>
+        <translation>保存交易数据</translation>
+    </message>
+    <message>
+        <source>Partially Signed Transaction (Binary)</source>
+        <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
+        <translation>部分签名的交易 (二进制)</translation>
+    </message>
+    <message>
+        <source>PSBT saved to %1.</source>
+        <translation>PSBT 已保存至 %1。</translation>
+    </message>
+    <message>
+        <source>PSBT as QR code</source>
+        <translation>PSBT 二维码</translation>
+    </message>
+    <message>
+        <source>Scan this with the cosigner's device to transfer the partially signed transaction.</source>
+        <translation>使用其他签名方的设备扫描此码，以传输部分签名的交易。</translation>
+    </message>
+    <message>
+        <source>Transaction ID copied to clipboard.</source>
+        <translation>交易 ID 已复制到剪贴板。</translation>
+    </message>
+    <message>
+        <source>Unable to decode PSBT from clipboard: %1</source>
+        <translation>无法解码剪贴板中的 PSBT：%1</translation>
+    </message>
+    <message>
+        <source>Load Transaction Data</source>
+        <translation>读取交易数据</translation>
+    </message>
+    <message>
+        <source>Partially Signed Transaction (*.psbt)</source>
+        <translation>部分签名的交易 (*.psbt)</translation>
+    </message>
+    <message>
+        <source>PSBT file must be smaller than 100 MiB.</source>
+        <translation>PSBT 文件必须小于 100 MiB。</translation>
+    </message>
+    <message>
+        <source>Unable to decode PSBT: %1</source>
+        <translation>无法解码 PSBT：%1</translation>
+    </message>
+    <message>
+        <source>Could not merge: %1 Make sure the cosigner signed the same transaction.</source>
+        <translation>无法合并：%1 请确认其他签名方签署的是同一笔交易。</translation>
+    </message>
+    <message>
+        <source>Signatures merged.</source>
+        <translation>签名已合并。</translation>
+    </message>
+    <message>
+        <source>The transaction could not be analyzed: %1</source>
+        <translation>无法分析交易：%1</translation>
+    </message>
+    <message>
+        <source>Broadcast blocked: the exact transaction fee is unknown. Load a PSBT containing complete UTXO information.</source>
+        <translation>广播已被阻止：确切的交易费用未知。请加载包含完整 UTXO 信息的 PSBT。</translation>
+    </message>
+    <message>
+        <source>Broadcast blocked: the transaction fee is invalid.</source>
+        <translation>广播已被阻止：交易费用无效。</translation>
+    </message>
+    <message>
+        <source>The transaction could not be finalized — signatures are missing or invalid.</source>
+        <translation>无法完成交易，签名缺失或无效。</translation>
+    </message>
+    <message>
+        <source>Output %1: %2 to %3%4</source>
+        <translation>输出 %1：向 %3 发送 %2%4</translation>
+    </message>
+    <message>
+        <source> (change)</source>
+        <translation> （找零）</translation>
+    </message>
+    <message>
+        <source>Broadcast blocked: fee %1 exceeds the multisig safety limit. Review the selected inputs and outputs, then rebuild the transaction.</source>
+        <translation>广播已被阻止：费用 %1 超过多重签名安全限额。请检查选中的输入和输出，然后重新构建交易。</translation>
+    </message>
+    <message>
+        <source>This transaction pays an unusually high fee of %1.</source>
+        <translation>这笔交易的费用异常高，达到 %1。</translation>
+    </message>
+    <message>
+        <source>The fee is %1% of the amount being sent.</source>
+        <translation>费用占发送金额的 %1%。</translation>
+    </message>
+    <message>
+        <source>Continue only after checking every input and output.</source>
+        <translation>请检查每个输入和输出后再继续。</translation>
+    </message>
+    <message>
+        <source>High multisig transaction fee</source>
+        <translation>多重签名交易费用过高</translation>
+    </message>
+    <message>
+        <source>I understand</source>
+        <translation>我已了解</translation>
+    </message>
+    <message>
+        <source>Change output cannot be identified</source>
+        <translation>无法识别找零输出</translation>
+    </message>
+    <message>
+        <source>This PSBT was loaded without its multisig profile. The wallet cannot identify which output is change. Review every output in the final confirmation before broadcasting.</source>
+        <translation>加载此 PSBT 时未加载其多重签名方案。钱包无法识别哪个输出是找零。广播前，请在最终确认窗口检查每个输出。</translation>
+    </message>
+    <message>
+        <source>Review outputs</source>
+        <translation>检查输出</translation>
+    </message>
+    <message>
+        <source>Send amount: %1</source>
+        <translation>发送金额：%1</translation>
+    </message>
+    <message>
+        <source>Change: %1 to %2</source>
+        <translation>找零：%1，发送至 %2</translation>
+    </message>
+    <message>
+        <source>Change: none</source>
+        <translation>找零：无</translation>
+    </message>
+    <message>
+        <source>Send amount: review individual outputs below</source>
+        <translation>发送金额：请检查下方各个输出</translation>
+    </message>
+    <message>
+        <source>Change: unknown</source>
+        <translation>找零：未知</translation>
+    </message>
+    <message>
+        <source>Signatures: %1 of %2 collected</source>
+        <translation>已收集签名：%1/%2</translation>
+    </message>
+    <message>
+        <source>Signatures: transaction is complete</source>
+        <translation>签名：交易已完成</translation>
+    </message>
+    <message>
+        <source>Transaction ID: %1</source>
+        <translation>交易 ID：%1</translation>
+    </message>
+    <message>
+        <source>Confirm multisig broadcast</source>
+        <translation>确认多重签名广播</translation>
+    </message>
+    <message>
+        <source>Verify the transaction before broadcasting.</source>
+        <translation>广播前请核实交易。</translation>
+    </message>
+    <message>
+        <source>Broadcast</source>
+        <translation>广播</translation>
+    </message>
+    <message>
+        <source>Transaction broadcast successfully! Transaction ID: %1</source>
+        <translation>交易广播成功! 交易 ID: %1</translation>
+    </message>
+    <message>
+        <source>Transaction broadcast failed: %1</source>
+        <translation>广播交易失败: %1</translation>
     </message>
 </context>
 <context>
@@ -1595,7 +2846,7 @@
     </message>
     <message>
         <source>Number of script &amp;verification threads</source>
-        <translation>脚本&amp; 验证 进程数 </translation>
+        <translation>脚本验证线程数(&amp;V)</translation>
     </message>
     <message>
         <source>(0 = auto, &lt;0 = leave that many cores free)</source>
@@ -1672,6 +2923,14 @@
         <translation>保留自定义找零&amp;地址</translation>
     </message>
     <message>
+        <source>Show additional tab for multisignature addresses and partially signed transactions.</source>
+        <translation>显示额外标签页，用于多重签名地址和部分签名的交易。</translation>
+    </message>
+    <message>
+        <source>Show Multisig Tab</source>
+        <translation>显示多重签名标签页</translation>
+    </message>
+    <message>
         <source>Show additional tab listing all your masternodes in first sub-tab&lt;br/&gt;and all masternodes on the network in second sub-tab.</source>
         <translation>显示其他标签，在第一个子标签列出所有您的主节点&lt;br/&gt;在第二个子标签列出所有网络上的主节点。</translation>
     </message>
@@ -1721,7 +2980,7 @@
     </message>
     <message>
         <source>Whether to use experimental mode with multiple mixing sessions per block.&lt;br/&gt;Note: You must use this feature carefully.&lt;br/&gt;Make sure you always have recent wallet (auto)backup in a safe place!</source>
-        <translation>是否使用实验性质的模式，当中每个内存块都会有多个混合会话。&lt;br/&gt;注意：您必须小心使用此功能。&lt;br/&gt;确保您总是有最近的钱包（自动）备份在一个安全的地方！</translation>
+        <translation>是否使用每个区块可包含多个混币会话的实验模式。&lt;br/&gt;注意：请谨慎使用此功能。&lt;br/&gt;请务必始终在安全的位置保存最新的钱包（自动）备份！</translation>
     </message>
     <message>
         <source>Enable &amp;multi-session</source>
@@ -1772,10 +3031,6 @@
         <translation>最大</translation>
     </message>
     <message>
-        <source>Automatically open the Pacplatform client port on the router. This only works when your router supports UPnP and it is enabled.</source>
-        <translation>自动在路由器打开Pacplatform客户端端口。此项只在路由器支持UPnP且开启时有效。</translation>
-    </message>
-    <message>
         <source>Map port using NA&amp;T-PMP</source>
         <translation>使用NA&amp;T-PMP映射端口</translation>
     </message>
@@ -1785,11 +3040,7 @@
     </message>
     <message>
         <source>Allow incomin&amp;g connections</source>
-        <translation>允许连入连接</translation>
-    </message>
-    <message>
-        <source>Connect to the Pacplatform network through a SOCKS5 proxy.</source>
-        <translation>通过SOCKS5代理连接Pacplatform网络。</translation>
+        <translation>允许传入连接(&amp;G)</translation>
     </message>
     <message>
         <source>&amp;Connect through SOCKS5 proxy (default proxy):</source>
@@ -1814,6 +3065,22 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>窗口被关闭时最小化而不是退出应用程序。当此选项启用时，应用程序只会在菜单中选择退出时退出。</translation>
     </message>
     <message>
+        <source>Automatically open the DeFCoN client port on the router. This only works when your router supports UPnP and it is enabled.</source>
+        <translation>自动在路由器上开放 DeFCoN 客户端端口。仅在路由器支持并启用 UPnP 时有效。</translation>
+    </message>
+    <message>
+        <source>Automatically open the DeFCoN client port on the router. This only works when your router supports NAT-PMP and it is enabled. The external port could be random.</source>
+        <translation>自动在路由器上开放 DeFCoN 客户端端口。仅在路由器支持并启用 NAT-PMP 时有效。外部端口可能是随机的。</translation>
+    </message>
+    <message>
+        <source>Connect to the DeFCoN network through a SOCKS5 proxy.</source>
+        <translation>通过 SOCKS5 代理连接到 DeFCoN 网络。</translation>
+    </message>
+    <message>
+        <source>Connect to the DeFCoN network through a separate SOCKS5 proxy for Tor onion services.</source>
+        <translation>通过独立的 SOCKS5 代理，使用 Tor onion 服务连接到 DeFCoN 网络。</translation>
+    </message>
+    <message>
         <source>Third party URLs (e.g. a block explorer) that appear in the transactions tab as context menu items.&lt;br/&gt;%s in the URL is replaced by transaction hash. Multiple URLs are separated by vertical bar |.</source>
         <translation>出现在交易的选项卡的上下文菜单项的第三方URL（例如，区块链查询网站）。&lt;br/&gt;URL中的 %s被替换为交易哈希。多个URL需用竖线 | 分隔。</translation>
     </message>
@@ -1831,7 +3098,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>&amp;Start %1 on system login</source>
-        <translation>系统登入时启动 %1</translation>
+        <translation>登录系统时启动 %1(&amp;S)</translation>
     </message>
     <message>
         <source>Enable coin &amp;control features</source>
@@ -1856,10 +3123,6 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Map port using &amp;UPnP</source>
         <translation>使用UPnP映射端口(&amp;U)</translation>
-    </message>
-    <message>
-        <source>Automatically open the Pacplatform client port on the router. This only works when your router supports NAT-PMP and it is enabled. The external port could be random.</source>
-        <translation>自动打开路由器上Pacplatform客户端端口. 这仅在您的路由器支持NAT-PMP并且已启用时才有效. 外部端口可以是随机的.</translation>
     </message>
     <message>
         <source>Proxy &amp;IP:</source>
@@ -1910,10 +3173,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>显示(&amp;D)</translation>
     </message>
     <message>
-        <source>Connect to the Pacplatform network through a separate SOCKS5 proxy for Tor onion services.</source>
-        <translation>通过另一个SOCKS5代理服务器作为Tor洋葱服务来连接到 Pacplatform 网络.</translation>
-    </message>
-    <message>
         <source>Use separate SOCKS&amp;5 proxy to reach peers via Tor onion services:</source>
         <translation>使用独立的SOCK&amp;5代理服务器, 并通过Tor洋葱服务与节点连接:</translation>
     </message>
@@ -1927,7 +3186,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>&amp;Unit to show amounts in:</source>
-        <translation>显示金额的单位:</translation>
+        <translation>显示金额的单位(&amp;U)：</translation>
     </message>
     <message>
         <source>Choose the default subdivision unit to show in the interface and when sending coins.</source>
@@ -1989,10 +3248,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>表单</translation>
     </message>
     <message>
-        <source>The displayed information may be out of date. Your wallet automatically synchronizes with the Pacplatform network after a connection is established, but this process has not completed yet.</source>
-        <translation>显示的信息也许已过期。当与Pacplatform网络连接后钱包程序会自动同步，但现在还未完成。</translation>
-    </message>
-    <message>
         <source>Available:</source>
         <translation>可使用的余额：</translation>
     </message>
@@ -2021,8 +3276,12 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>余额</translation>
     </message>
     <message>
+        <source>The displayed information may be out of date. Your wallet automatically synchronizes with the DeFCoN network after a connection is established, but this process has not completed yet.</source>
+        <translation>显示的信息可能已过时。连接建立后，钱包会自动与 DeFCoN 网络同步，但此过程尚未完成。</translation>
+    </message>
+    <message>
         <source>Unconfirmed transactions to watch-only addresses</source>
-        <translation>仅限查看的还未交易确认的地址</translation>
+        <translation>仅限查看地址上的未确认交易</translation>
     </message>
     <message>
         <source>Mined balance in watch-only addresses that has not yet matured</source>
@@ -2070,7 +3329,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>0 DFCN / 0 Rounds</source>
-        <translation>0 Pacplatform / 0 循环数</translation>
+        <translation>0 DFCN / 0 次循环</translation>
     </message>
     <message>
         <source>Submitted Denom:</source>
@@ -2090,7 +3349,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>The denominations you submitted to the Masternode.&lt;br&gt;To mix, other users must submit the exact same denominations.</source>
-        <translation>您向主节点所提交的用以面额化混合的Pacplatform。&lt;br&gt;为了混合，其他用户必须提交完全一样的面额。</translation>
+        <translation>您提交给主节点的面额。&lt;br&gt;要进行混币，其他用户必须提交完全相同的面额。</translation>
     </message>
     <message>
         <source>out of sync</source>
@@ -2105,12 +3364,288 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>未检测到输入</translation>
     </message>
     <message>
+        <source>Overview</source>
+        <translation>概览</translation>
+    </message>
+    <message>
+        <source>Wallet overview and recent activity.</source>
+        <translation>钱包概览和最近活动。</translation>
+    </message>
+    <message>
+        <source>Block</source>
+        <translation>区块</translation>
+    </message>
+    <message>
+        <source>Synced</source>
+        <translation>已同步</translation>
+    </message>
+    <message>
+        <source>ChainLocked</source>
+        <translation>已由 ChainLocks 锁定</translation>
+    </message>
+    <message>
+        <source>MN</source>
+        <translation>主节点</translation>
+    </message>
+    <message>
+        <source>tx</source>
+        <translation>交易</translation>
+    </message>
+    <message>
+        <source>The newest block this wallet knows of</source>
+        <translation>此钱包已知的最新区块</translation>
+    </message>
+    <message>
+        <source>How long ago that block was made</source>
+        <translation>该区块生成至今经过的时间</translation>
+    </message>
+    <message>
+        <source>The blockchain and the masternode data are up to date</source>
+        <translation>区块链和主节点数据均已更新</translation>
+    </message>
+    <message>
+        <source>Masternodes have locked the newest block: it cannot be replaced</source>
+        <translation>主节点已锁定最新区块，该区块无法被替换</translation>
+    </message>
+    <message>
+        <source>Connected peers</source>
+        <translation>已连接的节点</translation>
+    </message>
+    <message>
+        <source>Valid masternodes</source>
+        <translation>有效主节点</translation>
+    </message>
+    <message>
+        <source>Transactions in the memory pool</source>
+        <translation>内存池中的交易</translation>
+    </message>
+    <message>
+        <source>Staking is paused while the wallet is locked.</source>
+        <translation>钱包锁定期间，质押暂停。</translation>
+    </message>
+    <message>
+        <source>Unlock</source>
+        <translation>解锁</translation>
+    </message>
+    <message>
+        <source>Unlock the wallet for staking. Sending stays locked.</source>
+        <translation>解锁钱包以进行质押。发送功能仍保持锁定。</translation>
+    </message>
+    <message>
+        <source>Staking</source>
+        <translation>质押</translation>
+    </message>
+    <message>
+        <source>%1: off</source>
+        <translation>%1：已关闭</translation>
+    </message>
+    <message>
+        <source>Show</source>
+        <translation>显示</translation>
+    </message>
+    <message>
+        <source>Show the %1 card, where mixing is started</source>
+        <translation>显示 %1 卡片，可在其中启动混币</translation>
+    </message>
+    <message>
+        <source>No recent transactions</source>
+        <translation>没有最近交易</translation>
+    </message>
+    <message>
+        <source>Your recent transactions will appear here.</source>
+        <translation>您最近的交易将显示在这里。</translation>
+    </message>
+    <message>
+        <source>Receive</source>
+        <translation>接收</translation>
+    </message>
+    <message>
         <source>%1 Balance</source>
         <translation>%1 余额</translation>
     </message>
     <message>
         <source>Discreet mode activated for the Overview tab. To unmask the values, uncheck Settings-&gt;Discreet mode.</source>
         <translation>启用了概述选项卡的谨慎模式. 显示数值, 请取消设置-&gt;谨慎模式.</translation>
+    </message>
+    <message>
+        <source>under a minute</source>
+        <translation>不到一分钟</translation>
+    </message>
+    <message>
+        <source>1 minute</source>
+        <translation>1 分钟</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n minutes</source>
+        <translation><numerusform>%n 分钟</numerusform></translation>
+    </message>
+    <message>
+        <source>1 hour</source>
+        <translation>1 小时</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n hours</source>
+        <translation><numerusform>%n 小时</numerusform></translation>
+    </message>
+    <message>
+        <source>1 day</source>
+        <translation>1 天</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n days</source>
+        <translation><numerusform>%n 天</numerusform></translation>
+    </message>
+    <message>
+        <source>1 week</source>
+        <translation>1 周</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n weeks</source>
+        <translation><numerusform>%n 周</numerusform></translation>
+    </message>
+    <message>
+        <source>1 year</source>
+        <translation>1 年</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n years</source>
+        <translation><numerusform>%n 年</numerusform></translation>
+    </message>
+    <message>
+        <source>%1 ago</source>
+        <translation>%1前</translation>
+    </message>
+    <message>
+        <source>%1 behind</source>
+        <translation>落后 %1</translation>
+    </message>
+    <message>
+        <source>Syncing data…</source>
+        <translation>正在同步数据…</translation>
+    </message>
+    <message>
+        <source>Syncing %1%</source>
+        <translation>同步进度 %1%</translation>
+    </message>
+    <message>
+        <source>Synchronizing additional data</source>
+        <translation>正在同步附加数据</translation>
+    </message>
+    <message>
+        <source>Catching up with the blockchain</source>
+        <translation>正在追赶区块链进度</translation>
+    </message>
+    <message>
+        <source>peer</source>
+        <translation>节点</translation>
+    </message>
+    <message>
+        <source>peers</source>
+        <translation>节点</translation>
+    </message>
+    <message>
+        <source>masternode</source>
+        <translation>主节点</translation>
+    </message>
+    <message numerus="yes">
+        <source>masternodes</source>
+        <translation><numerusform>主节点</numerusform></translation>
+    </message>
+    <message>
+        <source>in mempool</source>
+        <translation>内存池中</translation>
+    </message>
+    <message>
+        <source>Night sky level: %1</source>
+        <translation>夜空等级：%1</translation>
+    </message>
+    <message>
+        <source>The highest level.</source>
+        <translation>最高等级。</translation>
+    </message>
+    <message>
+        <source>Next: %1 from %2</source>
+        <translation>下一级：%1，起始余额 %2</translation>
+    </message>
+    <message>
+        <source>Top level</source>
+        <translation>最高等级</translation>
+    </message>
+    <message>
+        <source>Next level at %1</source>
+        <translation>余额达到 %1 时进入下一级</translation>
+    </message>
+    <message>
+        <source>The night sky behind the wallet grows with the balance: %1 now.</source>
+        <translation>钱包背景中的夜空会随余额增长而丰富：目前为 %1。</translation>
+    </message>
+    <message>
+        <source>Not available</source>
+        <translation>不可用</translation>
+    </message>
+    <message>
+        <source>This wallet holds no private keys, so it cannot stake.</source>
+        <translation>此钱包不持有私钥，因此无法进行质押。</translation>
+    </message>
+    <message>
+        <source>Off</source>
+        <translation>已关闭</translation>
+    </message>
+    <message>
+        <source>The node's staking thread is not running. See debug.log.</source>
+        <translation>节点的质押线程未运行。请查看 debug.log。</translation>
+    </message>
+    <message>
+        <source>This node runs without staking (-staking=0).</source>
+        <translation>此节点已禁用质押（-staking=0）。</translation>
+    </message>
+    <message>
+        <source>Paused: wallet locked</source>
+        <translation>已暂停：钱包已锁定</translation>
+    </message>
+    <message>
+        <source>Start staking to earn rewards with your balance.</source>
+        <translation>启动质押，利用您的余额获得奖励。</translation>
+    </message>
+    <message>
+        <source>Start staking</source>
+        <translation>启动质押</translation>
+    </message>
+    <message>
+        <source>Waiting for sync</source>
+        <translation>等待同步</translation>
+    </message>
+    <message>
+        <source>Staking starts once the wallet is up to date with the network.</source>
+        <translation>钱包与网络同步完成后，质押将开始。</translation>
+    </message>
+    <message>
+        <source>Pause staking</source>
+        <translation>暂停质押</translation>
+    </message>
+    <message>
+        <source>Ready</source>
+        <translation>就绪</translation>
+    </message>
+    <message>
+        <source>No spendable balance to stake.</source>
+        <translation>没有可用于质押的可花费余额。</translation>
+    </message>
+    <message>
+        <source>None of the coins can stake right now.</source>
+        <translation>目前没有币能够参与质押。</translation>
+    </message>
+    <message>
+        <source>Looking for coins to stake.</source>
+        <translation>正在查找可用于质押的币。</translation>
+    </message>
+    <message>
+        <source>This wallet is staking. A reward comes with each block it stakes.</source>
+        <translation>此钱包正在质押。每通过质押生成一个区块，就会获得一次奖励。</translation>
+    </message>
+    <message>
+        <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
+        <translation>未成熟或持有时间过短、低于最低或高于最高质押金额，或金额恰好等于主节点保证金的币不会参与质押。</translation>
     </message>
     <message numerus="yes">
         <source>%n Rounds</source>
@@ -2162,7 +3697,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>Wallet is locked and user declined to unlock. Disabling %1.</source>
-        <translation>钱包已锁定需要用户解锁。 正在关闭%1。</translation>
+        <translation>钱包已锁定，用户拒绝解锁。正在禁用 %1。</translation>
     </message>
     <message>
         <source>Stop %1</source>
@@ -2244,6 +3779,10 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>无法签名交易: %1</translation>
     </message>
     <message>
+        <source>Cannot sign inputs while wallet is locked.</source>
+        <translation>钱包锁定时无法签署输入。</translation>
+    </message>
+    <message>
         <source>Could not sign any more inputs.</source>
         <translation>无法签名更多输入.</translation>
     </message>
@@ -2298,7 +3837,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>Pays transaction fee: </source>
-        <translation>支付交易费用:</translation>
+        <translation>支付交易费用： </translation>
     </message>
     <message>
         <source>Total Amount</source>
@@ -2349,7 +3888,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>Cannot start defcon: click-to-pay handler</source>
-        <translation>无法启动Pacplatform程序：click-to-pay handler</translation>
+        <translation>无法启动 defcon: 点击付款处理程序</translation>
     </message>
     <message>
         <source>URI handling</source>
@@ -2366,12 +3905,12 @@ Due to discontinued support, you should request the merchant to provide you with
 由于终止支持, 您应当要求商家为您提供一个兼容BIP21的URI, 或使用仍支持BIP70的钱包.</translation>
     </message>
     <message>
-        <source>URI cannot be parsed! This can be caused by an invalid Pacplatform address or malformed URI parameters.</source>
-        <translation>URI不能被解析! 原因可能是无效的Pacplatform地址或URI参数格式错误。</translation>
+        <source>URI cannot be parsed! This can be caused by an invalid DeFCoN address or malformed URI parameters.</source>
+        <translation>无法解析 URI！这可能是由于 DeFCoN 地址无效或 URI 参数格式错误。</translation>
     </message>
     <message>
         <source>Payment request file handling</source>
-        <translation>付款请求文件处理 </translation>
+        <translation>付款请求文件处理</translation>
     </message>
 </context>
 <context>
@@ -2384,7 +3923,7 @@ Due to discontinued support, you should request the merchant to provide you with
     <message>
         <source>Ping</source>
         <extracomment>Title of Peers Table column which indicates the current latency of the connection with the peer.</extracomment>
-        <translation> Ping</translation>
+        <translation>延迟</translation>
     </message>
     <message>
         <source>Peer</source>
@@ -2577,15 +4116,15 @@ Due to discontinued support, you should request the merchant to provide you with
     </message>
     <message>
         <source>%1 didn't yet exit safely…</source>
-        <translation>%1 尚未安全退出</translation>
+        <translation>%1 尚未安全退出…</translation>
     </message>
     <message>
         <source>Amount</source>
         <translation>金额</translation>
     </message>
     <message>
-        <source>Enter a Pacplatform address (e.g. %1)</source>
-        <translation>输入一个Pacplatform地址(例如 %1)</translation>
+        <source>Enter a DeFCoN address (e.g. %1)</source>
+        <translation>输入 DeFCoN 地址（例如 %1）</translation>
     </message>
     <message>
         <source>Appearance Setup</source>
@@ -2722,6 +4261,162 @@ Due to discontinued support, you should request the merchant to provide you with
         <source>unknown</source>
         <translation>未知</translation>
     </message>
+    <message>
+        <source>Descriptor wallets do not support the legacy importmulti path. Import the profile descriptor manually with importdescriptors.</source>
+        <translation>描述符钱包不支持旧版 importmulti 导入方式。请通过 importdescriptors 手动导入方案的描述符。</translation>
+    </message>
+    <message>
+        <source>Wallet type could not be determined. No legacy watch-only import was attempted.</source>
+        <translation>无法确定钱包类型。未尝试旧格式的仅限查看导入。</translation>
+    </message>
+    <message>
+        <source>Wallet is locked. Unlock the wallet before importing the multisig setup.</source>
+        <translation>钱包已锁定。导入多重签名配置前，请解锁钱包。</translation>
+    </message>
+    <message>
+        <source>Watch-only import failed: %1</source>
+        <translation>仅限查看导入失败：%1</translation>
+    </message>
+    <message>
+        <source>Not a multisig setup file (unexpected type).</source>
+        <translation>这不是多重签名配置文件（类型不符）。</translation>
+    </message>
+    <message>
+        <source>Setup file was created by a newer version.</source>
+        <translation>配置文件由更新的版本创建。</translation>
+    </message>
+    <message>
+        <source>Setup file is missing required fields or is inconsistent.</source>
+        <translation>配置文件缺少必填字段，或内容不一致。</translation>
+    </message>
+    <message>
+        <source>Setup file key #%1 is not a valid hex public key.</source>
+        <translation>配置文件中的第 %1 个密钥不是有效的十六进制公钥。</translation>
+    </message>
+    <message>
+        <source>Setup file key #%1 is a duplicate.</source>
+        <translation>配置文件中的第 %1 个密钥重复。</translation>
+    </message>
+    <message>
+        <source>This setup is for %1 but this node runs on %2.</source>
+        <translation>此配置适用于 %1，但此节点运行于 %2。</translation>
+    </message>
+    <message>
+        <source>Mainnet</source>
+        <translation>主网</translation>
+    </message>
+    <message>
+        <source>Testnet</source>
+        <translation>测试网</translation>
+    </message>
+    <message>
+        <source>Regtest</source>
+        <translation>Regtest</translation>
+    </message>
+    <message>
+        <source>Devnet</source>
+        <translation>Devnet</translation>
+    </message>
+    <message>
+        <source>Address valid</source>
+        <translation>地址有效</translation>
+    </message>
+    <message>
+        <source>not a valid address on this network</source>
+        <translation>不是此网络上的有效地址</translation>
+    </message>
+    <message>
+        <source>Redeem script matches the address</source>
+        <translation>赎回脚本与地址匹配</translation>
+    </message>
+    <message>
+        <source>Redeem script does not match the address</source>
+        <translation>赎回脚本与地址不匹配</translation>
+    </message>
+    <message>
+        <source>do not use this profile</source>
+        <translation>请勿使用此方案</translation>
+    </message>
+    <message>
+        <source>Redeem script</source>
+        <translation>赎回脚本</translation>
+    </message>
+    <message>
+        <source>not stored in this profile</source>
+        <translation>未保存在此方案中</translation>
+    </message>
+    <message>
+        <source>Required signatures</source>
+        <translation>所需签名数</translation>
+    </message>
+    <message>
+        <source>%1 of %2</source>
+        <translation>%1/%2</translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <translation>网络</translation>
+    </message>
+    <message>
+        <source>not recorded in this profile</source>
+        <translation>未记录在此方案中</translation>
+    </message>
+    <message>
+        <source>profile is for %1, this node runs on %2</source>
+        <translation>方案适用于 %1，此节点运行于 %2</translation>
+    </message>
+    <message>
+        <source>Wallet can sign</source>
+        <translation>钱包可签名</translation>
+    </message>
+    <message>
+        <source>no wallet loaded</source>
+        <translation>未加载钱包</translation>
+    </message>
+    <message>
+        <source>Tracked by wallet</source>
+        <translation>钱包已跟踪</translation>
+    </message>
+    <message>
+        <source>import as watch-only to see the balance and build spends</source>
+        <translation>以仅限查看方式导入，以查看余额并构建花费交易</translation>
+    </message>
+    <message>
+        <source>could not query the wallet</source>
+        <translation>无法查询钱包</translation>
+    </message>
+    <message>
+        <source>no — private keys are disabled</source>
+        <translation>否 — 私钥已禁用</translation>
+    </message>
+    <message>
+        <source>yes — holds %1 of %2 keys (%3)</source>
+        <translation>是 — 持有 %1/%2 个密钥（%3）</translation>
+    </message>
+    <message>
+        <source>no cosigner key in this wallet — you can still track it and pass the PSBT on</source>
+        <translation>此钱包中没有签名方的密钥，但仍可跟踪地址并转交 PSBT</translation>
+    </message>
+    <message>
+        <source>The payload is too large for a QR code (%1 characters). Use file or clipboard transfer instead.</source>
+        <translation>数据过大，无法放入二维码（%1 个字符）。请改用文件或剪贴板传输。</translation>
+    </message>
+    <message>
+        <source>This build was compiled without QR code support.</source>
+        <translation>此版本编译时未启用二维码支持。</translation>
+    </message>
+    <message>
+        <source>Save image…</source>
+        <translation>保存图像…</translation>
+    </message>
+    <message>
+        <source>Copy image</source>
+        <translation>复制图像</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
 </context>
 <context>
     <name>QRDialog</name>
@@ -2857,8 +4552,16 @@ Due to discontinued support, you should request the merchant to provide you with
         <translation>发送</translation>
     </message>
     <message>
+        <source>Co&amp;mmands</source>
+        <translation>命令(&amp;M)</translation>
+    </message>
+    <message>
         <source>&amp;Peers</source>
         <translation>&amp;节点</translation>
+    </message>
+    <message>
+        <source>Number of Masternodes</source>
+        <translation>主节点数量</translation>
     </message>
     <message>
         <source>Wallet:</source>
@@ -2988,14 +4691,6 @@ Due to discontinued support, you should request the merchant to provide you with
     <message>
         <source>To specify a non-default location of the blocks directory use the '%1' option.</source>
         <translation>要指定的区块目录不是默认路径, 请使用 '%1' 选项.</translation>
-    </message>
-    <message>
-        <source>Number of regular Masternodes</source>
-        <translation>常规主节点数量</translation>
-    </message>
-    <message>
-        <source>Number of EvoNodes</source>
-        <translation>进化节点数量</translation>
     </message>
     <message>
         <source>Current block height</source>
@@ -3266,6 +4961,10 @@ Due to discontinued support, you should request the merchant to provide you with
         <translation>Ctrl+Shift+C</translation>
     </message>
     <message>
+        <source>Ctrl+Shift+H</source>
+        <translation>Ctrl+Shift+H</translation>
+    </message>
+    <message>
         <source>Ctrl+Shift+G</source>
         <translation>Ctrl+Shift+G</translation>
     </message>
@@ -3280,6 +4979,92 @@ Due to discontinued support, you should request the merchant to provide you with
     <message>
         <source>Executing command using "%1" wallet</source>
         <translation>使用 "%1" 钱包执行命令</translation>
+    </message>
+    <message>
+        <source>lists the commands by topic</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>按主题列出命令</translation>
+    </message>
+    <message>
+        <source>describes one command</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>说明一个命令</translation>
+    </message>
+    <message>
+        <source>describes one subcommand</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>说明一个子命令</translation>
+    </message>
+    <message>
+        <source>the state of the selected wallet</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>所选钱包的状态</translation>
+    </message>
+    <message>
+        <source>the staking state of every wallet on the staking list</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>质押列表中每个钱包的质押状态</translation>
+    </message>
+    <message>
+        <source>how far this node has synced</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>此节点的同步进度</translation>
+    </message>
+    <message>
+        <source>how many masternodes this node knows of</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>此节点已知的主节点数量</translation>
+    </message>
+    <message>
+        <source>what this node's Sentinel probe sees in the current epoch</source>
+        <extracomment>help-console: what typing the command on the left does.</extracomment>
+        <translation>此节点的 Sentinel 探针在当前纪元观察到的情况</translation>
+    </message>
+    <message>
+        <source>Getting started</source>
+        <translation>入门</translation>
+    </message>
+    <message>
+        <source>A command that works on a wallet uses the wallet chosen in the Wallet list above. While only one wallet is loaded the list stays hidden, and that wallet is used.</source>
+        <translation>对钱包进行操作的命令会使用上方“钱包”列表中选中的钱包。如果只加载了一个钱包，该列表会隐藏，并使用这个钱包。</translation>
+    </message>
+    <message>
+        <source>The examples in the help of a command are written for %1 and for curl. Here, type only the command and its arguments.</source>
+        <extracomment>help-console. %1 is the name of the command-line client.</extracomment>
+        <translation>命令帮助中的示例适用于 %1 和 curl。在此处只需输入命令及其参数。</translation>
+    </message>
+    <message>
+        <source>How to type a command</source>
+        <translation>如何输入命令</translation>
+    </message>
+    <message>
+        <source>example:</source>
+        <extracomment>help-console: the label in front of an example command.</extracomment>
+        <translation>示例：</translation>
+    </message>
+    <message>
+        <source>This console accepts RPC commands using the standard syntax.</source>
+        <translation>此控制台接受使用标准语法的 RPC 命令。</translation>
+    </message>
+    <message>
+        <source>This console can also accept RPC commands using the parenthesized syntax.</source>
+        <translation>此控制台也接受使用圆括号语法的 RPC 命令。</translation>
+    </message>
+    <message>
+        <source>Commands may be nested when specified with the parenthesized syntax.</source>
+        <translation>使用圆括号语法时，命令可以嵌套。</translation>
+    </message>
+    <message>
+        <source>A space or a comma can be used to delimit arguments for either syntax.</source>
+        <translation>两种语法都可以使用空格或逗号分隔参数。</translation>
+    </message>
+    <message>
+        <source>Named results can be queried with a non-quoted key string in brackets using the parenthesized syntax.</source>
+        <translation>使用圆括号语法时，可将不带引号的键名放在方括号中，查询具名结果。</translation>
+    </message>
+    <message>
+        <source>Results without keys can be queried with an integer in brackets using the parenthesized syntax.</source>
+        <translation>使用圆括号语法时，可将整数放在方括号中，查询没有键名的结果。</translation>
     </message>
     <message>
         <source>detecting: peer could be v1 or v2</source>
@@ -3303,7 +5088,7 @@ Due to discontinued support, you should request the merchant to provide you with
     </message>
     <message>
         <source>1 d&amp;ay</source>
-        <translation>1 天</translation>
+        <translation>1 天(&amp;A)</translation>
     </message>
     <message>
         <source>&amp;Copy IP/Netmask</source>
@@ -3331,6 +5116,11 @@ For more information on using this console, type %6.
         <source>Executing…</source>
         <extracomment>A console message indicating an entered command is currently being executed.</extracomment>
         <translation>执行中...</translation>
+    </message>
+    <message>
+        <source>Warning: the reply below can contain private keys or a recovery phrase. Anyone who sees them can take your coins. Never share them, and press %1 to clear the console when you are done.</source>
+        <extracomment>A console warning above a reply that can show a private key, a seed or a recovery phrase. %1 is the shortcut that clears the console.</extracomment>
+        <translation>警告：下方回复可能包含私钥或恢复短语。任何看到这些内容的人都可以拿走您的币。切勿分享这些内容，操作完成后请按 %1 清空控制台。</translation>
     </message>
     <message>
         <source>(peer: %1)</source>
@@ -3368,10 +5158,6 @@ For more information on using this console, type %6.
 <context>
     <name>ReceiveCoinsDialog</name>
     <message>
-        <source>An optional message to attach to the payment request, which will be displayed when the request is opened. Note: The message will not be sent with the payment over the Pacplatform network.</source>
-        <translation>附加在付款要求中的讯息，可以不填，打开要求内容时会显示。注意：这个讯息不会随着付款送到Pacplatform网路上。</translation>
-    </message>
-    <message>
         <source>&amp;Message:</source>
         <translation>消息(&amp;M)：</translation>
     </message>
@@ -3380,12 +5166,12 @@ For more information on using this console, type %6.
         <translation>可为新建的收款地址添加一个可选标签。</translation>
     </message>
     <message>
-        <source>An optional message to attach to the payment request, which will be displayed when the request is opened.&lt;br&gt;Note: The message will not be sent with the payment over the Pacplatform network.</source>
-        <translation>附加在付款要求中的讯息，可以不填，打开要求内容时会显示。&lt;br&gt;注意：这个讯息不会随着付款送到Pacplatform网路上。</translation>
-    </message>
-    <message>
         <source>An optional label to associate with the new receiving address (used by you to identify an invoice).  It is also attached to the payment request.</source>
         <translation>与新得接收地址关联的可选标签 (您可用以识别账单). 它也附在付款请求中.</translation>
+    </message>
+    <message>
+        <source>An optional message to attach to the payment request, which will be displayed when the request is opened.&lt;br&gt;Note: The message will not be sent with the payment over the DeFCoN network.</source>
+        <translation>可附加到付款请求的消息，打开请求时会显示。&lt;br&gt;注意：此消息不会随付款通过 DeFCoN 网络发送。</translation>
     </message>
     <message>
         <source>Use this form to request payments. All fields are &lt;b&gt;optional&lt;/b&gt;.</source>
@@ -3440,12 +5226,16 @@ For more information on using this console, type %6.
         <translation>输入标签以关联一个新的接收地址</translation>
     </message>
     <message>
+        <source>An optional message to attach to the payment request, which will be displayed when the request is opened. Note: The message will not be sent with the payment over the DeFCoN network.</source>
+        <translation>可附加到付款请求的消息，打开请求时会显示。注意：此消息不会随付款通过 DeFCoN 网络发送。</translation>
+    </message>
+    <message>
         <source>Enter a message to attach to the payment request</source>
         <translation>输入消息以添加到支付请求中</translation>
     </message>
     <message>
         <source>Copy &amp;URI</source>
-        <translation>复制 &amp; 链接</translation>
+        <translation>复制 URI(&amp;U)</translation>
     </message>
     <message>
         <source>&amp;Copy address</source>
@@ -3457,15 +5247,71 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Copy &amp;message</source>
-        <translation>复制 &amp;消息 </translation>
+        <translation>复制消息(&amp;M)</translation>
     </message>
     <message>
         <source>Copy &amp;amount</source>
         <translation>复制 &amp;金额</translation>
     </message>
     <message>
+        <source>QR code of the receiving address</source>
+        <translation>收款地址二维码</translation>
+    </message>
+    <message>
+        <source>Your receiving address</source>
+        <translation>您的收款地址</translation>
+    </message>
+    <message>
+        <source>Edit label</source>
+        <translation>编辑标签</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>复制</translation>
+    </message>
+    <message>
+        <source>Copy the address to the clipboard</source>
+        <translation>将地址复制到剪贴板</translation>
+    </message>
+    <message>
+        <source>New address</source>
+        <translation>新地址</translation>
+    </message>
+    <message>
+        <source>Get a new receiving address; the current one keeps working</source>
+        <translation>获取新的收款地址；当前地址仍可使用</translation>
+    </message>
+    <message>
+        <source>Request a specific amount</source>
+        <translation>请求指定金额</translation>
+    </message>
+    <message>
+        <source>Show the form for a payment request with an amount and a label</source>
+        <translation>显示带有金额和标签的付款请求表单</translation>
+    </message>
+    <message>
+        <source>No payment requests yet</source>
+        <translation>尚无付款请求</translation>
+    </message>
+    <message>
+        <source>No receiving address yet.</source>
+        <translation>尚无收款地址。</translation>
+    </message>
+    <message>
+        <source>Address copied</source>
+        <translation>地址已复制</translation>
+    </message>
+    <message>
         <source>Could not unlock wallet.</source>
         <translation>无法解锁钱包.</translation>
+    </message>
+    <message>
+        <source>Receive DeFCoN</source>
+        <translation>接收 DeFCoN</translation>
+    </message>
+    <message>
+        <source>Share this address to get paid.</source>
+        <translation>分享此地址以收款。</translation>
     </message>
     <message>
         <source>Could not generate new address</source>
@@ -3613,10 +5459,6 @@ For more information on using this console, type %6.
         <translation>交易手续费：</translation>
     </message>
     <message>
-        <source>When there is less transaction volume than space in the blocks, miners as well as relaying nodes may enforce a minimum fee. Paying only this minimum fee is just fine, but be aware that this can result in a never confirming transaction once there is more demand for dash transactions than the network can process.</source>
-        <translation>当交易量小于区块空间时, 矿工和中继节点或许会强制收取最低费用. 仅支付最低费用也可以, 但请注意, 一旦Pacplatform交易的需求超出了网络的处理能力, 则会导致这笔交易永远无法被确认.</translation>
-    </message>
-    <message>
         <source>A too low fee might result in a never confirming transaction (read the tooltip)</source>
         <translation>过低的交易手续费也许会导致交易永远无法被确认 (阅读提示信息)</translation>
     </message>
@@ -3655,6 +5497,10 @@ For more information on using this console, type %6.
     <message>
         <source>Hide</source>
         <translation>隐藏</translation>
+    </message>
+    <message>
+        <source>When there is less transaction volume than space in the blocks, miners as well as relaying nodes may enforce a minimum fee. Paying only this minimum fee is just fine, but be aware that this can result in a never confirming transaction once there is more demand for DeFCoN transactions than the network can process.</source>
+        <translation>当交易量小于区块可用空间时，矿工和中继节点可能会规定最低费用。仅支付这笔最低费用通常没有问题，但请注意：一旦 DeFCoN 交易需求超过网络处理能力，这可能导致交易始终无法确认。</translation>
     </message>
     <message>
         <source>Recommended:</source>
@@ -3758,7 +5604,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source> from wallet '%1'</source>
-        <translation>来自钱包 '%1'</translation>
+        <translation> 来自钱包 '%1'</translation>
     </message>
     <message>
         <source>%1 to '%2'</source>
@@ -3801,10 +5647,6 @@ For more information on using this console, type %6.
         <translation>提醒: 使用 %1与%2或更多输入不利于您的隐私保护，并不推荐</translation>
     </message>
     <message>
-        <source>Click to learn more</source>
-        <translation>点击了解更多</translation>
-    </message>
-    <message>
         <source>Total Amount</source>
         <translation>总金额</translation>
     </message>
@@ -3841,6 +5683,10 @@ For more information on using this console, type %6.
         <translation>发送</translation>
     </message>
     <message>
+        <source>Creates a Partially Signed Blockchain Transaction (PSBT) for use with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.</source>
+        <translation>创建部分签名的区块链交易（PSBT），供离线 %1 钱包或兼容 PSBT 的硬件钱包等使用。</translation>
+    </message>
+    <message>
         <source>To review recipient list click "Show Details…"</source>
         <translation>查看收件人列表请点击 "显示详细信息…"</translation>
     </message>
@@ -3848,6 +5694,34 @@ For more information on using this console, type %6.
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>部分签名的交易 (二进制)</translation>
+    </message>
+    <message>
+        <source>Send DeFCoN</source>
+        <translation>发送 DeFCoN</translation>
+    </message>
+    <message>
+        <source>Send to one or more recipients.</source>
+        <translation>发送给一个或多个收款人。</translation>
+    </message>
+    <message>
+        <source>Payment summary</source>
+        <translation>付款摘要</translation>
+    </message>
+    <message>
+        <source>Recipients</source>
+        <translation>收款人</translation>
+    </message>
+    <message>
+        <source>Amount entered</source>
+        <translation>输入的金额</translation>
+    </message>
+    <message>
+        <source>Fee rate</source>
+        <translation>费率</translation>
+    </message>
+    <message>
+        <source>The final transaction fee is shown in the confirmation dialog.</source>
+        <translation>最终交易费用会显示在确认窗口中。</translation>
     </message>
     <message>
         <source>The recipient address is not valid. Please recheck.</source>
@@ -3882,8 +5756,8 @@ For more information on using this console, type %6.
         <translation><numerusform>预计在%n 个区块内开始确认。</numerusform></translation>
     </message>
     <message>
-        <source>Warning: Invalid Pacplatform address</source>
-        <translation>警告：无效的Pacplatform地址</translation>
+        <source>Warning: Invalid DeFCoN address</source>
+        <translation>警告：DeFCoN 地址无效</translation>
     </message>
     <message>
         <source>Warning: Unknown change address</source>
@@ -3907,10 +5781,6 @@ For more information on using this console, type %6.
     <message>
         <source>Pay &amp;To:</source>
         <translation>付给(&amp;T)：</translation>
-    </message>
-    <message>
-        <source>The Pacplatform address to send the payment to</source>
-        <translation>选择发款地址</translation>
     </message>
     <message>
         <source>Choose previously used address</source>
@@ -3942,15 +5812,11 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>A&amp;mount:</source>
-        <translation>金额(&amp;M)</translation>
+        <translation>金额(&amp;M)：</translation>
     </message>
     <message>
         <source>The amount to send in the selected unit</source>
         <translation>在所选单位中发送的金额</translation>
-    </message>
-    <message>
-        <source>The fee will be deducted from the amount being sent. The recipient will receive a lower amount of Pacplatform than you enter in the amount field. If multiple recipients are selected, the fee is split equally.</source>
-        <translation>手续费将从发送金额中扣除。接收者将收到的Pacplatform金额将会比您在金额字段中输入的金额为少。如果选择了多个收款人，该费用将会被平均摊分。</translation>
     </message>
     <message>
         <source>S&amp;ubtract fee from amount</source>
@@ -3965,10 +5831,6 @@ For more information on using this console, type %6.
         <translation>消息：</translation>
     </message>
     <message>
-        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the Pacplatform network.</source>
-        <translation>附加在Pacplatform付款协议URI中的信息，会和交易内容一并存储，可供您参考。提示：此信息不会发送到Pacplatform网络上。</translation>
-    </message>
-    <message>
         <source>This is an unauthenticated payment request.</source>
         <translation>这是一个未经验证的支付请求。</translation>
     </message>
@@ -3981,8 +5843,24 @@ For more information on using this console, type %6.
         <translation>支付给：</translation>
     </message>
     <message>
+        <source>The DeFCoN address to send the payment to</source>
+        <translation>接收付款的 DeFCoN 地址</translation>
+    </message>
+    <message>
+        <source>The fee will be deducted from the amount being sent. The recipient will receive a lower amount of DeFCoN than you enter in the amount field. If multiple recipients are selected, the fee is split equally.</source>
+        <translation>费用将从发送金额中扣除。收款人收到的 DeFCoN 会少于您在金额栏中输入的数额。如果选择了多个收款人，费用将平均分摊。</translation>
+    </message>
+    <message>
+        <source>A message that was attached to the defcon: URI which will be stored with the transaction for your reference. Note: This message will not be sent over the DeFCoN network.</source>
+        <translation>附加到 defcon: URI 的消息，将随交易保存以供参考。注意：此消息不会通过 DeFCoN 网络发送。</translation>
+    </message>
+    <message>
         <source>Memo:</source>
         <translation>便条：</translation>
+    </message>
+    <message>
+        <source>Recipient</source>
+        <translation>收款人</translation>
     </message>
 </context>
 <context>
@@ -4005,14 +5883,6 @@ For more information on using this console, type %6.
     <message>
         <source>&amp;Sign Message</source>
         <translation>签名消息(&amp;S)</translation>
-    </message>
-    <message>
-        <source>You can sign messages/agreements with your addresses to prove you can receive Pacplatform sent to them. Be careful not to sign anything vague or random, as phishing attacks may try to trick you into signing your identity over to them. Only sign fully-detailed statements you agree to.</source>
-        <translation>您可以用自己的地址签署信息/协议，来证明您对地址的所有权。但是请小心，不要签署语意含糊不清的内容，因为钓鱼式诈骗可能会用骗您签署的手法来冒充是您。只有在语句中的细节您都同意时才签署。</translation>
-    </message>
-    <message>
-        <source>The Pacplatform address to sign the message with</source>
-        <translation>对此地址进行签名</translation>
     </message>
     <message>
         <source>Choose previously used address</source>
@@ -4043,10 +5913,6 @@ For more information on using this console, type %6.
         <translation>复制当前签名至剪切板</translation>
     </message>
     <message>
-        <source>Sign the message to prove you own this Pacplatform address</source>
-        <translation>签署信息证明您拥有此Pacplatform地址</translation>
-    </message>
-    <message>
         <source>Sign &amp;Message</source>
         <translation>消息签名(&amp;M)</translation>
     </message>
@@ -4064,11 +5930,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Enter the receiver's address, message (ensure you copy line breaks, spaces, tabs, etc. exactly) and signature below to verify the message. Be careful not to read more into the signature than what is in the signed message itself, to avoid being tricked by a man-in-the-middle attack. Note that this only proves the signing party receives with the address, it cannot prove sendership of any transaction!</source>
-        <translation>请在下面输入接收者地址、消息（确保换行符、空格符、制表符等完全相同）和签名以验证消息。请仔细核对签名信息，以提防中间人攻击。请注意，这只是证明接收方签名的地址，它不能证明任何交易！</translation>
-    </message>
-    <message>
-        <source>The Pacplatform address the message was signed with</source>
-        <translation>已签名的地址</translation>
+        <translation>在下方输入接收方地址、消息（请确保换行、空格、制表符等完全一致）和签名，以验证消息。请勿将签名理解为超出已签署消息本身内容的证明，以免受到中间人攻击。注意：这只能证明签名方能够通过该地址收款，不能证明其发送过任何交易！</translation>
     </message>
     <message>
         <source>The signed message to verify</source>
@@ -4077,10 +5939,6 @@ For more information on using this console, type %6.
     <message>
         <source>The signature given when the message was signed</source>
         <translation>签名消息时所用的签名</translation>
-    </message>
-    <message>
-        <source>Verify the message to ensure it was signed with the specified Pacplatform address</source>
-        <translation>验证信息用来确保此被签署信息对应相对的Pacplatform地址</translation>
     </message>
     <message>
         <source>Verify &amp;Message</source>
@@ -4095,8 +5953,24 @@ For more information on using this console, type %6.
         <translation>输入要签名的信息</translation>
     </message>
     <message>
+        <source>You can sign messages/agreements with your addresses to prove you can receive DeFCoN sent to them. Be careful not to sign anything vague or random, as phishing attacks may try to trick you into signing your identity over to them. Only sign fully-detailed statements you agree to.</source>
+        <translation>您可以使用自己的地址签署消息或协议，以证明您能够接收发送到这些地址的 DeFCoN。请勿签署含糊或随意的内容，钓鱼攻击可能诱骗您签署可被用来冒充您身份的文本。只签署内容完整且您同意的声明。</translation>
+    </message>
+    <message>
+        <source>The DeFCoN address to sign the message with</source>
+        <translation>用于签署消息的 DeFCoN 地址</translation>
+    </message>
+    <message>
         <source>Click "Sign Message" to generate signature</source>
         <translation>单击“签名消息“产生签名。</translation>
+    </message>
+    <message>
+        <source>Sign the message to prove you own this DeFCoN address</source>
+        <translation>签署消息，以证明您拥有此 DeFCoN 地址</translation>
+    </message>
+    <message>
+        <source>The DeFCoN address the message was signed with</source>
+        <translation>签署该消息所用的 DeFCoN 地址</translation>
     </message>
     <message>
         <source>Enter a message to be verified</source>
@@ -4105,6 +5979,10 @@ For more information on using this console, type %6.
     <message>
         <source>Enter a signature for the message to be verified</source>
         <translation>输入要验证的消息的签名</translation>
+    </message>
+    <message>
+        <source>Verify the message to ensure it was signed with the specified DeFCoN address</source>
+        <translation>验证消息，确认其是否由指定的 DeFCoN 地址签署</translation>
     </message>
     <message>
         <source>The entered address is invalid.</source>
@@ -4157,6 +6035,53 @@ For more information on using this console, type %6.
     <message>
         <source>Message verified.</source>
         <translation>消息验证成功。</translation>
+    </message>
+</context>
+<context>
+    <name>SkyTiers</name>
+    <message>
+        <source>Starfield</source>
+        <translation>星野</translation>
+    </message>
+    <message>
+        <source>Night Sky</source>
+        <translation>夜空</translation>
+    </message>
+    <message>
+        <source>Constellations</source>
+        <translation>星座</translation>
+    </message>
+    <message>
+        <source>Milky Way</source>
+        <translation>银河</translation>
+    </message>
+    <message>
+        <source>Saturn</source>
+        <translation>土星</translation>
+    </message>
+    <message>
+        <source>Jupiter</source>
+        <translation>木星</translation>
+    </message>
+    <message>
+        <source>Ice Giant</source>
+        <translation>冰巨星</translation>
+    </message>
+    <message>
+        <source>Nebula</source>
+        <translation>星云</translation>
+    </message>
+    <message>
+        <source>Galaxy</source>
+        <translation>星系</translation>
+    </message>
+    <message>
+        <source>Deep Space</source>
+        <translation>深空</translation>
+    </message>
+    <message>
+        <source>DeFCoN Universe</source>
+        <translation>DeFCoN 宇宙</translation>
     </message>
 </context>
 <context>
@@ -4236,6 +6161,150 @@ For more information on using this console, type %6.
         <translation>经即时支付验证</translation>
     </message>
     <message>
+        <source>Staking with consolidation</source>
+        <translation>质押并合并</translation>
+    </message>
+    <message>
+        <source>Staking details</source>
+        <translation>质押详情</translation>
+    </message>
+    <message>
+        <source>%1 existing outputs were used and combined into 1 new output, reducing the UTXO count by %2.</source>
+        <translation>使用了 %1 个现有输出，并合并为 1 个新输出，UTXO 数量减少了 %2 个。</translation>
+    </message>
+    <message>
+        <source>%1 existing outputs were used and combined into %2 new outputs, reducing the UTXO count by %3.</source>
+        <translation>使用了 %1 个现有输出，并合并为 %2 个新输出，UTXO 数量减少了 %3 个。</translation>
+    </message>
+    <message>
+        <source>1 existing output was used to create 1 new output. The UTXO count is unchanged.</source>
+        <translation>使用了 1 个现有输出创建 1 个新输出。UTXO 数量不变。</translation>
+    </message>
+    <message>
+        <source>%1 existing outputs were used to create %2 new outputs. The UTXO count is unchanged.</source>
+        <translation>使用了 %1 个现有输出创建 %2 个新输出。UTXO 数量不变。</translation>
+    </message>
+    <message>
+        <source>1 existing output was split into %1 new outputs, increasing the UTXO count by %2.</source>
+        <translation>将 1 个现有输出拆分为 %1 个新输出，UTXO 数量增加了 %2 个。</translation>
+    </message>
+    <message>
+        <source>%1 existing outputs were used to create %2 new outputs, increasing the UTXO count by %3.</source>
+        <translation>使用了 %1 个现有输出创建 %2 个新输出，UTXO 数量增加了 %3 个。</translation>
+    </message>
+    <message>
+        <source>This transaction is not currently confirmed in the active chain. The changes below are not a confirmed consolidation.</source>
+        <translation>此交易目前尚未在活动链中确认。下方变更并非已确认的合并。</translation>
+    </message>
+    <message>
+        <source>Existing coins used</source>
+        <translation>使用的现有币</translation>
+    </message>
+    <message>
+        <source>Unknown: some previous outputs are unavailable in this wallet</source>
+        <translation>未知：此钱包中缺少部分先前输出</translation>
+    </message>
+    <message>
+        <source>Staking reward</source>
+        <translation>质押奖励</translation>
+    </message>
+    <message>
+        <source>Cannot be calculated from the available input records</source>
+        <translation>无法根据现有输入记录计算</translation>
+    </message>
+    <message>
+        <source>New output total</source>
+        <translation>新输出总额</translation>
+    </message>
+    <message>
+        <source>No separate consolidation fee was deducted.</source>
+        <translation>未扣除单独的合并费用。</translation>
+    </message>
+    <message>
+        <source>The amounts below describe the whole transaction. This wallet may own or watch only part of it.</source>
+        <translation>下方金额描述整笔交易。此钱包可能仅拥有或查看其中一部分。</translation>
+    </message>
+    <message>
+        <source>Multiple source addresses</source>
+        <translation>多个来源地址</translation>
+    </message>
+    <message>
+        <source>Inputs from %1 addresses were combined, linking them on the blockchain.</source>
+        <translation>来自 %1 个地址的输入已合并，使这些地址在区块链上产生关联。</translation>
+    </message>
+    <message>
+        <source>Inputs used</source>
+        <translation>使用的输入</translation>
+    </message>
+    <message>
+        <source>Winning stake input</source>
+        <translation>赢得质押的输入</translation>
+    </message>
+    <message>
+        <source>Additional combined input</source>
+        <translation>额外合并的输入</translation>
+    </message>
+    <message>
+        <source>Address</source>
+        <translation>地址</translation>
+    </message>
+    <message>
+        <source>Label</source>
+        <translation>标签</translation>
+    </message>
+    <message>
+        <source>The original amount and address are unavailable in this wallet's history.</source>
+        <translation>此钱包的历史记录中没有原始金额和地址。</translation>
+    </message>
+    <message>
+        <source>Previous transaction</source>
+        <translation>上一笔交易</translation>
+    </message>
+    <message>
+        <source>New output</source>
+        <translation>新输出</translation>
+    </message>
+    <message>
+        <source>New outputs</source>
+        <translation>新输出</translation>
+    </message>
+    <message>
+        <source>Output %1</source>
+        <translation>输出 %1</translation>
+    </message>
+    <message>
+        <source>Destination address</source>
+        <translation>目标地址</translation>
+    </message>
+    <message>
+        <source>The first input won the stake.</source>
+        <translation>第一个输入赢得了质押。</translation>
+    </message>
+    <message>
+        <source>The first input won the stake. The additional input was combined afterwards and did not affect the chance of winning this block.</source>
+        <translation>第一个输入赢得了质押。额外的输入在之后才合并，并未影响赢得此区块的概率。</translation>
+    </message>
+    <message>
+        <source>The first input won the stake. The additional inputs were combined afterwards and did not affect the chance of winning this block.</source>
+        <translation>第一个输入赢得了质押。额外的输入在之后才合并，并未影响赢得此区块的概率。</translation>
+    </message>
+    <message>
+        <source>1 minute</source>
+        <translation>1 分钟</translation>
+    </message>
+    <message>
+        <source>%1 minutes</source>
+        <translation>%1 分钟</translation>
+    </message>
+    <message>
+        <source>The new output can stake again after at least &lt;b&gt;%1 confirmations&lt;/b&gt; and &lt;b&gt;%2&lt;/b&gt; from the block timestamp.</source>
+        <translation>新输出在获得至少 &lt;b&gt;%1 次确认&lt;/b&gt;，且自区块时间戳起经过至少 &lt;b&gt;%2&lt;/b&gt; 后，才能再次参与质押。</translation>
+    </message>
+    <message>
+        <source>The new outputs can stake again after at least &lt;b&gt;%1 confirmations&lt;/b&gt; and &lt;b&gt;%2&lt;/b&gt; from the block timestamp.</source>
+        <translation>这些新输出在获得至少 &lt;b&gt;%1 次确认&lt;/b&gt;，且自区块时间戳起经过至少 &lt;b&gt;%2&lt;/b&gt; 后，才能再次参与质押。</translation>
+    </message>
+    <message>
         <source>Status</source>
         <translation>状态</translation>
     </message>
@@ -4248,8 +6317,20 @@ For more information on using this console, type %6.
         <translation>源</translation>
     </message>
     <message>
+        <source>Masternode Reward</source>
+        <translation>主节点奖励</translation>
+    </message>
+    <message>
         <source>Generated</source>
         <translation>生成</translation>
+    </message>
+    <message>
+        <source>Staked (combined)</source>
+        <translation>质押（已合并）</translation>
+    </message>
+    <message>
+        <source>Staked</source>
+        <translation>质押</translation>
     </message>
     <message>
         <source>Platform Transfer</source>
@@ -4332,10 +6413,6 @@ For more information on using this console, type %6.
         <translation>交易总大小</translation>
     </message>
     <message>
-        <source>Generated coins must mature %1 blocks before they can be spent. When you generated this block, it was broadcast to the network to be added to the block chain. If it fails to get into the chain, its state will change to "not accepted" and it won't be spendable. This may occasionally happen if another node generates a block within a few seconds of yours.</source>
-        <translation>生成的Pacplatform在可以使用前必须有 %1 个成熟的区块。当您生成了此区块后，它将被广播到网络中以加入区块链。如果它未成功进入区块链，其状态将变更为“不接受”并且不可使用。这可能偶尔会发生，如果另一个节点比您早几秒钟成功生成一个区块。</translation>
-    </message>
-    <message>
         <source>Debug information</source>
         <translation>调试信息</translation>
     </message>
@@ -4352,6 +6429,18 @@ For more information on using this console, type %6.
         <translation>金额</translation>
     </message>
     <message>
+        <source>Transaction size</source>
+        <translation>交易大小</translation>
+    </message>
+    <message>
+        <source>Staked coins mature after %1 blocks before they can be spent.</source>
+        <translation>质押所得的币需要经过 %1 个区块才能成熟并花费。</translation>
+    </message>
+    <message>
+        <source> coins must mature %1 blocks before they can be spent. When you created this block, it was broadcast to the network to be added to the block chain. If it fails to get into the chain, its state will change to "not accepted" and it won't be spendable. This may occasionally happen if another node creates a block within a few seconds of yours.</source>
+        <translation>的币必须经过 %1 个区块成熟后才能花费。您创建此区块时，它已被广播到网络以加入区块链。如果未能加入区块链，其状态会变为“未被接受”，其中的币将无法花费。如果另一个节点在与您相差几秒的时间内创建了区块，偶尔会发生这种情况。</translation>
+    </message>
+    <message>
         <source>true</source>
         <translation>正确</translation>
     </message>
@@ -4362,10 +6451,6 @@ For more information on using this console, type %6.
 </context>
 <context>
     <name>TransactionDescDialog</name>
-    <message>
-        <source>This pane shows a detailed description of the transaction</source>
-        <translation>当前面板显示了交易的详细信息</translation>
-    </message>
     <message>
         <source>Details for %1</source>
         <translation>%1 详情</translation>
@@ -4395,7 +6480,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Unconfirmed</source>
-        <translation>未确认的 </translation>
+        <translation>未确认</translation>
     </message>
     <message>
         <source>Abandoned</source>
@@ -4454,8 +6539,20 @@ For more information on using this console, type %6.
         <translation>挖矿所得</translation>
     </message>
     <message>
+        <source>Staked (combined)</source>
+        <translation>质押（已合并）</translation>
+    </message>
+    <message>
+        <source>Staked</source>
+        <translation>质押</translation>
+    </message>
+    <message>
         <source>Platform Transfer</source>
         <translation>平台转移</translation>
+    </message>
+    <message>
+        <source>Masternode Reward</source>
+        <translation>主节点奖励</translation>
     </message>
     <message>
         <source>%1 Mixing</source>
@@ -4589,8 +6686,16 @@ For more information on using this console, type %6.
         <translation>平台转移</translation>
     </message>
     <message>
+        <source>Masternode Reward</source>
+        <translation>主节点奖励</translation>
+    </message>
+    <message>
         <source>Other</source>
         <translation>其他</translation>
+    </message>
+    <message>
+        <source>Staked</source>
+        <translation>质押</translation>
     </message>
     <message>
         <source>Enter address, transaction id, or label to search</source>
@@ -4599,6 +6704,18 @@ For more information on using this console, type %6.
     <message>
         <source>Min amount</source>
         <translation>最小金额</translation>
+    </message>
+    <message>
+        <source>No transactions yet</source>
+        <translation>尚无交易</translation>
+    </message>
+    <message>
+        <source>Your incoming and outgoing transactions will appear here.</source>
+        <translation>您的收款和付款交易将显示在这里。</translation>
+    </message>
+    <message>
+        <source>Receive</source>
+        <translation>接收</translation>
     </message>
     <message>
         <source>&amp;Copy address</source>
@@ -4630,11 +6747,11 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>A&amp;bandon transaction</source>
-        <translation>放弃交易</translation>
+        <translation>放弃交易(&amp;B)</translation>
     </message>
     <message>
         <source>Rese&amp;nd transaction</source>
-        <translation>重新发送交易</translation>
+        <translation>重新发送交易(&amp;N)</translation>
     </message>
     <message>
         <source>&amp;Edit address label</source>
@@ -4709,6 +6826,33 @@ For more information on using this console, type %6.
         <source>to</source>
         <translation>到</translation>
     </message>
+    <message>
+        <source>Any date</source>
+        <translation>任意日期</translation>
+    </message>
+    <message>
+        <source>Any type</source>
+        <translation>任意类型</translation>
+    </message>
+    <message>
+        <source>Show only transactions from this period</source>
+        <translation>仅显示此时间段内的交易</translation>
+    </message>
+    <message>
+        <source>Show only transactions of this type</source>
+        <translation>仅显示此类型的交易</translation>
+    </message>
+    <message>
+        <source>Show only transactions of at least this amount</source>
+        <translation>仅显示金额不低于此数值的交易</translation>
+    </message>
+</context>
+<context>
+    <name>TxViewDelegate</name>
+    <message>
+        <source>Amount: %1</source>
+        <translation>金额：%1</translation>
+    </message>
 </context>
 <context>
     <name>UnitDisplayStatusBarControl</name>
@@ -4755,6 +6899,18 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>创建一个新钱包</translation>
     </message>
     <message>
+        <source>No wallet loaded</source>
+        <translation>未加载钱包</translation>
+    </message>
+    <message>
+        <source>Open a wallet to view its information.</source>
+        <translation>打开钱包以查看其信息。</translation>
+    </message>
+    <message>
+        <source>Open wallet</source>
+        <translation>打开钱包</translation>
+    </message>
+    <message>
         <source>Error</source>
         <translation>错误</translation>
     </message>
@@ -4783,7 +6939,7 @@ Go to File &gt; Open Wallet to load a wallet.
     <name>WalletModel</name>
     <message>
         <source>Send Coins</source>
-        <translation>发送Pacplatform</translation>
+        <translation>发送币</translation>
     </message>
     <message>
         <source>default wallet</source>
@@ -4812,6 +6968,54 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Backup Wallet</source>
         <translation>备份钱包</translation>
+    </message>
+    <message>
+        <source>Transactions</source>
+        <translation>交易</translation>
+    </message>
+    <message>
+        <source>Your incoming and outgoing payments.</source>
+        <translation>您的收款和付款。</translation>
+    </message>
+    <message>
+        <source>CoinJoin</source>
+        <translation>CoinJoin</translation>
+    </message>
+    <message>
+        <source>Send coins that have been mixed, for more privacy.</source>
+        <translation>发送已混币的币，以增强隐私。</translation>
+    </message>
+    <message>
+        <source>Multisig</source>
+        <translation>多重签名</translation>
+    </message>
+    <message>
+        <source>Addresses that need several signatures to spend.</source>
+        <translation>花费资金时需要多个签名的地址。</translation>
+    </message>
+    <message>
+        <source>Masternodes</source>
+        <translation>主节点</translation>
+    </message>
+    <message>
+        <source>The masternodes of the network, and your own.</source>
+        <translation>网络上的主节点以及您自己的主节点。</translation>
+    </message>
+    <message>
+        <source>Governance</source>
+        <translation>治理</translation>
+    </message>
+    <message>
+        <source>Proposals on the network and how the votes stand.</source>
+        <translation>网络上的提案及投票情况。</translation>
+    </message>
+    <message>
+        <source>Staking</source>
+        <translation>质押</translation>
+    </message>
+    <message>
+        <source>Staking could not be started for this wallet. See debug.log for details.</source>
+        <translation>无法为此钱包启动质押。详情请查看 debug.log。</translation>
     </message>
     <message>
         <source>Backup Failed</source>
@@ -4917,6 +7121,26 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>-maxtxfee 设定了很高的金额！这是您一次交易就有可能付出的手续费。</translation>
     </message>
     <message>
+        <source> It does NOT contain the %u BLS private key(s) this wallet holds; back up the wallet file itself to keep those.</source>
+        <translation> 此文件不包含钱包持有的 %u 个 BLS 私钥；请备份钱包文件本身以保留这些私钥。</translation>
+    </message>
+    <message>
+        <source>%s corrupt. Try using the wallet tool defcon-wallet to salvage or restoring a backup.</source>
+        <translation>%s 已损坏。请尝试使用钱包工具 defcon-wallet 抢救数据，或恢复备份。</translation>
+    </message>
+    <message>
+        <source>%s file contains the ECDSA private keys from this wallet. Do not share it with anyone!</source>
+        <translation>%s 文件包含此钱包的 ECDSA 私钥。请勿与任何人分享！</translation>
+    </message>
+    <message>
+        <source>%s request to listen on port %u. This port is considered "bad" and thus it is unlikely that any DeFCoN peers connect to it. See doc/p2p-bad-ports.md for details and a full list.</source>
+        <translation>%s 请求监听端口 %u。此端口被视为“不良”端口，因此 DeFCoN 节点不太可能连接到它。详情和完整列表请参阅 doc/p2p-bad-ports.md。</translation>
+    </message>
+    <message>
+        <source>Error: Dumpfile version is not supported. This version of defcon-wallet only supports version 1 dumpfiles. Got dumpfile with version %s</source>
+        <translation>错误：不支持此转储文件版本。此版本的 defcon-wallet 仅支持版本 1 的转储文件。收到的转储文件版本为 %s</translation>
+    </message>
+    <message>
         <source>Found unconfirmed denominated outputs, will wait till they confirm to continue.</source>
         <translation>未确认的面额化输出，将等待他们确认后继续。</translation>
     </message>
@@ -4933,8 +7157,24 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>SQLite数据库: 未知的sqlite钱包架构版本 %d. 仅支持 %d 版本</translation>
     </message>
     <message>
+        <source>The -txindex upgrade started by a previous version cannot be completed. Restart with the previous version or run a full -reindex.</source>
+        <translation>无法完成由先前版本启动的 -txindex 升级。请使用先前版本重启，或执行完整的 -reindex。</translation>
+    </message>
+    <message>
         <source>Transaction index can't be disabled with governance validation enabled. Either start with -disablegovernance command line switch or enable transaction index.</source>
         <translation>管理验证启动后不能禁用交易索引. 可以使用-disablegovernance命令行选项进行关闭, 或者启用交易索引.</translation>
+    </message>
+    <message>
+        <source>Transaction needs a BLS change address, but the wallet is locked or the BLS key could not be saved.</source>
+        <translation>交易需要 BLS 找零地址，但钱包已锁定或无法保存 BLS 密钥。</translation>
+    </message>
+    <message>
+        <source>Unsupported category-specific logging level -loglevel=%s. Expected -loglevel=&lt;category&gt;:&lt;loglevel&gt;. Valid categories: %s. Valid loglevels: %s.</source>
+        <translation>不支持的分类日志级别 -loglevel=%s。预期格式为 -loglevel=&lt;category&gt;:&lt;loglevel&gt;。有效分类：%s。有效日志级别：%s。</translation>
+    </message>
+    <message>
+        <source>Warning: Outbound peers offer a chain that branches off this node's chain too far below its tip to follow automatically. If this node was upgraded late or cut off from the network, add a trusted, up-to-date peer with addnode.</source>
+        <translation>警告：出站连接的节点提供了一条分支链，其分叉点距本节点链顶端过远，无法自动跟随。如果此节点升级过晚或曾与网络断开，请使用 addnode 添加一个可信且已同步的节点。</translation>
     </message>
     <message>
         <source>Can't mix: no compatible inputs found!</source>
@@ -4943,6 +7183,30 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Entry exceeds maximum size.</source>
         <translation>条目超过最大值。</translation>
+    </message>
+    <message>
+        <source>Error reading the masternode list from the Evo database</source>
+        <translation>从 Evo 数据库读取主节点列表时出错</translation>
+    </message>
+    <message>
+        <source>Error upgrading Evo database</source>
+        <translation>升级 Evo 数据库时出错</translation>
+    </message>
+    <message>
+        <source>Error upgrading evo database for EHF</source>
+        <translation>为 EHF 升级 evo 数据库时出错</translation>
+    </message>
+    <message>
+        <source>Failed to commit Evo database</source>
+        <translation>提交 Evo 数据库失败</translation>
+    </message>
+    <message>
+        <source>Failed to reconcile Evo database with the block chain</source>
+        <translation>无法使 Evo 数据库与区块链保持一致</translation>
+    </message>
+    <message>
+        <source>Failed to repair the masternode list diffs</source>
+        <translation>修复主节点列表差异失败</translation>
     </message>
     <message>
         <source>Found enough users, signing ( waiting %s )</source>
@@ -4979,6 +7243,10 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Invalid minimum number of spork signers specified with -minsporkkeys</source>
         <translation>无效的最少数叉勺签名人以  -minsporkkeys 标识</translation>
+    </message>
+    <message>
+        <source>Listening for incoming connections failed (listen returned error %s)</source>
+        <translation>监听传入连接失败（listen 返回错误 %s）</translation>
     </message>
     <message>
         <source>Lock is already in place.</source>
@@ -5037,12 +7305,20 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>正在同步治理对象…</translation>
     </message>
     <message>
+        <source>Transaction change output index out of range</source>
+        <translation>交易找零输出索引超出范围</translation>
+    </message>
+    <message>
         <source>Unable to start HTTP server. See debug log for details.</source>
         <translation>无法启动HTTP服务，查看日志获取更多信息。</translation>
     </message>
     <message>
         <source>Unknown response.</source>
         <translation>未知响应。</translation>
+    </message>
+    <message>
+        <source>Unsupported global logging level -loglevel=%s. Valid values: %s.</source>
+        <translation>不支持的全局日志级别 -loglevel=%s。有效值：%s。</translation>
     </message>
     <message>
         <source>User Agent comment (%s) contains unsafe characters.</source>
@@ -5073,24 +7349,12 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>检测到无效脚本。</translation>
     </message>
     <message>
-        <source>%s file contains all private keys from this wallet. Do not share it with anyone!</source>
-        <translation>%s 文件包含此钱包中的所有私钥。不要与任何人分享！</translation>
-    </message>
-    <message>
         <source>Failed to create backup, file already exists! This could happen if you restarted wallet in less than 60 seconds. You can continue if you are ok with this.</source>
         <translation>无法创建备份，文件已经存在！如果您在60秒内重新启动钱包，则可能发生这种情况。如果您觉得这样没问题的话，您可以继续。</translation>
     </message>
     <message>
-        <source>Make sure to encrypt your wallet and delete all non-encrypted backups after you have verified that the wallet works!</source>
-        <translation>请确保加密您的钱包，并在验证您的钱包能够运作后删除所有未加密的备份！</translation>
-    </message>
-    <message>
         <source>More than one onion bind address is provided. Using %s for the automatically created Tor onion service.</source>
         <translation>提供了多个洋葱绑定地址, 将使用 %s 作为自动创建的 Tor 洋葱服务.</translation>
-    </message>
-    <message>
-        <source>Prune configured below the minimum of %d MiB.  Please use a higher number.</source>
-        <translation>修剪值被设置为低于最小值%d MiB。请使用更大的数值。</translation>
     </message>
     <message>
         <source>Prune: last wallet synchronisation goes beyond pruned data. You need to -reindex (download the whole blockchain again in case of pruned node)</source>
@@ -5098,7 +7362,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>The block database contains a block which appears to be from the future. This may be due to your computer's date and time being set incorrectly. Only rebuild the block database if you are sure that your computer's date and time are correct</source>
-        <translation>区块数据库包含未来的交易，这可能是由本机错误的日期时间引起。若确认本机日期时间正确，请重新建立区块数据库。</translation>
+        <translation>区块数据库中有一个区块，其时间似乎在未来。这可能是因为您的计算机日期和时间设置不正确。只有确认计算机日期和时间正确后，才应重建区块数据库</translation>
     </message>
     <message>
         <source>The transaction amount is too small to send after the fee has been deducted</source>
@@ -5277,10 +7541,6 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>文件说明符不足</translation>
     </message>
     <message>
-        <source>Prune cannot be configured with a negative value.</source>
-        <translation>修剪不能设置为负数。</translation>
-    </message>
-    <message>
         <source>Prune mode is incompatible with -disablegovernance=false.</source>
         <translation>修剪模式与 -disablegovernance=false 不兼容.</translation>
     </message>
@@ -5453,10 +7713,6 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>无法将非 HD 钱包从版本 %i 升级到版本 %i, 后者非 HD 钱包. 请使用 upgradetohd RPC</translation>
     </message>
     <message>
-        <source>Distributed under the MIT software license, see the accompanying file %s or %s</source>
-        <translation>在MIT协议下分发，参见附带的 %s 文件或 %s</translation>
-    </message>
-    <message>
         <source>Error loading %s: You can't enable HD on an already existing non-HD wallet</source>
         <translation>加载%s时出错：您不能够在非HD钱包上启用HD功能</translation>
     </message>
@@ -5475,10 +7731,6 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Error: Dumpfile identifier record is incorrect. Got "%s", expected "%s".</source>
         <translation>错误: 转储文件识别符记录不正确. 得到 "%s", 预期 "%s".</translation>
-    </message>
-    <message>
-        <source>Error: Dumpfile version is not supported. This version of bitcoin-wallet only supports version 1 dumpfiles. Got dumpfile with version %s</source>
-        <translation>错误: 转储文件版本不受支持. 此 bitcoin-wallet 的版本仅支持版本 1 的转储文件. 获得的转储文件版本为 %s.</translation>
     </message>
     <message>
         <source>Failed to rename invalid peers.dat file. Please move or delete it and try again.</source>
@@ -5523,10 +7775,6 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Please check that your computer's date and time are correct! If your clock is wrong, %s will not work properly.</source>
         <translation>请检查电脑的日期时间设置是否正确！时间错误可能会导致 %s 运行异常。</translation>
-    </message>
-    <message>
-        <source>Please contribute if you find %s useful. Visit %s for further information about the software.</source>
-        <translation>如果您认为%s对您比较有用的话，请对我们进行一些捐赠支持。请访问%s网站来获取有关这个软件的更多信息。</translation>
     </message>
     <message>
         <source>Prune mode is incompatible with -reindex-chainstate. Use full -reindex instead.</source>
@@ -5607,10 +7855,6 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Cannot write to data directory '%s'; check permissions.</source>
         <translation>无法写入数据目录 '%s'; 请检查权限.</translation>
-    </message>
-    <message>
-        <source>Copyright (C)</source>
-        <translation>版权 (C)</translation>
     </message>
     <message>
         <source>Disk space is too low!</source>
@@ -5765,16 +8009,12 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>上一次队列才被创建.</translation>
     </message>
     <message>
-        <source>%s corrupt. Try using the wallet tool dash-wallet to salvage or restoring a backup.</source>
-        <translation>%s 已损坏. 请尝试使用钱包工具 dash-wallet 来挽救或恢复备份.</translation>
+        <source>Cannot provide specific connections and have addrman find outgoing connections at the same time.</source>
+        <translation>不能在指定连接的同时，让 addrman 查找出站连接。</translation>
     </message>
     <message>
         <source>Last successful action was too recent.</source>
         <translation>上一次成功操作才完成。</translation>
-    </message>
-    <message>
-        <source>The source code is available from %s.</source>
-        <translation>源代码可以在 %s 获得。</translation>
     </message>
     <message>
         <source>The specified config file %s does not exist</source>
@@ -5783,10 +8023,6 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>The transaction amount is too small to pay the fee</source>
         <translation>交易金额太小，不足以支付交易费</translation>
-    </message>
-    <message>
-        <source>This is experimental software.</source>
-        <translation>这是一款实验软件。</translation>
     </message>
     <message>
         <source>Transaction amount too small</source>
@@ -5850,7 +8086,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>Warning: incorrect parameter %s, path must exist! Using default path.</source>
-        <translation>警告：不正确的参数 %s，路径必须存在！请使用预设路径。</translation>
+        <translation>警告：参数 %s 不正确，路径必须存在！正在使用默认路径。</translation>
     </message>
     <message>
         <source>Will retry…</source>
