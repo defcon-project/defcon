@@ -532,12 +532,22 @@ QVariant TransactionTableModel::addressColor(const TransactionRecord *wtx) const
     return GUIUtil::getThemedQColor(GUIUtil::ThemedColor::DEFAULT);
 }
 
+//! An amount the balance does not count yet -- not confirmed, or a reward
+//! still maturing -- which the table shows in brackets, as Bitcoin's and
+//! Dash's tables do. A masternode reward row is left without them, as this
+//! code always meant to (its test read the enumerator, not the row's type, so
+//! no amount ever had brackets).
+static bool AmountInBrackets(const TransactionRecord* wtx)
+{
+    return !wtx->status.countsForBalance && wtx->type != TransactionRecord::MasternodeReward;
+}
+
 QString TransactionTableModel::formatTxAmount(const TransactionRecord *wtx, bool showUnconfirmed, BitcoinUnits::SeparatorStyle separators) const
 {
     QString str = BitcoinUnits::format(walletModel->getOptionsModel()->getDisplayUnit(), wtx->credit + wtx->debit, false, separators);
     if(showUnconfirmed)
     {
-        if(!wtx->status.countsForBalance && !wtx->MasternodeReward)
+        if (AmountInBrackets(wtx))
         {
             str = QString("[") + str + QString("]");
         }
@@ -666,12 +676,10 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
                 // Abyss (U3-C): every decimal the amount has, without the
                 // trailing zeros; the exact text is the cell's tooltip. The
                 // view asks at paint time, and a theme change repaints it
-                // (QWidget::changeEvent, StyleChange). No brackets: the ones
-                // formatTxAmount means for an amount that does not count yet
-                // never show, because its test reads the MasternodeReward
-                // enumerator, not the record's type; Abyss shows what the
-                // classic table shows.
-                return AbyssUnits::number(walletModel->getOptionsModel()->getDisplayUnit(), rec->credit + rec->debit);
+                // (QWidget::changeEvent, StyleChange). An amount that does not
+                // count yet has its brackets, as in the classic table.
+                const QString number = AbyssUnits::number(walletModel->getOptionsModel()->getDisplayUnit(), rec->credit + rec->debit);
+                return AmountInBrackets(rec) ? QLatin1Char('[') + number + QLatin1Char(']') : number;
             }
             return formatTxAmount(rec, true, BitcoinUnits::SeparatorStyle::ALWAYS);
         } // no default case, so the compiler can warn about missing cases

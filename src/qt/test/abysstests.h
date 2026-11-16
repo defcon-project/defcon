@@ -35,6 +35,7 @@ private Q_SLOTS:
     void lightControlContrast();
     void abyssContrast();
     void zebraRows();
+    void transactionAmountBrackets();
     void networkBar();
     void skySuspendClock();
     void initialWindowGeometry_data();
