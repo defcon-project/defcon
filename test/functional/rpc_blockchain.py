@@ -91,6 +91,7 @@ class BlockchainTest(BitcoinTestFramework):
         self._test_waitforblockheight()
         self._test_getblock()
         assert self.nodes[0].verifychain(4, 0)
+        self._test_v231_softfork()
 
     def mine_chain(self):
         self.log.info(f"Generate {HEIGHT} blocks after the genesis block in 156 sec")
@@ -194,6 +195,27 @@ class BlockchainTest(BitcoinTestFramework):
                 },
                 'active': False},
         })
+
+    def _test_v231_softfork(self):
+        self.log.info("Test that getblockchaininfo lists the v23.1 height only where it is scheduled")
+        node = self.nodes[0]
+        # unset, as in _test_getblockchaininfo and in every build before the release
+        assert 'v231' not in node.getblockchaininfo()['softforks']
+        tip = node.getblockcount()
+        # The height names the retirement of superblocks with it, and cannot be
+        # scheduled together with mn_rr, which regtest turns on at 900.
+        for height, active in ((tip + 2, False), (tip + 1, True)):
+            self.restart_node(0, extra_args=[
+                "-txindex=0",
+                f"-testactivationheight=v231@{height}",
+                f"-testactivationheight=superblocksretired@{height}",
+                f"-testactivationheight=mn_rr@{2**31 - 1}",
+            ])
+            assert_equal(node.getblockcount(), tip)
+            assert_equal(node.getblockchaininfo()['softforks']['v231'],
+                         {'type': 'buried', 'active': active, 'height': height})
+        self.restart_node(0, extra_args=["-txindex=0"])
+        assert 'v231' not in node.getblockchaininfo()['softforks']
 
     def _test_getchaintxstats(self):
         self.log.info("Test getchaintxstats")
