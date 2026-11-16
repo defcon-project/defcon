@@ -9,6 +9,7 @@
 #include <qt/abyssunits.h>
 #include <qt/editaddressdialog.h>
 #include <qt/receiverequestdialog.h>
+#include <qt/transactionrecord.h>
 #include <qt/transactiontablemodel.h>
 #include <interfaces/node.h>
 #include <script/descriptor.h>
@@ -8439,6 +8440,112 @@ void AbyssTests::overviewRecentTooltip()
     Settle();
 }
 
+void AbyssTests::transactionAmountBrackets()
+{
+    // An amount the balance does not count yet is in brackets in the
+    // Transactions table, in every theme: a payment not yet in a block, a
+    // stake and a block reward still maturing. A confirmed payment has none,
+    // and neither has a masternode reward (the exception the code always
+    // meant). What leaves the screen (copy, export) never has them.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    const QString own = fixture.model->getAddressTableModel()->addRow(AddressTableModel::Receive, "", "");
+    QVERIFY(!own.isEmpty());
+    const CScript to_own = GetScriptForDestination(DecodeDestination(own.toStdString()));
+    const CBlockIndex* tip = WITH_LOCK(::cs_main, return fixture.chain.m_node.chainman->ActiveChain().Tip());
+    QVERIFY(tip && tip->nHeight > 20);
+    {
+        LOCK(fixture.wallet->cs_wallet);
+        fixture.wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+    const CBlockIndex* deep = tip->GetAncestor(tip->nHeight - 10);
+    QVERIFY(deep);
+    const CWalletTx::Confirmation in_tip(CWalletTx::CONFIRMED, tip->nHeight, tip->GetBlockHash(), 1);
+    const CWalletTx::Confirmation deep_down(CWalletTx::CONFIRMED, deep->nHeight, deep->GetBlockHash(), 1);
+    const auto add = [&](CMutableTransaction tx, const CWalletTx::Confirmation& confirmation) {
+        return fixture.wallet->AddToWallet(MakeTransactionRef(std::move(tx)), confirmation) != nullptr;
+    };
+    // A payment from elsewhere, not yet in a block.
+    CMutableTransaction pending;
+    pending.vin.emplace_back(COutPoint(uint256S("0400000000000000000000000000000000000000000000000000000000000000"), 0));
+    pending.vout.emplace_back(1 * COIN, to_own);
+    QVERIFY(add(pending, CWalletTx::Confirmation{}));
+    // A payment eleven blocks deep.
+    CMutableTransaction settled;
+    settled.vin.emplace_back(COutPoint(uint256S("0500000000000000000000000000000000000000000000000000000000000000"), 0));
+    settled.vout.emplace_back(2 * COIN, to_own);
+    QVERIFY(add(settled, deep_down));
+    // A stake in the tip: its first output empty, the reward to the wallet.
+    CMutableTransaction stake;
+    stake.vin.emplace_back(COutPoint(uint256S("0600000000000000000000000000000000000000000000000000000000000000"), 0));
+    // An empty output (a default CTxOut is a null one, value -1, not empty).
+    stake.vout.emplace_back(0, CScript());
+    stake.vout.emplace_back(3 * COIN, to_own);
+    QVERIFY(CTransaction(stake).IsCoinStake());
+    QVERIFY(add(stake, in_tip));
+    // Two coinbases in the tip: one pays the wallet as a masternode (its
+    // second output), the other the block reward (its first).
+    CMutableTransaction masternode;
+    masternode.vin.resize(1);
+    masternode.vin[0].prevout.SetNull();
+    masternode.vin[0].scriptSig = CScript() << tip->nHeight << OP_1;
+    masternode.vout.emplace_back(0, CScript());
+    masternode.vout.emplace_back(4 * COIN, to_own);
+    QVERIFY(CTransaction(masternode).IsMasternodeReward());
+    QVERIFY(add(masternode, in_tip));
+    CMutableTransaction mined;
+    mined.vin.resize(1);
+    mined.vin[0].prevout.SetNull();
+    mined.vin[0].scriptSig = CScript() << tip->nHeight << OP_2;
+    mined.vout.emplace_back(5 * COIN, to_own);
+    QVERIFY(CTransaction(mined).IsCoinBase());
+    QVERIFY(add(mined, in_tip));
+    Settle();
+
+    struct Row { int coins; int type; int status; bool brackets; };
+    const std::vector<Row> rows{
+        {1, TransactionRecord::RecvWithAddress, TransactionStatus::Unconfirmed, true},
+        {2, TransactionRecord::RecvWithAddress, TransactionStatus::Confirmed, false},
+        {3, TransactionRecord::Staked, TransactionStatus::Immature, true},
+        {4, TransactionRecord::MasternodeReward, TransactionStatus::Immature, false},
+        {5, TransactionRecord::Generated, TransactionStatus::Immature, true}};
+    TransactionTableModel* model = fixture.model->getTransactionTableModel();
+    QCOMPARE(model->rowCount({}), int(rows.size()));
+    const int unit = fixture.options->getDisplayUnit();
+    const auto cell = [&](int coins) {
+        for (int r = 0; r < model->rowCount({}); ++r) {
+            const QModelIndex index = model->index(r, TransactionTableModel::Amount);
+            if (index.data(TransactionTableModel::AmountRole).toLongLong() == coins * COIN) return index;
+        }
+        return QModelIndex();
+    };
+    TransactionView view;
+    view.setModel(fixture.model.get());
+    view.resize(1280, 420);
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    for (const char* theme : {"Light", "Dark", "Traditional", "Abyss"}) {
+        Theme(theme);
+        view.show(); Settle();
+        const bool abyss = qstrcmp(theme, "Abyss") == 0;
+        for (const Row& row : rows) {
+            const QString what = QString("%1, %2 coins").arg(theme).arg(row.coins);
+            const QModelIndex index = cell(row.coins);
+            QVERIFY2(index.isValid(), qPrintable(what));
+            // The case is what it says.
+            QVERIFY2(index.data(TransactionTableModel::TypeRole).toInt() == row.type, qPrintable(what + ": type " + index.data(TransactionTableModel::TypeRole).toString()));
+            QVERIFY2(index.data(TransactionTableModel::StatusRole).toInt() == row.status, qPrintable(what + ": status " + index.data(TransactionTableModel::StatusRole).toString()));
+            const CAmount amount = row.coins * COIN;
+            const QString number = abyss ? AbyssUnits::number(unit, amount) : BitcoinUnits::format(unit, amount, false, BitcoinUnits::SeparatorStyle::ALWAYS);
+            const QString shown = index.data(Qt::DisplayRole).toString();
+            QVERIFY2(shown == (row.brackets ? QLatin1Char('[') + number + QLatin1Char(']') : number), qPrintable(what + ": " + shown));
+            // What leaves the screen has no brackets in any theme.
+            QCOMPARE(index.data(TransactionTableModel::FormattedAmountRole).toString(), BitcoinUnits::format(unit, amount, false, BitcoinUnits::SeparatorStyle::NEVER));
+            QVERIFY2(!index.data(TransactionTableModel::TxPlainTextRole).toString().contains(QLatin1Char('[')), qPrintable(what));
+        }
+        if (!output.isEmpty()) QVERIFY(QDir().mkpath(output) && PageImage(view).save(QDir(output).filePath(QString("%1-transactions-brackets.png").arg(theme))));
+    }
+}
+
 void AbyssTests::transactionsPlainAmounts()
 {
     // The Transactions table's Amount column in Abyss: every decimal the
@@ -8474,10 +8581,10 @@ void AbyssTests::transactionsPlainAmounts()
         }
         return QModelIndex();
     };
-    // A text without the brackets formatTxAmount would put around an amount
-    // that does not count yet (they never show today: its test reads the
-    // MasternodeReward enumerator), and the classic text without the trailing
-    // zeros of its fraction, brackets kept: what Abyss must show.
+    // A text without the brackets of an amount that does not count yet (these
+    // payments are in no block, so they have them), and the classic text
+    // without the trailing zeros of its fraction, brackets kept: what Abyss
+    // must show.
     const auto unbracketed = [](const QString& text) {
         return text.startsWith(QLatin1Char('[')) && text.endsWith(QLatin1Char(']')) ? text.mid(1, text.size() - 2) : text;
     };
