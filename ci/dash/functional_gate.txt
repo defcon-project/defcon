@@ -61,6 +61,12 @@
 #   feature_dsl_fault_injection.py: 9 s and two daemons, kept out because it
 #   tests the fault injector itself, a lab instrument the node refuses to start
 #   with outside regtest and devnet.
+#   feature_assumevalid.py: it buries the block it assumes valid under two
+#   weeks of proof of work, 8,400 blocks at regtest's spacing, and this
+#   chain's regtest stakes from height 5001: the first header past 5000 is
+#   refused for its nonce (bad-pos-nonce) and the sending peer is dropped
+#   (measured 2026-11-17). Bringing it in means burying the block under
+#   staked headers instead.
 # From the same Sentinel layer the gate carries feature_dsl_service.py (the test
 # that caught #228), feature_dsl_commit_decision_log.py and
 # feature_dsl_commitment_v2.py: the probe, the producer's decision and the
@@ -81,9 +87,11 @@
 617  feature_pos_stake_combine.py           # continuous consolidation, both wallets and key-only scope
 291  feature_llmq_chainlocks.py             # ChainLocks, with a masternode added dynamically
 279  p2p_unbacked_pos_headers.py            # how many headers without their blocks a node takes, from one peer and above its tip
+249  feature_v231_transition.py             # the v23.1 height on staked blocks: the masternode payment at H - 1 and from H, a forged amount refused, a node without the height, a reindex across H
 215  feature_pos_staking.py                 # real proof-of-stake blocks on regtest; descriptor and legacy wallet
 213  feature_v231_no_payee.py               # from the v23.1 height a staked block with no payable masternode carries no payout at all (#354)
 182  feature_pos_header_only.py             # headers with no block behind them hold neither masternode sync nor staking
+155  feature_asset_locks.py                 # asset lock and unlock transactions: their limits, in the mempool and in blocks
 149  wallet_multiwallet.py                  # several wallets on one node: wallet directories, loading and unloading, each its own balance and calls
 134  feature_import_corrupt_pos_block.py    # a damaged copy of a staked block on -loadblock or -reindex (bad signature, damaged coinstake, signature past the size limit) leaves the header unmarked, and the good block comes in
 132  p2p_unbacked_deep_fork.py              # headers on a branch too deep to take: taken from a peer added by hand or with noban; an outbound peer offering such a chain raises a warning
@@ -101,6 +109,7 @@
 50   feature_llmq_is_named_quorum_window.py # an InstantSend lock signed by the quorum that has just left the signing-active set, right after a new commitment
 45   rpc_psbt.py                            # PSBTs: create, update, sign, combine, finalize, analyze, and the malformed and out-of-range ones refused
 42   p2p_instantsend.py                     # InstantSend: the unconfirmed double spend is refused
+42   p2p_llmq_signing_vectors.py            # malformed LLMQ signing and DKG messages within the size cap are scored and the peer dropped; both transports
 41   mempool_accept.py                      # testmempoolaccept: each reason a lone transaction is refused for, amounts above MAX_MONEY among them
 40   rpc_fundrawtransaction.py              # fundrawtransaction: coin selection, change position, fees and its options
 40   tool_wallet.py                         # defcon-wallet: create, info, dump and createfromdump, salvage; both wallets
@@ -108,6 +117,7 @@
 40   feature_masternode_connect_race.py     # a restarted masternode another node reached first: connect_nodes closes that connection, and its own one stays
 39   wallet_import_rescan.py                # importaddress, importpubkey, importprivkey and importmulti, with and without rescan, and a key timestamp past the rescan window
 35   rpc_blockchain.py                      # the chain calls: chain info, transaction statistics, the UTXO set summary, headers, block verbosity, the hash rate
+35   wallet_staking_info_multiwallet.py     # getstakinginfo with seven wallets: each row stays its wallet's while the staking list is rebuilt; both wallets
 34   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
 33   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 32   rpc_verifyislock.py                    # the lock-verifying RPCs
@@ -115,6 +125,7 @@
 31   interface_zmq.py                       # the ZMQ notifications: block and transaction hashes and raw data, the sequence topic over the mempool and reorgs
 30   feature_dsl_service.py                 # the Sentinel probe end to end: announcements flood, reports pool, a stopped node is reported MISSED
 30   p2p_invalid_tx.py                      # invalid transactions from a peer: each reject reason and its disconnect, orphans and their limits
+28   feature_llmq_nonforming_quiet.py       # a quorum type past its end logs no DKG failure, while one that forms and fails still does
 27   feature_dsl_perf_burst.py              # internal InstantSend locks and a new ChainLock during the real report cutoff
 27   feature_dsl_perf.py                    # bounded epoch diagnostics and report BLS reuse in the real service scenario
 26   p2p_sendheaders.py                     # headers announcements: sendheaders, the inv fallback, reorgs, and unconnecting headers until the peer is dropped
@@ -132,8 +143,10 @@
 20   p2p_blockfilters.py                    # BIP157 compact block filters over the peer protocol: getcfilters, getcfheaders and getcfcheckpt, across a reorg
 19   feature_v23_bundle_heights.py          # the v23 bundle's own regtest name on a running chain: three of its heights observed where the one number puts them
 19   rpc_verifychainlock.py                 # the lock-verifying RPCs
+19   p2p_epoll_eof.py                       # a short message and the peer's FIN queued together: the message is handled; both transports
 16   rpc_bls.py                             # BLS key persistence and the empty staking registry, both wallet formats
 16   feature_bip68_sequence.py              # BIP68 relative locktime: sequence locks in the mempool and in blocks, across a reorg, and before activation
+16   p2p_compactblocks.py                   # compact block relay (BIP 152): announcements, reconstruction, missing transactions
 15   interface_bitcoin_cli.py               # defcon-cli: -getinfo with one and several wallets, -generate, -stdin, -rpcwait
 15   wallet_txn_clone.py                    # the wallet's accounting when a malleated clone of its transaction confirms instead
 15   rpc_createmultisig.py                  # createmultisig and addmultisigaddress, a spend from each kind of multisig, the balances after them
@@ -147,8 +160,10 @@
 12   wallet_bls_change.py                   # a descriptor wallet that pays a BLS address keeps its change; a long data carrier output takes ordinary change
 11   feature_evodb_reconcile_below_dip3.py  # the evodb reconcile below DIP0003, where an empty evodb is current
 11   feature_evodb_repair_startup.py        # -evodbrepair finishes before the import, the network and the end of RPC warmup
+11   feature_v231_devnet_argument.py        # -v231activationheight on a devnet: taken on the grid, refused off it
 9    feature_llmq_q60_regtest.py            # the Q60 ChainLock profile (llmq_defcon) on regtest
 9    feature_llmq_switchover_config.py      # the startup guards on the Q60 switchover heights, the v23@N alias
+9    feature_loadblock.py                   # -loadblock with a bootstrap file made by contrib/linearize
 8    wallet_bls_locked.py                   # an encrypted wallet records the payments to its own BLS addresses while it is locked or unlocked for mixing only, and after a restart; spending them needs the full unlock
 8    feature_superblock_retirement.py       # a test chain with the superblock spork on: getblocktemplate at the retirement height, and the regtest alias
 7    feature_init_error_stops_import.py     # a start that fails after the block import has begun (here on -bind) asks the import to stop, and the node then starts as usual
@@ -167,8 +182,11 @@
 4    feature_llmq_no_rotation.py            # after the rotation removal: the old rotation messages are ignored without penalty, no rotation RPC or quorum type
 4    mempool_spend_coinbase.py              # a coinbase spend enters the mempool only once the next block may include it
 4    rpc_packages.py                        # testmempoolaccept on packages: chains, several parents or children, conflicts, fees
+4    p2p_mutated_blocks.py                  # an unsolicited mutated block cannot clear another peer's compact block request
+4    p2p_dstx.py                            # CoinJoin broadcast transactions: the penalties for an unknown masternode and for a malformed one
 3    p2p_headers_uncompressed.py            # the plain headers reader consumes what every writer writes (#220)
 3    feature_addressindex_type_boundary.py  # the P2PKH and P2SH records of one hash on a sparse index, where they are neighbours on disk (#328)
 3    rpc_getblockstats.py                   # getblockstats on a replayed chain: every statistic, by height and by hash, alone and together
 3    feature_dsl_commit_decision_log.py     # the producer's Sentinel commit decision without a commitment (F-2026-140)
 3    feature_utxo_set_hash.py               # gettxoutsetinfo's hash_serialized_2 and MuHash of a fixed chain, the MuHash also against an independent Python one
+3    rpc_coinjoin.py                        # the coinjoin wallet calls: start and stop, amount, rounds, salt

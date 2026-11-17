@@ -726,13 +726,12 @@ class SchedulingTest(unittest.TestCase):
 
     def test_original_unit_selection_is_preserved(self):
         # The exceptions are the ones the single process was given as '!name' filters, less the suites brought back
-        # since (denialofservice_tests, transaction_tests, validation_chainstate_tests: 2026-11-15), and nothing
-        # else selects.
+        # since (denialofservice_tests, transaction_tests, validation_chainstate_tests: 2026-11-15; bip39_tests,
+        # evo_utils_tests, util_tests: 2026-11-17), and nothing else selects.
         unit = run_script(step_text(self.checks, 'Unit suites (all but the named exceptions)'))
-        self.assertEqual(['bip324_tests:bip39_tests:blockencodings_tests:'
-                          'descriptor_tests:dynamic_activation_thresholds_tests:evo_utils_tests:'
-                          'governance_validators_tests:key_io_tests:miner_tests/CreateNewBlock_validity:'
-                          'util_tests'],
+        self.assertEqual(['bip324_tests:blockencodings_tests:'
+                          'descriptor_tests:dynamic_activation_thresholds_tests:'
+                          'governance_validators_tests:key_io_tests:miner_tests/CreateNewBlock_validity'],
                          re.findall(r"--exclude='([^']+)'", unit))
         self.assertNotIn('--run_test', unit)
         self.assertEqual(1, unit.count('./src/test/test_defcon'))
@@ -972,6 +971,10 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
             'feature_bip68_sequence.py', 'p2p_sendheaders.py', 'p2p_sendheaders_compressed.py',
             'p2p_unrequested_blocks.py', 'p2p_v2_encrypted.py',
             'wallet_import_rescan.py',
+            'feature_v231_transition.py', 'feature_v231_devnet_argument.py', 'feature_asset_locks.py',
+            'feature_llmq_nonforming_quiet.py', 'p2p_llmq_signing_vectors.py', 'wallet_staking_info_multiwallet.py',
+            'p2p_epoll_eof.py', 'p2p_compactblocks.py', 'feature_loadblock.py', 'p2p_mutated_blocks.py',
+            'p2p_dstx.py', 'rpc_coinjoin.py',
         ]), sorted(name for name, _ in functional_gate.read_gate()))
         functional = run_script(step_text(self.checks, 'Functional tests (named gate)'))
         self.assertIn('python3 ci/dash/functional_gate.py order --shard "$shard" > "$gate" || exit 1\n', functional)
