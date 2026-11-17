@@ -240,7 +240,7 @@ BOOST_AUTO_TEST_CASE(forgetting_from_an_epoch_drops_it_and_every_later_one)
     BOOST_CHECK(t.Holders(K("posereport", "a")).empty());
 }
 
-// Astra r1 R1: following a reorg, ordered against the thread that notes. The message thread reads the generation
+// Following a reorg, ordered against the thread that notes. The message thread reads the generation
 // before it looks at the store, sees the store hold the bytes, and stops before its note; the store forgets the epoch
 // in a reorg and the table follows (ForgetFrom); then the note lands. It is dropped: a copy seen before the forgetting
 // holds back nothing when the store takes the bytes again. NoteSent likewise; a note read after the forget lands.
@@ -270,7 +270,7 @@ BOOST_AUTO_TEST_CASE(a_note_read_before_a_forget_is_dropped)
     BOOST_CHECK(t.BeginRelay(r) == Peers({1}));
 }
 
-// The rest of R1: between the store's forgetting and the table's, a relay names nobody and a note is dropped -- the
+// Between the store's forgetting and the table's, a relay names nobody and a note is dropped -- the
 // ForgetWindow around both. A window in which nothing was forgotten leaves the table as it was, and a note read before
 // it still lands.
 BOOST_AUTO_TEST_CASE(a_forget_window_withholds_nothing_and_takes_no_note)

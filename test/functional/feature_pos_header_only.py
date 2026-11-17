@@ -4,9 +4,6 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Regress the masternode-sync guard against headers without backing blocks.
 
-The defensive case is documented in
-reports/staking/delegated-staking-centralization.md, section 10.2.
-
 ContextualCheckBlockHeader() does not run CheckProofOfWork() once the previous
 height is past lastPowBlock (validation.cpp, the require_pow flag before it is
 called). Above that height a header only has to carry a zero nonce, a time
