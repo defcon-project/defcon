@@ -550,10 +550,18 @@ jobs:
       # now carry the version a handshake gives them. validation_chainstate_tests
       # needed nothing: both its cases pass on this tree, whatever failed there
       # when the gate was inverted (#169) has since been fixed elsewhere.
-      #   still to triage:                       bip324_tests, bip39_tests,
-      #                                          evo_utils_tests,
-      #                                          governance_validators_tests,
-      #                                          util_tests
+      #
+      # Three more came off on 2026-11-17. util_tests failed in two cases:
+      # util_ParseMoney expected Bitcoin's 21,000,000 to refuse 100,000,000, a
+      # valid amount under this chain's 500,000,000, and now checks this
+      # chain's limit; message_verify used Dash's address prefixes, and now
+      # carries the same keys under this chain's (the signatures and the
+      # message magic are unchanged). bip39_tests derived every mnemonic and
+      # seed right and failed only at the extended key, which its vectors give
+      # in BIP32's xprv encoding; it now compares the key data under this
+      # chain's prefix. evo_utils_tests passed as it was.
+      #   still to triage:                       bip324_tests,
+      #                                          governance_validators_tests
       #
       # The suites run one process each, as many at a time as the runner has
       # CPUs (ci/dash/unit_suites.py). In one process, one after another, they
@@ -575,7 +583,7 @@ jobs:
           cd "build-ci/DeFCoN-${{ matrix.build_target }}"
           make -j"$(nproc)" -C src test/test_defcon
           python3 "$GITHUB_WORKSPACE/ci/dash/unit_suites.py" run --binary ./src/test/test_defcon --jobs "$(nproc)" \
-            --exclude='bip324_tests:bip39_tests:blockencodings_tests:descriptor_tests:dynamic_activation_thresholds_tests:evo_utils_tests:governance_validators_tests:key_io_tests:miner_tests/CreateNewBlock_validity:util_tests' \
+            --exclude='bip324_tests:blockencodings_tests:descriptor_tests:dynamic_activation_thresholds_tests:governance_validators_tests:key_io_tests:miner_tests/CreateNewBlock_validity' \
             --split=dsl_service_pose_tests \
             -- --catch_system_errors=no -l test_suite
         shell: bash

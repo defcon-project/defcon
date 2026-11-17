@@ -5,6 +5,8 @@
 #include <test/data/bip39_vectors.json.h>
 
 #include <wallet/bip39.h>
+#include <base58.h>
+#include <chainparams.h>
 #include <key.h>
 #include <key_io.h>
 #include <test/util/setup_common.h>
@@ -57,8 +59,15 @@ BOOST_AUTO_TEST_CASE(bip39_vectors)
         key.SetSeed(MakeByteSpan(seed));
         pubkey = key.Neuter();
 
-        // printf("CBitcoinExtKey: %s\n", EncodeExtKey(key).c_str());
-        BOOST_CHECK(EncodeExtKey(key) == test[3].get_str());
+        // The vectors give the key in BIP32's own encoding (version 0488ade4, "xprv"); this chain's extended
+        // keys carry its own version bytes, so the vector's key data is compared under them.
+        std::vector<unsigned char> vector_key;
+        BOOST_REQUIRE(DecodeBase58Check(test[3].get_str(), vector_key, 4 + BIP32_EXTKEY_SIZE));
+        BOOST_REQUIRE_EQUAL(vector_key.size(), 4U + BIP32_EXTKEY_SIZE);
+        BOOST_CHECK_EQUAL(HexStr(Span{vector_key}.first(4)), "0488ade4");
+        std::vector<unsigned char> expected{Params().Base58Prefix(CChainParams::EXT_SECRET_KEY)};
+        expected.insert(expected.end(), vector_key.begin() + 4, vector_key.end());
+        BOOST_CHECK_EQUAL(EncodeExtKey(key), EncodeBase58Check(expected));
     }
 }
 
