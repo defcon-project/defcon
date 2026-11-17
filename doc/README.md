@@ -74,6 +74,7 @@ The repository's [root README](/README.md) contains relevant information on the 
 - [PSBT support](psbt.md)
 - [Reduce Memory](reduce-memory.md)
 - [Reduce Traffic](reduce-traffic.md)
+- [Sentinel processing and the DKG (design note)](sentinelfix.md)
 - [Tor Support](tor.md)
 - [Transaction Relay Policy](policy/README.md)
 - [ZMQ](zmq.md)
