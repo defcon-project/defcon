@@ -372,7 +372,7 @@ BOOST_AUTO_TEST_CASE(a_finish_overtaken_by_a_reset_marks_no_peer)
 }
 
 // A trusted peer is never disconnected as recently synced, in whatever order a finish, a Reset() and the
-// exemption run. The order review r4 found: a tick lifts the restrictions, a finish of the same sync marks every
+// exemption run. The critical order: a tick lifts the restrictions, a finish of the same sync marks every
 // peer (rightly: same generation), a Reset() starts the next sync, and only then the tick decides on the mark,
 // before the next sync's exemption. Any other peer is disconnected for the mark, as before.
 BOOST_AUTO_TEST_CASE(a_trusted_peer_is_never_disconnected_as_recently_synced)

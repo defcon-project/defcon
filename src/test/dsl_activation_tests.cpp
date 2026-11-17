@@ -581,7 +581,7 @@ BOOST_AUTO_TEST_CASE(queued_events_finish_with_their_ticks_in_chain_order)
     BOOST_CHECK(observer.last[1] == std::make_pair(NEXT_EPOCH_HEIGHT, uint32_t{11}));
 }
 
-// R14: a subscriber after the PeerManager resets the masternode sync in the same event, as
+// A subscriber after the PeerManager resets the masternode sync in the same event, as
 // CDSNotificationInterface can (CMasternodeSync::UpdatedBlockTip -> Reset(true)). The tick runs with the sync the
 // PeerManager found, where the tick used to run, so it still begins the epoch.
 BOOST_AUTO_TEST_CASE(the_tick_keeps_the_sync_state_its_event_found)
@@ -730,7 +730,7 @@ BOOST_AUTO_TEST_CASE(the_record_of_accepted_bytes_is_bound_to_its_base)
     BOOST_CHECK(!dslman->HaveIdenticalResponse(epoch, base->GetBlockHash(), protx, hash));
 }
 
-// R14 at the end of an epoch (sentinelfix.md 6.1): in the event of the epoch's last block (E/23) a subscriber after the
+// At the end of an epoch (sentinelfix.md 6.1): in the event of the epoch's last block (E/23) a subscriber after the
 // PeerManager resets the masternode sync, and the tick, running with the sync its event found, still relays the
 // commitment the quorum signed -- as before SF1-A, where the tick ran ahead of the reset. Relaying is a member's duty,
 // so the PeerManager here is a masternode's.

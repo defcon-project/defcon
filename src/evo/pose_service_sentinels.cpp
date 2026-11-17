@@ -115,7 +115,7 @@ uint256 CPoSeServiceReport::GetSignHash(const uint256& epochBlockHash) const
 {
     // Binding the signature to the epoch base means a report signed for epoch N
     // on one base cannot be replayed onto a different base that a reorg gave the
-    // same epoch number -- the base the reviewer noted the report omitted.
+    // same epoch number.
     CHashWriter w(SER_GETHASH, 0);
     w << std::string{"dslreport"} << nEpoch << epochBlockHash << targetProTxHash << sentinelProTxHash << status;
     return w.GetHash();
