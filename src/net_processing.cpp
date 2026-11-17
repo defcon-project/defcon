@@ -1198,6 +1198,12 @@ private:
     /** Update tracking information about which blocks a peer is assumed to have. */
     void UpdateBlockAvailability(NodeId nodeid, const uint256& hash) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
     bool CanDirectFetch() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /** Whether a block from a peer on `parent` waits until the chain it builds on is complete here (see ProcessBlock):
+     *  above the last proof-of-work block, outside initial block download. */
+    bool BlockWaitsForParent(const CBlockIndex& parent) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+    /** Blocks asked for with getblockfrompeer, each with the peer it was asked from: processed whatever the chain
+     *  they build on (see ProcessBlock), until that peer has answered, the block is stored or the peer is gone. */
+    std::map<uint256, NodeId> m_blocks_fetched_on_request GUARDED_BY(cs_main);
 
     /**
      * To prevent fingerprinting attacks, only send blocks/headers outside of the
@@ -1733,6 +1739,14 @@ bool PeerManagerImpl::CanDirectFetch()
     return m_chainman.ActiveChain().Tip()->GetBlockTime() > GetAdjustedTime() - m_chainparams.GetConsensus().nPowTargetSpacing * 20;
 }
 
+bool PeerManagerImpl::BlockWaitsForParent(const CBlockIndex& parent)
+{
+    AssertLockHeld(cs_main);
+    // nChainTx, not BLOCK_HAVE_DATA: it says the chain is complete here, and it stays set for a pruned block.
+    return !parent.HaveTxsDownloaded() && parent.nHeight + 1 > m_chainparams.GetConsensus().lastPowBlock &&
+           !m_chainman.ActiveChainstate().IsInitialBlockDownload();
+}
+
 static bool PeerHasHeader(CNodeState *state, const CBlockIndex *pindex) EXCLUSIVE_LOCKS_REQUIRED(cs_main)
 {
     if (state->pindexBestKnownBlock && pindex == state->pindexBestKnownBlock->GetAncestor(pindex->nHeight))
@@ -1840,6 +1854,10 @@ void PeerManagerImpl::FindNextBlocksToDownload(const Peer& peer, unsigned int co
                     state->pindexLastCommonBlock = pindex;
             } else if (!IsBlockRequested(pindex->GetBlockHash())) {
                 // The block is not already downloaded, and not yet in flight.
+                if (pindex->pprev != nullptr && BlockWaitsForParent(*pindex->pprev)) {
+                    // Its parent is not in yet (nor, then, anything after it): asked for once it is.
+                    return;
+                }
                 if (pindex->nHeight > nWindowEnd) {
                     // We reached the end of the window.
                     if (vBlocks.size() == 0 && waitingfor != peer.m_id) {
@@ -2185,6 +2203,9 @@ void PeerManagerImpl::FinalizeNode(const CNode& node) {
             }
         }
     }
+    for (auto it{m_blocks_fetched_on_request.begin()}; it != m_blocks_fetched_on_request.end();) {
+        it = it->second == nodeid ? m_blocks_fetched_on_request.erase(it) : std::next(it);
+    }
     WITH_LOCK(g_cs_orphans, m_orphanage.EraseForPeer(nodeid));
     if (m_txreconciliation) m_txreconciliation->ForgetPeer(nodeid);
     m_num_preferred_download_peers -= state->fPreferredDownload;
@@ -2435,6 +2456,7 @@ std::optional<std::string> PeerManagerImpl::FetchBlock(NodeId peer_id, const CBl
     RemoveBlockRequest(block_index.GetBlockHash(), std::nullopt);
 
     if (!BlockRequested(peer_id, block_index)) return "Already requested from this peer";
+    m_blocks_fetched_on_request[block_index.GetBlockHash()] = peer_id;
 
     // Construct message to request the block
     const uint256& hash{block_index.GetBlockHash()};
@@ -3705,6 +3727,10 @@ void PeerManagerImpl::HeadersDirectFetchBlocks(CNode& pfrom, const Peer& peer, c
                     // Can't download any more from this peer
                     break;
                 }
+                if (pindex->pprev != nullptr && BlockWaitsForParent(*pindex->pprev)) {
+                    // Its parent is not in yet: the rest come one at a time (FindNextBlocksToDownload).
+                    break;
+                }
                 vGetData.push_back(CInv(MSG_BLOCK, pindex->GetBlockHash()));
                 BlockRequested(pfrom.GetId(), *pindex);
                 LogPrint(BCLog::NET, "Requesting block %s from  peer=%d\n",
@@ -4250,6 +4276,28 @@ static DSTXValidationResult ValidateDSTX(CDeterministicMNManager& dmnman, CDSTXM
 
 void PeerManagerImpl::ProcessBlock(CNode& node, const std::shared_ptr<const CBlock>& block, bool force_processing)
 {
+    {
+        LOCK(cs_main);
+        // Above the last proof-of-work block, outside initial block download, a block from a peer is processed only
+        // once the chain it builds on is complete here. Nothing checked before ConnectBlock shows that real stake is
+        // behind a proof-of-stake block, and one whose parent never comes is never connected: stored, it would stay
+        // on disk for good, as many as a peer holding the parent back cares to send. The download asks for such a
+        // block only once its parent is in (BlockWaitsForParent); one that comes anyway (not asked for, or out of
+        // order) is dropped, its header kept, and asked for again in turn. Blocks from anywhere but a peer
+        // (submitblock, -loadblock, -reindex, the minter) do not come here, and a block asked for with
+        // getblockfrompeer is processed as before until the peer asked has answered: a copy another peer sends
+        // first may fail its checks (a block's signature is not in its hash), and must not use the request up.
+        const auto fetched{m_blocks_fetched_on_request.find(block->GetHash())};
+        const bool fetched_on_request{fetched != m_blocks_fetched_on_request.end()};
+        if (fetched_on_request && fetched->second == node.GetId()) m_blocks_fetched_on_request.erase(fetched);
+        const CBlockIndex* parent{m_chainman.m_blockman.LookupBlockIndex(block->hashPrevBlock)};
+        if (!fetched_on_request && parent != nullptr && BlockWaitsForParent(*parent)) {
+            LogPrint(BCLog::NET, "peer=%d: block %s at height %d is not processed: the chain it builds on is not complete here\n",
+                     node.GetId(), block->GetHash().ToString(), parent->nHeight + 1);
+            mapBlockSource.erase(block->GetHash());
+            return;
+        }
+    }
     bool new_block{false};
     m_chainman.ProcessNewBlock(m_chainparams, block, force_processing, &new_block);
     if (new_block) {
@@ -4257,6 +4305,7 @@ void PeerManagerImpl::ProcessBlock(CNode& node, const std::shared_ptr<const CBlo
         // The accepted block may have arrived from a different peer than we requested.
         LOCK(cs_main);
         RemoveBlockRequest(block->GetHash(), std::nullopt);
+        m_blocks_fetched_on_request.erase(block->GetHash());
     } else {
         LOCK(cs_main);
         mapBlockSource.erase(block->GetHash());

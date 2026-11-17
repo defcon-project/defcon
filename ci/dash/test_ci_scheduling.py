@@ -935,6 +935,7 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
             'p2p_instantsend.py', 'rpc_verifyislock.py', 'rpc_bls.py',
             'rpc_masternode_lists_unconnected.py',
             'p2p_unbacked_deep_fork.py',
+            'p2p_unbacked_requested_blocks.py',
             'feature_pos_mixingonly_unlock.py',
             'feature_dsl_service.py', 'feature_dsl_perf.py', 'feature_dsl_perf_burst.py',
             'feature_llmq_is_nonrotation.py', 'feature_llmq_is_nonrotated_verify.py',
