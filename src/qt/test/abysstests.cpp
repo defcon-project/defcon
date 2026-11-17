@@ -8661,8 +8661,9 @@ static bool MineTo(CWallet& wallet, const QString& address, CAmount amount)
 void AbyssTests::transactionTypeList()
 {
     // The type filter has no "Mined": the coin is not mined. In every theme
-    // each other choice stands where it stood and filters what it filtered,
-    // the CoinJoin ones are still the ones that hide with CoinJoin off, and a
+    // each other choice keeps its name, its order and what it filtered (the
+    // four after "Mined" stand a row higher: transactionTypeSaved), the
+    // CoinJoin ones are still the ones that hide with CoinJoin off, and a
     // row of that type (a first block's reward) is listed under its own name
     // by the two choices that listed it before.
     RestoreAppearance restore;
@@ -8736,6 +8737,133 @@ void AbyssTests::transactionTypeList()
         QVERIFY2((choices[0].types & Proxy::TYPE(Record::Generated)) && (choices[1].types & Proxy::TYPE(Record::Generated)), theme);
     }
     if (type_setting.isValid()) QSettings().setValue("transactionType", type_setting); else QSettings().remove("transactionType");
+}
+
+//! The saved row of the Transactions type filter for one test, put back
+//! afterwards.
+struct SavedTypeRow {
+    QVariant before{QSettings().value("transactionType")};
+    ~SavedTypeRow()
+    {
+        if (before.isValid()) QSettings().setValue("transactionType", before); else QSettings().remove("transactionType");
+    }
+};
+//! The type filter's box of a Transactions page.
+static QComboBox* TypeFilter(const TransactionView& view)
+{
+    for (QComboBox* combo : view.findChildren<QComboBox*>()) {
+        if (combo->findText(TransactionView::tr("Most Common")) >= 0) return combo;
+    }
+    return nullptr;
+}
+//! The rows of v23.0.0's type filter: one more than now, "Mined" the eleventh.
+static constexpr int TYPE_ROWS_OF_V23_0_0{15};
+//! What "transactionType" can hold: each row v23.0.0 saved, numbers that never
+//! were a row, and values that are no number.
+static QList<QVariant> SavedTypeRows()
+{
+    QList<QVariant> saved;
+    for (int row = 0; row < TYPE_ROWS_OF_V23_0_0; ++row) saved << row;
+    saved << -1 << TYPE_ROWS_OF_V23_0_0 << 99 << std::numeric_limits<int>::max() << std::numeric_limits<int>::min() << QString("Staked") << QString();
+    return saved;
+}
+
+void AbyssTests::transactionTypeSaved()
+{
+    // The type filter saves the row of its choice ("transactionType"), and
+    // the list lost a row: what v23.0.0 saved from 10 up names another row
+    // here, and its 14 ("Staked") names none. A wallet's page does not open
+    // on the saved row, though, in v23.0.0 either: opening it ends on "All",
+    // or on "Most Common" with CoinJoin off, and saves that. So whatever was
+    // saved, the page opens on that choice with the wallet's payment listed:
+    // an upgrade leaves no page without a transaction under an empty box.
+    // Every theme: the filter is not the look's.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    const QString own = fixture.model->getAddressTableModel()->addRow(AddressTableModel::Receive, "", "");
+    QVERIFY(!own.isEmpty());
+    QVERIFY(PayTo(*fixture.wallet, own, 0, 3 * COIN));
+    Settle();
+    QCOMPARE(fixture.model->getTransactionTableModel()->rowCount({}), 1);
+    SavedTypeRow put_back;
+    const int opens_on = fixture.model->node().coinJoinOptions().isEnabled() ? 0 : 1;
+    for (const char* theme : {"Light", "Dark", "Traditional", "Abyss"}) {
+        Theme(theme);
+        for (const QVariant& value : SavedTypeRows()) {
+            const QString what = QString("%1, saved \"%2\"").arg(theme, value.toString());
+            QSettings().setValue("transactionType", value);
+            // As WalletView opens it.
+            TransactionView view;
+            view.setModel(fixture.model.get());
+            view.resize(1280, 420);
+            view.show(); Settle();
+            QComboBox* type = TypeFilter(view);
+            auto* table = view.findChild<QTableView*>("transactionView");
+            QVERIFY2(type && table && table->model(), qPrintable(what));
+            QVERIFY2(type->count() == TYPE_ROWS_OF_V23_0_0 - 1, qPrintable(what));
+            QVERIFY2(type->currentIndex() == opens_on, qPrintable(QString("%1: opens on row %2").arg(what).arg(type->currentIndex())));
+            QVERIFY2(!type->currentText().isEmpty(), qPrintable(what));
+            QVERIFY2(table->model()->rowCount() == 1, qPrintable(QString("%1: lists %2 rows").arg(what).arg(table->model()->rowCount())));
+            QVERIFY2(QSettings().value("transactionType").toInt() == opens_on,
+                     qPrintable(QString("%1: saves \"%2\"").arg(what, QSettings().value("transactionType").toString())));
+        }
+    }
+}
+
+void AbyssTests::transactionTypeNoSuchRow()
+{
+    // The data of a row the type filter's list does not have is a filter of
+    // no type: no transaction at all, and a box set to such a row is empty.
+    // Nothing but the page's opening hid that for a saved row past the end
+    // (transactionTypeSaved). A row the list has not is "All": in the box
+    // before the wallet is there, and asked for by its number, when that is
+    // also what it saves. Every theme.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    const QString own = fixture.model->getAddressTableModel()->addRow(AddressTableModel::Receive, "", "");
+    QVERIFY(!own.isEmpty());
+    QVERIFY(PayTo(*fixture.wallet, own, 0, 3 * COIN));
+    Settle();
+    QCOMPARE(fixture.model->getTransactionTableModel()->rowCount({}), 1);
+    SavedTypeRow put_back;
+    for (const char* theme : {"Light", "Dark", "Traditional", "Abyss"}) {
+        Theme(theme);
+        // Before the wallet is there: the saved row if the list has it, else the first.
+        for (const QVariant& value : SavedTypeRows()) {
+            const QString what = QString("%1, saved \"%2\"").arg(theme, value.toString());
+            QSettings().setValue("transactionType", value);
+            TransactionView view;
+            QComboBox* type = TypeFilter(view);
+            QVERIFY2(type, qPrintable(what));
+            const int row = value.toInt();
+            QVERIFY2(type->currentIndex() == (row >= 0 && row < type->count() ? row : 0),
+                     qPrintable(QString("%1: row %2 before the wallet").arg(what).arg(type->currentIndex())));
+            QVERIFY2(!type->currentText().isEmpty(), qPrintable(what));
+        }
+        // Asked for by its number, after a choice that lists nothing here
+        // ("Sent to": the wallet's one payment is a received one).
+        TransactionView view;
+        view.setModel(fixture.model.get());
+        view.resize(1280, 420);
+        view.show(); Settle();
+        QComboBox* type = TypeFilter(view);
+        auto* table = view.findChild<QTableView*>("transactionView");
+        QVERIFY2(type && table && table->model(), theme);
+        const int sent_to = type->findText(TransactionView::tr("Sent to"));
+        QVERIFY2(sent_to > 0, theme);
+        for (int row : {-1, type->count(), 99, std::numeric_limits<int>::max(), std::numeric_limits<int>::min()}) {
+            const QString what = QString("%1, asked for row %2").arg(theme).arg(row);
+            view.chooseType(sent_to);
+            Settle();
+            QVERIFY2(table->model()->rowCount() == 0, qPrintable(what));
+            QVERIFY2(QSettings().value("transactionType").toInt() == sent_to, qPrintable(what));
+            view.chooseType(row);
+            Settle();
+            QVERIFY2(table->model()->rowCount() == 1, qPrintable(QString("%1: lists %2 rows").arg(what).arg(table->model()->rowCount())));
+            QVERIFY2(QSettings().value("transactionType").toInt() == 0,
+                     qPrintable(QString("%1: saves \"%2\"").arg(what, QSettings().value("transactionType").toString())));
+        }
+    }
 }
 
 //! The part of a combo box that holds its current choice (the eye and the

@@ -212,6 +212,17 @@ public:
                   cell.state & QStyle::State_Open ? QIcon::On : QIcon::Off);
     }
 };
+
+//! The row a saved number names in a filter's list: the number itself, or the
+//! first row ("All") where the list has no such row. The type filter saves the
+//! row of its choice, and the list was a row longer with "Mined": a number
+//! saved then can be past the end now. The data of a row that is not there
+//! is a filter of no type, a page without a single transaction under an
+//! empty box.
+int SavedRow(const QComboBox* box, int row)
+{
+    return row >= 0 && row < box->count() ? row : 0;
+}
 } // namespace
 
 TransactionView::TransactionView(QWidget* parent) :
@@ -269,7 +280,7 @@ TransactionView::TransactionView(QWidget* parent) :
     typeWidget->addItem(tr("Masternode Reward"), TransactionFilterProxy::TYPE(TransactionRecord::MasternodeReward));
     typeWidget->addItem(tr("Other"), TransactionFilterProxy::TYPE(TransactionRecord::Other));
     typeWidget->addItem(tr("Staked"), TransactionFilterProxy::TYPE(TransactionRecord::Staked));
-    typeWidget->setCurrentIndex(settings.value("transactionType").toInt());
+    typeWidget->setCurrentIndex(SavedRow(typeWidget, settings.value("transactionType").toInt()));
 
     hlayout->addWidget(typeWidget);
 
@@ -548,6 +559,7 @@ void TransactionView::chooseType(int idx)
 {
     if(!transactionProxyModel)
         return;
+    idx = SavedRow(typeWidget, idx);
     transactionProxyModel->setTypeFilter(
         typeWidget->itemData(idx).toUInt());
     // Persist settings
