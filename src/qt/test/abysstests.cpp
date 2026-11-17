@@ -6,6 +6,7 @@
 #include <qt/test/abysstests.h>
 #include <qt/abyssmenus.h>
 #include <qt/abysstoast.h>
+#include <qt/transactionfilterproxy.h>
 #include <qt/abyssunits.h>
 #include <qt/editaddressdialog.h>
 #include <qt/receiverequestdialog.h>
@@ -144,6 +145,7 @@
 #include <cstring>
 #include <limits>
 #include <map>
+#include <set>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -9331,6 +9333,113 @@ void AbyssTests::receiveFits()
     if (!output.isEmpty()) QVERIFY(PageImage(*receive).save(QDir(output).filePath("Abyss-receive-history.png")));
     for (const QString& line : found) qInfo().noquote() << "RECEIVE_FITS" << line;
     QCOMPARE(found.join("\n"), QString());
+}
+
+void AbyssTests::transactionCommonTypes()
+{
+    // "Most Common", and the Overview's recent list, which filters with the
+    // same default, leave out CoinJoin's own housekeeping only. The mask was
+    // a number written for Dash's order of types; with DeFCoN's Staked
+    // inserted before SendToAddress it left out payments to yourself,
+    // platform transfers and masternode rewards, and let "Create
+    // Denominations" in. Every theme: the filter is not the look's.
+    using Proxy = TransactionFilterProxy;
+    using Record = TransactionRecord;
+
+    // A wallet with a payment received, a payment to itself, a masternode
+    // reward and a stake: the common lists show all four.
+    RestoreAppearance restore;
+    Theme("Light");
+    WalletFixture fixture(m_node);
+    AddressTableModel* addresses = fixture.model->getAddressTableModel();
+    const QString first = addresses->addRow(AddressTableModel::Receive, "", "");
+    const QString second = addresses->addRow(AddressTableModel::Receive, "", "");
+    QVERIFY(!first.isEmpty() && !second.isEmpty());
+    const auto to = [](const QString& address) { return GetScriptForDestination(DecodeDestination(address.toStdString())); };
+    const CBlockIndex* tip = WITH_LOCK(::cs_main, return fixture.chain.m_node.chainman->ActiveChain().Tip());
+    QVERIFY(tip && tip->nHeight > 20);
+    {
+        LOCK(fixture.wallet->cs_wallet);
+        fixture.wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+    const CBlockIndex* deep = tip->GetAncestor(tip->nHeight - 10);
+    QVERIFY(deep);
+    const CWalletTx::Confirmation in_tip(CWalletTx::CONFIRMED, tip->nHeight, tip->GetBlockHash(), 1);
+    const CWalletTx::Confirmation deep_down(CWalletTx::CONFIRMED, deep->nHeight, deep->GetBlockHash(), 1);
+    CMutableTransaction fund;
+    fund.vin.emplace_back(COutPoint(uint256S("0700000000000000000000000000000000000000000000000000000000000000"), 0));
+    fund.vout.emplace_back(10 * COIN, to(first));
+    const CTransactionRef fund_tx = MakeTransactionRef(std::move(fund));
+    QVERIFY(fixture.wallet->AddToWallet(fund_tx, deep_down));
+    CMutableTransaction self;
+    self.vin.emplace_back(COutPoint(fund_tx->GetHash(), 0));
+    self.vout.emplace_back(9 * COIN, to(second));
+    QVERIFY(fixture.wallet->AddToWallet(MakeTransactionRef(std::move(self)), deep_down));
+    CMutableTransaction masternode;
+    masternode.vin.resize(1);
+    masternode.vin[0].prevout.SetNull();
+    masternode.vin[0].scriptSig = CScript() << tip->nHeight << OP_1;
+    masternode.vout.emplace_back(0, CScript());
+    masternode.vout.emplace_back(4 * COIN, to(first));
+    QVERIFY(CTransaction(masternode).IsMasternodeReward());
+    QVERIFY(fixture.wallet->AddToWallet(MakeTransactionRef(std::move(masternode)), in_tip));
+    CMutableTransaction stake;
+    stake.vin.emplace_back(COutPoint(uint256S("0800000000000000000000000000000000000000000000000000000000000000"), 0));
+    stake.vout.emplace_back(0, CScript());
+    stake.vout.emplace_back(3 * COIN, to(second));
+    QVERIFY(CTransaction(stake).IsCoinStake());
+    QVERIFY(fixture.wallet->AddToWallet(MakeTransactionRef(std::move(stake)), in_tip));
+    Settle();
+    const std::multiset<int> wanted{Record::RecvWithAddress, Record::SendToSelf, Record::MasternodeReward, Record::Staked};
+    const auto types = [](const QAbstractItemModel* rows) {
+        std::multiset<int> found;
+        for (int row = 0; row < rows->rowCount(); ++row) found.insert(rows->index(row, 0).data(TransactionTableModel::TypeRole).toInt());
+        return found;
+    };
+    const auto names = [](const std::multiset<int>& found) {
+        QStringList list;
+        for (int type : found) list << QString::number(type);
+        return list.join(",");
+    };
+    QVERIFY2(types(fixture.model->getTransactionTableModel()) == wanted, qPrintable(names(types(fixture.model->getTransactionTableModel()))));
+
+    // The Overview's recent list.
+    QWidget host;
+    auto* overview = new OverviewPage(&host);
+    overview->setClientModel(fixture.client.get());
+    overview->setWalletModel(fixture.model.get());
+    host.resize(1280, 850); overview->setGeometry(0, 0, 1280, 850);
+    host.show(); Settle();
+    auto* recent = overview->findChild<QListView*>("listTransactions");
+    QVERIFY(recent && recent->model());
+    QVERIFY2(types(recent->model()) == wanted, qPrintable("recent: " + names(types(recent->model()))));
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    if (!output.isEmpty()) QVERIFY(QDir().mkpath(output) && overview->grab().save(QDir(output).filePath("Light-overview-recent-common.png")));
+
+    // The Transactions page's "Most Common".
+    TransactionView view;
+    view.setModel(fixture.model.get());
+    view.resize(1280, 420);
+    view.show(); Settle();
+    QComboBox* type = nullptr;
+    for (QComboBox* combo : view.findChildren<QComboBox*>()) {
+        if (combo->findText(TransactionView::tr("Most Common")) >= 0) type = combo;
+    }
+    auto* table = view.findChild<QTableView*>("transactionView");
+    QVERIFY(type && table);
+    const int common = type->findText(TransactionView::tr("Most Common"));
+    QCOMPARE(type->itemData(common).toUInt(), Proxy::COMMON_TYPES);
+    type->setCurrentIndex(common);
+    view.chooseType(common);
+    Settle();
+    QVERIFY2(types(table->model()) == wanted, qPrintable("Most Common: " + names(types(table->model()))));
+
+    // Every type: common, unless it is CoinJoin's housekeeping.
+    const std::set<int> housekeeping{Record::RecvWithCoinJoin, Record::CoinJoinMixing, Record::CoinJoinCollateralPayment,
+                                     Record::CoinJoinMakeCollaterals, Record::CoinJoinCreateDenominations};
+    for (int kind = Record::Other; kind <= Record::MasternodeReward; ++kind) {
+        QVERIFY2(bool(Proxy::COMMON_TYPES & Proxy::TYPE(kind)) == (housekeeping.count(kind) == 0), qPrintable(QString("type %1").arg(kind)));
+    }
 }
 
 void AbyssTests::sendInputsFirst()

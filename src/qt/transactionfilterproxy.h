@@ -6,11 +6,15 @@
 #define BITCOIN_QT_TRANSACTIONFILTERPROXY_H
 
 #include <consensus/amount.h>
+#include <qt/transactionrecord.h>
 
 #include <QDateTime>
 #include <QSortFilterProxyModel>
 
 #include <optional>
+
+/** Helper function to convert transaction type enum to bit field */
+constexpr quint32 TransactionTypeToBit(int type) { return 1u << type; }
 
 /** Filter the transaction list according to pre-specified rules. */
 class TransactionFilterProxy : public QSortFilterProxyModel
@@ -20,12 +24,24 @@ class TransactionFilterProxy : public QSortFilterProxyModel
 public:
     explicit TransactionFilterProxy(QObject *parent = nullptr);
 
+    /** Types to exclude from common transaction lists (CoinJoin internal
+     *  transactions). The common lists are the rest, by name: the number this
+     *  was before was written for Dash's order of types, and DeFCoN's Staked
+     *  and MasternodeReward moved it (it then left out payments to yourself,
+     *  platform transfers and masternode rewards, also from the Overview's
+     *  recent list). As dashpay #7147 has it, without its DustReceive. */
+    static constexpr quint32 EXCLUDED_TYPES =
+        TransactionTypeToBit(TransactionRecord::CoinJoinCollateralPayment) |
+        TransactionTypeToBit(TransactionRecord::CoinJoinCreateDenominations) |
+        TransactionTypeToBit(TransactionRecord::CoinJoinMakeCollaterals) |
+        TransactionTypeToBit(TransactionRecord::CoinJoinMixing) |
+        TransactionTypeToBit(TransactionRecord::RecvWithCoinJoin);
     /** Type filter bit field (all types) */
-    static const quint32 ALL_TYPES = 0xFFFFFFFF;
-    /** Type filter bit field (all types but Darksend-SPAM) */
-    static const quint32 COMMON_TYPES = 0x307f;
+    static constexpr quint32 ALL_TYPES = 0xFFFFFFFF;
+    /** Type filter bit field (all types except excluded) */
+    static constexpr quint32 COMMON_TYPES = ALL_TYPES & ~EXCLUDED_TYPES;
 
-    static quint32 TYPE(int type) { return 1<<type; }
+    static constexpr quint32 TYPE(int type) { return TransactionTypeToBit(type); }
 
     enum WatchOnlyFilter
     {

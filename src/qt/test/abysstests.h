@@ -102,6 +102,7 @@ private Q_SLOTS:
     void receiveWalletGone();
     void receiveToast();
     void receiveFits();
+    void transactionCommonTypes();
     void sendInputsFirst();
     void abyssUnitsFormat_data();
     void abyssUnitsFormat();

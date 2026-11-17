@@ -82,7 +82,7 @@ public:
 class TransactionRecord
 {
 public:
-    // Update COMMON_TYPES in TransactionFilterProxyWhen when adding a new type
+    // A new type shows in the common lists unless TransactionFilterProxy::EXCLUDED_TYPES names it
     enum Type
     {
         Other,
