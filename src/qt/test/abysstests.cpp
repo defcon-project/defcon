@@ -42,6 +42,8 @@
 #include <qt/starfieldwidget.h>
 #include <qt/qrimagewidget.h>
 #include <qt/qrdialog.h>
+#include <qt/transactionfilterproxy.h>
+#include <qt/transactionrecord.h>
 #include <qt/transactionview.h>
 #include <qt/masternodelist.h>
 #include <qt/multisigpage.h>
@@ -4007,7 +4009,8 @@ void AbyssTests::overviewColumns()
 void AbyssTests::transactionFilters()
 {
     // Abyss says what its filters filter, instead of two lists reading "All",
-    // and has no empty scroll bar strip beside a list with nothing to scroll.
+    // starts their row at the table's left edge, and has no empty scroll bar
+    // strip beside a list with nothing to scroll.
     RestoreAppearance restore;
     Theme("Light");
     WalletFixture fixture(m_node);
@@ -4031,6 +4034,8 @@ void AbyssTests::transactionFilters()
         QCOMPARE(date->itemText(0), TransactionView::tr("All"));
         QCOMPARE(type->itemText(0), TransactionView::tr("All"));
         QVERIFY(date->toolTip().isEmpty() && type->toolTip().isEmpty() && amount->toolTip().isEmpty());
+        // The filters stand over their columns: the status column's width before the first.
+        QCOMPARE(date->x(), int(TransactionView::STATUS_COLUMN_WIDTH) - 2);
 #ifndef Q_OS_MAC
         QCOMPARE(table->verticalScrollBarPolicy(), Qt::ScrollBarAlwaysOn);
         QVERIFY(classic_gap > 0);
@@ -4047,6 +4052,8 @@ void AbyssTests::transactionFilters()
     QCOMPARE(date->itemData(0), date_all);
     QCOMPARE(type->itemData(0), type_all);
     QCOMPARE(date->currentIndex(), 0);
+    // The row starts where the table does.
+    QCOMPARE(date->x(), table->x());
 #ifndef Q_OS_MAC
     QCOMPARE(table->verticalScrollBarPolicy(), Qt::ScrollBarAsNeeded);
     QVERIFY(!table->verticalScrollBar()->isVisible());
@@ -8636,6 +8643,567 @@ void AbyssTests::transactionsPlainAmounts()
     Theme("Abyss"); Settle();
     shows(true, "back in Abyss");
     QCOMPARE(reset.count(), 0);
+}
+
+//! A block reward paid to the wallet's address: a row of the type the table calls "Mined".
+static bool MineTo(CWallet& wallet, const QString& address, CAmount amount)
+{
+    CMutableTransaction reward;
+    reward.vin.resize(1);
+    reward.vin[0].prevout.SetNull();
+    reward.vin[0].scriptSig = CScript() << 1 << OP_0;
+    reward.vout.emplace_back(amount, GetScriptForDestination(DecodeDestination(address.toStdString())));
+    return wallet.AddToWallet(MakeTransactionRef(std::move(reward)), CWalletTx::Confirmation{}) != nullptr;
+}
+
+void AbyssTests::transactionTypeList()
+{
+    // The type filter has no "Mined": the coin is not mined. In every theme
+    // each other choice stands where it stood and filters what it filtered,
+    // the CoinJoin ones are still the ones that hide with CoinJoin off, and a
+    // row of that type (a first block's reward) is listed under its own name
+    // by the two choices that listed it before.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    const QString own = fixture.model->getAddressTableModel()->addRow(AddressTableModel::Receive, "", "");
+    QVERIFY(!own.isEmpty());
+    QVERIFY(PayTo(*fixture.wallet, own, 0, 3 * COIN));
+    QVERIFY(MineTo(*fixture.wallet, own, 7 * COIN));
+    Settle();
+    QCOMPARE(fixture.model->getTransactionTableModel()->rowCount({}), 2);
+    using Proxy = TransactionFilterProxy;
+    using Record = TransactionRecord;
+    const QString coinjoin = QString::fromStdString(gCoinJoinName);
+    struct Choice { QString text; quint32 types; bool coinjoin; };
+    const std::vector<Choice> choices{
+        {TransactionView::tr("All"), Proxy::ALL_TYPES, false},
+        {TransactionView::tr("Most Common"), Proxy::COMMON_TYPES, false},
+        {TransactionView::tr("Received with"), Proxy::TYPE(Record::RecvWithAddress) | Proxy::TYPE(Record::RecvFromOther), false},
+        {TransactionView::tr("Sent to"), Proxy::TYPE(Record::SendToAddress) | Proxy::TYPE(Record::SendToOther), false},
+        {TransactionView::tr("%1 Send").arg(coinjoin), Proxy::TYPE(Record::CoinJoinSend), true},
+        {TransactionView::tr("%1 Make Collateral Inputs").arg(coinjoin), Proxy::TYPE(Record::CoinJoinMakeCollaterals), true},
+        {TransactionView::tr("%1 Create Denominations").arg(coinjoin), Proxy::TYPE(Record::CoinJoinCreateDenominations), true},
+        {TransactionView::tr("%1 Mixing").arg(coinjoin), Proxy::TYPE(Record::CoinJoinMixing), true},
+        {TransactionView::tr("%1 Collateral Payment").arg(coinjoin), Proxy::TYPE(Record::CoinJoinCollateralPayment), true},
+        {TransactionView::tr("To yourself"), Proxy::TYPE(Record::SendToSelf), false},
+        {TransactionView::tr("Platform Transfer"), Proxy::TYPE(Record::PlatformTransfer), false},
+        {TransactionView::tr("Masternode Reward"), Proxy::TYPE(Record::MasternodeReward), false},
+        {TransactionView::tr("Other"), Proxy::TYPE(Record::Other), false},
+        {TransactionView::tr("Staked"), Proxy::TYPE(Record::Staked), false}};
+    const bool coinjoin_on = fixture.model->node().coinJoinOptions().isEnabled();
+    const QVariant type_setting = QSettings().value("transactionType");
+    for (const char* theme : {"Light", "Dark", "Traditional", "Abyss"}) {
+        Theme(theme);
+        TransactionView view;
+        view.setModel(fixture.model.get());
+        view.resize(1280, 420);
+        view.show(); Settle();
+        QComboBox* type = nullptr;
+        for (QComboBox* combo : view.findChildren<QComboBox*>()) {
+            if (combo->findText(TransactionView::tr("Most Common")) >= 0) type = combo;
+        }
+        auto* table = view.findChild<QTableView*>("transactionView");
+        QVERIFY2(type && table, theme);
+        auto* list = qobject_cast<QListView*>(type->view());
+        QVERIFY2(list, theme);
+        QStringList shown;
+        for (int i = 0; i < type->count(); ++i) shown << type->itemText(i);
+        QVERIFY2(type->count() == int(choices.size()), qPrintable(QString("%1: %2").arg(theme, shown.join(" | "))));
+        QVERIFY2(!shown.contains(TransactionView::tr("Mined")), qPrintable(QString("%1: %2").arg(theme, shown.join(" | "))));
+        const bool abyss = qstrcmp(theme, "Abyss") == 0;
+        for (int i = 0; i < type->count(); ++i) {
+            const QString what = QString("%1, choice %2 (%3)").arg(theme).arg(i).arg(type->itemText(i));
+            QVERIFY2(type->itemText(i) == (i == 0 && abyss ? TransactionView::tr("Any type") : choices[i].text), qPrintable(what));
+            QVERIFY2(type->itemData(i).toUInt() == choices[i].types, qPrintable(what));
+            QVERIFY2(type->itemData(i).toUInt() != Proxy::TYPE(Record::Generated), qPrintable(what));
+            QVERIFY2(list->isRowHidden(i) == (choices[i].coinjoin && !coinjoin_on), qPrintable(what));
+            // What the choice lists: the payment and the reward by their types.
+            type->setCurrentIndex(i);
+            view.chooseType(i);
+            Settle();
+            QStringList rows;
+            for (int row = 0; row < table->model()->rowCount(); ++row) rows << table->model()->index(row, TransactionTableModel::Type).data().toString();
+            rows.sort();
+            QStringList wanted;
+            if (choices[i].types & Proxy::TYPE(Record::Generated)) wanted << TransactionTableModel::tr("Mined");
+            if (choices[i].types & Proxy::TYPE(Record::RecvWithAddress)) wanted << TransactionTableModel::tr("Received with");
+            wanted.sort();
+            QVERIFY2(rows == wanted, qPrintable(QString("%1: lists %2").arg(what, rows.join(" | "))));
+        }
+        // The two that listed the reward before still do.
+        QVERIFY2((choices[0].types & Proxy::TYPE(Record::Generated)) && (choices[1].types & Proxy::TYPE(Record::Generated)), theme);
+    }
+    if (type_setting.isValid()) QSettings().setValue("transactionType", type_setting); else QSettings().remove("transactionType");
+}
+
+//! The part of a combo box that holds its current choice (the eye and the
+//! words), in the box's own coordinates: the style clips the words to it.
+static QRect ComboField(const QComboBox* combo)
+{
+    QStyleOptionComboBox option;
+    option.initFrom(combo);
+    option.editable = false;
+    option.frame = combo->hasFrame();
+    option.subControls = QStyle::SC_All;
+    option.iconSize = combo->iconSize();
+    return combo->style()->subControlRect(QStyle::CC_ComboBox, &option, QStyle::SC_ComboBoxEditField, combo);
+}
+
+//! Whether every pixel of a picture's part has the one colour.
+static bool Plain(const QImage& image, const QRect& logical, const QColor& colour)
+{
+    const QRect r = Pixels(image, logical);
+    for (int y = r.top(); y <= r.bottom(); ++y) {
+        for (int x = r.left(); x <= r.right(); ++x) {
+            if (image.pixelColor(x, y) != colour) return false;
+        }
+    }
+    return !r.isEmpty();
+}
+
+//! A key the wallet does not have, its address watched: the wallet lists the
+//! address's payments and cannot spend them.
+static QString WatchAddress(WalletFixture& fixture)
+{
+    CKey key;
+    key.MakeNewKey(true);
+    const CTxDestination destination = PKHash(key.GetPubKey());
+    auto spk_man = fixture.wallet->GetOrCreateLegacyScriptPubKeyMan();
+    LOCK2(fixture.wallet->cs_wallet, spk_man->cs_KeyStore);
+    if (!spk_man->ImportScriptPubKeys({GetScriptForDestination(destination)}, /*have_solving_data=*/false, /*timestamp=*/1)) return QString();
+    return QString::fromStdString(EncodeDestination(destination));
+}
+
+void AbyssTests::transactionWatchOnlyFilter()
+{
+    // Abyss: the filter row starts at the table's left edge, without a watched
+    // address in the wallet and with one. With one, the watch-only filter
+    // leads the row, as tall as the other filters: each choice has its words
+    // and its eye, none is empty, and each lists what it listed. Where the row
+    // is short of room the box gives way down to the eye and shortens its
+    // words; the open list keeps them whole. The table's eye stands in the
+    // middle of its cell, whatever the cell's width, and says what it is. The
+    // classic themes keep the row and the table they had.
+    RestoreAppearance restore;
+    Theme("Light");
+    WalletFixture fixture(m_node);
+    fixture.wallet->ConnectScriptPubKeyManNotifiers();
+    const QString own = fixture.model->getAddressTableModel()->addRow(AddressTableModel::Receive, "", "");
+    QVERIFY(!own.isEmpty());
+    QVERIFY(PayTo(*fixture.wallet, own, 0, 3 * COIN));
+    QVERIFY(PayTo(*fixture.wallet, own, 1, 4 * COIN));
+    Settle();
+    TransactionView view;
+    view.setModel(fixture.model.get());
+    view.resize(1280, 420);
+    view.show(); Settle();
+    QComboBox* date = nullptr;
+    QComboBox* type = nullptr;
+    QComboBox* watch = nullptr;
+    for (QComboBox* combo : view.findChildren<QComboBox*>()) {
+        if (combo->findText(TransactionView::tr("Today")) >= 0) {
+            date = combo;
+        } else if (combo->findText(TransactionView::tr("Most Common")) >= 0) {
+            type = combo;
+        } else if (combo->count() == 3) {
+            watch = combo;
+        }
+    }
+    auto* amount = view.findChild<QLineEdit*>("amountWidget");
+    auto* table = view.findChild<QTableView*>("transactionView");
+    QVERIFY(date && type && watch && amount && table);
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    const auto shot = [&](const QString& name, const QPixmap& picture) {
+        return output.isEmpty() || (QDir().mkpath(output) && picture.save(QDir(output).filePath(name + ".png")));
+    };
+    // Without a focused field: the search field takes the first focus, and a text cursor blinks.
+    const auto picture = [&] {
+        if (QWidget* focused = QApplication::focusWidget()) focused->clearFocus();
+        Settle();
+        return view.grab().toImage();
+    };
+    const int classic_lead = TransactionView::STATUS_COLUMN_WIDTH - 2;
+    const std::vector<QVariant> values{TransactionFilterProxy::WatchOnlyFilter_All, TransactionFilterProxy::WatchOnlyFilter_Yes,
+                                       TransactionFilterProxy::WatchOnlyFilter_No};
+    const QStringList words{TransactionView::tr("All addresses"), TransactionView::tr("Watch-only"), TransactionView::tr("Spendable only")};
+    // What a choice lists: the payments by their whole amounts.
+    const auto listed = [&](int choice) {
+        watch->setCurrentIndex(choice);
+        view.chooseWatchonly(choice);
+        Settle();
+        QStringList amounts;
+        for (int row = 0; row < table->model()->rowCount(); ++row) {
+            amounts << QString::number(table->model()->index(row, TransactionTableModel::Amount).data(TransactionTableModel::AmountRole).toLongLong() / COIN);
+        }
+        amounts.sort();
+        return amounts.join(",");
+    };
+    const auto classic_row = [&](bool watched, const QString& what) {
+        QVERIFY2(watch->isVisible() == watched, qPrintable(what));
+        QVERIFY2(watch->width() == 24 && watch->minimumWidth() == 24 && watch->maximumWidth() == 24, qPrintable(what));
+        QVERIFY2(watch->sizeAdjustPolicy() == QComboBox::AdjustToContentsOnFirstShow, qPrintable(what));
+        QVERIFY2(watch->sizePolicy().horizontalPolicy() == QSizePolicy::Preferred, qPrintable(what));
+        QVERIFY2(watch->toolTip().isEmpty(), qPrintable(what));
+        for (int i = 0; i < 3; ++i) {
+            QVERIFY2(watch->itemText(i).isEmpty() && watch->itemIcon(i).isNull() == (i == 0) && watch->itemData(i) == values[i],
+                     qPrintable(QString("%1, choice %2").arg(what).arg(i)));
+        }
+        // The filters stand over their columns: the status column's width
+        // before the first one.
+        QVERIFY2((watched ? watch : date)->x() == classic_lead, qPrintable(QString("%1: the row starts at %2").arg(what).arg((watched ? watch : date)->x())));
+        if (watched) QVERIFY2(date->x() == classic_lead + 24 + 1, qPrintable(QString("%1: the date filter at %2").arg(what).arg(date->x())));
+        // The date and type filters keep their columns' fixed widths.
+        QVERIFY2(date->width() == TransactionView::DATE_COLUMN_WIDTH && date->minimumWidth() == date->maximumWidth(), qPrintable(what));
+        QVERIFY2(type->width() == TransactionView::TYPE_COLUMN_WIDTH - 1 && type->minimumWidth() == type->maximumWidth(), qPrintable(what));
+    };
+    const auto abyss_edges = [&](const QString& what) {
+        QWidget* first = watch->isVisible() ? static_cast<QWidget*>(watch) : date;
+        QVERIFY2(first->x() == table->x() && table->x() == 0, qPrintable(QString("%1: the row starts at %2, the table at %3").arg(what).arg(first->x()).arg(table->x())));
+#ifndef Q_OS_MAC
+        QVERIFY2(amount->x() + amount->width() == table->x() + table->width(),
+                 qPrintable(QString("%1: the row ends at %2, the table at %3").arg(what).arg(amount->x() + amount->width()).arg(table->x() + table->width())));
+#endif
+    };
+
+    // No watched address: the classic row, then Abyss's from the table's edge.
+    classic_row(false, "Light, nothing watched");
+    if (QTest::currentTestFailed()) return;
+    Theme("Abyss"); Settle();
+    for (int width : {958, 1280}) {
+        view.resize(width, 420); Settle();
+        QVERIFY(!watch->isVisible());
+        abyss_edges(QString("Abyss, nothing watched, %1 px").arg(width));
+        if (QTest::currentTestFailed()) return;
+    }
+    QVERIFY(shot("Abyss-transactions-filter-row", PageImage(view)));
+    Theme("Light"); Settle();
+    view.resize(1280, 420); Settle();
+    classic_row(false, "back in Light, nothing watched");
+    if (QTest::currentTestFailed()) return;
+
+    // An address is watched: the filter and the table's column appear.
+    const QString watched = WatchAddress(fixture);
+    QVERIFY(!watched.isEmpty());
+    QTRY_VERIFY(watch->isVisible());
+    QVERIFY(PayTo(*fixture.wallet, watched, 2, 5 * COIN));
+    QVERIFY(PayTo(*fixture.wallet, watched, 3, 6 * COIN));
+    Settle();
+    QVERIFY(!table->isColumnHidden(TransactionTableModel::Watchonly));
+    classic_row(true, "Light, watched");
+    if (QTest::currentTestFailed()) return;
+    const QStringList classic_lists{listed(0), listed(1), listed(2)};
+    QCOMPARE(classic_lists, (QStringList{"3,4,5,6", "5,6", "3,4"}));
+    QCOMPARE(listed(0), classic_lists[0]);
+    // A watched payment's row and one of the wallet's own, by amount.
+    const auto cell = [&](int coins) {
+        for (int row = 0; row < table->model()->rowCount(); ++row) {
+            const QModelIndex index = table->model()->index(row, TransactionTableModel::Watchonly);
+            if (index.data(TransactionTableModel::AmountRole).toLongLong() == coins * COIN) return index;
+        }
+        return QModelIndex();
+    };
+    QVERIFY(cell(5).isValid() && cell(3).isValid());
+    const auto row_tip = [&](int coins) { return cell(coins).sibling(cell(coins).row(), TransactionTableModel::Date).data(Qt::ToolTipRole).toString(); };
+    QVERIFY(!row_tip(5).isEmpty() && !row_tip(3).isEmpty());
+    QCOMPARE(cell(5).data(Qt::ToolTipRole).toString(), row_tip(5));
+    QCOMPARE(cell(3).data(Qt::ToolTipRole).toString(), row_tip(3));
+    // The eye's column made wide: where the view put the eye in it (at the
+    // cell's left), and where Abyss does (in the middle).
+    const int column_width = table->columnWidth(TransactionTableModel::Watchonly);
+    const auto eye_offset = [&](const QString& what, bool& found) {
+        table->setColumnWidth(TransactionTableModel::Watchonly, 90); Settle();
+        // Clear of the grid lines, also where a fractional scale rounds them inwards.
+        const QRect place = table->visualRect(cell(5)).adjusted(3, 2, -3, -2);
+        const QImage rows = table->viewport()->grab().toImage();
+        const QRect r = Pixels(rows, place);
+        const QColor ground = Ground(rows, place);
+        int left = r.right() + 1, right = r.left() - 1;
+        for (int y = r.top(); y <= r.bottom(); ++y) {
+            for (int x = r.left(); x <= r.right(); ++x) {
+                if (rows.pixelColor(x, y) != ground) { left = std::min(left, x); right = std::max(right, x); }
+            }
+        }
+        table->setColumnWidth(TransactionTableModel::Watchonly, column_width); Settle();
+        found = right >= left;
+        Q_UNUSED(what);
+        // How far the eye's middle is from the cell's, in logical pixels.
+        return found ? ((left + right + 1) / 2.0 - (r.left() + r.right() + 1) / 2.0) / rows.devicePixelRatio() : 0.0;
+    };
+    bool eye_found = false;
+    const double classic_eye = eye_offset("Light", eye_found);
+    QVERIFY(eye_found);
+    QVERIFY2(classic_eye < -20, qPrintable(QString("the classic eye's middle is %1 px from the cell's").arg(classic_eye)));
+    const QImage classic_watched = picture();
+    QVERIFY(shot("Light-transactions-watch-only", QPixmap::fromImage(classic_watched)));
+
+    // Abyss, with room: the filter leads the row with its words.
+    Theme("Abyss"); Settle();
+    view.resize(1280, 420); Settle();
+    abyss_edges("Abyss, watched, 1280 px");
+    if (QTest::currentTestFailed()) return;
+    QVERIFY2(date->x() == watch->x() + watch->width() + 1, qPrintable(QString("the date filter at %1, the watch-only filter ends at %2").arg(date->x()).arg(watch->x() + watch->width())));
+    QVERIFY2(watch->y() == date->y() && watch->height() == date->height() && watch->height() == type->height(),
+             qPrintable(QString("watch-only %1+%2, date %3+%4").arg(watch->y()).arg(watch->height()).arg(date->y()).arg(date->height())));
+    QVERIFY(!watch->toolTip().isEmpty());
+    QCOMPARE(watch->currentIndex(), 0);
+    for (int i = 0; i < 3; ++i) {
+        QVERIFY2(watch->itemText(i) == words[i] && !watch->itemIcon(i).isNull() && watch->itemData(i) == values[i], qPrintable(QString("Abyss, choice %1: %2").arg(i).arg(watch->itemText(i))));
+        QCOMPARE(listed(i), classic_lists[i]);
+    }
+    QCOMPARE(listed(0), classic_lists[0]);
+    const int worded = watch->sizeHint().width();
+    const int least = watch->minimumSizeHint().width();
+    QVERIFY2(least < worded && least >= watch->iconSize().width(), qPrintable(QString("the box needs %1 to %2").arg(least).arg(worded)));
+    QCOMPARE(watch->width(), worded);
+    // The type filter as wide as before; the date filter as wide as its
+    // widest choice, never narrower than before.
+    QCOMPARE(type->width(), int(TransactionView::TYPE_COLUMN_WIDTH) - 1);
+    QVERIFY2(date->width() == date->sizeHint().width() && date->width() >= int(TransactionView::DATE_COLUMN_WIDTH),
+             qPrintable(QString("the date filter is %1 px, it needs %2").arg(date->width()).arg(date->sizeHint().width())));
+    // With a watched address the row needs no more room than it did: at the
+    // least, the watch-only, date and type filters need no more than the
+    // status column's gap, the 24 px box and the two fixed filters took (the
+    // row's other parts are as they were). At the test font's size; a larger
+    // font may widen the date filter, which before cut its words instead
+    // (without the test fonts the fallback's text widths say nothing).
+    if (GUIUtil::fontsLoaded()) {
+        auto* row = qobject_cast<QBoxLayout*>(view.layout()->itemAt(0)->layout());
+        QVERIFY(row && row->indexOf(watch) >= 0 && row->indexOf(date) >= 0 && row->indexOf(type) >= 0);
+        const auto least_of = [&](QWidget* widget) { return row->itemAt(row->indexOf(widget))->minimumSize().width(); };
+        const int now = least_of(watch) + least_of(date) + least_of(type);
+        const int before = int(TransactionView::STATUS_COLUMN_WIDTH) - 2 + 24 + int(TransactionView::DATE_COLUMN_WIDTH) + int(TransactionView::TYPE_COLUMN_WIDTH) - 1;
+        QVERIFY2(now <= before, qPrintable(QString("the three lists need %1 px at the least (%2, %3, %4); before %5")
+            .arg(now).arg(least_of(watch)).arg(least_of(date)).arg(least_of(type)).arg(before)));
+    }
+    const QColor text_colour("#e6edf7");
+    // The words' part of the box: the field, past the eye.
+    const auto words_part = [&] {
+        const QRect field = ComboField(watch);
+        return QRect(field.left() + watch->iconSize().width() + 2, field.top(), field.width() - watch->iconSize().width() - 2, field.height());
+    };
+    // Each choice whole in the box: its words end before the field does, and
+    // the box is the picture of a plain combo box with the same choice (one
+    // that shortens nothing), at the same place in the same view.
+    {
+        QComboBox plain(&view);
+        for (int i = 0; i < 3; ++i) plain.addItem(watch->itemIcon(i), watch->itemText(i));
+        plain.setGeometry(watch->geometry().translated(0, 150));
+        plain.show(); Settle();
+        for (int i = 0; i < 3; ++i) {
+            watch->setCurrentIndex(i);
+            plain.setCurrentIndex(i);
+            Settle();
+            const QImage box = watch->grab().toImage();
+            const QRect field = ComboField(watch);
+            const QColor ground = Ground(box, field);
+            QVERIFY2(Plain(box, QRect(field.right() - 1, field.top(), 2, field.height()), ground), qPrintable(QString("choice %1 reaches the field's end").arg(i)));
+            if (GUIUtil::fontsLoaded()) QVERIFY2(Inked(box, words_part(), text_colour), qPrintable(QString("choice %1 shows no words").arg(i)));
+            QVERIFY2(box == plain.grab().toImage(), qPrintable(QString("choice %1 is not whole in the box").arg(i)));
+            QVERIFY(shot(QString("Abyss-watch-only-box-%1").arg(i), QPixmap::fromImage(box)));
+        }
+    }
+    watch->setCurrentIndex(0); Settle();
+    // The eye as the box at rest shows it, for the least width below.
+    const auto eye_place = [&] { const QRect field = ComboField(watch); return QRect(field.topLeft(), QSize(watch->iconSize().width(), field.height())); };
+    const QImage rest_box = watch->grab().toImage();
+    const QImage eye_at_rest = rest_box.copy(Pixels(rest_box, eye_place()));
+    QVERIFY(shot("Abyss-transactions-watch-only", PageImage(view)));
+    // The open list: as wide as the box (the screen allowing: the test
+    // platform's is 240 pixels wide, fewer logical ones when scaled).
+    const int list_room = std::min(worded, view.screen()->availableGeometry().width());
+    watch->showPopup();
+    QTRY_VERIFY(watch->view()->isVisible());
+    Settle();
+    QVERIFY2(watch->view()->window()->width() >= list_room, qPrintable(QString("the list is %1 px wide, the box %2").arg(watch->view()->window()->width()).arg(worded)));
+    QVERIFY(shot("Abyss-watch-only-list", watch->view()->window()->grab()));
+    watch->hidePopup();
+    QTRY_VERIFY(!watch->view()->isVisible());
+    Settle();
+
+    // The eye in the table: in the middle of its cell, named in its tooltip.
+    const double abyss_eye = eye_offset("Abyss", eye_found);
+    QVERIFY(eye_found);
+    QVERIFY2(std::abs(abyss_eye) <= 1.0, qPrintable(QString("the eye's middle is %1 px from the cell's").arg(abyss_eye)));
+    QCOMPARE(cell(5).data(Qt::ToolTipRole).toString(), TransactionTableModel::tr("Watch-only address"));
+    QCOMPARE(cell(3).data(Qt::ToolTipRole).toString(), row_tip(3));
+
+    // Short of room: the box gives way steadily, between its words' width and
+    // the eye's, and what is left of its words ends inside the field, at every
+    // width down to the row's least, where the eye stands alone. (Without the
+    // test fonts sizes say nothing: the cases above are what is checked there.)
+    if (GUIUtil::fontsLoaded()) {
+    // A larger font: the date filter grows with its widest choice and shows
+    // each choice whole, rather than keeping 120 px and cutting it.
+    {
+        const bool had_font = date->testAttribute(Qt::WA_SetFont);
+        const QFont before = date->font();
+        QFont larger = before;
+        if (before.pointSizeF() > 0) larger.setPointSizeF(before.pointSizeF() * 1.6); else larger.setPixelSize(before.pixelSize() * 8 / 5);
+        date->setFont(larger); Settle();
+        QVERIFY2(date->width() == date->sizeHint().width() && date->width() > int(TransactionView::DATE_COLUMN_WIDTH),
+                 qPrintable(QString("with a larger font the date filter is %1 px, it needs %2").arg(date->width()).arg(date->sizeHint().width())));
+        abyss_edges("Abyss, watched, a larger date font");
+        for (int i = 0; i < date->count(); ++i) {
+            date->setCurrentIndex(i); Settle();
+            const QImage box = date->grab().toImage();
+            const QRect field = ComboField(date);
+            QVERIFY2(Plain(box, QRect(field.right(), field.top(), 1, field.height()), Ground(box, field)),
+                     qPrintable(QString("with a larger font the date choice %1 (%2) reaches the field's end").arg(i).arg(date->itemText(i))));
+        }
+        date->setCurrentIndex(0);
+        if (had_font) date->setFont(before); else date->setFont(QFont());
+        Settle();
+        QVERIFY(date->width() == date->sizeHint().width());
+    }
+    // The type filter on its first choice: at the row's least it shows it whole.
+    type->setCurrentIndex(0);
+    view.chooseType(0);
+    Settle();
+    const int date_width = date->width();
+    auto* search = view.findChild<QLineEdit*>("search_widget");
+    auto* row = qobject_cast<QBoxLayout*>(view.layout()->itemAt(0)->layout());
+    QVERIFY(search && row && row->indexOf(search) >= 0);
+    const int search_least = row->itemAt(row->indexOf(search))->minimumSize().width();
+    const int type_full = type->width();
+    const int row_least = view.minimumSizeHint().width();
+    int narrowest = worded;
+    QImage shortened;
+    for (int width = 1280; width >= row_least; width -= 4) {
+        view.resize(width, 420); Settle();
+        const QString what = QString("Abyss, watched, %1 px, the box %2 px").arg(width).arg(watch->width());
+        QVERIFY2(view.width() == width, qPrintable(what));
+        abyss_edges(what);
+        if (QTest::currentTestFailed()) return;
+        QVERIFY2(watch->width() >= least && watch->width() <= worded && watch->width() <= narrowest, qPrintable(what));
+        narrowest = watch->width();
+        const QImage box = watch->grab().toImage();
+        const QRect field = ComboField(watch);
+        QVERIFY2(field.width() >= watch->iconSize().width(), qPrintable(what));
+        QVERIFY2(Plain(box, QRect(field.right(), field.top(), 1, field.height()), Ground(box, field)), qPrintable(what + ": the words are cut at the field's end"));
+        if (narrowest < worded && narrowest > least + 40) shortened = box;
+        // The date filter keeps its width; the type filter's words end inside its field.
+        QVERIFY2(date->width() == date_width, qPrintable(what + QString(": the date filter is %1 px").arg(date->width())));
+        // A list is shortened only once the search field has given way to its least.
+        if (watch->width() < worded || type->width() < type_full) {
+            QVERIFY2(search->width() == search_least, qPrintable(what + QString(": the type filter %1 of %2 px, the search field %3 px, its least %4")
+                .arg(type->width()).arg(type_full).arg(search->width()).arg(search_least)));
+        }
+        const QImage type_box = type->grab().toImage();
+        const QRect type_field = ComboField(type);
+        QVERIFY2(Plain(type_box, QRect(type_field.right(), type_field.top(), 1, type_field.height()), Ground(type_box, type_field)),
+                 qPrintable(what + QString(": the type filter's words are cut at its field's end (%1 px)").arg(type->width())));
+    }
+    view.resize(row_least, 420); Settle();
+    QCOMPARE(view.width(), row_least);
+    QCOMPARE(watch->width(), least);
+    abyss_edges("Abyss, watched, the row's least width");
+    if (QTest::currentTestFailed()) return;
+    {
+        const QImage box = watch->grab().toImage();
+        const QRect field = ComboField(watch);
+        // The eye whole, as at rest, and no word beside it.
+        QVERIFY(field.width() >= watch->iconSize().width());
+        QVERIFY(box.copy(Pixels(box, eye_place())) == eye_at_rest);
+        QVERIFY(!Inked(box, words_part(), text_colour));
+        QVERIFY(!shortened.isNull());
+        // The type filter's first choice whole: the picture of a plain combo
+        // box with that text alone, at the same size in the same view.
+        QComboBox plain_type(&view);
+        plain_type.addItem(type->itemText(0));
+        plain_type.setGeometry(type->geometry().translated(0, 150));
+        plain_type.show(); Settle();
+        QVERIFY2(type->grab().toImage() == plain_type.grab().toImage(),
+                 qPrintable(QString("at the least the type filter (%1 px) does not show \"%2\" whole").arg(type->width()).arg(type->itemText(0))));
+        QVERIFY(shot("Abyss-watch-only-box-short", QPixmap::fromImage(shortened)));
+        QVERIFY(shot("Abyss-watch-only-box-least", QPixmap::fromImage(box)));
+        QVERIFY(shot("Abyss-transactions-watch-only-least", PageImage(view)));
+    }
+    // Its list is as wide as the words need there too.
+    watch->showPopup();
+    QTRY_VERIFY(watch->view()->isVisible());
+    Settle();
+    QVERIFY2(watch->view()->window()->width() >= list_room, qPrintable(QString("the list is %1 px wide, the words need %2").arg(watch->view()->window()->width()).arg(worded)));
+    QVERIFY(shot("Abyss-watch-only-list-least", watch->view()->window()->grab()));
+    watch->hidePopup();
+    QTRY_VERIFY(!watch->view()->isVisible());
+    Settle();
+    }
+    view.resize(1280, 420); Settle();
+    QCOMPARE(watch->width(), worded);
+
+    // The classic row and table again: what they were, to the pixel.
+    Theme("Light"); Settle();
+    view.resize(1280, 420); Settle();
+    classic_row(true, "back in Light, watched");
+    if (QTest::currentTestFailed()) return;
+    QCOMPARE(table->columnWidth(TransactionTableModel::Watchonly), column_width);
+    QCOMPARE(cell(5).data(Qt::ToolTipRole).toString(), row_tip(5));
+    for (int i = 0; i < 3; ++i) QCOMPARE(listed(i), classic_lists[i]);
+    QCOMPARE(listed(0), classic_lists[0]);
+    QCOMPARE(eye_offset("back in Light", eye_found), classic_eye);
+    QVERIFY(picture() == classic_watched);
+}
+
+void AbyssTests::transactionFiltersInWindow()
+{
+    // In the window, at its usual width and at the narrowest it is laid out
+    // for: the Transactions page of a wallet with a watched address starts
+    // its filter row at the table's left edge and does not scroll sideways.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Window geometry requires minimal:enable_fonts or a native platform");
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name); // Keep this test's isolated QSettings scope.
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    fixture.wallet->ConnectScriptPubKeyManNotifiers();
+    const QString own = fixture.model->getAddressTableModel()->addRow(AddressTableModel::Receive, "", "");
+    const QString watched = WatchAddress(fixture);
+    QVERIFY(!own.isEmpty() && !watched.isEmpty());
+    QVERIFY(PayTo(*fixture.wallet, own, 0, 3 * COIN));
+    QVERIFY(PayTo(*fixture.wallet, watched, 1, 5 * COIN));
+    Settle();
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.addWallet(fixture.model.get());
+    window.gotoHistoryPage();
+    // Shown first: the first show holds a window under the screen, and the
+    // test platform's screen is 240x320.
+    window.show(); Settle();
+    auto* frame = window.walletFrame;
+    QVERIFY(frame);
+    auto* scroll = frame->findChild<QScrollArea*>("abyssPageScroll");
+    auto* view = window.findChild<TransactionView*>();
+    QVERIFY(scroll && view);
+    QComboBox* watch = nullptr;
+    for (QComboBox* combo : view->findChildren<QComboBox*>()) {
+        if (combo->count() == 3 && combo->findText(TransactionView::tr("Watch-only")) >= 0) watch = combo;
+    }
+    auto* table = view->findChild<QTableView*>("transactionView");
+    auto* amount = view->findChild<QLineEdit*>("amountWidget");
+    QVERIFY(watch && table && amount);
+    const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    for (int width : {1280, 958}) {
+        window.resize(width, 850); Settle();
+        if (auto* overlay = window.findChild<ModalOverlay*>()) overlay->hide();
+        Settle();
+        const QString state = QString("window %1 px: viewport %2, page needs %3, view %4, row needs %5, the box %6 of %7..%8, scroll %9")
+            .arg(window.width()).arg(scroll->viewport()->width()).arg(frame->pageMinimum().width()).arg(view->width())
+            .arg(view->minimumSizeHint().width()).arg(watch->width()).arg(watch->minimumSizeHint().width()).arg(watch->sizeHint().width())
+            .arg(scroll->horizontalScrollBar()->maximum());
+        qInfo().noquote() << state;
+        QVERIFY2(window.width() == width, qPrintable(state));
+        QVERIFY2(view->isVisible() && watch->isVisible(), qPrintable(state));
+        QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0 && scroll->viewport()->width() >= frame->pageMinimum().width(), qPrintable(state));
+        QVERIFY2(OnPage(window, watch).left() == OnPage(window, table).left(), qPrintable(state));
+        QVERIFY2(OnPage(window, amount).right() == OnPage(window, table).right(), qPrintable(state));
+        // At the usual width the box has room for its words.
+        if (width == 1280) QVERIFY2(watch->width() == watch->sizeHint().width(), qPrintable(state));
+        if (!output.isEmpty()) QVERIFY(QDir().mkpath(output) && window.grab().save(QDir(output).filePath(QString("Abyss-transactions-window-%1.png").arg(width))));
+    }
 }
 
 void AbyssTests::receiveAddressFirst()

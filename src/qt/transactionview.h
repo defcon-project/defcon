@@ -9,8 +9,11 @@
 
 #include <uint256.h>
 
+#include <QIcon>
 #include <QWidget>
 #include <QKeyEvent>
+
+#include <array>
 
 class EmptyStateWidget;
 class TransactionFilterProxy;
@@ -89,12 +92,17 @@ private:
     QWidget *createDateRangeWidget();
     void updateCalendarWidgets();
     void updateEmptyState();
-    //! Abyss names what its two "All" lists filter and hides the scroll bar's
+    //! Abyss names what its two "All" lists filter, starts the row at the
+    //! table's left edge, says in words what its watch-only filter shows,
+    //! lets its lists give way in a narrow row and hides the scroll bar's
     //! empty strip; the classic themes keep the original row.
     void updateFilterPresentation();
     QBoxLayout* m_filter_row{nullptr};
+    QSpacerItem* m_filter_status_gap{nullptr};
     QSpacerItem* m_filter_scrollbar_gap{nullptr};
     int m_filter_scrollbar_width{0};
+    //! The watch-only filter's icons as the classic themes show them.
+    std::array<QIcon, 3> m_watch_classic_icons;
 
     void changeEvent(QEvent* e) override;
 

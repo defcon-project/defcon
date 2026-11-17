@@ -23,6 +23,7 @@
 
 #include <optional>
 
+#include <QApplication>
 #include <QCalendarWidget>
 #include <chrono>
 #include <QComboBox>
@@ -35,17 +36,183 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QMenu>
+#include <QPainter>
 #include <QPoint>
 #include <QScrollBar>
 #include <QSettings>
+#include <QStyleOptionComboBox>
+#include <QStyleOptionViewItem>
+#include <QStylePainter>
+#include <QStyledItemDelegate>
 #include <QTableView>
 #include <QTextCharFormat>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 /** Date format for persistence */
 static const char* PERSISTENCE_DATE_FORMAT = "yyyy-MM-dd";
+
+namespace {
+/** A list of the Transactions filter row. The classic themes show it as any
+ *  combo box (the watch-only filter as a narrow list of icons): Rule::Plain.
+ *  In Abyss a list either gives way where the row is short of room (a narrow
+ *  window), down to its least text whole beside its icon and arrow (an empty
+ *  least text: the icon alone), its current text shortened to what is left
+ *  (Rule::GivesWay); or it is always as wide as its widest choice and never
+ *  narrower than a floor (Rule::Whole). An open list keeps its texts whole. */
+class FilterBox : public QComboBox
+{
+public:
+    enum class Rule { Plain, GivesWay, Whole };
+    using QComboBox::QComboBox;
+
+    void setRule(Rule rule, const QString& least_text = QString(), int floor = 0)
+    {
+        if (m_rule == rule && m_least_text == least_text && m_floor == floor) return;
+        m_rule = rule;
+        m_least_text = least_text;
+        m_floor = floor;
+        updateGeometry();
+        update();
+    }
+    //! With the text of the widest choice. QComboBox counts four pixels
+    //! between an icon and the text and none after the text; a style sheet's
+    //! label leaves LABEL_GAP after the icon, the text ends END_CLEAR before
+    //! the field does, and two more allow for a text's advance past its
+    //! measured width.
+    QSize sizeHint() const override
+    {
+        QSize size = QComboBox::sizeHint();
+        if (m_rule == Rule::Plain) return size;
+        size.rwidth() += slack();
+        if (m_rule == Rule::Whole) size.setWidth(std::max(size.width(), m_floor));
+        return size;
+    }
+    //! GivesWay: QComboBox's own sum (an icon and four pixels, the text) for
+    //! the least text. Whole: the full width.
+    QSize minimumSizeHint() const override
+    {
+        if (m_rule == Rule::Plain) return QComboBox::minimumSizeHint();
+        if (m_rule == Rule::Whole) return sizeHint();
+        QSize size = QComboBox::minimumSizeHint();
+        int contents = m_least_text.isEmpty() ? 0 : fontMetrics().horizontalAdvance(m_least_text);
+        if (hasIcons()) contents += iconSize().width() + 4;
+        QStyleOptionComboBox option;
+        initStyleOption(&option);
+        int width = style()->sizeFromContents(QStyle::CT_ComboBox, &option, QSize(contents, size.height()), this).width();
+        if (!m_least_text.isEmpty()) width += slack();
+        size.setWidth(std::min(width, sizeHint().width()));
+        return size;
+    }
+    void showPopup() override
+    {
+        // A shortened list's popup is as wide as the box would be with room.
+        const int full = std::min(sizeHint().width(), maximumWidth());
+        view()->setMinimumWidth(m_rule == Rule::GivesWay && width() < full ? full : 0);
+        QComboBox::showPopup();
+    }
+
+protected:
+    void paintEvent(QPaintEvent*) override
+    {
+        // QComboBox::paintEvent(), with the text shortened to its room.
+        QStylePainter painter(this);
+        painter.setPen(palette().color(QPalette::Text));
+        QStyleOptionComboBox option;
+        initStyleOption(&option);
+        painter.drawComplexControl(QStyle::CC_ComboBox, option);
+        if (m_rule == Rule::GivesWay && !option.currentText.isEmpty()) {
+            int room = style()->subControlRect(QStyle::CC_ComboBox, &option, QStyle::SC_ComboBoxEditField, this).width() - END_CLEAR;
+            if (!option.currentIcon.isNull()) room -= option.iconSize.width() + LABEL_GAP;
+            if (option.fontMetrics.horizontalAdvance(option.currentText) > room) {
+                option.currentText = room > 0 ? option.fontMetrics.elidedText(option.currentText, Qt::ElideRight, room) : QString();
+            }
+        }
+        painter.drawControl(QStyle::CE_ComboBoxLabel, option);
+    }
+
+private:
+    //! What a style sheet's combo box label leaves between the icon and the text.
+    static constexpr int LABEL_GAP{6};
+    //! The text ends this far before the field that clips it.
+    static constexpr int END_CLEAR{2};
+    Rule m_rule{Rule::Plain};
+    QString m_least_text;
+    int m_floor{0};
+    bool hasIcons() const
+    {
+        for (int i = 0; i < count(); ++i) {
+            if (!itemIcon(i).isNull()) return true;
+        }
+        return false;
+    }
+    int slack() const { return (hasIcons() ? LABEL_GAP - 4 : 0) + END_CLEAR + 2; }
+};
+
+/** The search field. In Abyss it asks for no more than its least width, so
+ *  that where the row is short of room it gives way before the filter lists
+ *  shorten their words (it still takes all the room left: it expands). The
+ *  classic themes ask what a line edit asks. */
+class SearchField : public QLineEdit
+{
+public:
+    using QLineEdit::QLineEdit;
+
+    void setModest(bool modest)
+    {
+        if (m_modest == modest) return;
+        m_modest = modest;
+        updateGeometry();
+    }
+    QSize sizeHint() const override
+    {
+        QSize size = QLineEdit::sizeHint();
+        if (m_modest) size.setWidth(std::max(minimumSizeHint().width(), minimumWidth()));
+        return size;
+    }
+
+private:
+    bool m_modest{false};
+};
+
+/** The table's watch-only column in Abyss: the eye in the middle of its cell,
+ *  whatever width the header gives the column (its least width follows the
+ *  header's font). The classic themes paint the cell as the view always did. */
+class WatchOnlyCellDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
+    {
+        if (!GUIUtil::isModernTheme()) {
+            QStyledItemDelegate::paint(painter, option, index);
+            return;
+        }
+        QStyleOptionViewItem cell = option;
+        initStyleOption(&cell, index);
+        const QIcon eye = cell.icon;
+        // The cell without its icon (the row's ground and selection), then
+        // the icon in its middle, in the state the style would give it.
+        cell.icon = QIcon();
+        cell.features &= ~QStyleOptionViewItem::HasDecoration;
+        QStyle* style = cell.widget != nullptr ? cell.widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &cell, painter, cell.widget);
+        if (eye.isNull()) return;
+        QIcon::Mode mode = QIcon::Normal;
+        if (!(cell.state & QStyle::State_Enabled)) {
+            mode = QIcon::Disabled;
+        } else if (cell.state & QStyle::State_Selected) {
+            mode = QIcon::Selected;
+        }
+        eye.paint(painter, QStyle::alignedRect(cell.direction, Qt::AlignCenter, cell.decorationSize, cell.rect), Qt::AlignCenter, mode,
+                  cell.state & QStyle::State_Open ? QIcon::On : QIcon::Off);
+    }
+};
+} // namespace
 
 TransactionView::TransactionView(QWidget* parent) :
     QWidget(parent)
@@ -58,16 +225,19 @@ TransactionView::TransactionView(QWidget* parent) :
     hlayout->setContentsMargins(0,0,0,0);
     hlayout->setSpacing(1);
     hlayout->addSpacing(STATUS_COLUMN_WIDTH - 2);
+    m_filter_row = hlayout;
+    m_filter_status_gap = hlayout->itemAt(0)->spacerItem();
 
-    watchOnlyWidget = new QComboBox(this);
+    watchOnlyWidget = new FilterBox(this);
     watchOnlyWidget->setFixedWidth(24);
     watchOnlyWidget->addItem("", TransactionFilterProxy::WatchOnlyFilter_All);
     watchOnlyWidget->addItem(GUIUtil::getIcon("eye_plus"), "", TransactionFilterProxy::WatchOnlyFilter_Yes);
     watchOnlyWidget->addItem(GUIUtil::getIcon("eye_minus"), "", TransactionFilterProxy::WatchOnlyFilter_No);
+    for (int i = 0; i < 3; ++i) m_watch_classic_icons[i] = watchOnlyWidget->itemIcon(i);
     hlayout->addWidget(watchOnlyWidget);
 
-    dateWidget = new QComboBox(this);
-    dateWidget->setFixedWidth(120);
+    dateWidget = new FilterBox(this);
+    dateWidget->setFixedWidth(DATE_COLUMN_WIDTH);
     dateWidget->addItem(tr("All"), All);
     dateWidget->addItem(tr("Today"), Today);
     dateWidget->addItem(tr("This week"), ThisWeek);
@@ -79,7 +249,7 @@ TransactionView::TransactionView(QWidget* parent) :
     hlayout->addWidget(dateWidget);
 
     QString strCoinJoinName = QString::fromStdString(gCoinJoinName);
-    typeWidget = new QComboBox(this);
+    typeWidget = new FilterBox(this);
     typeWidget->setFixedWidth(TYPE_COLUMN_WIDTH - 1);
     typeWidget->addItem(tr("All"), TransactionFilterProxy::ALL_TYPES);
     typeWidget->addItem(tr("Most Common"), TransactionFilterProxy::COMMON_TYPES);
@@ -93,7 +263,8 @@ TransactionView::TransactionView(QWidget* parent) :
     typeWidget->addItem(tr("%1 Mixing").arg(strCoinJoinName), TransactionFilterProxy::TYPE(TransactionRecord::CoinJoinMixing));
     typeWidget->addItem(tr("%1 Collateral Payment").arg(strCoinJoinName), TransactionFilterProxy::TYPE(TransactionRecord::CoinJoinCollateralPayment));
     typeWidget->addItem(tr("To yourself"), TransactionFilterProxy::TYPE(TransactionRecord::SendToSelf));
-    typeWidget->addItem(tr("Mined"), TransactionFilterProxy::TYPE(TransactionRecord::Generated));
+    // No "Mined": the coin is not mined. A wallet's rows of that type (the
+    // first blocks' rewards) stay in the list under their own name.
     typeWidget->addItem(tr("Platform Transfer"), TransactionFilterProxy::TYPE(TransactionRecord::PlatformTransfer));
     typeWidget->addItem(tr("Masternode Reward"), TransactionFilterProxy::TYPE(TransactionRecord::MasternodeReward));
     typeWidget->addItem(tr("Other"), TransactionFilterProxy::TYPE(TransactionRecord::Other));
@@ -102,7 +273,7 @@ TransactionView::TransactionView(QWidget* parent) :
 
     hlayout->addWidget(typeWidget);
 
-    search_widget = new QLineEdit(this);
+    search_widget = new SearchField(this);
     search_widget->setPlaceholderText(tr("Enter address, transaction id, or label to search"));
     search_widget->setObjectName("search_widget");
     hlayout->addWidget(search_widget);
@@ -142,7 +313,6 @@ TransactionView::TransactionView(QWidget* parent) :
     int width = transactionView->verticalScrollBar()->sizeHint().width();
     // Cover scroll bar width with spacing
     hlayout->addSpacing(width);
-    m_filter_row = hlayout;
     m_filter_scrollbar_gap = hlayout->itemAt(hlayout->count() - 1)->spacerItem();
     m_filter_scrollbar_width = width;
     // Always show scroll bar
@@ -154,6 +324,7 @@ TransactionView::TransactionView(QWidget* parent) :
     transactionView->installEventFilter(this);
 
     transactionView->setObjectName("transactionView");
+    transactionView->setItemDelegateForColumn(TransactionTableModel::Watchonly, new WatchOnlyCellDelegate(transactionView));
 
     // Abyss says what an empty history means: nothing yet, nothing that
     // matches the filters, or waiting for the sync. The header stays visible
@@ -761,11 +932,58 @@ void TransactionView::updateFilterPresentation()
     dateWidget->setToolTip(modern ? tr("Show only transactions from this period") : QString());
     typeWidget->setToolTip(modern ? tr("Show only transactions of this type") : QString());
     amountWidget->setToolTip(modern ? tr("Show only transactions of at least this amount") : QString());
+    // Abyss starts the row at the table's left edge, and its watch-only
+    // filter says what each choice shows. The classic themes keep the filters
+    // above their columns, and the narrow list of icons with its first row
+    // empty.
+    m_filter_status_gap->changeSize(modern ? 0 : STATUS_COLUMN_WIDTH - 2, 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
+    const std::array<QString, 3> words{tr("All addresses"), tr("Watch-only"), tr("Spendable only")};
+    const std::array<const char*, 3> eyes{"eye", "eye_plus", "eye_minus"};
+    for (int i = 0; i < 3; ++i) {
+        watchOnlyWidget->setItemText(i, modern ? words[i] : QString());
+        watchOnlyWidget->setItemIcon(i, modern ? GUIUtil::getIcon(eyes[i]) : m_watch_classic_icons[i]);
+    }
+    watchOnlyWidget->setToolTip(modern ? tr("Show only transactions of these addresses") : QString());
+    const auto horizontal = [](QWidget* widget, QSizePolicy::Policy horizontal_policy) {
+        QSizePolicy policy = widget->sizePolicy();
+        policy.setHorizontalPolicy(horizontal_policy);
+        widget->setSizePolicy(policy);
+    };
+    // Abyss: the watch-only filter as wide as its widest choice, the type
+    // filter as wide as before; where the row is short of room both give way
+    // (FilterBox), the watch-only filter down to its eye, the type filter to
+    // its first choice whole, so that the row needs no more room than it did;
+    // the search field gives way first (SearchField).
+    // The date filter as wide as its widest choice, never less than before,
+    // so that a larger font does not cut it, also in a narrow row.
+    using Rule = FilterBox::Rule;
+    static_cast<FilterBox*>(watchOnlyWidget)->setRule(modern ? Rule::GivesWay : Rule::Plain);
+    static_cast<FilterBox*>(typeWidget)->setRule(modern ? Rule::GivesWay : Rule::Plain, typeWidget->itemText(0));
+    static_cast<FilterBox*>(dateWidget)->setRule(modern ? Rule::Whole : Rule::Plain, QString(), DATE_COLUMN_WIDTH);
+    static_cast<SearchField*>(search_widget)->setModest(modern);
+    horizontal(watchOnlyWidget, modern ? QSizePolicy::Maximum : QSizePolicy::Preferred);
+    horizontal(dateWidget, modern ? QSizePolicy::Fixed : QSizePolicy::Preferred);
+    if (modern) {
+        watchOnlyWidget->setMinimumWidth(0);
+        watchOnlyWidget->setMaximumWidth(QWIDGETSIZE_MAX);
+        watchOnlyWidget->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+        dateWidget->setMinimumWidth(0);
+        dateWidget->setMaximumWidth(QWIDGETSIZE_MAX);
+        dateWidget->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+        typeWidget->setMinimumWidth(0);
+        typeWidget->setMaximumWidth(TYPE_COLUMN_WIDTH - 1);
+    } else {
+        watchOnlyWidget->setSizeAdjustPolicy(QComboBox::AdjustToContentsOnFirstShow);
+        watchOnlyWidget->setFixedWidth(24);
+        dateWidget->setSizeAdjustPolicy(QComboBox::AdjustToContentsOnFirstShow);
+        dateWidget->setFixedWidth(DATE_COLUMN_WIDTH);
+        typeWidget->setFixedWidth(TYPE_COLUMN_WIDTH - 1);
+    }
 #ifndef Q_OS_MAC
     transactionView->setVerticalScrollBarPolicy(modern ? Qt::ScrollBarAsNeeded : Qt::ScrollBarAlwaysOn);
     m_filter_scrollbar_gap->changeSize(modern ? 0 : m_filter_scrollbar_width, 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
-    m_filter_row->invalidate();
 #endif
+    m_filter_row->invalidate();
 }
 
 void TransactionView::changeEvent(QEvent* e)

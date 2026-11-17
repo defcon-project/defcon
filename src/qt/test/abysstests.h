@@ -109,6 +109,9 @@ private Q_SLOTS:
     void overviewPlainAmounts();
     void overviewRecentTooltip();
     void transactionsPlainAmounts();
+    void transactionTypeList();
+    void transactionWatchOnlyFilter();
+    void transactionFiltersInWindow();
     void overviewDiscreetHeader();
     void sidebarLogoCentred();
     void sidebarMoreGroup();
