@@ -80,18 +80,28 @@ jobs:
 
       # The default shell has no pipefail, so "cmd | head" hands the step head's status, not the
       # command's. Each version command runs on its own: its exit status decides, and its first
-      # line must name the release under test.
+      # line must name the release under test. defcon-wallet -version prints its one version line
+      # and exits 1 (WalletAppInit returns false, src/bitcoin-wallet.cpp): exactly that answer,
+      # byte for byte and with nothing on stderr, is accepted.
       - name: Versions
         run: |
           cd defcon-apple
           for b in defcond defcon-cli defcon-tx defcon-wallet; do
-            out=$("./$b" -version) || { echo "FAIL: $b -version exited $?"; exit 1; }
+            rc=0
+            "./$b" -version >"$RUNNER_TEMP/v.out" 2>"$RUNNER_TEMP/v.err" || rc=$?
+            cat "$RUNNER_TEMP/v.err" >&2
+            out=$(cat "$RUNNER_TEMP/v.out")
             first=${out%%$'\n'*}
             echo "$first"
             case "$first" in
               *" version $TAG") ;;
-              *) echo "FAIL: $b reports \"$first\", expected version $TAG"; exit 1 ;;
+              *) echo "FAIL: $b reports \"$first\" (exit $rc), expected version $TAG"; exit 1 ;;
             esac
+            if [ "$b" = defcon-wallet ] && [ "$rc" = 1 ] && [ ! -s "$RUNNER_TEMP/v.err" ] &&
+               printf 'DeFCoN defcon-wallet version %s\n' "$TAG" | cmp -s - "$RUNNER_TEMP/v.out"; then
+              continue
+            fi
+            [ "$rc" = 0 ] || { echo "FAIL: $b -version exited $rc"; exit 1; }
           done
 
       - name: The node starts, answers and stops (regtest, no network)
@@ -102,7 +112,8 @@ jobs:
           for i in $(seq 1 90); do ./defcon-cli -regtest -datadir="$D" getblockcount >/dev/null 2>&1 && break; sleep 1; done
           info=$(./defcon-cli -regtest -datadir="$D" getblockchaininfo)
           printf '%s\n' "$info" | head -5
-          ./defcon-cli -regtest -datadir="$D" getnetworkinfo | grep -E '"subversion"|"protocolversion"'
+          net=$(./defcon-cli -regtest -datadir="$D" getnetworkinfo)
+          printf '%s\n' "$net" | grep -E '"subversion"|"protocolversion"'
           ./defcon-cli -regtest -datadir="$D" stop
           for i in $(seq 1 60); do pgrep -x defcond >/dev/null || break; sleep 1; done
           tail -2 "$D/regtest/debug.log"
@@ -114,9 +125,11 @@ jobs:
           ./defcond -datadir="$D" -listen=0 -connect=0 -dnsseed=0 -fixedseeds=0 -disablewallet \
                     -port=19999 -rpcport=19998 -printtoconsole=0 -daemon=1
           for i in $(seq 1 90); do ./defcon-cli -datadir="$D" -rpcport=19998 getblockcount >/dev/null 2>&1 && break; sleep 1; done
-          ./defcon-cli -datadir="$D" -rpcport=19998 getblockchaininfo | grep '"chain"'
-          ACT=$(./defcon-cli -datadir="$D" -rpcport=19998 dslstatus | grep '"activationheight"' | tr -dc 0-9)
-          ENF=$(./defcon-cli -datadir="$D" -rpcport=19998 dslstatus | grep '"enforcementheight"' | tr -dc 0-9)
+          info=$(./defcon-cli -datadir="$D" -rpcport=19998 getblockchaininfo)
+          printf '%s\n' "$info" | grep '"chain"'
+          dsl=$(./defcon-cli -datadir="$D" -rpcport=19998 dslstatus)
+          ACT=$(printf '%s\n' "$dsl" | grep '"activationheight"' | tr -dc 0-9)
+          ENF=$(printf '%s\n' "$dsl" | grep '"enforcementheight"' | tr -dc 0-9)
           echo "activationheight=$ACT enforcementheight=$ENF"
           ./defcon-cli -datadir="$D" -rpcport=19998 stop
           for i in $(seq 1 60); do pgrep -x defcond >/dev/null || break; sleep 1; done
@@ -131,11 +144,11 @@ jobs:
       - name: The GUI binary loads its libraries (it cannot open a window here)
         run: |
           cd defcon-apple
-          # As in "Versions": the exit status decides, and the first line names the release.
-          out=$(./defcon-qt -version) || { echo "FAIL: defcon-qt -version exited $?"; exit 1; }
+          # As in "Versions" the exit status decides; here only the last word of the first line has
+          # to be the release, as the word before it is translated (tr("version"), src/qt/utilitydialog.cpp).
+          rc=0
+          out=$(./defcon-qt -version) || rc=$?
           first=${out%%$'\n'*}
           echo "$first"
-          case "$first" in
-            *" version $TAG") ;;
-            *) echo "FAIL: defcon-qt reports \"$first\", expected version $TAG"; exit 1 ;;
-          esac
+          [ "${first##* }" = "$TAG" ] || { echo "FAIL: defcon-qt reports \"$first\" (exit $rc), expected version $TAG"; exit 1; }
+          [ "$rc" = 0 ] || { echo "FAIL: defcon-qt -version exited $rc"; exit 1; }
