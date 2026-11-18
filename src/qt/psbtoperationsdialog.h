@@ -15,6 +15,10 @@ namespace Ui {
 class PSBTOperationsDialog;
 }
 
+QT_BEGIN_NAMESPACE
+class QFile;
+QT_END_NAMESPACE
+
 /** Dialog showing transaction details. */
 class PSBTOperationsDialog : public QDialog
 {
@@ -33,6 +37,8 @@ public Q_SLOTS:
     void saveTransaction();
 
 private:
+    friend class AbyssTests; // Regression tests, no runtime test hooks.
+
     Ui::PSBTOperationsDialog* m_ui;
     PartiallySignedTransaction m_transaction_data;
     WalletModel* m_wallet_model;
@@ -44,6 +50,8 @@ private:
         ERR
     };
 
+    //! Writes the transaction to the file and reports whether the whole of it is there.
+    void saveTransactionTo(QFile& file);
     size_t couldSignInputs(const PartiallySignedTransaction &psbtx);
     void updateTransactionDisplay();
     std::string renderTransaction(const PartiallySignedTransaction &psbtx);

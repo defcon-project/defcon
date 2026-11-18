@@ -32,6 +32,7 @@
 #include <QAbstractButton>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QFile>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -252,6 +253,8 @@ void MultisigSpendDialog::setupUi(bool with_build_stage)
     root->addWidget(m_finalize_group);
 
     m_status_label = new QLabel(this);
+    // As it is: a file's name in a message is not markup.
+    m_status_label->setTextFormat(Qt::PlainText);
     m_status_label->setWordWrap(true);
     m_status_label->setVisible(false);
     root->addWidget(m_status_label);
@@ -692,8 +695,6 @@ void MultisigSpendDialog::copyPsbt()
 void MultisigSpendDialog::savePsbt()
 {
     if (!m_psbt) return;
-    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
-    ssTx << *m_psbt;
 
     const QString suggested = (m_entry.isValid() && !m_entry.label.isEmpty() ? m_entry.label : tr("multisig")) + QLatin1String(".psbt");
     const QString filename = GUIUtil::getSaveFileName(this,
@@ -702,10 +703,23 @@ void MultisigSpendDialog::savePsbt()
         tr("Partially Signed Transaction (Binary)") + QLatin1String(" (*.psbt)"), nullptr);
     if (filename.isEmpty()) return;
 
-    std::ofstream out{filename.toLocal8Bit().data(), std::ofstream::out | std::ofstream::binary};
-    out << ssTx.str();
-    out.close();
-    setStatus(tr("PSBT saved to %1.").arg(filename), false);
+    QFile file(filename);
+    savePsbtTo(file);
+}
+
+void MultisigSpendDialog::savePsbtTo(QFile& file)
+{
+    if (!m_psbt) return;
+    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
+    ssTx << *m_psbt;
+    // Saved only when the whole file is written: the cosigner must not be
+    // handed a part of the transaction under a message that it was saved.
+    // The stream's own bytes are written, not a copy of them, in their own length.
+    if (!GUIUtil::SaveFile(file, reinterpret_cast<const char*>(ssTx.data()), ssTx.size())) {
+        setStatus(tr("Could not write file %1.").arg(file.fileName()), true);
+        return;
+    }
+    setStatus(tr("PSBT saved to %1.").arg(file.fileName()), false);
 }
 
 void MultisigSpendDialog::showPsbtQr()

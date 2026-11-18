@@ -16,6 +16,7 @@ class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
+class QFile;
 class QSpinBox;
 class WalletModel;
 
@@ -33,6 +34,8 @@ private Q_SLOTS:
     void exportSetup();
 
 private:
+    friend class AbyssTests; // Regression tests, no runtime test hooks.
+
     enum class Mode {
         CREATE_ONLY = 0,
         ADD_TO_WALLET = 1,
@@ -60,6 +63,8 @@ private:
     MultisigUtil::Entry m_last_entry;
 
     void clearResult();
+    //! Writes the last result's setup to the file and reports whether the whole of it is there.
+    void exportSetupTo(QFile& file);
     void setStatus(const QString& message, bool is_error);
     Mode currentMode() const;
     //! Parsed key tokens from the keys edit; empty result and non-empty error on validation failure.

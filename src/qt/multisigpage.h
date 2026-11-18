@@ -21,6 +21,7 @@ class QGroupBox;
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QFile;
 class QTableWidget;
 QT_END_NAMESPACE
 
@@ -58,6 +59,8 @@ private Q_SLOTS:
     void showProfileQr();
 
 private:
+    friend class AbyssTests; // Regression tests, no runtime test hooks.
+
     void updateThemePresentation();
 
     ClientModel* m_client_model{nullptr};
@@ -93,6 +96,8 @@ private:
     void updateDetailsPanel();
     QString walletName() const;
     void continuePsbt(bool from_clipboard);
+    //! Writes the setup to the file and reports whether the whole of it is there.
+    void exportSetupTo(const MultisigUtil::Entry& entry, QFile& file);
     void setStatus(const QString& message, bool is_error);
     //! Query per-address balances/UTXO counts for all tracked addresses via a single listunspent call.
     bool queryBalances(QHash<QString, CAmount>& balances, QHash<QString, int>& utxo_counts, QString& error) const;

@@ -76,6 +76,8 @@ private Q_SLOTS:
     void shortcutUnderlines();
     void buttonRows();
     void walletGoneWhileAdding();
+    void saveFileWhole();
+    void savedFilesReported();
     void pageHeaders();
     void primaryButtons();
     void overviewColumns();

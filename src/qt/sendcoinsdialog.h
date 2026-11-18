@@ -30,6 +30,7 @@ QT_BEGIN_NAMESPACE
 class QUrl;
 class QGridLayout;
 class QLabel;
+class QFile;
 class QScrollArea;
 QT_END_NAMESPACE
 
@@ -91,6 +92,12 @@ private:
     void minimizeFeeSection(bool fMinimize);
     // Format confirmation message
     bool PrepareSendText(QString& question_string, QString& informative_text, QString& detailed_text);
+    //! Writes an unsigned transaction's PSBT to the file and reports whether the whole of it is there.
+    bool saveUnsignedTransaction(QFile& file, const char* data, size_t size);
+    //! Saves an unsigned transaction's PSBT and ends the send: the form is cleared only if it was saved.
+    void concludeUnsigned(QFile& file, const char* data, size_t size);
+    //! Ends a send: clears the form unless the send failed, and takes new recipients again.
+    void finishSend(bool failed);
     void updateFeeMinimizedLabel();
     void updateCoinControlState();
     //! Let the form decide how small this page may become.

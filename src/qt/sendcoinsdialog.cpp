@@ -31,9 +31,10 @@
 #include <chrono>
 
 #include <array>
-#include <fstream>
 #include <memory>
+#include <string>
 
+#include <QFile>
 #include <QFontMetrics>
 #include <QFormLayout>
 #include <QFrame>
@@ -532,11 +533,10 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
             if (filename.isEmpty()) {
                 return;
             }
-            std::ofstream out{filename.toLocal8Bit().data(), std::ofstream::out | std::ofstream::binary};
-            out << ssTx.str();
-            out.close();
-            Q_EMIT message(tr("PSBT saved"), "PSBT saved to disk", CClientUIInterface::MSG_INFORMATION);
-            break;
+            QFile file(filename);
+            // The stream's own bytes: no copy of the PSBT lives on while the result is shown.
+            concludeUnsigned(file, reinterpret_cast<const char*>(ssTx.data()), ssTx.size());
+            return;
         }
         case QMessageBox::Discard:
             break;
@@ -555,13 +555,38 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
             send_failure = true;
         }
     }
-    if (!send_failure) {
+    finishSend(send_failure);
+}
+
+void SendCoinsDialog::finishSend(bool failed)
+{
+    if (!failed) {
         accept();
         m_coin_control->UnSelectAll();
         coinControlUpdateLabels();
     }
     fNewRecipientAllowed = true;
     m_current_transaction.reset();
+}
+
+bool SendCoinsDialog::saveUnsignedTransaction(QFile& file, const char* data, size_t size)
+{
+    // Saved only when the whole file is written: the signer must not be
+    // handed a part of the transaction under a message that it was saved.
+    // The caller's own bytes are written, not a copy of them, in their own length.
+    if (!GUIUtil::SaveFile(file, data, size)) {
+        Q_EMIT message(tr("Save Transaction Data"), tr("Could not write file %1.").arg(file.fileName()), CClientUIInterface::MSG_ERROR);
+        return false;
+    }
+    Q_EMIT message(tr("PSBT saved"), "PSBT saved to disk", CClientUIInterface::MSG_INFORMATION);
+    return true;
+}
+
+void SendCoinsDialog::concludeUnsigned(QFile& file, const char* data, size_t size)
+{
+    // Not saved: the form stays as it is, its recipients and its chosen
+    // coins, so that the transaction can be made and saved again.
+    finishSend(!saveUnsignedTransaction(file, data, size));
 }
 
 void SendCoinsDialog::clear()

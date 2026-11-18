@@ -142,6 +142,8 @@ MultisigDialog::MultisigDialog(QWidget* parent, WalletModel* wallet_model, Clien
     root->addWidget(output_group);
 
     m_status_label = new QLabel(this);
+    // As it is: a file's name in a message is not markup.
+    m_status_label->setTextFormat(Qt::PlainText);
     m_status_label->setWordWrap(true);
     m_status_label->setVisible(false);
     root->addWidget(m_status_label);
@@ -422,10 +424,17 @@ void MultisigDialog::exportSetup()
     if (filename.isEmpty()) return;
 
     QFile file(filename);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        setStatus(tr("Could not write file %1.").arg(filename), true);
+    exportSetupTo(file);
+}
+
+void MultisigDialog::exportSetupTo(QFile& file)
+{
+    if (!m_last_entry.isValid()) return;
+    // Saved only when the whole file is written: the cosigners must not be
+    // handed a part of the setup under a message that it was saved.
+    if (!GUIUtil::SaveFile(file, MultisigUtil::EntryToSetupJson(m_last_entry))) {
+        setStatus(tr("Could not write file %1.").arg(file.fileName()), true);
         return;
     }
-    file.write(MultisigUtil::EntryToSetupJson(m_last_entry));
-    setStatus(tr("Setup saved to %1. Share this file with your cosigners; it contains no private keys.").arg(filename), false);
+    setStatus(tr("Setup saved to %1. Share this file with your cosigners; it contains no private keys.").arg(file.fileName()), false);
 }
