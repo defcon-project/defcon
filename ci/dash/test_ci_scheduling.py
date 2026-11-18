@@ -941,6 +941,7 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
             'feature_llmq_is_nonrotation.py', 'feature_llmq_is_nonrotated_verify.py',
             'feature_llmq_is_named_quorum_window.py', 'feature_llmq_no_rotation.py', 'feature_superblock_retirement.py',
             'feature_v23_bundle_heights.py', 'feature_v231_no_payee.py', 'feature_llmq_q60_proto_floor.py',
+            'feature_v231_mn_payment_count.py',
             'feature_evodb_reconcile.py',
             'rpc_verifychainlock.py', 'feature_evodb_reconcile_below_dip3.py', 'feature_evodb_repair_startup.py',
             'feature_llmq_q60_regtest.py', 'feature_llmq_switchover_config.py', 'p2p_headers_uncompressed.py',
