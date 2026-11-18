@@ -12,6 +12,7 @@
 #include <qt/guiutil.h>
 #include <qt/initexecutor.h>
 #include <qt/test/apptests.h>
+#include <qt/test/coinjoinuitests.h>
 #include <qt/test/guiutiltests.h>
 #include <qt/test/rpcnestedtests.h>
 #include <qt/test/uritests.h>
@@ -117,6 +118,10 @@ int main(int argc, char* argv[])
     // Pure arithmetic, so it runs on every platform plugin including `minimal`.
     GUIUtilTests guiutil_tests;
     run(guiutil_tests);
+    // The CoinJoin help and the options form's target field; the dialog's
+    // saving of the target is a wallet build's (it skips without one).
+    CoinJoinUiTests coinjoin_ui_tests(app.node());
+    run(coinjoin_ui_tests);
 #ifdef ENABLE_WALLET
     AbyssTests abyss_tests(app.node());
     run(abyss_tests);

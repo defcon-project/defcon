@@ -146,7 +146,16 @@ HelpMessageDialog::HelpMessageDialog(QWidget *parent, HelpMode helpMode) :
             "<li><b>Backups:</b> each round uses up to 9 new addresses. "
             "%1 needs automatic wallet backups to be switched on; they are on by default.</li>"
             "</ul>"
-        ).arg(strCoinJoinName).arg(Params().PoolMinParticipants()));
+        ).arg(strCoinJoinName).arg(Params().PoolMinParticipants())
+        // A string of its own, so that the translations of the text above stay
+        // valid. The cap is the target balance field's maximum in the options form.
+        + tr(
+            "<hr><b>How much to mix</b>"
+            "<p>The standard amounts are at most about 10 DFCN, so %1 is meant for smaller sums. "
+            "A payment can hold only so many coins: one payment from mixed coins can be at most about 6,700 DFCN, "
+            "so send a larger amount in several payments. "
+            "The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more.</p>"
+        ).arg(strCoinJoinName));
         ui->aboutMessage->setWordWrap(true);
         ui->helpMessage->setVisible(false);
     }
