@@ -111,6 +111,8 @@ private Q_SLOTS:
     void overviewRecentTooltip();
     void transactionsPlainAmounts();
     void transactionTypeList();
+    void transactionTypeSaved();
+    void transactionTypeNoSuchRow();
     void transactionWatchOnlyFilter();
     void transactionFiltersInWindow();
     void overviewDiscreetHeader();
