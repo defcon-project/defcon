@@ -249,6 +249,26 @@ void OptionsDialog::setModel(OptionsModel *_model)
         }
 #endif
 
+        // A saved language this version does not ship (an earlier one did, a
+        // later one may again) is none of the list's rows: the box would be
+        // empty, and OK would save that as the choice and ask for a restart.
+        // "(default)" stands for it and carries the saved value, so leaving
+        // the box alone changes nothing; any choice made replaces it. That
+        // holds for "(default)" itself: once the user chooses a row, that
+        // row is the empty value again, the system's language. The saved one
+        // is not the same thing: it would go on overriding the system's.
+        const QVariant language = _model->data(_model->index(OptionsModel::Language, 0), Qt::EditRole);
+        if (ui->lang->findData(language) < 0) {
+            ui->lang->setItemData(0, language);
+            connect(ui->lang, qOverload<int>(&QComboBox::activated), this, [this](int row) {
+                if (ui->lang->itemData(0).toString().isEmpty()) return;
+                ui->lang->setItemData(0, QString(""));
+                // Chosen where it stood, the row's value changed without a
+                // change of row to say so.
+                if (row == 0) showRestartWarning();
+            });
+        }
+
         mapper->setModel(_model);
         setMapper();
         mapper->toFirst();

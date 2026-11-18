@@ -342,32 +342,33 @@ bool SendCoinsDialog::send(const QList<SendCoinsRecipient>& recipients, QString&
           return false;
     }
 
+    // The question is rich text, the "Show Details" pane under it plain text.
+    // A recipient's label and the wallet's name are the user's words (a
+    // label can also arrive in a defcon: URI): in the question they are
+    // escaped, so that they read as written and cannot add lines or styling
+    // of their own to what the user is asked to confirm.
     QStringList formatted;
+    QStringList formatted_plain;
+    // Asked once: wallets are loaded and unloaded on other threads, and the
+    // question and its details have to name the wallet alike.
+    const bool multiwallet = model->isMultiwallet();
+    const QString wallet_name = model->getWalletName();
     for (const SendCoinsRecipient &rcp : m_current_transaction->getRecipients())
     {
-        // generate amount string with wallet name in case of multiwallet
-        QString amount = BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), rcp.amount);
-        if (model->isMultiwallet()) {
-            amount.append(tr(" from wallet '%1'").arg(model->getWalletName()));
-        }
-
-        // generate address string
-        QString address = rcp.address;
-
-        QString recipientElement;
-
-        {
-            if(rcp.label.length() > 0) // label with address
-            {
-                recipientElement.append(tr("%1 to '%2'").arg(amount, rcp.label));
-                recipientElement.append(QString(" (%1)").arg(address));
+        const auto element = [&](bool rich) -> QString {
+            const auto users = [rich](const QString& text) { return rich ? GUIUtil::HtmlEscape(text) : text; };
+            // generate amount string with wallet name in case of multiwallet
+            QString amount = BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), rcp.amount);
+            if (multiwallet) {
+                amount.append(tr(" from wallet '%1'").arg(users(wallet_name)));
             }
-            else // just address
-            {
-                recipientElement.append(tr("%1 to %2").arg(amount, address));
+            if (rcp.label.length() > 0) { // label with address
+                return tr("%1 to '%2'").arg(amount, users(rcp.label)) + QString(" (%1)").arg(rcp.address);
             }
-        }
-        formatted.append(recipientElement);
+            return tr("%1 to %2").arg(amount, rcp.address); // just address
+        };
+        formatted.append(element(true));
+        formatted_plain.append(element(false));
     }
 
     // Limit number of displayed entries
@@ -465,7 +466,7 @@ bool SendCoinsDialog::send(const QList<SendCoinsRecipient>& recipients, QString&
 
     if (formatted.size() > 1) {
         informative_text = tr("To review recipient list click \"Show Details…\"");
-        detailed_text = formatted.join("\n\n");
+        detailed_text = formatted_plain.join("\n\n");
     }
 
     return true;

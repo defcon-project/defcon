@@ -1483,7 +1483,11 @@ void OverviewPage::setWalletModel(WalletModel *model)
         connect(model->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &OverviewPage::updateDisplayUnit);
 
         updateWatchOnlyLabels((wallet.haveWatchOnly() && !model->wallet().privateKeysDisabled()) || gArgs.GetBoolArg("-debug-ui", false));
-        connect(model, &WalletModel::notifyWatchonlyChanged, [this](bool showWatchOnly) {
+        // The page is the context of this lambda and of the CoinJoin one
+        // below, so the connections go with the page. The options outlive a
+        // closed wallet's page: without a context, switching CoinJoin after
+        // the wallet was closed ran on the page that was gone.
+        connect(model, &WalletModel::notifyWatchonlyChanged, this, [this](bool showWatchOnly) {
             updateWatchOnlyLabels(showWatchOnly && !walletModel->wallet().privateKeysDisabled());
         });
 
@@ -1493,7 +1497,7 @@ void OverviewPage::setWalletModel(WalletModel *model)
         connect(model->getOptionsModel(), &OptionsModel::coinJoinRoundsChanged, this, &OverviewPage::updateCoinJoinProgress);
         connect(model->getOptionsModel(), &OptionsModel::coinJoinAmountChanged, this, &OverviewPage::updateCoinJoinProgress);
         connect(model->getOptionsModel(), &OptionsModel::AdvancedCJUIChanged, this, &OverviewPage::updateAdvancedCJUI);
-        connect(model->getOptionsModel(), &OptionsModel::coinJoinEnabledChanged, [=]() {
+        connect(model->getOptionsModel(), &OptionsModel::coinJoinEnabledChanged, this, [=]() {
             coinJoinStatus(true);
         });
 

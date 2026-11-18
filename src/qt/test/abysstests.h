@@ -120,6 +120,9 @@ private Q_SLOTS:
     void sidebarMoreGroup();
     void sidebarMoreWalletGate();
     void quickButtonsCompact();
+    void sendConfirmationEscapes();
+    void closedPageConnections();
+    void optionsLanguageGone();
     void translationLink();
     // Last, after the window-activation checks of paymentPages: run before
     // them, its two short-lived wallet windows were followed by occasional
