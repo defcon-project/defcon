@@ -43,6 +43,7 @@
 #include <qt/starfieldwidget.h>
 #include <qt/qrimagewidget.h>
 #include <qt/qrdialog.h>
+#include <qt/qvaluecombobox.h>
 #include <qt/transactionfilterproxy.h>
 #include <qt/transactionrecord.h>
 #include <qt/transactionview.h>
@@ -98,6 +99,8 @@
 #include <QDateTimeEdit>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDataWidgetMapper>
+#include <QDebug>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
@@ -10115,6 +10118,345 @@ void AbyssTests::transactionCommonTypes()
     for (int kind = Record::Other; kind <= Record::MasternodeReward; ++kind) {
         QVERIFY2(bool(Proxy::COMMON_TYPES & Proxy::TYPE(kind)) == (housekeeping.count(kind) == 0), qPrintable(QString("type %1").arg(kind)));
     }
+}
+
+//! A second wallet beside a fixture's, under a name of the case's choosing;
+//! unregistered when the case ends.
+struct NamedWallet {
+    std::shared_ptr<CWallet> wallet;
+    NamedWallet(interfaces::Node& node, const std::string& name)
+        : wallet(std::make_shared<CWallet>(node.context()->chain.get(), node.context()->coinjoin_loader.get(), name, CreateMockWalletDatabase()))
+    {
+        AddWallet(wallet);
+        wallet->LoadWallet();
+        wallet->GetOrCreateLegacyScriptPubKeyMan();
+    }
+    ~NamedWallet() { RemoveWallet(wallet, std::nullopt); }
+};
+
+void AbyssTests::sendConfirmationEscapes()
+{
+    // The send confirmation's question is rich text. A recipient's label and
+    // the wallet's name are the user's words, and a label can arrive in a
+    // defcon: URI: read as markup they could put lines of their own into what
+    // the user is asked to confirm. In the question they read as written, and
+    // in the plain "Show Details" text under it they are the words
+    // themselves, not their escaped form. Every theme: the text is not the
+    // look's.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    const QString name = "<u>mine</u><br>&amp;";
+    NamedWallet named(fixture.node, name.toStdString());
+    WalletModel model(interfaces::MakeWallet(named.wallet), *fixture.client);
+    QVERIFY(model.isMultiwallet());
+    QCOMPARE(model.getWalletName(), name);
+    AddressTableModel* addresses = model.getAddressTableModel();
+    const QString funded = addresses->addRow(AddressTableModel::Receive, "", "");
+    const QString first = addresses->addRow(AddressTableModel::Receive, "", "");
+    const QString second = addresses->addRow(AddressTableModel::Receive, "", "");
+    QVERIFY(!funded.isEmpty() && !first.isEmpty() && !second.isEmpty());
+    // A payment received ten blocks deep: something to send from.
+    const CBlockIndex* tip = WITH_LOCK(::cs_main, return fixture.chain.m_node.chainman->ActiveChain().Tip());
+    QVERIFY(tip && tip->nHeight > 20);
+    {
+        LOCK(named.wallet->cs_wallet);
+        named.wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+    const CBlockIndex* deep = tip->GetAncestor(tip->nHeight - 10);
+    QVERIFY(deep);
+    CMutableTransaction fund;
+    fund.vin.emplace_back(COutPoint(uint256S("0900000000000000000000000000000000000000000000000000000000000000"), 0));
+    fund.vout.emplace_back(10 * COIN, GetScriptForDestination(DecodeDestination(funded.toStdString())));
+    QVERIFY(named.wallet->AddToWallet(MakeTransactionRef(std::move(fund)), CWalletTx::Confirmation(CWalletTx::CONFIRMED, deep->nHeight, deep->GetBlockHash(), 1)));
+    Settle();
+    const QString label = "<b>bold</b><br>Total Amount: 0 DFCN &lt; <a href=\"x\">here</a>";
+    const auto fill = [](SendCoinsEntry* entry, const QString& address, const QString& label, CAmount amount) {
+        auto* pay_to = entry->findChild<QLineEdit*>("payTo");
+        auto* add_label = entry->findChild<QLineEdit*>("addAsLabel");
+        auto* pay_amount = entry->findChild<BitcoinAmountField*>("payAmount");
+        if (!pay_to || !add_label || !pay_amount) return false;
+        pay_to->setText(address);
+        add_label->setText(label);
+        pay_amount->setValue(amount);
+        return true;
+    };
+    for (const char* theme : {"Light", "Dark", "Traditional", "Abyss"}) {
+        Theme(theme);
+        QWidget host;
+        auto* send = new SendCoinsDialog(false, &host);
+        send->setModel(&model);
+        host.resize(1280, 850); send->setGeometry(0, 0, 1280, 850);
+        host.show(); send->show(); Settle();
+        auto* entry = send->findChild<SendCoinsEntry*>();
+        QVERIFY2(entry && fill(entry, first, label, COIN), theme);
+        // A second recipient: the question then comes with its details.
+        SendCoinsEntry* other = send->addEntry();
+        QVERIFY2(other && fill(other, second, "", 2 * COIN), theme);
+        QString question, informative, details;
+        QVERIFY2(send->PrepareSendText(question, informative, details), theme);
+        // As markup: the two escaped, neither as it was typed.
+        QVERIFY2(question.contains(GUIUtil::HtmlEscape(label)) && !question.contains(label), qPrintable(QString("%1: %2").arg(theme, question)));
+        QVERIFY2(question.contains(GUIUtil::HtmlEscape(name)) && !question.contains(name), qPrintable(QString("%1: %2").arg(theme, question)));
+        // As the dialog shows it: both as typed, the label on its recipient's line.
+        QTextDocument shown;
+        shown.setHtml(question);
+        const QString seen = shown.toPlainText();
+        QVERIFY2(seen.contains(QString("'%1' (%2)").arg(label, first)), qPrintable(QString("%1: %2").arg(theme, seen)));
+        QVERIFY2(seen.contains(QString("'%1'").arg(name)), qPrintable(QString("%1: %2").arg(theme, seen)));
+        QVERIFY2(seen.contains(second), qPrintable(QString("%1: %2").arg(theme, seen)));
+        // The details are plain text: the words, nothing escaped.
+        QVERIFY2(!informative.isEmpty(), theme);
+        QVERIFY2(details.contains(QString("'%1' (%2)").arg(label, first)) && details.contains(QString("'%1'").arg(name)),
+                 qPrintable(QString("%1: %2").arg(theme, details)));
+        QVERIFY2(!details.contains("&lt;u&gt;") && !details.contains("&lt;b&gt;") && !details.contains("&amp;amp;"),
+                 qPrintable(QString("%1: %2").arg(theme, details)));
+    }
+}
+
+namespace {
+//! The options and a wallet's model with their receivers counted: a page's
+//! connections to them, while it lives and after it is gone.
+struct CountedOptions : OptionsModel {
+    using QObject::receivers;
+};
+struct CountedWallet : WalletModel {
+    using WalletModel::WalletModel;
+    using QObject::receivers;
+};
+} // namespace
+
+void AbyssTests::closedPageConnections()
+{
+    // A wallet's pages listen to the options and to the wallet's model. A
+    // lambda connected without the page as its context stays connected when
+    // the page is deleted. The options live as long as the program, so the
+    // Overview's lambda for the CoinJoin switch then ran on the page that was
+    // gone (switch CoinJoin in Options after closing a wallet). Two more
+    // were built the same way toward the wallet's model, which today dies
+    // right after its view: the Overview's for the watch-only notice and the
+    // Receive page's for the wallet's ability to give addresses. A closed
+    // page leaves no receiver behind, on any of the three.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    CountedOptions options;
+    options.setNode(fixture.node);
+    ClientModel client(fixture.node, &options);
+    CountedWallet model(interfaces::MakeWallet(fixture.wallet), client);
+    const auto receivers = [&] {
+        return std::array<int, 3>{options.receivers(SIGNAL(coinJoinEnabledChanged())),
+                                  model.receivers(SIGNAL(notifyWatchonlyChanged(bool))),
+                                  model.receivers(SIGNAL(canGetAddressesChanged()))};
+    };
+    const char* const signal_names[3]{"coinJoinEnabledChanged", "notifyWatchonlyChanged", "canGetAddressesChanged"};
+    for (const char* theme : {"Light", "Abyss"}) {
+        Theme(theme);
+        const std::array<int, 3> before = receivers();
+        {
+            OverviewPage overview;
+            overview.setClientModel(&client);
+            overview.setWalletModel(&model);
+            ReceiveCoinsDialog receive;
+            receive.setModel(&model);
+            Settle();
+            const std::array<int, 3> open = receivers();
+            for (int i = 0; i < 3; ++i) {
+                QVERIFY2(open[i] > before[i], qPrintable(QString("%1, %2: %3 with the pages, %4 before").arg(theme, signal_names[i]).arg(open[i]).arg(before[i])));
+            }
+        }
+        const std::array<int, 3> closed = receivers();
+        for (int i = 0; i < 3; ++i) {
+            QVERIFY2(closed[i] == before[i], qPrintable(QString("%1, %2: %3 after the pages, %4 before").arg(theme, signal_names[i]).arg(closed[i]).arg(before[i])));
+        }
+    }
+}
+
+void AbyssTests::optionsLanguageGone()
+{
+    // The language list is what this version ships. A saved language it
+    // does not ship (v23.0.0 had twelve that are gone) is none of the list's
+    // rows, so the box was empty, and OK saved the value of no row and asked
+    // for a restart. "(default)" stands for such a language and keeps the
+    // saved value, which is good again if the language comes back: leaving
+    // the box alone changes nothing and asks for nothing. Any row the user
+    // chooses is that row: a language is saved as ever, and "(default)",
+    // chosen, is the empty value, the system's language, where it stood or
+    // after another row; chosen where it stood, the dialog says at once that
+    // a restart is needed, as it does for any other change of the language.
+    // What is saved is what the dialog's own mapper submits, as OK makes it,
+    // with the language box the one field left mapped.
+    if (!GUIUtil::fontsLoaded()) QSKIP("The options dialog needs the application fonts; run minimal:enable_fonts");
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    // Whatever the dialog and its mapper write to the settings is put back.
+    struct PutBack {
+        QMap<QString, QVariant> all;
+        PutBack()
+        {
+            QSettings settings;
+            for (const QString& key : settings.allKeys()) all.insert(key, settings.value(key));
+        }
+        ~PutBack()
+        {
+            QSettings settings;
+            for (const QString& key : settings.allKeys()) {
+                if (!all.contains(key)) settings.remove(key);
+            }
+            for (auto it = all.constBegin(); it != all.constEnd(); ++it) settings.setValue(it.key(), it.value());
+        }
+    } put_back;
+    // No language's name: none that could ship.
+    const QString gone = "zz_ZZ";
+    QVERIFY(!QDir(":/translations").entryList().contains(gone));
+    const QString default_row = QString("(%1)").arg(OptionsDialog::tr("default"));
+    // One dialog on a saved language: what the user does in the box, then what OK's mapper saves.
+    struct Saved {
+        QString language;
+        bool restart;
+        QString problem;
+    };
+    // The options the dialogs read. "Start at login" is the one row that is
+    // read from the system and not from the settings (on Windows the read
+    // makes the startup folder where it is missing): the dialog gets a fixed
+    // answer for it, and nothing can be written through it. Every other row,
+    // the language among them, is the real model's.
+    struct OptionsButStartup : OptionsModel {
+        QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override
+        {
+            if (index.row() == StartAtStartup) return false;
+            return OptionsModel::data(index, role);
+        }
+        bool setData(const QModelIndex& index, const QVariant& value, int role = Qt::EditRole) override
+        {
+            if (index.row() == StartAtStartup) return false;
+            return OptionsModel::setData(index, value, role);
+        }
+    } model;
+    model.setNode(m_node);
+    // The settings but for the two the language's own step writes.
+    const auto other_settings = [] {
+        QMap<QString, QVariant> all;
+        QSettings settings;
+        for (const QString& key : settings.allKeys()) {
+            if (key != "language" && key != "fRestartRequired") all.insert(key, settings.value(key));
+        }
+        return all;
+    };
+    const auto dialog_on = [&](const QString& saved, const std::function<QString(OptionsDialog&, QValueComboBox*)>& user) {
+        QSettings().setValue("language", saved);
+        QSettings().setValue("fRestartRequired", false);
+        // The dialog gives its two proxy validators to its parent to keep: they go with this one.
+        QWidget owner;
+        OptionsDialog options(&owner, true);
+        options.setModel(&model);
+        options.setCurrentTab(OptionsDialog::TAB_DISPLAY);
+        options.show(); Settle();
+        auto* lang = options.findChild<QValueComboBox*>("lang");
+        const QList<QDataWidgetMapper*> mappers = options.findChildren<QDataWidgetMapper*>(QString(), Qt::FindDirectChildrenOnly);
+        if (!lang || mappers.size() != 1) return Saved{QString(), false, "the dialog's language box or its mapper was not found"};
+        QDataWidgetMapper* mapper = mappers.first();
+        const int section = mapper->mappedSection(lang);
+        if (section != OptionsModel::Language) return Saved{QString(), false, QString("the language box is mapped to section %1").arg(section)};
+        const QString problem = user(options, lang);
+        if (!problem.isEmpty()) return Saved{QString(), false, problem};
+        // OK's submit() on the dialog's own mapper, with the language box the
+        // one widget left mapped. The other fields are none of this case's,
+        // and not all of them stop at the settings: "start at login" writes
+        // the system's own entry even when its box is as it was, and on a
+        // profile that never saved them the two tab boxes ask for a restart
+        // of their own.
+        for (int other = 0; other < model.rowCount(); ++other) {
+            if (other == section) continue;
+            while (QWidget* widget = mapper->mappedWidgetAt(other)) mapper->removeMapping(widget);
+        }
+        if (mapper->mappedSection(lang) != section) return Saved{QString(), false, "the language box lost its mapping"};
+        const QMap<QString, QVariant> before = other_settings();
+        if (!mapper->submit()) return Saved{QString(), false, "the mapper did not submit"};
+        // Every other setting is as it was: none written, none added, none removed.
+        const QMap<QString, QVariant> after = other_settings();
+        if (after != before) {
+            QStringList changed;
+            for (auto it = before.constBegin(); it != before.constEnd(); ++it) {
+                if (!after.contains(it.key()) || after.value(it.key()) != it.value()) changed << it.key();
+            }
+            for (auto it = after.constBegin(); it != after.constEnd(); ++it) {
+                if (!before.contains(it.key())) changed << it.key();
+            }
+            return Saved{QString(), false, QString("the submit changed settings that are not the language's: %1").arg(changed.join(", "))};
+        }
+        return Saved{QSettings().value("language").toString(), model.isRestartRequired(), QString()};
+    };
+    // What the dialog says when a change needs a restart.
+    const QString restart_notice = OptionsDialog::tr("This change would require a client restart.");
+    // The user's choices: a row taken in the open list (the only way to take the row the box
+    // is on), and the arrow keys on the closed box.
+    const auto choose_in_list = [](QValueComboBox* lang, int row) {
+        QSignalSpy activated(lang, qOverload<int>(&QComboBox::activated));
+        lang->showPopup(); Settle();
+        lang->view()->setCurrentIndex(lang->model()->index(row, lang->modelColumn(), lang->rootModelIndex()));
+        QTest::keyClick(lang->view(), Qt::Key_Return); Settle();
+        return activated.count() == 1 && activated.first().at(0).toInt() == row && lang->currentIndex() == row;
+    };
+
+    // Left alone: the saved language stays, and nothing asks for a restart.
+    Saved saved = dialog_on(gone, [&](OptionsDialog&, QValueComboBox* lang) {
+        if (lang->currentIndex() != 0 || lang->currentText() != default_row) return QString("the box is on row %1, \"%2\"").arg(lang->currentIndex()).arg(lang->currentText());
+        for (int i = 0; i < lang->count(); ++i) {
+            if (lang->itemText(i).contains(gone)) return QString("a row names the language: %1").arg(lang->itemText(i));
+        }
+        return QString();
+    });
+    QVERIFY2(saved.problem.isEmpty(), qPrintable(saved.problem));
+    QCOMPARE(saved.language, gone);
+    QVERIFY(!saved.restart);
+
+    // "(default)" chosen where it stands: the system's language, and a
+    // restart. The dialog says so at once, before anything is saved: the
+    // row did not change, so nothing else would say it.
+    saved = dialog_on(gone, [&](OptionsDialog& options, QValueComboBox* lang) {
+        const auto* status = options.findChild<QLabel*>("statusLabel");
+        if (!status) return QString("the dialog's status line was not found");
+        if (status->text() == restart_notice) return QString("the status line asks for a restart before any choice");
+        if (!choose_in_list(lang, 0)) return QString("\"(default)\" could not be chosen in the list");
+        return status->text() == restart_notice ? QString() : QString("the status line after \"(default)\" was chosen where it stood: \"%1\"").arg(status->text());
+    });
+    QVERIFY2(saved.problem.isEmpty(), qPrintable(saved.problem));
+    QVERIFY2(saved.language.isEmpty(), qPrintable(saved.language));
+    QVERIFY(saved.restart);
+
+    // A language chosen, then "(default)" again, with the keys: the same.
+    saved = dialog_on(gone, [&](OptionsDialog&, QValueComboBox* lang) {
+        QTest::keyClick(lang, Qt::Key_Down);
+        if (lang->currentIndex() != 1) return QString("the Down key left the box on row %1").arg(lang->currentIndex());
+        QTest::keyClick(lang, Qt::Key_Up);
+        return lang->currentIndex() == 0 ? QString() : QString("the Up key left the box on row %1").arg(lang->currentIndex());
+    });
+    QVERIFY2(saved.problem.isEmpty(), qPrintable(saved.problem));
+    QVERIFY2(saved.language.isEmpty(), qPrintable(saved.language));
+    QVERIFY(saved.restart);
+
+    // A language chosen: saved as ever.
+    QString chosen;
+    saved = dialog_on(gone, [&](OptionsDialog&, QValueComboBox* lang) {
+        QTest::keyClick(lang, Qt::Key_Down);
+        chosen = lang->itemData(lang->currentIndex()).toString();
+        return lang->currentIndex() == 1 && !chosen.isEmpty() ? QString() : QString("the Down key left the box on row %1").arg(lang->currentIndex());
+    });
+    QVERIFY2(saved.problem.isEmpty(), qPrintable(saved.problem));
+    QCOMPARE(saved.language, chosen);
+    QVERIFY(saved.restart);
+
+    // With that shipped language saved the box is on it, "(default)" is the
+    // empty value from the start, and choosing it saves the empty value.
+    saved = dialog_on(chosen, [&](OptionsDialog&, QValueComboBox* lang) {
+        if (lang->currentIndex() != 1 || lang->itemText(0) != default_row || !lang->itemData(0).toString().isEmpty()) {
+            return QString("the box is on row %1, its first row is \"%2\" with the value \"%3\"").arg(lang->currentIndex()).arg(lang->itemText(0), lang->itemData(0).toString());
+        }
+        QTest::keyClick(lang, Qt::Key_Up);
+        return lang->currentIndex() == 0 ? QString() : QString("the Up key left the box on row %1").arg(lang->currentIndex());
+    });
+    QVERIFY2(saved.problem.isEmpty(), qPrintable(saved.problem));
+    QVERIFY2(saved.language.isEmpty(), qPrintable(saved.language));
+    QVERIFY(saved.restart);
 }
 
 void AbyssTests::sendInputsFirst()
