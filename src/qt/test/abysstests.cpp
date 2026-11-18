@@ -3733,6 +3733,9 @@ void AbyssTests::pageHeaders()
         // The header keeps together, however much room the page has to spare.
         QVERIFY2(OnPage(*page, subtitle).top() - OnPage(*page, title).bottom() <= 10, qPrintable(titles[i]));
     }
+    // The titles are 22 points, the Overview's as well. Without the
+    // application fonts the sizes are not set (updateFonts returns first).
+    if (GUIUtil::fontsLoaded()) QCOMPARE(title_font->pointSizeF(), GUIUtil::getScaledFontSize(22));
     // An empty Multisig page keeps its buttons under the header.
     QWidget* multisig = view.widget(5);
     open(multisig);
@@ -10585,6 +10588,73 @@ void AbyssTests::optionsLanguageGone()
     QVERIFY2(saved.problem.isEmpty(), qPrintable(saved.problem));
     QVERIFY2(saved.language.isEmpty(), qPrintable(saved.language));
     QVERIFY(saved.restart);
+}
+
+void AbyssTests::optionsCancelTheme()
+{
+    // Another theme tried on the Options' Appearance page, then Cancel: the
+    // page puts the theme back when it is destroyed, and says so with
+    // themeChanged, which the dialog answers in its status line. The page
+    // went with the dialog's other children, after the dialog had deleted its
+    // ui, and the answer read what was already deleted (the program could
+    // crash). The answer has to come while the dialog is still whole, and the
+    // theme is the one from before, both ways.
+    if (!GUIUtil::fontsLoaded()) QSKIP("The options dialog needs the application fonts; run minimal:enable_fonts");
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    // "Start at login" is read from the system and not from the settings (on
+    // Windows the read makes the startup folder where it is missing): the
+    // dialog gets a fixed answer for it, as in optionsLanguageGone.
+    struct OptionsButStartup : OptionsModel {
+        QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override
+        {
+            if (index.row() == StartAtStartup) return false;
+            return OptionsModel::data(index, role);
+        }
+        bool setData(const QModelIndex& index, const QVariant& value, int role = Qt::EditRole) override
+        {
+            if (index.row() == StartAtStartup) return false;
+            return OptionsModel::setData(index, value, role);
+        }
+    } model;
+    model.setNode(m_node);
+    for (const auto& [from, to] : std::vector<std::pair<QString, QString>>{{"Light", "Abyss"}, {"Abyss", "Light"}}) {
+        Theme(from.toUtf8().constData());
+        const QString what = from + " -> " + to;
+        int answers = 0;
+        bool whole = true;
+        {
+            // The dialog gives its two proxy validators to its parent to keep: they go with this one.
+            QWidget owner;
+            OptionsDialog options(&owner, true);
+            options.setModel(&model);
+            options.setCurrentTab(OptionsDialog::TAB_APPEARANCE);
+            options.show(); Settle();
+            auto* appearance = options.findChild<AppearanceWidget*>();
+            auto* theme = appearance ? appearance->findChild<QComboBox*>("theme") : nullptr;
+            auto* cancel = options.findChild<QPushButton*>("cancelButton");
+            QVERIFY2(appearance && theme && cancel, qPrintable(what));
+            const int row = theme->findData(to);
+            QVERIFY2(row >= 0, qPrintable(what));
+            theme->setCurrentIndex(row); Settle();
+            QVERIFY2(GUIUtil::getActiveTheme() == to, qPrintable(what + ": " + GUIUtil::getActiveTheme()));
+            // What the dialog is when the page answers: past its own
+            // destructor it is only a QWidget, and its ui is gone.
+            const QObject* dialog = &options;
+            QObject::connect(appearance, &AppearanceWidget::themeChanged, [&answers, &whole, dialog](bool) {
+                ++answers;
+                whole = whole && dialog->metaObject() == &OptionsDialog::staticMetaObject;
+            });
+            QSignalSpy rejected(&options, &QDialog::rejected);
+            cancel->click(); Settle();
+            QVERIFY2(rejected.count() == 1, qPrintable(what + QString(": Cancel rejected the dialog %1 times").arg(rejected.count())));
+            QVERIFY2(answers == 0, qPrintable(what + ": the theme went back before the dialog went"));
+        }
+        QVERIFY2(answers == 1, qPrintable(what + QString(": %1 answers").arg(answers)));
+        QVERIFY2(whole, qPrintable(what + ": the page answered a dialog that was already destroyed"));
+        QVERIFY2(GUIUtil::getActiveTheme() == from, qPrintable(what + ": " + GUIUtil::getActiveTheme()));
+        QCOMPARE(QSettings().value("theme").toString(), from);
+    }
 }
 
 void AbyssTests::sendInputsFirst()
