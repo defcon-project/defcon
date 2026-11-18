@@ -113,7 +113,7 @@ static void SignTransaction(const CTxMemPool& mempool, CMutableTransaction& tx, 
     }
 }
 
-static CMutableTransaction CreateProRegTx(const CChain& active_chain, const CTxMemPool& mempool, SimpleUTXOMap& utxos, int port, const CScript& scriptPayout, const CKey& coinbaseKey, CKey& ownerKeyRet, CBLSSecretKey& operatorKeyRet)
+static CMutableTransaction CreateProRegTx(const CChain& active_chain, const CTxMemPool& mempool, SimpleUTXOMap& utxos, int port, const CScript& scriptPayout, const CKey& coinbaseKey, CKey& ownerKeyRet, CBLSSecretKey& operatorKeyRet, uint16_t operator_reward = 0)
 {
     ownerKeyRet.MakeNewKey(true);
     operatorKeyRet.MakeNewKey();
@@ -125,6 +125,7 @@ static CMutableTransaction CreateProRegTx(const CChain& active_chain, const CTxM
     proTx.keyIDOwner = ownerKeyRet.GetPubKey().GetID();
     proTx.pubKeyOperator.Set(operatorKeyRet.GetPublicKey(), bls::bls_legacy_scheme.load());
     proTx.keyIDVoting = ownerKeyRet.GetPubKey().GetID();
+    proTx.nOperatorReward = operator_reward;
     proTx.scriptPayout = scriptPayout;
 
     CMutableTransaction tx;
@@ -1820,6 +1821,132 @@ void FuncUnresolvedPayeeBound(TestChainSetup& setup)
     params.DIP0003EnforcementHeight = saved_enforcement;
 }
 
+// A masternode whose operator takes half the payment, paid to the owner's own
+// script, expects two equal coinbase outputs. Below the v23.1 height one output
+// satisfies both, so a staked block may pay half, or pay half and keep the other
+// half within the coinbase bound; from the height each expected payment needs an
+// output of its own. The producer has always added both, so its block passes on
+// both sides. A masternode whose operator is paid elsewhere expects two different
+// outputs, and both rules give it the same verdict. `legacy` names the BLS scheme
+// the setup stands for; the test checks it is the one in use.
+void FuncMasternodePaymentCount(TestChainSetup& setup, bool legacy)
+{
+    auto& chainman = *Assert(setup.m_node.chainman.get());
+    auto& dmnman = *Assert(setup.m_node.dmnman);
+    auto& payments = *Assert(Assert(setup.m_node.chain_helper.get())->mn_payments);
+    auto& params = const_cast<Consensus::Params&>(Params().GetConsensus());
+    auto utxos = BuildSimpleUtxoMap(setup.m_coinbase_txns);
+
+    // The overrides below go back however the test ends, a failed BOOST_REQUIRE
+    // included: the next setup in this binary reads the same Params().
+    const Consensus::Params saved_params{params};
+    struct RestoreParams {
+        Consensus::Params& params;
+        const Consensus::Params& saved;
+        ~RestoreParams() { params = saved; }
+    } restore_params{params, saved_params};
+
+    // CreateProRegTx and CreateProUpServTx take the scheme from this flag.
+    BOOST_REQUIRE_EQUAL(bls::bls_legacy_scheme.load(), legacy);
+
+    const CScript owner_payout{GenerateRandomAddress()};
+    const CScript other_payout{GenerateRandomAddress()};
+    BOOST_REQUIRE(owner_payout != other_payout);
+    CKey ownerKey;
+    CBLSSecretKey operatorKey;
+    auto tx_reg = CreateProRegTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, 1, owner_payout, setup.coinbaseKey, ownerKey, operatorKey,
+                                 /*operator_reward=*/5000);
+    setup.CreateAndProcessBlock({tx_reg}, setup.coinbaseKey);
+    dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+    const int saved_enforcement = params.DIP0003EnforcementHeight;
+    params.DIP0003EnforcementHeight = chainman.ActiveChain().Height() + 1;
+    // The operator's half goes to the owner's own script.
+    auto tx_serv = CreateProUpServTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, tx_reg.GetHash(), operatorKey, 1, owner_payout, setup.coinbaseKey);
+    setup.CreateAndProcessBlock({tx_serv}, setup.coinbaseKey);
+    dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+
+    const CAmount subsidy{500 * COIN};
+    const CAmount fees{0};
+    const CAmount staked{12345 * COIN};
+    const CScript mine{CScript() << OP_TRUE};
+    const int saved_last_pow = params.lastPowBlock;
+    const int saved_bound = params.nPosCoinbaseBoundActivationHeight;
+    const int saved_v231 = params.nV231ActivationHeight;
+
+    // Checks the staked blocks at the next height with the height unset, one block
+    // above it, at it and one block below it. Nothing is connected meanwhile: the
+    // overrides only change what the two checks and the producer read.
+    const auto check = [&](const CScript& operator_payout, bool same_script) {
+        const CBlockIndex* tip{WITH_LOCK(cs_main, return chainman.ActiveChain().Tip())};
+        const auto payee = dmnman.GetListAtChainTip().GetMNPayee(tip);
+        BOOST_REQUIRE(payee != nullptr);
+        BOOST_REQUIRE(payee->proTxHash == tx_reg.GetHash());
+        BOOST_REQUIRE_EQUAL(payee->nOperatorReward, 5000);
+        BOOST_REQUIRE(payee->pdmnState->scriptPayout == owner_payout);
+        BOOST_REQUIRE(payee->pdmnState->scriptOperatorPayout == operator_payout);
+        // The checked height is still on the setup's side of V19.
+        BOOST_REQUIRE_EQUAL(DeploymentActiveAfter(tip, params, Consensus::DEPLOYMENT_V19), !legacy);
+        BOOST_REQUIRE_EQUAL(bls::bls_legacy_scheme.load(), legacy);
+
+        const int height{tip->nHeight + 1};
+        params.lastPowBlock = tip->nHeight - 1;
+        params.nPosCoinbaseBoundActivationHeight = 0;
+        for (const int v231 : {std::numeric_limits<int>::max(), height + 1, height, height - 1}) {
+            params.nV231ActivationHeight = v231;
+            const bool strict{v231 <= height};
+            const CAmount half{(strict ? 5000 : 10000) * COIN / 2};
+
+            // What the honest producer adds: both halves, as two outputs.
+            CMutableTransaction coinbase;
+            coinbase.vout.resize(1);
+            coinbase.vout[0].SetEmpty();
+            std::vector<CTxOut> honest;
+            std::vector<CTxOut> superblock_outputs;
+            payments.FillBlockPayments(coinbase, tip, subsidy, fees, honest, superblock_outputs);
+            BOOST_REQUIRE(superblock_outputs.empty());
+            BOOST_REQUIRE_EQUAL(coinbase.vout.size(), 3U);
+            BOOST_REQUIRE_EQUAL(honest.size(), 2U);
+            // The producer's coinbase carries exactly these two after its first output.
+            BOOST_CHECK(coinbase.vout[1] == honest[0]);
+            BOOST_CHECK(coinbase.vout[2] == honest[1]);
+            BOOST_CHECK(honest[0] == CTxOut(half, owner_payout));
+            BOOST_CHECK(honest[1] == CTxOut(half, operator_payout));
+            BOOST_CHECK_EQUAL(honest[0] == honest[1], same_script);
+
+            std::string err;
+            const CBlock honest_block = StakeShapedBlock(staked + subsidy, honest);
+            BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(honest_block, tip, subsidy, fees, staked, err, /*check_superblock=*/true), err);
+            BOOST_CHECK_MESSAGE(payments.IsBlockPayeeValid(*honest_block.vtx[0], tip, subsidy, fees, /*check_superblock=*/true),
+                                "honest, v231=" << v231 << " height=" << height);
+
+            // Half paid, and half paid with the other half kept: within the coinbase
+            // bound either way, so only the payee check can refuse them.
+            const std::vector<std::vector<CTxOut>> short_paid{{honest[0]}, {honest[0], CTxOut(half, mine)}};
+            for (const auto& added : short_paid) {
+                const CBlock block = StakeShapedBlock(staked + subsidy, added);
+                BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(block, tip, subsidy, fees, staked, err, /*check_superblock=*/true), err);
+                // One output satisfies two equal expected outputs only below the height.
+                const bool want{same_script && !strict};
+                BOOST_CHECK_MESSAGE(payments.IsBlockPayeeValid(*block.vtx[0], tip, subsidy, fees, /*check_superblock=*/true) == want,
+                                    "outputs=" << added.size() << " v231=" << v231 << " height=" << height << " want=" << want);
+            }
+        }
+        params.nV231ActivationHeight = saved_v231;
+        params.nPosCoinbaseBoundActivationHeight = saved_bound;
+        params.lastPowBlock = saved_last_pow;
+    };
+
+    check(owner_payout, /*same_script=*/true);
+
+    // The operator is paid elsewhere: two different expected outputs, the same verdict on both sides.
+    auto tx_serv_other = CreateProUpServTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, tx_reg.GetHash(), operatorKey, 1, other_payout, setup.coinbaseKey);
+    setup.CreateAndProcessBlock({tx_serv_other}, setup.coinbaseKey);
+    dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
+    check(other_payout, /*same_script=*/false);
+
+    params.DIP0003EnforcementHeight = saved_enforcement;
+}
+
 // Disconnecting a block whose stored list diff is missing must stop as damaged local history, not
 // pass as a block without masternode changes: taken as the latter, the disconnect reported no
 // change and erased the caches as if the list were known. A block that really had no changes has
@@ -1982,6 +2109,20 @@ BOOST_AUTO_TEST_CASE(v231_unresolved_payee_coinbase_bound_basic)
 {
     TestChainV19Setup setup;
     FuncUnresolvedPayeeBound(setup);
+}
+
+BOOST_AUTO_TEST_CASE(v231_masternode_payment_count_legacy)
+{
+    // Below V19 (at 500), so the legacy scheme: TestChainDIP3Setup is past the
+    // regtest V19 height already.
+    TestChainV19BeforeActivationSetup setup;
+    FuncMasternodePaymentCount(setup, /*legacy=*/true);
+}
+
+BOOST_AUTO_TEST_CASE(v231_masternode_payment_count_basic)
+{
+    TestChainV19Setup setup;
+    FuncMasternodePaymentCount(setup, /*legacy=*/false);
 }
 
 BOOST_AUTO_TEST_CASE(test_mempool_reorg_legacy)
