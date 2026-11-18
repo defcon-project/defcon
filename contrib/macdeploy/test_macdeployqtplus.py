@@ -63,6 +63,17 @@ class SourceNamesTest(unittest.TestCase):
         for plugin in imported:
             self.assertIn(f"'{dynamic[plugin]}'", names)
 
+    def test_bundle_identifiers_are_defcon_own(self):
+        # On a Mac that also runs Dash Core, a shared identifier would mix the two apps' permissions,
+        # notifications and "Open with" entries. The notification handler reports the identifier
+        # itself, so it must name the same one as the plist.
+        plist = plist_from_template()
+        self.assertEqual(plist['CFBundleIdentifier'], 'io.dfcn.Defcon-Qt')
+        self.assertEqual([t['CFBundleURLName'] for t in plist['CFBundleURLTypes']], ['io.dfcn.DefconPayment'])
+        handler = (ROOT / 'src' / 'qt' / 'macnotificationhandler.mm').read_text(encoding='utf-8')
+        self.assertEqual(re.findall(r'return @"([^"]+)";', handler), [plist['CFBundleIdentifier']])
+        self.assertNotIn('org.dash', PLIST_IN.read_text(encoding='utf-8'))
+
     def test_plist_registers_the_uri_scheme_the_wallet_reads(self):
         match = re.search(r'uri\.scheme\(\) != QString\("([a-z]+)"\)', GUIUTIL.read_text(encoding='utf-8'))
         self.assertIsNotNone(match)
