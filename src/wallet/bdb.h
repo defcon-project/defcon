@@ -163,6 +163,11 @@ public:
     std::unique_ptr<DatabaseBatch> MakeBatch(bool flush_on_close = true) override;
 
     virtual bool SupportsAutoBackup() override { return true; }
+
+protected:
+    /** The read-only batch Rewrite copies the records from. A function of its own so that a test can hand Rewrite a
+     *  batch whose cursor does not open. */
+    virtual std::unique_ptr<BerkeleyBatch> MakeRewriteSource();
 };
 
 /** RAII class that provides access to a Berkeley database */

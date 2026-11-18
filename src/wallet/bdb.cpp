@@ -455,6 +455,11 @@ void BerkeleyEnvironment::ReloadDbEnv()
     Open(open_err);
 }
 
+std::unique_ptr<BerkeleyBatch> BerkeleyDatabase::MakeRewriteSource()
+{
+    return std::make_unique<BerkeleyBatch>(*this, true);
+}
+
 bool BerkeleyDatabase::Rewrite(const char* pszSkip)
 {
     while (true) {
@@ -470,7 +475,8 @@ bool BerkeleyDatabase::Rewrite(const char* pszSkip)
                 LogPrintf("BerkeleyBatch::Rewrite: Rewriting %s...\n", strFile);
                 std::string strFileRes = strFile + ".rewrite";
                 { // surround usage of db with extra {}
-                    BerkeleyBatch db(*this, true);
+                    const std::unique_ptr<BerkeleyBatch> source = MakeRewriteSource();
+                    BerkeleyBatch& db = *source;
                     std::unique_ptr<Db> pdbCopy = std::make_unique<Db>(env->dbenv.get(), 0);
 
                     int ret = pdbCopy->open(nullptr,               // Txn pointer
@@ -511,6 +517,12 @@ bool BerkeleyDatabase::Rewrite(const char* pszSkip)
                                 fSuccess = false;
                         }
                         db.CloseCursor();
+                    } else {
+                        // A cursor that does not open has copied nothing.
+                        // That is not an empty database: the empty copy must
+                        // not take the original's place.
+                        LogPrintf("BerkeleyBatch::Rewrite: Can't read database file %s\n", strFile);
+                        fSuccess = false;
                     }
                     if (fSuccess) {
                         db.Close();
