@@ -24,6 +24,7 @@ private Q_SLOTS:
     void walletTests();
     void stakingCombinationLabels();
     void stakingTransactionDetails();
+    void psbtFeeRow();
 };
 
 #endif // BITCOIN_QT_TEST_WALLETTESTS_H
