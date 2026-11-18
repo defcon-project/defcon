@@ -322,7 +322,7 @@ QWidget* createPageHeader(QWidget* parent, const QString& title, const QString& 
     auto* caption = new QLabel(subtitle, header);
     caption->setObjectName("abyssPageSubtitle");
     caption->setWordWrap(true);
-    setFont({heading}, FontWeight::Normal, 24);
+    setFont({heading}, FontWeight::Normal, 22);
     setFont({caption}, FontWeight::Normal, 13);
     text->addWidget(heading);
     text->addWidget(caption);

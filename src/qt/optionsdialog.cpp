@@ -214,6 +214,12 @@ OptionsDialog::OptionsDialog(QWidget *parent, bool enableWallet) :
 
 OptionsDialog::~OptionsDialog()
 {
+    // The Appearance page puts the theme back when it is destroyed after a
+    // Cancel, and says so with themeChanged, which this dialog answers in its
+    // status line. Destroyed here, while that line is still there: left to the
+    // dialog's children, it went after ui, and the answer read what was
+    // already deleted.
+    delete appearance;
     delete pageButtons;
     delete ui;
 }

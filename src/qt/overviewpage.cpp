@@ -462,7 +462,7 @@ OverviewPage::OverviewPage(QWidget* parent) :
                      }, GUIUtil::FontWeight::Bold);
 
     // As GUIUtil::createPageHeader sets them on the other pages.
-    GUIUtil::setFont({modernTitle}, GUIUtil::FontWeight::Normal, 24);
+    GUIUtil::setFont({modernTitle}, GUIUtil::FontWeight::Normal, 22);
     GUIUtil::setFont({modernSubtitle}, GUIUtil::FontWeight::Normal, 13);
     GUIUtil::setFont(network_words, GUIUtil::FontWeight::Normal);
     GUIUtil::setFont(network_values, GUIUtil::FontWeight::Bold);

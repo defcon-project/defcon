@@ -123,6 +123,7 @@ private Q_SLOTS:
     void sendConfirmationEscapes();
     void closedPageConnections();
     void optionsLanguageGone();
+    void optionsCancelTheme();
     void translationLink();
     // Last, after the window-activation checks of paymentPages: run before
     // them, its two short-lived wallet windows were followed by occasional
