@@ -62,6 +62,13 @@
 #include <qt/wavebackdrop.h>
 #include <pos/minter.h>
 #include <pos/multiwallet.h>
+#include <psbt.h>
+#include <qt/multisigdialog.h>
+#include <qt/multisigspenddialog.h>
+#include <qt/multisigutil.h>
+#include <qt/psbtoperationsdialog.h>
+#include <streams.h>
+#include <version.h>
 #include <test/util/setup_common.h>
 #include <timedata.h>
 #include <util/settings.h>
@@ -73,7 +80,10 @@
 #include <wallet/wallet.h>
 
 #ifndef WIN32
+#include <fcntl.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 #include <QAbstractItemView>
 #include <QApplication>
@@ -7850,6 +7860,412 @@ void AbyssTests::stakingStartRefused()
     QVERIFY(IsWalletStaking(name));
     QCOMPARE(page->stakingState(), OverviewPage::StakingState::Ready);
     QCOMPARE(messages.count(), 1);
+}
+
+namespace {
+//! A file to save that fails on its way. Short: the write takes half of what
+//! it is given. And those that fail late, after every byte was taken (Linux
+//! only): as a disk that fills or fails does, the open file's handle led
+//! elsewhere under it. Unflushed, where what is buffered cannot be written
+//! out, and Unsynced, where it can, but the system cannot put it on a disk.
+struct FailingSaveFile : QFile {
+    enum class How { Short, Unflushed, Unsynced };
+    const How how;
+    FailingSaveFile(const QString& name, How h) : QFile(name), how(h) {}
+    qint64 writeData(const char* data, qint64 len) override
+    {
+        const qint64 written = QFile::writeData(data, how == How::Short ? len / 2 : len);
+        if (how == How::Short) return written;
+#ifdef Q_OS_LINUX
+        // In place of the file's handle: the same file's, opened for reading
+        // (nothing can be written to it), or /dev/null's (what is written
+        // goes nowhere, and it cannot be synced).
+        const int other = how == How::Unflushed ? ::open(QFile::encodeName(fileName()).constData(), O_RDONLY) : ::open("/dev/null", O_WRONLY);
+        if (other != -1) {
+            ::dup2(other, handle());
+            ::close(other);
+        }
+#endif
+        return written;
+    }
+};
+QByteArray FileBytes(const QString& name)
+{
+    QFile file(name);
+    return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray("<no such file>");
+}
+} // namespace
+
+void AbyssTests::saveFileWhole()
+{
+    // What the wallet saves for another signer (a PSBT, a multisig setup) is
+    // said to be saved only when all of it is. The five places that save one
+    // wrote the file and looked at nothing: a write that failed half way left
+    // a part of the file under a message that it was saved.
+    // GUIUtil::SaveFile writes into the file as they did, so that a file
+    // that is there stays the same file, with its owner, its group and its
+    // access list, and says whether every byte was taken, left the buffer,
+    // reached the disk and the file closed. A save that fails leaves the file
+    // as far as it got, as before, and removes nothing; it is said.
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QDir dir(directory.path());
+    const QString name = dir.filePath("transaction.psbt");
+    const QByteArray first("psbt\xff\x00 first", 12);
+    const QByteArray second = QByteArray("psbt\xff", 5) + QByteArray(100000, 'x'); // more than a write buffer holds
+    const auto listed = [&dir] { return dir.entryList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot, QDir::Name); };
+    const auto save = [](const QString& file_name, const QByteArray& data) {
+        QFile file(file_name);
+        return GUIUtil::SaveFile(file, data);
+    };
+
+    // A new file, then a shorter and again a longer content under the same
+    // name: each is all there, with nothing of the one before behind it, and
+    // nothing is left beside it.
+    QVERIFY(save(name, second));
+    QCOMPARE(FileBytes(name), second);
+    QVERIFY(save(name, first));
+    QCOMPARE(FileBytes(name), first);
+    QVERIFY(save(name, second));
+    QCOMPARE(FileBytes(name), second);
+    QCOMPARE(listed(), QStringList{"transaction.psbt"});
+
+#ifdef Q_OS_UNIX
+    // The file that is there keeps who may read it through a save: the same
+    // owner, group and mode. (A file put in its place had the old file's
+    // mode with a new file's group, and none of its access list.) It is
+    // given a mode of its own, and a group other than a new file's here
+    // where this user can give it one: another of the user's groups, or, for
+    // root, the next number (not the one chown reads as "keep the group").
+    // The mode is one a new file does not get here, whatever the umask.
+    {
+        const QByteArray native_name = QFile::encodeName(name);
+        struct stat fresh;
+        QVERIFY(::stat(native_name.constData(), &fresh) == 0);
+        const int mode = (fresh.st_mode & 07777) == 0640 ? 0600 : 0640;
+        QVERIFY(::chmod(native_name.constData(), mode) == 0);
+        struct stat made;
+        QVERIFY(::stat(native_name.constData(), &made) == 0);
+        std::vector<gid_t> groups(std::max(0, ::getgroups(0, nullptr)));
+        if (!groups.empty()) groups.resize(std::max(0, ::getgroups(static_cast<int>(groups.size()), groups.data())));
+        groups.push_back(made.st_gid + 1);
+        bool regrouped = false;
+        for (const gid_t group : groups) {
+            if (group != made.st_gid && group != static_cast<gid_t>(-1) && ::chown(native_name.constData(), static_cast<uid_t>(-1), group) == 0) {
+                regrouped = true;
+                break;
+            }
+        }
+        if (!regrouped) qInfo("the saved file's group is that of a new file here: this user can give a file no other");
+        struct stat before;
+        QVERIFY(::stat(native_name.constData(), &before) == 0);
+        QCOMPARE(regrouped, before.st_gid != made.st_gid);
+        QVERIFY(save(name, first));
+        struct stat after;
+        QVERIFY(::stat(native_name.constData(), &after) == 0);
+        QCOMPARE(static_cast<int>(after.st_mode & 07777), mode);
+        QCOMPARE(static_cast<qulonglong>(after.st_gid), static_cast<qulonglong>(before.st_gid));
+        QCOMPARE(static_cast<qulonglong>(after.st_uid), static_cast<qulonglong>(before.st_uid));
+        QCOMPARE(FileBytes(name), first);
+        QVERIFY(save(name, second));
+    }
+#endif
+
+    // Failures: each is said, the file is closed when the call returns, and
+    // nothing is made beside it or removed. Over a file that is there, which
+    // is written in place, and under a new name: the file is under its name
+    // and does not hold the whole new content (after the write that takes
+    // half, it holds exactly that half). A write that takes less than the
+    // whole; and the two that show only after the write was taken.
+    std::vector<std::pair<FailingSaveFile::How, const char*>> failures{{FailingSaveFile::How::Short, "a write that takes half"}};
+#ifdef Q_OS_LINUX
+    failures.emplace_back(FailingSaveFile::How::Unflushed, "a buffer that cannot be written out");
+    failures.emplace_back(FailingSaveFile::How::Unsynced, "a file that cannot be synced");
+#endif
+    for (const auto& [how, what] : failures) {
+        const bool half = how == FailingSaveFile::How::Short;
+        {
+            FailingSaveFile file(name, how);
+            QVERIFY2(!GUIUtil::SaveFile(file, first), what);
+            QVERIFY2(!file.isOpen(), what);
+        }
+        QVERIFY2(FileBytes(name) != first, what);
+        QVERIFY2(!half || FileBytes(name) == first.left(first.size() / 2), what);
+        QVERIFY2(listed() == QStringList{"transaction.psbt"}, what);
+        const QString new_name = dir.filePath("new.psbt");
+        {
+            FailingSaveFile file(new_name, how);
+            QVERIFY2(!GUIUtil::SaveFile(file, first), what);
+            QVERIFY2(!file.isOpen(), what);
+        }
+        QVERIFY2(listed() == (QStringList{"new.psbt", "transaction.psbt"}), what);
+        QVERIFY2(FileBytes(new_name) != first, what);
+        QVERIFY2(!half || FileBytes(new_name) == first.left(first.size() / 2), what);
+        QVERIFY2(QFile::remove(new_name), what);
+        QVERIFY2(save(name, second), what);
+    }
+
+#ifdef Q_OS_LINUX
+    // A file that every byte reached but whose close fails (a network share
+    // can report an error only there): not saved. The close is given one more
+    // byte to flush, through a handle that cannot be written (the same file
+    // opened for reading put in its place, as Unflushed does): its own flush
+    // fails. No handle is closed twice.
+    {
+        struct UnclosedSaveFile : QFile {
+            using QFile::QFile;
+            void close() override
+            {
+                if (isOpen() && write("!", 1) == 1) {
+                    const int other = ::open(QFile::encodeName(fileName()).constData(), O_RDONLY);
+                    if (other != -1) {
+                        ::dup2(other, handle());
+                        ::close(other);
+                    }
+                }
+                QFile::close();
+            }
+        };
+        UnclosedSaveFile file(name);
+        QVERIFY(!GUIUtil::SaveFile(file, first));
+        QVERIFY(!file.isOpen());
+    }
+    QCOMPARE(listed(), QStringList{"transaction.psbt"});
+    QVERIFY(save(name, second));
+#endif
+
+#if SIZE_MAX > UINT32_MAX
+    // The length a place hands over reaches the write whole: a PSBT can be
+    // longer than an int holds, and cut to an int, a part of it would be
+    // saved as all of it. A file that only notes what it is asked to write:
+    // no such length is read here.
+    {
+        struct NotingSaveFile : QFile {
+            using QFile::QFile;
+            qint64 asked{-1};
+            qint64 writeData(const char*, qint64 len) override
+            {
+                asked = len;
+                return len;
+            }
+        };
+        const QString long_name = dir.filePath("long.psbt");
+        const size_t longer_than_an_int = (size_t{1} << 32) + 1;
+        {
+            NotingSaveFile file(long_name);
+            QVERIFY(GUIUtil::SaveFile(file, first.constData(), longer_than_an_int));
+            QCOMPARE(file.asked, qint64{4294967297});
+        }
+        QVERIFY(QFile::remove(long_name));
+        // A length no write can be asked for is refused before the file is touched.
+        {
+            QFile file(name);
+            QVERIFY(!GUIUtil::SaveFile(file, first.constData(), std::numeric_limits<size_t>::max()));
+            QVERIFY(!file.isOpen());
+        }
+        QCOMPARE(FileBytes(name), second);
+        QCOMPARE(listed(), QStringList{"transaction.psbt"});
+    }
+#endif
+
+    // A folder under the name, and a folder that is not there: not saved,
+    // and nothing made or removed on the way.
+    const QString blocked = dir.filePath("blocked.psbt");
+    QVERIFY(QDir().mkdir(blocked));
+    QVERIFY(!save(blocked, first));
+    QVERIFY(QFileInfo(blocked).isDir());
+    QVERIFY(!save(dir.filePath("missing/transaction.psbt"), first));
+    QCOMPARE(listed(), (QStringList{"blocked.psbt", "transaction.psbt"}));
+    QCOMPARE(FileBytes(name), second);
+}
+
+void AbyssTests::savedFilesReported()
+{
+    // The five places that save a file for another signer say that it is
+    // saved only when all of it is: the PSBT dialog, the multisig spend
+    // dialog, the Send page's unsigned transaction, and the multisig setup
+    // from the Multisig page and from the dialog that creates one. A file
+    // that cannot be written, or is written in part, is reported as an error
+    // that names it, in a status line that shows the name as it is. The Send
+    // page keeps its form for another try.
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QDir dir(directory.path());
+
+    CMutableTransaction mtx;
+    mtx.vin.emplace_back(COutPoint(uint256S("0a00000000000000000000000000000000000000000000000000000000000000"), 0));
+    mtx.vout.emplace_back(COIN, CScript() << OP_TRUE);
+    const PartiallySignedTransaction psbtx(mtx);
+    const auto bytes_of = [](const PartiallySignedTransaction& psbt) {
+        CDataStream stream(SER_NETWORK, PROTOCOL_VERSION);
+        stream << psbt;
+        return stream.str();
+    };
+    MultisigUtil::Entry entry;
+    entry.label = "Treasury 2-of-2";
+    entry.address = "not looked at here";
+    entry.required_sigs = 2;
+    entry.pubkeys = QStringList{QString("02") + QString(64, 'a'), QString("03") + QString(64, 'b')};
+    const QByteArray setup = MultisigUtil::EntryToSetupJson(entry);
+    QVERIFY(setup.size() > 100);
+
+    struct Report {
+        QString text;
+        bool error;
+    };
+    const auto is_error = [](const QLabel* status) { return status->styleSheet() == GUIUtil::getThemedStyleQString(GUIUtil::ThemedStyle::TS_ERROR); };
+    // One place. A file in a folder that is not there. Then, over a file
+    // that is there, a write that takes half: the file opens, which is all
+    // the old code looked at where it looked at anything. Then a file that
+    // can be written. `saved_text` is the place's message for a saved file,
+    // with %1 where it names it.
+    const auto check = [&](const QString& what, const QByteArray& expected, const QString& saved_text, const std::function<Report(QFile&)>& save) {
+        const QString missing = dir.filePath("missing/" + what);
+        {
+            QFile file(missing);
+            const Report failed = save(file);
+            QVERIFY2(failed.error && failed.text == QString("Could not write file %1.").arg(missing),
+                     qPrintable(QString("%1, a folder that is not there: \"%2\"").arg(what, failed.text)));
+        }
+        QVERIFY2(!QFileInfo::exists(missing), qPrintable(what));
+        const QString name = dir.filePath(what);
+        const QByteArray old("the file that was there");
+        {
+            QFile file(name);
+            QVERIFY2(file.open(QIODevice::WriteOnly) && file.write(old) == old.size(), qPrintable(what));
+        }
+        {
+            FailingSaveFile file(name, FailingSaveFile::How::Short);
+            const Report failed = save(file);
+            QVERIFY2(failed.error && failed.text == QString("Could not write file %1.").arg(name),
+                     qPrintable(QString("%1, a write that takes half: \"%2\"").arg(what, failed.text)));
+        }
+        // Written in place: the file holds the half that was written, not the whole content.
+        QVERIFY2(FileBytes(name) == expected.left(expected.size() / 2), qPrintable(QString("%1: the file after the write that takes half").arg(what)));
+        {
+            QFile file(name);
+            const Report saved = save(file);
+            QVERIFY2(!saved.error && saved.text == QString(saved_text).replace("%1", name),
+                     qPrintable(QString("%1, a file that can be written: \"%2\"").arg(what, saved.text)));
+        }
+        QVERIFY2(FileBytes(name) == expected, qPrintable(what));
+        // And under a name that the old Windows code pages do not hold
+        // (Chinese and Cyrillic letters): the file's name goes to the system
+        // as it is, no longer through the local 8-bit encoding.
+        const QString wide = dir.filePath(QString::fromUtf8("\xe4\xb8\xad\xe6\x96\x87-\xd0\x96-") + what);
+        {
+            QFile file(wide);
+            const Report saved = save(file);
+            QVERIFY2(!saved.error && saved.text == QString(saved_text).replace("%1", wide),
+                     qPrintable(QString("%1, a name outside the code pages: \"%2\"").arg(what, saved.text)));
+        }
+        QVERIFY2(FileBytes(wide) == expected, qPrintable(QString("%1, read back under the name outside the code pages").arg(what)));
+    };
+    const QString setup_saved = "Setup saved to %1. Share this file with your cosigners; it contains no private keys.";
+
+    {
+        PSBTOperationsDialog dialog(nullptr, fixture.model.get(), fixture.client.get());
+        dialog.m_transaction_data = psbtx;
+        auto* status = dialog.findChild<QLabel*>("statusBar");
+        QVERIFY(status);
+        QCOMPARE(status->textFormat(), Qt::PlainText);
+        check("psbt-dialog.psbt", QByteArray::fromStdString(bytes_of(psbtx)), "PSBT saved to disk.", [&](QFile& file) {
+            dialog.saveTransactionTo(file);
+            return Report{status->text(), is_error(status)};
+        });
+        // A name too long for a line does not widen the dialog.
+        dialog.show(); Settle();
+        const int width = dialog.minimumSizeHint().width();
+        QFile long_named(dir.filePath("missing/" + QString(300, 'n') + ".psbt"));
+        dialog.saveTransactionTo(long_named);
+        Settle();
+        QVERIFY(is_error(status) && status->text().contains(QString(300, 'n')));
+        QVERIFY(status->wordWrap());
+        QVERIFY2(dialog.minimumSizeHint().width() == width,
+                 qPrintable(QString("the dialog's least width %1 with the long name in its status line, %2 before").arg(dialog.minimumSizeHint().width()).arg(width)));
+    }
+    {
+        MultisigSpendDialog dialog(nullptr, fixture.model.get(), fixture.client.get(), psbtx);
+        QVERIFY(dialog.m_psbt);
+        QCOMPARE(dialog.m_status_label->textFormat(), Qt::PlainText);
+        check("multisig-spend.psbt", QByteArray::fromStdString(bytes_of(*dialog.m_psbt)), "PSBT saved to %1.", [&](QFile& file) {
+            dialog.savePsbtTo(file);
+            return Report{dialog.m_status_label->text(), is_error(dialog.m_status_label)};
+        });
+    }
+    {
+        // The Send page reports through its message signal, which the window
+        // shows as plain text (BitcoinGUI::message).
+        SendCoinsDialog send(false, nullptr);
+        send.setModel(fixture.model.get());
+        QSignalSpy messages(&send, &SendCoinsDialog::message);
+        const std::string psbt = bytes_of(psbtx);
+        std::vector<std::pair<bool, unsigned int>> results;
+        check("unsigned.psbt", QByteArray::fromStdString(psbt), "PSBT saved to disk", [&](QFile& file) {
+            messages.clear();
+            const bool saved = send.saveUnsignedTransaction(file, psbt.data(), psbt.size());
+            if (messages.count() != 1) return Report{QString("%1 messages").arg(messages.count()), saved};
+            results.emplace_back(saved, messages.first().at(2).toUInt());
+            return Report{messages.first().at(1).toString(), !saved};
+        });
+        // What the page is told, and what the window is asked to show: two errors, then two notices.
+        const std::vector<std::pair<bool, unsigned int>> expected{
+            {false, CClientUIInterface::MSG_ERROR}, {false, CClientUIInterface::MSG_ERROR},
+            {true, CClientUIInterface::MSG_INFORMATION}, {true, CClientUIInterface::MSG_INFORMATION}};
+        QVERIFY(results == expected);
+
+        // The end of such a send: a file that was not saved leaves the form
+        // as it is, its recipient and its chosen coin; a saved one clears it.
+        // The form's entry: the last one made (a cleared form makes a new one; the old is deleted later).
+        const auto pay_to = [&send]() -> QLineEdit* {
+            const QList<SendCoinsEntry*> entries = send.findChildren<SendCoinsEntry*>();
+            return entries.isEmpty() ? nullptr : entries.last()->findChild<QLineEdit*>("payTo");
+        };
+        QVERIFY(pay_to());
+        pay_to()->setText("a recipient typed in");
+        // As the field holds it (it takes the spaces out of an address).
+        const QString typed = pay_to()->text();
+        QVERIFY(!typed.isEmpty());
+        send.m_coin_control->Select(COutPoint(uint256S("0b00000000000000000000000000000000000000000000000000000000000000"), 0));
+        const QString name = dir.filePath("unsigned-again.psbt");
+        {
+            FailingSaveFile file(name, FailingSaveFile::How::Short);
+            send.concludeUnsigned(file, psbt.data(), psbt.size());
+        }
+        Settle();
+        QCOMPARE(FileBytes(name), QByteArray::fromStdString(psbt).left(static_cast<int>(psbt.size() / 2)));
+        QVERIFY(pay_to());
+        QCOMPARE(pay_to()->text(), typed);
+        QVERIFY(send.m_coin_control->HasSelected());
+        {
+            QFile file(name);
+            send.concludeUnsigned(file, psbt.data(), psbt.size());
+        }
+        Settle();
+        QCOMPARE(FileBytes(name), QByteArray::fromStdString(psbt));
+        QVERIFY(pay_to());
+        QVERIFY2(pay_to()->text().isEmpty(), qPrintable(pay_to()->text()));
+        QVERIFY(!send.m_coin_control->HasSelected());
+    }
+    {
+        MultisigPage page;
+        QCOMPARE(page.m_status_label->textFormat(), Qt::PlainText);
+        check("page-setup.json", setup, setup_saved, [&](QFile& file) {
+            page.exportSetupTo(entry, file);
+            return Report{page.m_status_label->text(), is_error(page.m_status_label)};
+        });
+    }
+    {
+        MultisigDialog dialog(nullptr, fixture.model.get(), fixture.client.get());
+        dialog.m_last_entry = entry;
+        QCOMPARE(dialog.m_status_label->textFormat(), Qt::PlainText);
+        check("dialog-setup.json", setup, setup_saved, [&](QFile& file) {
+            dialog.exportSetupTo(file);
+            return Report{dialog.m_status_label->text(), is_error(dialog.m_status_label)};
+        });
+    }
 }
 
 void AbyssTests::translationLink()

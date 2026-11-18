@@ -23,6 +23,7 @@ class QGroupBox;
 class QLabel;
 class QLineEdit;
 class QPushButton;
+class QFile;
 class QTableWidget;
 class QVBoxLayout;
 QT_END_NAMESPACE
@@ -55,6 +56,8 @@ private Q_SLOTS:
     void copyTxid();
 
 private:
+    friend class AbyssTests; // Regression tests, no runtime test hooks.
+
     WalletModel* m_wallet_model;
     ClientModel* m_client_model;
     MultisigUtil::Entry m_entry; //!< invalid in continue flow
@@ -92,6 +95,8 @@ private:
 
     void setupUi(bool with_build_stage);
     void setPsbt(const PartiallySignedTransaction& psbtx);
+    //! Writes the transaction to the file and reports whether the whole of it is there.
+    void savePsbtTo(QFile& file);
     void updateManageUi();
     void refreshAvailableBalance();
     void populateValidationPanel();

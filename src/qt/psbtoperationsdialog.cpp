@@ -16,7 +16,9 @@
 #include <qt/optionsmodel.h>
 #include <util/strencodings.h>
 
-#include <fstream>
+#include <QFile>
+#include <QSizePolicy>
+
 #include <iostream>
 #include <string>
 
@@ -39,6 +41,13 @@ PSBTOperationsDialog::PSBTOperationsDialog(
 
     m_ui->signTransactionButton->setEnabled(false);
     m_ui->broadcastTransactionButton->setEnabled(false);
+
+    // The status line shows its text as it is (a file's name is not markup),
+    // on as many lines as it needs, and does not widen the dialog: a name
+    // too long for a line is cut at the dialog's edge.
+    m_ui->statusBar->setTextFormat(Qt::PlainText);
+    m_ui->statusBar->setWordWrap(true);
+    m_ui->statusBar->setSizePolicy(QSizePolicy::Ignored, m_ui->statusBar->sizePolicy().verticalPolicy());
 }
 
 PSBTOperationsDialog::~PSBTOperationsDialog()
@@ -133,9 +142,6 @@ void PSBTOperationsDialog::copyToClipboard() {
 }
 
 void PSBTOperationsDialog::saveTransaction() {
-    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
-    ssTx << m_transaction_data;
-
     QString selected_filter;
     QString filename_suggestion = "";
     bool first = true;
@@ -158,9 +164,21 @@ void PSBTOperationsDialog::saveTransaction() {
     if (filename.isEmpty()) {
         return;
     }
-    std::ofstream out{filename.toLocal8Bit().data(), std::ofstream::out | std::ofstream::binary};
-    out << ssTx.str();
-    out.close();
+    QFile file(filename);
+    saveTransactionTo(file);
+}
+
+void PSBTOperationsDialog::saveTransactionTo(QFile& file)
+{
+    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION);
+    ssTx << m_transaction_data;
+    // Saved only when the whole file is written: the next signer must not be
+    // handed a part of the transaction under a message that it was saved.
+    // The stream's own bytes are written, not a copy of them, in their own length.
+    if (!GUIUtil::SaveFile(file, reinterpret_cast<const char*>(ssTx.data()), ssTx.size())) {
+        showStatus(tr("Could not write file %1.").arg(file.fileName()), StatusLevel::ERR);
+        return;
+    }
     showStatus(tr("PSBT saved to disk."), StatusLevel::INFO);
 }
 

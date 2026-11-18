@@ -29,11 +29,16 @@
 
 #include <atomic>
 #include <cmath>
+#include <limits>
 
 #ifdef WIN32
+#include <io.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 
 #include <QAbstractButton>
@@ -46,6 +51,7 @@
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDoubleValidator>
+#include <QFile>
 #include <QFileDialog>
 #include <QFont>
 #include <QFontDatabase>
@@ -808,6 +814,59 @@ QString getOpenFileName(QWidget *parent, const QString &caption, const QString &
         *selectedSuffixOut = selectedSuffix;
     }
     return result;
+}
+
+//! Whether what the system holds of the open file has reached the device.
+static bool SyncedToDisk(QFileDevice& file)
+{
+    const int fd = file.handle();
+    if (fd == -1) {
+        return false;
+    }
+#ifdef WIN32
+    return _commit(fd) == 0;
+#elif defined(Q_OS_MAC) && defined(F_FULLFSYNC)
+    // On macOS fsync() can leave the data in the drive's own cache: the full
+    // sync, as FileCommit (util/system.cpp) asks for it.
+    return fcntl(fd, F_FULLFSYNC, 0) != -1;
+#else
+    return fsync(fd) == 0;
+#endif
+}
+
+bool SaveFile(QFile& file, const char* data, size_t size)
+{
+    // A write is asked for a qint64 of bytes: a size beyond that is refused
+    // before the file is touched.
+    if (size > static_cast<size_t>(std::numeric_limits<qint64>::max())) {
+        return false;
+    }
+    const qint64 length = static_cast<qint64>(size);
+    // Written into the file that is there, as these places always wrote: it
+    // stays the same file, with its owner, its group and everything else
+    // that says who may read it. A file put in its place would bring none of
+    // that along. A save that fails leaves the file as far as it got, as
+    // these places always did, and nothing is removed (the name can lead
+    // elsewhere, or another program can have saved under it meanwhile): the
+    // caller says that the file was not saved.
+    if (!file.open(QIODevice::WriteOnly)) {
+        return false;
+    }
+    // Every byte has to be taken, then leave the buffer for the system, then
+    // reach the device, then the file has to close: an error that only shows
+    // in one of the last three (a full disk, a failing one, a network share)
+    // would otherwise pass for a saved file.
+    const bool written = file.write(data, length) == length && file.flush() && SyncedToDisk(file);
+    // Closed here, not when the file object goes: the caller may tell the
+    // user first. The close keeps the error of its own flush and of the
+    // system's close.
+    file.close();
+    return written && file.error() == QFileDevice::NoError;
+}
+
+bool SaveFile(QFile& file, const QByteArray& data)
+{
+    return SaveFile(file, data.constData(), static_cast<size_t>(data.size()));
 }
 
 Qt::ConnectionType blockingGUIThreadConnection()

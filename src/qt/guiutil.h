@@ -51,6 +51,7 @@ class QLineEdit;
 class QMenu;
 class QPoint;
 class QProgressDialog;
+class QFile;
 class QUrl;
 class QWidget;
 QT_END_NAMESPACE
@@ -258,6 +259,22 @@ namespace GUIUtil
     QString getOpenFileName(QWidget *parent, const QString &caption, const QString &dir,
         const QString &filter,
         QString *selectedSuffixOut);
+
+    /** Write data to a file, and say whether all of it reached the disk. A file that is there
+        is written into, as it always was: it keeps its owner, its group and its access list.
+
+      @param[in] file  The file to write, made for its name and not yet open
+      @param[in] data  Its whole content
+      @param[in] size  The content's length in bytes: the length as its owner has it, so that
+                       none of it is lost on the way (a PSBT can be longer than an int holds)
+      @returns false if the size is beyond what a write can take or the file could not be
+               opened (the file is not touched then), or if it was not written to the end,
+               not synced or not closed: the file then holds what was written of the new
+               content, not what it held before. Nothing is removed. The caller has to say
+               that the file was not saved.
+     */
+    bool SaveFile(QFile& file, const char* data, size_t size);
+    bool SaveFile(QFile& file, const QByteArray& data);
 
     /** Get connection type to call object slot in GUI thread with invokeMethod. The call will be blocking.
 
