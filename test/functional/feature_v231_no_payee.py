@@ -40,7 +40,7 @@ from test_framework.address import base58_to_byte, key_to_p2pkh
 from test_framework.key import ECKey
 from test_framework.messages import COIN, CBlock, CTxOut, from_hex, ser_uint256
 from test_framework.script import CScript, OP_CHECKSIG, OP_RETURN
-from test_framework.test_framework import DashTestFramework
+from test_framework.test_framework import DashTestFramework, SkipTest
 from test_framework.util import assert_equal, assert_greater_than, force_finish_mnsync, set_node_times
 
 LAST_POW_BLOCK = 5000
@@ -77,6 +77,9 @@ class V231NoPayeeTest(DashTestFramework):
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
+        self.skip_if_no_bdb()
+        if self.options.descriptors:
+            raise SkipTest("reads the staker's key with dumpprivkey, which needs a legacy wallet")
 
     # ---- the clock and the staker -------------------------------------------
 

@@ -1671,8 +1671,9 @@ static CBlock StakeShapedBlock(CAmount coinstake_out, const std::vector<CTxOut>&
 // and nothing else. No network may schedule the height before superblocks retire or
 // together with mn_rr (CheckV231ActivationBundle), so neither can ask for an output
 // there. Both are forced here all the same, to show that the rule does not bend for
-// them.
-void FuncUnresolvedPayeeBound(TestChainSetup& setup)
+// them. `legacy` names the BLS scheme the setup stands for; the test checks it is the
+// one in use.
+void FuncUnresolvedPayeeBound(TestChainSetup& setup, bool legacy)
 {
     auto& chainman = *Assert(setup.m_node.chainman.get());
     auto& dmnman = *Assert(setup.m_node.dmnman);
@@ -1680,12 +1681,24 @@ void FuncUnresolvedPayeeBound(TestChainSetup& setup)
     auto& params = const_cast<Consensus::Params&>(Params().GetConsensus());
     auto utxos = BuildSimpleUtxoMap(setup.m_coinbase_txns);
 
+    // The overrides below go back however the test ends, a failed BOOST_REQUIRE
+    // included: the fixture's teardown still runs on these Params(), and so does
+    // a later case without a fixture of its own; the next fixture selects fresh ones.
+    const Consensus::Params saved_params{params};
+    struct RestoreParams {
+        Consensus::Params& params;
+        const Consensus::Params& saved;
+        ~RestoreParams() { params = saved; }
+    } restore_params{params, saved_params};
+
+    // CreateProRegTx and CreateProUpRevTx take the scheme from this flag.
+    BOOST_REQUIRE_EQUAL(bls::bls_legacy_scheme.load(), legacy);
+
     CKey ownerKey;
     CBLSSecretKey operatorKey;
     auto tx_reg = CreateProRegTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, 1, GenerateRandomAddress(), setup.coinbaseKey, ownerKey, operatorKey);
     setup.CreateAndProcessBlock({tx_reg}, setup.coinbaseKey);
     dmnman.UpdatedBlockTip(chainman.ActiveChain().Tip());
-    const int saved_enforcement = params.DIP0003EnforcementHeight;
     params.DIP0003EnforcementHeight = chainman.ActiveChain().Height() + 1;
     auto tx_rev = CreateProUpRevTx(chainman.ActiveChain(), *(setup.m_node.mempool), utxos, tx_reg.GetHash(), operatorKey, setup.coinbaseKey);
     setup.CreateAndProcessBlock({tx_rev}, setup.coinbaseKey);
@@ -1696,6 +1709,8 @@ void FuncUnresolvedPayeeBound(TestChainSetup& setup)
     BOOST_REQUIRE_EQUAL(list.GetAllMNsCount(), 1U);
     BOOST_REQUIRE_EQUAL(list.GetValidMNsCount(), 0U);
     BOOST_REQUIRE(list.GetMNPayee(tip) == nullptr);
+    // The checked height is still on the setup's side of V19.
+    BOOST_REQUIRE_EQUAL(DeploymentActiveAfter(tip, params, Consensus::DEPLOYMENT_V19), !legacy);
 
     const int height{tip->nHeight + 1};
     const CAmount subsidy{500 * COIN};
@@ -1704,9 +1719,6 @@ void FuncUnresolvedPayeeBound(TestChainSetup& setup)
     const CAmount extra{5000 * COIN};
     const CScript mine{CScript() << OP_TRUE};
     const CScript data{CScript() << OP_RETURN << std::vector<unsigned char>{0x01}};
-    const int saved_last_pow = params.lastPowBlock;
-    const int saved_bound = params.nPosCoinbaseBoundActivationHeight;
-    const int saved_v231 = params.nV231ActivationHeight;
     params.lastPowBlock = tip->nHeight - 1;
     params.nPosCoinbaseBoundActivationHeight = 0;
 
@@ -1785,7 +1797,6 @@ void FuncUnresolvedPayeeBound(TestChainSetup& setup)
     // with no payee, as it always has, at every height, and from the height the
     // rule refuses the producer's own coinbase for it: that is why the two may
     // not be scheduled together.
-    const int saved_mn_rr = params.MN_RRHeight;
     params.MN_RRHeight = height;
     for (const int v231 : {std::numeric_limits<int>::max(), height + 1, height, height - 1}) {
         params.nV231ActivationHeight = v231;
@@ -1813,12 +1824,6 @@ void FuncUnresolvedPayeeBound(TestChainSetup& setup)
     std::string mined_err;
     BOOST_CHECK_MESSAGE(payments.IsBlockValueValid(mined, tip, subsidy, fees, /*stakeValueIn=*/0, mined_err, /*check_superblock=*/true), mined_err);
     BOOST_CHECK(payments.IsBlockPayeeValid(*mined.vtx[0], tip, subsidy, fees, /*check_superblock=*/true));
-
-    params.MN_RRHeight = saved_mn_rr;
-    params.nV231ActivationHeight = saved_v231;
-    params.nPosCoinbaseBoundActivationHeight = saved_bound;
-    params.lastPowBlock = saved_last_pow;
-    params.DIP0003EnforcementHeight = saved_enforcement;
 }
 
 // A masternode whose operator takes half the payment, paid to the owner's own
@@ -1838,7 +1843,8 @@ void FuncMasternodePaymentCount(TestChainSetup& setup, bool legacy)
     auto utxos = BuildSimpleUtxoMap(setup.m_coinbase_txns);
 
     // The overrides below go back however the test ends, a failed BOOST_REQUIRE
-    // included: the next setup in this binary reads the same Params().
+    // included: the fixture's teardown still runs on these Params(), and so does
+    // a later case without a fixture of its own; the next fixture selects fresh ones.
     const Consensus::Params saved_params{params};
     struct RestoreParams {
         Consensus::Params& params;
@@ -2101,14 +2107,16 @@ BOOST_AUTO_TEST_CASE(dip3_protx_basic)
 
 BOOST_AUTO_TEST_CASE(v231_unresolved_payee_coinbase_bound_legacy)
 {
-    TestChainDIP3Setup setup;
-    FuncUnresolvedPayeeBound(setup);
+    // Below V19 (at 500), so the legacy scheme: TestChainDIP3Setup is past the
+    // regtest V19 height already.
+    TestChainV19BeforeActivationSetup setup;
+    FuncUnresolvedPayeeBound(setup, /*legacy=*/true);
 }
 
 BOOST_AUTO_TEST_CASE(v231_unresolved_payee_coinbase_bound_basic)
 {
     TestChainV19Setup setup;
-    FuncUnresolvedPayeeBound(setup);
+    FuncUnresolvedPayeeBound(setup, /*legacy=*/false);
 }
 
 BOOST_AUTO_TEST_CASE(v231_masternode_payment_count_legacy)
