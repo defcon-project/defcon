@@ -846,6 +846,21 @@ public:
                int{FillBlock(block2, block2_out, lock, active)};
     }
     void findCoins(std::map<COutPoint, Coin>& coins) override { return FindCoins(m_node, coins); }
+    void findMixingInputs(std::map<COutPoint, bool>& inputs) override
+    {
+        assert(m_node.mempool);
+        const auto* isman{m_node.llmq_ctx == nullptr ? nullptr : m_node.llmq_ctx->isman.get()};
+        // The masternode's input check (CCoinJoinBaseSession::IsValidInOuts), and a spend already in the mempool, which
+        // would make the final transaction a mempool conflict. The InstantSend lock is read while the mempool still
+        // holds the transaction, so both hold at one moment.
+        LOCK2(::cs_main, m_node.mempool->cs);
+        CCoinsViewMemPool view(&chainman().ActiveChainstate().CoinsTip(), *m_node.mempool);
+        for (auto& [outpoint, usable] : inputs) {
+            Coin coin;
+            usable = view.GetCoin(outpoint, coin) && !coin.IsSpent() && !m_node.mempool->isSpent(outpoint) &&
+                     (coin.nHeight != MEMPOOL_HEIGHT || (isman != nullptr && isman->IsLocked(outpoint.hash)));
+        }
+    }
     double guessVerificationProgress(const uint256& block_hash) override
     {
         LOCK(cs_main);

@@ -1183,6 +1183,7 @@ public:
     bool findAncestorByHash(const uint256& block_hash, const uint256& ancestor_hash, const interfaces::FoundBlock& ancestor_out) override { return m_inner.findAncestorByHash(block_hash, ancestor_hash, ancestor_out); }
     bool findCommonAncestor(const uint256& block_hash1, const uint256& block_hash2, const interfaces::FoundBlock& ancestor_out, const interfaces::FoundBlock& block1_out, const interfaces::FoundBlock& block2_out) override { return m_inner.findCommonAncestor(block_hash1, block_hash2, ancestor_out, block1_out, block2_out); }
     void findCoins(std::map<COutPoint, Coin>& coins) override { m_inner.findCoins(coins); }
+    void findMixingInputs(std::map<COutPoint, bool>& inputs) override { m_inner.findMixingInputs(inputs); }
     double guessVerificationProgress(const uint256& block_hash) override { return m_inner.guessVerificationProgress(block_hash); }
     bool hasBlocks(const uint256& block_hash, int min_height, std::optional<int> max_height) override { return m_inner.hasBlocks(block_hash, min_height, max_height); }
     bool isInMempool(const uint256& txid) override { return m_inner.isInMempool(txid); }

@@ -3453,6 +3453,35 @@ bool CWallet::FundTransaction(CMutableTransaction& tx, CAmount& nFeeRet, int& nC
     return true;
 }
 
+namespace {
+/** The node's answer, for each of these coins, whether it can be a mixing input now (Chain::findMixingInputs): in its
+ *  chain or mempool, not spent there, confirmed or InstantSend-locked, all read at one moment. */
+std::map<COutPoint, bool> NodeMixingInputs(const CWallet& wallet, const std::vector<COutput>& coins)
+{
+    std::map<COutPoint, bool> inputs;
+    for (const auto& out : coins) inputs.emplace(COutPoint{out.tx->GetHash(), static_cast<uint32_t>(out.i)}, false);
+    wallet.chain().findMixingInputs(inputs);
+    return inputs;
+}
+
+/** Whether a ready-to-mix coin can be a mixing input as the masternode checks one: a P2PKH output this wallet holds the
+ *  private key of, which the node can take as an input now (`node_inputs`). The masternode refuses any other input, and
+ *  for a wrong script it charges the collateral. The selectors test this before a coin takes any of their budget;
+ *  AvailableCoins' ONLY_READY_TO_MIX has already left out coins the wallet knows spent or locked, fully mixed coins and
+ *  amounts outside the wallet's list. */
+bool IsMixingCandidate(const CWallet& wallet, const COutput& out, const std::map<COutPoint, bool>& node_inputs)
+{
+    if (!out.tx->tx->vout[out.i].scriptPubKey.IsPayToPublicKeyHash()) return false;
+    // A watch-only coin is not spendable; a wallet without private keys (its descriptors public only) counts its coins
+    // as spendable, yet cannot sign them.
+    if (!out.fSpendable || wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) return false;
+    // The node's chain, mempool and InstantSend locks now, not the wallet's depth, spends, mempool flag and cached lock,
+    // which lag behind its notifications.
+    const auto it{node_inputs.find(COutPoint{out.tx->GetHash(), static_cast<uint32_t>(out.i)})};
+    return it != node_inputs.end() && it->second;
+}
+} // namespace
+
 bool CWallet::SelectTxDSInsByDenomination(int nDenom, CAmount nValueMax, std::vector<CTxDSIn>& vecTxDSInRet)
 {
     LOCK(cs_wallet);
@@ -3469,6 +3498,8 @@ bool CWallet::SelectTxDSInsByDenomination(int nDenom, CAmount nValueMax, std::ve
     if (!CoinJoin::IsValidDenomination(nDenom) || CoinJoin::IsDfcnScaleDenomination(nDenom)) {
         return false;
     }
+    // A fully locked wallet signs nothing (the caller's unlock check may be older than this call).
+    if (IsLocked(/*fForMixing=*/true)) return false;
     CAmount nDenomAmount = CoinJoin::DenominationToAmount(nDenom);
 
     CCoinControl coin_control;
@@ -3477,18 +3508,28 @@ bool CWallet::SelectTxDSInsByDenomination(int nDenom, CAmount nValueMax, std::ve
     WalletCJLogPrint(this, "CWallet::%s -- vCoins.size(): %d\n", __func__, vCoins.size());
 
     Shuffle(vCoins.rbegin(), vCoins.rend(), FastRandomContext());
+    const auto node_inputs{NodeMixingInputs(*this, vCoins)};
+
+    // The budget and the scripts are counted per round count: the ready step builds its entry from coins of one round
+    // count (SubmitDenominate), and within an entry a scriptPubKey appears once (the masternode refuses a second one and
+    // charges the collateral).
+    std::map<int, CAmount> mapTotalByRounds;
+    std::map<int, std::set<CScript>> mapScriptsByRounds;
 
     for (const auto& out : vCoins) {
         uint256 txHash = out.tx->GetHash();
         CAmount nValue = out.tx->tx->vout[out.i].nValue;
         if (setRecentTxIds.find(txHash) != setRecentTxIds.end()) continue; // no duplicate txids
-        if (nValueTotal + nValue > nValueMax) continue;
         if (nValue != nDenomAmount) continue;
+        if (!IsMixingCandidate(*this, out, node_inputs)) continue;
 
         CTxIn txin = CTxIn(txHash, out.i);
-        CScript scriptPubKey = out.tx->tx->vout[out.i].scriptPubKey;
         int nRounds = GetRealOutpointCoinJoinRounds(txin.prevout);
+        if (mapTotalByRounds[nRounds] + nValue > nValueMax) continue;
+        const CScript& scriptPubKey = out.tx->tx->vout[out.i].scriptPubKey;
+        if (!mapScriptsByRounds[nRounds].insert(scriptPubKey).second) continue;
 
+        mapTotalByRounds[nRounds] += nValue;
         nValueTotal += nValue;
         vecTxDSInRet.emplace_back(CTxDSIn(txin, scriptPubKey, nRounds));
         setRecentTxIds.emplace(txHash);
@@ -3673,14 +3714,20 @@ bool CWallet::SelectDenominatedAmounts(CAmount nValueMax, std::set<CAmount>& set
     CAmount nValueTotal{0};
     setAmountsRet.clear();
 
+    // A fully locked wallet signs nothing (the caller's unlock check may be older than this call).
+    if (IsLocked(/*fForMixing=*/true)) return false;
+
     std::vector<COutput> vCoins;
     CCoinControl coin_control;
     coin_control.nCoinType = CoinType::ONLY_READY_TO_MIX;
     AvailableCoins(vCoins, &coin_control);
     // larger denoms first
     std::sort(vCoins.rbegin(), vCoins.rend(), CompareByPriority());
+    const auto node_inputs{NodeMixingInputs(*this, vCoins)};
 
     for (const auto& out : vCoins) {
+        // Only a coin a mixing entry can use counts toward the amounts a new queue may be started for.
+        if (!IsMixingCandidate(*this, out, node_inputs)) continue;
         CAmount nValue = out.tx->tx->vout[out.i].nValue;
         if (nValueTotal + nValue <= nValueMax) {
             nValueTotal += nValue;

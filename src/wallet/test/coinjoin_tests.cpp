@@ -11,11 +11,25 @@
 #include <coinjoin/util.h>
 #include <consensus/amount.h>
 #include <interfaces/coinjoin.h>
+#include <key.h>
+#include <key_io.h>
+#include <llmq/context.h>
+#include <llmq/instantsend.h>
 #include <logging.h>
 #include <node/context.h>
+#include <script/descriptor.h>
+#include <script/standard.h>
+#include <spork.h>
+#include <util/check.h>
+#include <util/strencodings.h>
+#include <util/time.h>
 #include <util/translation.h>
 #include <policy/settings.h>
 #include <validation.h>
+#include <txmempool.h>
+#include <consensus/validation.h>
+#include <wallet/coincontrol.h>
+#include <wallet/walletutil.h>
 #include <wallet/wallet.h>
 
 #include <boost/test/unit_test.hpp>
@@ -25,11 +39,18 @@
 #include <future>
 #include <functional>
 #include <list>
+#include <map>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
+
+namespace llmq {
+// Defined in instantsend_queue_tests.cpp, which holds the manager's test seam: stores a lock as a verified one.
+void StoreInstantSendLockForTest(CInstantSendManager& manager, const CInstantSendLock& islock);
+} // namespace llmq
 
 BOOST_FIXTURE_TEST_SUITE(coinjoin_tests, BasicTestingSetup)
 
@@ -188,6 +209,97 @@ public:
         it->second.m_confirm = confirm;
         return it->second;
     }
+    // One transaction from the wallet's non-denominated coins paying `outputs`; mined when `confirm`, else accepted into
+    // the mempool (this wallet does not broadcast) and seen there by the wallet.
+    CTransactionRef PayOutputs(const std::vector<std::pair<CScript, CAmount>>& outputs, bool confirm)
+    {
+        std::vector<CRecipient> recipients;
+        for (const auto& [script, amount] : outputs) recipients.push_back({script, amount, false});
+        CTransactionRef tx;
+        CAmount fee;
+        int change_pos{-1};
+        bilingual_str error;
+        CCoinControl coin_control;
+        coin_control.m_feerate = CFeeRate(1000);
+        coin_control.nCoinType = CoinType::ONLY_NONDENOMINATED;
+        FeeCalculation fee_calc;
+        BOOST_REQUIRE(wallet->CreateTransaction(recipients, tx, fee, change_pos, error, coin_control, fee_calc));
+        {
+            LOCK2(wallet->cs_wallet, cs_main);
+            wallet->CommitTransaction(tx, {}, {});
+        }
+        if (confirm) {
+            Confirm(tx);
+        } else {
+            BOOST_REQUIRE(WITH_LOCK(cs_main, return m_node.chainman->ProcessTransaction(tx).m_result_type) ==
+                          MempoolAcceptResult::ResultType::VALID);
+            // This wallet is not subscribed to the chain's notifications (no CWallet::Create): tell it, as they would.
+            wallet->transactionAddedToMempool(tx, /*nAcceptTime=*/GetTime(), /*mempool_sequence=*/0);
+            LOCK(wallet->cs_wallet);
+            const CWalletTx* wtx{wallet->GetWalletTx(tx->GetHash())};
+            BOOST_REQUIRE(wtx && wtx->InMempool() && wtx->GetDepthInMainChain() == 0 && !wtx->IsLockedByInstantSend());
+        }
+        return tx;
+    }
+
+    // Mines the wallet's transaction through AddTxToChain, after checking that its block became the tip (the helper
+    // marks the transaction confirmed by the tip it finds) and that the transaction's first output is in the UTXO set.
+    void Confirm(const CTransactionRef& tx)
+    {
+        const int height{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Height())};
+        AddTxToChain(tx->GetHash());
+        LOCK(cs_main);
+        BOOST_REQUIRE_EQUAL(m_node.chainman->ActiveChain().Height(), height + 1);
+        BOOST_REQUIRE(m_node.chainman->ActiveChainstate().CoinsTip().HaveCoin(COutPoint{tx->GetHash(), 0}));
+    }
+
+    // A zero-fee, all-denominated spend of one ready coin to `script`: its output has one round more than the coin.
+    COutPoint MixOnce(const COutPoint& coin, CAmount amount, const CScript& script)
+    {
+        CMutableTransaction mtx;
+        mtx.vin.emplace_back(coin);
+        mtx.vout.emplace_back(amount, script);
+        {
+            LOCK(wallet->cs_wallet);
+            BOOST_REQUIRE(wallet->SignTransaction(mtx));
+        }
+        const CTransactionRef tx{MakeTransactionRef(mtx)};
+        {
+            LOCK2(wallet->cs_wallet, cs_main);
+            wallet->CommitTransaction(tx, {}, {});
+        }
+        Confirm(tx);
+        return COutPoint{tx->GetHash(), 0};
+    }
+
+    // A wallet of the test's own learns the chain's coins: the tip is its last processed block, then a full rescan.
+    void Rescan(CWallet& w)
+    {
+        {
+            LOCK2(w.cs_wallet, cs_main);
+            w.SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+        }
+        WalletRescanReserver reserver(w);
+        BOOST_REQUIRE(reserver.reserve());
+        BOOST_REQUIRE_EQUAL(w.ScanForWalletTransactions(w.chain().getBlockHash(0), /*start_height=*/0, /*max_height=*/{},
+                                                        reserver, /*fUpdate=*/true).status,
+                            CWallet::ScanResult::SUCCESS);
+    }
+
+    // The ready-to-mix coins AvailableCoins lists (spent, locked and fully mixed coins and other amounts left out), with
+    // whether each counts as spendable.
+    static std::map<COutPoint, bool> ReadyToMix(CWallet& w)
+    {
+        std::vector<COutput> coins;
+        CCoinControl coin_control;
+        coin_control.nCoinType = CoinType::ONLY_READY_TO_MIX;
+        LOCK(w.cs_wallet);
+        w.AvailableCoins(coins, &coin_control);
+        std::map<COutPoint, bool> outpoints;
+        for (const auto& out : coins) outpoints.emplace(COutPoint{out.tx->GetHash(), static_cast<uint32_t>(out.i)}, out.fSpendable);
+        return outpoints;
+    }
+
     CompactTallyItem GetTallyItem(const std::vector<CAmount>& vecAmounts)
     {
         CompactTallyItem tallyItem;
@@ -442,6 +554,279 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_autostart_only_initializes_added_wallet, CTrans
     CCoinJoinClientOptions::SetEnabled(enabled_before);
     BOOST_CHECK_EQUAL(gArgs.IsArgSet("-coinjoinautostart"), had_arg);
     BOOST_CHECK_EQUAL(gArgs.GetArg("-coinjoinautostart", ""), old_arg);
+}
+
+// CJ4-B1: both selectors take only a coin a mixing entry can use (P2PKH, the wallet's private key, present in the node's
+// chain and mempool now, not spent in its mempool, and there confirmed or InstantSend-locked now), from a wallet that is
+// not fully locked, before the coin takes any of the budget, and count the budget and the scripts per round count (the
+// ready step builds its entry from one round count). Every other coin here is ready to mix by AvailableCoins, so it is
+// the selectors' own rule that leaves it out. The fixture's wallet is not subscribed to the chain's notifications, so
+// what the node does after a coin was recorded (a block disconnected, a transaction evicted or added) reaches the wallet
+// late, as notifications can. One coin per transaction: an entry takes one output of a transaction.
+BOOST_FIXTURE_TEST_CASE(coinjoin_selectors_take_only_mixing_candidates, CTransactionBuilderTestSetup)
+{
+    const int bit{1 << 0};
+    const CAmount amount{CoinJoin::DenominationToAmount(bit)};          // 10.0001
+    const CAmount small_amount{CoinJoin::DenominationToAmount(1 << 1)}; // 1.00001
+    const auto new_key = [&](bool in_wallet) {
+        CKey key;
+        key.MakeNewKey(true);
+        if (in_wallet) {
+            LOCK(wallet->cs_wallet);
+            BOOST_REQUIRE(wallet->GetLegacyScriptPubKeyMan()->AddKeyPubKey(key, key.GetPubKey()));
+        }
+        return key;
+    };
+    const auto p2pkh = [](const CKey& key) { return GetScriptForDestination(PKHash(key.GetPubKey())); };
+    const CKey key_a{new_key(true)}, key_b{new_key(true)}, key_c{new_key(true)}, key_s1{new_key(true)},
+        key_s2{new_key(true)}, key_late{new_key(true)}, key_c1{new_key(true)}, key_c2{new_key(true)},
+        key_small{new_key(true)}, key_watched{new_key(false)}, key_d{new_key(false)}, key_l{new_key(false)};
+    {
+        LOCK(wallet->cs_wallet);
+        auto* spkm{wallet->GetLegacyScriptPubKeyMan()};
+        LOCK(spkm->cs_KeyStore);
+        BOOST_REQUIRE(spkm->AddWatchOnly(p2pkh(key_watched), /*nCreateTime=*/1));
+    }
+
+    // Confirmed first (a later payment must not spend an unconfirmed change). Round 0: A twice, B; round 1 (a zero-fee,
+    // all-denominated spend of a round-0 coin): A, B. Not candidates: pay to pubkey, watch-only. For the wallets of their
+    // own below: D (public keys only) and L (lockable). Last, in the tip block: LATE.
+    const COutPoint a1{PayOutputs({{p2pkh(key_a), amount}}, true)->GetHash(), 0};
+    const COutPoint a2{PayOutputs({{p2pkh(key_a), amount}}, true)->GetHash(), 0};
+    const COutPoint b{PayOutputs({{p2pkh(key_b), amount}}, true)->GetHash(), 0};
+    const COutPoint s1{PayOutputs({{p2pkh(key_s1), amount}}, true)->GetHash(), 0};
+    const COutPoint s2{PayOutputs({{p2pkh(key_s2), amount}}, true)->GetHash(), 0};
+    const COutPoint a_r1{MixOnce(s1, amount, p2pkh(key_a))};
+    const COutPoint b_r1{MixOnce(s2, amount, p2pkh(key_b))};
+    const COutPoint pay_to_pubkey{PayOutputs({{GetScriptForRawPubKey(key_c.GetPubKey()), amount}}, true)->GetHash(), 0};
+    const COutPoint watched{PayOutputs({{p2pkh(key_watched), amount}}, true)->GetHash(), 0};
+    const COutPoint d{PayOutputs({{p2pkh(key_d), amount}}, true)->GetHash(), 0};
+    const COutPoint l{PayOutputs({{p2pkh(key_l), amount}}, true)->GetHash(), 0};
+    const COutPoint late{PayOutputs({{p2pkh(key_late), amount}}, true)->GetHash(), 0};
+    // In the mempool, own, no InstantSend lock yet: C1 and C2 of 10.0001, SMALL of 1.00001.
+    const CTransactionRef c1_tx{PayOutputs({{p2pkh(key_c1), amount}}, false)};
+    const CTransactionRef c2_tx{PayOutputs({{p2pkh(key_c2), amount}}, false)};
+    const CTransactionRef small_tx{PayOutputs({{p2pkh(key_small), small_amount}}, false)};
+    const COutPoint c1{c1_tx->GetHash(), 0}, c2{c2_tx->GetHash(), 0}, small{small_tx->GetHash(), 0};
+    const std::set<COutPoint> round0{a1, a2, b, late}, round1{a_r1, b_r1};
+    {
+        const auto ready{ReadyToMix(*wallet)};
+        for (const auto& [outpoint, name] : std::vector<std::pair<COutPoint, std::string>>{
+                 {a1, "A, round 0"}, {a2, "A again, round 0"}, {b, "B, round 0"}, {late, "LATE, round 0"},
+                 {a_r1, "A, round 1"}, {b_r1, "B, round 1"}, {pay_to_pubkey, "pay to pubkey"}, {watched, "watch-only"},
+                 {c1, "C1 in the mempool"}, {c2, "C2 in the mempool"}, {small, "SMALL in the mempool"}}) {
+            BOOST_REQUIRE_MESSAGE(ready.count(outpoint), "ready to mix by AvailableCoins: " + name);
+        }
+        BOOST_REQUIRE_EQUAL(wallet->GetRealOutpointCoinJoinRounds(a1), 0);
+        BOOST_REQUIRE_EQUAL(wallet->GetRealOutpointCoinJoinRounds(a_r1), 1);
+        BOOST_REQUIRE_EQUAL(wallet->GetRealOutpointCoinJoinRounds(b_r1), 1);
+    }
+
+    // The entry selector's choice, with the return value checked against the outcome and an entry's scripts (one round
+    // count each) told apart.
+    const auto inputs = [&](CWallet& w, CAmount budget) {
+        std::vector<CTxDSIn> selected;
+        const bool found{w.SelectTxDSInsByDenomination(bit, budget, selected)};
+        BOOST_CHECK_EQUAL(found, !selected.empty());
+        std::vector<COutPoint> outpoints;
+        std::map<int, std::set<CScript>> scripts;
+        for (const auto& in : selected) {
+            outpoints.push_back(in.prevout);
+            BOOST_CHECK_MESSAGE(scripts[in.nRounds].insert(in.prevPubKey).second, "an entry names each script once");
+        }
+        return outpoints;
+    };
+    const auto count = [](const std::vector<COutPoint>& v, const COutPoint& o) { return std::count(v.begin(), v.end(), o); };
+    const auto count_of = [](const std::vector<COutPoint>& v, const std::set<COutPoint>& set) {
+        return std::count_if(v.begin(), v.end(), [&](const COutPoint& o) { return set.count(o) > 0; });
+    };
+    const auto denominated_amounts = [](CWallet& w, CAmount budget) {
+        std::set<CAmount> amounts;
+        const bool enough{w.SelectDenominatedAmounts(budget, amounts)};
+        return std::make_pair(enough, amounts);
+    };
+
+    // Any budget: only candidates; round 0 gives B, LATE and one of A's two coins, round 1 keeps its own A and B.
+    for (int i = 0; i < 20; ++i) {
+        const auto chosen{inputs(*wallet, MAX_MONEY)};
+        BOOST_CHECK_MESSAGE(chosen.size() == 5, "every round count keeps its own scripts");
+        for (const auto& outpoint : chosen) {
+            BOOST_CHECK_MESSAGE(round0.count(outpoint) || round1.count(outpoint), "the entry selector takes only mixing candidates");
+        }
+        BOOST_CHECK_EQUAL(count(chosen, b) + count(chosen, late) + count(chosen, a_r1) + count(chosen, b_r1), 4);
+        BOOST_CHECK_EQUAL(count(chosen, a1) + count(chosen, a2), 1);
+    }
+    // A budget of one coin, per round count: exactly one candidate of round 0 and one of round 1.
+    for (int i = 0; i < 20; ++i) {
+        const auto chosen{inputs(*wallet, amount)};
+        BOOST_CHECK_MESSAGE(chosen.size() == 2 && count_of(chosen, round0) == 1 && count_of(chosen, round1) == 1,
+                            "the budget is counted per round count");
+    }
+    BOOST_CHECK(denominated_amounts(*wallet, MAX_MONEY) == std::make_pair(true, std::set<CAmount>{amount}));
+
+    // InstantSend on, and C1, C2 and SMALL locked: the mempool coins are candidates.
+    CKey spork_key;
+    spork_key.MakeNewKey(false);
+    auto& sporkman{*m_node.sporkman};
+    BOOST_REQUIRE(sporkman.SetSporkAddress(EncodeDestination(PKHash(spork_key.GetPubKey()))));
+    BOOST_REQUIRE(sporkman.SetMinSporkKeys(1));
+    BOOST_REQUIRE(sporkman.SetPrivKey(EncodeSecret(spork_key)));
+    BOOST_REQUIRE(sporkman.UpdateSpork(*Assert(m_node.peerman.get()), SPORK_2_INSTANTSEND_ENABLED, 0));
+    for (const CTransactionRef& tx : {c1_tx, c2_tx, small_tx}) {
+        llmq::CInstantSendLock islock;
+        islock.txid = tx->GetHash();
+        for (const auto& in : tx->vin) islock.inputs.push_back(in.prevout);
+        islock.cycleHash = WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+        llmq::StoreInstantSendLockForTest(*m_node.llmq_ctx->isman, islock);
+        BOOST_REQUIRE(m_node.llmq_ctx->isman->IsLocked(islock.txid));
+    }
+    {
+        const auto chosen{inputs(*wallet, MAX_MONEY)};
+        BOOST_CHECK_EQUAL(count(chosen, c1), 1);
+        BOOST_CHECK_EQUAL(count(chosen, c2), 1);
+    }
+    BOOST_CHECK(denominated_amounts(*wallet, MAX_MONEY) == std::make_pair(true, std::set<CAmount>{amount, small_amount}));
+    // A budget of one 10.0001: the larger amount comes first, and then SMALL no longer fits.
+    BOOST_CHECK_MESSAGE(denominated_amounts(*wallet, amount) == std::make_pair(true, std::set<CAmount>{amount}),
+                        "the amounts a new queue may be started for stay within the budget");
+
+    // C2 evicted from the node's mempool, the wallet not told yet (it still has C2 in the mempool, locked): the node no
+    // longer has the coin, so it is no candidate; C1 still is.
+    {
+        LOCK2(cs_main, m_node.mempool->cs);
+        m_node.mempool->removeRecursive(*c2_tx, MemPoolRemovalReason::SIZELIMIT);
+    }
+    BOOST_REQUIRE(!m_node.mempool->exists(c2_tx->GetHash()));
+    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->GetWalletTx(c2_tx->GetHash())->InMempool()));
+    BOOST_REQUIRE(m_node.llmq_ctx->isman->IsLocked(c2_tx->GetHash()));
+    BOOST_REQUIRE(ReadyToMix(*wallet).count(c2));
+    {
+        const auto chosen{inputs(*wallet, MAX_MONEY)};
+        BOOST_CHECK_MESSAGE(count(chosen, c2) == 0, "a coin the node no longer has is not a candidate");
+        BOOST_CHECK_EQUAL(count(chosen, c1), 1);
+    }
+
+    // The 10.0001 candidates locked by the user: the 10.0001 coins left (pay to pubkey, watch-only, C2) take none of a
+    // 10.0001 budget, which goes to the locked SMALL in the mempool.
+    {
+        LOCK(wallet->cs_wallet);
+        for (const auto& outpoint : {a1, a2, b, late, a_r1, b_r1, c1}) BOOST_REQUIRE(wallet->LockCoin(outpoint));
+    }
+    BOOST_CHECK_MESSAGE(denominated_amounts(*wallet, amount) == std::make_pair(true, std::set<CAmount>{small_amount}),
+                        "coins no entry can use take none of the budget");
+
+    // InstantSend off: C1 (unlocked by the user again) is in the node's mempool, its lock ended, while the wallet's
+    // cached answer still says locked.
+    {
+        LOCK(wallet->cs_wallet);
+        BOOST_REQUIRE(wallet->UnlockCoin(c1));
+    }
+    SetMockTime(GetTime() + 60);
+    BOOST_REQUIRE(sporkman.UpdateSpork(*Assert(m_node.peerman.get()), SPORK_2_INSTANTSEND_ENABLED, 4070908800ULL));
+    BOOST_REQUIRE(!m_node.llmq_ctx->isman->IsLocked(c1_tx->GetHash()));
+    BOOST_REQUIRE(m_node.mempool->exists(c1_tx->GetHash()));
+    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->GetWalletTx(c1_tx->GetHash())->IsLockedByInstantSend()));
+    BOOST_REQUIRE(ReadyToMix(*wallet).count(c1));
+    BOOST_CHECK_MESSAGE(count(inputs(*wallet, MAX_MONEY), c1) == 0,
+                        "a mempool coin whose InstantSend lock ended is not a candidate");
+
+    // Nothing usable left: neither selector finds anything, so no queue is joined or started. Unlocking B brings
+    // exactly B back.
+    {
+        LOCK(wallet->cs_wallet);
+        BOOST_REQUIRE(wallet->LockCoin(c1));
+    }
+    BOOST_CHECK(inputs(*wallet, MAX_MONEY).empty());
+    BOOST_CHECK_MESSAGE(!denominated_amounts(*wallet, MAX_MONEY).first, "a new queue is not started for coins no entry can use");
+    {
+        LOCK(wallet->cs_wallet);
+        BOOST_REQUIRE(wallet->UnlockCoin(b));
+    }
+    BOOST_CHECK(inputs(*wallet, MAX_MONEY) == std::vector<COutPoint>{b});
+    BOOST_CHECK(denominated_amounts(*wallet, MAX_MONEY) == std::make_pair(true, std::set<CAmount>{amount}));
+
+    // B's spend in the node's mempool, the wallet not told yet (it still lists B): a final transaction with B would
+    // conflict with it, so B is no candidate for either selector. With the spend evicted, B is back.
+    CMutableTransaction spend_b;
+    spend_b.vin.emplace_back(b);
+    spend_b.vout.emplace_back(amount - 10000, p2pkh(key_c));
+    {
+        LOCK(wallet->cs_wallet);
+        BOOST_REQUIRE(wallet->SignTransaction(spend_b));
+    }
+    const CTransactionRef spend_b_tx{MakeTransactionRef(spend_b)};
+    BOOST_REQUIRE(WITH_LOCK(cs_main, return m_node.chainman->ProcessTransaction(spend_b_tx).m_result_type) ==
+                  MempoolAcceptResult::ResultType::VALID);
+    BOOST_REQUIRE(ReadyToMix(*wallet).count(b));
+    BOOST_CHECK_MESSAGE(inputs(*wallet, MAX_MONEY).empty(), "a coin spent in the node's mempool is not a candidate");
+    BOOST_CHECK_MESSAGE(!denominated_amounts(*wallet, MAX_MONEY).first, "a coin spent in the node's mempool starts no queue");
+    {
+        LOCK2(cs_main, m_node.mempool->cs);
+        m_node.mempool->removeRecursive(*spend_b_tx, MemPoolRemovalReason::SIZELIMIT);
+    }
+    BOOST_REQUIRE(!m_node.mempool->exists(spend_b_tx->GetHash()));
+    BOOST_CHECK(inputs(*wallet, MAX_MONEY) == std::vector<COutPoint>{b});
+
+    // A descriptor wallet without private keys: its public-key descriptor's coin D counts as spendable, yet cannot be
+    // signed, so it is no candidate.
+    auto public_only = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "cj4b1-public-only",
+                                                 CreateMockWalletDatabase());
+    public_only->SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+    public_only->SetWalletFlag(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    {
+        FlatSigningProvider provider;
+        std::string error;
+        std::unique_ptr<Descriptor> desc{Parse("pkh(" + HexStr(key_d.GetPubKey()) + ")", provider, error)};
+        BOOST_REQUIRE_MESSAGE(desc, error);
+        WalletDescriptor w_desc(std::move(desc), /*creation_time=*/0, /*range_start=*/0, /*range_end=*/0, /*next_index=*/0);
+        LOCK(public_only->cs_wallet);
+        BOOST_REQUIRE(public_only->AddWalletDescriptor(w_desc, provider, "", /*internal=*/false));
+    }
+    Rescan(*public_only);
+    const auto public_ready{ReadyToMix(*public_only)};
+    BOOST_REQUIRE(public_ready.count(d) && public_ready.at(d));
+    BOOST_CHECK_MESSAGE(inputs(*public_only, MAX_MONEY).empty(), "a wallet without private keys offers no mixing input");
+    BOOST_CHECK(!denominated_amounts(*public_only, MAX_MONEY).first);
+
+    // A fully locked wallet offers nothing, also while its coin L is listed; unlocked for mixing only, it offers L. A
+    // wallet of its own, on a database that encryption can rewrite (the fixture's mock database has no path).
+    auto lockable = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "cj4b1-lockable",
+                                              CreateDummyWalletDatabase());
+    {
+        LOCK(lockable->cs_wallet);
+        lockable->SetupLegacyScriptPubKeyMan();
+        BOOST_REQUIRE(lockable->GetLegacyScriptPubKeyMan()->AddKeyPubKey(key_l, key_l.GetPubKey()));
+    }
+    Rescan(*lockable);
+    BOOST_REQUIRE(inputs(*lockable, MAX_MONEY) == std::vector<COutPoint>{l});
+    BOOST_REQUIRE(lockable->EncryptWallet(SecureString{"cj4b1-passphrase"}));
+    BOOST_REQUIRE(lockable->Lock());
+    BOOST_REQUIRE(lockable->IsLocked(/*fForMixing=*/true));
+    BOOST_REQUIRE(ReadyToMix(*lockable).count(l));
+    BOOST_CHECK_MESSAGE(inputs(*lockable, MAX_MONEY).empty(), "a fully locked wallet offers no mixing input");
+    BOOST_CHECK_MESSAGE(!denominated_amounts(*lockable, MAX_MONEY).first, "a fully locked wallet starts no queue");
+    BOOST_REQUIRE(lockable->Unlock(SecureString{"cj4b1-passphrase"}, /*fForMixingOnly=*/true));
+    BOOST_REQUIRE(!lockable->IsLocked(/*fForMixing=*/true));
+    BOOST_CHECK(inputs(*lockable, MAX_MONEY) == std::vector<COutPoint>{l});
+    BOOST_CHECK(denominated_amounts(*lockable, MAX_MONEY).first);
+
+    // LATE's block disconnected, the wallet not told yet (it still counts LATE confirmed): the node holds LATE only in
+    // its mempool, without a lock, so it is no candidate.
+    {
+        LOCK(wallet->cs_wallet);
+        BOOST_REQUIRE(wallet->UnlockCoin(late));
+    }
+    BOOST_REQUIRE(count(inputs(*wallet, MAX_MONEY), late) == 1);
+    {
+        BlockValidationState state;
+        CBlockIndex* tip{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip())};
+        BOOST_REQUIRE(m_node.chainman->ActiveChainstate().InvalidateBlock(state, tip));
+    }
+    BOOST_REQUIRE(m_node.mempool->exists(late.hash));
+    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->GetWalletTx(late.hash)->GetDepthInMainChain()) > 0);
+    BOOST_REQUIRE(ReadyToMix(*wallet).count(late));
+    BOOST_CHECK_MESSAGE(inputs(*wallet, MAX_MONEY) == std::vector<COutPoint>{b},
+                        "a coin the node holds unconfirmed and unlocked is not a candidate");
 }
 
 BOOST_FIXTURE_TEST_CASE(CTransactionBuilderTest, CTransactionBuilderTestSetup)
