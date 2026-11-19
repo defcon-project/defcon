@@ -57,6 +57,18 @@ class BLSRPCTest(BitcoinTestFramework):
             self.restart_node(0)
             assert_equal(len(node.listblsaddresses()), 3)
 
+            # A wallet made without private keys takes no BLS secret key: the call fails, and the
+            # wallet holds no key, now or after it is loaded again.
+            node.createwallet("nokeys", disable_private_keys=True, descriptors=self.options.descriptors)
+            nokeys = node.get_wallet_rpc("nokeys")
+            assert_raises_rpc_error(-4, "Cannot generate a BLS key in a wallet with private keys disabled", nokeys.bls, "generate")
+            assert_equal(nokeys.listblsaddresses(), {})
+            node.unloadwallet("nokeys")
+            node.loadwallet("nokeys")
+            assert_equal(nokeys.listblsaddresses(), {})
+            node.unloadwallet("nokeys")
+            assert_equal(len(node.listblsaddresses()), 3)
+
         # A configuration written for a wallet build does not stop a build without
         # one: both accept the wallet's staking and HD options.
         self.restart_node(0, extra_args=["-stakecombinescope=key", "-mnemonicbits=256"])

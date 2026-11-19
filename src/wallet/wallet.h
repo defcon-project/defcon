@@ -963,6 +963,8 @@ private:
     static bool AttachChain(const std::shared_ptr<CWallet>& wallet, interfaces::Chain& chain, bilingual_str& error, std::vector<bilingual_str>& warnings);
 
     bool LoadBLSKeyToMemory(const std::string& keydata, int64_t record_id = -1, BlsWalletEntry* loaded_entry = nullptr) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
+    //! LoadBLSKeyToMemory for a key read already (its secret, public key and key id).
+    bool AddBLSKeyToMemory(BlsWalletEntry& entry, int64_t record_id = -1, BlsWalletEntry* loaded_entry = nullptr) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
     bool EncryptBLSKeySecret(const CKeyingMaterial& master_key, const std::string& keydata, CPubKey& pubkey, std::vector<unsigned char>& crypted_secret) const;
     bool DecryptBLSKeySecret(const CKeyingMaterial& master_key, const CPubKey& pubkey, const std::vector<unsigned char>& crypted_secret, std::string& keydata) const;
     bool EncryptBLSKeyRecords(const CKeyingMaterial& master_key, WalletBatch& batch) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);

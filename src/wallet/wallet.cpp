@@ -3822,6 +3822,9 @@ bool CWallet::CreateTransactionInternal(
             // TODO: pass in scriptChange instead of reservedest so
             // change transaction isn't always pay-to-bitcoin-address
             CScript scriptChange;
+            // Set when the wallet cannot make the change address this payment
+            // needs: scriptChange then only stands in for it.
+            bool change_address_unavailable{false};
 
             // coin control: send change to custom address
             if (!std::get_if<CNoDestination>(&coin_control.destChange)) {
@@ -3830,10 +3833,22 @@ bool CWallet::CreateTransactionInternal(
                 // A descriptor wallet counts only what its descriptors produce as its own, not a
                 // BLS key it stores: change sent to one would drop out of its balance. It takes
                 // the ordinary change address below.
-                scriptChange = GenerateNewBLSChangeAddress();
-                if (scriptChange.empty()) {
-                    error = _("Transaction needs a BLS change address, but the wallet is locked or the BLS key could not be saved.");
-                    return false;
+                if (IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+                    // A new BLS change address is a new secret key, which a
+                    // wallet without private keys does not hold: none is made.
+                    // A script of a BLS address's size stands in for it, so
+                    // that the fee and the dust limit are worked out as in any
+                    // other wallet. A transaction that leaves no change is
+                    // made as before; one that would pay change to the
+                    // stand-in is refused below.
+                    scriptChange = CScript() << std::vector<unsigned char>(CPubKey::BLS_PUBLIC_KEY_SIZE, 0) << OP_CHECKSIG;
+                    change_address_unavailable = true;
+                } else {
+                    scriptChange = GenerateNewBLSChangeAddress();
+                    if (scriptChange.empty()) {
+                        error = _("Transaction needs a BLS change address, but the wallet is locked or the BLS key could not be saved.");
+                        return false;
+                    }
                 }
             } else { // no coin control: send change to newly generated address
                 // Note: We use a new key here to keep it from being obvious which side is the change.
@@ -4102,6 +4117,12 @@ bool CWallet::CreateTransactionInternal(
 
             if (nMaxTries == 0) {
                 error = _("Exceeded max tries.");
+                return false;
+            }
+
+            // The change would go to an address this wallet cannot make.
+            if (change_address_unavailable && nChangePosInOut != -1) {
+                error = _("Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.");
                 return false;
             }
 
@@ -6454,6 +6475,12 @@ bool CWallet::LoadBLSKeyToMemory(const std::string& keydata, int64_t record_id, 
     }
     entry.pk = entry.sk.GetPublicKey();
     entry.keyID = CPubKey(entry.pk.ToByteVector(false)).GetID();
+    return AddBLSKeyToMemory(entry, record_id, loaded_entry);
+}
+
+bool CWallet::AddBLSKeyToMemory(BlsWalletEntry& entry, int64_t record_id, BlsWalletEntry* loaded_entry)
+{
+    AssertLockHeld(cs_wallet);
 
     std::vector<uint8_t> pubBytes = entry.pk.ToByteVector(false);
     CPubKey pubkey;
@@ -6594,34 +6621,117 @@ bool CWallet::WriteToBLSWallet(const std::string& keydata)
 {
     LOCK(cs_wallet);
 
+    // A wallet made without private keys holds none: not a BLS one either.
+    if (IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+        WalletLogPrintf("%s: refusing to write a BLS key to a wallet with private keys disabled.\n", __func__);
+        return false;
+    }
+
     if (IsCrypted() && IsLocked()) {
         WalletLogPrintf("%s: refusing to write BLS key while wallet is locked.\n", __func__);
         return false;
     }
 
-    BlsWalletEntry entry;
-    if (!LoadBLSKeyToMemory(keydata, -1, &entry)) {
-        return false;
-    }
+    // As before, the key joins the wallet's keys first, where the memory it
+    // takes is allocated, and its record is written after. What this call
+    // adds stays only if the record was written: when the database refuses
+    // the write, or a step up to it throws, it is taken back, and the error
+    // goes on as before. Otherwise the wallet would hold, until the next
+    // start, a key whose record is not there: a new key's address listed as
+    // its own, or the secret of a key it knew by its public key alone (a
+    // record not loaded); a BLS key does not come back from the seed. Taking
+    // back drops what was added last. A key the wallet held with its secret
+    // keeps its place: its record holds it.
+    LegacyScriptPubKeyMan* const spk_man = GetLegacyScriptPubKeyMan();
+    const auto save = [&]() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet) {
+        const size_t known_keys = blsKeyRecords.size();
+        const std::pair<size_t, size_t> known_entries = spk_man ? spk_man->CountBLSEntries() : std::pair<size_t, size_t>{0, 0};
+        const auto forget_unsaved_key = [&]() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet) {
+            if (blsKeyRecords.size() > known_keys) {
+                blsKeyRecords.pop_back();
+            }
+            if (spk_man) {
+                spk_man->RemoveBLSEntriesAfter(known_entries);
+            }
+        };
 
-    WalletBatch batch(GetDatabase());
-    if (IsCrypted()) {
+        BlsWalletEntry entry;
         CPubKey pubkey;
         std::vector<unsigned char> crypted_secret;
-        if (!EncryptBLSKeySecret(vMasterKey, keydata, pubkey, crypted_secret)) {
+        // A key known by its public key alone takes its secret into its entry
+        // only once the record is written, so a refused save leaves nothing in
+        // the entry to take back; the key store's entries, which allocate, are
+        // added before the write and taken back as a new key's are.
+        BlsWalletEntry* waiting{nullptr};
+        bool written{false};
+        try {
+            if (!entry.sk.SetHexStr(keydata, false)) {
+                return false;
+            }
+            entry.pk = entry.sk.GetPublicKey();
+            entry.keyID = CPubKey(entry.pk.ToByteVector(false)).GetID();
+            for (BlsWalletEntry& known : blsKeyRecords) {
+                if (known.keyID == entry.keyID && !known.sk.IsValid()) {
+                    waiting = &known;
+                    break;
+                }
+            }
+            bool held{false};
+            if (waiting) {
+                entry.id = waiting->id;
+                if (spk_man) {
+                    const std::vector<uint8_t> pub_bytes = entry.pk.ToByteVector(false);
+                    CPubKey key_pubkey;
+                    key_pubkey.Set(pub_bytes.begin(), pub_bytes.end());
+                    const std::vector<uint8_t> secret_bytes = entry.sk.ToByteVector(false);
+                    CKey key;
+                    key.Set(secret_bytes.begin(), secret_bytes.end(), false);
+                    spk_man->AddBLSEntries(key_pubkey, key);
+                }
+                held = true;
+            } else {
+                // The key as read above: it is not read again.
+                BlsWalletEntry loaded;
+                held = AddBLSKeyToMemory(entry, -1, &loaded);
+                entry.id = loaded.id;
+            }
+            if (held) {
+                WalletBatch batch(GetDatabase());
+                if (IsCrypted()) {
+                    written = EncryptBLSKeySecret(vMasterKey, keydata, pubkey, crypted_secret) &&
+                              batch.WriteCryptedBLSKey(entry.id, pubkey, crypted_secret);
+                } else {
+                    std::string bls_private_key = keydata;
+                    written = batch.WriteBLSKey(entry.id, bls_private_key);
+                    CleanseString(bls_private_key);
+                }
+            }
+        } catch (...) {
+            forget_unsaved_key();
+            throw;
+        }
+        if (!written) {
+            forget_unsaved_key();
             return false;
         }
-        if (!batch.WriteCryptedBLSKey(entry.id, pubkey, crypted_secret)) {
-            return false;
+        if (waiting) {
+            // Copied into the entry's own secure buffer: no allocation.
+            waiting->sk = entry.sk;
         }
-        cryptedBLSKeyRecords[entry.id] = std::make_pair(pubkey, crypted_secret);
+        if (IsCrypted()) {
+            cryptedBLSKeyRecords[entry.id] = std::make_pair(pubkey, crypted_secret);
+        }
         return true;
+    };
+    if (!spk_man) {
+        return save();
     }
-
-    std::string bls_private_key = keydata;
-    const bool written = batch.WriteBLSKey(entry.id, bls_private_key);
-    CleanseString(bls_private_key);
-    return written;
+    // Signing reads the legacy key store under its own lock, not the
+    // wallet's. As the key store's key writer (AddKeyPubKeyWithDB) holds it
+    // through its write, this holds it from the key's joining through the
+    // save's outcome, so that no reader gets a key that is then taken back.
+    LOCK(spk_man->cs_KeyStore);
+    return save();
 }
 
 std::map<unsigned int, std::string> CWallet::GetBLSAddresses()
