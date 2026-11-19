@@ -253,6 +253,15 @@ void OptionsDialog::setModel(OptionsModel *_model)
             ui->coinJoinEnabled->setChecked(_model->node().coinJoinOptions().isEnabled());
             ui->coinJoinEnabled->setEnabled(false);
         }
+
+        // A target saved above the field's cap (the field went up to 21,000,000
+        // before) is shown as saved: left alone, OK writes back what is saved
+        // and changes nothing, neither the saved target nor one set with
+        // -coinjoinamount or setcoinjoinamount. Any change brings the cap back
+        // (below, once the field is loaded).
+        const int coinjoin_cap = ui->coinJoinAmount->maximum();
+        const int coinjoin_amount = _model->data(_model->index(OptionsModel::CoinJoinAmount, 0), Qt::EditRole).toInt();
+        if (coinjoin_amount > coinjoin_cap) ui->coinJoinAmount->setMaximum(coinjoin_amount);
 #endif
 
         // A saved language this version does not ship (an earlier one did, a
@@ -278,6 +287,13 @@ void OptionsDialog::setModel(OptionsModel *_model)
         mapper->setModel(_model);
         setMapper();
         mapper->toFirst();
+#ifdef ENABLE_WALLET
+        if (coinjoin_amount > coinjoin_cap) {
+            connect(ui->coinJoinAmount, qOverload<int>(&QSpinBox::valueChanged), this, [this, coinjoin_cap] {
+                ui->coinJoinAmount->setMaximum(coinjoin_cap);
+            });
+        }
+#endif
 
         appearance->setModel(_model);
 

@@ -538,11 +538,14 @@
          </item>
          <item row="2" column="1">
           <widget class="QSpinBox" name="coinJoinAmount">
+           <property name="toolTip">
+            <string>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins.</string>
+           </property>
            <property name="minimum">
             <number>2</number>
            </property>
            <property name="maximum">
-            <number>21000000</number>
+            <number>10000</number>
            </property>
            <property name="singleStep">
             <number>10</number>
