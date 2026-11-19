@@ -8,9 +8,11 @@
 #include <interfaces/chain.h>
 #include <interfaces/handler.h>
 #include <interfaces/node.h>
+#include <psbt.h>
 #include <qt/bitcoinamountfield.h>
 #include <qt/clientmodel.h>
 #include <qt/optionsmodel.h>
+#include <qt/psbtoperationsdialog.h>
 #include <qt/qvalidatedlineedit.h>
 #include <qt/sendcoinsdialog.h>
 #include <qt/sendcoinsentry.h>
@@ -385,4 +387,55 @@ void WalletTests::stakingTransactionDetails()
     tx.vout.emplace_back(10000 * COIN, first_script);
     wtx.tx = MakeTransactionRef(tx);
     QVERIFY(TransactionDesc::FormatStakeDetails(wtx, status, previous, labels, outputs, unit).contains("increasing the UTXO count by 1"));
+}
+
+void WalletTests::psbtFeeRow()
+{
+    // The PSBT preview looks at whether the fee is known, not at whether it is
+    // zero: a known fee of nothing is shown as such, with the total; a fee that
+    // cannot be known (an input without its previous output) is said to be so.
+    TestChain100Setup test;
+    struct RestoreContext {
+        interfaces::Node& node;
+        NodeContext* previous;
+        ~RestoreContext() { node.setContext(previous); }
+    } restore{m_node, m_node.context()};
+    m_node.setContext(&test.m_node);
+    OptionsModel options;
+    ClientModel client(m_node, &options);
+    const CScript script = GetScriptForDestination(PKHash(test.coinbaseKey.GetPubKey()));
+    CMutableTransaction previous;
+    previous.vin.emplace_back(COutPoint(uint256S("01"), 0));
+    previous.vout.emplace_back(25 * COIN, script);
+    const CTransactionRef funding = MakeTransactionRef(previous);
+    CMutableTransaction spend;
+    spend.vin.emplace_back(COutPoint(funding->GetHash(), 0));
+    spend.vout.emplace_back(25 * COIN, script);
+    const auto preview = [&](const PartiallySignedTransaction& psbt) {
+        PSBTOperationsDialog dialog(nullptr, nullptr, &client);
+        dialog.openWithPSBT(psbt);
+        auto* text = dialog.findChild<QTextEdit*>("transactionDescription");
+        return text ? text->toPlainText() : QString("(no description)");
+    };
+    PartiallySignedTransaction known(spend);
+    known.inputs[0].non_witness_utxo = funding;
+    // The total is in the display unit, with its digit groups in a unit that
+    // has them (25,000 mDFCN); the thin and non-breaking spaces the formatters
+    // use are compared as plain ones on both sides.
+    const auto plain = [](QString text) { return text.replace(QChar(0x2009), ' ').replace(QChar(0x00a0), ' '); };
+    struct RestoreUnit {
+        OptionsModel& options;
+        const int unit;
+        ~RestoreUnit() { options.setDisplayUnit(unit); }
+    } restore_unit{options, options.getDisplayUnit()};
+    for (const int unit : {int{BitcoinUnits::DASH}, int{BitcoinUnits::mDASH}}) {
+        options.setDisplayUnit(unit);
+        const QString zero = preview(known);
+        QVERIFY2(zero.contains("Pays transaction fee: " + BitcoinUnits::formatWithUnit(BitcoinUnits::DASH, 0)), qPrintable(zero));
+        QVERIFY2(plain(zero).contains("Total Amount: " + plain(BitcoinUnits::formatWithUnit(unit, 25 * COIN))), qPrintable(zero));
+        QVERIFY2(!zero.contains("Unable to calculate"), qPrintable(zero));
+    }
+    const QString unknown = preview(PartiallySignedTransaction(spend));
+    QVERIFY2(unknown.contains("Unable to calculate transaction fee or total transaction amount."), qPrintable(unknown));
+    QVERIFY2(!unknown.contains("Pays transaction fee"), qPrintable(unknown));
 }
