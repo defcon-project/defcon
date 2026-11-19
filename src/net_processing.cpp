@@ -3312,13 +3312,21 @@ void PeerManagerImpl::ProcessGetData(CNode& pfrom, Peer& peer, const std::atomic
         bool push = false;
         if (inv.IsGenTxMsg()) {
             CTransactionRef tx = FindTxForGetData(&pfrom, inv.hash, mempool_req, now);
-            if (tx) {
-                CCoinJoinBroadcastTx dstx;
-                if (inv.IsMsgDstx()) {
-                    dstx = m_cj_ctx->dstxman->GetDSTX(inv.hash);
+            // Set only when a DSTX was asked for and the node keeps one for the hash.
+            std::optional<CCoinJoinBroadcastTx> dstx;
+            if (tx && inv.IsMsgDstx()) {
+                dstx = m_cj_ctx->dstxman->GetDSTX(inv.hash);
+                if (!*dstx) {
+                    dstx.reset();
+                } else if (pfrom.nVersion < COINJOIN_DFCN_DENOMS_PROTO_VERSION && dstx->HasDfcnScaleDenomination()) {
+                    // A peer that does not know the DFCN-scale denominations would penalise this envelope:
+                    // it is answered as not found. A request as MSG_TX still gets the plain transaction.
+                    tx = nullptr;
                 }
+            }
+            if (tx) {
                 if (dstx) {
-                    m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::DSTX, dstx));
+                    m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::DSTX, *dstx));
                 } else {
                     m_connman.PushMessage(&pfrom, msgMaker.Make(NetMsgType::TX, *tx));
                 }
@@ -8568,9 +8576,15 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                     tx_relay->m_tx_inventory_to_send.erase(hash);
                     if (tx_relay->m_bloom_filter && !tx_relay->m_bloom_filter->IsRelevantAndUpdate(*txinfo.tx)) continue;
 
-                    int nInvType = m_cj_ctx->dstxman->GetDSTX(hash) ? MSG_DSTX : MSG_TX;
-                    tx_relay->m_tx_inventory_known_filter.insert(hash);
-                    queueAndMaybePushInv(CInv(nInvType, hash));
+                    const auto dstx = m_cj_ctx->dstxman->GetDSTX(hash);
+                    const bool is_dstx{static_cast<bool>(dstx)};
+                    // Only the transaction's own item is held back from a peer that does not know the
+                    // DFCN-scale denominations; its InstantSend lock below is still offered.
+                    if (!(is_dstx && pto->nVersion < COINJOIN_DFCN_DENOMS_PROTO_VERSION && dstx.HasDfcnScaleDenomination())) {
+                        int nInvType = is_dstx ? MSG_DSTX : MSG_TX;
+                        tx_relay->m_tx_inventory_known_filter.insert(hash);
+                        queueAndMaybePushInv(CInv(nInvType, hash));
+                    }
 
                     const auto islock = m_llmq_ctx->isman->GetInstantSendLockByTxid(hash);
                     if (islock == nullptr) continue;
@@ -8630,6 +8644,15 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                         continue;
                     }
                     if (tx_relay->m_bloom_filter && !tx_relay->m_bloom_filter->IsRelevantAndUpdate(*txinfo.tx)) continue;
+                    // One read of the DSTX cache decides both whether the item is held back and its type, as in
+                    // the BIP35 reply: the cache can gain the envelope between two reads.
+                    const auto dstx = m_cj_ctx->dstxman->GetDSTX(hash);
+                    const bool is_dstx{static_cast<bool>(dstx)};
+                    // A peer that does not know the DFCN-scale denominations is not offered such a DSTX.
+                    // The check sits after the Bloom filter has seen the transaction (so a later spend of
+                    // its outputs still matches for this peer) and before the announcement is booked (so the
+                    // transaction does not become fetchable through an announcement the peer never got).
+                    if (is_dstx && pto->nVersion < COINJOIN_DFCN_DENOMS_PROTO_VERSION && dstx.HasDfcnScaleDenomination()) continue;
                     // Send
                     State(pto->GetId())->m_recently_announced_invs.insert(hash);
                     nRelayedTransactions++;
@@ -8646,7 +8669,7 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                             g_relay_expiration.emplace_back(current_time + RELAY_TX_CACHE_TIME, ret.first);
                         }
                     }
-                    int nInvType = m_cj_ctx->dstxman->GetDSTX(hash) ? MSG_DSTX : MSG_TX;
+                    int nInvType = is_dstx ? MSG_DSTX : MSG_TX;
                     tx_relay->m_tx_inventory_known_filter.insert(hash);
                     queueAndMaybePushInv(CInv(nInvType, hash));
                 }

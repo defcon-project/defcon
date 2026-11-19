@@ -85,6 +85,19 @@ class P2PDSTXTest(BitcoinTestFramework):
         ]):
             peer.send_and_ping(msg_dstx(self.make_dstx(nonce=1)))
 
+        # CJ4-A: a DFCN-scale amount (bit 5, 100.001 DFCN), alone or after an old amount, passes the structure
+        # check at every height, so an unknown masternode costs +1 here too, not the +10 of a structural failure.
+        for label, amounts in (("alone", [100 * COIN + 100000] * 3),
+                               ("after an old amount", [COIN // 1000 + 1] + [100 * COIN + 100000] * 2)):
+            self.log.info("Unknown-MN DSTX with a DFCN-scale amount %s => +%d, not +%d", label, UNKNOWN_MN_SCORE, INVALID_DSTX_SCORE)
+            peer_new = node.add_p2p_connection(P2PInterface())
+            dfcn = self.make_dstx(nonce=3 if label == "alone" else 4)
+            for out, amount in zip(dfcn.tx.vout, amounts):
+                out.nValue = amount
+            with node.assert_debug_log(["Can't find masternode", "(0 -> {})".format(UNKNOWN_MN_SCORE)],
+                                       unexpected_msgs=["Invalid DSTX structure"]):
+                peer_new.send_and_ping(msg_dstx(dfcn))
+
         self.log.info("Structurally invalid DSTX => stronger (+%d) misbehavior penalty", INVALID_DSTX_SCORE)
         peer_invalid = node.add_p2p_connection(P2PInterface())
         bad = self.make_dstx(nonce=2)

@@ -1888,6 +1888,45 @@ class msg_dsa:
         return "msg_dsa(dsa=%s)" % (repr(self.dsa))
 
 
+class CCoinJoinStatusUpdate:
+    """A masternode's answer to a mixing request (src/coinjoin/coinjoin.h)."""
+    __slots__ = ("nSessionID", "nState", "nStatusUpdate", "nMessageID")
+
+    def __init__(self, nSessionID=0, nState=0, nStatusUpdate=1, nMessageID=19):  # C++: STATUS_ACCEPTED, MSG_NOERR
+        self.nSessionID = nSessionID
+        self.nState = nState
+        self.nStatusUpdate = nStatusUpdate
+        self.nMessageID = nMessageID
+
+    def deserialize(self, f):
+        self.nSessionID, self.nState, self.nStatusUpdate, self.nMessageID = struct.unpack("<iiii", f.read(16))
+
+    def serialize(self):
+        return struct.pack("<iiii", self.nSessionID, self.nState, self.nStatusUpdate, self.nMessageID)
+
+    def __repr__(self):
+        return "CCoinJoinStatusUpdate(nSessionID=%d nState=%d nStatusUpdate=%d nMessageID=%d)" % (
+            self.nSessionID, self.nState, self.nStatusUpdate, self.nMessageID)
+
+
+class msg_dssu:
+    __slots__ = ("dssu",)
+    msgtype = b"dssu"
+
+    def __init__(self, dssu=None):
+        self.dssu = dssu or CCoinJoinStatusUpdate()
+
+    def deserialize(self, f):
+        self.dssu = CCoinJoinStatusUpdate()
+        self.dssu.deserialize(f)
+
+    def serialize(self):
+        return self.dssu.serialize()
+
+    def __repr__(self):
+        return "msg_dssu(dssu=%s)" % (repr(self.dssu))
+
+
 class msg_block:
     __slots__ = ("block",)
     msgtype = b"block"

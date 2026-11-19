@@ -153,6 +153,7 @@
 15   wallet_txn_clone.py                    # the wallet's accounting when a malleated clone of its transaction confirms instead
 15   rpc_createmultisig.py                  # createmultisig and addmultisigaddress, a spend from each kind of multisig, the balances after them
 15   rpc_masternode_lists_unconnected.py    # the masternode-list calls on a stored block never connected say so (protx info, diff, listdiff; masternode payments by the parent), and connected blocks are answered as before
+15   p2p_coinjoin_dfcn_denoms.py            # a masternode opens a mixing session for a DFCN-scale denomination only from the v23.1 height, counted by the next block, and never while it is unset
 14   mining_basic.py                        # getmininginfo, getblocktemplate proposals and submitblock, with valid and invalid blocks
 14   feature_minchainwork.py                # -minimumchainwork: below it a node relays no blocks and answers no getheaders, until the chain passes it
 13   feature_coinstatsindex.py              # the coin statistics index agrees with the UTXO set, by height, across restarts and reorgs

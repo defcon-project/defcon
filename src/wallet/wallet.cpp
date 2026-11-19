@@ -3464,7 +3464,9 @@ bool CWallet::SelectTxDSInsByDenomination(int nDenom, CAmount nValueMax, std::ve
 
     vecTxDSInRet.clear();
 
-    if (!CoinJoin::IsValidDenomination(nDenom)) {
+    // A bit the wallet does not use (the DFCN-scale bits 5-7 of the wire table) is turned away here,
+    // before any coin is looked at, exactly as v23.0.0 turns away a bit it does not know.
+    if (!CoinJoin::IsValidDenomination(nDenom) || CoinJoin::IsDfcnScaleDenomination(nDenom)) {
         return false;
     }
     CAmount nDenomAmount = CoinJoin::DenominationToAmount(nDenom);

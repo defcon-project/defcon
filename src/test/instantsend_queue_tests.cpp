@@ -176,7 +176,19 @@ struct InstantSendQueueTest {
                                    peerman);
         BOOST_REQUIRE(sigman.HasRecoveredSig(llmq_type, lock->GetRequestId(), lock->txid));
     }
+
+    static void Store(CInstantSendManager& manager, const CInstantSendLock& islock)
+    {
+        manager.db.WriteNewInstantSendLock(::SerializeHash(islock), islock);
+    }
 };
+
+void StoreInstantSendLockForTest(CInstantSendManager& manager, const CInstantSendLock& islock);
+// For the CoinJoin relay tests (coinjoin_dstx_relay_tests.cpp): a lock the node holds, as if it had been verified.
+void StoreInstantSendLockForTest(CInstantSendManager& manager, const CInstantSendLock& islock)
+{
+    InstantSendQueueTest::Store(manager, islock);
+}
 } // namespace llmq
 
 BOOST_FIXTURE_TEST_SUITE(instantsend_queue_tests, TestingSetup)

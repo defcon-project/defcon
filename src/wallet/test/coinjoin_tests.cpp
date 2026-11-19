@@ -11,6 +11,7 @@
 #include <coinjoin/util.h>
 #include <consensus/amount.h>
 #include <interfaces/coinjoin.h>
+#include <logging.h>
 #include <node/context.h>
 #include <util/translation.h>
 #include <policy/settings.h>
@@ -19,11 +20,16 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <future>
 #include <functional>
+#include <list>
+#include <mutex>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(coinjoin_tests, BasicTestingSetup)
 
@@ -218,6 +224,66 @@ public:
         return tallyItem;
     }
 };
+
+namespace {
+// The COINJOIN log lines while it lives: it switches the category on, and its destructor removes the callback before
+// its members go and puts the category back, also when the test leaves through an exception.
+class CoinJoinLogLines
+{
+public:
+    CoinJoinLogLines()
+    {
+        // The callback first: if registering it throws, the category is still as it was.
+        m_connection = LogInstance().PushBackCallback([this](const std::string& line) {
+            const std::lock_guard<std::mutex> lock{m_mutex};
+            m_lines.push_back(line);
+        });
+        LogInstance().EnableCategory(BCLog::COINJOIN);
+    }
+    ~CoinJoinLogLines()
+    {
+        LogInstance().DeleteCallback(m_connection);
+        if (!m_was_on) LogInstance().DisableCategory(BCLog::COINJOIN);
+    }
+    CoinJoinLogLines(const CoinJoinLogLines&) = delete;
+    CoinJoinLogLines& operator=(const CoinJoinLogLines&) = delete;
+
+    // Whether a line with the text was logged since the last call.
+    bool Logged(const std::string& text)
+    {
+        const std::lock_guard<std::mutex> lock{m_mutex};
+        const bool found{std::any_of(m_lines.begin(), m_lines.end(), [&](const std::string& line) {
+            return line.find(text) != std::string::npos;
+        })};
+        m_lines.clear();
+        return found;
+    }
+
+private:
+    const bool m_was_on{LogInstance().WillLogCategory(BCLog::COINJOIN)};
+    std::mutex m_mutex;
+    std::vector<std::string> m_lines;
+    std::list<std::function<void(const std::string&)>>::iterator m_connection;
+};
+} // namespace
+
+// CJ4-A: the wallet turns a DFCN-scale bit (5-7) away before it lists any coin, as v23.0.0 turns away a bit it does
+// not know. CWallet is final, so the listing is observed through its COINJOIN log line.
+BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_bit_returns_before_listing_coins, CTransactionBuilderTestSetup)
+{
+    CoinJoinLogLines log;
+    const std::string listing{"CWallet::SelectTxDSInsByDenomination -- vCoins.size():"};
+
+    std::vector<CTxDSIn> selected;
+    // An old bit lists the wallet's ready-to-mix coins and logs how many there are.
+    wallet->SelectTxDSInsByDenomination(1 << 0, MAX_MONEY, selected);
+    BOOST_CHECK(log.Logged(listing));
+    for (const int bit : {1 << 5, 1 << 6, 1 << 7}) {
+        BOOST_CHECK(!wallet->SelectTxDSInsByDenomination(bit, MAX_MONEY, selected));
+        BOOST_CHECK(selected.empty());
+        BOOST_CHECK_MESSAGE(!log.Logged(listing), "a DFCN-scale bit returns before the wallet lists its coins");
+    }
+}
 
 BOOST_FIXTURE_TEST_CASE(coinjoin_manager_start_stop_tests, CTransactionBuilderTestSetup)
 {
