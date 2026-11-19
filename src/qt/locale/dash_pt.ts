@@ -1146,7 +1146,7 @@
     </message>
     <message>
         <source>(%1 locked)</source>
-        <translation>(%1 bloqueado)</translation>
+        <translation>(bloqueadas: %1)</translation>
     </message>
     <message>
         <source>yes</source>
@@ -7570,15 +7570,15 @@ Acesse Arquivo &gt; Abrir carteira para carregar uma carteira.
     </message>
     <message>
         <source>Specified -walletdir "%s" does not exist</source>
-        <translation>O diretório especificado -walletdir "%s" não existe</translation>
+        <translation>O caminho especificado em -walletdir "%s" não existe</translation>
     </message>
     <message>
         <source>Specified -walletdir "%s" is a relative path</source>
-        <translation>O diretório especificado -walletdir "%s" é um caminho relativo</translation>
+        <translation>O caminho especificado em -walletdir "%s" é um caminho relativo</translation>
     </message>
     <message>
         <source>Specified -walletdir "%s" is not a directory</source>
-        <translation>O diretório especificado -walletdir "%s" não é um diretório</translation>
+        <translation>O caminho especificado em -walletdir "%s" não é um diretório</translation>
     </message>
     <message>
         <source>The wallet will avoid paying less than the minimum relay fee.</source>

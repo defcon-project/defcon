@@ -5765,7 +5765,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Confirm custom change address</source>
-        <translation>确认用户找零地址</translation>
+        <translation>确认自定义找零地址</translation>
     </message>
     <message>
         <source>The address you selected for change is not part of this wallet. Any or all funds in your wallet may be sent to this address. Are you sure?</source>
@@ -7486,7 +7486,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>Ignoring duplicate -wallet %s.</source>
-        <translation>忽略重复 -钱包 %s.</translation>
+        <translation>忽略重复的 -wallet %s。</translation>
     </message>
     <message>
         <source>Input not found or already spent</source>
@@ -7742,7 +7742,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>Incompatible options: -dnsseed=1 was explicitly specified, but -onlynet forbids connections to IPv4/IPv6</source>
-        <translation>不兼容的选项: -dnsseed = 1 已明确指定, 但是 -onlynet 禁止连接到 IPv4/ipv6</translation>
+        <translation>不兼容的选项：已明确指定 -dnsseed=1，但 -onlynet 禁止连接到 IPv4/IPv6</translation>
     </message>
     <message>
         <source>Incorrect or no devnet genesis block found. Wrong datadir for devnet specified?</source>

@@ -1146,7 +1146,7 @@
     </message>
     <message>
         <source>(%1 locked)</source>
-        <translation>(%1 zablokowane)</translation>
+        <translation>(zablokowane: %1)</translation>
     </message>
     <message>
         <source>yes</source>
@@ -4391,7 +4391,7 @@ Poproś sprzedawcę o URI zgodny z BIP21 lub użyj portfela, który nadal obsłu
     </message>
     <message>
         <source>yes — holds %1 of %2 keys (%3)</source>
-        <translation>tak — ma %1 z %2 kluczy (%3)</translation>
+        <translation>tak — klucze w portfelu: %1 z %2 (%3)</translation>
     </message>
     <message>
         <source>no cosigner key in this wallet — you can still track it and pass the PSBT on</source>
