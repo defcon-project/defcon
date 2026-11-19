@@ -14,7 +14,7 @@ from test_framework.p2p import (
     P2PInterface,
     msg_headers,
 )
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 
 import os
 
@@ -23,6 +23,16 @@ class RejectLowDifficultyHeadersTest(BitcoinTestFramework):
         self.setup_clean_chain = True
         self.chain = 'testnet3'  # Use testnet chain because it has an early checkpoint
         self.num_nodes = 2
+
+    def skip_test_if_missing_module(self):
+        # This test was written for Dash testnet3 and cannot run on DeFCoN's testnet:
+        # - the test framework's testnet3 message start is Dash's (test_framework/messages.py), so the node refuses
+        #   the Python peer's version message ("Wrong MessageStart cee2caff") before any header is sent;
+        # - the data file holds 255 + 2 raw Dash testnet3 headers on another genesis;
+        # - DeFCoN's testnet has no checkpoint after genesis (src/chainparams.cpp), so a fork from height 1 cannot
+        #   fail the "fork below the last checkpoint" rule the test exercises (src/validation.cpp).
+        # A new data file alone is not enough: it needs a DeFCoN testnet checkpoint above genesis as well.
+        raise SkipTest("written for Dash testnet3: its message start and data, and DeFCoN's testnet has no checkpoint after genesis")
 
     def add_options(self, parser):
         parser.add_argument(
