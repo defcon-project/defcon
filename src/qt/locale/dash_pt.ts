@@ -4391,7 +4391,7 @@ Devido ao fim do suporte, solicite ao comerciante um URI compatível com BIP21 o
     </message>
     <message>
         <source>yes — holds %1 of %2 keys (%3)</source>
-        <translation>sim — possui %1 de %2 chaves (%3)</translation>
+        <translation>sim — chaves na carteira: %1 de %2 (%3)</translation>
     </message>
     <message>
         <source>no cosigner key in this wallet — you can still track it and pass the PSBT on</source>
@@ -7122,7 +7122,7 @@ Acesse Arquivo &gt; Abrir carteira para carregar uma carteira.
     </message>
     <message>
         <source> It does NOT contain the %u BLS private key(s) this wallet holds; back up the wallet file itself to keep those.</source>
-        <translation> Ele NÃO contém as %u chaves privadas BLS que esta carteira possui; faça backup do próprio arquivo da carteira para preservá-las.</translation>
+        <translation> Ele NÃO contém as chaves privadas BLS desta carteira (%u); faça backup do próprio arquivo da carteira para preservá-las.</translation>
     </message>
     <message>
         <source>%s corrupt. Try using the wallet tool defcon-wallet to salvage or restoring a backup.</source>

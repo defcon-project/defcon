@@ -1146,7 +1146,7 @@
     </message>
     <message>
         <source>(%1 locked)</source>
-        <translation>(%1 kilitlendi)</translation>
+        <translation>(%1 kilitli)</translation>
     </message>
     <message>
         <source>yes</source>

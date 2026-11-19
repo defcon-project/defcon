@@ -4391,7 +4391,7 @@ Debido a la retirada del soporte, solicite al comerciante un URI compatible con 
     </message>
     <message>
         <source>yes — holds %1 of %2 keys (%3)</source>
-        <translation>sí: contiene %1 de %2 claves (%3)</translation>
+        <translation>sí: claves en la billetera: %1 de %2 (%3)</translation>
     </message>
     <message>
         <source>no cosigner key in this wallet — you can still track it and pass the PSBT on</source>
@@ -7122,7 +7122,7 @@ Vaya a Archivo &gt; Abrir billetera para cargar una.
     </message>
     <message>
         <source> It does NOT contain the %u BLS private key(s) this wallet holds; back up the wallet file itself to keep those.</source>
-        <translation> NO contiene las %u claves privadas BLS que posee esta billetera; haga una copia del archivo de la billetera para conservarlas.</translation>
+        <translation> NO contiene las claves privadas BLS de esta billetera (%u); haga una copia del archivo de la billetera para conservarlas.</translation>
     </message>
     <message>
         <source>%s corrupt. Try using the wallet tool defcon-wallet to salvage or restoring a backup.</source>

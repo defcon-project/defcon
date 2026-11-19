@@ -7570,15 +7570,15 @@ Przejdź do Plik &gt; Otwórz portfel, aby załadować portfel.
     </message>
     <message>
         <source>Specified -walletdir "%s" does not exist</source>
-        <translation>Wyznaczona komenda -walletdir "%s" nie istnieje</translation>
+        <translation>Ścieżka „%s” podana w -walletdir nie istnieje</translation>
     </message>
     <message>
         <source>Specified -walletdir "%s" is a relative path</source>
-        <translation>Wyznaczona komenda -walletdir "%s" jest względną ścieżką</translation>
+        <translation>Ścieżka „%s” podana w -walletdir jest ścieżką względną</translation>
     </message>
     <message>
         <source>Specified -walletdir "%s" is not a directory</source>
-        <translation>Wyznaczona komenda -walletdir "%s" nie jest katalogiem danych</translation>
+        <translation>Ścieżka „%s” podana w -walletdir nie jest katalogiem</translation>
     </message>
     <message>
         <source>The wallet will avoid paying less than the minimum relay fee.</source>
