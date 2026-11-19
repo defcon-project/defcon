@@ -91,6 +91,7 @@
 249  feature_v231_transition.py             # the v23.1 height on staked blocks: the masternode payment at H - 1 and from H, a forged amount refused, a node without the height, a reindex across H
 215  feature_pos_staking.py                 # real proof-of-stake blocks on regtest; descriptor and legacy wallet
 213  feature_v231_no_payee.py               # from the v23.1 height a staked block with no payable masternode carries no payout at all (#354)
+213  feature_v231_mn_payment_count.py       # from the v23.1 height each expected masternode payment needs a coinbase output of its own: a masternode paid in two equal halves to one address
 182  feature_pos_header_only.py             # headers with no block behind them hold neither masternode sync nor staking
 155  feature_asset_locks.py                 # asset lock and unlock transactions: their limits, in the mempool and in blocks
 149  wallet_multiwallet.py                  # several wallets on one node: wallet directories, loading and unloading, each its own balance and calls

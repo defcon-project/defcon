@@ -25,6 +25,36 @@
 #include <limits>
 #include <string>
 
+int FindUnmatchedMasternodePayment(const std::vector<CTxOut>& expected,
+                                   const std::vector<CTxOut>& actual,
+                                   bool strict_multiplicity)
+{
+    if (!strict_multiplicity) {
+        for (size_t i = 0; i < expected.size(); ++i) {
+            const auto& txout = expected[i];
+            if (!ranges::any_of(actual, [&txout](const auto& txout2) { return txout == txout2; })) {
+                return static_cast<int>(i);
+            }
+        }
+        return -1;
+    }
+
+    std::vector<bool> consumed(actual.size(), false);
+    for (size_t i = 0; i < expected.size(); ++i) {
+        const auto& txout = expected[i];
+        bool found = false;
+        for (size_t j = 0; j < actual.size(); ++j) {
+            if (!consumed[j] && actual[j] == txout) {
+                consumed[j] = true;
+                found = true;
+                break;
+            }
+        }
+        if (!found) return static_cast<int>(i);
+    }
+    return -1;
+}
+
 CAmount PlatformShare(const CAmount reward)
 {
     const CAmount platformReward = reward * 375 / 1000;
@@ -123,19 +153,26 @@ CAmount PlatformShare(const CAmount reward)
         return true;
     }
 
-    for (const auto& txout : voutMasternodePayments) {
-        bool found = ranges::any_of(txNew.vout, [&txout](const auto& txout2) {return txout == txout2;});
-        if (!found) {
-            std::string str_payout;
-            if (CTxDestination dest; ExtractDestination(txout.scriptPubKey, dest)) {
-                str_payout = EncodeDestination(dest);
-            } else {
-                str_payout = HexStr(txout.scriptPubKey);
-            }
-            LogPrintf("CMNPaymentsProcessor::%s -- ERROR! Failed to find expected payee %s in block at height %s\n",
-                      __func__, str_payout, nBlockHeight);
-            return false;
+    // From the v23.1 height each expected payment needs a coinbase output of its
+    // own. A masternode whose operator takes half the payment, paid to the
+    // owner's own script, expects two equal outputs, and one output used to
+    // satisfy both: a block producer could pay half and keep the other half.
+    // Below the height the existence-only check stays, so no historical block
+    // changes its verdict.
+    const bool strict_multiplicity{m_consensus_params.nV231ActivationHeight != std::numeric_limits<int>::max() &&
+                                   nBlockHeight >= m_consensus_params.nV231ActivationHeight};
+    const int unmatched{FindUnmatchedMasternodePayment(voutMasternodePayments, txNew.vout, strict_multiplicity)};
+    if (unmatched >= 0) {
+        const auto& txout = voutMasternodePayments[unmatched];
+        std::string str_payout;
+        if (CTxDestination dest; ExtractDestination(txout.scriptPubKey, dest)) {
+            str_payout = EncodeDestination(dest);
+        } else {
+            str_payout = HexStr(txout.scriptPubKey);
         }
+        LogPrintf("CMNPaymentsProcessor::%s -- ERROR! Failed to find expected payee %s in block at height %s\n",
+                  __func__, str_payout, nBlockHeight);
+        return false;
     }
     return true;
 }

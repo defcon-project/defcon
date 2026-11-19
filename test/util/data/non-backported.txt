@@ -38,6 +38,7 @@ src/test/dip0020opcodes_tests.cpp
 src/test/dynamic_activation*.cpp
 src/test/evo*.cpp
 src/test/governance*.cpp
+src/test/masternode_payments_tests.cpp
 src/unordered_lru_cache.h
 src/util/edge.*
 src/util/enumerate.h

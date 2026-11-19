@@ -30,6 +30,25 @@ namespace Consensus { struct Params; }
  */
 CAmount PlatformShare(const CAmount masternodeReward);
 
+/**
+ * Match the list of expected masternode payment outputs against the coinbase
+ * outputs.
+ *
+ * When @p strict_multiplicity is true, every expected output must be matched
+ * by a distinct actual output (multiplicity-correct matching): two identical
+ * expected outputs require two identical actual outputs.
+ *
+ * When false, the legacy behaviour is used where each expected output only
+ * has to appear at least once in the actual outputs. This is preserved below
+ * the v23.1 height, so no historical block changes its verdict.
+ *
+ * @return -1 if every expected output is matched, otherwise the index in
+ * @p expected of the first output that could not be matched.
+ */
+int FindUnmatchedMasternodePayment(const std::vector<CTxOut>& expected,
+                                   const std::vector<CTxOut>& actual,
+                                   bool strict_multiplicity);
+
 class CMNPaymentsProcessor
 {
 private:
