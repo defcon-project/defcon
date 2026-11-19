@@ -3008,7 +3008,7 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <source>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</source>
-        <translation>每個面額建立了多少個輸入。&lt;br/&gt;如果您想要更少的小面額，請降低這些數字。</translation>
+        <translation>設定每種面額要建立的輸入數量。&lt;br/&gt;如果您想要更少的小面額，請降低這些數字。</translation>
     </message>
     <message>
         <source>Inputs per denomination</source>
@@ -3048,7 +3048,7 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <source>Shows if the supplied default SOCKS5 proxy is used to reach peers via this network type.</source>
-        <translation>顯示是否正透過提供的預設 SOCKS5 代理伺服器，在此類型的網路上連線至對等節點。</translation>
+        <translation>顯示此類型的網路是否設定為使用指定的預設 SOCKS5 代理伺服器連線至對等節點。</translation>
     </message>
     <message>
         <source>Language missing or translation incomplete? Help contributing translations here:
@@ -6556,7 +6556,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>%1 Mixing</source>
-        <translation>%1 混合中</translation>
+        <translation>%1 混合交易</translation>
     </message>
     <message>
         <source>%1 Collateral Payment</source>
@@ -6667,7 +6667,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>%1 Mixing</source>
-        <translation>%1 混合中</translation>
+        <translation>%1 混合交易</translation>
     </message>
     <message>
         <source>%1 Collateral Payment</source>
