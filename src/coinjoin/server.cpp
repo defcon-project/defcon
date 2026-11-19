@@ -4,6 +4,7 @@
 
 #include <coinjoin/server.h>
 
+#include <chainparams.h>
 #include <consensus/validation.h>
 #include <core_io.h>
 #include <evo/deterministicmns.h>
@@ -24,6 +25,16 @@
 #include <version.h>
 
 #include <univalue.h>
+
+namespace {
+/** CJ4: a masternode opens a session for a DFCN-scale bit (5-7) only from the v23.1 height H, by the
+ *  height of the next block, as the consensus gates count it; with H unset, never. */
+bool DfcnScaleSessionsOpen(ChainstateManager& chainman)
+{
+    return CoinJoin::DfcnScaleSessionsOpenAt(Params().GetConsensus().nV231ActivationHeight,
+                                             WITH_LOCK(::cs_main, return chainman.ActiveChain().Height()));
+}
+} // namespace
 
 PeerMsgRet CCoinJoinServer::ProcessMessage(CNode& peer, std::string_view msg_type, CDataStream& vRecv)
 {
@@ -760,16 +771,31 @@ bool CCoinJoinServer::CreateNewSession(const CCoinJoinAccept& dsa, PoolMessage& 
         return false;
     }
 
-    if (!IsAcceptableDSA(dsa, nMessageIDRet)) {
-        return false;
+    {
+        // One cs_main section from the height check to the session's start, so the tip cannot fall below the
+        // v23.1 height between them (the collateral check takes cs_main as well).
+        LOCK(::cs_main);
+
+        // Before H a DFCN-scale bit is answered as v23.0.0 answers a bit it does not know: ERR_DENOM, no
+        // penalty, before the collateral is looked at.
+        if (CoinJoin::IsDfcnScaleDenomination(dsa.nDenom) && !DfcnScaleSessionsOpen(m_chainman)) {
+            LogPrint(BCLog::COINJOIN, "CCoinJoinServer::CreateNewSession -- denom %d is not open before the v23.1 height\n", dsa.nDenom);
+            nMessageIDRet = ERR_DENOM;
+            return false;
+        }
+
+        if (!IsAcceptableDSA(dsa, nMessageIDRet)) {
+            return false;
+        }
+
+        // start new session, still in the section of the height check (checked in DEBUG_LOCKORDER builds)
+        AssertLockHeld(::cs_main);
+        nMessageIDRet = MSG_NOERR;
+        nSessionID = GetRandInt(999999) + 1;
+        nSessionDenom = dsa.nDenom;
+
+        SetState(POOL_STATE_QUEUE);
     }
-
-    // start new session
-    nMessageIDRet = MSG_NOERR;
-    nSessionID = GetRandInt(999999) + 1;
-    nSessionDenom = dsa.nDenom;
-
-    SetState(POOL_STATE_QUEUE);
 
     if (!fUnitTest) {
         //broadcast that I'm accepting entries, only if it's the first entry through
@@ -794,6 +820,18 @@ bool CCoinJoinServer::CreateNewSession(const CCoinJoinAccept& dsa, PoolMessage& 
 bool CCoinJoinServer::AddUserToExistingSession(const CCoinJoinAccept& dsa, PoolMessage& nMessageIDRet)
 {
     if (!m_mn_activeman || nSessionID == 0 || IsSessionReady()) return false;
+
+    // A DFCN-scale bit that is not this session's bit is refused before the collateral, as v23.0.0
+    // refuses a bit it does not know (an old bit keeps the order below). The session's bit is read under
+    // cs_coinjoin, which the scheduler holds when it resets the session on a timeout.
+    if (CoinJoin::IsDfcnScaleDenomination(dsa.nDenom)) {
+        const int session_denom{WITH_LOCK(cs_coinjoin, return nSessionDenom)};
+        if (dsa.nDenom != session_denom) {
+            LogPrint(BCLog::COINJOIN, "CCoinJoinServer::AddUserToExistingSession -- denom %d is not this session's %d\n", dsa.nDenom, session_denom);
+            nMessageIDRet = ERR_DENOM;
+            return false;
+        }
+    }
 
     if (!IsAcceptableDSA(dsa, nMessageIDRet)) {
         return false;

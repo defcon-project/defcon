@@ -9,6 +9,8 @@
 #include <primitives/transaction.h>
 
 #include <array>
+#include <cstdint>
+#include <limits>
 #include <string>
 #include <util/ranges.h>
 
@@ -35,6 +37,26 @@ public:
 namespace CoinJoin
 {
 
+/** The wire table: a denomination travels as the bit of its index here, so the
+ *  order is fixed forever. Bits 0-4 are the amounts v23.0.0 knows; bits 5-7 the
+ *  DFCN-scale amounts (100.001, 1000.01 and 10 000.1 DFCN) that every v23.1 node
+ *  accepts and relays (CJ4). Only the protocol calls below read it: the DSTX
+ *  structure check, the masternode's session checks and the session amount check
+ *  (IsValidInOuts). */
+constexpr std::array<CAmount, 8> vecDenominationsByBit{
+        (10 * COIN) + 10000,
+        (1 * COIN) + 1000,
+        (COIN / 10) + 100,
+        (COIN / 100) + 10,
+        (COIN / 1000) + 1,
+        (100 * COIN) + 100000,
+        (1000 * COIN) + 1000000,
+        (10000 * COIN) + 10000000,
+};
+
+/** The wallet's list, in descending order: what the wallet classifies, creates,
+ *  selects and excludes from staking as a denomination. It stays the five amounts
+ *  of v23.0.0; the wallet does not use the DFCN-scale amounts. */
 constexpr std::array<CAmount, 5> vecStandardDenominations{
         (10 * COIN) + 10000,
         (1 * COIN) + 1000,
@@ -43,17 +65,23 @@ constexpr std::array<CAmount, 5> vecStandardDenominations{
         (COIN / 1000) + 1,
 };
 
+static_assert([] {
+    for (size_t i = 0; i < vecStandardDenominations.size(); ++i) {
+        if (vecStandardDenominations[i] != vecDenominationsByBit[i]) return false;
+    }
+    return true;
+}(), "the wallet's denominations must be bits 0-4 of the wire table, in the same order");
+
 constexpr std::array<CAmount, 5> GetStandardDenominations() { return vecStandardDenominations; }
 constexpr CAmount GetSmallestDenomination() { return vecStandardDenominations.back(); }
 
 /*
-    Return a bitshifted integer representing a denomination in vecStandardDenominations
-    or 0 if none was found
+    Protocol call: return the bit of an amount in vecDenominationsByBit, or 0 if it is none of them.
 */
 constexpr int AmountToDenomination(CAmount nInputAmount)
 {
-    for (size_t i = 0; i < vecStandardDenominations.size(); ++i) {
-        if (nInputAmount == vecStandardDenominations[i]) {
+    for (size_t i = 0; i < vecDenominationsByBit.size(); ++i) {
+        if (nInputAmount == vecDenominationsByBit[i]) {
             return 1 << i;
         }
     }
@@ -61,8 +89,8 @@ constexpr int AmountToDenomination(CAmount nInputAmount)
 }
 
 /*
-    Returns:
-    - one of standard denominations from vecStandardDenominations based on the provided bitshifted integer
+    Protocol call. Returns:
+    - the amount of the given bit in vecDenominationsByBit
     - 0 for non-initialized sessions (nDenom = 0)
     - a value below 0 if an error occurred while converting from one to another
 */
@@ -73,7 +101,7 @@ constexpr CAmount DenominationToAmount(int nDenom)
         return 0;
     }
 
-    size_t nMaxDenoms = vecStandardDenominations.size();
+    size_t nMaxDenoms = vecDenominationsByBit.size();
 
     if (nDenom >= (1 << nMaxDenoms) || nDenom < 0) {
         // out of bounds
@@ -89,7 +117,7 @@ constexpr CAmount DenominationToAmount(int nDenom)
 
     for (size_t i = 0; i < nMaxDenoms; ++i) {
         if (nDenom & (1 << i)) {
-            nDenomAmount = vecStandardDenominations[i];
+            nDenomAmount = vecDenominationsByBit[i];
             break;
         }
     }
@@ -97,9 +125,35 @@ constexpr CAmount DenominationToAmount(int nDenom)
     return nDenomAmount;
 }
 
-
-constexpr bool IsDenominatedAmount(CAmount nInputAmount) { return AmountToDenomination(nInputAmount) > 0; }
+/** Protocol call: an amount of the wire table (any of the eight). */
+constexpr bool IsKnownDenominationAmount(CAmount nInputAmount) { return AmountToDenomination(nInputAmount) > 0; }
+/** Protocol call: a single bit of the wire table. */
 constexpr bool IsValidDenomination(int nDenom) { return DenominationToAmount(nDenom) > 0; }
+
+/** Wallet API: an amount of the wallet's list (the five of v23.0.0). */
+constexpr bool IsDenominatedAmount(CAmount nInputAmount)
+{
+    for (const CAmount denom : vecStandardDenominations) {
+        if (nInputAmount == denom) return true;
+    }
+    return false;
+}
+
+/** A bit of the wire table beyond the five of v23.0.0: bits 5-7, the DFCN-scale amounts. Read from the bit, not
+ *  from the wallet's list, so it means the same whatever the wallet uses. */
+constexpr bool IsDfcnScaleDenomination(int nDenom)
+{
+    return IsValidDenomination(nDenom) && nDenom >= (1 << 5);
+}
+
+/** Whether a masternode whose tip is at `tip_height` opens a session for a DFCN-scale bit (5-7): from the v23.1
+ *  height H, counted by the height of the next block as the consensus gates count it; never while H is unset (the
+ *  largest int, which the next block's height reaches at one tip). */
+constexpr bool DfcnScaleSessionsOpenAt(int activation_height, int tip_height)
+{
+    if (activation_height == std::numeric_limits<int>::max()) return false;
+    return int64_t{tip_height} + 1 >= int64_t{activation_height};
+}
 
 /*
 Same as DenominationToAmount but returns a string representation

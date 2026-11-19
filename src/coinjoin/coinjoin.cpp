@@ -133,8 +133,18 @@ bool CCoinJoinBroadcastTx::IsValidStructure() const
     if (tx->vin.size() > CoinJoin::GetMaxPoolInputOutputCount()) {
         return false;
     }
+    // Every amount of the wire table, at every height: a v23.1 node never penalises a peer for a
+    // DFCN-scale amount (CJ4). Peers that do not know them are never offered such an envelope.
     return ranges::all_of(tx->vout, [] (const auto& txOut){
-        return CoinJoin::IsDenominatedAmount(txOut.nValue) && txOut.scriptPubKey.IsPayToPublicKeyHash();
+        return CoinJoin::IsKnownDenominationAmount(txOut.nValue) && txOut.scriptPubKey.IsPayToPublicKeyHash();
+    });
+}
+
+bool CCoinJoinBroadcastTx::HasDfcnScaleDenomination() const
+{
+    if (!tx) return false;
+    return ranges::any_of(tx->vout, [](const auto& txOut) {
+        return CoinJoin::IsDfcnScaleDenomination(CoinJoin::AmountToDenomination(txOut.nValue));
     });
 }
 

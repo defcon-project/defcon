@@ -22,9 +22,11 @@ but the version every v22.1.x binary really speaks (MN_DSL_PROTO_VERSION,
 predecessor was admitted and the synthetic 70240 control never noticed; the
 independent review did, with an unmodified predecessor build. -pushversion,
 which the node honours on every network but mainnet, presents that version
-here; a current-version peer stands beside it as the control: the floor must
-remove exactly one of the two, and the node under test must itself advertise
-the floor, or the assertion in version.h that keeps the two apart is moot.
+here; a peer advertising exactly the floor and a current-version peer stand
+beside it as the controls: the floor must remove exactly the old one. The node
+under test advertises the current version, 70243 since the DFCN-scale CoinJoin
+denominations (COINJOIN_DFCN_DENOMS_PROTO_VERSION); the floor itself stays at
+70242, so a v23.0.0 peer is kept.
 """
 
 from test_framework.test_framework import BitcoinTestFramework
@@ -33,52 +35,55 @@ from test_framework.util import assert_equal, p2p_port
 ACTIVATION = 240
 LEAD = 120                 # (signingActiveQuorumCount + 1) * dkgInterval of llmq_defcon
 FLOOR_HEIGHT = ACTIVATION - LEAD
-FLOOR = 70242              # Q60_SWITCHOVER_PROTO_VERSION, src/version.h
+FLOOR = 70242              # Q60_SWITCHOVER_PROTO_VERSION, src/version.h: what v23.0.0 advertises
 OLD = 70241                # LAST_PRE_SWITCHOVER_PROTO_VERSION: what every v22.1.x binary advertises
-assert OLD < FLOOR
+CURRENT = 70243            # PROTOCOL_VERSION, src/version.h (COINJOIN_DFCN_DENOMS_PROTO_VERSION)
+assert OLD < FLOOR < CURRENT
 
 
 class LLMQQ60ProtoFloorTest(BitcoinTestFramework):
     def set_test_params(self):
-        self.num_nodes = 3
+        self.num_nodes = 4
         self.setup_clean_chain = True
         switchover = "-testactivationheight=chainlocksv2@%d" % ACTIVATION
         self.extra_args = [
             [switchover],                              # node 0: the node under test
             [switchover, "-pushversion=%d" % OLD],     # node 1: one below the floor
             [switchover],                              # node 2: the control, current version
+            [switchover, "-pushversion=%d" % FLOOR],   # node 3: exactly the floor (v23.0.0)
         ]
 
     def setup_network(self):
         self.setup_nodes()
         self.connect_nodes(0, 1)
         self.connect_nodes(0, 2)
+        self.connect_nodes(0, 3)
 
     def peer_versions(self, node):
         return sorted(p["version"] for p in node.getpeerinfo())
 
     def run_test(self):
-        node, old, new = self.nodes
+        node, old, new, at_floor = self.nodes
 
-        self.log.info("The node under test advertises the floor itself, above every v22.1.x binary")
-        assert_equal(node.getnetworkinfo()["protocolversion"], FLOOR)
-        # (the old node's getnetworkinfo would answer FLOOR too: the RPC reports
+        self.log.info("The node under test advertises the current version, above the floor and every v22.1.x binary")
+        assert_equal(node.getnetworkinfo()["protocolversion"], CURRENT)
+        # (the old node's getnetworkinfo would answer CURRENT too: the RPC reports
         # the compiled PROTOCOL_VERSION, and -pushversion only changes what is
         # sent on the wire -- which is what the peer list below observes)
 
-        self.log.info("Below the lead both peers are accepted, the old one included")
-        assert_equal(self.peer_versions(node), sorted([OLD, FLOOR]))
+        self.log.info("Below the lead all three peers are accepted, the old one included")
+        assert_equal(self.peer_versions(node), sorted([OLD, FLOOR, CURRENT]))
 
         self.generate(node, FLOOR_HEIGHT - 1, sync_fun=self.sync_blocks)
         assert_equal(node.getblockcount(), FLOOR_HEIGHT - 1)
-        assert_equal(self.peer_versions(node), sorted([OLD, FLOOR]))
+        assert_equal(self.peer_versions(node), sorted([OLD, FLOOR, CURRENT]))
 
-        self.log.info("At the lead (%d) the floor moves and the old peer is dropped, the current one kept",
+        self.log.info("At the lead (%d) the floor moves and the old peer is dropped, the floor and current ones kept",
                       FLOOR_HEIGHT)
         with node.assert_debug_log(["using obsolete version %d" % OLD]):
             self.generate(node, 1, sync_fun=self.no_op)
             assert_equal(node.getblockcount(), FLOOR_HEIGHT)
-            self.wait_until(lambda: self.peer_versions(node) == [FLOOR], timeout=30)
+            self.wait_until(lambda: self.peer_versions(node) == [FLOOR, CURRENT], timeout=30)
 
         self.log.info("The old peer cannot come back")
         # Expected: the VERSION-handler rejection, not the later post-handshake drop.
@@ -90,13 +95,14 @@ class LLMQQ60ProtoFloorTest(BitcoinTestFramework):
             # A connection is visible with version 0 before VERSION is processed.
             # Rejecting it before publishing OLD is correct; counting it is not.
             assert not self.wait_until(lambda: OLD in self.peer_versions(node), timeout=5, do_assert=False)
-        self.wait_until(lambda: self.peer_versions(node) == [FLOOR], timeout=30)
-        assert_equal(self.peer_versions(node), [FLOOR])
+        self.wait_until(lambda: self.peer_versions(node) == [FLOOR, CURRENT], timeout=30)
+        assert_equal(self.peer_versions(node), [FLOOR, CURRENT])
 
-        self.log.info("The current-version peer keeps following the chain across the lead")
+        self.log.info("The floor and current-version peers keep following the chain across the lead")
         self.generate(node, 3, sync_fun=self.no_op)
-        self.sync_blocks([node, new])
+        self.sync_blocks([node, new, at_floor])
         assert_equal(new.getblockcount(), FLOOR_HEIGHT + 3)
+        assert_equal(at_floor.getblockcount(), FLOOR_HEIGHT + 3)
         # The old peer is stranded at the cut. Whether it still got the block
         # that moved the floor is a race with the disconnect and not the claim;
         # the claim is that nothing mined after the cut reaches it.

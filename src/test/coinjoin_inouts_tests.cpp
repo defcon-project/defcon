@@ -6,11 +6,13 @@
 #include <coinjoin/context.h>
 #include <bls/bls.h>
 #include <chain.h>
+#include <coins.h>
 #include <coinjoin/coinjoin.h>
 #include <coinjoin/common.h>
 #include <coinjoin/server.h>
 #include <evo/chainhelper.h>
 #include <llmq/context.h>
+#include <llmq/instantsend.h>
 #include <masternode/sync.h>
 #include <net.h>
 #include <netfulfilledman.h>
@@ -19,15 +21,18 @@
 #include <script/script.h>
 #include <streams.h>
 #include <test/util/setup_common.h>
+#include <txmempool.h>
 #include <uint256.h>
 #include <util/check.h>
 #include <util/time.h>
+#include <validation.h>
 
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -359,4 +364,136 @@ BOOST_AUTO_TEST_CASE(queue_timeout_bounds)
     // Reset mock time
     SetMockTime(0);
 }
+
+// CJ4-A: the wire table knows eight amounts, the wallet API keeps the five of v23.0.0.
+BOOST_AUTO_TEST_CASE(dfcn_scale_denominations_wire_table_and_wallet_api)
+{
+    // Bits 0-4: the v23.0.0 values, both directions.
+    const std::array<std::pair<int, CAmount>, 5> old_bits{{
+        {1, 1000010000}, {2, 100001000}, {4, 10000100}, {8, 1000010}, {16, 100001}}};
+    // Bits 5-7: literals independent of the product table, both directions, so a swap of two
+    // table entries fails here.
+    const std::array<std::pair<int, CAmount>, 3> new_bits{{
+        {32, 10000100000}, {64, 100001000000}, {128, 1000010000000}}};
+    for (const auto& [bit, amount] : old_bits) {
+        BOOST_CHECK_EQUAL(CoinJoin::DenominationToAmount(bit), amount);
+        BOOST_CHECK_EQUAL(CoinJoin::AmountToDenomination(amount), bit);
+        BOOST_CHECK(CoinJoin::IsValidDenomination(bit));
+        BOOST_CHECK(CoinJoin::IsKnownDenominationAmount(amount));
+        BOOST_CHECK(CoinJoin::IsDenominatedAmount(amount));
+        BOOST_CHECK(!CoinJoin::IsDfcnScaleDenomination(bit));
+    }
+    for (const auto& [bit, amount] : new_bits) {
+        BOOST_CHECK_EQUAL(CoinJoin::DenominationToAmount(bit), amount);
+        BOOST_CHECK_EQUAL(CoinJoin::AmountToDenomination(amount), bit);
+        BOOST_CHECK(CoinJoin::IsValidDenomination(bit));
+        BOOST_CHECK(CoinJoin::IsKnownDenominationAmount(amount));
+        BOOST_CHECK(CoinJoin::IsDfcnScaleDenomination(bit));
+        // The wallet API answers as v23.0.0 does: not a denomination, an ordinary amount.
+        BOOST_CHECK(!CoinJoin::IsDenominatedAmount(amount));
+        BOOST_CHECK(!CoinJoin::IsDenominatedOrCollateralAmount(amount));
+        BOOST_CHECK_EQUAL(CoinJoin::CalculateAmountPriority(amount), -1 * (amount / COIN));
+        const auto wallet_denoms{CoinJoin::GetStandardDenominations()};
+        BOOST_CHECK(std::find(wallet_denoms.begin(), wallet_denoms.end(), amount) == wallet_denoms.end());
+    }
+    BOOST_CHECK_EQUAL(CoinJoin::DenominationToAmount(256), -1);
+    BOOST_CHECK_EQUAL(CoinJoin::DenominationToAmount(32 | 64), -2);
+    BOOST_CHECK(!CoinJoin::IsDfcnScaleDenomination(0));
+    // The wallet's list, its smallest amount, the collateral and the pool maximum stay v23.0.0's.
+    BOOST_CHECK_EQUAL(CoinJoin::GetStandardDenominations().size(), 5U);
+    BOOST_CHECK_EQUAL(CoinJoin::GetSmallestDenomination(), 100001);
+    BOOST_CHECK_EQUAL(CoinJoin::GetCollateralAmount(), 10000);
+    BOOST_CHECK_EQUAL(CoinJoin::GetMaxPoolAmount(), 9 * CAmount{1000010000});
+}
+
+BOOST_AUTO_TEST_CASE(dfcn_scale_denominations_in_dstx_structure)
+{
+    const int participants = std::max(3, CoinJoin::GetMinPoolParticipants());
+    const auto make = [&](CAmount first, CAmount rest) {
+        CCoinJoinBroadcastTx dstx;
+        CMutableTransaction mtx;
+        for (int i = 0; i < participants; ++i) {
+            mtx.vin.emplace_back(COutPoint(uint256::ONE, static_cast<uint32_t>(i)));
+            mtx.vout.emplace_back(i == 0 ? first : rest, P2PKHScript(static_cast<uint8_t>(i)));
+        }
+        dstx.tx = MakeTransactionRef(mtx);
+        dstx.m_protxHash = uint256::ONE;
+        return dstx;
+    };
+    const CAmount old_amount{CoinJoin::GetSmallestDenomination()};
+    const CAmount new_amount{CoinJoin::DenominationToAmount(32)};
+    // Old amounts only: valid, nothing DFCN-scale in it.
+    BOOST_CHECK(make(old_amount, old_amount).IsValidStructure());
+    BOOST_CHECK(!make(old_amount, old_amount).HasDfcnScaleDenomination());
+    // A new amount, alone or after an old one: structurally valid at every height, and DFCN-scale.
+    BOOST_CHECK(make(new_amount, new_amount).IsValidStructure());
+    BOOST_CHECK(make(new_amount, new_amount).HasDfcnScaleDenomination());
+    BOOST_CHECK(make(old_amount, new_amount).IsValidStructure());
+    BOOST_CHECK(make(old_amount, new_amount).HasDfcnScaleDenomination());
+    // An amount of no table stays invalid.
+    BOOST_CHECK(!make(old_amount, new_amount + 1).IsValidStructure());
+}
+
+// The masternode's gate for DFCN-scale sessions counts the next block's height. An unset H (the largest int) stays
+// closed also at the one tip, INT_MAX - 1, where the next block's height would reach it.
+BOOST_AUTO_TEST_CASE(dfcn_scale_session_gate_by_next_height)
+{
+    constexpr int unset{std::numeric_limits<int>::max()};
+    BOOST_CHECK(!CoinJoin::DfcnScaleSessionsOpenAt(400, 398));
+    BOOST_CHECK(CoinJoin::DfcnScaleSessionsOpenAt(400, 399));
+    BOOST_CHECK(CoinJoin::DfcnScaleSessionsOpenAt(400, 400));
+    BOOST_CHECK(!CoinJoin::DfcnScaleSessionsOpenAt(unset, 0));
+    BOOST_CHECK(!CoinJoin::DfcnScaleSessionsOpenAt(unset, unset - 1));
+    BOOST_CHECK(!CoinJoin::DfcnScaleSessionsOpenAt(unset, unset));
+    // Just below the unset value the next height counts as for any H, without overflow.
+    BOOST_CHECK(!CoinJoin::DfcnScaleSessionsOpenAt(unset - 1, unset - 3));
+    BOOST_CHECK(CoinJoin::DfcnScaleSessionsOpenAt(unset - 1, unset - 2));
+    // With H set, the tip INT_MAX: the next height is counted in 64 bits. An int addition would overflow here, which
+    // a constant evaluation refuses, so this fails to compile rather than passing by chance.
+    static_assert(CoinJoin::DfcnScaleSessionsOpenAt(400, std::numeric_limits<int>::max()));
+    static_assert(CoinJoin::DfcnScaleSessionsOpenAt(unset - 1, unset));
+    BOOST_CHECK(CoinJoin::DfcnScaleSessionsOpenAt(400, unset));
+}
+
+// The session amount check of a masternode (IsValidInOuts) reads the wire table: an entry of 100.001 DFCN coins
+// is valid in a bit-5 session and is refused with ERR_DENOM, charging the collateral, in a bit-0 session.
+class InOutsProbe : public CCoinJoinBaseSession
+{
+public:
+    using CCoinJoinBaseSession::IsValidInOuts;
+};
+
+BOOST_AUTO_TEST_CASE(dfcn_scale_session_amount_check)
+{
+    const CAmount new_amount{CoinJoin::DenominationToAmount(1 << 5)};
+    auto& chainstate{m_node.chainman->ActiveChainstate()};
+    std::vector<CTxIn> vin;
+    std::vector<CTxOut> vout;
+    {
+        LOCK(cs_main);
+        for (uint8_t i = 0; i < 2; ++i) {
+            const COutPoint prevout{uint256S("c140000000000000000000000000000000000000000000000000000000000001"), i};
+            chainstate.CoinsTip().AddCoin(prevout,
+                                          Coin{CTxOut{new_amount, P2PKHScript(static_cast<uint8_t>(0x10 + i))}, 1,
+                                               /*fCoinBaseIn=*/false, /*fCoinStakeIn=*/false},
+                                          /*possible_overwrite=*/false);
+            vin.emplace_back(prevout);
+            vout.emplace_back(new_amount, P2PKHScript(static_cast<uint8_t>(0x20 + i)));
+        }
+    }
+    InOutsProbe session;
+    PoolMessage message{MSG_NOERR};
+    bool consume{true};
+
+    session.nSessionDenom = 1 << 5;
+    BOOST_CHECK(session.IsValidInOuts(chainstate, *m_node.llmq_ctx->isman, *m_node.mempool, vin, vout, message, &consume));
+    BOOST_CHECK_EQUAL(message, MSG_NOERR);
+    BOOST_CHECK(!consume);
+
+    session.nSessionDenom = 1 << 0;
+    BOOST_CHECK(!session.IsValidInOuts(chainstate, *m_node.llmq_ctx->isman, *m_node.mempool, vin, vout, message, &consume));
+    BOOST_CHECK_EQUAL(message, ERR_DENOM);
+    BOOST_CHECK(consume);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

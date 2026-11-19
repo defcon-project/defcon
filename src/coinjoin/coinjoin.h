@@ -316,6 +316,10 @@ public:
     void SetConfirmedHeight(std::optional<int> nConfirmedHeightIn) { assert(nConfirmedHeightIn == std::nullopt || *nConfirmedHeightIn > 0); nConfirmedHeight = nConfirmedHeightIn; }
     bool IsExpired(const CBlockIndex* pindex, const llmq::CChainLocksHandler& clhandler) const;
     [[nodiscard]] bool IsValidStructure() const;
+    /** Whether any output carries a DFCN-scale denomination (bits 5-7), in any position. A peer
+     *  below COINJOIN_DFCN_DENOMS_PROTO_VERSION would penalise such an envelope, so it is never
+     *  offered one. */
+    [[nodiscard]] bool HasDfcnScaleDenomination() const;
 };
 
 // base class

@@ -11,11 +11,10 @@
  */
 
 
-//! 70242: the release that carries the Q60 switchover. Every v22.1.x binary
-//! advertises 70241 (MN_DSL_PROTO_VERSION, 7bf3c5ad19), and the switchover
-//! floor below has to tell this binary from those, so the bump is not
-//! cosmetic: without it the floor admits the predecessor.
-static const int PROTOCOL_VERSION = 70242;
+//! 70243: the release whose nodes know the DFCN-scale CoinJoin denominations
+//! (COINJOIN_DFCN_DENOMS_PROTO_VERSION below). 70242 carried the Q60
+//! switchover; the Q60 floor stays at that number.
+static const int PROTOCOL_VERSION = 70243;
 
 //! initial proto version, to be increased after version/verack negotiation
 static const int INIT_PROTO_VERSION = 209;
@@ -49,6 +48,16 @@ static_assert(Q60_SWITCHOVER_PROTO_VERSION > FORK_RECOVERY_PROTO_VERSION,
               "the Q60 floor succeeds the fork-recovery floor and must sit above it");
 static_assert(Q60_SWITCHOVER_PROTO_VERSION <= PROTOCOL_VERSION,
               "a floor above what this binary speaks would disconnect every peer, ourselves included");
+
+//! The first version whose nodes know CoinJoin denomination bits 5-7 (100.001,
+//! 1000.01 and 10 000.1 DFCN). A v23.0.0 node (70242) gives +10 for a DSTX with
+//! an amount it does not know, so a DSTX with one of them is never offered to a
+//! peer below this version.
+static const int COINJOIN_DFCN_DENOMS_PROTO_VERSION = 70243;
+static_assert(COINJOIN_DFCN_DENOMS_PROTO_VERSION > Q60_SWITCHOVER_PROTO_VERSION,
+              "v23.0.0 nodes advertise the Q60 floor and do not know the new denominations");
+static_assert(COINJOIN_DFCN_DENOMS_PROTO_VERSION <= PROTOCOL_VERSION,
+              "this binary relays the new denominations, so it must advertise the version that knows them");
 
 //! minimum proto version of masternode to accept in DKGs
 static const int MIN_MASTERNODE_PROTO_VERSION = 70235;

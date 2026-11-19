@@ -976,7 +976,7 @@ print('\x1b[1;32;49m*** No errors detected\x1b[0;39;49m')
             'feature_v231_transition.py', 'feature_v231_devnet_argument.py', 'feature_asset_locks.py',
             'feature_llmq_nonforming_quiet.py', 'p2p_llmq_signing_vectors.py', 'wallet_staking_info_multiwallet.py',
             'p2p_epoll_eof.py', 'p2p_compactblocks.py', 'feature_loadblock.py', 'p2p_mutated_blocks.py',
-            'p2p_dstx.py', 'rpc_coinjoin.py',
+            'p2p_dstx.py', 'rpc_coinjoin.py', 'p2p_coinjoin_dfcn_denoms.py',
         ]), sorted(name for name, _ in functional_gate.read_gate()))
         functional = run_script(step_text(self.checks, 'Functional tests (named gate)'))
         self.assertIn('python3 ci/dash/functional_gate.py order --shard "$shard" > "$gate" || exit 1\n', functional)
