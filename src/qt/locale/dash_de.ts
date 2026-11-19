@@ -290,7 +290,7 @@
     </message>
     <message>
         <source>IMPORTANT: Any previous backups you have made of your wallet file should be replaced with the newly generated, encrypted wallet file. Previous backups of the unencrypted wallet file contain the same HD seed and still have full access to all your funds just like the new, encrypted wallet.</source>
-        <translation>WICHTIG: Alle vorherigen Wallet-Sicherungen sollten durch die neu erzeugte, verschlüsselte Wallet ersetzt werden. Vorherige Backups der unverschlüsselten Wallet beinhalten den gleichen HD-Seed, weswegen sie weiterhin auf das Guthaben der verschlüsselten Wallet zugreifen können. </translation>
+        <translation>WICHTIG: Alle früheren Sicherungen Ihrer Wallet-Datei sollten durch die neu erzeugte, verschlüsselte Wallet-Datei ersetzt werden. Frühere Sicherungen der unverschlüsselten Wallet-Datei enthalten denselben HD-Seed und haben, genau wie die neue, verschlüsselte Wallet, weiterhin vollen Zugriff auf Ihr gesamtes Guthaben.</translation>
     </message>
     <message>
         <source>IMPORTANT: Any previous backups you have made of your wallet file should be replaced with the newly generated, encrypted wallet file. For security reasons, previous backups of the unencrypted wallet file will become useless as soon as you start using the new, encrypted wallet.</source>
@@ -1529,7 +1529,7 @@
     </message>
     <message>
         <source>Proposal Info: %1</source>
-        <translation>Proposal Info: %1</translation>
+        <translation>Vorschlagsinformationen: %1</translation>
     </message>
 </context>
 <context>
@@ -1552,7 +1552,7 @@
     </message>
     <message>
         <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;%1-Grundlagen&lt;/h3&gt;&lt;p&gt;%1 erschwert es erheblich, die Herkunft Ihrer DFCN nachzuverfolgen. Ihre Coins werden in gemeinsamen Transaktionen mit Coins anderer DeFCoN-Nutzer gemischt. Ihre Coins verlassen dabei niemals Ihre Wallet, und nur Sie können sie ausgeben.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;So funktioniert es&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Ihre Wallet teilt einen Teil Ihres Guthabens in Standardbeträge von etwas mehr als 0.001, 0.01, 0.1, 1 und 10 DFCN auf, zum Beispiel 10.0001 DFCN. Alle verwenden dieselben Beträge, sodass die Coins gleich aussehen.&lt;/li&gt;&lt;li&gt;Für einen dieser Beträge tritt Ihre Wallet einer an einer Masternode wartenden Mischsitzung bei oder bittet eine zufällig ausgewählte Masternode, eine neue Sitzung zu starten.&lt;/li&gt;&lt;li&gt;Sobald mindestens %2 Teilnehmer beigetreten sind, fasst die Masternode deren Coins in einer Transaktion zusammen. Jede Wallet prüft und signiert nur ihren eigenen Teil und erhält dieselben Beträge an neue eigene Adressen zurück.&lt;/li&gt;&lt;li&gt;Jede abgeschlossene Sitzung zählt als eine Runde. Ihre Wallet wiederholt dies mehrmals. Die Anzahl der Runden und das Zielguthaben können Sie in den Optionen festlegen.&lt;/li&gt;&lt;li&gt;Das Mischen läuft im Hintergrund, solange die Wallet geöffnet ist. Wenn Sie aus Ihrem %1-Guthaben senden, sind Ihre Coins bereits gemischt.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Gut zu wissen&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; Im Hauptnetz liegen gemischte Coins unter dem Mindestbetrag für Staking und erhalten deshalb keine Staking-Belohnungen. Staking führt weder diese Coins noch die Sicherheiten für das Mischen mit Ihren anderen Coins zusammen. Das Zielguthaben in den Optionen legt ungefähr fest, wie viel gemischt wird.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Gebühren:&lt;/b&gt; Mischtransaktionen sind kostenlos. Das Erstellen der Standardbeträge kostet eine normale geringe Netzwerkgebühr. Gelegentlich geht eine winzige Sicherheit von etwa 0.0001 DFCN an das Netzwerk, um Missbrauch zu verhindern.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privatsphäre:&lt;/b&gt; Die Masternode einer Sitzung sieht, welche Coins daran teilnehmen. Es ist nicht garantiert, dass die anderen Teilnehmer unterschiedliche Personen sind. Mehr Runden erschweren die Nachverfolgung Ihrer Coins. Wenn Sie viele gemischte Coins gemeinsam in einer Zahlung senden, können sie wieder miteinander verknüpft werden.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Verschlüsselte Wallet:&lt;/b&gt; Ist die Wallet beim Start des Mischens gesperrt, fragt sie nach Ihrer Passphrase und wird nur zum Mischen entsperrt. Zum Senden ist die Passphrase weiterhin erforderlich.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Sicherungen:&lt;/b&gt; Jede Runde verwendet bis zu 9 neue Adressen. Für %1 müssen automatische Wallet-Sicherungen aktiviert sein; dies ist standardmäßig der Fall.&lt;/li&gt;&lt;/ul&gt;</translation>
+        <translation>&lt;h3&gt;%1-Grundlagen&lt;/h3&gt;&lt;p&gt;%1 erschwert es erheblich, die Herkunft Ihrer DFCN nachzuverfolgen. Ihre Coins werden in gemeinsamen Transaktionen mit Coins anderer DeFCoN-Nutzer gemischt. Ihre Coins verlassen dabei niemals Ihre Wallet, und nur Sie können sie ausgeben.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;So funktioniert es&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Ihre Wallet teilt einen Teil Ihres Guthabens in Standardbeträge von etwas mehr als 0.001, 0.01, 0.1, 1 und 10 DFCN auf, zum Beispiel 10.0001 DFCN. Alle verwenden dieselben Beträge, sodass die Coins gleich aussehen.&lt;/li&gt;&lt;li&gt;Für einen dieser Beträge tritt Ihre Wallet einer an einer Masternode wartenden Mischsitzung bei oder bittet eine zufällig ausgewählte Masternode, eine neue Sitzung zu starten.&lt;/li&gt;&lt;li&gt;Sobald mindestens %2 Teilnehmer beigetreten sind, fasst die Masternode deren Coins in einer Transaktion zusammen. Jede Wallet prüft und signiert nur ihren eigenen Teil und erhält dieselben Beträge an neue eigene Adressen zurück.&lt;/li&gt;&lt;li&gt;Jede abgeschlossene Sitzung zählt als eine Runde. Ihre Wallet wiederholt dies mehrmals. Die Anzahl der Runden und das Zielguthaben können Sie in den Optionen festlegen.&lt;/li&gt;&lt;li&gt;Das Mischen läuft im Hintergrund, solange die Wallet geöffnet ist. Wenn Sie aus Ihrem %1-Guthaben senden, sind Ihre Coins bereits gemischt.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Gut zu wissen&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; Im Hauptnetz liegen gemischte Coins unter dem Mindestbetrag für Staking und erhalten deshalb keine Staking-Belohnungen. Staking führt weder diese Coins noch die Sicherheitsleistungen für das Mischen mit Ihren anderen Coins zusammen. Das Zielguthaben in den Optionen legt ungefähr fest, wie viel gemischt wird.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Gebühren:&lt;/b&gt; Mischtransaktionen sind kostenlos. Das Erstellen der Standardbeträge kostet eine normale geringe Netzwerkgebühr. Gelegentlich geht eine winzige Sicherheitsleistung von etwa 0.0001 DFCN an das Netzwerk, um Missbrauch zu verhindern.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privatsphäre:&lt;/b&gt; Die Masternode einer Sitzung sieht, welche Coins daran teilnehmen. Es ist nicht garantiert, dass die anderen Teilnehmer unterschiedliche Personen sind. Mehr Runden erschweren die Nachverfolgung Ihrer Coins. Wenn Sie viele gemischte Coins gemeinsam in einer Zahlung senden, können sie wieder miteinander verknüpft werden.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Verschlüsselte Wallet:&lt;/b&gt; Ist die Wallet beim Start des Mischens gesperrt, fragt sie nach Ihrer Passphrase und wird nur zum Mischen entsperrt. Zum Senden ist die Passphrase weiterhin erforderlich.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Sicherungen:&lt;/b&gt; Jede Runde verwendet bis zu 9 neue Adressen. Für %1 müssen automatische Wallet-Sicherungen aktiviert sein; dies ist standardmäßig der Fall.&lt;/li&gt;&lt;/ul&gt;</translation>
     </message>
 </context>
 <context>
@@ -2920,7 +2920,7 @@ Nur der Listeneintrag wird entfernt. Falls die Adresse in die Wallet importiert 
     </message>
     <message>
         <source>Keep custom change &amp;address</source>
-        <translation>Benutzerdefinierte Wechselgeld-Adresse beibehalten</translation>
+        <translation>Benutzerdefinierte Wechselgeld-&amp;Adresse beibehalten</translation>
     </message>
     <message>
         <source>Show additional tab for multisignature addresses and partially signed transactions.</source>
@@ -3513,7 +3513,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>%1 ago</source>
-        <translation>vor %1</translation>
+        <translation>%1 her</translation>
     </message>
     <message>
         <source>%1 behind</source>
@@ -3645,7 +3645,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
-        <translation>Coins werden ausgeschlossen, solange sie unreif oder zu jung sind, unter dem Mindest- oder über dem Höchstbetrag für Staking liegen oder genau einer Masternode-Sicherheit entsprechen.</translation>
+        <translation>Coins werden ausgeschlossen, solange sie unreif oder zu jung sind, unter dem Mindest- oder über dem Höchstbetrag für Staking liegen oder genau einer Masternode-Sicherheitsleistung entsprechen.</translation>
     </message>
     <message numerus="yes">
         <source>%n Rounds</source>
@@ -3837,7 +3837,7 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <source>Pays transaction fee: </source>
-        <translation>Transaktionsgebühr kostet:</translation>
+        <translation>Zahlt Transaktionsgebühr: </translation>
     </message>
     <message>
         <source>Total Amount</source>
@@ -5568,7 +5568,7 @@ Für mehr Information, wie diese Konsole zu nutzen ist, %6 tippen.
     </message>
     <message>
         <source>%1 (%2 blocks)</source>
-        <translation>%1 (%2 blocks)</translation>
+        <translation>%1 (%2 Blöcke)</translation>
     </message>
     <message>
         <source>This will produce a Partially Signed Transaction (PSBT) which you can save or copy and then sign with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.</source>
@@ -7486,7 +7486,7 @@ Gehen Sie zu "Datei" &gt; "Wallet öffnen" um Wallet zu laden
     </message>
     <message>
         <source>Ignoring duplicate -wallet %s.</source>
-        <translation>Ignoring duplicate -wallet %s.</translation>
+        <translation>Doppeltes -wallet %s wird ignoriert.</translation>
     </message>
     <message>
         <source>Input not found or already spent</source>
