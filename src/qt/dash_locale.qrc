@@ -4,6 +4,7 @@
         <file alias="en">locale/dash_en.qm</file>
         <file alias="es">locale/dash_es.qm</file>
         <file alias="fr">locale/dash_fr.qm</file>
+        <file alias="hu">locale/dash_hu.qm</file>
         <file alias="id">locale/dash_id.qm</file>
         <file alias="it">locale/dash_it.qm</file>
         <file alias="ja">locale/dash_ja.qm</file>
