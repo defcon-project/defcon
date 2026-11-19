@@ -1552,7 +1552,7 @@
     </message>
     <message>
         <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;Les bases de %1&lt;/h3&gt;&lt;p&gt;%1 rend beaucoup plus difficile le suivi de la provenance de vos DFCN. Il mélange vos fonds avec ceux d’autres utilisateurs de DeFCoN dans des transactions communes. Vos fonds ne quittent jamais votre portefeuille et vous seul pouvez les dépenser.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Fonctionnement&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Votre portefeuille divise une partie de votre solde en montants standard légèrement supérieurs à 0.001, 0.01, 0.1, 1 et 10 DFCN, par exemple 10.0001 DFCN. Tout le monde utilise les mêmes montants, ce qui rend les fonds semblables.&lt;/li&gt;&lt;li&gt;Pour l’un de ces montants, votre portefeuille rejoint une session de mélange en attente sur un masternode, ou demande à un masternode choisi au hasard d’en démarrer une nouvelle.&lt;/li&gt;&lt;li&gt;Lorsqu’au moins %2 participants ont rejoint la session, le masternode regroupe leurs fonds en une seule transaction. Chaque portefeuille vérifie et signe uniquement sa propre partie, puis reçoit les mêmes montants à de nouvelles adresses lui appartenant.&lt;/li&gt;&lt;li&gt;Chaque session terminée constitue un cycle. Votre portefeuille répète cette opération plusieurs fois. Vous pouvez définir le nombre de cycles et le solde cible dans les Options.&lt;/li&gt;&lt;li&gt;Le mélange s’effectue en arrière-plan tant que le portefeuille est ouvert. Quand vous envoyez des fonds depuis votre solde %1, ils sont déjà mélangés.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Bon à savoir&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking :&lt;/b&gt; sur le réseau principal, les fonds mélangés sont inférieurs à la mise minimale : ils ne rapportent donc aucune récompense de staking, et le staking ne les regroupe jamais avec vos autres fonds, pas plus que les garanties de mélange. Le solde cible dans les Options définit approximativement le montant à mélanger.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Frais :&lt;/b&gt; les transactions de mélange sont gratuites. La création des montants standard entraîne de faibles frais de réseau ordinaires. De temps à autre, une petite garantie d’environ 0.0001 DFCN est versée au réseau pour empêcher les abus.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Confidentialité :&lt;/b&gt; le masternode qui gère une session voit quels fonds y participent, et rien ne garantit que les autres participants soient des personnes différentes. Un plus grand nombre de cycles rend vos fonds plus difficiles à suivre. Envoyer de nombreux fonds mélangés ensemble dans un seul paiement peut à nouveau les relier.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Portefeuille chiffré :&lt;/b&gt; si le portefeuille est verrouillé lorsque vous démarrez le mélange, il demande votre phrase de passe et se déverrouille uniquement pour le mélange ; l’envoi nécessite donc toujours la phrase de passe.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Sauvegardes :&lt;/b&gt; chaque cycle utilise jusqu’à 9 nouvelles adresses. %1 nécessite l’activation des sauvegardes automatiques du portefeuille ; elles sont activées par défaut.&lt;/li&gt;&lt;/ul&gt;</translation>
+        <translation>&lt;h3&gt;Les bases de %1&lt;/h3&gt;&lt;p&gt;%1 rend beaucoup plus difficile le suivi de la provenance de vos DFCN. Il mélange vos fonds avec ceux d’autres utilisateurs de DeFCoN dans des transactions communes. Vos fonds ne quittent jamais votre portefeuille et vous seul pouvez les dépenser.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Fonctionnement&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Votre portefeuille divise une partie de votre solde en montants standard légèrement supérieurs à 0.001, 0.01, 0.1, 1 et 10 DFCN, par exemple 10.0001 DFCN. Tout le monde utilise les mêmes montants, ce qui rend les fonds semblables.&lt;/li&gt;&lt;li&gt;Pour l’un de ces montants, votre portefeuille rejoint une session de mélange en attente sur un masternode, ou demande à un masternode choisi au hasard d’en démarrer une nouvelle.&lt;/li&gt;&lt;li&gt;Lorsqu’au moins %2 participants ont rejoint la session, le masternode regroupe leurs fonds en une seule transaction. Chaque portefeuille vérifie et signe uniquement sa propre partie, puis reçoit les mêmes montants à de nouvelles adresses lui appartenant.&lt;/li&gt;&lt;li&gt;Chaque session terminée constitue un cycle. Votre portefeuille répète cette opération plusieurs fois. Vous pouvez définir le nombre de cycles et le solde cible dans les Options.&lt;/li&gt;&lt;li&gt;Le mélange s’effectue en arrière-plan tant que le portefeuille est ouvert. Quand vous envoyez des fonds depuis votre solde %1, ils sont déjà mélangés.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Bon à savoir&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking :&lt;/b&gt; sur le réseau principal, les fonds mélangés sont inférieurs à la mise minimale : ils ne rapportent donc aucune récompense de staking, et le staking ne regroupe jamais ces fonds, ni les garanties de mélange, avec vos autres fonds. Le solde cible dans les Options définit approximativement le montant à mélanger.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Frais :&lt;/b&gt; les transactions de mélange sont gratuites. La création des montants standard entraîne de faibles frais de réseau ordinaires. De temps à autre, une petite garantie d’environ 0.0001 DFCN est versée au réseau pour empêcher les abus.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Confidentialité :&lt;/b&gt; le masternode qui gère une session voit quels fonds y participent, et rien ne garantit que les autres participants soient des personnes différentes. Un plus grand nombre de cycles rend vos fonds plus difficiles à suivre. Envoyer de nombreux fonds mélangés ensemble dans un seul paiement peut à nouveau les relier.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Portefeuille chiffré :&lt;/b&gt; si le portefeuille est verrouillé lorsque vous démarrez le mélange, il demande votre phrase de passe et se déverrouille uniquement pour le mélange ; l’envoi nécessite donc toujours la phrase de passe.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Sauvegardes :&lt;/b&gt; chaque cycle utilise jusqu’à 9 nouvelles adresses. %1 nécessite l’activation des sauvegardes automatiques du portefeuille ; elles sont activées par défaut.&lt;/li&gt;&lt;/ul&gt;</translation>
     </message>
 </context>
 <context>
@@ -1896,7 +1896,7 @@
     </message>
     <message>
         <source>Redeem script</source>
-        <translation>Script de déblocage</translation>
+        <translation>Script de rachat</translation>
     </message>
     <message>
         <source>Export setup…</source>
@@ -1904,7 +1904,7 @@
     </message>
     <message>
         <source>Save the setup (keys, address, redeem script) to a file you can share with your cosigners</source>
-        <translation>Enregistrer la configuration (clés, adresse, script de déblocage) dans un fichier à partager avec vos cosignataires</translation>
+        <translation>Enregistrer la configuration (clés, adresse, script de rachat) dans un fichier à partager avec vos cosignataires</translation>
     </message>
     <message>
         <source>Show raw RPC result</source>
@@ -2083,7 +2083,7 @@
     </message>
     <message>
         <source>Advanced (redeem script, descriptor)</source>
-        <translation>Avancé (script de déblocage, descripteur)</translation>
+        <translation>Avancé (script de rachat, descripteur)</translation>
     </message>
     <message>
         <source>%1 copied to clipboard.</source>
@@ -2091,7 +2091,7 @@
     </message>
     <message>
         <source>Redeem script</source>
-        <translation>Script de déblocage</translation>
+        <translation>Script de rachat</translation>
     </message>
     <message>
         <source>Descriptor</source>
@@ -2335,7 +2335,7 @@ Seule l’entrée de la liste sera retirée. Si l’adresse a été importée da
     </message>
     <message>
         <source>Contains the profile name, public keys, address and redeem script — no private keys.</source>
-        <translation>Contient le nom du profil, les clés publiques, l’adresse et le script de déblocage — aucune clé privée.</translation>
+        <translation>Contient le nom du profil, les clés publiques, l’adresse et le script de rachat — aucune clé privée.</translation>
     </message>
 </context>
 <context>
@@ -2530,7 +2530,7 @@ Seule l’entrée de la liste sera retirée. Si l’adresse a été importée da
     </message>
     <message>
         <source>Hint: import the multisig setup (with redeem script) into this wallet so it can estimate the transaction size.</source>
-        <translation>Conseil : importez la configuration multisig (avec le script de déblocage) dans ce portefeuille pour qu’il puisse estimer la taille de la transaction.</translation>
+        <translation>Conseil : importez la configuration multisig (avec le script de rachat) dans ce portefeuille pour qu’il puisse estimer la taille de la transaction.</translation>
     </message>
     <message>
         <source>No transaction loaded yet.</source>
@@ -2586,7 +2586,7 @@ Seule l’entrée de la liste sera retirée. Si l’adresse a été importée da
     </message>
     <message>
         <source>Signature progress is unknown: the transaction inputs are missing multisig redeem script information.</source>
-        <translation>La progression des signatures est inconnue : les entrées de la transaction ne contiennent pas les informations du script de déblocage multisig.</translation>
+        <translation>La progression des signatures est inconnue : les entrées de la transaction ne contiennent pas les informations du script de rachat multisig.</translation>
     </message>
     <message>
         <source>Nothing left to sign.</source>
@@ -3053,7 +3053,7 @@ Seule l’entrée de la liste sera retirée. Si l’adresse a été importée da
     <message>
         <source>Language missing or translation incomplete? Help contributing translations here:
 https://app.transifex.com/defcon/defcon/</source>
-        <translation>Langue absent ou traduction incompléte ? Aidez à traduire ici :
+        <translation>Langue manquante ou traduction incomplète ? Aidez à traduire ici :
 https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
@@ -4303,11 +4303,11 @@ En raison d'un support interrompu, vous devriez demander au vendeur de vous comm
     </message>
     <message>
         <source>Mainnet</source>
-        <translation>Réseau principal</translation>
+        <translation>Mainnet</translation>
     </message>
     <message>
         <source>Testnet</source>
-        <translation>Réseau de test</translation>
+        <translation>Testnet</translation>
     </message>
     <message>
         <source>Regtest</source>
@@ -4327,11 +4327,11 @@ En raison d'un support interrompu, vous devriez demander au vendeur de vous comm
     </message>
     <message>
         <source>Redeem script matches the address</source>
-        <translation>Le script de déblocage correspond à l’adresse</translation>
+        <translation>Le script de rachat correspond à l’adresse</translation>
     </message>
     <message>
         <source>Redeem script does not match the address</source>
-        <translation>Le script de déblocage ne correspond pas à l’adresse</translation>
+        <translation>Le script de rachat ne correspond pas à l’adresse</translation>
     </message>
     <message>
         <source>do not use this profile</source>
@@ -4339,7 +4339,7 @@ En raison d'un support interrompu, vous devriez demander au vendeur de vous comm
     </message>
     <message>
         <source>Redeem script</source>
-        <translation>Script de déblocage</translation>
+        <translation>Script de rachat</translation>
     </message>
     <message>
         <source>not stored in this profile</source>

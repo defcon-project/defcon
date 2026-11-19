@@ -2251,7 +2251,7 @@ Note: transactions received before now will only appear after a rescan.</source>
     </message>
     <message>
         <source>Load Transaction Data</source>
-        <translation>读取交易数据</translation>
+        <translation>加载交易数据</translation>
     </message>
     <message>
         <source>Partially Signed Transaction (*.psbt)</source>
@@ -2358,7 +2358,7 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <source>3. Finalize &amp; broadcast</source>
-        <translation>3. 完成 &amp; 广播</translation>
+        <translation>3. 最终确定 &amp; 广播</translation>
     </message>
     <message>
         <source>Transaction</source>
@@ -2462,11 +2462,11 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <source>Finalize &amp;&amp; broadcast</source>
-        <translation>完成 &amp;&amp; 广播</translation>
+        <translation>最终确定 &amp;&amp; 广播</translation>
     </message>
     <message>
         <source>Finalize and broadcast</source>
-        <translation>完成并广播</translation>
+        <translation>最终确定并广播</translation>
     </message>
     <message>
         <source>Combine the collected signatures into a final transaction and send it to the network</source>
@@ -2570,7 +2570,7 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <source>All required signatures collected — ready to finalize.</source>
-        <translation>已收集全部所需签名，可以完成交易。</translation>
+        <translation>已收集全部所需签名，可以最终确定。</translation>
     </message>
     <message>
         <source>Signatures: %1 of %2 collected.</source>
@@ -2578,7 +2578,7 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <source>(%1 of %2 inputs already finalized)</source>
-        <translation>（已有 %1/%2 个输入完成最终处理）</translation>
+        <translation>（已有 %1/%2 个输入已最终确定）</translation>
     </message>
     <message>
         <source>Missing: %1</source>
@@ -2659,7 +2659,7 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <source>Load Transaction Data</source>
-        <translation>读取交易数据</translation>
+        <translation>加载交易数据</translation>
     </message>
     <message>
         <source>Partially Signed Transaction (*.psbt)</source>
@@ -2695,7 +2695,7 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <source>The transaction could not be finalized — signatures are missing or invalid.</source>
-        <translation>无法完成交易，签名缺失或无效。</translation>
+        <translation>无法最终确定交易，签名缺失或无效。</translation>
     </message>
     <message>
         <source>Output %1: %2 to %3%4</source>
@@ -5769,7 +5769,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>The address you selected for change is not part of this wallet. Any or all funds in your wallet may be sent to this address. Are you sure?</source>
-        <translation>您选择的找零地址未被包含在本钱包中，您钱包中的部分或全部金额将被发送至该地址。您确定要这样做吗？</translation>
+        <translation>您选择的找零地址未被包含在本钱包中，您钱包中的部分或全部金额可能会被发送至该地址。您确定要这样做吗？</translation>
     </message>
     <message>
         <source>(no label)</source>
@@ -6920,7 +6920,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>Load Transaction Data</source>
-        <translation>读取交易数据</translation>
+        <translation>加载交易数据</translation>
     </message>
     <message>
         <source>Partially Signed Transaction (*.psbt)</source>
