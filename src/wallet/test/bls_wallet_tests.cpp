@@ -4,17 +4,22 @@
 
 #include <base58.h>
 #include <bls/bls.h>
+#include <clientversion.h>
 #include <coins.h>
+#include <key.h>
 #include <policy/policy.h>
 #include <psbt.h>
+#include <pubkey.h>
 #include <script/interpreter.h>
 #include <script/sign.h>
 #include <script/signingprovider.h>
 #include <script/standard.h>
+#include <span.h>
 #include <streams.h>
 #include <util/translation.h>
 #include <version.h>
 #include <wallet/crypter.h>
+#include <wallet/db.h>
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/test/wallet_test_fixture.h>
 #include <wallet/wallet.h>
@@ -22,10 +27,18 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <future>
 #include <map>
 #include <memory>
+#include <new>
 #include <optional>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -381,9 +394,10 @@ CScript ScriptOf(const CPubKey& pubkey) { return CScript() << ToByteVector(pubke
 // An encrypted legacy wallet as it is when its file has just been read: the master key record of
 // `passphrase`, and nothing unlocked. Its database keeps what the test writes, so BLSWalletInit
 // reads the BLS records as it does when a wallet opens.
-std::shared_ptr<CWallet> MakeEncryptedWalletFile(NodeContext& node, const std::string& name, const SecureString& passphrase, CKeyingMaterial& master_key)
+std::shared_ptr<CWallet> MakeEncryptedWalletFile(NodeContext& node, const std::string& name, const SecureString& passphrase, CKeyingMaterial& master_key,
+                                                 std::unique_ptr<WalletDatabase> database = CreateMockWalletDatabase())
 {
-    auto wallet = std::make_shared<CWallet>(node.chain.get(), node.coinjoin_loader.get(), name, CreateMockWalletDatabase());
+    auto wallet = std::make_shared<CWallet>(node.chain.get(), node.coinjoin_loader.get(), name, std::move(database));
     wallet->LoadWallet();
     master_key.assign(WALLET_CRYPTO_KEY_SIZE, 0x2a);
     CMasterKey record;
@@ -557,6 +571,393 @@ BOOST_FIXTURE_TEST_CASE(a_bls_record_naming_another_keys_public_key_does_not_unl
         BOOST_CHECK(!Signs(*wallet, ScriptOf(other_pubkey)));
         BOOST_CHECK_EQUAL(Mine(*wallet, held), ISMINE_NO);
         BOOST_CHECK_EQUAL(wallet->GetBLSAddresses().size(), 1U);
+    }
+}
+
+namespace {
+// The record types the wallet database refuses to write, as a full or failing disk refuses a write.
+struct RefusedRecords {
+    std::set<std::string> types;
+    int refusals{0};
+    //! The write of a refused record throws instead of returning false, as one that runs out of memory.
+    bool throws{false};
+    //! How many writes of a refused type still go through before the refusals start.
+    int let_through{0};
+    //! Run once, while the database is answering the next write it refuses.
+    std::function<void()> on_refusal;
+
+    //! Whether `key` names a record of a refused type (a record's key starts with its type); counts the refusal.
+    bool Refuses(const CDataStream& key)
+    {
+        for (const std::string& type : types) {
+            CDataStream prefix(SER_DISK, CLIENT_VERSION);
+            prefix << type;
+            if (key.size() >= prefix.size() && std::equal(prefix.begin(), prefix.end(), key.begin())) {
+                if (let_through > 0) {
+                    --let_through;
+                    return false;
+                }
+                ++refusals;
+                if (on_refusal) {
+                    const std::function<void()> hook = std::move(on_refusal);
+                    on_refusal = nullptr;
+                    hook();
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+};
+
+// A key or a value that is serialized already: written and read as it is.
+struct RawRecord {
+    std::vector<std::byte> bytes;
+
+    RawRecord() = default;
+    explicit RawRecord(const CDataStream& stream) : bytes(stream.begin(), stream.end()) {}
+    template <typename Stream> void Serialize(Stream& s) const { s.write(Span<const std::byte>{bytes.data(), bytes.size()}); }
+    template <typename Stream> void Unserialize(Stream& s)
+    {
+        bytes.resize(s.size());
+        s.read(Span<std::byte>{bytes.data(), bytes.size()});
+    }
+};
+
+// The real database's batch, except that it refuses to write the records RefusedRecords names.
+class RefusingBatch : public DatabaseBatch
+{
+    const std::unique_ptr<DatabaseBatch> m_real;
+    const std::shared_ptr<RefusedRecords> m_refused;
+
+    bool ReadKey(CDataStream&& key, CDataStream& value) override
+    {
+        RawRecord found;
+        if (!m_real->Read(RawRecord{key}, found)) return false;
+        value.clear();
+        value.write(Span<const std::byte>{found.bytes.data(), found.bytes.size()});
+        return true;
+    }
+    bool WriteKey(CDataStream&& key, CDataStream&& value, bool overwrite = true) override
+    {
+        if (m_refused->Refuses(key)) {
+            if (m_refused->throws) throw std::bad_alloc();
+            return false;
+        }
+        return m_real->Write(RawRecord{key}, RawRecord{value}, overwrite);
+    }
+    bool EraseKey(CDataStream&& key) override { return m_real->Erase(RawRecord{key}); }
+    bool HasKey(CDataStream&& key) override { return m_real->Exists(RawRecord{key}); }
+
+public:
+    RefusingBatch(std::unique_ptr<DatabaseBatch> real, std::shared_ptr<RefusedRecords> refused) : m_real{std::move(real)}, m_refused{std::move(refused)} {}
+
+    void Flush() override { m_real->Flush(); }
+    void Close() override { m_real->Close(); }
+    bool StartCursor() override { return m_real->StartCursor(); }
+    bool ReadAtCursor(CDataStream& key, CDataStream& value, bool& complete) override { return m_real->ReadAtCursor(key, value, complete); }
+    void CloseCursor() override { m_real->CloseCursor(); }
+    bool TxnBegin() override { return m_real->TxnBegin(); }
+    bool TxnCommit() override { return m_real->TxnCommit(); }
+    bool TxnAbort() override { return m_real->TxnAbort(); }
+};
+
+// The real wallet database behind batches that can refuse a write.
+class RefusingDatabase : public WalletDatabase
+{
+    const std::unique_ptr<WalletDatabase> m_real;
+    const std::shared_ptr<RefusedRecords> m_refused;
+
+public:
+    RefusingDatabase(std::unique_ptr<WalletDatabase> real, std::shared_ptr<RefusedRecords> refused) : m_real{std::move(real)}, m_refused{std::move(refused)} {}
+
+    void Open() override { m_real->Open(); }
+    void AddRef() override { m_real->AddRef(); }
+    void RemoveRef() override { m_real->RemoveRef(); }
+    bool Rewrite(const char* skip = nullptr) override { return m_real->Rewrite(skip); }
+    bool Backup(const std::string& dest) const override { return m_real->Backup(dest); }
+    void Flush() override { m_real->Flush(); }
+    void Close() override { m_real->Close(); }
+    bool PeriodicFlush() override { return m_real->PeriodicFlush(); }
+    void IncrementUpdateCounter() override
+    {
+        ++nUpdateCounter;
+        m_real->IncrementUpdateCounter();
+    }
+    void ReloadDbEnv() override { m_real->ReloadDbEnv(); }
+    std::string Filename() override { return m_real->Filename(); }
+    std::string Format() override { return m_real->Format(); }
+    std::unique_ptr<DatabaseBatch> MakeBatch(bool flush_on_close = true) override
+    {
+        return std::make_unique<RefusingBatch>(m_real->MakeBatch(flush_on_close), m_refused);
+    }
+    bool SupportsAutoBackup() override { return m_real->SupportsAutoBackup(); }
+};
+
+// The wallet holds the BLS keys it listed as `addresses` and not the key of `pubkey`: neither among its keys in
+// memory, nor in record `id` of its database, which is where the key would have been written.
+void CheckNotHeld(CWallet& wallet, const std::map<unsigned int, std::string>& addresses, const CPubKey& pubkey, int64_t id, const std::string& when)
+{
+    const CScript script = ScriptOf(pubkey);
+    BOOST_CHECK_MESSAGE(wallet.GetBLSAddresses() == addresses, when << ": the wallet lists " << wallet.GetBLSAddresses().size() << " BLS addresses");
+    BOOST_CHECK_MESSAGE(Mine(wallet, script) == ISMINE_NO, when << ": the wallet takes the key's outputs for its own");
+    BOOST_CHECK_MESSAGE(!Signs(wallet, script), when << ": the wallet signs with the key");
+    CKey secret;
+    BOOST_CHECK_MESSAGE(!wallet.GetBLSKey(pubkey.GetID(), secret), when << ": the wallet gives the key's secret");
+    WalletBatch batch(wallet.GetDatabase());
+    std::string plain;
+    CPubKey stored_pubkey;
+    std::vector<unsigned char> crypted;
+    BOOST_CHECK_MESSAGE(!batch.ReadBLSKey(id, plain), when << ": the database holds a plaintext record " << id);
+    BOOST_CHECK_MESSAGE(!batch.ReadCryptedBLSKey(id, stored_pubkey, crypted), when << ": the database holds an encrypted record " << id);
+}
+} // namespace
+
+// WriteToBLSWallet took a new key among the wallet's keys before it wrote the key's record, and left it there when
+// the database refused the write. The caller got its error, but the wallet went on listing the address as its own
+// and counting what was paid to it until the next start, when the key was gone: a BLS key does not come back from
+// the seed.
+BOOST_AUTO_TEST_CASE(a_bls_key_the_database_refused_is_not_among_the_wallets_keys)
+{
+    const auto refused = std::make_shared<RefusedRecords>();
+    auto wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "bls-refused",
+                                            std::make_unique<RefusingDatabase>(CreateMockWalletDatabase(), refused));
+    wallet->LoadWallet();
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->SetupLegacyScriptPubKeyMan();
+    }
+    CBLSSecretKey first_sk;
+    first_sk.MakeNewKey();
+    const CScript first = ScriptOf(PubKeyOf(first_sk));
+    BOOST_REQUIRE(wallet->WriteToBLSWallet(first_sk.ToString()));
+    const std::map<unsigned int, std::string> addresses = wallet->GetBLSAddresses();
+    BOOST_REQUIRE_EQUAL(addresses.size(), 1U);
+
+    CBLSSecretKey sk;
+    sk.MakeNewKey();
+    const CPubKey pubkey = PubKeyOf(sk);
+    refused->types = {DBKeys::BLSKEY, DBKeys::CRYPTED_BLSKEY};
+    // While the database answers the write it refuses, the key store is held: a reader on another thread, which takes
+    // the key store's lock and not the wallet's, cannot get in until the outcome, and then finds no key (review r4,
+    // R40). The other thread tries the lock once and the test waits for its answer, so no timing is involved (r5, R48).
+    LegacyScriptPubKeyMan* const key_store = wallet->GetLegacyScriptPubKeyMan();
+    BOOST_REQUIRE(key_store);
+    bool held_while_writing{false};
+    refused->on_refusal = [&] {
+        held_while_writing = std::async(std::launch::async, [&] {
+            const bool got = key_store->cs_KeyStore.try_lock();
+            if (got) key_store->cs_KeyStore.unlock();
+            return !got;
+        }).get();
+    };
+    BOOST_CHECK(!wallet->WriteToBLSWallet(sk.ToString()));
+    BOOST_CHECK_EQUAL(refused->refusals, 1);
+    BOOST_CHECK(held_while_writing);
+    {
+        CKey secret;
+        BOOST_CHECK(!std::async(std::launch::async, [&] { return wallet->GetBLSKey(pubkey.GetID(), secret); }).get());
+    }
+    CheckNotHeld(*wallet, addresses, pubkey, 1, "after the refused write");
+
+    // The BLS change address of a transaction is a new key saved the same way: none is made.
+    BOOST_CHECK(wallet->GenerateNewBLSChangeAddress().empty());
+    BOOST_CHECK_EQUAL(refused->refusals, 2);
+    BOOST_CHECK(wallet->GetBLSAddresses() == addresses);
+
+    // A write that throws, as one that runs out of memory: the key is taken back the same way, and the error goes on.
+    refused->throws = true;
+    BOOST_CHECK_THROW(wallet->WriteToBLSWallet(sk.ToString()), std::bad_alloc);
+    BOOST_CHECK_EQUAL(refused->refusals, 3);
+    CheckNotHeld(*wallet, addresses, pubkey, 1, "after the write that threw");
+    refused->throws = false;
+
+    // A key the wallet holds already keeps its place when its write is refused: its record holds it.
+    BOOST_CHECK(!wallet->WriteToBLSWallet(first_sk.ToString()));
+    BOOST_CHECK_EQUAL(refused->refusals, 4);
+    BOOST_CHECK(wallet->GetBLSAddresses() == addresses);
+    BOOST_CHECK(Signs(*wallet, first));
+
+    // What the next start reads from the database is the same.
+    BOOST_REQUIRE(wallet->BLSWalletInit());
+    CheckNotHeld(*wallet, addresses, pubkey, 1, "after the records are read again");
+    BOOST_CHECK(Signs(*wallet, first));
+
+    // Once the database writes, the same key is saved as the wallet's second one.
+    refused->types.clear();
+    BOOST_REQUIRE(wallet->WriteToBLSWallet(sk.ToString()));
+    BOOST_CHECK_EQUAL(wallet->GetBLSAddresses().size(), 2U);
+    BOOST_CHECK(Signs(*wallet, ScriptOf(pubkey)));
+    std::string record;
+    BOOST_CHECK(WalletBatch(wallet->GetDatabase()).ReadBLSKey(1, record));
+    BOOST_CHECK_EQUAL(record, sk.ToString());
+
+    // A key the wallet holds already is written to its own record, not to a new one.
+    BOOST_CHECK(wallet->WriteToBLSWallet(first_sk.ToString()));
+    BOOST_CHECK_EQUAL(wallet->GetBLSAddresses().size(), 2U);
+    BOOST_CHECK(WalletBatch(wallet->GetDatabase()).ReadBLSKey(0, record));
+    BOOST_CHECK_EQUAL(record, first_sk.ToString());
+    BOOST_CHECK(!WalletBatch(wallet->GetDatabase()).ReadBLSKey(2, record));
+
+    BOOST_REQUIRE(wallet->BLSWalletInit());
+    BOOST_CHECK_EQUAL(wallet->GetBLSAddresses().size(), 2U);
+    BOOST_CHECK(Signs(*wallet, first));
+    BOOST_CHECK(Signs(*wallet, ScriptOf(pubkey)));
+}
+
+// The same in an encrypted wallet, where the key's record is the encrypted one. A lock leaves the public keys the
+// wallet holds, so the key that was not saved would have stayed listed with no secret left to unlock.
+BOOST_FIXTURE_TEST_CASE(an_encrypted_bls_key_the_database_refused_is_not_among_the_wallets_keys, OpenedWalletSetup)
+{
+    const auto refused = std::make_shared<RefusedRecords>();
+    auto wallet = MakeEncryptedWalletFile(m_node, "bls-refused-encrypted", passphrase, master_key,
+                                          std::make_unique<RefusingDatabase>(CreateMockWalletDatabase(), refused));
+    CBLSSecretKey first_sk;
+    first_sk.MakeNewKey();
+    const CScript first = ScriptOf(PubKeyOf(first_sk));
+    WriteCryptedRecord(*wallet, 0, master_key, first_sk, PubKeyOf(first_sk));
+    BOOST_REQUIRE(wallet->BLSWalletInit());
+    BOOST_REQUIRE(wallet->Unlock(passphrase));
+    BOOST_REQUIRE(Signs(*wallet, first));
+    const std::map<unsigned int, std::string> addresses = wallet->GetBLSAddresses();
+    BOOST_REQUIRE_EQUAL(addresses.size(), 1U);
+
+    refused->types = {DBKeys::BLSKEY, DBKeys::CRYPTED_BLSKEY};
+    BOOST_CHECK(!wallet->WriteToBLSWallet(sk.ToString()));
+    BOOST_CHECK_EQUAL(refused->refusals, 1);
+    CheckNotHeld(*wallet, addresses, pubkey, 1, "after the refused write");
+
+    refused->throws = true;
+    BOOST_CHECK_THROW(wallet->WriteToBLSWallet(sk.ToString()), std::bad_alloc);
+    BOOST_CHECK_EQUAL(refused->refusals, 2);
+    CheckNotHeld(*wallet, addresses, pubkey, 1, "after the write that threw");
+    refused->throws = false;
+
+    BOOST_REQUIRE(wallet->Lock());
+    BOOST_CHECK(wallet->GetBLSAddresses() == addresses);
+    BOOST_CHECK_EQUAL(Mine(*wallet, held), ISMINE_NO);
+    BOOST_REQUIRE(wallet->Unlock(passphrase));
+    CheckNotHeld(*wallet, addresses, pubkey, 1, "after a lock and an unlock");
+
+    BOOST_REQUIRE(wallet->BLSWalletInit());
+    CheckNotHeld(*wallet, addresses, pubkey, 1, "after the records are read again");
+    BOOST_CHECK(Signs(*wallet, first));
+
+    // Once the database writes, the same key is saved as the wallet's second one, in an encrypted record that
+    // carries its public key: locked, the wallet knows the key's outputs, and the unlock brings its secret back.
+    refused->types.clear();
+    BOOST_REQUIRE(wallet->WriteToBLSWallet(sk.ToString()));
+    BOOST_CHECK_EQUAL(wallet->GetBLSAddresses().size(), 2U);
+    CPubKey stored_pubkey;
+    std::vector<unsigned char> crypted;
+    std::string plain;
+    BOOST_CHECK(WalletBatch(wallet->GetDatabase()).ReadCryptedBLSKey(1, stored_pubkey, crypted));
+    BOOST_CHECK(stored_pubkey == pubkey);
+    BOOST_CHECK(!WalletBatch(wallet->GetDatabase()).ReadBLSKey(1, plain));
+    BOOST_REQUIRE(wallet->Lock());
+    BOOST_CHECK_EQUAL(Mine(*wallet, held), ISMINE_SPENDABLE);
+    BOOST_CHECK(!Signs(*wallet, held));
+    BOOST_REQUIRE(wallet->Unlock(passphrase));
+    BOOST_CHECK(Signs(*wallet, held));
+    BOOST_CHECK(Signs(*wallet, first));
+    BOOST_CHECK_EQUAL(wallet->GetBLSAddresses().size(), 2U);
+
+    // As the next start reads the records: the saved key is there, and the unlock gives it its secret.
+    BOOST_REQUIRE(wallet->BLSWalletInit());
+    BOOST_REQUIRE(wallet->Lock());
+    BOOST_CHECK_EQUAL(Mine(*wallet, held), ISMINE_SPENDABLE);
+    BOOST_REQUIRE(wallet->Unlock(passphrase));
+    BOOST_CHECK(Signs(*wallet, held));
+    BOOST_CHECK_EQUAL(wallet->GetBLSAddresses().size(), 2U);
+}
+
+// An unlocked wallet can know a key by its public key alone: two keys an older version left in plaintext in an
+// encrypted wallet, the first unlock moving the first to an encrypted record and refused the second's, and the next
+// unlock stopping the move where the first plaintext record is gone (inherited, r4 R26) and loading the first's secret
+// alone. The second key's import then gives that key its secret; a refused write has to take the secret back, or the
+// wallet signs with a key whose record it does not have, and takes the next import for a duplicate (review r4, R39).
+BOOST_FIXTURE_TEST_CASE(a_bls_key_known_by_its_public_key_keeps_no_refused_secret, OpenedWalletSetup)
+{
+    const auto refused = std::make_shared<RefusedRecords>();
+    auto wallet = MakeEncryptedWalletFile(m_node, "bls-refused-public-only", passphrase, master_key,
+                                          std::make_unique<RefusingDatabase>(CreateMockWalletDatabase(), refused));
+    CBLSSecretKey first_sk;
+    first_sk.MakeNewKey();
+    const CScript first = ScriptOf(PubKeyOf(first_sk));
+    {
+        std::string first_hex = first_sk.ToString();
+        std::string hex = sk.ToString();
+        WalletBatch batch(wallet->GetDatabase());
+        BOOST_REQUIRE(batch.WriteBLSKey(0, first_hex));
+        BOOST_REQUIRE(batch.WriteBLSKey(1, hex));
+    }
+    BOOST_REQUIRE(wallet->BLSWalletInit());
+    BOOST_REQUIRE(wallet->IsLocked());
+    BOOST_REQUIRE_EQUAL(Mine(*wallet, held), ISMINE_SPENDABLE);
+
+    refused->types = {DBKeys::CRYPTED_BLSKEY};
+    refused->let_through = 1;
+    BOOST_CHECK(!wallet->Unlock(passphrase));
+    BOOST_CHECK_EQUAL(refused->refusals, 1);
+    BOOST_REQUIRE(wallet->Unlock(passphrase));
+    BOOST_REQUIRE(Signs(*wallet, first));
+    BOOST_REQUIRE(!Signs(*wallet, held));
+    const std::map<unsigned int, std::string> addresses = wallet->GetBLSAddresses();
+    BOOST_REQUIRE_EQUAL(addresses.size(), 2U);
+
+    BOOST_CHECK(!wallet->WriteToBLSWallet(sk.ToString()));
+    BOOST_CHECK_EQUAL(refused->refusals, 2);
+    BOOST_CHECK(!Signs(*wallet, held));
+    CKey secret;
+    BOOST_CHECK(!wallet->GetBLSKey(pubkey.GetID(), secret));
+    // The wallet's own entry never took the secret (review r7, R50: nothing in it to take back).
+    BOOST_CHECK(!wallet->GetBLSSigningProvider().GetKey(pubkey.GetID(), secret));
+    BOOST_CHECK_EQUAL(Mine(*wallet, held), ISMINE_SPENDABLE);
+    BOOST_CHECK(wallet->GetBLSAddresses() == addresses);
+    BOOST_CHECK(Signs(*wallet, first));
+
+    // Once the database writes, the import saves the key in its own encrypted record, its entry takes the secret, and
+    // the wallet signs with it.
+    refused->types.clear();
+    BOOST_REQUIRE(wallet->WriteToBLSWallet(sk.ToString()));
+    BOOST_CHECK(Signs(*wallet, held));
+    BOOST_CHECK(wallet->GetBLSSigningProvider().GetKey(pubkey.GetID(), secret));
+    BOOST_CHECK(wallet->GetBLSAddresses() == addresses);
+    CPubKey stored_pubkey;
+    std::vector<unsigned char> crypted;
+    BOOST_CHECK(WalletBatch(wallet->GetDatabase()).ReadCryptedBLSKey(1, stored_pubkey, crypted));
+    BOOST_CHECK(stored_pubkey == pubkey);
+    BOOST_REQUIRE(wallet->Lock());
+    BOOST_REQUIRE(wallet->Unlock(passphrase));
+    BOOST_CHECK(Signs(*wallet, held));
+    BOOST_CHECK(Signs(*wallet, first));
+}
+
+// A wallet made without private keys took a BLS secret key all the same: `bls generate` saved one in it, and a
+// legacy one that paid a BLS address made one for its change.
+BOOST_AUTO_TEST_CASE(a_wallet_without_private_keys_takes_no_bls_key)
+{
+    for (const bool descriptors : {false, true}) {
+        const std::string kind{descriptors ? "descriptor" : "legacy"};
+        auto wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "bls-no-private-keys-" + kind, CreateMockWalletDatabase());
+        wallet->LoadWallet();
+        {
+            LOCK(wallet->cs_wallet);
+            wallet->SetWalletFlag(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+            if (descriptors) {
+                wallet->SetWalletFlag(WALLET_FLAG_DESCRIPTORS);
+            } else {
+                wallet->SetupLegacyScriptPubKeyMan();
+            }
+        }
+        CBLSSecretKey sk;
+        sk.MakeNewKey();
+        const std::map<unsigned int, std::string> no_addresses;
+        BOOST_CHECK_MESSAGE(!wallet->WriteToBLSWallet(sk.ToString()), kind << ": the key was written");
+        BOOST_CHECK_MESSAGE(wallet->GenerateNewBLSChangeAddress().empty(), kind << ": a change key was made");
+        CheckNotHeld(*wallet, no_addresses, PubKeyOf(sk), 0, kind);
+        BOOST_REQUIRE(wallet->BLSWalletInit());
+        CheckNotHeld(*wallet, no_addresses, PubKeyOf(sk), 0, kind + ", after the records are read again");
     }
 }
 

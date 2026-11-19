@@ -15,13 +15,15 @@ What is checked:
   change pays an ordinary address of its own, and no BLS key is added;
 - a legacy wallet still sends that change to a new BLS key, which it lists and counts;
 - a transaction with a 48-byte data carrier output, one that ends in the byte of OP_CHECKSIG among them, takes ordinary
-  change in both kinds of wallet and adds no BLS key.
+  change in both kinds of wallet and adds no BLS key;
+- a legacy wallet made without private keys makes no BLS key for its change: a payment that leaves change is refused
+  until a change address is named, and one that leaves none is funded without one.
 """
 
 from decimal import Decimal
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal
+from test_framework.util import assert_equal, assert_raises_rpc_error
 
 # Data carrier payloads whose output script is 50 bytes long, the length of a BLS one: OP_RETURN, a push of 48, and 48
 # bytes. The second ends in 0xac, OP_CHECKSIG, as a BLS script does.
@@ -32,6 +34,8 @@ class WalletBLSChangeTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
+        # The default, named: the last case's amounts are worked out from it.
+        self.extra_args = [["-discardfee=0.0001"]]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -103,6 +107,49 @@ class WalletBLSChangeTest(BitcoinTestFramework):
                 assert_equal(change["type"], "pubkeyhash")
                 assert wallet.getaddressinfo(change["address"])["ismine"]
                 assert_equal(len(wallet.listblsaddresses()), keys_before)
+
+        self.log.info("A legacy wallet without private keys makes no BLS key for its change")
+        node.createwallet(wallet_name="nokeys", descriptors=False, disable_private_keys=True)
+        nokeys = node.get_wallet_rpc("nokeys")
+        watched = funder.getnewaddress()
+        nokeys.importpubkey(funder.getaddressinfo(watched)["pubkey"])
+        funder.sendtoaddress(watched, Decimal("100"))
+        self.confirm(mine_to)
+        assert_equal(nokeys.getbalance(), Decimal("100"))
+        outputs = [{bls_address: Decimal("10")}]
+        assert_raises_rpc_error(-4, "Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.",
+                                nokeys.walletcreatefundedpsbt, [], outputs)
+        assert_equal(nokeys.listblsaddresses(), {})
+        # With a change address named, the same payment is funded, and still no BLS key is made.
+        funded = nokeys.walletcreatefundedpsbt([], outputs, 0, {"changeAddress": watched})
+        assert funded["changepos"] >= 0
+        tx = nokeys.decodepsbt(funded["psbt"])["tx"]
+        assert_equal(tx["vout"][funded["changepos"]]["scriptPubKey"]["address"], watched)
+        assert_equal(nokeys.listblsaddresses(), {})
+        # A payment that leaves no change needs no change address: the whole coin, the fee taken from the amount.
+        whole = nokeys.walletcreatefundedpsbt([], [{bls_address: Decimal("100")}], 0, {"subtractFeeFromOutputs": [0]})
+        assert_equal(whole["changepos"], -1)
+        tx = nokeys.decodepsbt(whole["psbt"])["tx"]
+        assert_equal(len(tx["vout"]), 1)
+        assert_equal(tx["vout"][0]["scriptPubKey"]["hex"], bls_script)
+        assert_equal(tx["vout"][0]["value"], Decimal("100") - whole["fee"])
+        assert_equal(nokeys.listblsaddresses(), {})
+        # A payment that leaves too little for a change output: what counts as too little is measured with a change
+        # output of a BLS address's size, as in a wallet that can make one, and the rest goes to the fee. At 1 duff
+        # per byte and the default discard rate (10 duffs per byte) 1850 duffs are left: a change output to a BLS
+        # address (59 bytes) would hold 1791, under the 2070 it has to hold; measured with no script (9 bytes) it
+        # would hold 1841, over 1570, and the payment would be refused for the change it does not need.
+        same_shape = nokeys.walletcreatefundedpsbt([], [{bls_address: Decimal("100")}], 0, {"subtractFeeFromOutputs": [0], "fee_rate": 1})
+        left = Decimal("0.00001850")
+        edge = nokeys.walletcreatefundedpsbt([], [{bls_address: Decimal("100") - same_shape["fee"] - left}], 0, {"fee_rate": 1})
+        assert_equal(edge["changepos"], -1)
+        assert_equal(edge["fee"], same_shape["fee"] + left)
+        assert_equal(len(nokeys.decodepsbt(edge["psbt"])["tx"]["vout"]), 1)
+        assert_equal(nokeys.listblsaddresses(), {})
+        # Nor did any of these payments leave a BLS key in the wallet's file: loaded again, it lists none.
+        node.unloadwallet("nokeys")
+        node.loadwallet("nokeys")
+        assert_equal(nokeys.listblsaddresses(), {})
 
 
 if __name__ == '__main__':

@@ -498,6 +498,10 @@ public:
     bool AddBLSKeyPair(CKey& key, CPubKey& pubkey);
     bool AddBLSPubKeyPair(CKey& key, CPubKey& pubkey);
     bool AddBLSEntries(CPubKey& pubkey, CKey& key);
+    //! How many BLS secrets and public keys the key store holds, for RemoveBLSEntriesAfter.
+    std::pair<size_t, size_t> CountBLSEntries() const;
+    //! Drop the BLS secrets and public keys added since CountBLSEntries gave `counts`: the last ones (no new secure key buffer).
+    void RemoveBLSEntriesAfter(const std::pair<size_t, size_t>& counts);
     //! A BLS key of this wallet by its public key alone: what a locked wallet knows of it.
     bool AddBLSPubKey(const CPubKey& pubkey);
     void ClearBLSEntries();

@@ -1898,9 +1898,10 @@ static RPCHelpMan bls_generate()
     return RPCHelpMan{
         "bls generate",
         "\nGenerates a new BLS secret/public key pair and returns it.\n"
-        "With the wallet built in, it needs a loaded wallet, unlocked if it is encrypted, and also stores the\n"
-        "new secret key in that wallet's BLS key store. A descriptor wallet stores it too, but does not count\n"
-        "payments to its BLS address as its own (see listblsaddresses).\n"
+        "With the wallet built in, it needs a loaded wallet that holds private keys (not one created with\n"
+        "disable_private_keys), unlocked if it is encrypted, and also stores the new secret key in that wallet's\n"
+        "BLS key store. A descriptor wallet stores it too, but does not count payments to its BLS address as its\n"
+        "own (see listblsaddresses).\n"
         "The reply shows the secret key: anyone who has it can sign as the masternode operator, so keep it private.\n",
         {
             {"legacy", RPCArg::Type::BOOL, RPCArg::Default{false}, "Show the public key in the legacy BLS scheme, which only the\n"
@@ -1919,6 +1920,11 @@ static RPCHelpMan bls_generate()
 #ifdef ENABLE_WALLET
             std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
             if (!pwallet) return NullUniValue;
+
+            // The key made here is saved in the wallet, which one made without private keys does not allow.
+            if (pwallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
+                throw JSONRPCError(RPC_WALLET_ERROR, "Cannot generate a BLS key in a wallet with private keys disabled");
+            }
 
             EnsureWalletIsUnlocked(*pwallet);
 #endif

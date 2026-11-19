@@ -1890,6 +1890,23 @@ bool LegacyScriptPubKeyMan::AddBLSEntries(CPubKey& pubkey, CKey& key)
     return true;
 }
 
+std::pair<size_t, size_t> LegacyScriptPubKeyMan::CountBLSEntries() const
+{
+    LOCK(cs_KeyStore);
+    return {blsKeyVector.size(), blsPubKeyVector.size()};
+}
+
+void LegacyScriptPubKeyMan::RemoveBLSEntriesAfter(const std::pair<size_t, size_t>& counts)
+{
+    LOCK(cs_KeyStore);
+    while (blsKeyVector.size() > counts.first) {
+        blsKeyVector.pop_back();
+    }
+    while (blsPubKeyVector.size() > counts.second) {
+        blsPubKeyVector.pop_back();
+    }
+}
+
 bool LegacyScriptPubKeyMan::AddBLSPubKey(const CPubKey& pubkey)
 {
     LOCK(cs_KeyStore);
