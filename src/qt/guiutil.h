@@ -415,7 +415,11 @@ namespace GUIUtil
     /** set/get normal font weight: GUIUtil::fontWeightNormal */
     QFont::Weight getFontWeightNormalDefault();
     QFont::Weight getFontWeightNormal();
-    void setFontWeightNormal(QFont::Weight weight);
+    void setFontWeightNormal(QFont::Weight weight, bool explicit_selection = true);
+    /** Whether the normal weight was chosen, rather than left at the default. */
+    bool hasExplicitFontWeightNormal();
+    /** The normal weight text is drawn with: Regular in Abyss while the default was not chosen, else the weight. */
+    QFont::Weight getPresentationFontWeightNormal();
 
     /** set/get bold font weight: GUIUtil::fontWeightBold */
     QFont::Weight getFontWeightBoldDefault();

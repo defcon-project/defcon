@@ -41,7 +41,8 @@ private Q_SLOTS:
     void updateTheme(const QString& toTheme = QString());
     void updateFontFamily(int index);
     void updateFontScale(int nScale);
-    void updateFontWeightNormal(int nValue, bool fForce = false);
+    //! fChosen: whether the weight is a choice (the slider moved), rather than set from the settings or reset.
+    void updateFontWeightNormal(int nValue, bool fForce = false, bool fChosen = true);
     void updateFontWeightBold(int nValue, bool fForce = false);
 
 private:
@@ -49,15 +50,27 @@ private:
     QDataWidgetMapper* mapper;
     OptionsModel* model;
     bool fAcceptChanges{false};
+    //! Set while the mapper fills the widgets from the settings: what the sliders get then is no choice.
+    bool m_populating{false};
+    //! Whether the normal slider shows the Regular Abyss draws in place of the weight held (showFontWeightNormal).
+    bool m_shows_stand_in{false};
+    //! The normal slider's own value, kept aside while it shows the Regular.
+    int m_normal_slider_value{0};
     QString prevTheme{GUIUtil::getActiveTheme()};
     int prevScale{GUIUtil::getFontScale()};
     GUIUtil::FontFamily prevFontFamily{GUIUtil::getFontFamily()};
     bool prevFontFamilyExplicit{GUIUtil::hasExplicitFontFamily()};
     QFont::Weight prevWeightNormal{GUIUtil::getFontWeightNormal()};
+    bool prevWeightNormalExplicit{GUIUtil::hasExplicitFontWeightNormal()};
     QFont::Weight prevWeightBold{GUIUtil::getFontWeightBold()};
     bool prevAnimateNightSky{true};
 
     void updateWeightSlider(bool fForce = false);
+    //! While no normal weight was chosen, the normal slider shows the Regular Abyss draws in place of the weight held,
+    //! without changing the weight, and keeps its own value aside; otherwise it holds its own value.
+    void showFontWeightNormal();
+    //! Gives the normal slider its own value back if it shows the Regular in its place.
+    void putBackFontWeightNormal();
 };
 
 #endif // BITCOIN_QT_APPEARANCEWIDGET_H

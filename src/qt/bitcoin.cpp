@@ -649,6 +649,7 @@ int GuiMain(int argc, char* argv[])
     }
     // Load GUI settings from QSettings
     const bool font_family_argument = gArgs.IsArgSet("-font-family");
+    const bool font_weight_normal_argument = gArgs.IsArgSet("-font-weight-normal");
     app.createOptionsModel(gArgs.GetBoolArg("-resetguisettings", false));
     // Validate/set font family
     if (gArgs.IsArgSet("-font-family")) {
@@ -671,7 +672,7 @@ int GuiMain(int argc, char* argv[])
                                   QObject::tr("Error: Specified font-weight-normal invalid. Valid range %1 to %2.").arg(0).arg(8));
             return EXIT_FAILURE;
         }
-        GUIUtil::setFontWeightNormal(weight);
+        GUIUtil::setFontWeightNormal(weight, font_weight_normal_argument || GUIUtil::hasExplicitFontWeightNormal());
     }
     // Validate/set bold font weight
     if (gArgs.IsArgSet("-font-weight-bold")) {
