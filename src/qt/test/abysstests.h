@@ -26,6 +26,7 @@ private Q_SLOTS:
     void cliFontDoesNotPersist_data();
     void cliFontDoesNotPersist();
     void appearanceFonts();
+    void abyssNormalWeight();
     void cssStates();
     void buttonFocusVisible_data();
     void buttonFocusVisible();

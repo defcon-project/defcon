@@ -119,16 +119,29 @@ void OptionsModel::Init(bool resetSettings)
 
     if (!settings.contains("fontWeightNormal"))
         settings.setValue("fontWeightNormal", GUIUtil::weightToArg(GUIUtil::getFontWeightNormalDefault()));
-    if (gArgs.SoftSetArg("-font-weight-normal", settings.value("fontWeightNormal").toString().toStdString())) {
+    m_font_weight_normal_overridden = !gArgs.SoftSetArg("-font-weight-normal", settings.value("fontWeightNormal").toString().toStdString());
+    if (!m_font_weight_normal_overridden) {
         if (GUIUtil::fontsLoaded()) {
+            const int stored_weight = settings.value("fontWeightNormal").toInt();
             QFont::Weight weight;
-            GUIUtil::weightFromArg(settings.value("fontWeightNormal").toInt(), weight);
+            GUIUtil::weightFromArg(stored_weight, weight);
+            // Every start writes the weight (above), so the stored default
+            // alone does not say it was chosen; a separate marker does, as for
+            // the family. Older settings have none: a stored weight other than
+            // the default counts as chosen, judged by the weight as it was
+            // stored, before the fallback below rewrites it.
+            const bool explicit_weight = settings.value("fontWeightNormalExplicit",
+                stored_weight != GUIUtil::weightToArg(GUIUtil::getFontWeightNormalDefault())).toBool();
             if (!GUIUtil::isSupportedWeight(weight)) {
                 // If the currently selected weight is not supported fallback to the lightest weight for normal font.
                 weight = GUIUtil::getSupportedWeights().front();
                 settings.setValue("fontWeightNormal", GUIUtil::weightToArg(weight));
+                // The rewritten weight no longer says whether one was chosen: the marker does from now on.
+                if (!settings.contains("fontWeightNormalExplicit")) {
+                    settings.setValue("fontWeightNormalExplicit", explicit_weight);
+                }
             }
-            GUIUtil::setFontWeightNormal(weight);
+            GUIUtil::setFontWeightNormal(weight, explicit_weight);
         }
     } else {
         addOverriddenOption("-font-weight-normal");
@@ -786,6 +799,12 @@ bool OptionsModel::setData(const QModelIndex & index, const QVariant & value, in
             int nWeight = GUIUtil::weightToArg(GUIUtil::supportedWeightFromIndex(value.toInt()));
             if (settings.value("fontWeightNormal") != nWeight) {
                 settings.setValue("fontWeightNormal", nWeight);
+            }
+            // The choice, unless a -font-weight-normal argument set the weight:
+            // it lasts for this launch, and its intent is not kept as a choice
+            // (as for the family).
+            if (!m_font_weight_normal_overridden) {
+                settings.setValue("fontWeightNormalExplicit", GUIUtil::hasExplicitFontWeightNormal());
             }
             break;
         }

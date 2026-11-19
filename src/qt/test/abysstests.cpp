@@ -114,6 +114,7 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
+#include <QFontInfo>
 #include <QFontMetricsF>
 #include <QFormLayout>
 #include <QFrame>
@@ -133,6 +134,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QScreen>
+#include <QSlider>
 #include <QSpinBox>
 #include <QProgressBar>
 #include <QPushButton>
@@ -234,6 +236,23 @@ void Settle()
 {
     // Deliver coalesced font/layout callbacks and the resulting layout requests.
     for (int i = 0; i < 8; ++i) QApplication::processEvents();
+}
+//! Whether `font` draws `weight` as GUIUtil asks for it. The macOS branch of getFont picks a bundled family's face by
+//! its style name and sets no weight: there the family and the face the font resolves to are compared with those of
+//! GUIUtil's font for the weight.
+bool DrawsWeight(const QFont& font, QFont::Weight weight)
+{
+#ifdef Q_OS_MAC
+    const QFontInfo info(font), face(GUIUtil::getFont(weight));
+    return info.family() == face.family() && info.styleName() == face.styleName();
+#else
+    return font.weight() == int(weight);
+#endif
+}
+//! Whether the application font draws `weight`.
+bool AppFontWeightIs(QFont::Weight weight)
+{
+    return DrawsWeight(qApp->font(), weight);
 }
 QRect OnPage(QWidget& page, QWidget* child)
 {
@@ -1146,6 +1165,511 @@ void AbyssTests::appearanceFonts()
         QCOMPARE(label.font().pointSizeF(), double(GUIUtil::getScaledFontSize(18)));
         QCOMPARE(label.font().weight(), int(GUIUtil::getFontWeightBold()));
     }
+}
+
+// Abyss draws normal text Regular while no normal weight was chosen: the Light the other themes start with is thin
+// on its dark background. The stored weight stays the default, the other themes draw it, a chosen weight (the Light
+// too) is drawn in every theme, and the Appearance slider shows the weight drawn. A -font-weight-normal argument is
+// drawn as given and is not kept as a choice, as for the family.
+void AbyssTests::abyssNormalWeight()
+{
+    if (!GUIUtil::fontsLoaded()) QSKIP("Font preferences require minimal:enable_fonts or a native platform");
+    RestoreAppearance restore;
+    const QFont::Weight old_weight = GUIUtil::getFontWeightNormal();
+    const bool old_explicit = GUIUtil::hasExplicitFontWeightNormal();
+    const bool had_arg = gArgs.IsArgSet("-font-weight-normal");
+    const std::string old_arg = gArgs.GetArg("-font-weight-normal", "");
+    const bool had_bold_arg = gArgs.IsArgSet("-font-weight-bold");
+    const std::string old_bold_arg = gArgs.GetArg("-font-weight-bold", "");
+    // Each family's weights, put back into that family: the dialog's family change resets the new family's weights,
+    // and a weight set while another family is active lands in that one (review r1, R10).
+    const GUIUtil::FontFamily old_family = GUIUtil::getFontFamily();
+    const bool old_family_explicit = GUIUtil::hasExplicitFontFamily();
+    std::vector<std::tuple<GUIUtil::FontFamily, QFont::Weight, QFont::Weight>> old_family_weights;
+    for (const auto family : {GUIUtil::FontFamily::SystemDefault, GUIUtil::FontFamily::Montserrat, GUIUtil::FontFamily::Roboto}) {
+        GUIUtil::setFontFamily(family, old_family_explicit);
+        old_family_weights.emplace_back(family, GUIUtil::getFontWeightNormal(), GUIUtil::getFontWeightBold());
+    }
+    GUIUtil::setFontFamily(old_family, old_family_explicit);
+    QSettings settings;
+    const std::vector<std::pair<QString, QVariant>> old_settings{
+        {"fontWeightNormal", settings.value("fontWeightNormal")}, {"fontWeightNormalExplicit", settings.value("fontWeightNormalExplicit")},
+        {"fontWeightBold", settings.value("fontWeightBold")},
+        {"fontFamily", settings.value("fontFamily")}, {"fontFamilyExplicit", settings.value("fontFamilyExplicit")}};
+    const auto restore_weight = interfaces::MakeHandler([&] {
+        if (had_arg) gArgs.ForceSetArg("-font-weight-normal", old_arg); else gArgs.ForceRemoveArg("font-weight-normal");
+        if (had_bold_arg) gArgs.ForceSetArg("-font-weight-bold", old_bold_arg); else gArgs.ForceRemoveArg("font-weight-bold");
+        for (const auto& [key, value] : old_settings) {
+            if (value.isValid()) settings.setValue(key, value); else settings.remove(key);
+        }
+        for (const auto& [family, normal, bold] : old_family_weights) {
+            GUIUtil::setFontFamily(family, old_family_explicit);
+            GUIUtil::setFontWeightNormal(normal, old_explicit);
+            GUIUtil::setFontWeightBold(bold);
+        }
+        GUIUtil::setFontFamily(old_family, old_family_explicit);
+        GUIUtil::setFontWeightNormal(old_weight, old_explicit);
+    });
+    const QFont::Weight light = GUIUtil::getFontWeightNormalDefault();
+    // Abyss draws Roboto while no family was chosen; Roboto has a Regular face.
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+    const auto shown = [](AppearanceWidget& appearance) {
+        auto* slider = appearance.findChild<QSlider*>("fontWeightNormalSlider");
+        return slider ? GUIUtil::supportedWeightFromIndex(slider->value()) : QFont::Thin;
+    };
+    const auto drawn = [](const char* when, QFont::Weight weight) {
+        QLabel label("Normal text");
+        GUIUtil::setFont({&label}, GUIUtil::FontWeight::Normal, 14);
+        GUIUtil::updateFonts();
+        QVERIFY2(DrawsWeight(GUIUtil::getFontNormal(), weight), when);
+        // The application font follows the weight where a family is drawn: in Abyss Roboto. The classic themes draw
+        // the system font there while no family was chosen, at its own weight, as on the base.
+        if (GUIUtil::isDefconDarkTheme()) {
+            QVERIFY2(AppFontWeightIs(weight), when);
+            // A bold font made from it, as the command browser's group rows are, is the bold face (review r6, R19).
+            QFont bold = qApp->font();
+            bold.setBold(true);
+            QVERIFY2(DrawsWeight(bold, QFont::Bold), when);
+        }
+        QVERIFY2(DrawsWeight(label.font(), weight), when);
+    };
+    const auto open = [&settings](int stored, int marker) {
+        // No family chosen, so that Abyss draws Roboto, whatever earlier cases stored.
+        settings.setValue("fontFamily", "SystemDefault");
+        settings.setValue("fontFamilyExplicit", false);
+        settings.setValue("fontWeightNormal", stored);
+        if (marker < 0) settings.remove("fontWeightNormalExplicit"); else settings.setValue("fontWeightNormalExplicit", bool(marker));
+        // A bold weight with room for the Regular under it, whatever earlier cases stored (review r2, R10).
+        settings.setValue("fontWeightBold", GUIUtil::weightToArg(GUIUtil::getSupportedFontWeightBoldDefault()));
+        // Every OptionsModel sets the arguments from the settings when none is given; a test process makes many.
+        gArgs.ForceRemoveArg("font-weight-normal");
+        gArgs.ForceRemoveArg("font-weight-bold");
+    };
+
+    // (1) Abyss, the default not chosen: drawn Regular; the weight the wallet holds is the default.
+    Theme("Abyss");
+    GUIUtil::setFontWeightNormal(light, false);
+    GUIUtil::loadTheme(true);
+    QCOMPARE(GUIUtil::getPresentationFontWeightNormal(), QFont::Normal);
+    drawn("Abyss, not chosen", QFont::Normal);
+    QCOMPARE(GUIUtil::getFontWeightNormal(), light);
+    // (3) The Light chosen: drawn Light in Abyss too.
+    GUIUtil::setFontWeightNormal(light, true);
+    GUIUtil::loadTheme(true);
+    drawn("Abyss, Light chosen", light);
+    // (4) Another theme, the default not chosen: drawn as stored. Also with one of the wallet's own families, which
+    // Abyss would draw Regular: the system font is never swapped (review r1, R6), so it alone would not show that the
+    // swap is Abyss's.
+    GUIUtil::setFontWeightNormal(light, false);
+    Theme("Light");
+    QCOMPARE(GUIUtil::getPresentationFontWeightNormal(), light);
+    drawn("Light theme, not chosen", light);
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::Montserrat, true);
+    GUIUtil::setFontWeightNormal(light, false);
+    QCOMPARE(GUIUtil::getPresentationFontWeightNormal(), light);
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+
+    // (11) The system font chosen as the family: drawn at the weight held in Abyss too. The system font is drawn at its
+    // own weight, so the Regular is for the wallet's own families (review r1, R6).
+    Theme("Abyss");
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, true);
+    GUIUtil::setFontWeightNormal(light, false);
+    QVERIFY(GUIUtil::isDefconDarkTheme());
+    QCOMPARE(GUIUtil::getPresentationFontWeightNormal(), light);
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::Roboto, true);
+    GUIUtil::setFontWeightNormal(light, false);
+    QCOMPARE(GUIUtil::getPresentationFontWeightNormal(), QFont::Normal);
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+
+    // The slider parts below move between the Light and the Regular on the system font's slider (the family selected
+    // here): a system font that offers neither is no failure of the change, and the parts above have run (review r2
+    // and r6, R9).
+    if (!GUIUtil::isSupportedWeight(light) || !GUIUtil::isSupportedWeight(QFont::Normal)) {
+        QSKIP("The system font's slider offers no Light and Regular to move between; the slider parts are left out");
+    }
+
+    // (2), (5) The settings as every start leaves them (the default stored, no marker): not chosen. The slider shows
+    // the Regular drawn in Abyss and the weight stored in Light, also after a theme switch in the dialog; an OK
+    // that touched nothing stores no weight and no choice.
+    Theme("Abyss");
+    open(GUIUtil::weightToArg(light), -1);
+    {
+        OptionsModel options;
+        QVERIFY(!options.getOverriddenByCommandLine().contains("-font-weight-normal"));
+        QVERIFY(!GUIUtil::hasExplicitFontWeightNormal());
+        AppearanceWidget appearance;
+        appearance.setModel(&options);
+        QCOMPARE(shown(appearance), QFont::Normal);
+        auto* theme = appearance.findChild<QComboBox*>("theme");
+        QVERIFY(theme);
+        theme->setCurrentText("Light");
+        QCOMPARE(shown(appearance), light);
+        drawn("Light theme in the dialog", light);
+        theme->setCurrentText("Abyss");
+        QCOMPARE(shown(appearance), QFont::Normal);
+        drawn("Abyss again in the dialog", QFont::Normal);
+        QVERIFY(!GUIUtil::hasExplicitFontWeightNormal());
+        appearance.accept();
+    }
+    QCOMPARE(settings.value("fontWeightNormal").toInt(), GUIUtil::weightToArg(light));
+    QCOMPARE(settings.value("fontWeightNormalExplicit").toBool(), false);
+    QVERIFY(!GUIUtil::hasExplicitFontWeightNormal());
+    QCOMPARE(GUIUtil::getPresentationFontWeightNormal(), QFont::Normal);
+
+    // (6) Moving the slider chooses: to the Light, Cancel puts back the weight, the marker and the Regular drawn;
+    // to the Light, OK stores the weight and the choice, and the Light is drawn.
+    for (const bool accepted : {false, true}) {
+        open(GUIUtil::weightToArg(light), -1);
+        OptionsModel options;
+        {
+            AppearanceWidget appearance;
+            appearance.setModel(&options);
+            auto* slider = appearance.findChild<QSlider*>("fontWeightNormalSlider");
+            QVERIFY(slider);
+            slider->setValue(GUIUtil::supportedWeightToIndex(light));
+            QVERIFY(GUIUtil::hasExplicitFontWeightNormal());
+            QCOMPARE(GUIUtil::getPresentationFontWeightNormal(), light);
+            if (accepted) appearance.accept();
+        }
+        QCOMPARE(GUIUtil::hasExplicitFontWeightNormal(), accepted);
+        QCOMPARE(settings.value("fontWeightNormal").toInt(), GUIUtil::weightToArg(light));
+        QCOMPARE(settings.value("fontWeightNormalExplicit").toBool(), accepted);
+        QCOMPARE(GUIUtil::getPresentationFontWeightNormal(), accepted ? light : QFont::Normal);
+        // The application font follows, without a theme reload (review r1, R2).
+        QVERIFY2(AppFontWeightIs(accepted ? light : QFont::Normal), "(6) application font");
+    }
+    // The stored choice holds at the next start.
+    open(GUIUtil::weightToArg(light), 1);
+    {
+        OptionsModel next_launch;
+        QVERIFY(GUIUtil::hasExplicitFontWeightNormal());
+        QCOMPARE(GUIUtil::getPresentationFontWeightNormal(), light);
+    }
+
+    // (6b) Two moves in a row, from the Regular shown to a heavier weight and then to the Light: the application font
+    // keeps the weight it was set from, the Light, as on the base, and draws that Light once a weight is chosen,
+    // without a theme reload (review r2, R2; review r5, R2: it is set where the base sets it, from the weight held then).
+    // (6c) A heavier weight given as an argument draws the application font; opening the dialog, which fills the
+    // slider with the stored Regular (the weight held follows, as before), and an OK that touched nothing leave the
+    // application font as it was (review r4, R2); so does a second dialog with the Light chosen, and Cancel (review r5,
+    // R17). Both need a third weight on the slider, above the Regular; a system font without one leaves them out
+    // (review r4, R9).
+    const int heavier = GUIUtil::supportedWeightToIndex(QFont::Normal) + 1;
+    if (heavier >= int(GUIUtil::getSupportedWeights().size())) {
+        qInfo("abyssNormalWeight (6b), (6c): the system font's slider offers no weight above the Regular; left out");
+    } else {
+        const QFont::Weight heavy = GUIUtil::supportedWeightFromIndex(heavier);
+        open(GUIUtil::weightToArg(light), -1);
+        settings.setValue("fontWeightBold", GUIUtil::weightToArg(GUIUtil::getSupportedWeights().back()));
+        {
+            OptionsModel options;
+            // As a start sets it: from the Light held, the Regular standing in.
+            GUIUtil::loadTheme(true);
+            QVERIFY2(AppFontWeightIs(QFont::Normal), "(6b) at the start");
+            AppearanceWidget appearance;
+            appearance.setModel(&options);
+            auto* slider = appearance.findChild<QSlider*>("fontWeightNormalSlider");
+            QVERIFY(slider);
+            QCOMPARE(shown(appearance), QFont::Normal);
+            slider->setValue(heavier);
+            QVERIFY2(AppFontWeightIs(light), "(6b) after the first move");
+            slider->setValue(GUIUtil::supportedWeightToIndex(light));
+            QVERIFY2(AppFontWeightIs(light), "(6b) after the second move");
+            appearance.accept();
+        }
+        QVERIFY2(AppFontWeightIs(light), "(6b) after OK");
+        QCOMPARE(settings.value("fontWeightNormal").toInt(), GUIUtil::weightToArg(light));
+
+        open(GUIUtil::weightToArg(QFont::Normal), -1);
+        settings.setValue("fontWeightBold", GUIUtil::weightToArg(GUIUtil::getSupportedWeights().back()));
+        gArgs.ForceSetArg("-font-weight-normal", strprintf("%d", GUIUtil::weightToArg(heavy)));
+        {
+            OptionsModel options;
+            GUIUtil::setFontWeightNormal(heavy, true);
+            GUIUtil::loadTheme(true);
+            QVERIFY2(AppFontWeightIs(heavy), "(6c) the argument's weight");
+            AppearanceWidget appearance;
+            appearance.setModel(&options);
+            QVERIFY2(AppFontWeightIs(heavy), "(6c) after opening the dialog");
+            appearance.accept();
+        }
+        QVERIFY2(AppFontWeightIs(heavy), "(6c) after OK");
+        {
+            OptionsModel options;
+            AppearanceWidget appearance;
+            appearance.setModel(&options);
+            auto* slider = appearance.findChild<QSlider*>("fontWeightNormalSlider");
+            QVERIFY(slider);
+            slider->setValue(GUIUtil::supportedWeightToIndex(light));
+            QVERIFY2(AppFontWeightIs(heavy), "(6c) the Light chosen in a second dialog");
+        }
+        QVERIFY2(AppFontWeightIs(heavy), "(6c) after Cancel in a second dialog");
+        gArgs.ForceRemoveArg("font-weight-normal");
+    }
+
+    // (7) Another family in the dialog resets the weight to the family's default: not a choice, as it was not one
+    // before the change; Cancel puts back the choice there was.
+    open(GUIUtil::weightToArg(light), 1);
+    {
+        OptionsModel options;
+        QVERIFY(GUIUtil::hasExplicitFontWeightNormal());
+        AppearanceWidget appearance;
+        appearance.setModel(&options);
+        auto* family = appearance.findChild<QComboBox*>("fontFamily");
+        QVERIFY(family);
+        const int montserrat = family->findData(static_cast<int>(GUIUtil::FontFamily::Montserrat));
+        const int roboto = family->findData(static_cast<int>(GUIUtil::FontFamily::Roboto));
+        family->setCurrentIndex(family->currentIndex() == montserrat ? roboto : montserrat);
+        QVERIFY(!GUIUtil::hasExplicitFontWeightNormal());
+    }
+    QVERIFY(GUIUtil::hasExplicitFontWeightNormal());
+    // The application font is the Light chosen again, though the family was put back first (review r1, R2).
+    QVERIFY2(AppFontWeightIs(light), "(7) application font after Cancel");
+
+    // (7b) A family chosen, no weight: the dialog sets a heavier weight and the Light theme, then Cancel. Cancel puts
+    // the theme back first, which sets the application font from the heavier weight held then, and it keeps that, as
+    // on the base; the weight put back is the default, not chosen, so Abyss draws the Regular, and a plain label (not
+    // registered with GUIUtil::setFont) too. Where the application font names its face, as on macOS, the plain label
+    // takes the weight alone while the Regular stands in (review r7, R20); the other platforms set the application
+    // font by its weight, so the test names a face for it.
+    {
+        open(GUIUtil::weightToArg(light), -1);
+        settings.setValue("fontFamily", "Montserrat");
+        settings.setValue("fontFamilyExplicit", true);
+        GUIUtil::setFontFamily(GUIUtil::FontFamily::Montserrat, true);
+        const int heavier_index = GUIUtil::supportedWeightToIndex(QFont::Normal) + 1;
+        if (GUIUtil::supportedWeightToIndex(QFont::Normal) < 0 || heavier_index >= int(GUIUtil::getSupportedWeights().size())) {
+            qInfo("abyssNormalWeight (7b): Montserrat's slider offers no weight above the Regular; left out");
+        } else {
+            const QFont::Weight heavier_weight = GUIUtil::supportedWeightFromIndex(heavier_index);
+            settings.setValue("fontWeightBold", GUIUtil::weightToArg(GUIUtil::getSupportedWeights().back()));
+            QLabel plain("Plain text");
+            {
+                OptionsModel options;
+                QVERIFY(GUIUtil::hasExplicitFontFamily());
+                GUIUtil::setFontWeightNormal(light, false);
+                GUIUtil::loadTheme(true);
+                AppearanceWidget appearance;
+                appearance.setModel(&options);
+                auto* slider = appearance.findChild<QSlider*>("fontWeightNormalSlider");
+                auto* theme = appearance.findChild<QComboBox*>("theme");
+                QVERIFY(slider && theme);
+                slider->setValue(heavier_index);
+                theme->setCurrentText("Light");
+            }
+            QVERIFY(GUIUtil::isDefconDarkTheme());
+            QVERIFY(!GUIUtil::hasExplicitFontWeightNormal());
+            QCOMPARE(GUIUtil::getPresentationFontWeightNormal(), QFont::Normal);
+            QVERIFY2(AppFontWeightIs(heavier_weight), "(7b) the application font keeps the heavier weight");
+            QVERIFY2(DrawsWeight(plain.font(), QFont::Normal), "(7b) a plain label");
+            const QFont app_font = qApp->font();
+            QFont named = app_font;
+            named.setStyleName("Medium");
+            qApp->setFont(named);
+            GUIUtil::updateFonts();
+            QVERIFY2(plain.font().styleName().isEmpty(), "(7b) a plain label, the application font naming its face");
+            qApp->setFont(app_font);
+        }
+        GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+    }
+
+    // (8) A -font-weight-normal argument: drawn as given in Abyss, and not kept as a choice by an OK.
+    open(GUIUtil::weightToArg(light), -1);
+    gArgs.ForceSetArg("-font-weight-normal", strprintf("%d", GUIUtil::weightToArg(light)));
+    {
+        OptionsModel options;
+        QVERIFY(options.getOverriddenByCommandLine().contains("-font-weight-normal"));
+        // GuiMain, after the options model: the argument is a choice for this launch.
+        GUIUtil::setFontWeightNormal(light, true);
+        GUIUtil::loadTheme(true);
+        drawn("Abyss, weight given as an argument", light);
+        AppearanceWidget appearance;
+        appearance.setModel(&options);
+        appearance.accept();
+    }
+    QVERIFY(!settings.contains("fontWeightNormalExplicit"));
+    QCOMPARE(settings.value("fontWeightNormal").toInt(), GUIUtil::weightToArg(light));
+
+    // (8b) With the argument, another family in the dialog, then OK: the slider shows the Regular drawn, and what is
+    // stored is the family's default weight the wallet holds, as on the base; the next start without the argument
+    // holds that weight (review r1, R1).
+    open(GUIUtil::weightToArg(light), -1);
+    gArgs.ForceSetArg("-font-weight-normal", strprintf("%d", GUIUtil::weightToArg(light)));
+    QFont::Weight held = QFont::Thin;
+    {
+        OptionsModel options;
+        GUIUtil::setFontWeightNormal(light, true);
+        AppearanceWidget appearance;
+        appearance.setModel(&options);
+        auto* family = appearance.findChild<QComboBox*>("fontFamily");
+        QVERIFY(family);
+        family->setCurrentIndex(family->findData(static_cast<int>(GUIUtil::FontFamily::Montserrat)));
+        held = GUIUtil::getFontWeightNormal();
+        QVERIFY(held != QFont::Normal);
+        QCOMPARE(shown(appearance), QFont::Normal);
+        appearance.accept();
+    }
+    QCOMPARE(settings.value("fontWeightNormal").toInt(), GUIUtil::weightToArg(held));
+    gArgs.ForceRemoveArg("font-weight-normal");
+    {
+        OptionsModel next_launch;
+        QCOMPARE(GUIUtil::weightToArg(GUIUtil::getFontWeightNormal()), GUIUtil::weightToArg(held));
+    }
+
+    // (8c) With the argument, in a classic theme, an OK that touched nothing: the slider's weight is stored, as on the
+    // base, though the weight held is the argument's (the slider filled with the value it already had raises no
+    // change), and the next start without the argument holds it (review r2, R1).
+    Theme("Light");
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+    const QFont::Weight first = GUIUtil::getSupportedWeights().front();
+    open(GUIUtil::weightToArg(first), -1);
+    gArgs.ForceSetArg("-font-weight-normal", strprintf("%d", GUIUtil::weightToArg(QFont::Normal)));
+    {
+        OptionsModel options;
+        GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+        GUIUtil::setFontWeightNormal(QFont::Normal, true);
+        AppearanceWidget appearance;
+        appearance.setModel(&options);
+        QCOMPARE(shown(appearance), first);
+        appearance.accept();
+    }
+    QCOMPARE(settings.value("fontWeightNormal").toInt(), GUIUtil::weightToArg(first));
+    gArgs.ForceRemoveArg("font-weight-normal");
+    {
+        OptionsModel next_launch;
+        QCOMPARE(GUIUtil::weightToArg(GUIUtil::getFontWeightNormal()), GUIUtil::weightToArg(first));
+    }
+
+    // (8d) In a classic theme no weight stands in: the slider keeps the value the settings filled it with, though the
+    // weight held differs (a start that set another weight, unchosen), and an OK that touched nothing stores that
+    // value, as on the base (review r4, R1). A switch to Abyss in the dialog shows the Regular in its place; an OK
+    // there, or back in the classic theme, stores the slider's own value all the same (review r5, R1).
+    if (first == light) {
+        qInfo("abyssNormalWeight (8d): the slider's first weight is the default; left out");
+    } else {
+        for (const char* path : {"no switch", "OK in Abyss", "Abyss and back"}) {
+            const std::string step{path};
+            Theme("Light");
+            open(GUIUtil::weightToArg(first), -1);
+            {
+                OptionsModel options;
+                GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+                GUIUtil::setFontWeightNormal(light, false);
+                AppearanceWidget appearance;
+                appearance.setModel(&options);
+                QCOMPARE(shown(appearance), first);
+                auto* theme = appearance.findChild<QComboBox*>("theme");
+                QVERIFY(theme);
+                if (step != "no switch") {
+                    theme->setCurrentText("Abyss");
+                    QCOMPARE(shown(appearance), QFont::Normal);
+                }
+                if (step == "Abyss and back") {
+                    theme->setCurrentText("Light");
+                    QCOMPARE(shown(appearance), first);
+                }
+                appearance.accept();
+            }
+            QVERIFY2(settings.value("fontWeightNormal").toInt() == GUIUtil::weightToArg(first), path);
+        }
+    }
+    Theme("Abyss");
+
+    // (9) A bold weight the family's slider does not offer, given as an argument: the dialog resets both weights to the
+    // family's defaults, as on the base, and the normal weight chosen stays chosen through an OK that touched nothing
+    // (review r1, R4). The slider lists the weights whose text width differs from the next lighter one's; a system
+    // font that offers every weight leaves nothing to give, and the part is skipped there (review r2, R9).
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+    QFont::Weight missing = QFont::Normal;
+    for (const QFont::Weight weight : {QFont::Thin, QFont::ExtraLight, QFont::Light, QFont::Medium, QFont::DemiBold,
+                                       QFont::Bold, QFont::ExtraBold, QFont::Black}) {
+        if (!GUIUtil::isSupportedWeight(weight)) {
+            missing = weight;
+            break;
+        }
+    }
+    // The normal weight chosen is not the default, and the application font draws it: the dialog's reset and the
+    // settings filling it leave the application font on it, as on the base (review r5, R2).
+    if (missing == QFont::Normal) {
+        qInfo("abyssNormalWeight (9): the system font's slider offers every weight; the part is skipped");
+    } else {
+        open(GUIUtil::weightToArg(QFont::Normal), 1);
+        {
+            OptionsModel options;
+            QVERIFY(GUIUtil::hasExplicitFontWeightNormal());
+            GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+            GUIUtil::setFontWeightNormal(QFont::Normal, true);
+            gArgs.ForceSetArg("-font-weight-bold", strprintf("%d", GUIUtil::weightToArg(missing)));
+            GUIUtil::setFontWeightBold(missing);
+            GUIUtil::loadTheme(true);
+            QVERIFY2(AppFontWeightIs(QFont::Normal), "(9) before the dialog");
+            AppearanceWidget appearance;
+            QVERIFY(GUIUtil::hasExplicitFontWeightNormal());
+            QVERIFY2(AppFontWeightIs(QFont::Normal), "(9) after the dialog's reset");
+            appearance.setModel(&options);
+            appearance.accept();
+        }
+        QVERIFY(GUIUtil::hasExplicitFontWeightNormal());
+        QCOMPARE(settings.value("fontWeightNormalExplicit").toBool(), true);
+        QVERIFY2(AppFontWeightIs(QFont::Normal), "(9) after OK");
+        gArgs.ForceRemoveArg("font-weight-bold");
+    }
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+
+    // (10) Not chosen, with the bold weight stored at the Light: the dialog cannot show the Regular above it; raised
+    // to the Regular, the bold weight makes room, and the normal slider shows the Regular, the weight and the
+    // choice unchanged (review r1, R5).
+    open(GUIUtil::weightToArg(light), -1);
+    settings.setValue("fontWeightBold", GUIUtil::weightToArg(light));
+    gArgs.ForceRemoveArg("font-weight-bold");
+    {
+        OptionsModel options;
+        AppearanceWidget appearance;
+        appearance.setModel(&options);
+        QCOMPARE(shown(appearance), light);
+        auto* bold = appearance.findChild<QSlider*>("fontWeightBoldSlider");
+        QVERIFY(bold);
+        bold->setValue(GUIUtil::supportedWeightToIndex(QFont::Normal));
+        QCOMPARE(shown(appearance), QFont::Normal);
+        QVERIFY(!GUIUtil::hasExplicitFontWeightNormal());
+        QCOMPARE(GUIUtil::getFontWeightNormal(), light);
+    }
+    // (10b) Not chosen, the Regular shown in place of the Light: the bold slider goes down to the Light, as on the
+    // base, since the normal slider's own value is the Light, and the normal slider shows that again (review r5, R1).
+    open(GUIUtil::weightToArg(light), -1);
+    {
+        OptionsModel options;
+        AppearanceWidget appearance;
+        appearance.setModel(&options);
+        QCOMPARE(shown(appearance), QFont::Normal);
+        auto* bold = appearance.findChild<QSlider*>("fontWeightBoldSlider");
+        QVERIFY(bold);
+        bold->setValue(GUIUtil::supportedWeightToIndex(light));
+        QCOMPARE(bold->value(), GUIUtil::supportedWeightToIndex(light));
+        QCOMPARE(shown(appearance), light);
+        QVERIFY(!GUIUtil::hasExplicitFontWeightNormal());
+    }
+
+    // (12) No family and no weight chosen: in Abyss the slider shows the Regular of the Roboto drawn. Choosing the
+    // system font the list already shows (only `activated` comes) makes it the family drawn, which is not swapped, and
+    // the slider shows its weight; the weight's choice stays as it was (review r2, R12). Cancel puts the family back.
+    GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+    open(GUIUtil::weightToArg(light), -1);
+    {
+        OptionsModel options;
+        GUIUtil::setFontFamily(GUIUtil::FontFamily::SystemDefault, false);
+        AppearanceWidget appearance;
+        appearance.setModel(&options);
+        QCOMPARE(shown(appearance), QFont::Normal);
+        auto* family = appearance.findChild<QComboBox*>("fontFamily");
+        QVERIFY(family);
+        QCOMPARE(family->currentData().toInt(), static_cast<int>(GUIUtil::FontFamily::SystemDefault));
+        QVERIFY(QMetaObject::invokeMethod(family, "activated", Q_ARG(int, family->currentIndex())));
+        QVERIFY(GUIUtil::hasExplicitFontFamily());
+        QCOMPARE(shown(appearance), light);
+        QVERIFY(!GUIUtil::hasExplicitFontWeightNormal());
+    }
+    QVERIFY(!GUIUtil::hasExplicitFontFamily());
 }
 
 void AbyssTests::buttonFocusVisible_data()
@@ -11541,7 +12065,7 @@ void AbyssTests::sidebarMoreGroup()
     QVERIFY(window.masternodeButton->isHidden());
     QVERIFY(more->property("currentInside").toBool());
     // GUIUtil sets fonts only once they are loaded, in the weights it is set to.
-    if (GUIUtil::fontsLoaded()) QCOMPARE(more->font().weight(), int(GUIUtil::getFontWeightBold()));
+    if (GUIUtil::fontsLoaded()) QVERIFY(DrawsWeight(more->font(), GUIUtil::getFontWeightBold()));
     QVERIFY(save("Abyss-sidebar-more-current.png"));
     // A theme switch polishes the bar again, which puts back each widget's first
     // font; the header keeps its weight through it. The minimal platform's small
@@ -11551,12 +12075,12 @@ void AbyssTests::sidebarMoreGroup()
     window.resize(1280, 850); Settle();
     QVERIFY(window.masternodeButton->isHidden() && window.masternodeButton->isChecked());
     QVERIFY(more->property("currentInside").toBool());
-    if (GUIUtil::fontsLoaded()) QCOMPARE(more->font().weight(), int(GUIUtil::getFontWeightBold()));
+    if (GUIUtil::fontsLoaded()) QVERIFY(DrawsWeight(more->font(), GUIUtil::getFontWeightBold()));
     PressShortcut(folded(window.masternodeButton));
     QVERIFY(window.m_more_open);
     QVERIFY(window.masternodeButton->isVisible());
     QVERIFY(!more->property("currentInside").toBool());
-    if (GUIUtil::fontsLoaded()) QCOMPARE(more->font().weight(), int(GUIUtil::getFontWeightNormal()));
+    if (GUIUtil::fontsLoaded()) QVERIFY(DrawsWeight(more->font(), GUIUtil::getPresentationFontWeightNormal()));
 
     // A page reached another way -- the slot its sidebar button or menu entry calls -- opens it as well.
     window.gotoOverviewPage(); Settle();

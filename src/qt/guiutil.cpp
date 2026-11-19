@@ -168,6 +168,12 @@ static const int defaultFontScale = 0;
 // Application font family. May be overwritten by -font-family.
 static FontFamily fontFamily = defaultFontFamily;
 static bool fontFamilyExplicit{false};
+// Whether the normal weight was chosen (in the Appearance settings or with -font-weight-normal); see
+// getPresentationFontWeightNormal.
+static bool fontWeightNormalExplicit{false};
+// The normal weight the application font was last set from: setApplicationFont takes the weight held, at the points it
+// always did (the fonts loading, a family, a theme). See setFontWeightNormal.
+static QFont::Weight applicationFontWeightNormal{defaultFontWeightNormal};
 // Application font scale value. May be overwritten by -font-scale.
 static int fontScale = defaultFontScale;
 // Contains the weight settings separated for all available fonts
@@ -1441,7 +1447,7 @@ QFont::Weight getFontWeightNormalDefault()
 
 QFont::Weight toQFontWeight(FontWeight weight)
 {
-    return weight == FontWeight::Bold ? getFontWeightBold() : getFontWeightNormal();
+    return weight == FontWeight::Bold ? getFontWeightBold() : getPresentationFontWeightNormal();
 }
 
 QFont::Weight getFontWeightNormal()
@@ -1452,13 +1458,60 @@ QFont::Weight getFontWeightNormal()
     return mapWeights[fontFamily].first;
 }
 
-void setFontWeightNormal(QFont::Weight weight)
+static QFont::Weight presentationFontWeightNormal(QFont::Weight weight);
+static void applyApplicationFont();
+
+void setFontWeightNormal(QFont::Weight weight, bool explicit_selection)
 {
     if (!mapWeights.count(fontFamily)) {
         throw std::runtime_error(strprintf("%s: Font family not loaded: %s", __func__, fontFamilyToString(fontFamily).toStdString()));
     }
+    const QFont::Weight application_drawn = presentationFontWeightNormal(applicationFontWeightNormal);
     mapWeights[fontFamily].first = weight;
+    fontWeightNormalExplicit = explicit_selection;
+    // The application font keeps the weight it was set from, as before. In
+    // Abyss the Regular stands in for that weight while none was chosen:
+    // where a choice made or put back starts or ends that, the application
+    // font is drawn again, from the same weight.
+    if (presentationFontWeightNormal(applicationFontWeightNormal) != application_drawn) {
+        applyApplicationFont();
+    }
     updateFonts();
+}
+
+bool hasExplicitFontWeightNormal()
+{
+    return fontWeightNormalExplicit;
+}
+
+// Abyss draws normal text Regular while no weight was chosen, as it draws
+// Roboto while no family was chosen (presentationFontFamily): the Light the
+// other themes start with is thin on its dark background. Only the stored
+// default gives way, and only where the family drawn is one of the wallet's
+// own with a Regular face: the system font is drawn at its own weight
+// (setApplicationFont). A chosen weight, the Light too, is drawn as chosen in
+// every theme.
+static QFont::Weight presentationFontWeightNormal(QFont::Weight weight)
+{
+    if (fontWeightNormalExplicit || weight != defaultFontWeightNormal || !isDefconDarkTheme()) {
+        return weight;
+    }
+    // Abyss's family drawn (presentationFontFamily), with the theme read once.
+    const FontFamily family = fontFamilyExplicit ? fontFamily : FontFamily::Roboto;
+    if (family == FontFamily::SystemDefault) {
+        return weight;
+    }
+    const auto supported = mapSupportedWeights.find(family);
+    if (supported == mapSupportedWeights.end() ||
+        std::find(supported->second.begin(), supported->second.end(), QFont::Normal) == supported->second.end()) {
+        return weight;
+    }
+    return QFont::Normal;
+}
+
+QFont::Weight getPresentationFontWeightNormal()
+{
+    return presentationFontWeightNormal(getFontWeightNormal());
 }
 
 QFont::Weight getFontWeightBoldDefault()
@@ -1657,25 +1710,38 @@ bool fontsLoaded()
 
 void setApplicationFont()
 {
+    // The weight held now: the application font keeps it until it is set
+    // again (setFontWeightNormal).
+    applicationFontWeightNormal = getFontWeightNormal();
+    applyApplicationFont();
+}
+
+static void applyApplicationFont()
+{
     if (!fontsLoaded()) {
         return;
     }
 
     std::unique_ptr<QFont> font;
 
+    // The weight the application font was set from, as Abyss draws it.
+    const QFont::Weight weight_drawn = presentationFontWeightNormal(applicationFontWeightNormal);
     const FontFamily family_selected = presentationFontFamily();
     if (family_selected != FontFamily::SystemDefault) {
         QString family = fontFamilyToString(family_selected);
 #ifdef Q_OS_MAC
-        if (getFontWeightNormal() != getFontWeightNormalDefault()) {
-            font = std::make_unique<QFont>(getFontNormal());
+        // The face by its style name where the weight set from is not the
+        // default, as before; the default, or the Regular standing in for it,
+        // by its weight alone.
+        if (applicationFontWeightNormal != getFontWeightNormalDefault()) {
+            font = std::make_unique<QFont>(getFont(weight_drawn));
         } else {
             font = std::make_unique<QFont>(family);
-            font->setWeight(getFontWeightNormalDefault());
+            font->setWeight(weight_drawn);
         }
 #else
         font = std::make_unique<QFont>(family);
-        font->setWeight(getFontWeightNormal());
+        font->setWeight(weight_drawn);
 #endif
     } else {
         font = std::make_unique<QFont>(*osDefaultFont);
@@ -1774,6 +1840,12 @@ void updateFonts()
 
     size_t nUpdatable{0}, nUpdated{0};
     std::map<QWidget*, QFont> mapWidgetFonts;
+    // The weight drawn, once for the whole pass (it reads the theme).
+    const QFont::Weight normal_weight = getPresentationFontWeightNormal();
+    // Where the Regular stands in, a style name the application font carries
+    // (macOS picks a face by it, setApplicationFont) names another face: the
+    // widgets take the weight alone then.
+    const QString style_name = normal_weight != getFontWeightNormal() ? QString() : qApp->font().styleName();
     // Loop through all widgets
     for (QWidget* w : qApp->allWidgets()) {
         std::vector<QString> vecIgnoreClasses{
@@ -1801,8 +1873,8 @@ void updateFonts()
         }
         ++nUpdatable;
         font.setFamily(qApp->font().family());
-        font.setWeight(getFontWeightNormal());
-        font.setStyleName(qApp->font().styleName());
+        font.setWeight(normal_weight);
+        font.setStyleName(style_name);
         font.setStyle(qApp->font().style());
 
         // Insert/Get the default font size of the widget. Stored exactly as
@@ -1819,7 +1891,8 @@ void updateFonts()
                 // getFont(). Only the unscaled path below gets the exact value.
                 nSize = std::max(1, qRound(itDefault.first->second));
             }
-            font = getFont(std::get<0>(it->second), std::get<1>(it->second), nSize);
+            const QFont::Weight weight = std::get<0>(it->second) == FontWeight::Bold ? getFontWeightBold() : normal_weight;
+            font = getFont(weight, std::get<1>(it->second), nSize);
             // A responsive label owns its fitted point size. Global Appearance
             // updates still supply family/style/weight, but must not undo that
             // fit at every dialog construction and start a resize feedback loop.

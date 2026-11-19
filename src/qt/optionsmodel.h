@@ -142,6 +142,7 @@ private:
     /* settings that were overridden by command-line */
     QString strOverriddenByCommandLine;
     bool m_font_family_overridden{false};
+    bool m_font_weight_normal_overridden{false};
 
     // Add option to list of GUI options overridden through command line/config file
     void addOverriddenOption(const std::string &option);
