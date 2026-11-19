@@ -6626,7 +6626,9 @@ void AbyssTests::smallWindow()
              qPrintable(QString("the layout asks for %1x%2; %3").arg(asked.width()).arg(asked.height()).arg(state())));
     QVERIFY2(least.width() < bar->sizeHint().width() + need.width(), qPrintable(state()));
 
-    // Made that small, the page keeps what it needs and scrolls both ways.
+    // Made that small, the page keeps what it needs and scrolls down; its
+    // columns stand one under the other there (overviewBreakpoint), so it
+    // scrolls across only where its widest row does not fit.
     // What it needs follows its width a little (the Total's font is fitted to
     // the width), so it is read again at this width.
     window.resize(least); Settle();
@@ -6636,9 +6638,10 @@ void AbyssTests::smallWindow()
     QVERIFY2(scroll->width() == 480 && scroll->height() >= 360, qPrintable(state()));
     const QSize need_small = frame->pageMinimum();
     QCOMPARE(need_small, overview->minimumSizeHint().expandedTo(overview->minimumSize()));
-    QVERIFY2(need_small.width() > scroll->viewport()->width() && need_small.height() > scroll->viewport()->height(), qPrintable(state()));
+    QVERIFY2(need_small.height() > scroll->viewport()->height(), qPrintable(state()));
     QVERIFY2(overview->width() >= need_small.width() && overview->height() >= need_small.height(), qPrintable(state()));
-    QVERIFY2(scroll->verticalScrollBar()->maximum() > 0 && scroll->horizontalScrollBar()->maximum() > 0, qPrintable(state()));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() > 0 &&
+             scroll->horizontalScrollBar()->maximum() == std::max(0, need_small.width() - scroll->viewport()->width()), qPrintable(state()));
     // At least: a page with wrapped text may ask for a few pixels more height
     // at its least width (heightForWidth), and the scroll area gives them.
     const QSize given = scroll->viewport()->size().expandedTo(need_small);
@@ -6729,6 +6732,284 @@ void AbyssTests::smallWindow()
     } else {
         qInfo() << "smallWindow: the kept size and the switch into Abyss need a desktop-sized screen; this one has room for" << room;
     }
+}
+
+void AbyssTests::overviewBreakpoint()
+{
+    // Below the width the Overview's columns need side by side, the Recent
+    // transactions card stands under the cards and the page needs no more
+    // than its widest row, so that a narrow window scrolls down only (U11-D).
+    // The width is the page's room in the wallet's scroll area, not the
+    // window's: at the breakpoint and above it the page is as before. A window
+    // grown to show the page whole still gives it the room side by side, and
+    // a classic theme never stacks.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Window geometry requires minimal:enable_fonts or a native platform");
+    const QString shots = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name); // Keep this test's isolated QSettings scope.
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.addWallet(fixture.model.get());
+    window.gotoOverviewPage();
+    window.show(); Settle();
+    auto* overview = window.findChild<OverviewPage*>();
+    auto* staking_icon = window.findChild<QLabel*>("labelStakingIcon");
+    auto* staking_card = overview ? overview->findChild<QFrame*>("frameStaking") : nullptr;
+    QVERIFY(overview && staking_icon && staking_card);
+    // The figures below are compared across steps, and the left column's
+    // staking card follows the window's 1.5 s tick, whose first one comes
+    // only after the client model is set: the card is given its state once,
+    // here, and the tick stopped, so that it holds still while the columns
+    // are measured.
+    const auto staking_said = [&] {
+        return QString("state %1 card %2").arg(int(overview->stakingState())).arg(staking_card->sizeHint().height());
+    };
+    const QString staking_before = staking_said();
+    for (QTimer* tick : staking_icon->findChildren<QTimer*>(QString(), Qt::FindDirectChildrenOnly)) tick->stop();
+    window.setStakingStatus(); Settle();
+    qInfo("OVERVIEW_BREAKPOINT_STAKING before the first tick: %s; after it: %s", qPrintable(staking_before), qPrintable(staking_said()));
+    // Tall enough that no vertical scroll bar takes from the viewport's width,
+    // stacked or not: the breakpoint is read off the viewport.
+    constexpr int tall{2000};
+    window.resize(1500, tall); Settle();
+    auto* frame = window.walletFrame;
+    QVERIFY(frame);
+    auto* scroll = frame->findChild<QScrollArea*>("abyssPageScroll");
+    QVERIFY(scroll);
+    auto* cards = overview->findChild<QFrame*>("frame");
+    auto* recent = overview->findChild<QFrame*>("frame_2");
+    auto* row = overview->findChild<QHBoxLayout*>("horizontalLayout");
+    auto* transactions = overview->findChild<QListView*>("listTransactions");
+    QVERIFY(cards && recent && row && transactions);
+    // The disposable fixture's sync overlay covers the window, not a page.
+    const auto hide_overlay = [&] {
+        if (auto* overlay = window.findChild<ModalOverlay*>()) overlay->hide();
+        Settle();
+    };
+    hide_overlay();
+    const auto shot = [&](const QString& name) {
+        if (shots.isEmpty()) return true;
+        hide_overlay();
+        return QDir().mkpath(shots) && window.grab().save(QDir(shots).filePath(name + ".png"));
+    };
+    // A QString, not the QStringBuilder of its temporaries (QT_USE_QSTRINGBUILDER).
+    const auto state = [&]() -> QString {
+        return QString("window %1x%2 viewport %3x%4 page %5x%6 page minimum %7 scroll %8/%9 cards %10,%11 %12x%13 recent %14,%15 %16x%17")
+            .arg(window.width()).arg(window.height()).arg(scroll->viewport()->width()).arg(scroll->viewport()->height())
+            .arg(overview->width()).arg(overview->height()).arg(overview->minimumWidth())
+            .arg(scroll->horizontalScrollBar()->maximum()).arg(scroll->verticalScrollBar()->maximum())
+            .arg(cards->x()).arg(cards->y()).arg(cards->width()).arg(cards->height())
+            .arg(recent->x()).arg(recent->y()).arg(recent->width()).arg(recent->height()) +
+            QString(" list minimum %1").arg(transactions->minimumHeight());
+    };
+    // The page's rows and the left column's cards, each as tall as it stands
+    // and its minimum, and the staking card's state.
+    const auto rows = [&]() -> QString {
+        QStringList parts;
+        const auto add = [&](QLayout* layout) {
+            for (int item = 0; item < layout->count(); ++item) {
+                QLayoutItem* entry = layout->itemAt(item);
+                const QString name = entry->widget() ? entry->widget()->objectName() : entry->layout() ? entry->layout()->objectName() : QString("spacer");
+                parts << QString("%1 %2/%3").arg(name).arg(entry->geometry().height()).arg(entry->minimumSize().height());
+            }
+        };
+        add(overview->layout());
+        if (auto* left = overview->findChild<QVBoxLayout*>("verticalLayout_2")) add(left);
+        return parts.join(", ") + "; staking " + staking_said();
+    };
+    // Side by side: the Recent transactions to the right of the cards, level
+    // with them. Stacked: under them, from the same left edge.
+    const auto side_by_side = [&] {
+        return row->direction() == QBoxLayout::LeftToRight && recent->x() > cards->geometry().right() &&
+               recent->y() < cards->geometry().bottom();
+    };
+    const auto stacked = [&] {
+        return row->direction() == QBoxLayout::TopToBottom && recent->y() > cards->geometry().bottom() && recent->x() == cards->x();
+    };
+
+    // With room: side by side, nothing scrolls, and the page's minimum is the
+    // breakpoint, what a window grown to show it whole gives it across.
+    QVERIFY2(side_by_side(), qPrintable(state()));
+    QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0 && scroll->verticalScrollBar()->maximum() == 0, qPrintable(state()));
+    const int breakpoint = overview->minimumWidth();
+    QCOMPARE(frame->pageWhole().width(), breakpoint);
+    const int around = window.width() - scroll->viewport()->width();
+
+    // At the breakpoint: still side by side, nothing scrolls.
+    window.resize(breakpoint + around, tall); Settle();
+    QVERIFY2(scroll->viewport()->width() == breakpoint, qPrintable(state()));
+    QVERIFY2(side_by_side() && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    const QSize side_by_side_whole = frame->pageWhole();
+    const QString side_by_side_rows = rows();
+    QVERIFY(shot("overview-breakpoint-side"));
+
+    // A pixel less: stacked; the page needs its widest row only, and fills the
+    // viewport without scrolling across.
+    window.resize(breakpoint + around - 1, tall); Settle();
+    QVERIFY2(scroll->viewport()->width() == breakpoint - 1, qPrintable(state()));
+    QVERIFY2(stacked(), qPrintable(state()));
+    QVERIFY2(overview->minimumWidth() < breakpoint && overview->minimumWidth() == overview->layout()->minimumSize().width(), qPrintable(state()));
+    QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0 && overview->width() == scroll->viewport()->width(), qPrintable(state()));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() == 0, qPrintable(state()));
+    QVERIFY(shot("overview-breakpoint-stacked"));
+
+    // A window grown to show the page whole gives it the room side by side:
+    // measuring leaves the page stacked, and the figure is the one the page
+    // had side by side at the breakpoint. That window is exactly as wide as
+    // the columns need (as a screen as wide as the breakpoint would hold it)
+    // and only as tall as they need, shorter than the stacked page, whose
+    // own bar narrows the viewport under the breakpoint: the page measures
+    // the columns there and turns. Grown from a stacked window that scrolls
+    // down already (its bar laid out before the growth), side by side,
+    // nothing scrolls.
+    const int bar = scroll->verticalScrollBar()->sizeHint().width();
+    const int chrome_height = window.height() - scroll->viewport()->height();
+    const QSize whole = frame->pageWhole();
+    QVERIFY2(stacked(), qPrintable(QString("whole %1x%2; %3").arg(whole.width()).arg(whole.height()).arg(state())));
+    const int stacked_need = std::max(overview->minimumSizeHint().height(), overview->heightForWidth(scroll->viewport()->width()));
+    QVERIFY2(whole.height() < stacked_need, qPrintable(QString("whole %1x%2, stacked %3; %4").arg(whole.width()).arg(whole.height()).arg(stacked_need).arg(state())));
+    window.resize(breakpoint + around - 1, chrome_height + whole.height()); Settle();
+    QVERIFY2(stacked() && scroll->verticalScrollBar()->maximum() > 0, qPrintable(state()));
+    window.resize(window.modernWindowSize(frame->pageWhole())); Settle();
+    QVERIFY2(side_by_side(), qPrintable(state()));
+    QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0 && scroll->verticalScrollBar()->maximum() == 0, qPrintable(state()));
+    QCOMPARE(overview->minimumWidth(), breakpoint);
+    // The figure: the one the page had side by side at the breakpoint.
+    // QVERIFY2 keeps 1024 characters of its message: the rows go to the log.
+    if (whole != side_by_side_whole) qInfo("OVERVIEW_BREAKPOINT_ROWS now: %s; at the breakpoint: %s", qPrintable(rows()), qPrintable(side_by_side_rows));
+    QVERIFY2(whole == side_by_side_whole, qPrintable(QString("whole %1x%2, side by side %3x%4; %5").arg(whole.width()).arg(whole.height())
+                                                    .arg(side_by_side_whole.width()).arg(side_by_side_whole.height()).arg(state())));
+    // Shorter than that, the page scrolls down. With the breakpoint's room
+    // and no more, the bar would take the columns' last pixels: stacked,
+    // nothing scrolls across. With the bar's room as well, side by side,
+    // nothing scrolls across.
+    window.resize(breakpoint + around, chrome_height + whole.height() / 2); Settle();
+    QVERIFY2(stacked() && scroll->verticalScrollBar()->maximum() > 0 && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    QVERIFY2(scroll->width() - scroll->viewport()->width() == bar, qPrintable(QString("bar %1; %2").arg(bar).arg(state())));
+    window.resize(breakpoint + around + bar, chrome_height + whole.height() / 2); Settle();
+    QVERIFY2(side_by_side() && scroll->verticalScrollBar()->maximum() > 0 && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+
+    // Between the two, the columns are measured at their own width: with its
+    // bar on show the scroll area lays the page out there, and takes the bar
+    // away only if the page's height for that width fits. An alert that
+    // wraps into one line less a bar's width wider than the breakpoint: from
+    // a stacked window that scrolls down, behind its bar, a window tall
+    // enough for the shorter alert only keeps the page stacked, scrolling
+    // down and not across (side by side, the bar would stay on the columns'
+    // own width, and the page would scroll both ways). Tall enough for the
+    // longer one, the columns stand side by side, scrolling neither way.
+    auto* alerts = overview->findChild<QLabel*>("labelAlerts");
+    QVERIFY(alerts);
+    const int extra = bar - 1;
+    QVERIFY(extra > 0);
+    // The page's own slot for the node's warnings.
+    const auto set_alerts = [&](const QString& text) {
+        return QMetaObject::invokeMethod(overview, "updateAlerts", Qt::DirectConnection, Q_ARG(QString, text));
+    };
+    QVERIFY(set_alerts("warn"));
+    window.resize(breakpoint + around, tall); Settle();
+    QVERIFY2(side_by_side() && scroll->viewport()->width() == breakpoint && alerts->isVisible(), qPrintable(state()));
+    const auto need_at = [&](int width) { return std::max(overview->minimumSizeHint().height(), overview->heightForWidth(width)); };
+    // The page's own heights at the two widths, half a line apart at least.
+    QString alert;
+    for (int words = 1; words < 300 && alert.isEmpty(); ++words) {
+        for (int tail = 1; tail <= 60; ++tail) {
+            const QString text = QStringLiteral("warn ").repeated(words) + QString(tail, QLatin1Char('i'));
+            alerts->setText(text);
+            if (need_at(breakpoint) - need_at(breakpoint + extra) >= alerts->fontMetrics().height() / 2) {
+                alert = text;
+                break;
+            }
+        }
+    }
+    QVERIFY2(!alert.isEmpty(), qPrintable(QString("alert width %1; %2").arg(alerts->width()).arg(state())));
+    QVERIFY(set_alerts(alert)); Settle();
+    QVERIFY2(side_by_side() && overview->minimumWidth() == breakpoint, qPrintable(state()));
+    const int longer = need_at(breakpoint);
+    window.resize(breakpoint + around + extra, tall); Settle();
+    QVERIFY2(side_by_side() && scroll->viewport()->width() == breakpoint + extra, qPrintable(state()));
+    const int shorter = need_at(breakpoint + extra);
+    const QString needs = QString("need %1 at the breakpoint, %2 beyond; ").arg(longer).arg(shorter);
+    QVERIFY2(shorter < longer, qPrintable(needs + state()));
+    const int enough = shorter + (longer - shorter) / 2;
+    window.resize(breakpoint + around + extra, chrome_height + enough / 2); Settle();
+    QVERIFY2(stacked() && scroll->verticalScrollBar()->maximum() > 0 && scroll->viewport()->width() < breakpoint, qPrintable(needs + state()));
+    window.resize(breakpoint + around + extra, chrome_height + enough); Settle();
+    QVERIFY2(stacked() && scroll->verticalScrollBar()->maximum() > 0 && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(needs + state()));
+    window.resize(breakpoint + around + extra, chrome_height + longer); Settle();
+    QVERIFY2(side_by_side() && scroll->verticalScrollBar()->maximum() == 0 && scroll->horizontalScrollBar()->maximum() == 0,
+             qPrintable(needs + state()));
+    QVERIFY(set_alerts(QString())); Settle();
+
+    // The least window: stacked; it scrolls across only where its widest row
+    // does not fit, and down.
+    const QSize least = window.modernWindowSize(QSize(480, 360));
+    window.resize(least); Settle();
+    QVERIFY2(stacked(), qPrintable(state()));
+    QVERIFY2(scroll->horizontalScrollBar()->maximum() == std::max(0, overview->minimumWidth() - scroll->viewport()->width()), qPrintable(state()));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() > 0, qPrintable(state()));
+    QVERIFY(shot("overview-breakpoint-least"));
+
+    // A classic theme keeps the columns side by side.
+    Theme("Light"); Settle();
+    QVERIFY2(row->direction() == QBoxLayout::LeftToRight && recent->x() > cards->geometry().right(), qPrintable(state()));
+    // Back in Abyss, the small window stacks them again.
+    Theme("Abyss"); Settle();
+    window.resize(least); Settle();
+    QVERIFY2(stacked(), qPrintable(state()));
+
+    // The breakpoint is what the columns measure, not the form's 960 px: with
+    // a larger font they need more, and the row turns a pixel under that.
+    constexpr int taller{3000};
+    int scaled_breakpoint = 0;
+    for (int scale : {25, 50, 75, 100}) {
+        GUIUtil::setFontScale(scale);
+        window.resize(3000, taller); Settle();
+        if (side_by_side() && overview->minimumWidth() > 961) {
+            scaled_breakpoint = overview->minimumWidth();
+            break;
+        }
+    }
+    QVERIFY2(scaled_breakpoint > 961, qPrintable(state()));
+    const int scaled_around = window.width() - scroll->viewport()->width();
+    window.resize(scaled_breakpoint + scaled_around, taller); Settle();
+    QVERIFY2(scroll->viewport()->width() == scaled_breakpoint && side_by_side(), qPrintable(state()));
+    QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    window.resize(scaled_breakpoint + scaled_around - 1, taller); Settle();
+    QVERIFY2(stacked(), qPrintable(state()));
+
+    // Measuring the columns for a grown window lays them out side by side
+    // for a moment, and the page comes back as it was: an empty list whose
+    // message wraps into more lines in the narrower side-by-side card keeps
+    // its stacked minimum, and the page scrolls as before.
+    auto* empty = overview->findChild<EmptyStateWidget*>("emptyState");
+    auto* list = overview->findChild<QListView*>("listTransactions");
+    auto* empty_title = empty ? empty->findChild<QLabel*>("emptyStateTitle") : nullptr;
+    QVERIFY(empty && list && empty_title);
+    QVERIFY2(empty->state() != EmptyStateWidget::State::Hidden && empty->isVisible(), qPrintable(state()));
+    const QString empty_text = empty_title->text();
+    const int title_width = empty_title->width();
+    QString long_title = empty_text;
+    while (empty_title->fontMetrics().horizontalAdvance(long_title) < title_width * 9 / 2) long_title += QStringLiteral(" synchronization");
+    empty_title->setText(long_title);
+    QVERIFY2(empty_title->heightForWidth(title_width / 2) > empty_title->heightForWidth(title_width), qPrintable(state()));
+    // The stacked list fits the longer message first, as the list's resize does.
+    window.resize(window.width(), taller + 1); Settle();
+    window.resize(window.width(), taller); Settle();
+    QVERIFY2(stacked(), qPrintable(state()));
+    const int list_minimum = list->minimumHeight();
+    const int scroll_down = scroll->verticalScrollBar()->maximum();
+    frame->pageWhole(); Settle();
+    QVERIFY2(stacked() && list->minimumHeight() == list_minimum && scroll->verticalScrollBar()->maximum() == scroll_down,
+             qPrintable(QString("list minimum %1, was %2; %3").arg(list->minimumHeight()).arg(list_minimum).arg(state())));
+    empty_title->setText(empty_text);
 }
 
 void AbyssTests::hoverMenus()

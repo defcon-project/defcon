@@ -32,6 +32,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScreen>
+#include <QScrollArea>
 
 #include <algorithm>
 #include <array>
@@ -61,6 +62,10 @@
 #define NUM_ITEMS_DISABLED 5
 #define NUM_ITEMS_ENABLED_NORMAL 6
 #define NUM_ITEMS_ENABLED_ADVANCED 8
+
+//! Abyss: the gap between the two columns, across while they stand side by
+//! side, downwards while one stands under the other.
+static constexpr int ABYSS_COLUMN_GAP{12};
 
 Q_DECLARE_METATYPE(interfaces::WalletBalances)
 
@@ -548,6 +553,17 @@ void OverviewPage::changeEvent(QEvent* event)
 
 bool OverviewPage::eventFilter(QObject* watched, QEvent* event)
 {
+    // The scroll area's room for the page: below what the columns need side
+    // by side, they stack. A hidden page catches up when it is shown.
+    if (m_area != nullptr && watched == m_area->viewport()) {
+        if (event->type() == QEvent::Resize && isVisible()) updateColumns();
+        return QWidget::eventFilter(watched, event);
+    }
+    // Shown, the page stands in its window's scroll area, if it has one.
+    if (watched == this && event->type() == QEvent::Show) {
+        watchScrollArea();
+        updateColumns();
+    }
     // The bar's own layout has placed its entries by now (a layout sees its
     // widget's events before the filters do); the badge takes the room left.
     if (watched == networkCard && (event->type() == QEvent::LayoutRequest || event->type() == QEvent::Resize)) placeSkyBadge();
@@ -614,16 +630,9 @@ void OverviewPage::updateThemePresentation()
     // The same gap as the balances grid, so that the amounts line up across the cards.
     ui->coinJoinFormLayout->setHorizontalSpacing(modern ? ui->gridLayout->horizontalSpacing() : m_coinjoin_form_spacing);
 
-    for (int item = 0; item < ui->horizontalLayout->count(); ++item) {
-        const int inherited = m_inherited_stretch.emplace(item, ui->horizontalLayout->stretch(item)).first->second;
-        QSpacerItem* spacer = ui->horizontalLayout->itemAt(item)->spacerItem();
-        ui->horizontalLayout->setStretch(item, modern ? (spacer ? 0 : 1) : inherited);
-        if (spacer) {
-            const auto& original = m_inherited_spacers.emplace(spacer, std::make_pair(spacer->sizeHint(), spacer->sizePolicy())).first->second;
-            spacer->changeSize(modern ? (item == 2 ? 12 : 0) : original.first.width(), original.first.height(),
-                               modern ? QSizePolicy::Fixed : original.second.horizontalPolicy(), original.second.verticalPolicy());
-        }
-    }
+    // A classic theme never stacks the columns.
+    updateColumns();
+    applyColumnLayout();
     // Neither the empty fourth grid column nor its spacer may take the amount's room.
     QSpacerItem* spacer = ui->horizontalSpacer_2;
     const auto& original = m_inherited_spacers.emplace(spacer, std::make_pair(spacer->sizeHint(), spacer->sizePolicy())).first->second;
@@ -1089,6 +1098,135 @@ void OverviewPage::updateColumnStretch()
     ui->verticalLayout_2->invalidate();
 }
 
+void OverviewPage::applyColumnLayout()
+{
+    const bool modern = GUIUtil::isModernTheme();
+    // Stacked, the Recent transactions card stands under the cards.
+    ui->horizontalLayout->setDirection(m_stacked ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    for (int item = 0; item < ui->horizontalLayout->count(); ++item) {
+        const int inherited = m_inherited_stretch.emplace(item, ui->horizontalLayout->stretch(item)).first->second;
+        QLayoutItem* entry = ui->horizontalLayout->itemAt(item);
+        QSpacerItem* spacer = entry->spacerItem();
+        // Stacked, the height to spare goes to the Recent transactions, not to the cards.
+        const int stretch = m_stacked ? (entry->layout() == ui->verticalLayout_3 ? 1 : 0) : modern ? (spacer ? 0 : 1) : inherited;
+        ui->horizontalLayout->setStretch(item, stretch);
+        if (spacer) {
+            const auto& original = m_inherited_spacers.emplace(spacer, std::make_pair(spacer->sizeHint(), spacer->sizePolicy())).first->second;
+            if (m_stacked) {
+                // The gap between the columns, now downwards; the side spacers take nothing.
+                spacer->changeSize(0, item == 2 ? ABYSS_COLUMN_GAP : 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+            } else {
+                spacer->changeSize(modern ? (item == 2 ? ABYSS_COLUMN_GAP : 0) : original.first.width(), original.first.height(),
+                                   modern ? QSizePolicy::Fixed : original.second.horizontalPolicy(), original.second.verticalPolicy());
+            }
+        }
+    }
+}
+
+int OverviewPage::twoColumnWidth() const
+{
+    // Side by side, the row of cards is the left column, the gap and the right
+    // column (Abyss gives the row no spacing and its side spacers no width);
+    // the page is as wide as its widest row, within its margins.
+    int widest = ui->verticalLayout_2->minimumSize().width() + ABYSS_COLUMN_GAP + ui->verticalLayout_3->minimumSize().width();
+    for (int item = 0; item < ui->topLayout->count(); ++item) {
+        QLayoutItem* row = ui->topLayout->itemAt(item);
+        if (row->layout() != ui->horizontalLayout) widest = std::max(widest, row->minimumSize().width());
+    }
+    const QMargins margins = ui->topLayout->contentsMargins();
+    return margins.left() + margins.right() + widest;
+}
+
+void OverviewPage::watchScrollArea()
+{
+    QScrollArea* area = nullptr;
+    for (QWidget* parent = parentWidget(); parent != nullptr && area == nullptr; parent = parent->parentWidget()) {
+        area = qobject_cast<QScrollArea*>(parent);
+    }
+    if (area == m_area) return;
+    if (m_area) m_area->viewport()->removeEventFilter(this);
+    m_area = area;
+    if (m_area) m_area->viewport()->installEventFilter(this);
+}
+
+void OverviewPage::updateColumns()
+{
+    // Stacked where the scroll area's room with no scroll bar is less than
+    // the columns need side by side. Where it has that width but a vertical
+    // bar on show takes the columns' last pixels, they stand side by side
+    // only if, side by side, the page needs no bar there: measured, not read
+    // off the bar on show, which may still be the other state's, so the
+    // state the page turns to keeps. Measured at the columns' own width:
+    // with its bar on show the scroll area lays the page out there (the page
+    // is no narrower), and takes the bar away only if the page's height for
+    // that width fits (QScrollArea's updateScrollBars); a wider room's
+    // height would turn the columns behind a bar that stays.
+    bool stacked = false;
+    if (GUIUtil::isModernTheme() && m_area != nullptr && m_two_column_width > 0) {
+        const QSize room = m_area->maximumViewportSize();
+        if (room.width() < m_two_column_width) {
+            stacked = true;
+        } else if (m_area->viewport()->width() < m_two_column_width) {
+            stacked = sideBySideNeed(m_two_column_width) > room.height();
+        }
+    }
+    if (stacked == m_stacked) return;
+    m_stacked = stacked;
+    applyColumnLayout();
+    ui->horizontalLayout->invalidate();
+    ui->topLayout->invalidate();
+    // The page's minimum follows: the two columns' side by side, the widest row's stacked.
+    scheduleBalanceWidths();
+}
+
+int OverviewPage::sideBySideNeed(int width)
+{
+    // What moves here sends resize and font events; no width pass may start
+    // from them.
+    const bool applying = m_applying_balance_widths;
+    m_applying_balance_widths = true;
+    const auto invalidate = [this] {
+        for (QLayout* nested : findChildren<QLayout*>()) nested->invalidate();
+        ui->topLayout->invalidate();
+    };
+    // As WalletFrame::pageWhole measures a page: its minimum height, and
+    // more where wrapped text asks for it at that width.
+    const auto need = [this, width] {
+        int height = ui->topLayout->totalMinimumSize().height();
+        if (ui->topLayout->hasHeightForWidth()) height = std::max(height, ui->topLayout->totalHeightForWidth(width));
+        return height;
+    };
+    const bool was_stacked = m_stacked;
+    // At the width an empty list's message may wrap more, and the list's
+    // resize raises its minimum to it (EmptyStateWidget::fitList): that
+    // counts side by side, and is put back before the page is laid out as it is.
+    const EmptyStateWidget::Fit fit = m_transactions_empty->fit();
+    m_stacked = false;
+    applyColumnLayout();
+    invalidate();
+    // Laid out at the width, as tall as it needs: the total's card has its
+    // side-by-side width, and the font is fitted to it.
+    ui->topLayout->setGeometry(QRect(0, 0, width, std::max(need(), height())).marginsRemoved(contentsMargins()));
+    fitTotalFont();
+    invalidate();
+    const int side_by_side = need();
+    m_stacked = was_stacked;
+    applyColumnLayout();
+    m_transactions_empty->restoreFit(fit);
+    invalidate();
+    ui->topLayout->setGeometry(contentsRect());
+    fitTotalFont();
+    invalidate();
+    m_applying_balance_widths = applying;
+    return side_by_side;
+}
+
+QSize OverviewPage::sideBySideWhole()
+{
+    if (!m_stacked) return {};
+    return QSize(m_two_column_width, sideBySideNeed(m_two_column_width));
+}
+
 void OverviewPage::updateCoinJoinCard()
 {
     if (m_coinjoin_row == nullptr || !m_coinjoin_known) return;
@@ -1275,6 +1413,14 @@ void OverviewPage::applyBalanceWidths()
         if (widget->layout()) {
             for (QLayout* nested : widget->findChildren<QLayout*>()) nested->invalidate();
             widget->layout()->invalidate();
+            if (widget == this) {
+                // Where the scroll area gives the page less than its columns
+                // need side by side, they stack; the form's minimum is a
+                // two-column width and holds only while they do not.
+                m_two_column_width = std::max(wanted, twoColumnWidth());
+                updateColumns();
+                if (m_stacked) wanted = 0;
+            }
             wanted = std::max(wanted, widget->layout()->minimumSize().width());
         }
         // Abyss keeps the measured text floor even on a smaller screen so the

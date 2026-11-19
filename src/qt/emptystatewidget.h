@@ -52,6 +52,17 @@ public:
     State state() const { return m_state; }
     QPushButton* actionButton() const { return m_action; }
 
+    //! What fitList() has made of the list's minimum. A page that lays the
+    //! list out at a trial width only (OverviewPage::sideBySideNeed), where
+    //! the message may wrap more, puts it back as it was afterwards.
+    struct Fit {
+        int list_minimum{0};
+        int saved_minimum{0};
+        int floor{0};
+    };
+    Fit fit() const;
+    void restoreFit(const Fit& fit);
+
 Q_SIGNALS:
     //! The page's own action, offered in the Empty state.
     void actionClicked();

@@ -212,3 +212,15 @@ void EmptyStateWidget::fitList()
     m_floor = needed;
     m_list->setMinimumHeight(needed);
 }
+
+EmptyStateWidget::Fit EmptyStateWidget::fit() const
+{
+    return {m_list ? m_list->minimumHeight() : 0, m_list_minimum, m_floor};
+}
+
+void EmptyStateWidget::restoreFit(const Fit& fit)
+{
+    m_list_minimum = fit.saved_minimum;
+    m_floor = fit.floor;
+    if (m_list && m_list->minimumHeight() != fit.list_minimum) m_list->setMinimumHeight(fit.list_minimum);
+}

@@ -190,6 +190,15 @@ QSize WalletFrame::pageMinimum() const
 
 QSize WalletFrame::pageWhole() const
 {
+    // The Overview's columns stand one under the other where the window is
+    // narrow (Abyss); a window grown to show the page whole gives it the
+    // room side by side, as it did before they could stack.
+    if (const auto* view = qobject_cast<const QStackedWidget*>(walletStack->currentWidget())) {
+        if (auto* overview = qobject_cast<OverviewPage*>(view->currentWidget())) {
+            const QSize side_by_side = overview->sideBySideWhole();
+            if (side_by_side.isValid()) return side_by_side;
+        }
+    }
     QSize whole = walletStack->minimumSizeHint();
     // A page with wrapped text may ask for more height at its least width
     // than its minimum says; the scroll area gives it that height.
