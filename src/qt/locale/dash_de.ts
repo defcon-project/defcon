@@ -7950,7 +7950,7 @@ Gehen Sie zu "Datei" &gt; "Wallet öffnen" um Wallet zu laden
     </message>
     <message>
         <source>Incorrect -rescan mode, falling back to default value</source>
-        <translation>Falscher -Rescan-Modus, Zurückfallen auf Standardwert</translation>
+        <translation>Ungültiger -rescan-Modus, Standardwert wird verwendet</translation>
     </message>
     <message>
         <source>Initialization sanity check failed. %s is shutting down.</source>

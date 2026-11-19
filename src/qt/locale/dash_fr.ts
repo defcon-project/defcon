@@ -1146,7 +1146,7 @@
     </message>
     <message>
         <source>(%1 locked)</source>
-        <translation>(%1 verrouillés)</translation>
+        <translation>(verrouillées : %1)</translation>
     </message>
     <message>
         <source>yes</source>
@@ -5765,7 +5765,7 @@ Pour plus d'informations sur l'utilisation de cette console, tapez %6.
     </message>
     <message>
         <source>Confirm custom change address</source>
-        <translation>Confimer l’adresse personnalisée de monnaie</translation>
+        <translation>Confirmer l’adresse personnalisée de monnaie</translation>
     </message>
     <message>
         <source>The address you selected for change is not part of this wallet. Any or all funds in your wallet may be sent to this address. Are you sure?</source>
@@ -7634,7 +7634,7 @@ Allez à Fichier &gt; Ouvrir le portefeuille pour charger un portefeuille.
     </message>
     <message>
         <source>Unable to parse -maxuploadtarget: '%s' (possible integer overflow?)</source>
-        <translation>Impossible de traiter -maxuploadtarge : '%s' (débordement d'entier ?)</translation>
+        <translation>Impossible de traiter -maxuploadtarget : '%s' (débordement d'entier ?)</translation>
     </message>
     <message>
         <source>Unknown -blockfilterindex value %s.</source>

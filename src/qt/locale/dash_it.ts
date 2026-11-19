@@ -1146,7 +1146,7 @@
     </message>
     <message>
         <source>(%1 locked)</source>
-        <translation>(%1 bloccato)</translation>
+        <translation>(bloccate: %1)</translation>
     </message>
     <message>
         <source>yes</source>

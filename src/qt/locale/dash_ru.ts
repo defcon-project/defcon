@@ -1146,7 +1146,7 @@
     </message>
     <message>
         <source>(%1 locked)</source>
-        <translation>(%1 заблокировано)</translation>
+        <translation>(заблокировано: %1)</translation>
     </message>
     <message>
         <source>yes</source>
@@ -2916,11 +2916,11 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <source>Whether to keep the specified custom change address or not.</source>
-        <translation>Сохранять указанный свой адрес для сдачи или нет.</translation>
+        <translation>Сохранять указанный вами адрес для сдачи или нет.</translation>
     </message>
     <message>
         <source>Keep custom change &amp;address</source>
-        <translation>Сохранить свой &amp;адрес для сдачи</translation>
+        <translation>Сохранить указанный вами &amp;адрес для сдачи</translation>
     </message>
     <message>
         <source>Show additional tab for multisignature addresses and partially signed transactions.</source>
@@ -5452,7 +5452,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Custom change address</source>
-        <translation>Свой адрес для сдачи</translation>
+        <translation>Указанный вами адрес для сдачи</translation>
     </message>
     <message>
         <source>Transaction Fee:</source>
@@ -5765,7 +5765,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Confirm custom change address</source>
-        <translation>Подтвердите свой адрес для сдачи</translation>
+        <translation>Подтвердите указанный вами адрес для сдачи</translation>
     </message>
     <message>
         <source>The address you selected for change is not part of this wallet. Any or all funds in your wallet may be sent to this address. Are you sure?</source>
