@@ -3,6 +3,7 @@ QT_TS = \
   qt/locale/dash_en.ts \
   qt/locale/dash_es.ts \
   qt/locale/dash_fr.ts \
+  qt/locale/dash_id.ts \
   qt/locale/dash_it.ts \
   qt/locale/dash_ja.ts \
   qt/locale/dash_ko.ts \
@@ -10,5 +11,6 @@ QT_TS = \
   qt/locale/dash_pt.ts \
   qt/locale/dash_ru.ts \
   qt/locale/dash_tr.ts \
+  qt/locale/dash_uk.ts \
   qt/locale/dash_zh_CN.ts \
   qt/locale/dash_zh_TW.ts
