@@ -21,6 +21,105 @@
 #include <QGridLayout>
 #include <QStyle>
 
+#include <algorithm>
+
+//! Abyss: the amount field (its own row layout) and the "Use available
+//! balance" button side by side where both fit at their preferred widths,
+//! the button under the field where they do not. The row asks no more width
+//! than the wider of the two, as the field and the button did on rows of
+//! their own, so the recipient card's least width does not grow with it.
+class AmountRowLayout : public QLayout
+{
+public:
+    AmountRowLayout(int horizontal, int vertical) : m_horizontal(horizontal), m_vertical(vertical)
+    {
+        setContentsMargins(0, 0, 0, 0);
+    }
+    ~AmountRowLayout() override
+    {
+        while (QLayoutItem* item = takeAt(0)) delete item;
+    }
+    void addRowLayout(QLayout* layout)
+    {
+        addChildLayout(layout);
+        addItem(layout);
+    }
+    void addItem(QLayoutItem* item) override { m_items.append(item); }
+    int count() const override { return m_items.size(); }
+    QLayoutItem* itemAt(int index) const override { return m_items.value(index); }
+    QLayoutItem* takeAt(int index) override { return index >= 0 && index < m_items.size() ? m_items.takeAt(index) : nullptr; }
+    Qt::Orientations expandingDirections() const override { return {}; }
+    bool hasHeightForWidth() const override { return true; }
+    int heightForWidth(int width) const override { return arrange(QRect(0, 0, width, 0), false); }
+    QSize sizeHint() const override
+    {
+        int width = 0;
+        int height = 0;
+        for (QLayoutItem* item : shown()) {
+            const QSize hint = item->sizeHint();
+            width += (width > 0 ? m_horizontal : 0) + hint.width();
+            height = std::max(height, hint.height());
+        }
+        return {width, height};
+    }
+    QSize minimumSize() const override
+    {
+        QSize size(0, 0);
+        for (QLayoutItem* item : shown()) size = size.expandedTo(item->minimumSize());
+        return size;
+    }
+    void setGeometry(const QRect& rect) override
+    {
+        QLayout::setGeometry(rect);
+        arrange(rect, true);
+    }
+
+private:
+    QList<QLayoutItem*> m_items;
+    const int m_horizontal;
+    const int m_vertical;
+
+    QList<QLayoutItem*> shown() const
+    {
+        QList<QLayoutItem*> items;
+        for (QLayoutItem* item : m_items) {
+            if (!item->isEmpty()) items << item;
+        }
+        return items;
+    }
+    //! Lays the items out in `rect` (or only measures them there); returns the height they take.
+    int arrange(const QRect& rect, bool apply) const
+    {
+        const QList<QLayoutItem*> items = shown();
+        int wanted = 0;
+        int row_height = 0;
+        for (QLayoutItem* item : items) {
+            wanted += (wanted > 0 ? m_horizontal : 0) + item->sizeHint().width();
+            row_height = std::max(row_height, item->sizeHint().height());
+        }
+        const bool one_row = wanted <= rect.width();
+        // Laid out left to right, mirrored for a right-to-left layout.
+        const Qt::LayoutDirection direction = parentWidget() ? parentWidget()->layoutDirection() : QGuiApplication::layoutDirection();
+        const auto place = [&](QLayoutItem* item, const QRect& area) { item->setGeometry(QStyle::visualRect(direction, rect, area)); };
+        int x = rect.x();
+        int y = rect.y();
+        for (QLayoutItem* item : items) {
+            const QSize hint = item->sizeHint();
+            const int width = std::max(item->minimumSize().width(), std::min(hint.width(), rect.width()));
+            if (one_row) {
+                // Side by side, centred on the row.
+                if (apply) place(item, QRect(x, rect.y() + (row_height - hint.height()) / 2, width, hint.height()));
+                x += width + m_horizontal;
+            } else {
+                if (apply) place(item, QRect(rect.x(), y, width, hint.height()));
+                y += hint.height() + m_vertical;
+            }
+        }
+        if (items.isEmpty()) return 0;
+        return one_row ? row_height : y - m_vertical - rect.y();
+    }
+};
+
 SendCoinsEntry::SendCoinsEntry(QWidget* parent) :
     QStackedWidget(parent),
     ui(new Ui::SendCoinsEntry),
@@ -80,6 +179,8 @@ void SendCoinsEntry::updateThemePresentation(bool modern)
         auto* title = new QLabel(tr("Recipient"), m_modern_content);
         GUIUtil::setFont({title}, GUIUtil::FontWeight::Normal, 16);
         grid->addWidget(title, 0, 0);
+        m_amount_row = new AmountRowLayout(grid->horizontalSpacing(), grid->verticalSpacing());
+        grid->addLayout(m_amount_row, 6, 0, 1, 2);
     }
     ui->payAmount->setMaximumWidth(modern ? 300 : ui->payAmount->property("abyssOriginalMaximumWidth").toInt());
     auto* destination = modern ? qobject_cast<QGridLayout*>(m_modern_content->layout()) : ui->gridLayout;
@@ -90,6 +191,7 @@ void SendCoinsEntry::updateThemePresentation(bool modern)
     // Move child layouts with their QObject ownership detached.
     for (QLayout* child : {static_cast<QLayout*>(ui->payToLayout), static_cast<QLayout*>(ui->horizontalLayoutAmount)}) {
         if (modern) ui->gridLayout->removeItem(child);
+        else if (child == ui->horizontalLayoutAmount) m_amount_row->removeItem(child);
         else m_modern_content->layout()->removeItem(child);
         child->setParent(nullptr);
     }
@@ -103,12 +205,12 @@ void SendCoinsEntry::updateThemePresentation(bool modern)
         destination->addWidget(ui->labellLabel, 3, 0, 1, 2);
         destination->addWidget(ui->addAsLabel, 4, 0, 1, 2);
         destination->addWidget(ui->amountLabel, 5, 0, 1, 2);
-        destination->addLayout(ui->horizontalLayoutAmount, 6, 0, 1, 2);
-        destination->setAlignment(ui->horizontalLayoutAmount, Qt::AlignLeft);
+        // The button beside the field where both fit, under it where not.
+        m_amount_row->addRowLayout(ui->horizontalLayoutAmount);
+        m_amount_row->addWidget(ui->useAvailableBalanceButton);
         destination->addWidget(ui->checkboxSubtractFeeFromAmount, 7, 0, 1, 2);
-        destination->addWidget(ui->useAvailableBalanceButton, 8, 0, 1, 2, Qt::AlignRight);
-        destination->addWidget(ui->messageLabel, 9, 0, 1, 2);
-        destination->addWidget(ui->messageTextLabel, 10, 0, 1, 2);
+        destination->addWidget(ui->messageLabel, 8, 0, 1, 2);
+        destination->addWidget(ui->messageTextLabel, 9, 0, 1, 2);
         ui->line->hide();
         ui->gridLayout->addWidget(m_modern_content, 0, 0, 4, 2);
         m_modern_content->show();
@@ -117,7 +219,7 @@ void SendCoinsEntry::updateThemePresentation(bool modern)
         m_modern_content->hide();
         m_modern_content->layout()->removeWidget(ui->deleteButton);
         m_modern_content->layout()->removeWidget(ui->checkboxSubtractFeeFromAmount);
-        m_modern_content->layout()->removeWidget(ui->useAvailableBalanceButton);
+        m_amount_row->removeWidget(ui->useAvailableBalanceButton);
         ui->payToLayout->addWidget(ui->deleteButton);
         ui->horizontalLayoutAmount->addWidget(ui->checkboxSubtractFeeFromAmount);
         ui->horizontalLayoutAmount->addWidget(ui->useAvailableBalanceButton);
@@ -297,6 +399,12 @@ QWidget *SendCoinsEntry::setupTabChain(QWidget *prev)
     QWidget::setTabOrder(prev, ui->payTo);
     QWidget::setTabOrder(ui->payTo, ui->addAsLabel);
     QWidget *w = ui->payAmount->setupTabChain(ui->addAsLabel);
+    // Abyss: the button stands in the amount's row (beside the field or under
+    // it), so it comes after the field and before the check box under the row.
+    if (m_amount_row && m_amount_row->indexOf(ui->useAvailableBalanceButton) >= 0) {
+        QWidget::setTabOrder(w, ui->useAvailableBalanceButton);
+        w = ui->useAvailableBalanceButton;
+    }
     QWidget::setTabOrder(w, ui->checkboxSubtractFeeFromAmount);
     QWidget::setTabOrder(ui->checkboxSubtractFeeFromAmount, ui->addressBookButton);
     QWidget::setTabOrder(ui->addressBookButton, ui->pasteButton);

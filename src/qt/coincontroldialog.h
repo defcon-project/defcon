@@ -44,8 +44,9 @@ public:
     explicit CoinControlDialog(CCoinControl& coin_control, WalletModel* model, QWidget *parent = nullptr);
     ~CoinControlDialog();
 
-    // static because also called from sendcoinsdialog
-    static void updateLabels(CCoinControl& m_coin_control, WalletModel*, QDialog*);
+    // static because also called from sendcoinsdialog; unselect_spent false only shows: spent inputs are left out of
+    // the figures but stay selected, with no warning (a theme switch)
+    static void updateLabels(CCoinControl& m_coin_control, WalletModel*, QDialog*, bool unselect_spent = true);
 
     static QList<CAmount> payAmounts;
     static bool fSubtractFeeFromAmount;

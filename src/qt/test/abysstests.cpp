@@ -2660,6 +2660,436 @@ void AbyssTests::networkBar()
     QVERIFY(!card->isVisible());
 }
 
+// The Send page's confirmation targets by the chooser's index (sendcoinsdialog.cpp).
+int getConfTargetForIndex(int index);
+
+void AbyssTests::topMenuOpenShown()
+{
+    // U17, 1: the top menu button whose menu is open is the one shown up (the
+    // stylesheet's :pressed: Qt draws a tool button with its menu open as
+    // pressed), and a click leaves no focus on a button: with that focus it
+    // stayed shown up while another one's menu was open (the owner's picture,
+    // 2026-11-18: the Wallet menu open, Tools shown up).
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    WalletFixture fixture(m_node);
+    Theme("Abyss");
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.addWallet(fixture.model.get());
+    window.show();
+    Settle();
+    window.resize(1280, 850);
+    Settle();
+    QApplication::setActiveWindow(&window);
+    Settle();
+    QVERIFY(window.isActiveWindow());
+    if (window.nativeMenuBar()) QSKIP("A native menu bar belongs to the platform");
+    // The disposable fixture's sync overlay holds the keyboard focus on its
+    // close button while its layer is up (ModalOverlay::eventFilter), hidden
+    // or not, and would take it from a clicked or tabbed button: closed as a
+    // user closes it, it lets go.
+    auto* overlay = window.findChild<ModalOverlay*>();
+    QVERIFY(overlay);
+    overlay->closeClicked();
+    Settle();
+    QVERIFY(!overlay->isLayerVisible());
+    auto* bar = window.findChild<QWidget*>("abyssMenuControls");
+    QVERIFY(bar && bar->isVisible());
+    QList<QToolButton*> buttons;
+    for (const char* name : {"abyssWalletMenuButton", "abyssToolsMenuButton", "abyssHelpMenuButton"}) {
+        buttons << bar->findChild<QToolButton*>(name);
+        QVERIFY(buttons.last());
+    }
+    // The stylesheet's shown-up background (#10263e), in the button's left padding.
+    const auto shown_up = [](QToolButton* button) {
+        const QImage image = button->grab().toImage();
+        const QColor colour = image.pixelColor(int(3 * image.devicePixelRatio()), image.height() / 2);
+        return qAbs(colour.red() - 0x10) <= 2 && qAbs(colour.green() - 0x26) <= 2 && qAbs(colour.blue() - 0x3e) <= 2;
+    };
+    const QPoint away = window.mapToGlobal(QPoint(900, 700));
+    QStringList problems;
+    const auto expect = [&](bool ok, const char* what) {
+        if (!ok) problems << what;
+    };
+    MenuScript script;
+    script.describe([&]() -> QString {
+        return PointerState(&window) + QString(" open %1, focus %2")
+            .arg(window.abyssMenuHover && window.abyssMenuHover->openButton() ? window.abyssMenuHover->openButton()->objectName() : QString("none"))
+            .arg(QApplication::focusWidget() ? QApplication::focusWidget()->objectName() : QString("none"));
+    });
+    script.then("away", [&] { PointAt(&window, away); });
+    script.then("click Tools", [&] {
+        MenuScript::post([&] { QTest::mouseClick(buttons[1], Qt::LeftButton, Qt::NoModifier, buttons[1]->rect().center()); });
+    });
+    script.until("the Tools menu opens", [&] { return window.abyssToolsMenu->isVisible(); });
+    script.then("Tools shown up, Wallet not", [&] {
+        expect(shown_up(buttons[1]), "Tools not shown up with its menu open");
+        expect(!shown_up(buttons[0]), "Wallet shown up with the Tools menu open");
+    });
+    script.then("close it", [&] { window.abyssToolsMenu->hide(); });
+    script.until("the Tools menu closes", [&] { return !window.abyssToolsMenu->isVisible(); });
+    // A closed popup hands the activation back on a desktop; the test
+    // platform leaves the window inactive, where no hover is tracked.
+    script.then("activate the window", [&] { QApplication::setActiveWindow(&window); });
+    script.until("the window is active", [&] { return window.isActiveWindow(); });
+    script.then("away again", [&] { PointAt(&window, away); });
+    script.then("rest on Wallet", [&] { PointAt(&window, Centre(buttons[0])); });
+    script.until("the Wallet menu opens", [&] { return window.abyssWalletMenu->isVisible(); });
+    script.then("Wallet shown up, Tools and Help not", [&] {
+        expect(shown_up(buttons[0]), "Wallet not shown up with its menu open");
+        expect(!shown_up(buttons[1]), "Tools still shown up after its click");
+        expect(!shown_up(buttons[2]), "Help shown up");
+        expect(!buttons[1]->hasFocus(), "Tools kept the focus of its click");
+    });
+    // However a button has the keyboard focus (Tab, or the window's first
+    // focus when it is activated), it keeps it while another button's menu
+    // is open: the focus is a ring there, not the open menu's look.
+    script.then("away, close the Wallet menu", [&] {
+        PointAt(&window, away);
+        window.abyssWalletMenu->hide();
+    });
+    script.until("the Wallet menu closes", [&] { return !window.abyssWalletMenu->isVisible(); });
+    script.then("activate the window again", [&] { QApplication::setActiveWindow(&window); });
+    script.until("the window is active again", [&] { return window.isActiveWindow(); });
+    script.then("Tab to Help", [&] { buttons[2]->setFocus(Qt::TabFocusReason); });
+    script.until("Help has the focus", [&] { return buttons[2]->hasFocus(); });
+    script.then("rest on Wallet again", [&] { PointAt(&window, Centre(buttons[0])); });
+    script.until("the Wallet menu opens again", [&] { return window.abyssWalletMenu->isVisible(); });
+    script.then("Wallet shown up, the focused Help not", [&] {
+        expect(shown_up(buttons[0]), "Wallet not shown up with its menu open again");
+        expect(!shown_up(buttons[2]), "Help shown up by its keyboard focus");
+    });
+    const QString failure = script.run();
+    QVERIFY2(failure.isEmpty(), qPrintable(failure));
+    QVERIFY2(problems.isEmpty(), qPrintable(problems.join("; ")));
+    // Reached with Tab; a click does not focus them.
+    for (QToolButton* button : buttons) QCOMPARE(button->focusPolicy(), Qt::TabFocus);
+}
+
+void AbyssTests::sendAmountRow()
+{
+    // U17, 2: in Abyss the recipient card's "Use available balance" button
+    // stands in the amount's row, beside the field, and "Subtract fee from
+    // amount" under them. A classic theme keeps the form's row.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Row geometry requires minimal:enable_fonts or a native platform");
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    SendCoinsDialog send;
+    send.setModel(fixture.model.get());
+    send.resize(1026, 850);
+    send.show(); Settle();
+    auto* entry = send.findChild<SendCoinsEntry*>();
+    QVERIFY(entry);
+    auto* amount = entry->findChild<BitcoinAmountField*>("payAmount");
+    auto* available = entry->findChild<QPushButton*>("useAvailableBalanceButton");
+    auto* subtract = entry->findChild<QCheckBox*>("checkboxSubtractFeeFromAmount");
+    auto* row = entry->findChild<QHBoxLayout*>("horizontalLayoutAmount");
+    QVERIFY(amount && available && subtract && row);
+    const auto in_entry = [&](QWidget* widget) { return QRect(widget->mapTo(entry, QPoint()), widget->size()); };
+    const auto state = [&] {
+        const QRect a = in_entry(amount), b = in_entry(available), c = in_entry(subtract);
+        return QString("amount %1,%2 %3x%4 button %5,%6 %7x%8 check box %9,%10")
+            .arg(a.x()).arg(a.y()).arg(a.width()).arg(a.height()).arg(b.x()).arg(b.y()).arg(b.width()).arg(b.height()).arg(c.x()).arg(c.y());
+    };
+    const auto abyss_row = [&] {
+        const QRect a = in_entry(amount), b = in_entry(available), c = in_entry(subtract);
+        return available->isVisible() && b.left() > a.right() &&
+               qAbs(b.center().y() - a.center().y()) <= 1 && c.top() > std::max(a.bottom(), b.bottom());
+    };
+    QVERIFY2(abyss_row(), qPrintable(state()));
+    // Tab goes as the row reads: from the amount field (through its own
+    // widgets) to the button, then to the check box, wherever the button
+    // stands (review r1, R2).
+    QApplication::setActiveWindow(&send);
+    Settle();
+    QVERIFY(send.isActiveWindow());
+    const auto tab_path = [&]() -> QString {
+        amount->setFocus(Qt::TabFocusReason);
+        Settle();
+        QWidget* reached = QApplication::focusWidget();
+        for (int step = 0; step < 4 && reached && (reached == amount || amount->isAncestorOf(reached)); ++step) {
+            QTest::keyClick(reached, Qt::Key_Tab);
+            Settle();
+            reached = QApplication::focusWidget();
+        }
+        if (reached != available) return QString("after the amount: %1").arg(reached ? reached->objectName() : QString("none"));
+        QTest::keyClick(reached, Qt::Key_Tab);
+        Settle();
+        reached = QApplication::focusWidget();
+        if (reached != subtract) return QString("after the button: %1").arg(reached ? reached->objectName() : QString("none"));
+        return QString();
+    };
+    QString tabbed = tab_path();
+    QVERIFY2(tabbed.isEmpty(), qPrintable(tabbed + "; " + state()));
+    // A right-to-left layout mirrors the row: the button to the field's left (review r1, R6).
+    entry->setLayoutDirection(Qt::RightToLeft);
+    Settle();
+    {
+        const QRect a = in_entry(amount), b = in_entry(available);
+        QVERIFY2(b.right() < a.left() && qAbs(b.center().y() - a.center().y()) <= 1, qPrintable(state()));
+    }
+    entry->setLayoutDirection(Qt::LeftToRight);
+    Settle();
+    QVERIFY2(abyss_row(), qPrintable(state()));
+    // Where the two do not fit side by side, the button stands under the
+    // field, from its left edge, and the check box under both: the card asks
+    // no more width for the row than the wider of the two, and the column
+    // does not scroll across.
+    auto* fields_scroll = send.findChild<QScrollArea*>("abyssSendFieldsScroll");
+    QVERIFY(fields_scroll);
+    const auto abyss_wrapped = [&] {
+        const QRect a = in_entry(amount), b = in_entry(available), c = in_entry(subtract);
+        return available->isVisible() && b.left() == a.left() && b.top() > a.bottom() && c.top() > b.bottom();
+    };
+    send.resize(704, 740); Settle();
+    QVERIFY2(abyss_wrapped(), qPrintable(state()));
+    QCOMPARE(fields_scroll->horizontalScrollBar()->maximum(), 0);
+    tabbed = tab_path();
+    QVERIFY2(tabbed.isEmpty(), qPrintable(tabbed + "; " + state()));
+    send.resize(1026, 850); Settle();
+    QVERIFY2(abyss_row(), qPrintable(state()));
+    Theme("Light"); Settle();
+    QVERIFY2(row->indexOf(amount) >= 0 && row->indexOf(amount) < row->indexOf(subtract) && row->indexOf(subtract) < row->indexOf(available),
+             qPrintable(QString("the form's row: amount %1, check box %2, button %3").arg(row->indexOf(amount)).arg(row->indexOf(subtract)).arg(row->indexOf(available))));
+    Theme("Abyss"); Settle();
+    QVERIFY2(abyss_row(), qPrintable(state()));
+}
+
+void AbyssTests::sendRecommendedFee()
+{
+    // U17, 3: the Send page shows no fee chooser in Abyss, and Abyss pays the
+    // recommended fee at the wallet's confirmation target (owner decision,
+    // 2026-11-18), whatever the chooser holds. The chooser's settings are not
+    // touched: a classic theme shows it again and pays as it says. Prepared on
+    // a funded wallet, the transaction pays that fee for its size, and the
+    // confirmation says so; the selected inputs' figures follow a theme
+    // switch; neither a switch nor the smart fee label's refresh (each block)
+    // leaves the page's coin control, which the Inputs dialog estimates with,
+    // without the rate the theme pays; and the page closed in Abyss saves the
+    // chooser as it was (review r1, R1 and R3). The Inputs dialog counts with
+    // its own page's recipients, whichever page refreshed last, and a switch
+    // leaves the selection as it is (review r2, R8 and R9). Nothing is
+    // broadcast.
+    RestoreAppearance restore;
+    Theme("Light");
+    WalletFixture fixture(m_node);
+    // A coin of its own, ten blocks deep: 10 to an address of the wallet (its
+    // own input is made up; nothing checks it, and nothing is broadcast).
+    const QString own = fixture.model->getAddressTableModel()->addRow(AddressTableModel::Receive, "", "");
+    QVERIFY(!own.isEmpty());
+    const CBlockIndex* tip = WITH_LOCK(::cs_main, return fixture.chain.m_node.chainman->ActiveChain().Tip());
+    QVERIFY(tip && tip->nHeight > 20);
+    {
+        LOCK(fixture.wallet->cs_wallet);
+        fixture.wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+    const CBlockIndex* deep = tip->GetAncestor(tip->nHeight - 10);
+    QVERIFY(deep);
+    CMutableTransaction fund;
+    fund.vin.emplace_back(COutPoint(uint256S("0700000000000000000000000000000000000000000000000000000000000000"), 0));
+    fund.vout.emplace_back(10 * COIN, GetScriptForDestination(DecodeDestination(own.toStdString())));
+    const CTransactionRef fund_tx = MakeTransactionRef(std::move(fund));
+    QVERIFY(fixture.wallet->AddToWallet(fund_tx, CWalletTx::Confirmation(CWalletTx::CONFIRMED, deep->nHeight, deep->GetBlockHash(), 1)));
+    const COutPoint coin(fund_tx->GetHash(), 0);
+    const QString payee = QString::fromStdString(EncodeDestination(PKHash(fixture.chain.coinbaseKey.GetPubKey())));
+    const int wallet_target = int(fixture.model->wallet().getConfirmTarget());
+    const int unit = fixture.model->getOptionsModel()->getDisplayUnit();
+    const CFeeRate custom(2000);
+    // The fee the wallet asks for `size` bytes at a custom rate or at a confirmation target.
+    const auto wallet_fee = [&](unsigned int size, std::optional<CFeeRate> rate, int conf_target) {
+        CCoinControl control;
+        control.m_feerate = rate;
+        control.m_confirm_target = conf_target;
+        return fixture.model->wallet().getMinimumFee(size, control, nullptr, nullptr);
+    };
+    // A transaction's fee is the rate's for the size the wallet counted: its
+    // inputs with dummy signatures (CalculateMaximumSignedTxSize), which the
+    // signed ones can undercut by a few bytes (review r2, R10).
+    const auto pays = [&](CAmount paid, const CTransactionRef& tx, std::optional<CFeeRate> rate, int conf_target) {
+        const int64_t size = WITH_LOCK(fixture.wallet->cs_wallet, return CalculateMaximumSignedTxSize(*tx, fixture.wallet.get()));
+        return size > 0 && paid == wallet_fee(static_cast<unsigned int>(size), rate, conf_target);
+    };
+    {
+        SendCoinsDialog send;
+        send.setModel(fixture.model.get());
+        send.resize(1026, 850);
+        send.show(); Settle();
+        auto* fee = send.findChild<QFrame*>("frameFee");
+        auto* custom_radio = send.findChild<QRadioButton*>("radioCustomFee");
+        auto* custom_fee = send.findChild<BitcoinAmountField*>("customFee");
+        auto* target = send.findChild<QComboBox*>("confTargetSelector");
+        auto* entry = send.findChild<SendCoinsEntry*>();
+        auto* input_fee = send.findChild<QLabel*>("labelCoinControlFee");
+        QVERIFY(fee && custom_radio && custom_fee && target && entry && input_fee);
+        QVERIFY(fee->isVisible());
+        send.findChild<QPushButton*>("buttonChooseFee")->click(); Settle();
+        custom_radio->click();
+        custom_fee->setValue(custom.GetFeePerK());
+        target->setCurrentIndex(target->count() - 1);
+        Settle();
+        const int classic_target = getConfTargetForIndex(target->currentIndex());
+        QVERIFY(classic_target != wallet_target);
+        // An input chosen in the Inputs dialog, and a payment.
+        QVERIFY(QMetaObject::invokeMethod(&send, "coinControlFeatureChanged", Q_ARG(bool, true)));
+        send.m_coin_control->Select(coin);
+        entry->setValue(SendCoinsRecipient(payee, QString(), COIN, QString()));
+        QVERIFY(QMetaObject::invokeMethod(&send, "coinControlUpdateLabels"));
+        Settle();
+        const QString classic_input_fee = input_fee->text();
+        QVERIFY(send.m_coin_control->m_feerate && *send.m_coin_control->m_feerate == custom);
+        // The smart fee label's refresh (each new block) estimates on a copy.
+        send.updateSmartFeeLabel();
+        QVERIFY(send.m_coin_control->m_feerate && *send.m_coin_control->m_feerate == custom);
+        // Prepared in a classic theme: the custom rate, and the confirmation says so.
+        const auto prepare = [&](QString& question) {
+            QString informative, detailed;
+            return send.PrepareSendText(question, informative, detailed);
+        };
+        QString classic_question;
+        QVERIFY(prepare(classic_question));
+        const CAmount classic_paid = send.m_current_transaction->getTransactionFee();
+        const unsigned int classic_size = send.m_current_transaction->getTransactionSize();
+        QVERIFY2(pays(classic_paid, send.m_current_transaction->getWtx(), custom, classic_target),
+                 qPrintable(QString("paid %1 for %2 bytes").arg(classic_paid).arg(classic_size)));
+        QVERIFY2(classic_question.contains(BitcoinUnits::formatHtmlWithUnit(unit, classic_paid)), qPrintable(classic_question));
+
+        Theme("Abyss"); Settle();
+        QVERIFY(!fee->isVisible());
+        // After the switch alone: the coin control the Inputs dialog takes,
+        // and the inputs' figures, are the recommended fee's.
+        QVERIFY(!send.m_coin_control->m_feerate);
+        QVERIFY(send.m_coin_control->m_confirm_target);
+        QCOMPARE(int(*send.m_coin_control->m_confirm_target), wallet_target);
+        QVERIFY2(input_fee->text() != classic_input_fee, qPrintable(input_fee->text()));
+        auto* rate = send.findChild<QLabel*>("abyssFeeRate");
+        QVERIFY(rate);
+        QCOMPARE(rate->text(), send.findChild<QLabel*>("labelSmartFee")->text());
+        // Prepared in Abyss: the recommended fee at the wallet's target, not the custom rate.
+        QString abyss_question;
+        QVERIFY(prepare(abyss_question));
+        const CAmount abyss_paid = send.m_current_transaction->getTransactionFee();
+        const unsigned int abyss_size = send.m_current_transaction->getTransactionSize();
+        QVERIFY2(pays(abyss_paid, send.m_current_transaction->getWtx(), std::nullopt, wallet_target),
+                 qPrintable(QString("paid %1 for %2 bytes").arg(abyss_paid).arg(abyss_size)));
+        QVERIFY2(!pays(abyss_paid, send.m_current_transaction->getWtx(), custom, wallet_target), qPrintable(QString("paid %1, the custom rate's").arg(abyss_paid)));
+        QVERIFY2(abyss_question.contains(BitcoinUnits::formatHtmlWithUnit(unit, abyss_paid)), qPrintable(abyss_question));
+        // Nothing of the chooser changed.
+        QVERIFY(custom_radio->isChecked());
+        QCOMPARE(custom_fee->value(), custom.GetFeePerK());
+        QCOMPARE(target->currentIndex(), target->count() - 1);
+
+        // Back in the classic theme (as a cancelled Appearance preview leaves
+        // it): the custom rate and its figures again.
+        Theme("Light"); Settle();
+        QVERIFY(fee->isVisible());
+        QVERIFY(send.m_coin_control->m_feerate && *send.m_coin_control->m_feerate == custom);
+        QCOMPARE(int(*send.m_coin_control->m_confirm_target), classic_target);
+        QCOMPARE(input_fee->text(), classic_input_fee);
+
+        // The Inputs dialog counts with its own page's recipients (review r2
+        // and r3, R8): the wallet's other Send page (the CoinJoin page is
+        // one, with an empty form) refreshing last, as on a unit switch,
+        // leaves this page's dialog this page's payment when it opens; while
+        // it is open, the other page's style refresh (a theme switch, or the
+        // -debug-ui stylesheet reload) leaves the payment as it is.
+        // The other page pays 2 with the fee subtracted, this one 1 without.
+        {
+            SendCoinsDialog other;
+            other.setModel(fixture.model.get());
+            auto* other_entry = other.findChild<SendCoinsEntry*>();
+            auto* other_subtract = other.findChild<QCheckBox*>("checkboxSubtractFeeFromAmount");
+            QVERIFY(other_entry && other_subtract);
+            other_entry->setValue(SendCoinsRecipient(payee, QString(), 2 * COIN, QString()));
+            other_subtract->setChecked(true);
+            QVERIFY(QMetaObject::invokeMethod(&other, "coinControlUpdateLabels"));
+            QCOMPARE(CoinControlDialog::payAmounts, QList<CAmount>{2 * COIN});
+            QVERIFY(CoinControlDialog::fSubtractFeeFromAmount);
+            // Read once the dialog is up in its own loop (a timer firing
+            // earlier, while it is built, would leave exec() waiting); after
+            // the other page's style refresh the input is selected again with
+            // the dialog's own button, and the dialog shows its change anew.
+            QList<CAmount> opened{-1}, restyled{-1};
+            bool opened_subtract{true}, restyled_subtract{true};
+            QString change_opened, change_reselected;
+            QTimer closer;
+            closer.setInterval(10);
+            QObject::connect(&closer, &QTimer::timeout, &send, [&] {
+                auto* dialog = qobject_cast<CoinControlDialog*>(QApplication::activeModalWidget());
+                if (!dialog || !dialog->isVisible()) return;
+                closer.stop();
+                auto* change = dialog->findChild<QLabel*>("labelCoinControlChange");
+                auto* select_all = dialog->findChild<QPushButton*>("pushButtonSelectAll");
+                if (change && select_all) {
+                    opened = CoinControlDialog::payAmounts;
+                    opened_subtract = CoinControlDialog::fSubtractFeeFromAmount;
+                    change_opened = change->text();
+                    QEvent style_change(QEvent::StyleChange);
+                    QApplication::sendEvent(&other, &style_change);
+                    restyled = CoinControlDialog::payAmounts;
+                    restyled_subtract = CoinControlDialog::fSubtractFeeFromAmount;
+                    select_all->click(); // unselects
+                    select_all->click(); // selects again
+                    change_reselected = change->text();
+                }
+                dialog->reject();
+            });
+            closer.start();
+            QVERIFY(QMetaObject::invokeMethod(&send, "coinControlButtonClicked"));
+            closer.stop();
+            QCOMPARE(opened, QList<CAmount>{COIN});
+            QVERIFY(!opened_subtract);
+            QCOMPARE(restyled, QList<CAmount>{COIN});
+            QVERIFY(!restyled_subtract);
+            QVERIFY(!change_opened.isEmpty());
+            QCOMPARE(change_reselected, change_opened);
+        }
+
+        // A switch leaves the selection as it is (review r2, R9): the selected
+        // coin, spent elsewhere meanwhile, stays selected through the switch,
+        // with no warning; the user's next change unselects it and warns, as
+        // on the base. A warning box is noted and closed. Closed in Abyss.
+        CMutableTransaction elsewhere;
+        elsewhere.vin.emplace_back(coin);
+        elsewhere.vout.emplace_back(9 * COIN, GetScriptForDestination(DecodeDestination(payee.toStdString())));
+        QVERIFY(fixture.wallet->AddToWallet(MakeTransactionRef(std::move(elsewhere)),
+                                            CWalletTx::Confirmation(CWalletTx::CONFIRMED, tip->nHeight, tip->GetBlockHash(), 2)));
+        QStringList warnings;
+        QTimer boxes;
+        boxes.setInterval(10);
+        QObject::connect(&boxes, &QTimer::timeout, &send, [&] {
+            auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            if (!box || !box->isVisible()) return;
+            warnings << box->text();
+            box->done(QMessageBox::Ok);
+        });
+        boxes.start();
+        Theme("Abyss"); Settle();
+        QVERIFY2(warnings.isEmpty(), qPrintable(warnings.join("; ")));
+        QVERIFY(send.m_coin_control->IsSelected(coin));
+        QVERIFY(QMetaObject::invokeMethod(&send, "coinControlUpdateLabels"));
+        QVERIFY(!send.m_coin_control->IsSelected(coin));
+        QCOMPARE(warnings.size(), 1);
+        boxes.stop();
+    }
+    // Opened again in a classic theme: the chooser as it was set.
+    Theme("Light");
+    SendCoinsDialog again;
+    again.setModel(fixture.model.get());
+    again.show(); Settle();
+    auto* again_target = again.findChild<QComboBox*>("confTargetSelector");
+    QVERIFY(again_target);
+    QVERIFY(again.findChild<QRadioButton*>("radioCustomFee")->isChecked());
+    QCOMPARE(again.findChild<BitcoinAmountField*>("customFee")->value(), custom.GetFeePerK());
+    QCOMPARE(again_target->currentIndex(), again_target->count() - 1);
+}
+
 void AbyssTests::paymentPages()
 {
     if (!GUIUtil::fontsLoaded()) QSKIP("Payment layout needs minimal:enable_fonts or a native platform");
@@ -2782,8 +3212,8 @@ void AbyssTests::paymentPages()
         second->findChild<QToolButton*>("deleteButton")->click(); Settle();
         QCOMPARE(count->text(), QString("1"));
         QCOMPARE(amount->text(), format(125000000));
-        send.findChild<QPushButton*>("buttonChooseFee")->click(); Settle();
-        QVERIFY(send.findChild<QFrame*>("frameFeeSelection")->isVisible());
+        // No fee chooser in Abyss (U17, sendRecommendedFee).
+        QVERIFY(!send.findChild<QFrame*>("frameFee")->isVisible());
         send.resize(704, 1000); Settle();
         QCOMPARE(send.width(), 704);
         QVERIFY(QMetaObject::invokeMethod(&send, "coinControlFeatureChanged", Q_ARG(bool, true)));
@@ -2841,8 +3271,9 @@ void AbyssTests::paymentPages()
         auto* smart_radio = send.findChild<QRadioButton*>("radioSmartFee");
         auto* custom_fee = send.findChild<BitcoinAmountField*>("customFee");
         QVERIFY(custom_radio && smart_radio && custom_fee);
+        // Abyss pays the recommended fee, whatever the hidden chooser holds (U17).
         custom_radio->click(); custom_fee->setValue(2000); Settle();
-        QCOMPARE(rate->text(), format(2000) + "/kB");
+        QCOMPARE(rate->text(), send.findChild<QLabel*>("labelSmartFee")->text());
         smart_radio->click(); Settle();
         QCOMPARE(rate->text(), send.findChild<QLabel*>("labelSmartFee")->text());
 
@@ -5599,7 +6030,8 @@ void AbyssTests::topMenus()
             auto* button = row->findChild<QToolButton*>(name);
             QVERIFY(button && button->isVisible() && button->menu());
             QCOMPARE(button->toolButtonStyle(), Qt::ToolButtonTextBesideIcon);
-            QCOMPARE(button->focusPolicy(), Qt::StrongFocus);
+            // Reached with Tab; a click leaves no focus behind (U17).
+            QCOMPARE(button->focusPolicy(), Qt::TabFocus);
             QVERIFY(!button->icon().isNull());
             QVERIFY(!button->accessibleName().isEmpty());
             bool keyboard_opened{false};

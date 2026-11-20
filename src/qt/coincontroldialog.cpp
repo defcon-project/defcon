@@ -442,7 +442,7 @@ void CoinControlDialog::on_hideButton_clicked()
     CoinControlDialog::updateLabels(m_coin_control, model, this);
 }
 
-void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *model, QDialog* dialog)
+void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *model, QDialog* dialog, bool unselect_spent)
 {
     if (!model)
         return;
@@ -483,8 +483,10 @@ void CoinControlDialog::updateLabels(CCoinControl& m_coin_control, WalletModel *
         const COutPoint& outpt = vCoinControl[i++];
         if (out.is_spent)
         {
-            m_coin_control.UnSelect(outpt);
-            fUnselectedSpent = true;
+            if (unselect_spent) {
+                m_coin_control.UnSelect(outpt);
+                fUnselectedSpent = true;
+            }
             continue;
         }
 

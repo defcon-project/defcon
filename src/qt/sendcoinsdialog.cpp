@@ -820,6 +820,8 @@ void SendCoinsDialog::updateThemePresentation()
             ui->scrollAreaWidgetContents->show();
             left->addWidget(ui->addButton, 0, Qt::AlignLeft);
             left->addWidget(ui->frameFee);
+            // Abyss pays the recommended fee (owner decision): no chooser.
+            ui->frameFee->hide();
             ui->scrollArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
             if (ui->sendButton->parentWidget() != m_modern_summary) right->addWidget(ui->sendButton);
             // Mirror the formatted balance without moving the classic labels.
@@ -855,6 +857,7 @@ void SendCoinsDialog::updateThemePresentation()
             right->removeWidget(ui->sendButton);
             ui->verticalLayout->insertWidget(1, ui->scrollArea, m_original_scroll_stretch);
             ui->verticalLayout->insertWidget(2, ui->frameFee);
+            ui->frameFee->show();
             ui->horizontalLayout->insertWidget(0, ui->sendButton);
             ui->horizontalLayout->insertWidget(1, ui->clearButton);
             ui->horizontalLayout->insertWidget(2, ui->addButton);
@@ -888,6 +891,13 @@ void SendCoinsDialog::updateThemePresentation()
     }
     setupTabChain(nullptr);
     applyScrollAreaMinimum();
+    // The fee follows the theme (Abyss: the recommended fee at the wallet's
+    // target), and so do the selected inputs' fee and change; the selection
+    // itself stays as it is.
+    if (model && model->getOptionsModel()) {
+        updateSmartFeeLabel();
+        updateCoinControlLabels(/*keep_selection=*/true);
+    }
     updatePaymentSummary();
     if (restore_focus && !(modern && (focus == ui->labelBalance || focus == ui->labelBalanceName))
         && focus->parentWidget()->isVisibleTo(this)) {
@@ -984,8 +994,8 @@ void SendCoinsDialog::updatePaymentSummary()
     const int unit = model && model->getOptionsModel() ? model->getOptionsModel()->getDisplayUnit() : BitcoinUnits::DASH;
     m_summary_recipients->setText(QString::number(count));
     m_summary_amount->setText(valid ? BitcoinUnits::formatWithUnit(unit, amount) : QString(QChar(0x2013)));
-    m_summary_fee->setText(ui->radioSmartFee->isChecked() ? ui->labelSmartFee->text()
-        : BitcoinUnits::formatWithUnit(unit, ui->customFee->value()) + "/kB");
+    // Abyss pays the recommended fee, whatever the hidden chooser holds.
+    m_summary_fee->setText(ui->labelSmartFee->text());
 }
 
 void SendCoinsDialog::applyScrollAreaMinimum()
@@ -1264,7 +1274,7 @@ void SendCoinsDialog::updateFeeMinimizedLabel()
     if(!model || !model->getOptionsModel())
         return;
 
-    if (ui->radioSmartFee->isChecked())
+    if (ui->radioSmartFee->isChecked() || m_modern_layout)
         ui->labelFeeMinimized->setText(ui->labelSmartFee->text());
     else {
         ui->labelFeeMinimized->setText(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), ui->customFee->value()) + "/kB");
@@ -1274,14 +1284,18 @@ void SendCoinsDialog::updateFeeMinimizedLabel()
 
 void SendCoinsDialog::updateCoinControlState()
 {
-    if (ui->radioCustomFee->isChecked()) {
+    // Abyss shows no fee chooser and pays the recommended fee at the
+    // wallet's confirmation target (owner decision); the chooser's saved
+    // settings stay as they are, for a classic theme.
+    if (ui->radioCustomFee->isChecked() && !m_modern_layout) {
         m_coin_control->m_feerate = CFeeRate(ui->customFee->value());
     } else {
         m_coin_control->m_feerate.reset();
     }
     // Avoid using global defaults when sending money from the GUI
     // Either custom fee will be used or if not selected, the confirmation target from dropdown box
-    m_coin_control->m_confirm_target = getConfTargetForIndex(ui->confTargetSelector->currentIndex());
+    m_coin_control->m_confirm_target = m_modern_layout ? model->wallet().getConfirmTarget()
+                                                       : getConfTargetForIndex(ui->confTargetSelector->currentIndex());
     // Include watch-only for wallets without private key
     m_coin_control->fAllowWatchOnly = model->wallet().privateKeysDisabled();
 }
@@ -1297,10 +1311,13 @@ void SendCoinsDialog::updateSmartFeeLabel()
     if(!model || !model->getOptionsModel())
         return;
     updateCoinControlState();
-    m_coin_control->m_feerate.reset(); // Explicitly use only fee estimation rate for smart fee labels
+    // Explicitly use only fee estimation rate for smart fee labels, on a copy:
+    // the page's coin control keeps the rate the Inputs dialog estimates with.
+    CCoinControl estimate = *m_coin_control;
+    estimate.m_feerate.reset();
     int returned_target;
     FeeReason reason;
-    CFeeRate feeRate = CFeeRate(model->wallet().getMinimumFee(1000, *m_coin_control, &returned_target, &reason));
+    CFeeRate feeRate = CFeeRate(model->wallet().getMinimumFee(1000, estimate, &returned_target, &reason));
 
     ui->labelSmartFee->setText(BitcoinUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), feeRate.GetFeePerK()) + "/kB");
 
@@ -1376,6 +1393,9 @@ void SendCoinsDialog::coinControlFeatureChanged(bool checked)
 // Coin Control: button inputs -> show actual coin control dialog
 void SendCoinsDialog::coinControlButtonClicked()
 {
+    // The dialog counts with this page's recipients: another page's refresh
+    // (the CoinJoin page's, on a theme or unit switch) may have set them last.
+    setCoinControlPayAmounts();
     CoinControlDialog dlg(*m_coin_control, model, this);
     dlg.exec();
     coinControlUpdateLabels();
@@ -1453,11 +1473,50 @@ void SendCoinsDialog::coinControlChangeEdited(const QString& text)
 // Coin Control: update labels
 void SendCoinsDialog::coinControlUpdateLabels()
 {
+    updateCoinControlLabels(/*keep_selection=*/false);
+}
+
+void SendCoinsDialog::updateCoinControlLabels(bool keep_selection)
+{
     if (!model || !model->getOptionsModel())
         return;
 
     updateCoinControlState();
 
+    // A refresh that only shows (a theme switch) puts the shared pay amounts
+    // back afterwards: another page's open Inputs dialog counts with them.
+    const QList<CAmount> shared_amounts = CoinControlDialog::payAmounts;
+    const bool shared_subtract = CoinControlDialog::fSubtractFeeFromAmount;
+    setCoinControlPayAmounts();
+
+    if (m_coin_control->HasSelected())
+    {
+        // actual coin control calculation; a theme switch only shows: inputs
+        // spent meanwhile are unselected (with a warning) by the user's own
+        // changes only
+        CoinControlDialog::updateLabels(*m_coin_control, model, this, /*unselect_spent=*/!keep_selection);
+
+        // show coin control stats
+        ui->labelCoinControlAutomaticallySelected->hide();
+        ui->widgetCoinControl->show();
+    }
+    else
+    {
+        // hide coin control stats
+        ui->labelCoinControlAutomaticallySelected->show();
+        ui->widgetCoinControl->hide();
+        ui->labelCoinControlInsuffFunds->hide();
+    }
+
+    if (keep_selection) {
+        CoinControlDialog::payAmounts = shared_amounts;
+        CoinControlDialog::fSubtractFeeFromAmount = shared_subtract;
+    }
+}
+
+// Coin Control: the pay amounts the Inputs dialog counts with
+void SendCoinsDialog::setCoinControlPayAmounts()
+{
     // set pay amounts
     CoinControlDialog::payAmounts.clear();
     CoinControlDialog::fSubtractFeeFromAmount = false;
@@ -1472,23 +1531,6 @@ void SendCoinsDialog::coinControlUpdateLabels()
             if (rcp.fSubtractFeeFromAmount)
                 CoinControlDialog::fSubtractFeeFromAmount = true;
         }
-    }
-
-    if (m_coin_control->HasSelected())
-    {
-        // actual coin control calculation
-        CoinControlDialog::updateLabels(*m_coin_control, model, this);
-
-        // show coin control stats
-        ui->labelCoinControlAutomaticallySelected->hide();
-        ui->widgetCoinControl->show();
-    }
-    else
-    {
-        // hide coin control stats
-        ui->labelCoinControlAutomaticallySelected->show();
-        ui->widgetCoinControl->hide();
-        ui->labelCoinControlInsuffFunds->hide();
     }
 }
 

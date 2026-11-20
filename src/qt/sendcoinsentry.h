@@ -9,6 +9,7 @@
 
 #include <QStackedWidget>
 
+class AmountRowLayout;
 class WalletModel;
 
 namespace interfaces {
@@ -84,6 +85,8 @@ private:
     Ui::SendCoinsEntry *ui;
     WalletModel *model;
     QWidget* m_modern_content{nullptr};
+    //! Abyss: the amount field with the "Use available balance" button.
+    AmountRowLayout* m_amount_row{nullptr};
     bool m_modern_layout{false};
     int m_original_subtract_stretch{0};
 
