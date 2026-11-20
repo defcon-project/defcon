@@ -4,10 +4,18 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import random
+from decimal import Decimal
 
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.messages import (
+    COIN,
+    CTransaction,
+    CTxOut,
     uint256_to_string,
+)
+from test_framework.script import (
+    CScript,
+    OP_CHECKSIG,
 )
 from test_framework.util import (
     assert_equal,
@@ -64,6 +72,8 @@ class CoinJoinTest(BitcoinTestFramework):
         w2 = node.get_wallet_rpc('w2')
         self.test_coinjoinsalt_disabled(w2)
         w2.unloadwallet()
+
+        self.test_dfcn_scale_coin(node)
 
     def test_salt_presence(self, node):
         self.log.info('Salt should be automatically generated in new wallet')
@@ -178,6 +188,95 @@ class CoinJoinTest(BitcoinTestFramework):
             assert_raises_rpc_error(-32600, 'Wallet "w2" has private keys disabled, cannot perform CoinJoin!', node.coinjoinsalt, subcommand)
         s1 = uint256_to_string(random.getrandbits(256))
         assert_raises_rpc_error(-32600, 'Wallet "w2" has private keys disabled, cannot perform CoinJoin!', node.coinjoinsalt, 'set', s1)
+
+    def test_dfcn_scale_coin(self, node):
+        self.log.info('A DFCN-scale coin (CJ4) is listed by its rounds')
+        amount = Decimal('100.001')
+        miner = node.get_deterministic_priv_key()
+        node.createwallet(wallet_name='w3', blank=False, disable_private_keys=False)
+        w3 = node.get_wallet_rpc('w3')
+        w3.importprivkey(privkey=miner.key, label='coinbase', rescan=True)
+        node.createwallet(wallet_name='w4', blank=False, disable_private_keys=False)  # the other party of the mixes
+        w4 = node.get_wallet_rpc('w4')
+        w3.sendtoaddress(w4.getnewaddress(), 2000)
+        self.generate(node, 1, sync_fun=self.no_op)
+        w3.setcoinjoinrounds(COINJOIN_ROUNDS_MIN)  # fully mixed from 2 + 3 random rounds on
+
+        def types_of(txid, vout):
+            return [coin_type for coin_type in range(4)
+                    if any(u['txid'] == txid and u['vout'] == vout for u in w3.listunspent(1, 9999999, [], True, {'coinType': coin_type}))]
+
+        def entry(txid, vout):
+            return next(u for u in w3.listunspent(1, 9999999, [], True) if u['txid'] == txid and u['vout'] == vout)
+
+        # An exact-amount P2PK output to an own key: listed as ready to mix (the help says it is no mixing candidate)
+        pubkey = w3.getaddressinfo(miner.address)['pubkey']
+        p2pk = CTransaction()
+        p2pk.vout.append(CTxOut(int(amount * COIN), CScript([bytes.fromhex(pubkey), OP_CHECKSIG])))
+        signed_p2pk = w3.signrawtransactionwithwallet(w3.fundrawtransaction(p2pk.serialize().hex())['hex'])['hex']
+        p2pk_tx = w3.decoderawtransaction(signed_p2pk)
+        w3.sendrawtransaction(signed_p2pk)
+        self.generate(node, 1, sync_fun=self.no_op)
+        p2pk_vout = next(o['n'] for o in p2pk_tx['vout'] if o['scriptPubKey']['hex'] == p2pk.vout[0].scriptPubKey.hex())
+        assert_equal(entry(p2pk_tx['txid'], p2pk_vout)['amount'], amount)
+        assert_equal(types_of(p2pk_tx['txid'], p2pk_vout), [0, 2])
+        # Spent on to the other wallet, so that later the fully mixed coin is w3's only DFCN-scale coin
+        to_w4 = w3.createrawtransaction([{'txid': p2pk_tx['txid'], 'vout': p2pk_vout}], [{w4.getnewaddress(): amount - Decimal('0.001')}])
+        w3.sendrawtransaction(w3.signrawtransactionwithwallet(to_w4)['hex'])
+        self.generate(node, 1, sync_fun=self.no_op)
+
+        address = w3.getnewaddress()
+        txid = w4.sendtoaddress(address, amount)  # paid by another wallet: no own input
+        self.generate(node, 1, sync_fun=self.no_op)
+        vout = next(u['vout'] for u in w3.listunspent(1, 9999999, [address]) if u['txid'] == txid)
+        assert_equal(entry(txid, vout)['coinjoin_rounds'], 0)  # an ordinary incoming DFCN-scale coin; v23.0.0 read -2
+        assert_equal(types_of(txid, vout), [0, 2])  # ready to mix, not fully mixed, not an ordinary coin
+        assert_equal(w3.getbalances()['mine']['coinjoin'], 0)
+        assert_equal(w3.getwalletinfo()['coinjoin_balance'], 0)
+        # With CoinJoin enabled the salt guard counts an unmixed DFCN-scale coin (here the only one, of zero rounds)
+        salt = uint256_to_string(random.getrandbits(256))
+        assert_raises_rpc_error(-4, 'Wallet "w3" has CoinJoin balance, cannot continue!', w3.coinjoinsalt, 'set', salt)
+
+        self.log.info('Five real mixes, zero-fee and mined directly: a fully mixed DFCN-scale coin')
+
+        def script_of(addr):
+            return w3.getaddressinfo(addr)['scriptPubKey']
+
+        def mix(own_txid, own_vout):
+            foreign = w4.getnewaddress()
+            foreign_txid = w4.sendtoaddress(foreign, amount)
+            self.generate(node, 1, sync_fun=self.no_op)
+            foreign_vout = next(u['vout'] for u in w4.listunspent(1, 9999999, [foreign]) if u['txid'] == foreign_txid)
+            own_to, foreign_to = w3.getnewaddress(), w4.getnewaddress()
+            ins = sorted([{'txid': own_txid, 'vout': own_vout}, {'txid': foreign_txid, 'vout': foreign_vout}],
+                         key=lambda i: (i['txid'], i['vout']))  # BIP69: the txid as shown, then the index
+            outs = sorted([own_to, foreign_to], key=script_of)  # BIP69: equal amounts, then the script
+            raw = w3.createrawtransaction(ins, [{a: amount} for a in outs])
+            raw = w3.signrawtransactionwithwallet(raw, [], 'ALL|ANYONECANPAY')['hex']
+            signed = w4.signrawtransactionwithwallet(raw, [], 'ALL|ANYONECANPAY')
+            assert signed['complete']
+            self.generateblock(node, miner.address, [signed['hex']], sync_fun=self.no_op)
+            tx = w3.decoderawtransaction(signed['hex'])
+            return tx['txid'], next(o['n'] for o in tx['vout'] if o['scriptPubKey']['hex'] == script_of(own_to))
+
+        for r in range(1, 6):
+            txid, vout = mix(txid, vout)
+            assert_equal(entry(txid, vout)['coinjoin_rounds'], r)
+        assert_equal(types_of(txid, vout), [0, 1])  # fully mixed: neither ready to mix nor an ordinary coin
+        assert_equal(w3.getbalances()['mine']['coinjoin'], amount)
+        assert_equal(w3.getwalletinfo()['coinjoin_balance'], amount)
+
+        self.log.info('The salt guard with the fully mixed coin, w3\'s only DFCN-scale coin; generate\'s own guard comes first')
+        assert_raises_rpc_error(-4, 'Wallet "w3" has CoinJoin balance, cannot continue!', w3.coinjoinsalt, 'set', salt)
+        assert_raises_rpc_error(-32600, 'Wallet "w3" already has set CoinJoin salt!', w3.coinjoinsalt, 'generate')
+        assert_equal(w3.coinjoinsalt('set', salt, True), True)
+
+        self.log.info('With CoinJoin disabled the salt guard leaves the DFCN-scale coin out, as it leaves the old amounts')
+        self.restart_node(0, extra_args=self.extra_args[0] + ['-enablecoinjoin=0'])
+        node.loadwallet('w3')
+        w3 = node.get_wallet_rpc('w3')
+        assert_equal(w3.coinjoinsalt('set', uint256_to_string(random.getrandbits(256))), True)
+        w3.unloadwallet()
 
 if __name__ == '__main__':
     CoinJoinTest().main()

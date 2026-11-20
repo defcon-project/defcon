@@ -72,7 +72,9 @@ WalletTx MakeWalletTx(CWallet& wallet, const CWalletTx& wtx)
         result.txout_address_is_mine.emplace_back(ExtractDestination(txout.scriptPubKey, result.txout_address.back()) ?
                                                       wallet.IsMine(result.txout_address.back()) :
                                                       ISMINE_NO);
-        if (!fOutputDenomFound && result.txout_address_is_mine.back() && CoinJoin::IsDenominatedAmount(txout.nValue)) {
+        // Any of the eight amounts (CJ4), so that a mix of a DFCN-scale amount shows as one, as wallet.IsDenominated()
+        // above recognises its input.
+        if (!fOutputDenomFound && result.txout_address_is_mine.back() && CoinJoin::IsKnownDenominationAmount(txout.nValue)) {
             fOutputDenomFound = true;
         }
     }
@@ -435,7 +437,10 @@ public:
     CAmount getAvailableBalance(const CCoinControl& coin_control) override
     {
         if (coin_control.IsUsingCoinJoin()) {
-            return m_wallet->GetBalance(0, coin_control.m_avoid_address_reuse, false, &coin_control).m_anonymized;
+            // What a "mixed only" payment can spend: fully mixed coins of all eight amounts (CJ4).
+            CAmount dfcn_scale_anonymized{0};
+            const auto bal{m_wallet->GetBalance(0, coin_control.m_avoid_address_reuse, false, &coin_control, &dfcn_scale_anonymized)};
+            return bal.m_anonymized + dfcn_scale_anonymized;
         } else {
             return m_wallet->GetAvailableBalance(&coin_control);
         }

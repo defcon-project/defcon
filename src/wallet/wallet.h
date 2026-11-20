@@ -412,6 +412,8 @@ public:
     mutable bool fChangeCached;
     mutable bool fInMempool;
     mutable CAmount nChangeCached;
+    //! Whether an output has a DFCN-scale amount (CJ4), read once from the outputs; no round count or credit is kept
+    mutable std::optional<bool> m_dfcn_scale_output;
 
     CWalletTx(const CWallet* wallet, CTransactionRef arg)
         : pwallet(wallet),
@@ -525,6 +527,7 @@ public:
     void SetTx(CTransactionRef arg)
     {
         tx = std::move(arg);
+        m_dfcn_scale_output.reset();
     }
 
     //! make sure balances are recalculated
@@ -563,6 +566,10 @@ public:
     // annotation "NO_THREAD_SAFETY_ANALYSIS" was temporarily added to avoid
     // having to resolve the issue of member access into incomplete type CWallet.
     CAmount GetAnonymizedCredit(const CCoinControl* coinControl = nullptr) const NO_THREAD_SAFETY_ANALYSIS;
+    /** Whether an output of this transaction has a DFCN-scale amount (CJ4). */
+    bool HasDfcnScaleOutput() const;
+    /** The unspent DFCN-scale outputs (CJ4) this wallet can spend, the fully mixed ones only if asked; never cached. */
+    CAmount GetDfcnScaleCredit(bool fFullyMixedOnly, const CCoinControl* coinControl = nullptr) const NO_THREAD_SAFETY_ANALYSIS;
     CAmount GetDenominatedCredit(bool unconfirmed, bool fUseCache=true) const NO_THREAD_SAFETY_ANALYSIS;
 
     /** Get the marginal bytes if spending the specified output from this transaction */
@@ -1240,11 +1247,16 @@ public:
         CAmount m_watchonly_trusted{0};
         CAmount m_watchonly_untrusted_pending{0};
         CAmount m_watchonly_immature{0};
-        CAmount m_anonymized{0};
+        CAmount m_anonymized{0};             //!< Fully mixed coins of the five v23.0.0 amounts: what the mixing target counts
         CAmount m_denominated_trusted{0};
         CAmount m_denominated_untrusted_pending{0};
     };
-    Balance GetBalance(const int min_depth = 0, const bool avoid_reuse = true, const bool fAddLocked = false, const CCoinControl* coinControl = nullptr) const;
+    /** CJ4: the DFCN-scale coins are never part of the mixing target and its figures. A caller that shows or guards them
+     *  asks for them through `dfcn_scale_anonymized` (fully mixed, with `coinControl`'s selection, as m_anonymized) or
+     *  `dfcn_scale_denominated` (all, mixed or not), filled in the same walk under the same lock; zero while CoinJoin is
+     *  disabled, as the mixing fields. A caller that asks for neither gets no DFCN-scale work. */
+    Balance GetBalance(const int min_depth = 0, const bool avoid_reuse = true, const bool fAddLocked = false, const CCoinControl* coinControl = nullptr,
+                       CAmount* dfcn_scale_anonymized = nullptr, CAmount* dfcn_scale_denominated = nullptr) const;
 
     CAmount GetAnonymizableBalance(bool fSkipDenominated = false, bool fSkipUnconfirmed = true) const;
     float GetAverageAnonymizedRounds() const;

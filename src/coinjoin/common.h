@@ -40,9 +40,10 @@ namespace CoinJoin
 /** The wire table: a denomination travels as the bit of its index here, so the
  *  order is fixed forever. Bits 0-4 are the amounts v23.0.0 knows; bits 5-7 the
  *  DFCN-scale amounts (100.001, 1000.01 and 10 000.1 DFCN) that every v23.1 node
- *  accepts and relays (CJ4). Only the protocol calls below read it: the DSTX
- *  structure check, the masternode's session checks and the session amount check
- *  (IsValidInOuts). */
+ *  accepts and relays (CJ4). The protocol calls below read it (the DSTX structure
+ *  check, the masternode's session checks and the session amount check,
+ *  IsValidInOuts), and the wallet recognises all eight through
+ *  IsKnownDenominationAmount (labels, coin types, round counts; CJ4-B). */
 constexpr std::array<CAmount, 8> vecDenominationsByBit{
         (10 * COIN) + 10000,
         (1 * COIN) + 1000,
@@ -54,9 +55,10 @@ constexpr std::array<CAmount, 8> vecDenominationsByBit{
         (10000 * COIN) + 10000000,
 };
 
-/** The wallet's list, in descending order: what the wallet classifies, creates,
- *  selects and excludes from staking as a denomination. It stays the five amounts
- *  of v23.0.0; the wallet does not use the DFCN-scale amounts. */
+/** The wallet's list, in descending order: what the mixing target counts and what
+ *  the wallet creates, selects for its queues and excludes from staking as a
+ *  denomination. It stays the five amounts of v23.0.0; the DFCN-scale amounts are
+ *  recognised from the wire table, not created. */
 constexpr std::array<CAmount, 5> vecStandardDenominations{
         (10 * COIN) + 10000,
         (1 * COIN) + 1000,
@@ -169,9 +171,9 @@ constexpr bool IsCollateralAmount(CAmount nInputAmount)
     return (nInputAmount >= GetCollateralAmount() && nInputAmount <= GetMaxCollateralAmount());
 }
 
-/** A denomination or a collateral amount: the amounts CoinJoin itself spends,
- *  exactly what CoinType::ONLY_NONDENOMINATED leaves out. Stake combining and
- *  combineoutputs never spend an output of such an amount. */
+/** A denomination or a collateral amount: the amounts CoinJoin itself spends in v23.0.0,
+ *  which CoinType::ONLY_NONDENOMINATED leaves out together with the DFCN-scale amounts (CJ4).
+ *  Stake combining and combineoutputs never spend an output of such an amount. */
 constexpr bool IsDenominatedOrCollateralAmount(CAmount nInputAmount)
 {
     return IsDenominatedAmount(nInputAmount) || IsCollateralAmount(nInputAmount);
