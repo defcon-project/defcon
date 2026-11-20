@@ -184,7 +184,7 @@ void CCoinJoinBaseManager::CheckQueue()
     }
 }
 
-bool CCoinJoinBaseManager::GetQueueItemAndTry(CCoinJoinQueue& dsqRet)
+bool CCoinJoinBaseManager::GetQueueItemAndTry(CCoinJoinQueue& dsqRet, int dfcn_bits)
 {
     TRY_LOCK(cs_vecqueue, lockDS);
     if (!lockDS) return false; // it's ok to fail here, we run this quite frequently
@@ -192,9 +192,14 @@ bool CCoinJoinBaseManager::GetQueueItemAndTry(CCoinJoinQueue& dsqRet)
     for (auto& dsq : vecCoinJoinQueue) {
         // only try each queue once
         if (dsq.fTried || dsq.IsTimeOutOfBounds()) continue;
-        // The old client's walk asks for the five bits of v23.0.0 (CJ4-B2b): a queue of a DFCN-scale bit stays untried.
-        // An nDenom that is no single bit of the wire table is tried and turned away as in v23.0.0.
-        if (CoinJoin::IsDfcnScaleDenomination(dsq.nDenom)) continue;
+        if (dfcn_bits == 0) {
+            // The old client's walk asks for the five bits of v23.0.0 (CJ4-B2b): a queue of a DFCN-scale bit stays
+            // untried. An nDenom that is no single bit of the wire table is tried and turned away as in v23.0.0.
+            if (CoinJoin::IsDfcnScaleDenomination(dsq.nDenom)) continue;
+        } else if (!CoinJoin::IsDfcnScaleDenomination(dsq.nDenom) || (dsq.nDenom & dfcn_bits) == 0) {
+            // The DFCN-scale attempt's walk asks for the bits it has work for (CJ4-B2b3): any other queue stays untried.
+            continue;
+        }
         dsq.fTried = true;
         dsqRet = dsq;
         return true;

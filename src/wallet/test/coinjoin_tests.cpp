@@ -19,6 +19,7 @@
 #include <llmq/context.h>
 #include <llmq/instantsend.h>
 #include <logging.h>
+#include <masternode/meta.h>
 #include <node/context.h>
 #include <chainparams.h>
 #include <evo/evodb.h>
@@ -66,6 +67,23 @@ void StoreInstantSendLockForTest(CInstantSendManager& manager, const CInstantSen
 // step with a given session budget, one dry PrepareDenominate over a range of round counts, the collateral maker and the
 // denomination creator.
 bool MakeCollateralAmountsForTest(CCoinJoinClientSession& session) { return session.MakeCollateralAmounts(); }
+
+// CJ4-B2b3: the DFCN-scale attempt's collateral maker and queue start, the automatic attempt below its height read with the
+// gate and the coin toss given, and the session's collateral transaction.
+bool MakeCollateralAmountsOrdinaryForTest(CCoinJoinClientSession& session) { return session.MakeCollateralAmountsOrdinary(); }
+
+bool StartNewDfcnScaleQueueForTest(CCoinJoinClientSession& session, const std::array<CAmount, 3>& work, CConnman& connman)
+{
+    return session.StartNewDfcnScaleQueue(work, connman);
+}
+
+bool DoAttemptForTest(CCoinJoinClientSession& session, ChainstateManager& chainman, CConnman& connman,
+                      const CTxMemPool& mempool, bool fDfcnOpen, const std::function<bool()>& toss)
+{
+    return session.DoAttempt(chainman, connman, mempool, /*fDryRun=*/false, fDfcnOpen, toss);
+}
+
+uint256 CollateralTxHashForTest(const CCoinJoinClientSession& session) { return session.txMyCollateral.GetHash(); }
 
 bool CreateDenominatedForTest(CCoinJoinClientSession& session, CAmount nBalanceToDenominate)
 {
@@ -1837,6 +1855,402 @@ BOOST_AUTO_TEST_CASE(coinjoin_old_queue_walk_leaves_dfcn_scale_queues)
     for (const int bit : {1 << 5, 1 << 6, 1 << 7}) {
         BOOST_CHECK_MESSAGE(!queues.Tried(bit), "the old walk leaves a DFCN-scale queue untried");
     }
+
+    // CJ4-B2b3: the DFCN-scale attempt's walk takes, of the queues not tried, only one of a bit it asks for. The bit-5 and
+    // bit-7 queues the old walk left come back; the bit-6 queue, not asked for, stays, and so do a queue of two DFCN-scale
+    // bits, an nDenom past the table and an old bit, which the old walk then tries as in v23.0.0.
+    const int several_new{(1 << 5) | (1 << 7)};
+    for (const int nDenom : {several_new, 1 << 8, 1 << 1}) queues.Add(nDenom);
+    walked.clear();
+    while (queues.GetQueueItemAndTry(dsq, (1 << 5) | (1 << 7))) walked.push_back(dsq.nDenom);
+    BOOST_CHECK_MESSAGE(walked == (std::vector<int>{1 << 5, 1 << 7}), "the DFCN-scale walk takes the queues of its bits only");
+    BOOST_CHECK(!queues.Tried(1 << 6) && !queues.Tried(several_new) && !queues.Tried(1 << 8) && !queues.Tried(1 << 1));
+    walked.clear();
+    while (queues.GetQueueItemAndTry(dsq)) walked.push_back(dsq.nDenom);
+    BOOST_CHECK(walked == (std::vector<int>{several_new, 1 << 8, 1 << 1}));
+    BOOST_CHECK(!queues.Tried(1 << 6));
+}
+
+// CJ4-B2b3: which attempt (design note § 2). From U, with work, the DFCN-scale attempt runs where the old path would stop,
+// and otherwise by a coin toss, which is made only then; a new DFCN-scale queue takes a bit with work, any of them.
+BOOST_AUTO_TEST_CASE(coinjoin_dfcn_scale_attempt_choice)
+{
+    int tosses{0};
+    const auto toss = [&tosses](bool result) {
+        return std::function<bool()>{[&tosses, result] {
+            ++tosses;
+            return result;
+        }};
+    };
+    for (const bool old_would_stop : {true, false}) {
+        for (const bool result : {true, false}) {
+            BOOST_CHECK(!CoinJoin::ChooseDfcnScaleAttempt(/*open=*/false, /*has_work=*/true, old_would_stop, toss(result)));
+            BOOST_CHECK(!CoinJoin::ChooseDfcnScaleAttempt(/*open=*/true, /*has_work=*/false, old_would_stop, toss(result)));
+            BOOST_CHECK(!CoinJoin::ChooseDfcnScaleAttempt(/*open=*/false, /*has_work=*/false, old_would_stop, toss(result)));
+        }
+    }
+    BOOST_CHECK_MESSAGE(tosses == 0, "no toss when closed or without work");
+    BOOST_CHECK(CoinJoin::ChooseDfcnScaleAttempt(true, true, /*old_would_stop=*/true, toss(false)));
+    BOOST_CHECK_MESSAGE(tosses == 0, "where the old path stops the DFCN-scale attempt runs without a toss");
+    BOOST_CHECK(CoinJoin::ChooseDfcnScaleAttempt(true, true, /*old_would_stop=*/false, toss(true)));
+    BOOST_CHECK(!CoinJoin::ChooseDfcnScaleAttempt(true, true, /*old_would_stop=*/false, toss(false)));
+    BOOST_CHECK_MESSAGE(tosses == 2, "where the old path goes on one toss decides");
+
+    BOOST_CHECK_EQUAL(CoinJoin::DfcnScaleWorkBits({0, 0, 0}), 0);
+    BOOST_CHECK_EQUAL(CoinJoin::DfcnScaleWorkBits({1, 0, 1}), (1 << 5) | (1 << 7));
+    BOOST_CHECK_EQUAL(CoinJoin::DfcnScaleWorkBits({0, 1, 0}), 1 << 6);
+    BOOST_CHECK_EQUAL(CoinJoin::RandomDfcnScaleWorkBit({0, 0, 0}), 0);
+    std::set<int> seen;
+    for (int i = 0; i < 200; ++i) seen.insert(CoinJoin::RandomDfcnScaleWorkBit({1, 0, 1}));
+    BOOST_CHECK_MESSAGE(seen == (std::set<int>{1 << 5, 1 << 7}), "the new queue takes a bit with work, any of them");
+    for (int i = 0; i < 20; ++i) BOOST_CHECK_EQUAL(CoinJoin::RandomDfcnScaleWorkBit({0, 1, 0}), 1 << 6);
+}
+
+// CJ4-B2b3: the DFCN-scale attempt's collateral maker runs v23.0.0's first pass in rank order over the address groups that
+// hold no old denomination: it skips a smaller group with an old denomination, which v23.0.0's maker spends first (the
+// control), and treats a P2PK coin of a DFCN-scale amount, which is no candidate, as ordinary funds.
+BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_maker_spares_old_denominations, CTransactionBuilderTestSetup)
+{
+    struct RestoreEnabled {
+        const bool before{CCoinJoinClientOptions::IsEnabled()};
+        ~RestoreEnabled() { CCoinJoinClientOptions::SetEnabled(before); }
+    } restore_enabled;
+    CCoinJoinClientOptions::SetEnabled(true);
+    const CAmount amount{CoinJoin::DenominationToAmount(1 << 5)}; // 100.001
+    const CAmount small{CoinJoin::DenominationToAmount(1 << 4)};  // 0.00100001, an old denomination
+    const CAmount tiny{COIN / 2000};                              // 0.0005
+    const auto p2pkh = [](const CKey& key) { return GetScriptForDestination(PKHash(key.GetPubKey())); };
+
+    // F: a small denomination and 0.0005, the smallest group; G: 0.01 and, for the DFCN-scale maker, a candidate (G ranks
+    // 100.011 with 0.01 to spend); H: 0.02; twice (0 for the DFCN-scale maker, 1 for the control). P: a P2PK 100.001
+    // alone.
+    const CKey f0{NewWalletKey()}, g0{NewWalletKey()}, h0{NewWalletKey()}, f1{NewWalletKey()}, g1{NewWalletKey()},
+        h1{NewWalletKey()}, p{NewWalletKey()};
+    const CScript p2pk_p{GetScriptForRawPubKey(p.GetPubKey())};
+    const CTransactionRef pay{PayOutputs({{p2pkh(f0), small}, {p2pkh(f0), tiny}, {p2pkh(g0), COIN / 100}, {p2pkh(g0), amount},
+                                          {p2pkh(h0), COIN / 50}, {p2pkh(f1), small}, {p2pkh(f1), tiny},
+                                          {p2pkh(g1), COIN / 100}, {p2pkh(h1), COIN / 50}, {p2pk_p, amount}},
+                                         true)};
+    const auto out = [&](const CKey& key, CAmount value) { return OutputOf(pay, p2pkh(key), value); };
+
+    BOOST_REQUIRE(m_node.cj_ctx->walletman->DoForClient(wallet->GetName(), [&](CCoinJoinClientManager& clientman) {
+        CCoinJoinClientSession session(wallet, *m_node.cj_ctx->walletman, clientman, *m_node.dmnman, *m_node.mn_metaman,
+                                       *m_node.mn_sync, *m_node.llmq_ctx->isman, m_node.cj_ctx->queueman,
+                                       /*is_masternode=*/false);
+
+        LockAllBut({out(f0, small), out(f0, tiny), out(g0, COIN / 100), out(g0, amount), out(h0, COIN / 50)});
+        BOOST_CHECK(MakeCollateralAmountsOrdinaryForTest(session));
+        BOOST_CHECK_MESSAGE(!Spent(out(f0, small)) && !Spent(out(f0, tiny)),
+                            "the DFCN-scale maker leaves a group with an old denomination out");
+        BOOST_CHECK_MESSAGE(Spent(out(h0, COIN / 50)) && !Spent(out(g0, COIN / 100)) && !Spent(out(g0, amount)),
+                            "the DFCN-scale maker tries the other groups by rank, the candidate counted");
+        // Control: v23.0.0's maker spends F first, its small denomination with it.
+        LockAllBut({out(f1, small), out(f1, tiny), out(g1, COIN / 100), out(h1, COIN / 50)});
+        BOOST_CHECK(MakeCollateralAmountsForTest(session));
+        BOOST_CHECK(Spent(out(f1, small)) && Spent(out(f1, tiny)) && !Spent(out(g1, COIN / 100)));
+        // A P2PK coin of a DFCN-scale amount is no candidate: ordinary funds to this maker too.
+        LockAllBut({OutputOf(pay, p2pk_p, amount)});
+        BOOST_CHECK(MakeCollateralAmountsOrdinaryForTest(session));
+        BOOST_CHECK_MESSAGE(Spent(OutputOf(pay, p2pk_p, amount)), "a P2PK 100.001 is ordinary funds to the DFCN-scale maker");
+    }));
+}
+
+// CJ4-B2b3: the automatic attempt, with the DFCN-scale gate given below its height read. Open (from U) and with work, it is
+// the DFCN-scale attempt where the old path stops ("Nothing to do", "Not enough funds to mix"); that attempt is v23.0.0's
+// from its collateral step on, with the maker of ordinary funds in groups without an old denomination, and its queue walk
+// asks for the bits it has work for. Closed, every attempt is the old one. Design note § 9.4: r13/R3, r16/R1, the recipe's
+// 0.01 DFCN, r13/R4, r13/R7, r19/R2.
+BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_attempt, CTransactionBuilderTestSetup)
+{
+    struct RestoreOptions {
+        const bool enabled{CCoinJoinClientOptions::IsEnabled()};
+        const int rounds{CCoinJoinClientOptions::GetRounds()};
+        const int amount{CCoinJoinClientOptions::GetAmount()};
+        const bool multi_session{CCoinJoinClientOptions::IsMultiSessionEnabled()};
+        ~RestoreOptions()
+        {
+            CCoinJoinClientOptions::SetEnabled(enabled);
+            CCoinJoinClientOptions::SetRounds(rounds);
+            CCoinJoinClientOptions::SetAmount(amount);
+            CCoinJoinClientOptions::SetMultiSessionEnabled(multi_session);
+        }
+    } restore_options;
+    CCoinJoinClientOptions::SetEnabled(true);
+    CCoinJoinClientOptions::SetRounds(1);
+    CCoinJoinClientOptions::SetAmount(MIN_COINJOIN_AMOUNT); // the old target, which one fully mixed 10.0001 reaches
+    CCoinJoinClientOptions::SetMultiSessionEnabled(false);
+    BOOST_REQUIRE(m_node.mn_metaman->LoadCache(/*load_cache=*/false)); // a new queue's start asserts a loaded cache
+
+    const CAmount amount{CoinJoin::DenominationToAmount(1 << 5)};     // 100.001
+    const CAmount old_amount{CoinJoin::DenominationToAmount(1 << 0)}; // 10.0001
+    const CAmount small{CoinJoin::DenominationToAmount(1 << 4)};      // 0.00100001
+    const auto p2pkh = [](const CKey& key) { return GetScriptForDestination(PKHash(key.GetPubKey())); };
+
+    // M: a fully mixed 10.0001 (four real rounds), with 0.001 DFCN paid to its address later; C: a candidate; R, R2: the
+    // recipe's 0.01 DFCN, each at an address of its own; Q: one collateral input; T: 0.0005; S: a small denomination;
+    // F: 5 DFCN that later pay an old denomination into the mempool; F2: 2 DFCN that later pay an own collateral into
+    // the mempool; X: 0.002 DFCN to a key of another party, which later pays a collateral to the wallet; D: a 1.00001
+    // denomination.
+    const CKey m{NewWalletKey()}, c{NewWalletKey()}, r{NewWalletKey()}, r2{NewWalletKey()}, q{NewWalletKey()},
+        t{NewWalletKey()}, s{NewWalletKey()}, f{NewWalletKey()}, f2{NewWalletKey()}, d{NewWalletKey()};
+    CKey x;
+    x.MakeNewKey(true);
+    const CAmount one{CoinJoin::DenominationToAmount(1 << 1)}; // 1.00001
+    const CTransactionRef pay{PayOutputs({{p2pkh(m), old_amount}, {p2pkh(c), amount}, {p2pkh(r), COIN / 100},
+                                          {p2pkh(r2), COIN / 100}, {p2pkh(q), CoinJoin::GetMaxCollateralAmount()},
+                                          {p2pkh(t), COIN / 2000}, {p2pkh(s), small}, {p2pkh(f), 5 * COIN},
+                                          {p2pkh(f2), 2 * COIN}, {p2pkh(x), COIN / 500}, {p2pkh(d), one}},
+                                         true)};
+    const auto out = [&](const CKey& key, CAmount value) { return OutputOf(pay, p2pkh(key), value); };
+    COutPoint mixed{out(m, old_amount)};
+    CKey mixed_key;
+    for (int round = 1; round <= 4; ++round) {
+        mixed_key = NewWalletKey();
+        mixed = MixOnce(mixed, old_amount, p2pkh(mixed_key));
+    }
+    BOOST_REQUIRE_GE(4, 1 + CCoinJoinClientOptions::GetRandomRounds());
+    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->IsFullyMixed(mixed)));
+    // The 0.001 DFCN is paid with the test's coins locked, so that the payment takes none of them.
+    {
+        LOCK(wallet->cs_wallet);
+        for (uint32_t i = 0; i < pay->vout.size(); ++i) wallet->LockCoin(COutPoint{pay->GetHash(), i});
+        wallet->LockCoin(mixed);
+    }
+    const COutPoint mixed_small{OutputOf(PayOutputs({{p2pkh(mixed_key), COIN / 1000}}, true), p2pkh(mixed_key), COIN / 1000)};
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->UnlockAllCoins();
+    }
+    const COutPoint cand{out(c, amount)}, recipe{out(r, COIN / 100)}, recipe2{out(r2, COIN / 100)},
+        collateral{out(q, CoinJoin::GetMaxCollateralAmount())}, tiny{out(t, COIN / 2000)}, small_denom{out(s, small)},
+        d_denom{out(d, one)};
+
+    // The session's queues are the test's: their masternodes are in no list, so a walk only marks what it takes.
+    class Queues : public CCoinJoinClientQueueManager
+    {
+    public:
+        using CCoinJoinClientQueueManager::CCoinJoinClientQueueManager;
+        void Add(int nDenom) EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue)
+        {
+            LOCK(cs_vecqueue);
+            vecCoinJoinQueue.emplace_back(nDenom, COutPoint{uint256::ONE, uint32_t(vecCoinJoinQueue.size())}, uint256{},
+                                          GetAdjustedTime(), /*fReady=*/false);
+        }
+        bool Tried(int nDenom) EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue)
+        {
+            LOCK(cs_vecqueue);
+            for (const auto& dsq : vecCoinJoinQueue) {
+                if (dsq.nDenom == nDenom) return dsq.fTried;
+            }
+            BOOST_FAIL("no queue of this nDenom");
+            return false;
+        }
+    };
+    Queues queues{*m_node.cj_ctx->walletman, *m_node.dmnman, *m_node.mn_metaman, *m_node.mn_sync, /*is_masternode=*/false};
+    // The session reads its queue manager through a unique_ptr; this one only points at `queues` and is released before
+    // it goes, so nothing is deleted through the base class (it has no virtual destructor).
+    std::unique_ptr<CCoinJoinClientQueueManager> queueman{&queues};
+    struct Release {
+        std::unique_ptr<CCoinJoinClientQueueManager>& ptr;
+        ~Release() { (void)ptr.release(); }
+    } release_queueman{queueman};
+
+    // A client manager of the test's own, which lives as long as the session, so no manager borrowed from DoForClient
+    // outlives its callback (and the manager map's lock is free while the test mines a block between attempts).
+    CCoinJoinClientManager clientman(wallet, *m_node.cj_ctx->walletman, *m_node.dmnman, *m_node.mn_metaman, *m_node.mn_sync,
+                                     *m_node.llmq_ctx->isman, queueman, /*is_masternode=*/false);
+    CCoinJoinClientSession session(wallet, *m_node.cj_ctx->walletman, clientman, *m_node.dmnman, *m_node.mn_metaman,
+                                   *m_node.mn_sync, *m_node.llmq_ctx->isman, queueman, /*is_masternode=*/false);
+    CoinJoinLogLines log;
+    // The coin toss is the test's: it counts the tosses and answers toss_result.
+    int tosses{0};
+    bool toss_result{false};
+    const auto attempt = [&](bool open) {
+        log.Logged(""); // forget the lines so far
+        return DoAttemptForTest(session, *m_node.chainman, *m_node.connman, *m_node.mempool, open, [&] {
+            ++tosses;
+            return toss_result;
+        });
+    };
+    const auto tx_count = [&] { return WITH_LOCK(wallet->cs_wallet, return wallet->mapWallet.size()); };
+    const auto locked = [&](const COutPoint& outpoint) {
+        return WITH_LOCK(wallet->cs_wallet, return wallet->IsLockedCoin(outpoint.hash, outpoint.n));
+    };
+    const auto spender = [&](const COutPoint& outpoint) {
+        LOCK(wallet->cs_wallet);
+        for (const auto& [hash, wtx] : wallet->mapWallet) {
+            for (const auto& in : wtx.tx->vin) {
+                if (in.prevout == outpoint) return wtx.tx;
+            }
+        }
+        BOOST_FAIL("no transaction spends the outpoint");
+        return CTransactionRef{};
+    };
+
+    // r13/R3: the target reached, the fully mixed 10.0001 and a candidate, no other funds, no collateral. Closed, the old
+    // path has nothing to do. Open, the DFCN-scale attempt's maker finds no group it may use, and the 10.0001 stays.
+    LockAllBut({mixed, cand});
+    size_t txes{tx_count()};
+    BOOST_CHECK(!attempt(false));
+    BOOST_CHECK(log.Logged("DoAutomaticDenominating -- Nothing to do"));
+    BOOST_CHECK(!attempt(true));
+    BOOST_CHECK_MESSAGE(log.Logged("MakeCollateralAmountsOrdinary -- no collateral from ordinary funds"),
+                        "the open attempt is the DFCN-scale attempt, whose maker finds nothing");
+    BOOST_CHECK_MESSAGE(tx_count() == txes && !Spent(mixed) && !Spent(cand), "the DFCN-scale attempt never breaks an old denomination");
+
+    // r16/R1: 0.001 DFCN at the 10.0001's address, which v23.0.0's first pass would spend with it (the control at the end).
+    LockAllBut({mixed, mixed_small, cand});
+    BOOST_CHECK(!attempt(true));
+    BOOST_CHECK_MESSAGE(tx_count() == txes && !Spent(mixed) && !Spent(mixed_small),
+                        "the DFCN-scale attempt leaves a group with an old denomination out");
+
+    // The recipe's 0.01 DFCN at an address of its own: closed, nothing to do; open, the maker makes the collateral from
+    // it, and the attempt ends there.
+    LockAllBut({mixed, mixed_small, cand, recipe});
+    BOOST_CHECK(!attempt(false));
+    BOOST_CHECK_MESSAGE(tx_count() == txes && !Spent(recipe), "a closed attempt is the old one, with nothing to do");
+    BOOST_CHECK(attempt(true));
+    BOOST_CHECK_MESSAGE(Spent(recipe) && !Spent(mixed) && !Spent(mixed_small) && !Spent(cand),
+                        "the DFCN-scale attempt makes the collateral from the recipe's 0.01 DFCN");
+
+    // A candidate the user locked is no work: the open attempt is the old one, with nothing to do.
+    LockAllBut({mixed, recipe2});
+    txes = tx_count();
+    BOOST_CHECK(!attempt(true));
+    BOOST_CHECK_MESSAGE(log.Logged("DoAutomaticDenominating -- Nothing to do") && tx_count() == txes && !Spent(recipe2),
+                        "a candidate the user locked gives no DFCN-scale work");
+
+    // r13/R4 and r13/R7, one collateral input Q. The first attempt takes Q for its collateral transaction and walks the
+    // queues: it takes the bit-5 queue, which the old walk leaves untried, and leaves the old bit's; no new queue starts,
+    // and Q stays locked. The second has no free collateral and makes one from the recipe's second 0.01 DFCN. Once that
+    // is mined, the third passes the presence check, keeps its collateral transaction (Q locked again, as in v23.0.0)
+    // and reaches the queue search.
+    queues.Add(1 << 0);
+    queues.Add(1 << 5);
+    LockAllBut({mixed, cand, collateral, recipe2});
+    BOOST_CHECK(!attempt(true));
+    BOOST_CHECK(log.Logged("JoinExistingDfcnScaleQueue -- dsq masternode is not in masternode list"));
+    BOOST_CHECK_MESSAGE(queues.Tried(1 << 5) && !queues.Tried(1 << 0),
+                        "the DFCN-scale walk takes the bit-5 queue and leaves the old bit's");
+    BOOST_CHECK_EQUAL(session.GetStatus(/*fWaitForBlock=*/true).original, "No compatible Masternode found.");
+    BOOST_CHECK(tx_count() == txes && locked(collateral) && !Spent(collateral));
+    const uint256 kept{CollateralTxHashForTest(session)};
+    BOOST_CHECK(attempt(true));
+    BOOST_CHECK_MESSAGE(Spent(recipe2) && !Spent(collateral) && locked(collateral) && !Spent(mixed) && !Spent(cand),
+                        "without a free collateral the DFCN-scale attempt makes one from the 0.01 DFCN");
+    BOOST_REQUIRE_EQUAL(tx_count(), txes + 1);
+    const CTransactionRef made{spender(recipe2)};
+    Confirm(made);
+    txes = tx_count();
+    BOOST_CHECK(!attempt(true));
+    BOOST_CHECK_MESSAGE(log.Logged("StartNewDfcnScaleQueue -- Can't find random Masternode."),
+                        "with the new collateral the next attempt reaches the queue search");
+    BOOST_CHECK_MESSAGE(tx_count() == txes && locked(collateral) && CollateralTxHashForTest(session) == kept,
+                        "the third attempt keeps the first one's collateral transaction");
+    BOOST_CHECK_MESSAGE(tosses == 0, "the old path's stops take no toss");
+
+    // A new DFCN-scale queue starts only for a bit the wallet can still fill: the work read while C was free, C then
+    // locked by the user, the start stops before it looks for a masternode; with C free again it looks for one.
+    const auto work{wallet->GetDfcnScaleMixingWork()};
+    BOOST_REQUIRE(work[0] == amount);
+    WITH_LOCK(wallet->cs_wallet, wallet->LockCoin(cand));
+    BOOST_CHECK(!StartNewDfcnScaleQueueForTest(session, work, *m_node.connman));
+    BOOST_CHECK_MESSAGE(session.GetStatus(/*fWaitForBlock=*/true).original == "Can't mix: no compatible inputs found!",
+                        "a new DFCN-scale queue starts only for a bit the wallet can still fill");
+    WITH_LOCK(wallet->cs_wallet, wallet->UnlockCoin(cand));
+    BOOST_CHECK(!StartNewDfcnScaleQueueForTest(session, work, *m_node.connman));
+    BOOST_CHECK_EQUAL(session.GetStatus(/*fWaitForBlock=*/true).original, "Can't find random Masternode.");
+
+    // r18/R3 and r19/R1: an unconfirmed 0.0004 collateral without an InstantSend lock. Paid by another party (X), it is
+    // not present to HasCollateralInputs() but is to HasCollateralInputs(false): the attempt waits, before the maker.
+    // Made by the wallet from its own confirmed coins (F2), it is present, and the attempt goes on past its collateral
+    // step to the queue search.
+    CMutableTransaction ext;
+    ext.vin.emplace_back(out(x, COIN / 500));
+    const CScript ext_script{p2pkh(NewWalletKey())};
+    ext.vout.emplace_back(CoinJoin::GetMaxCollateralAmount(), ext_script);
+    FillableSigningProvider x_keys;
+    BOOST_REQUIRE(x_keys.AddKey(x));
+    BOOST_REQUIRE(SignSignature(x_keys, *pay, ext, 0, SIGHASH_ALL));
+    const CTransactionRef ext_tx{MakeTransactionRef(ext)};
+    BOOST_REQUIRE(WITH_LOCK(cs_main, return m_node.chainman->ProcessTransaction(ext_tx).m_result_type) ==
+                  MempoolAcceptResult::ResultType::VALID);
+    wallet->transactionAddedToMempool(ext_tx, /*nAcceptTime=*/GetTime(), /*mempool_sequence=*/0);
+    LockAllBut({mixed, cand, OutputOf(ext_tx, ext_script, CoinJoin::GetMaxCollateralAmount())});
+    BOOST_REQUIRE(!wallet->HasCollateralInputs() && wallet->HasCollateralInputs(/*fOnlyConfirmed=*/false));
+    txes = tx_count();
+    BOOST_CHECK(!attempt(true));
+    BOOST_CHECK_MESSAGE(!log.Logged("MakeCollateralAmountsOrdinary") && tx_count() == txes,
+                        "an unconfirmed collateral from another party makes the attempt wait before the maker");
+    LockAllBut({out(f2, 2 * COIN)});
+    const CScript own_script{p2pkh(NewWalletKey())};
+    const CTransactionRef own_tx{PayOutputs({{own_script, CoinJoin::GetMaxCollateralAmount()}}, false)};
+    LockAllBut({mixed, cand, OutputOf(own_tx, own_script, CoinJoin::GetMaxCollateralAmount())});
+    BOOST_REQUIRE(wallet->HasCollateralInputs());
+    BOOST_CHECK(!attempt(true));
+    BOOST_CHECK_MESSAGE(session.GetStatus(/*fWaitForBlock=*/true).original == "No compatible Masternode found.",
+                        "an unconfirmed collateral the wallet made is present, and the attempt goes on");
+
+    // Plan decision 2: an unconfirmed old denomination of the wallet's own (F pays 1.00001 into the mempool) makes the
+    // DFCN-scale attempt wait in single-session mode, as v23.0.0's attempt waits; with several sessions it goes on.
+    LockAllBut({out(f, 5 * COIN)});
+    PayOutputs({{p2pkh(NewWalletKey()), CoinJoin::DenominationToAmount(1 << 1)}}, false);
+    std::set<COutPoint> keep{mixed, cand};
+    for (uint32_t i = 0; i < made->vout.size(); ++i) keep.emplace(made->GetHash(), i);
+    LockAllBut(keep);
+    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->GetBalance().m_denominated_untrusted_pending) > 0);
+    BOOST_CHECK(!attempt(true));
+    BOOST_CHECK_MESSAGE(session.GetStatus(/*fWaitForBlock=*/true).original ==
+                            "Found unconfirmed denominated outputs, will wait till they confirm to continue.",
+                        "the DFCN-scale attempt waits for unconfirmed old denominations too");
+    CCoinJoinClientOptions::SetMultiSessionEnabled(true);
+    BOOST_CHECK(!attempt(true));
+    BOOST_CHECK_EQUAL(session.GetStatus(/*fWaitForBlock=*/true).original, "No compatible Masternode found.");
+    CCoinJoinClientOptions::SetMultiSessionEnabled(false);
+
+    // Not enough funds to mix (the old target raised, nothing to mix but 0.0005): closed, the old path stops; open, the
+    // DFCN-scale attempt makes a collateral from the 0.0005.
+    CCoinJoinClientOptions::SetAmount(DEFAULT_COINJOIN_AMOUNT);
+    LockAllBut({cand, tiny});
+    txes = tx_count();
+    BOOST_CHECK(!attempt(false));
+    BOOST_CHECK(log.Logged("DoAutomaticDenominating -- Not enough funds to mix.") && tx_count() == txes && !Spent(tiny));
+    BOOST_CHECK(attempt(true));
+    BOOST_CHECK_MESSAGE(Spent(tiny) && !Spent(cand), "where the old path has not enough funds the DFCN-scale attempt runs");
+    BOOST_CHECK_MESSAGE(session.GetStatus(/*fWaitForBlock=*/true).original.empty(),
+                        "the DFCN-scale attempt clears an earlier stop status");
+
+    // The coin toss where the old path goes on (the old target not reached, the 1.00001 denomination D to mix, no
+    // collateral, a candidate), one toss each: heads, the DFCN-scale attempt, whose maker leaves D's group out; tails,
+    // the old path, whose maker breaks D in its second pass, as v23.0.0. (Right after a new transaction, so that the
+    // wallet's cached anonymizable groups are this wallet's: a lock does not refresh them, inherited.)
+    LockAllBut({cand, d_denom});
+    BOOST_CHECK_MESSAGE(tosses == 0, "the not-enough-funds stop takes no toss either");
+    toss_result = true;
+    BOOST_CHECK(!attempt(true));
+    BOOST_CHECK_MESSAGE(log.Logged("MakeCollateralAmountsOrdinary -- no collateral from ordinary funds") && !Spent(d_denom) &&
+                            tosses == 1,
+                        "on heads the DFCN-scale attempt runs where the old path goes on");
+    toss_result = false;
+    BOOST_CHECK(attempt(true));
+    BOOST_CHECK_MESSAGE(Spent(d_denom) && !Spent(cand) && tosses == 2, "on tails the old path runs where it goes on");
+
+    // r19/R2: a small old denomination and a candidate. Closed: not enough funds, no maker; open: the DFCN-scale maker
+    // leaves the denomination's group out. Either way the denomination stays.
+    LockAllBut({cand, small_denom});
+    txes = tx_count();
+    BOOST_CHECK(!attempt(false));
+    BOOST_CHECK(log.Logged("DoAutomaticDenominating -- Not enough funds to mix."));
+    BOOST_CHECK(!attempt(true));
+    BOOST_CHECK_MESSAGE(log.Logged("MakeCollateralAmountsOrdinary -- no collateral from ordinary funds") &&
+                            tx_count() == txes && !Spent(small_denom),
+                        "neither attempt breaks the small old denomination, and the open one asks the maker");
+    BOOST_CHECK_MESSAGE(tosses == 2, "the two tosses of the third point are the case's only tosses");
+
+    // Control, v23.0.0's maker on the r16/R1 wallet: its first pass spends the 10.0001 with the 0.001 DFCN.
+    LockAllBut({mixed, mixed_small});
+    BOOST_CHECK(MakeCollateralAmountsForTest(session));
+    BOOST_CHECK(Spent(mixed) && Spent(mixed_small));
 }
 
 BOOST_FIXTURE_TEST_CASE(CTransactionBuilderTest, CTransactionBuilderTestSetup)

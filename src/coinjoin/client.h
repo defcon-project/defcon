@@ -12,9 +12,12 @@
 #include <util/ranges.h>
 #include <util/translation.h>
 
+#include <array>
 #include <atomic>
 #include <deque>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <utility>
 
 class CCoinJoinClientManager;
@@ -33,6 +36,17 @@ class PeerManager;
 class UniValue;
 
 using CDeterministicMNCPtr = std::shared_ptr<const CDeterministicMN>;
+
+namespace CoinJoin {
+/** Whether an automatic attempt is the DFCN-scale attempt (CJ4-B2b3, design note § 2): from U (open), with work for a
+ *  DFCN-scale bit, where v23.0.0's path would stop ("Nothing to do", "Not enough funds to mix"), and otherwise by a coin
+ *  toss, which is made only then. */
+bool ChooseDfcnScaleAttempt(bool open, bool has_work, bool old_would_stop, const std::function<bool()>& toss);
+/** The DFCN-scale bits (5-7) that CWallet::GetDfcnScaleMixingWork's array has work for. */
+int DfcnScaleWorkBits(const std::array<CAmount, 3>& work);
+/** One of these bits at random; 0 when there is none. */
+int RandomDfcnScaleWorkBit(const std::array<CAmount, 3>& work);
+} // namespace CoinJoin
 
 class CPendingDsaRequest
 {
@@ -180,6 +194,14 @@ private:
     friend bool PrepareDenominateForTest(CCoinJoinClientSession& session, int nMinRounds, int nMaxRounds,
                                          const std::vector<CTxDSIn>& vecTxDSIn,
                                          std::vector<std::pair<CTxDSIn, CTxOut>>& vecPSInOutPairsRet);
+    // CJ4-B2b3: the automatic attempt below its height read, with the DFCN-scale gate and the coin toss given; the
+    // DFCN-scale maker and queue start; the session's collateral transaction.
+    friend bool DoAttemptForTest(CCoinJoinClientSession& session, ChainstateManager& chainman, CConnman& connman,
+                                 const CTxMemPool& mempool, bool fDfcnOpen, const std::function<bool()>& toss);
+    friend bool MakeCollateralAmountsOrdinaryForTest(CCoinJoinClientSession& session);
+    friend bool StartNewDfcnScaleQueueForTest(CCoinJoinClientSession& session, const std::array<CAmount, 3>& work,
+                                              CConnman& connman);
+    friend uint256 CollateralTxHashForTest(const CCoinJoinClientSession& session);
 
     CKeyHolderStorage keyHolderStorage; // storage for keys used in PrepareDenominate
 
@@ -192,12 +214,35 @@ private:
     bool MakeCollateralAmounts();
     bool MakeCollateralAmounts(const CompactTallyItem& tallyItem, bool fTryDenominated)
         EXCLUSIVE_LOCKS_REQUIRED(m_wallet->cs_wallet);
+    /// The DFCN-scale attempt's collateral maker (CJ4-B2b3): the first pass only, over the groups without an old denomination
+    bool MakeCollateralAmountsOrdinary();
 
     bool CreateCollateralTransaction(CMutableTransaction& txCollateral, std::string& strReason)
         EXCLUSIVE_LOCKS_REQUIRED(m_wallet->cs_wallet);
 
+    /// The automatic attempt from its wallet checks on; fDfcnOpen: from U it may be the DFCN-scale attempt, where the old
+    /// path goes on by the coin toss (CJ4-B2b3)
+    bool DoAttempt(ChainstateManager& chainman, CConnman& connman, const CTxMemPool& mempool, bool fDryRun,
+                   bool fDfcnOpen, const std::function<bool()>& toss) EXCLUSIVE_LOCKS_REQUIRED(!cs_coinjoin);
+    /// The attempt's part under the wallet's lock: its result when it ends there; nullopt when the queue search follows,
+    /// the DFCN-scale attempt's with dfcn_work set, otherwise the old one's with nBalanceNeedsAnonymized
+    std::optional<bool> ChooseAndPrepareAttempt(ChainstateManager& chainman, const CTxMemPool& mempool, bool fDryRun,
+                                                bool fDfcnOpen, const std::function<bool()>& toss,
+                                                CAmount& nBalanceNeedsAnonymized,
+                                                std::optional<std::array<CAmount, 3>>& dfcn_work)
+        EXCLUSIVE_LOCKS_REQUIRED(!cs_coinjoin);
+    /// Both attempts' collateral step, v23.0.0's: the collateral inputs, the session's cleanup, the wait for unconfirmed
+    /// old denominations, the collateral transaction; its result when the attempt ends there, nullopt when it goes on
+    std::optional<bool> PrepareAttempt(ChainstateManager& chainman, const CTxMemPool& mempool,
+                                       CAmount nBalanceDenominatedUnconf, bool fOrdinaryCollateralOnly)
+        EXCLUSIVE_LOCKS_REQUIRED(m_wallet->cs_wallet, cs_coinjoin);
+
     bool JoinExistingQueue(CAmount nBalanceNeedsAnonymized, CConnman& connman);
     bool StartNewQueue(CAmount nBalanceNeedsAnonymized, CConnman& connman);
+    /// The DFCN-scale attempt's queues: a queue of a bit it has work for, or a new one for such a bit; the bit's work is
+    /// the session's budget
+    bool JoinExistingDfcnScaleQueue(const std::array<CAmount, 3>& work, CConnman& connman);
+    bool StartNewDfcnScaleQueue(const std::array<CAmount, 3>& work, CConnman& connman);
 
     /// step 0: select denominated inputs and txouts
     bool SelectDenominate(std::string& strErrorRet, std::vector<CTxDSIn>& vecTxDSInRet);

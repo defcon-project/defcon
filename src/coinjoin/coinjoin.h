@@ -370,7 +370,10 @@ public:
     CCoinJoinBaseManager() = default;
 
     int GetQueueSize() const EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue) { LOCK(cs_vecqueue); return vecCoinJoinQueue.size(); }
-    bool GetQueueItemAndTry(CCoinJoinQueue& dsqRet) EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue);
+    /** Takes the first queue not tried yet that the walk asks for, marks it tried and returns it. dfcn_bits 0: the old
+     *  walk (every queue but one of a DFCN-scale bit); otherwise the DFCN-scale attempt's walk, a queue of one of these
+     *  bits only (CJ4-B2b3). */
+    bool GetQueueItemAndTry(CCoinJoinQueue& dsqRet, int dfcn_bits = 0) EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue);
 
     bool HasQueue(const uint256& queueHash) EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue)
     {

@@ -815,8 +815,24 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(ChainstateManager& chainman
 
     if (!CCoinJoinClientOptions::IsEnabled()) return false;
 
-    CAmount nBalanceNeedsAnonymized;
+    // From U the attempt may be the DFCN-scale attempt (CJ4-B2b3): the height is read once per attempt, with H set only.
+    const Consensus::Params& consensus{Params().GetConsensus()};
+    bool fDfcnOpen{false};
+    if (consensus.nV231ActivationHeight != std::numeric_limits<int>::max()) {
+        LOCK(::cs_main);
+        const CBlockIndex* tip{chainman.ActiveChain().Tip()};
+        fDfcnOpen = tip != nullptr && CoinJoin::DfcnScaleMixingOpenAt(consensus.nV231ActivationHeight,
+                                                                     consensus.nDfcnScaleMixingHeightOverride, tip->nHeight);
+    }
+    return DoAttempt(chainman, connman, mempool, fDryRun, fDfcnOpen, [] { return GetRandInt(2) == 0; });
+}
 
+std::optional<bool> CCoinJoinClientSession::ChooseAndPrepareAttempt(ChainstateManager& chainman,
+                                                                    const CTxMemPool& mempool, bool fDryRun,
+                                                                    bool fDfcnOpen, const std::function<bool()>& toss,
+                                                                    CAmount& nBalanceNeedsAnonymized,
+                                                                    std::optional<std::array<CAmount, 3>>& dfcn_work)
+{
     {
         LOCK(m_wallet->cs_wallet);
 
@@ -845,11 +861,29 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(ChainstateManager& chainman
 
         const auto bal = m_wallet->GetBalance();
 
+        // Whether this attempt is the DFCN-scale attempt (CJ4-B2b3), asked where the old path stops or goes on: the work
+        // is read from U only, and once.
+        const auto dfcn_scale_attempt = [&](bool old_would_stop) {
+            if (!fDfcnOpen) return false;
+            const auto work{m_wallet->GetDfcnScaleMixingWork()};
+            const bool has_work{std::any_of(work.begin(), work.end(), [](CAmount amount) { return amount > 0; })};
+            if (!CoinJoin::ChooseDfcnScaleAttempt(fDfcnOpen, has_work, old_would_stop, toss)) return false;
+            dfcn_work = work;
+            // An earlier attempt's stop status ("Not enough funds to mix.") no longer holds; the DFCN-scale attempt
+            // writes its own where v23.0.0's attempt does.
+            strAutoDenomResult = bilingual_str{};
+            return true;
+        };
+
         // check if there is anything left to do
         CAmount nBalanceAnonymized = bal.m_anonymized;
         nBalanceNeedsAnonymized = CCoinJoinClientOptions::GetAmount() * COIN - nBalanceAnonymized;
 
         if (nBalanceNeedsAnonymized < 0) {
+            if (dfcn_scale_attempt(/*old_would_stop=*/true)) {
+                if (fDryRun) return true;
+                return PrepareAttempt(chainman, mempool, bal.m_denominated_untrusted_pending, /*fOrdinaryCollateralOnly=*/true);
+            }
             WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::DoAutomaticDenominating -- Nothing to do\n");
             // nothing to do, just keep it in idle mode
             return false;
@@ -868,6 +902,10 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(ChainstateManager& chainman
 
         // mixable balance is way too small
         if (nBalanceAnonymizable < nValueMin) {
+            if (dfcn_scale_attempt(/*old_would_stop=*/true)) {
+                if (fDryRun) return true;
+                return PrepareAttempt(chainman, mempool, bal.m_denominated_untrusted_pending, /*fOrdinaryCollateralOnly=*/true);
+            }
             strAutoDenomResult = _("Not enough funds to mix.");
             WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::DoAutomaticDenominating -- %s\n", strAutoDenomResult.original);
             return false;
@@ -918,6 +956,11 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(ChainstateManager& chainman
 
         if (fDryRun) return true;
 
+        // From U, with DFCN-scale work, a coin toss makes the attempt the DFCN-scale one (CJ4-B2b3).
+        if (dfcn_scale_attempt(/*old_would_stop=*/false)) {
+            return PrepareAttempt(chainman, mempool, nBalanceDenominatedUnconf, /*fOrdinaryCollateralOnly=*/true);
+        }
+
         // Check if we have should create more denominated inputs i.e.
         // there are funds to denominate and denominated balance does not exceed
         // max amount to mix yet.
@@ -925,59 +968,88 @@ bool CCoinJoinClientSession::DoAutomaticDenominating(ChainstateManager& chainman
             CreateDenominated(nBalanceToDenominate);
         }
 
-        //check if we have the collateral sized inputs
-        if (!m_wallet->HasCollateralInputs()) {
-            return !m_wallet->HasCollateralInputs(false) && MakeCollateralAmounts();
-        }
-
-        if (nSessionID) {
-            strAutoDenomResult = _("Mixing in progress…");
-            return false;
-        }
-
-        // Initial phase, find a Masternode
-        // Clean if there is anything left from previous session
-        UnlockCoins();
-        keyHolderStorage.ReturnAll();
-        SetNull();
-
-        // should be no unconfirmed denoms in non-multi-session mode
-        if (!CCoinJoinClientOptions::IsMultiSessionEnabled() && nBalanceDenominatedUnconf > 0) {
-            strAutoDenomResult = _("Found unconfirmed denominated outputs, will wait till they confirm to continue.");
-            WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::DoAutomaticDenominating -- %s\n", strAutoDenomResult.original);
-            return false;
-        }
-
-        //check our collateral and create new if needed
-        std::string strReason;
-        if (CTransaction(txMyCollateral).IsNull()) {
-            if (!CreateCollateralTransaction(txMyCollateral, strReason)) {
-                WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::DoAutomaticDenominating -- create collateral error:%s\n", strReason);
-                return false;
-            }
-        } else {
-            if (!CoinJoin::IsCollateralValid(chainman, m_isman, mempool, CTransaction(txMyCollateral))) {
-                WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::DoAutomaticDenominating -- invalid collateral, recreating...\n");
-                if (!CreateCollateralTransaction(txMyCollateral, strReason)) {
-                    WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::DoAutomaticDenominating -- create collateral error: %s\n", strReason);
-                    return false;
-                }
-            }
-        }
-        // lock the funds we're going to use for our collateral
-        for (const auto& txin : txMyCollateral.vin) {
-            m_wallet->LockCoin(txin.prevout);
-            vecOutPointLocked.push_back(txin.prevout);
-        }
+        return PrepareAttempt(chainman, mempool, nBalanceDenominatedUnconf, /*fOrdinaryCollateralOnly=*/false);
     } // LOCK(m_wallet->cs_wallet);
+}
 
-    // Always attempt to join an existing queue
-    if (JoinExistingQueue(nBalanceNeedsAnonymized, connman)) {
-        return true;
+std::optional<bool> CCoinJoinClientSession::PrepareAttempt(ChainstateManager& chainman, const CTxMemPool& mempool,
+                                                          CAmount nBalanceDenominatedUnconf, bool fOrdinaryCollateralOnly)
+{
+    AssertLockHeld(m_wallet->cs_wallet);
+    AssertLockHeld(cs_coinjoin);
+
+    //check if we have the collateral sized inputs
+    if (!m_wallet->HasCollateralInputs()) {
+        // The DFCN-scale attempt's maker spends ordinary funds only, from groups without an old denomination (CJ4-B2b3).
+        return !m_wallet->HasCollateralInputs(false) &&
+               (fOrdinaryCollateralOnly ? MakeCollateralAmountsOrdinary() : MakeCollateralAmounts());
     }
 
-    // If we were unable to find/join an existing queue then start a new one.
-    if (StartNewQueue(nBalanceNeedsAnonymized, connman)) return true;
+    if (nSessionID) {
+        strAutoDenomResult = _("Mixing in progress…");
+        return false;
+    }
+
+    // Initial phase, find a Masternode
+    // Clean if there is anything left from previous session
+    UnlockCoins();
+    keyHolderStorage.ReturnAll();
+    SetNull();
+
+    // should be no unconfirmed denoms in non-multi-session mode
+    if (!CCoinJoinClientOptions::IsMultiSessionEnabled() && nBalanceDenominatedUnconf > 0) {
+        strAutoDenomResult = _("Found unconfirmed denominated outputs, will wait till they confirm to continue.");
+        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::DoAutomaticDenominating -- %s\n", strAutoDenomResult.original);
+        return false;
+    }
+
+    //check our collateral and create new if needed
+    std::string strReason;
+    if (CTransaction(txMyCollateral).IsNull()) {
+        if (!CreateCollateralTransaction(txMyCollateral, strReason)) {
+            WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::DoAutomaticDenominating -- create collateral error:%s\n", strReason);
+            return false;
+        }
+    } else {
+        if (!CoinJoin::IsCollateralValid(chainman, m_isman, mempool, CTransaction(txMyCollateral))) {
+            WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::DoAutomaticDenominating -- invalid collateral, recreating...\n");
+            if (!CreateCollateralTransaction(txMyCollateral, strReason)) {
+                WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::DoAutomaticDenominating -- create collateral error: %s\n", strReason);
+                return false;
+            }
+        }
+    }
+    // lock the funds we're going to use for our collateral
+    for (const auto& txin : txMyCollateral.vin) {
+        m_wallet->LockCoin(txin.prevout);
+        vecOutPointLocked.push_back(txin.prevout);
+    }
+    return std::nullopt;
+}
+
+bool CCoinJoinClientSession::DoAttempt(ChainstateManager& chainman, CConnman& connman, const CTxMemPool& mempool,
+                                       bool fDryRun, bool fDfcnOpen, const std::function<bool()>& toss)
+{
+    CAmount nBalanceNeedsAnonymized{0};
+    std::optional<std::array<CAmount, 3>> dfcn_work;
+    if (const auto result{ChooseAndPrepareAttempt(chainman, mempool, fDryRun, fDfcnOpen, toss, nBalanceNeedsAnonymized,
+                                                  dfcn_work)}) {
+        return *result;
+    }
+
+    if (dfcn_work) {
+        // The DFCN-scale attempt: a queue of a bit it has work for, else a new one for such a bit (CJ4-B2b3).
+        if (JoinExistingDfcnScaleQueue(*dfcn_work, connman)) return true;
+        if (StartNewDfcnScaleQueue(*dfcn_work, connman)) return true;
+    } else {
+        // Always attempt to join an existing queue
+        if (JoinExistingQueue(nBalanceNeedsAnonymized, connman)) {
+            return true;
+        }
+
+        // If we were unable to find/join an existing queue then start a new one.
+        if (StartNewQueue(nBalanceNeedsAnonymized, connman)) return true;
+    }
 
     strAutoDenomResult = _("No compatible Masternode found.");
     return false;
@@ -1043,6 +1115,40 @@ static int WinnersToSkip()
     return 1;
 }
 
+namespace CoinJoin {
+bool ChooseDfcnScaleAttempt(bool open, bool has_work, bool old_would_stop, const std::function<bool()>& toss)
+{
+    return open && has_work && (old_would_stop || toss());
+}
+
+int DfcnScaleWorkBits(const std::array<CAmount, 3>& work)
+{
+    int bits{0};
+    for (size_t i = 0; i < work.size(); ++i) {
+        if (work[i] > 0) bits |= 1 << (5 + i);
+    }
+    return bits;
+}
+
+int RandomDfcnScaleWorkBit(const std::array<CAmount, 3>& work)
+{
+    std::vector<int> bits;
+    for (size_t i = 0; i < work.size(); ++i) {
+        if (work[i] > 0) bits.push_back(1 << (5 + i));
+    }
+    return bits.empty() ? 0 : bits[GetRand(bits.size())];
+}
+} // namespace CoinJoin
+
+// The index of a DFCN-scale bit (5-7) in CWallet::GetDfcnScaleMixingWork's array.
+static size_t DfcnScaleWorkIndex(int nDenom)
+{
+    assert(CoinJoin::IsDfcnScaleDenomination(nDenom));
+    size_t i{0};
+    while (nDenom != 1 << (5 + i)) ++i;
+    return i;
+}
+
 bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, CConnman& connman)
 {
     if (!CCoinJoinClientOptions::IsEnabled()) return false;
@@ -1093,6 +1199,66 @@ bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, 
         WalletCJLogPrint(m_wallet, /* Continued */
                          "CCoinJoinClientSession::JoinExistingQueue -- pending connection (from queue): nSessionDenom: "
                          "%d (%s), addr=%s\n",
+                         nSessionDenom, CoinJoin::DenominationToString(nSessionDenom),
+                         dmn->pdmnState->addr.ToStringAddrPort());
+        strAutoDenomResult = _("Trying to connect…");
+        return true;
+    }
+    strAutoDenomResult = _("Failed to find mixing queue to join");
+    return false;
+}
+
+// JoinExistingQueue for the DFCN-scale attempt (CJ4-B2b3): the walk returns only a queue of a bit with work, whose work is
+// the budget the session selects and keeps (the ready step caps it at GetMaxPoolAmount, B1b).
+bool CCoinJoinClientSession::JoinExistingDfcnScaleQueue(const std::array<CAmount, 3>& work, CConnman& connman)
+{
+    if (!CCoinJoinClientOptions::IsEnabled()) return false;
+    if (m_queueman == nullptr) return false;
+    const int nBits{CoinJoin::DfcnScaleWorkBits(work)};
+    if (nBits == 0) return false; // the walk's 0 is the old walk
+
+    const auto mnList = m_dmnman.GetListAtChainTip();
+    const int nWeightedMnCount = mnList.GetValidPaymentWeightedMNsCount();
+
+    // Look through the queues and see if anything matches
+    CCoinJoinQueue dsq;
+    while (m_queueman->GetQueueItemAndTry(dsq, nBits)) {
+        auto dmn = mnList.GetValidMNByCollateral(dsq.masternodeOutpoint);
+
+        if (!dmn) {
+            WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::JoinExistingDfcnScaleQueue -- dsq masternode is not in masternode list, masternode=%s\n", dsq.masternodeOutpoint.ToStringShort());
+            continue;
+        }
+
+        // skip next mn payments winners
+        if (dmn->pdmnState->nLastPaidHeight + nWeightedMnCount < mnList.GetHeight() + WinnersToSkip()) {
+            WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::JoinExistingDfcnScaleQueue -- skipping winner, masternode=%s\n", dmn->proTxHash.ToString());
+            continue;
+        }
+
+        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::JoinExistingDfcnScaleQueue -- trying queue: %s\n", dsq.ToString());
+
+        const CAmount nBudget{work[DfcnScaleWorkIndex(dsq.nDenom)]};
+        std::vector<CTxDSIn> vecTxDSInTmp;
+
+        // Try to match their denomination, within the bit's work
+        if (!m_wallet->SelectTxDSInsByDenomination(dsq.nDenom, nBudget, vecTxDSInTmp)) {
+            WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::JoinExistingDfcnScaleQueue -- Couldn't match denomination %d (%s)\n", dsq.nDenom, CoinJoin::DenominationToString(dsq.nDenom));
+            continue;
+        }
+
+        m_clientman.AddUsedMasternode(dsq.masternodeOutpoint);
+
+        nSessionDenom = dsq.nDenom;
+        m_session_budget = nBudget;
+        mixingMasternode = dmn;
+        pendingDsaRequest = CPendingDsaRequest(dmn->pdmnState->addr, CCoinJoinAccept(nSessionDenom, txMyCollateral));
+        connman.AddPendingMasternode(dmn->proTxHash);
+        SetState(POOL_STATE_QUEUE);
+        nTimeLastSuccessfulStep = GetTime();
+        WalletCJLogPrint(m_wallet, /* Continued */
+                         "CCoinJoinClientSession::JoinExistingDfcnScaleQueue -- pending connection (from queue): "
+                         "nSessionDenom: %d (%s), addr=%s\n",
                          nSessionDenom, CoinJoin::DenominationToString(nSessionDenom),
                          dmn->pdmnState->addr.ToStringAddrPort());
         strAutoDenomResult = _("Trying to connect…");
@@ -1173,6 +1339,82 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
         nTimeLastSuccessfulStep = GetTime();
         WalletCJLogPrint( /* Continued */
             m_wallet, "CCoinJoinClientSession::StartNewQueue -- pending connection, nSessionDenom: %d (%s), addr=%s\n",
+            nSessionDenom, CoinJoin::DenominationToString(nSessionDenom), dmn->pdmnState->addr.ToStringAddrPort());
+        strAutoDenomResult = _("Trying to connect…");
+        return true;
+    }
+    strAutoDenomResult = _("Failed to start a new mixing queue");
+    return false;
+}
+
+// StartNewQueue for the DFCN-scale attempt (CJ4-B2b3): a random bit with work, whose work is the session's budget (the
+// ready step caps it at GetMaxPoolAmount, B1b).
+bool CCoinJoinClientSession::StartNewDfcnScaleQueue(const std::array<CAmount, 3>& work, CConnman& connman)
+{
+    assert(m_mn_metaman.IsValid());
+
+    if (!CCoinJoinClientOptions::IsEnabled()) return false;
+
+    // The bits the wallet can still fill now, as the old start asks SelectDenominatedAmounts: the work was read under an
+    // earlier lock, and the user may have locked or spent a coin since.
+    std::array<CAmount, 3> ready{};
+    for (size_t i = 0; i < work.size(); ++i) {
+        std::vector<CTxDSIn> vecTxDSInTmp;
+        if (work[i] > 0 && m_wallet->SelectTxDSInsByDenomination(1 << (5 + i), work[i], vecTxDSInTmp)) ready[i] = work[i];
+    }
+    if (CoinJoin::DfcnScaleWorkBits(ready) == 0) {
+        strAutoDenomResult = _("Can't mix: no compatible inputs found!");
+        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewDfcnScaleQueue -- %s\n", strAutoDenomResult.original);
+        return false;
+    }
+
+    int nTries = 0;
+    const auto mnList = m_dmnman.GetListAtChainTip();
+    const int nMnCount = mnList.GetValidMNsCount();
+    const int nWeightedMnCount = mnList.GetValidPaymentWeightedMNsCount();
+
+    // try one randomly
+    while (nTries < 10) {
+        auto dmn = m_clientman.GetRandomUsedMasternode();
+        if (!dmn) {
+            strAutoDenomResult = _("Can't find random Masternode.");
+            WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewDfcnScaleQueue -- %s\n", strAutoDenomResult.original);
+            return false;
+        }
+
+        m_clientman.AddUsedMasternode(dmn->collateralOutpoint);
+
+        // skip next mn payments winners
+        if (dmn->pdmnState->nLastPaidHeight + nWeightedMnCount < mnList.GetHeight() + WinnersToSkip()) {
+            WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewDfcnScaleQueue -- skipping winner, masternode=%s\n", dmn->proTxHash.ToString());
+            nTries++;
+            continue;
+        }
+
+        int64_t nLastDsq = m_mn_metaman.GetMetaInfo(dmn->proTxHash)->GetLastDsq();
+        int64_t nDsqThreshold = m_mn_metaman.GetDsqThreshold(dmn->proTxHash, nMnCount);
+        if (nLastDsq != 0 && nDsqThreshold > m_mn_metaman.GetDsqCount()) {
+            WalletCJLogPrint(m_wallet, /* Continued */
+                             "CCoinJoinClientSession::StartNewDfcnScaleQueue -- Too early to mix on this masternode!" /* Continued */
+                             " masternode=%s  addr=%s  nLastDsq=%d  nDsqThreshold=%d  nDsqCount=%d\n",
+                             dmn->proTxHash.ToString(), dmn->pdmnState->addr.ToStringAddrPort(), nLastDsq,
+                             nDsqThreshold, m_mn_metaman.GetDsqCount());
+            nTries++;
+            continue;
+        }
+
+        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::StartNewDfcnScaleQueue -- attempt %d connection to Masternode %s\n",
+                         nTries, dmn->pdmnState->addr.ToStringAddrPort());
+
+        nSessionDenom = CoinJoin::RandomDfcnScaleWorkBit(ready);
+        m_session_budget = ready[DfcnScaleWorkIndex(nSessionDenom)];
+        mixingMasternode = dmn;
+        connman.AddPendingMasternode(dmn->proTxHash);
+        pendingDsaRequest = CPendingDsaRequest(dmn->pdmnState->addr, CCoinJoinAccept(nSessionDenom, txMyCollateral));
+        SetState(POOL_STATE_QUEUE);
+        nTimeLastSuccessfulStep = GetTime();
+        WalletCJLogPrint( /* Continued */
+            m_wallet, "CCoinJoinClientSession::StartNewDfcnScaleQueue -- pending connection, nSessionDenom: %d (%s), addr=%s\n",
             nSessionDenom, CoinJoin::DenominationToString(nSessionDenom), dmn->pdmnState->addr.ToStringAddrPort());
         strAutoDenomResult = _("Trying to connect…");
         return true;
@@ -1435,6 +1677,39 @@ bool CCoinJoinClientSession::MakeCollateralAmounts()
 
     // If we got here then something is terribly broken actually
     WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::MakeCollateralAmounts -- ERROR: Can't make collaterals!\n");
+    return false;
+}
+
+// The DFCN-scale attempt's collateral maker (CJ4-B2b3, design note § 2): the groups listed and ordered as above, those
+// holding a coin of an old amount left out, and the first pass only, so it never breaks an old denomination (a DFCN-scale
+// candidate is never in what a group may spend). Without such funds it makes nothing, and the DFCN-scale amounts wait.
+bool CCoinJoinClientSession::MakeCollateralAmountsOrdinary()
+{
+    if (!CCoinJoinClientOptions::IsEnabled()) return false;
+
+    LOCK(m_wallet->cs_wallet);
+
+    std::vector<CompactTallyItem> vecTally = m_wallet->SelectCoinsGroupedByAddresses(false, false, true, 400);
+    std::sort(vecTally.begin(), vecTally.end(), [](const CompactTallyItem& a, const CompactTallyItem& b) {
+        return a.nRankAmount < b.nRankAmount;
+    });
+    vecTally.erase(std::remove_if(vecTally.begin(), vecTally.end(),
+                                  [](const CompactTallyItem& item) {
+                                      return item.vecInputCoins.empty() ||
+                                             std::any_of(item.vecInputCoins.begin(), item.vecInputCoins.end(),
+                                                         [](const CInputCoin& coin) {
+                                                             return CoinJoin::IsDenominatedAmount(coin.txout.nValue);
+                                                         });
+                                  }),
+                   vecTally.end());
+
+    if (ranges::any_of(vecTally, [&](const auto& item) EXCLUSIVE_LOCKS_REQUIRED(m_wallet->cs_wallet) {
+            return MakeCollateralAmounts(item, false);
+        })) {
+        return true;
+    }
+
+    WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::MakeCollateralAmountsOrdinary -- no collateral from ordinary funds without an old denomination\n");
     return false;
 }
 

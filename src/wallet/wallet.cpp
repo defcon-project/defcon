@@ -3970,7 +3970,8 @@ bool CWallet::SelectDenominatedAmounts(CAmount nValueMax, std::set<CAmount>& set
     std::vector<COutput> vCoins;
     CCoinControl coin_control;
     coin_control.nCoinType = CoinType::ONLY_READY_TO_MIX;
-    // The five amounts of v23.0.0 only (CJ4): the client does not start a queue of a DFCN-scale bit (CJ4-B2b adds it).
+    // The five amounts of v23.0.0 only (CJ4): this is the old queue start's offer; the DFCN-scale attempt starts its
+    // queues from its own work (CJ4-B2b3, StartNewDfcnScaleQueue).
     coin_control.m_old_denominations_only = true;
     AvailableCoins(vCoins, &coin_control);
     // larger denoms first
