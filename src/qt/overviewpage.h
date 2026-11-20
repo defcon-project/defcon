@@ -8,6 +8,7 @@
 #include <interfaces/wallet.h>
 
 #include <QDateTime>
+#include <QPointer>
 #include <QWidget>
 #include <QSizePolicy>
 #include <map>
@@ -33,6 +34,7 @@ class QModelIndex;
 class QPaintEvent;
 class QProgressBar;
 class QPushButton;
+class QScrollArea;
 class QSpacerItem;
 QT_END_NAMESPACE
 
@@ -102,6 +104,12 @@ public:
     void setStakingStatus(const StakingStatus& status);
     const StakingStatus& stakingStatus() const { return m_staking; }
     StakingState stakingState() const;
+    //! Abyss: what the page needs with its columns side by side, while they
+    //! stand one under the other (an invalid size otherwise): the two-column
+    //! width, and the height there as the side-by-side page would have it. A
+    //! window grown to show the page whole (WalletFrame::pageWhole) gives it
+    //! this, as it did before the columns could stack.
+    QSize sideBySideWhole();
 
 public Q_SLOTS:
     void coinJoinStatus(bool fForce = false);
@@ -244,6 +252,29 @@ private:
     //! to the right card's bottom, so that both columns end on one line.
     void updateColumnStretch();
     std::map<QWidget*, QSizePolicy> m_inherited_card_policies;
+    //! Abyss, in the wallet's scroll area: where the page's room there is
+    //! less than its columns need side by side, the Recent transactions card
+    //! stands under the cards, so that a narrow window scrolls down only. The
+    //! room is the viewport as it stands, its vertical bar included where
+    //! the page on show scrolls down. The page's own width cannot tell: it
+    //! never falls below the page's minimum.
+    bool m_stacked{false};
+    //! The page's minimum width with its columns side by side, from the last width pass.
+    int m_two_column_width{0};
+    QPointer<QScrollArea> m_area;
+    //! Finds the scroll area the page stands in and follows its viewport.
+    void watchScrollArea();
+    //! Stacks the columns, or sets them side by side again, as the viewport's width asks.
+    void updateColumns();
+    //! The row of cards as the theme and m_stacked want it: direction, spacers, stretch.
+    void applyColumnLayout();
+    //! The page's minimum width with the columns side by side (Abyss).
+    int twoColumnWidth() const;
+    //! The height the page needs at this width with its columns side by side,
+    //! measured as the event loop would lay them out (the row side by side and
+    //! laid out at the width, the total's font fitted to its card); the row,
+    //! the children's places and the total's font are set back after.
+    int sideBySideNeed(int width);
     QSizePolicy m_total_size_policy;
     int m_total_minimum_height{0};
     bool m_balance_update_pending{false};
