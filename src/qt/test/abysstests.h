@@ -49,6 +49,7 @@ private Q_SLOTS:
     void menuColors();
     void darkStateRules();
     void waveBackdrop();
+    void translucentCards();
     void smallWindow();
     void overviewBreakpoint();
     void hoverMenus();

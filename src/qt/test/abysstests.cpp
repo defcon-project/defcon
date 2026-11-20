@@ -119,6 +119,7 @@
 #include <QFormLayout>
 #include <QFrame>
 #include <QGridLayout>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QHelpEvent>
@@ -6957,6 +6958,284 @@ void AbyssTests::waveBackdrop()
         AppearanceWidget appearance;
         QVERIFY(!appearance.findChild<QLabel*>("lblNightSky")->isHidden());
         QVERIFY(!appearance.findChild<QCheckBox*>("animateNightSky")->isHidden());
+    }
+}
+
+void AbyssTests::translucentCards()
+{
+    // U18: in Abyss the page cards cover 85 % of the wave backdrop under them,
+    // so the waves show through. A card's own fill is #0b1727 at 0.85 (Qt
+    // keeps int(0.85 * 255) = 216): painted alone with its children onto a
+    // transparent image, a good share of the card's inside is that colour at
+    // that alpha; an opaque card has none. The controls on a
+    // card keep their opaque fill; the Receive request history lets its card
+    // show through. In the window, a card's pixel is its fill over the
+    // backdrop's pixel there (read with the card hidden, its room kept), and
+    // the backdrop under it is not flat. A classic theme has no such card.
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name); // Keep this test's isolated QSettings scope.
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.addWallet(fixture.model.get());
+    window.gotoOverviewPage();
+    window.show(); Settle();
+    // Shown, the window is held to the test platform's 240x320 screen; resized
+    // after that it keeps a desktop size (as overviewBreakpoint does).
+    window.resize(1280, 900); Settle();
+    // The disposable fixture's sync overlay covers the window, not a page.
+    if (auto* overlay = window.findChild<ModalOverlay*>()) overlay->hide();
+    auto* overview = window.findChild<OverviewPage*>();
+    QVERIFY(overview);
+    // Every card of the Overview on show: the staking card waits for the
+    // window's first staking tick, the CoinJoin card for a synced chain.
+    for (const char* object : {"frameStaking", "frameCoinJoin"}) {
+        auto* card = overview->findChild<QFrame*>(object);
+        QVERIFY(card);
+        card->setVisible(true);
+    }
+    Settle();
+
+    constexpr int fill_alpha{216};
+    const QColor fill(11, 23, 39);
+    const auto is_fill = [&](QRgb pixel) {
+        return std::abs(qAlpha(pixel) - fill_alpha) <= 2 && std::abs(qRed(pixel) - fill.red()) <= 2 &&
+               std::abs(qGreen(pixel) - fill.green()) <= 2 && std::abs(qBlue(pixel) - fill.blue()) <= 2;
+    };
+    // A card painted alone with its children onto a transparent image. Not
+    // grab(): a widget drawn as the root (DrawWindowBackground) gets the
+    // palette's Window brush under it, copied in opaque (qwidget.cpp,
+    // QWidgetPrivate::paintBackground); without it the stylesheet's
+    // background is the card's own, alpha and all.
+    const auto alone_image = [](QWidget* card) {
+        const qreal dpr = card->devicePixelRatioF();
+        QImage image(card->size() * dpr, QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(dpr);
+        image.fill(Qt::transparent);
+        card->render(&image, QPoint(), QRegion(), QWidget::DrawChildren);
+        return image.convertToFormat(QImage::Format_ARGB32);
+    };
+    // The share of a widget's area (logical, inside `card`) that is the fill, the card painted alone.
+    const auto fill_share = [&](QWidget* card, const QRect& logical) {
+        const QImage image = alone_image(card);
+        const qreal dpr = image.devicePixelRatio();
+        const QRect area = QRect(QPoint(qRound(logical.left() * dpr), qRound(logical.top() * dpr)),
+                                 QPoint(qRound(logical.right() * dpr), qRound(logical.bottom() * dpr))) & image.rect();
+        int found = 0;
+        for (int y = area.top(); y <= area.bottom(); ++y) {
+            for (int x = area.left(); x <= area.right(); ++x) found += is_fill(image.pixel(x, y)) ? 1 : 0;
+        }
+        return area.isEmpty() ? 0.0 : double(found) / (area.width() * area.height());
+    };
+    QStringList problems;
+    int checked = 0;
+    const auto check_card = [&](QWidget* page, const char* object) {
+        auto* card = page->findChild<QFrame*>(object);
+        if (card == nullptr || !card->isVisible()) {
+            problems << QString("%1 not on show").arg(object);
+            return;
+        }
+        ++checked;
+        // Clear of the border and its rounded corners.
+        const double share = fill_share(card, card->rect().adjusted(12, 12, -12, -12));
+        const QImage image = alone_image(card);
+        const QRgb centre = image.pixel(image.width() / 2, image.height() / 2);
+        qInfo("TRANSLUCENT_CARD %s: %d %% fill, centre ARGB %d,%d,%d,%d", object, int(share * 100),
+              qAlpha(centre), qRed(centre), qGreen(centre), qBlue(centre));
+        if (share < 0.15) problems << QString("%1: %2 % of it is the 0.85 fill").arg(object).arg(int(share * 100));
+    };
+    // The commonest pixels of an image (ARGB), for a failure message.
+    const auto commonest = [](const QImage& image) {
+        QHash<QRgb, int> counts;
+        for (int y = 0; y < image.height(); y += 3) {
+            for (int x = 0; x < image.width(); x += 3) ++counts[image.pixel(x, y)];
+        }
+        QList<QPair<int, QRgb>> ranked;
+        for (auto it = counts.cbegin(); it != counts.cend(); ++it) ranked.append({it.value(), it.key()});
+        std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        QStringList out;
+        for (int i = 0; i < std::min<int>(3, ranked.size()); ++i) {
+            const QRgb p = ranked.at(i).second;
+            out << QString("%1x ARGB %2,%3,%4,%5").arg(ranked.at(i).first).arg(qAlpha(p)).arg(qRed(p)).arg(qGreen(p)).arg(qBlue(p));
+        }
+        return out.join("; ");
+    };
+
+    // The Overview's cards.
+    for (const char* object : {"networkCard", "frame", "frameStaking", "frameCoinJoin", "frame_2"}) check_card(overview, object);
+
+    // In the window the waves show through the Recent transactions card: its
+    // fill over the backdrop's pixel, wherever the card alone shows its fill,
+    // and the backdrop there not one flat colour. Read in the same state as
+    // the window shows the card; a point may be a few levels off (rounding of
+    // the two blends) and, at a fractional scale, a few points fall on glyph
+    // edges the card painted alone and in place a pixel apart: at most 1 %.
+    {
+        auto* recent = overview->findChild<QFrame*>("frame_2");
+        QVERIFY(recent);
+        // The card in view in the page's scroll area: below the breakpoint
+        // (without the fonts at this size) it stands under the other cards.
+        for (QWidget* up = recent->parentWidget(); up; up = up->parentWidget()) {
+            if (auto* area = qobject_cast<QScrollArea*>(up)) area->ensureWidgetVisible(recent, 0, 0);
+        }
+        Settle();
+        QSizePolicy keep = recent->sizePolicy();
+        keep.setRetainSizeWhenHidden(true);
+        recent->setSizePolicy(keep);
+        recent->hide(); Settle();
+        const QImage backdrop = window.grab().toImage().convertToFormat(QImage::Format_ARGB32);
+        recent->show(); Settle();
+        const QImage shown = window.grab().toImage().convertToFormat(QImage::Format_ARGB32);
+        const QImage alone = alone_image(recent);
+        const qreal dpr = alone.devicePixelRatio();
+        const QPoint origin = recent->mapTo(&window, QPoint(0, 0));
+        // Only where the card is on show (the scroll area may cut it off; review r1, R2).
+        const QRegion visible = recent->visibleRegion();
+        int points = 0, off = 0, darkest = 255, lightest = 0, filled = 0, outside = 0;
+        QString first_off;
+        // Each point's backdrop and finished picture, as the sum of R, G and B.
+        std::vector<std::pair<int, int>> samples;
+        for (int y = 12; y < recent->height() - 12; y += 5) {
+            for (int x = 12; x < recent->width() - 12; x += 5) {
+                if (!visible.contains(QPoint(x, y))) continue;
+                if (!is_fill(alone.pixel(qRound(x * dpr), qRound(y * dpr)))) continue;
+                ++filled;
+                const QPoint at(qRound((origin.x() + x) * dpr), qRound((origin.y() + y) * dpr));
+                if (!backdrop.rect().contains(at)) {
+                    ++outside;
+                    continue;
+                }
+                const QRgb under = backdrop.pixel(at), over = shown.pixel(at);
+                const auto blend = [&](int card, int behind) { return (card * fill_alpha + behind * (255 - fill_alpha)) / 255; };
+                const bool close = std::abs(qRed(over) - blend(fill.red(), qRed(under))) <= 6 &&
+                                   std::abs(qGreen(over) - blend(fill.green(), qGreen(under))) <= 6 &&
+                                   std::abs(qBlue(over) - blend(fill.blue(), qBlue(under))) <= 6;
+                ++points;
+                if (!close && off++ == 0) first_off = QString("at %1,%2 %3 over %4").arg(x).arg(y).arg(QColor(over).name(), QColor(under).name());
+                darkest = std::min(darkest, qBlue(under));
+                lightest = std::max(lightest, qBlue(under));
+                samples.emplace_back(qRed(under) + qGreen(under) + qBlue(under), qRed(over) + qGreen(over) + qBlue(over));
+            }
+        }
+        QVERIFY2(points >= 100, qPrintable(QString("%1 points (%2 filled, %3 outside); window %4x%5 visible %6, grabbed %7x%8 and %9x%10, "
+                                                   "card at %11,%12 size %13x%14; the card alone (%15x%16 at DPR %17): %18; %19")
+                                               .arg(points).arg(filled).arg(outside).arg(window.width()).arg(window.height()).arg(window.isVisible())
+                                               .arg(backdrop.width()).arg(backdrop.height()).arg(shown.width()).arg(shown.height())
+                                               .arg(origin.x()).arg(origin.y()).arg(recent->width()).arg(recent->height())
+                                               .arg(alone.width()).arg(alone.height()).arg(dpr).arg(commonest(alone), problems.join("; "))));
+        qInfo("TRANSLUCENT_WINDOW %d of %d points not the fill over the backdrop; first %s", off, points, qPrintable(first_off));
+        QVERIFY2(off * 100 <= points, qPrintable(QString("%1 of %2 points are not the fill over the backdrop; first %3").arg(off).arg(points).arg(first_off)));
+        QVERIFY2(lightest - darkest >= 8, qPrintable(QString("the backdrop under the card is flat: blue %1 to %2").arg(darkest).arg(lightest)));
+        // The finished picture follows the backdrop (review r1 and r2, R3):
+        // over the lighter half of the backdrop the points are lighter in the
+        // window too, by the card's (255 - 216) / 255 of the difference, at
+        // least half of it; a flat cover over the card shows none of it.
+        std::sort(samples.begin(), samples.end());
+        const size_t half = samples.size() / 2;
+        double under_dark = 0, under_light = 0, over_dark = 0, over_light = 0;
+        for (size_t i = 0; i < samples.size(); ++i) {
+            (i < half ? under_dark : under_light) += samples[i].first;
+            (i < half ? over_dark : over_light) += samples[i].second;
+        }
+        under_dark /= half;
+        over_dark /= half;
+        under_light /= samples.size() - half;
+        over_light /= samples.size() - half;
+        const double through = (under_light - under_dark) * (255 - fill_alpha) / 255.0;
+        qInfo("TRANSLUCENT_THROUGH backdrop halves %.1f / %.1f, window %.1f / %.1f: %.1f through, %.1f expected",
+              under_dark, under_light, over_dark, over_light, over_light - over_dark, through);
+        QVERIFY2(through >= 3, qPrintable(QString("the backdrop's halves differ too little to tell: %1").arg(through)));
+        QVERIFY2(over_light - over_dark >= through / 2,
+                 qPrintable(QString("the window shows %1 of the backdrop's difference through the card, expected about %2").arg(over_light - over_dark).arg(through)));
+    }
+
+    // The Send page's recipient card and its summary (the wallet has two
+    // SendCoinsDialogs, Send and CoinJoin: the one on show).
+    window.gotoSendCoinsPage(); Settle();
+    SendCoinsDialog* send = nullptr;
+    for (auto* page : window.findChildren<SendCoinsDialog*>()) {
+        if (page->isVisible()) send = page;
+    }
+    QVERIFY(send);
+    check_card(send, "SendCoins");
+    check_card(send, "abyssSendSummary");
+    // No fee card: Abyss pays the recommended fee and hides the fee section.
+
+    // The Receive page's address card, its request form, and its history:
+    // with requests, the table lets the card show through.
+    window.gotoReceiveCoinsPage(); Settle();
+    auto* receive = window.findChild<ReceiveCoinsDialog*>();
+    QVERIFY(receive);
+    auto* toggle = receive->findChild<QPushButton*>("abyssReceiveRequestToggle");
+    QVERIFY(toggle);
+    if (!toggle->isChecked()) toggle->click();
+    RecentRequestsTableModel* requests = fixture.model->getRecentRequestsTableModel();
+    auto* address_label = receive->findChild<QLabel*>("abyssReceiveAddress");
+    QVERIFY(address_label);
+    const QString address = address_label->text();
+    for (int i = 0; i < 6; ++i) requests->addNewRequest(SendCoinsRecipient(address, QString("Request %1").arg(i), (i + 1) * COIN, QString()));
+    Settle();
+    check_card(receive, "abyssReceiveCard");
+    check_card(receive, "frame2");
+    check_card(receive, "frame");
+    auto* history = receive->findChild<QFrame*>("frame");
+    auto* table = receive->findChild<QTableView*>("recentRequestsView");
+    QVERIFY(history && table && table->isVisible());
+    const QRect viewport(table->viewport()->mapTo(history, QPoint(0, 0)), table->viewport()->size());
+    const double table_share = fill_share(history, viewport);
+    if (table_share < 0.3) problems << QString("recentRequestsView: %1 % of it is the card's 0.85 fill").arg(int(table_share * 100));
+    // A plain and a striped row (review r2, R5), each away from its text (the
+    // label column stretches; its right end is empty), nothing selected: the
+    // plain one is the card's fill, the striped one the stripe's tint over it,
+    // as a painter composes the two colours.
+    table->clearSelection();
+    // The pointer off the table (a hovered row has an opaque fill of its own;
+    // review r3, R8): on the window's top left corner, above the pages.
+    PointAt(&window, window.mapToGlobal(QPoint(2, 2)));
+    Settle();
+    QVERIFY(!table->viewport()->underMouse());
+    const QImage history_alone = alone_image(history);
+    const auto composed = [](const QList<QColor>& layers) {
+        QImage one(1, 1, QImage::Format_ARGB32_Premultiplied);
+        one.fill(Qt::transparent);
+        QPainter painter(&one);
+        for (const QColor& layer : layers) painter.fillRect(0, 0, 1, 1, layer);
+        painter.end();
+        return one.convertToFormat(QImage::Format_ARGB32).pixel(0, 0);
+    };
+    const auto row_pixel = [&](int row) {
+        const QRect cell = table->visualRect(table->model()->index(row, RecentRequestsTableModel::Label));
+        const QPoint at = table->viewport()->mapTo(history, QPoint(cell.right() - 6, cell.center().y()));
+        const qreal hdpr = history_alone.devicePixelRatio();
+        return history_alone.pixel(qRound(at.x() * hdpr), qRound(at.y() * hdpr));
+    };
+    const auto argb = [](QRgb p) { return QString("%1,%2,%3,%4").arg(qAlpha(p)).arg(qRed(p)).arg(qGreen(p)).arg(qBlue(p)); };
+    // (Not "near": the Windows headers define it as a macro.)
+    const auto alike = [](QRgb a, QRgb b) {
+        return std::abs(qAlpha(a) - qAlpha(b)) <= 2 && std::abs(qRed(a) - qRed(b)) <= 2 &&
+               std::abs(qGreen(a) - qGreen(b)) <= 2 && std::abs(qBlue(a) - qBlue(b)) <= 2;
+    };
+    const QColor card_fill(fill.red(), fill.green(), fill.blue(), fill_alpha);
+    const QColor stripe(120, 170, 230, int(0.05 * 255)); // as Qt's stylesheet parser keeps rgba(120, 170, 230, 0.05)
+    const QRgb plain = row_pixel(0), striped = row_pixel(1);
+    if (!alike(plain, composed({card_fill}))) problems << QString("plain row %1, not the card's fill %2").arg(argb(plain), argb(composed({card_fill})));
+    if (!alike(striped, composed({card_fill, stripe}))) problems << QString("striped row %1, not the stripe over the card %2").arg(argb(striped), argb(composed({card_fill, stripe})));
+    QVERIFY2(problems.isEmpty(), qPrintable(problems.join("; ")));
+    QCOMPARE(checked, 10);
+
+    // A classic theme: no card there is the Abyss fill.
+    Theme("Light"); Settle();
+    window.gotoOverviewPage(); Settle();
+    for (const char* object : {"frame", "frame_2"}) {
+        auto* card = overview->findChild<QFrame*>(object);
+        QVERIFY(card && card->isVisible());
+        QCOMPARE(fill_share(card, card->rect().adjusted(12, 12, -12, -12)), 0.0);
     }
 }
 
