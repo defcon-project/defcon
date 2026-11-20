@@ -915,7 +915,9 @@ void BitcoinGUI::createMenuBar()
             button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
             button->setPopupMode(QToolButton::InstantPopup);
             button->setAutoRaise(true);
-            button->setFocusPolicy(Qt::StrongFocus);
+            // Reached with Tab; a click leaves no focus behind, whose ring would
+            // stay on the button while another one's menu is open.
+            button->setFocusPolicy(Qt::TabFocus);
             button->setIconSize(QSize(22, 22));
             button->setMenu(menu);
             button->setProperty("abyssMenuGlyph", glyph);

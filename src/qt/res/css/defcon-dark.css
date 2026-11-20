@@ -1461,10 +1461,16 @@ QWidget#abyssMenuControls QToolButton {
     padding: 6px 12px 6px 8px;
     min-height: 26px;
 }
+/* The button whose menu is open is drawn pressed: it is the one shown up. */
 QWidget#abyssMenuControls QToolButton:hover,
-QWidget#abyssMenuControls QToolButton:focus {
+QWidget#abyssMenuControls QToolButton:pressed {
     background: #10263e;
     border-color: #1d3f60;
+}
+/* The keyboard focus is a ring only: it stays on its button while another
+   button's menu is open, and must not look like the open one. */
+QWidget#abyssMenuControls QToolButton:focus {
+    border-color: #1297ff;
 }
 
 /* The divider between the two cells of a paired menu row (Tools, Wallet). */

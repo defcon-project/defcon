@@ -100,6 +100,11 @@ private:
     void finishSend(bool failed);
     void updateFeeMinimizedLabel();
     void updateCoinControlState();
+    //! The Inputs dialog's pay amounts, shared by every Send page (the CoinJoin page too): this page's recipients.
+    void setCoinControlPayAmounts();
+    //! The selected inputs' figures; with keep_selection (a theme switch only shows) the selection and the shared pay
+    //! amounts are left as they were.
+    void updateCoinControlLabels(bool keep_selection);
     //! Let the form decide how small this page may become.
     void applyScrollAreaMinimum();
     //! The scroll area's minimum as the form set it, kept for the other themes.

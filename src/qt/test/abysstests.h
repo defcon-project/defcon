@@ -53,6 +53,9 @@ private Q_SLOTS:
     void hoverMenus();
     void topMenuPairs();
     void topMenusHover();
+    void topMenuOpenShown();
+    void sendAmountRow();
+    void sendRecommendedFee();
     void paymentPages();
     void paymentSummaryLifecycle();
     void networkModelLifecycle();
