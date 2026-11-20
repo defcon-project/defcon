@@ -391,6 +391,13 @@ namespace CoinJoin
     bilingual_str GetMessageByID(PoolMessage nMessageID);
 
     constexpr CAmount GetMaxPoolAmount() { return COINJOIN_ENTRY_MAX_SIZE * vecStandardDenominations.front(); }
+    /** The most one session of bit `nDenom` mixes: GetMaxPoolAmount() for the five bits of v23.0.0, nine coins of
+     *  the amount for a DFCN-scale bit (CJ4). */
+    constexpr CAmount GetMaxPoolAmount(int nDenom)
+    {
+        return IsDfcnScaleDenomination(nDenom) ? CAmount(COINJOIN_ENTRY_MAX_SIZE) * DenominationToAmount(nDenom)
+                                               : GetMaxPoolAmount();
+    }
 
     /// If the collateral is valid given by a client
     bool IsCollateralValid(ChainstateManager& chainman, const llmq::CInstantSendManager& isman,

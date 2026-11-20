@@ -284,6 +284,7 @@ void CCoinJoinClientSession::SetNull()
     // Client side
     mixingMasternode = nullptr;
     pendingDsaRequest = CPendingDsaRequest();
+    m_session_budget = 0;
 
     CCoinJoinBaseSession::SetNull();
 }
@@ -1083,6 +1084,7 @@ bool CCoinJoinClientSession::JoinExistingQueue(CAmount nBalanceNeedsAnonymized, 
         m_clientman.AddUsedMasternode(dsq.masternodeOutpoint);
 
         nSessionDenom = dsq.nDenom;
+        m_session_budget = nBalanceNeedsAnonymized;
         mixingMasternode = dmn;
         pendingDsaRequest = CPendingDsaRequest(dmn->pdmnState->addr, CCoinJoinAccept(nSessionDenom, txMyCollateral));
         connman.AddPendingMasternode(dmn->proTxHash);
@@ -1163,6 +1165,7 @@ bool CCoinJoinClientSession::StartNewQueue(CAmount nBalanceNeedsAnonymized, CCon
             }
         }
 
+        m_session_budget = nBalanceNeedsAnonymized;
         mixingMasternode = dmn;
         connman.AddPendingMasternode(dmn->proTxHash);
         pendingDsaRequest = CPendingDsaRequest(dmn->pdmnState->addr, CCoinJoinAccept(nSessionDenom, txMyCollateral));
@@ -1274,6 +1277,14 @@ bool CCoinJoinClientSession::SubmitDenominate(CConnman& connman)
         WalletCJLogPrint(m_wallet, "vecInputsByRounds: rounds: %d, inputs: %d\n", pair.first, pair.second);
     }
 
+    // No round count could build an entry (the selected inputs' round counts lie outside the configured range, which
+    // the options can change between the selection and here): there is nothing to submit.
+    if (vecInputsByRounds.empty()) {
+        WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::SubmitDenominate -- no round count has an input\n");
+        strAutoDenomResult = Untranslated("Can't prepare current denominated outputs");
+        return false;
+    }
+
     int nRounds = vecInputsByRounds.begin()->first;
     if (PrepareDenominate(nRounds, nRounds, strError, vecTxDSIn, vecPSInOutPairsTmp)) {
         WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::SubmitDenominate -- Running CoinJoin denominate for %d rounds, success\n", nRounds);
@@ -1308,7 +1319,10 @@ bool CCoinJoinClientSession::SelectDenominate(std::string& strErrorRet, std::vec
 
     vecTxDSInRet.clear();
 
-    bool fSelected = m_wallet->SelectTxDSInsByDenomination(nSessionDenom, CoinJoin::GetMaxPoolAmount(), vecTxDSInRet);
+    // The budget the session chose its queue with (JoinExistingQueue, StartNewQueue), at most what one session of its
+    // bit mixes: the ready step does not take more than the queue was joined or started for (none without a budget).
+    const CAmount nBudget{std::min<CAmount>(m_session_budget, CoinJoin::GetMaxPoolAmount(nSessionDenom))};
+    bool fSelected = m_wallet->SelectTxDSInsByDenomination(nSessionDenom, nBudget, vecTxDSInRet);
     if (!fSelected) {
         strErrorRet = "Can't select current denominated inputs";
         return false;
@@ -1331,11 +1345,15 @@ bool CCoinJoinClientSession::PrepareDenominate(int nMinRounds, int nMaxRounds, s
     // initially shuffled in CWallet::SelectTxDSInsByDenomination already.
     size_t nSteps{0};
     vecPSInOutPairsRet.clear();
+    // Within an entry a script appears once: the masternode refuses a second one and charges the collateral. The
+    // selector keeps scripts apart per round count only, so a range of round counts can meet one script twice.
+    std::set<CScript> setScripts;
 
     // Try to add up to COINJOIN_ENTRY_MAX_SIZE of every needed denomination
     for (const auto& entry : vecTxDSIn) {
         if (nSteps >= COINJOIN_ENTRY_MAX_SIZE) break;
         if (entry.nRounds < nMinRounds || entry.nRounds > nMaxRounds) continue;
+        if (!setScripts.insert(entry.prevPubKey).second) continue;
 
         CScript scriptDenom;
         if (fDryRun) {

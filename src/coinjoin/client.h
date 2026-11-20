@@ -168,6 +168,16 @@ private:
     CDeterministicMNCPtr mixingMasternode;
     CMutableTransaction txMyCollateral; // client side collateral
     CPendingDsaRequest pendingDsaRequest;
+    std::atomic<CAmount> m_session_budget{0}; // the budget the session joined or started its queue with
+
+    // Test seams (wallet/test/coinjoin_tests.cpp): the ready step's selection and the whole ready step with a given
+    // session budget, and one dry PrepareDenominate over a range of round counts.
+    friend bool SelectDenominateForTest(CCoinJoinClientSession& session, CAmount nBudget,
+                                        std::vector<CTxDSIn>& vecTxDSInRet);
+    friend bool SubmitDenominateForTest(CCoinJoinClientSession& session, CAmount nBudget, CConnman& connman);
+    friend bool PrepareDenominateForTest(CCoinJoinClientSession& session, int nMinRounds, int nMaxRounds,
+                                         const std::vector<CTxDSIn>& vecTxDSIn,
+                                         std::vector<std::pair<CTxDSIn, CTxOut>>& vecPSInOutPairsRet);
 
     CKeyHolderStorage keyHolderStorage; // storage for keys used in PrepareDenominate
 
