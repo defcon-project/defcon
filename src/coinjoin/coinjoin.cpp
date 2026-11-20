@@ -192,6 +192,9 @@ bool CCoinJoinBaseManager::GetQueueItemAndTry(CCoinJoinQueue& dsqRet)
     for (auto& dsq : vecCoinJoinQueue) {
         // only try each queue once
         if (dsq.fTried || dsq.IsTimeOutOfBounds()) continue;
+        // The old client's walk asks for the five bits of v23.0.0 (CJ4-B2b): a queue of a DFCN-scale bit stays untried.
+        // An nDenom that is no single bit of the wire table is tried and turned away as in v23.0.0.
+        if (CoinJoin::IsDfcnScaleDenomination(dsq.nDenom)) continue;
         dsq.fTried = true;
         dsqRet = dsq;
         return true;

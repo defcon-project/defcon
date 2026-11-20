@@ -1404,15 +1404,20 @@ bool CCoinJoinClientSession::MakeCollateralAmounts()
     // Knowing that each CTxIn is at least 148 B big, 400 inputs should take 400 x ~148 B = ~60 kB.
     // This still leaves more than enough room for another data of typical MakeCollateralAmounts tx.
     std::vector<CompactTallyItem> vecTally = m_wallet->SelectCoinsGroupedByAddresses(false, false, true, 400);
+
+    // Start from the smallest balances first to consume tiny amounts and cleanup UTXO a bit. The balances are v23.0.0's,
+    // DFCN-scale candidates counted (CJ4-B2b), so the groups keep v23.0.0's order; a group of candidates only has nothing
+    // to spend.
+    std::sort(vecTally.begin(), vecTally.end(), [](const CompactTallyItem& a, const CompactTallyItem& b) {
+        return a.nRankAmount < b.nRankAmount;
+    });
+    vecTally.erase(std::remove_if(vecTally.begin(), vecTally.end(),
+                                  [](const CompactTallyItem& item) { return item.vecInputCoins.empty(); }),
+                   vecTally.end());
     if (vecTally.empty()) {
         WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::MakeCollateralAmounts -- SelectCoinsGroupedByAddresses can't find any inputs!\n");
         return false;
     }
-
-    // Start from the smallest balances first to consume tiny amounts and cleanup UTXO a bit
-    std::sort(vecTally.begin(), vecTally.end(), [](const CompactTallyItem& a, const CompactTallyItem& b) {
-        return a.nAmount < b.nAmount;
-    });
 
     // First try to use only non-denominated funds
     if (ranges::any_of(vecTally, [&](const auto& item) EXCLUSIVE_LOCKS_REQUIRED(m_wallet->cs_wallet) {
@@ -1581,15 +1586,22 @@ bool CCoinJoinClientSession::CreateDenominated(CAmount nBalanceToDenominate)
     // Knowing that each CTxIn is at least 148 B big, 400 inputs should take 400 x ~148 B = ~60 kB.
     // This still leaves more than enough room for another data of typical CreateDenominated tx.
     std::vector<CompactTallyItem> vecTally = m_wallet->SelectCoinsGroupedByAddresses(true, true, true, 400);
+
+    // Start from the largest balances first to speed things up by creating txes with larger/largest denoms included. The
+    // balances are v23.0.0's, DFCN-scale candidates counted (CJ4-B2b), so the groups keep v23.0.0's order; a group left
+    // with less than the smallest denomination to spend is one v23.0.0 would not list for the wallet without them.
+    std::sort(vecTally.begin(), vecTally.end(), [](const CompactTallyItem& a, const CompactTallyItem& b) {
+        return a.nRankAmount > b.nRankAmount;
+    });
+    vecTally.erase(std::remove_if(vecTally.begin(), vecTally.end(),
+                                  [](const CompactTallyItem& item) {
+                                      return item.nAmount < CoinJoin::GetSmallestDenomination();
+                                  }),
+                   vecTally.end());
     if (vecTally.empty()) {
         WalletCJLogPrint(m_wallet, "CCoinJoinClientSession::CreateDenominated -- SelectCoinsGroupedByAddresses can't find any inputs!\n");
         return false;
     }
-
-    // Start from the largest balances first to speed things up by creating txes with larger/largest denoms included
-    std::sort(vecTally.begin(), vecTally.end(), [](const CompactTallyItem& a, const CompactTallyItem& b) {
-        return a.nAmount > b.nAmount;
-    });
 
     bool fCreateMixingCollaterals = !m_wallet->HasCollateralInputs();
 

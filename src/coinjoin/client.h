@@ -171,7 +171,9 @@ private:
     std::atomic<CAmount> m_session_budget{0}; // the budget the session joined or started its queue with
 
     // Test seams (wallet/test/coinjoin_tests.cpp): the ready step's selection and the whole ready step with a given
-    // session budget, and one dry PrepareDenominate over a range of round counts.
+    // session budget, one dry PrepareDenominate over a range of round counts, the collateral maker and the creator.
+    friend bool MakeCollateralAmountsForTest(CCoinJoinClientSession& session);
+    friend bool CreateDenominatedForTest(CCoinJoinClientSession& session, CAmount nBalanceToDenominate);
     friend bool SelectDenominateForTest(CCoinJoinClientSession& session, CAmount nBudget,
                                         std::vector<CTxDSIn>& vecTxDSInRet);
     friend bool SubmitDenominateForTest(CCoinJoinClientSession& session, CAmount nBudget, CConnman& connman);

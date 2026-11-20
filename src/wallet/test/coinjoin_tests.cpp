@@ -62,7 +62,15 @@ void StoreInstantSendLockForTest(CInstantSendManager& manager, const CInstantSen
 } // namespace llmq
 
 // The client session's test seams (friends of CCoinJoinClientSession): the ready step's selection and the whole ready
-// step with a given session budget, and one dry PrepareDenominate over a range of round counts.
+// step with a given session budget, one dry PrepareDenominate over a range of round counts, the collateral maker and the
+// denomination creator.
+bool MakeCollateralAmountsForTest(CCoinJoinClientSession& session) { return session.MakeCollateralAmounts(); }
+
+bool CreateDenominatedForTest(CCoinJoinClientSession& session, CAmount nBalanceToDenominate)
+{
+    return session.CreateDenominated(nBalanceToDenominate);
+}
+
 bool SelectDenominateForTest(CCoinJoinClientSession& session, CAmount nBudget, std::vector<CTxDSIn>& vecTxDSInRet)
 {
     session.m_session_budget = nBudget;
@@ -320,6 +328,41 @@ public:
                             CWallet::ScanResult::SUCCESS);
     }
 
+    // Locks every output of the wallet's transactions but `keep`: the old client's groups then hold `keep` only (its
+    // tally skips a locked coin as if it were not there, and this wallet learns no coinbase of the blocks mined later).
+    void LockAllBut(const std::set<COutPoint>& keep)
+    {
+        LOCK(wallet->cs_wallet);
+        wallet->UnlockAllCoins();
+        for (const auto& [hash, wtx] : wallet->mapWallet) {
+            for (uint32_t i = 0; i < wtx.tx->vout.size(); ++i) {
+                if (!keep.count(COutPoint{hash, i})) wallet->LockCoin(COutPoint{hash, i});
+            }
+        }
+    }
+
+    // A new key of this wallet.
+    CKey NewWalletKey()
+    {
+        CKey key;
+        key.MakeNewKey(true);
+        LOCK(wallet->cs_wallet);
+        BOOST_REQUIRE(wallet->GetLegacyScriptPubKeyMan()->AddKeyPubKey(key, key.GetPubKey()));
+        return key;
+    }
+
+    // The output of `tx` that pays `amount` to `script`.
+    static COutPoint OutputOf(const CTransactionRef& tx, const CScript& script, CAmount amount)
+    {
+        for (uint32_t i = 0; i < tx->vout.size(); ++i) {
+            if (tx->vout[i].scriptPubKey == script && tx->vout[i].nValue == amount) return COutPoint{tx->GetHash(), i};
+        }
+        BOOST_FAIL("no such output");
+        return COutPoint{};
+    }
+
+    bool Spent(const COutPoint& outpoint) { return WITH_LOCK(wallet->cs_wallet, return wallet->IsSpent(outpoint.hash, outpoint.n)); }
+
     // The ready-to-mix coins AvailableCoins lists (spent, locked and fully mixed coins and other amounts left out), with
     // whether each counts as spendable.
     static std::map<COutPoint, bool> ReadyToMix(CWallet& w)
@@ -366,6 +409,7 @@ public:
             }
         }
         assert(tallyItem.vecInputCoins.size() == vecAmounts.size());
+        tallyItem.nRankAmount = tallyItem.nAmount; // ordinary coins only: the rank is their sum
         reserveDest.KeepDestination();
         return tallyItem;
     }
@@ -1230,8 +1274,8 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_rounds_and_balances, CTransactionBui
                             "a mixed-only payment spends the fully mixed DFCN-scale coin: " + error.original);
     }
     {
-        // The old client's funding stays v23.0.0's: a fully mixed DFCN-scale coin is still funds there (B2b leaves every
-        // DFCN-scale candidate out), so locking it lowers both anonymizable balances by its amount.
+        // The old client never funds from a DFCN-scale candidate, mixed or not (CJ4-B2b): locking the fully mixed coin
+        // leaves both anonymizable balances as they were, while the wallet's ordinary funds still count.
         const auto funding = [&] {
             return std::make_pair(wallet->GetAnonymizableBalance(/*fSkipDenominated=*/false),
                                   wallet->GetAnonymizableBalance(/*fSkipDenominated=*/true));
@@ -1240,8 +1284,8 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_rounds_and_balances, CTransactionBui
         BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->LockCoin(chain.prevout)));
         const auto without_coin{funding()};
         BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->UnlockCoin(chain.prevout)));
-        BOOST_CHECK_MESSAGE(with_coin.first - without_coin.first == amount && with_coin.second - without_coin.second == amount,
-                            "the old client still funds from a fully mixed DFCN-scale coin, as v23.0.0");
+        BOOST_CHECK(with_coin.second > 0);
+        BOOST_CHECK_MESSAGE(with_coin == without_coin, "the old client does not fund from a fully mixed DFCN-scale candidate");
     }
     {
         std::vector<COutput> nondenominated;
@@ -1417,6 +1461,262 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_rounds_and_balances, CTransactionBui
         CAmount dfcn_mixed{-1}, dfcn_all{-1};
         wallet->GetBalance(0, true, false, nullptr, &dfcn_mixed, &dfcn_all);
         BOOST_CHECK_MESSAGE(dfcn_mixed == 0 && dfcn_all == 0, "with CoinJoin disabled the balance has no DFCN-scale coins");
+    }
+}
+
+// CJ4-B2b1: the old client never funds from a DFCN-scale candidate (a P2PKH output of exactly a DFCN-scale amount whose
+// key the wallet holds). The tally keeps a candidate out of what its group may spend and in the group's rank, the total
+// v23.0.0 computes: the spendable coins and the balances are v23.0.0's for the wallet without its candidates (the
+// control locks them), the rank is v23.0.0's for the wallet with them, each under v23.0.0's cut of 400 coins per address.
+BOOST_FIXTURE_TEST_CASE(coinjoin_tally_leaves_dfcn_scale_candidates_out, CTransactionBuilderTestSetup)
+{
+    struct RestoreEnabled {
+        const bool before{CCoinJoinClientOptions::IsEnabled()};
+        ~RestoreEnabled() { CCoinJoinClientOptions::SetEnabled(before); }
+    } restore_enabled;
+    CCoinJoinClientOptions::SetEnabled(true);
+    const CAmount amount{CoinJoin::DenominationToAmount(1 << 5)}; // 100.001
+    const auto p2pkh = [](const CKey& key) { return GetScriptForDestination(PKHash(key.GetPubKey())); };
+    const auto groups = [&](bool anonymizable) {
+        std::map<CTxDestination, CompactTallyItem> ret;
+        for (const auto& item : wallet->SelectCoinsGroupedByAddresses(/*fSkipDenominated=*/false, anonymizable,
+                                                                      /*fSkipUnconfirmed=*/true,
+                                                                      anonymizable ? -1 : 400)) {
+            ret.emplace(item.txdest, item);
+        }
+        return ret;
+    };
+    const auto members = [](const CompactTallyItem& item) {
+        std::set<COutPoint> ret;
+        for (const auto& coin : item.vecInputCoins) ret.insert(coin.outpoint);
+        return ret;
+    };
+
+    // A: a candidate and 3 DFCN; B: a candidate alone; C: a P2PK 100.001 (no candidate, r13/R8) and 2 DFCN.
+    const CKey a{NewWalletKey()}, b{NewWalletKey()}, c{NewWalletKey()};
+    const CScript p2pk_c_script{GetScriptForRawPubKey(c.GetPubKey())};
+    const CTransactionRef pay{PayOutputs({{p2pkh(a), amount}, {p2pkh(a), 3 * COIN}, {p2pkh(b), amount},
+                                          {p2pk_c_script, amount}, {p2pkh(c), 2 * COIN}}, true)};
+    const COutPoint cand_a{OutputOf(pay, p2pkh(a), amount)}, ord_a{OutputOf(pay, p2pkh(a), 3 * COIN)},
+        cand_b{OutputOf(pay, p2pkh(b), amount)}, p2pk_c{OutputOf(pay, p2pk_c_script, amount)},
+        ord_c{OutputOf(pay, p2pkh(c), 2 * COIN)};
+    const CTxDestination dest_a{PKHash(a.GetPubKey())}, dest_b{PKHash(b.GetPubKey())}, dest_c{PKHash(c.GetPubKey())};
+    const auto balances = [&] {
+        return std::make_pair(wallet->GetAnonymizableBalance(/*fSkipDenominated=*/false),
+                              wallet->GetAnonymizableBalance(/*fSkipDenominated=*/true));
+    };
+
+    LockAllBut({cand_a, ord_a, cand_b, p2pk_c, ord_c});
+    std::map<bool, std::map<CTxDestination, CompactTallyItem>> with;
+    for (const bool anonymizable : {false, true}) {
+        const auto& g{with[anonymizable] = groups(anonymizable)};
+        BOOST_REQUIRE(g.size() == 3 && g.count(dest_a) && g.count(dest_b) && g.count(dest_c));
+        // A candidate counts toward its group's rank, never toward what the group may spend.
+        BOOST_CHECK(members(g.at(dest_a)) == std::set<COutPoint>{ord_a});
+        BOOST_CHECK_EQUAL(g.at(dest_a).nAmount, 3 * COIN);
+        BOOST_CHECK_EQUAL(g.at(dest_a).nRankAmount, 3 * COIN + amount);
+        // A group of candidates only is listed with its rank, so the sort sees v23.0.0's list, and has nothing to spend.
+        BOOST_CHECK(g.at(dest_b).vecInputCoins.empty());
+        BOOST_CHECK_EQUAL(g.at(dest_b).nAmount, 0);
+        BOOST_CHECK_EQUAL(g.at(dest_b).nRankAmount, amount);
+        // A P2PK coin of a DFCN-scale amount is no candidate: funds, as in v23.0.0.
+        BOOST_CHECK(members(g.at(dest_c)) == (std::set<COutPoint>{p2pk_c, ord_c}));
+        BOOST_CHECK_EQUAL(g.at(dest_c).nAmount, amount + 2 * COIN);
+        BOOST_CHECK_EQUAL(g.at(dest_c).nRankAmount, amount + 2 * COIN);
+    }
+    const auto with_balances{balances()};
+    BOOST_CHECK_EQUAL(with_balances.first, 3 * COIN + amount + 2 * COIN);
+
+    // Five-amount control, the wallet without its candidates: the same spendable coins and balances, each rank its sum.
+    WITH_LOCK(wallet->cs_wallet, wallet->LockCoin(cand_a); wallet->LockCoin(cand_b));
+    for (const bool anonymizable : {false, true}) {
+        const auto g{groups(anonymizable)};
+        BOOST_REQUIRE(g.size() == 2 && g.count(dest_a) && g.count(dest_c));
+        for (const auto& dest : {dest_a, dest_c}) {
+            BOOST_CHECK(members(g.at(dest)) == members(with[anonymizable].at(dest)));
+            BOOST_CHECK_EQUAL(g.at(dest).nAmount, with[anonymizable].at(dest).nAmount);
+            BOOST_CHECK_EQUAL(g.at(dest).nRankAmount, g.at(dest).nAmount);
+        }
+    }
+    BOOST_CHECK_MESSAGE(balances() == with_balances, "the balances are v23.0.0's for the wallet without its candidates");
+
+    // r19/R3: the spendable list is built without the candidate before the cut, so a candidate followed by 400 coins at
+    // one address leaves 400 inputs, not 399, while the rank is v23.0.0's: the candidate and 399 coins.
+    const CKey d{NewWalletKey()}, e{NewWalletKey()};
+    const CAmount piece{COIN / 10};
+    WITH_LOCK(wallet->cs_wallet, wallet->UnlockAllCoins()); // the fixture's funds pay again
+    const CTransactionRef fund{PayOutputs({{p2pkh(d), amount + 400 * piece}}, true)};
+    CMutableTransaction mtx;
+    mtx.vin.emplace_back(OutputOf(fund, p2pkh(d), amount + 400 * piece));
+    mtx.vout.emplace_back(amount, p2pkh(e)); // first in the tally's walk over the transaction's outputs
+    for (int i = 0; i < 400; ++i) mtx.vout.emplace_back(piece, p2pkh(e));
+    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->SignTransaction(mtx)));
+    const CTransactionRef fan{MakeTransactionRef(mtx)};
+    {
+        LOCK2(wallet->cs_wallet, cs_main);
+        wallet->CommitTransaction(fan, {}, {});
+    }
+    Confirm(fan);
+    std::set<COutPoint> fan_outputs;
+    for (uint32_t i = 0; i < fan->vout.size(); ++i) fan_outputs.emplace(fan->GetHash(), i);
+    LockAllBut(fan_outputs);
+    const CTxDestination dest_e{PKHash(e.GetPubKey())};
+    const auto cut{groups(/*anonymizable=*/false)};
+    BOOST_REQUIRE(cut.size() == 1 && cut.count(dest_e));
+    BOOST_CHECK_EQUAL(cut.at(dest_e).vecInputCoins.size(), 400U);
+    BOOST_CHECK(!members(cut.at(dest_e)).count(COutPoint{fan->GetHash(), 0}));
+    BOOST_CHECK_EQUAL(cut.at(dest_e).nAmount, 400 * piece);
+    BOOST_CHECK_EQUAL(cut.at(dest_e).nRankAmount, amount + 399 * piece);
+    // A cut of 0 lets each count take its first coin, as v23.0.0 lets a new group take its first: the rank the candidate,
+    // the spendable list the first coin of 0.1 DFCN, as for the wallet without the candidate.
+    const auto first{wallet->SelectCoinsGroupedByAddresses(/*fSkipDenominated=*/false, /*fAnonymizable=*/false,
+                                                           /*fSkipUnconfirmed=*/true, /*nMaxOupointsPerAddress=*/0)};
+    BOOST_REQUIRE_EQUAL(first.size(), 1U);
+    BOOST_CHECK(members(first[0]) == std::set<COutPoint>{COutPoint(fan->GetHash(), 1)});
+    BOOST_CHECK_EQUAL(first[0].nAmount, piece);
+    BOOST_CHECK_EQUAL(first[0].nRankAmount, amount);
+    // Five-amount control: without the candidate the same 400 coins, ranked by their sum.
+    WITH_LOCK(wallet->cs_wallet, wallet->LockCoin(COutPoint{fan->GetHash(), 0}));
+    const auto cut_without{groups(/*anonymizable=*/false)};
+    BOOST_REQUIRE(cut_without.count(dest_e));
+    BOOST_CHECK(members(cut_without.at(dest_e)) == members(cut.at(dest_e)));
+    BOOST_CHECK_EQUAL(cut_without.at(dest_e).nRankAmount, 400 * piece);
+}
+
+// CJ4-B2b1: the collateral maker and the denomination creator try the groups in v23.0.0's order, ranked with the
+// candidates, and never spend a candidate (design note § 2, § 8, § 9.4). Each scenario runs on its own coins, every other
+// coin locked; a session of the fixture's wallet without a masternode.
+BOOST_FIXTURE_TEST_CASE(coinjoin_old_makers_leave_dfcn_scale_candidates, CTransactionBuilderTestSetup)
+{
+    struct RestoreEnabled {
+        const bool before{CCoinJoinClientOptions::IsEnabled()};
+        ~RestoreEnabled() { CCoinJoinClientOptions::SetEnabled(before); }
+    } restore_enabled;
+    CCoinJoinClientOptions::SetEnabled(true);
+    const CAmount amount{CoinJoin::DenominationToAmount(1 << 5)};    // 100.001
+    const CAmount small{CoinJoin::DenominationToAmount(1 << 4)};     // 0.00100001, an old denomination
+    const CAmount one{CoinJoin::DenominationToAmount(1 << 1)};       // 1.00001, an old denomination
+    const CAmount tiny{COIN / 2000};                                 // 0.0005
+    const auto p2pkh = [](const CKey& key) { return GetScriptForDestination(PKHash(key.GetPubKey())); };
+
+    // r17/R2, twice: F a candidate, a small denomination and 0.0005; G the recipe's 0.01 DFCN at an address of its own.
+    // r18/R1: X a candidate alone, Y 110 DFCN and a 1.00001 denomination, Z 150 DFCN; X2, Y2, Z2 the same with a P2PK
+    // 100.001, which every path treats as ordinary funds, in the candidate's place: the base (v23.0.0) emulated.
+    // For the creator, twice: J a candidate and 20 DFCN, L 50 DFCN; P a P2PK 100.001 alone (r13/R8). K a candidate
+    // alone; K2 a candidate and 0.0005.
+    const CKey f0{NewWalletKey()}, g0{NewWalletKey()}, f1{NewWalletKey()}, g1{NewWalletKey()}, x{NewWalletKey()},
+        y{NewWalletKey()}, z{NewWalletKey()}, x2{NewWalletKey()}, y2{NewWalletKey()}, z2{NewWalletKey()},
+        j0{NewWalletKey()}, l0{NewWalletKey()}, j1{NewWalletKey()}, l1{NewWalletKey()}, p{NewWalletKey()},
+        k{NewWalletKey()}, k2{NewWalletKey()};
+    const CScript p2pk_x2{GetScriptForRawPubKey(x2.GetPubKey())}, p2pk_p{GetScriptForRawPubKey(p.GetPubKey())};
+    const CTransactionRef pay{PayOutputs({{p2pkh(f0), amount}, {p2pkh(f0), small}, {p2pkh(f0), tiny}, {p2pkh(g0), COIN / 100},
+                                          {p2pkh(f1), amount}, {p2pkh(f1), small}, {p2pkh(f1), tiny}, {p2pkh(g1), COIN / 100},
+                                          {p2pkh(x), amount}, {p2pkh(y), 110 * COIN}, {p2pkh(y), one}, {p2pkh(z), 150 * COIN},
+                                          {p2pk_x2, amount}, {p2pkh(y2), 110 * COIN}, {p2pkh(y2), one}, {p2pkh(z2), 150 * COIN},
+                                          {p2pkh(j0), amount}, {p2pkh(j0), 20 * COIN}, {p2pkh(l0), 50 * COIN},
+                                          {p2pkh(j1), amount}, {p2pkh(j1), 20 * COIN}, {p2pkh(l1), 50 * COIN},
+                                          {p2pk_p, amount}, {p2pkh(k), amount}, {p2pkh(k2), amount}, {p2pkh(k2), tiny}},
+                                         true)};
+    const auto out = [&](const CKey& key, CAmount value) { return OutputOf(pay, p2pkh(key), value); };
+    CoinJoinLogLines log;
+
+    BOOST_REQUIRE(m_node.cj_ctx->walletman->DoForClient(wallet->GetName(), [&](CCoinJoinClientManager& clientman) {
+        CCoinJoinClientSession session(wallet, *m_node.cj_ctx->walletman, clientman, *m_node.dmnman, *m_node.mn_metaman,
+                                       *m_node.mn_sync, *m_node.llmq_ctx->isman, m_node.cj_ctx->queueman,
+                                       /*is_masternode=*/false);
+
+        // r17/R2: F ranks above G with its candidate, so the maker spends the 0.01 and the small denomination stays.
+        LockAllBut({out(f0, amount), out(f0, small), out(f0, tiny), out(g0, COIN / 100)});
+        BOOST_CHECK(MakeCollateralAmountsForTest(session));
+        BOOST_CHECK(Spent(out(g0, COIN / 100)));
+        BOOST_CHECK_MESSAGE(!Spent(out(f0, small)) && !Spent(out(f0, tiny)) && !Spent(out(f0, amount)),
+                            "the maker tries the groups in v23.0.0's order, the candidate counted");
+        // Control, the wallet without its candidate: F is the smaller group, and v23.0.0 spends its small denomination.
+        LockAllBut({out(f1, small), out(f1, tiny), out(g1, COIN / 100)});
+        BOOST_CHECK(MakeCollateralAmountsForTest(session));
+        BOOST_CHECK(Spent(out(f1, small)) && Spent(out(f1, tiny)));
+        BOOST_CHECK(!Spent(out(g1, COIN / 100)));
+
+        // r18/R1, the stated residual (§ 8): the base makes the collateral from X, the smallest group, and keeps Y's old
+        // denomination; with X a candidate group with nothing to spend, the maker spends Y, its denomination with it,
+        // while the candidate and Z's ordinary funds stay untouched.
+        LockAllBut({OutputOf(pay, p2pk_x2, amount), out(y2, 110 * COIN), out(y2, one), out(z2, 150 * COIN)});
+        BOOST_CHECK(MakeCollateralAmountsForTest(session));
+        BOOST_CHECK_MESSAGE(Spent(OutputOf(pay, p2pk_x2, amount)) && !Spent(out(y2, one)) && !Spent(out(y2, 110 * COIN)) &&
+                                !Spent(out(z2, 150 * COIN)),
+                            "the base makes the collateral from X and keeps Y's old denomination");
+        LockAllBut({out(x, amount), out(y, 110 * COIN), out(y, one), out(z, 150 * COIN)});
+        BOOST_CHECK(MakeCollateralAmountsForTest(session));
+        BOOST_CHECK_MESSAGE(Spent(out(y, one)) && Spent(out(y, 110 * COIN)) && !Spent(out(x, amount)) &&
+                                !Spent(out(z, 150 * COIN)),
+                            "with X's candidate left out the maker spends Y's old denomination, as § 8 states");
+
+        // The creator starts from the largest group as v23.0.0 ranks it: J with its candidate ranks above L, so it funds
+        // denominations from J's 20 DFCN, never from the candidate (at every height, r13/R5), and L stays untouched.
+        LockAllBut({out(j0, amount), out(j0, 20 * COIN), out(l0, 50 * COIN)});
+        BOOST_CHECK(CreateDenominatedForTest(session, 15 * COIN));
+        BOOST_CHECK_MESSAGE(Spent(out(j0, 20 * COIN)) && !Spent(out(l0, 50 * COIN)),
+                            "the creator tries the groups in v23.0.0's order, the candidate counted");
+        BOOST_CHECK_MESSAGE(!Spent(out(j0, amount)), "the creator never spends a candidate");
+        // Control, the wallet without its candidate: L is the larger group.
+        LockAllBut({out(j1, 20 * COIN), out(l1, 50 * COIN)});
+        BOOST_CHECK(CreateDenominatedForTest(session, 15 * COIN));
+        BOOST_CHECK(Spent(out(l1, 50 * COIN)) && !Spent(out(j1, 20 * COIN)));
+        // A P2PK coin of a DFCN-scale amount is no candidate: the creator funds old denominations from it, as v23.0.0.
+        LockAllBut({OutputOf(pay, p2pk_p, amount)});
+        BOOST_CHECK(CreateDenominatedForTest(session, 15 * COIN));
+        BOOST_CHECK_MESSAGE(Spent(OutputOf(pay, p2pk_p, amount)), "the creator funds from a P2PK 100.001, as v23.0.0");
+
+        // A wallet whose only coin is a candidate: the maker tries no group, as v23.0.0 for the wallet without it.
+        LockAllBut({out(k, amount)});
+        log.Logged(""); // forget the lines so far
+        BOOST_CHECK(!MakeCollateralAmountsForTest(session));
+        BOOST_CHECK_MESSAGE(log.Logged("MakeCollateralAmounts -- SelectCoinsGroupedByAddresses can't find any inputs!"),
+                            "the maker finds no group with anything to spend");
+        BOOST_CHECK(!Spent(out(k, amount)));
+        // A candidate and 0.0005 DFCN: the group ranks above the smallest denomination but has less than it to spend, a
+        // group v23.0.0 would not list for the wallet without the candidate, so the creator tries none either.
+        LockAllBut({out(k2, amount), out(k2, tiny)});
+        BOOST_CHECK(!CreateDenominatedForTest(session, 15 * COIN));
+        BOOST_CHECK_MESSAGE(log.Logged("CreateDenominated -- SelectCoinsGroupedByAddresses can't find any inputs!"),
+                            "the creator finds no group with anything to spend");
+        BOOST_CHECK(!Spent(out(k2, amount)) && !Spent(out(k2, tiny)));
+    }));
+}
+
+// CJ4-B2b1: the old client's queue walk asks for the five bits of v23.0.0. A queue of a DFCN-scale bit stays untried; an
+// nDenom that is no single bit of the wire table is tried and turned away as in v23.0.0, and so is an old bit.
+BOOST_AUTO_TEST_CASE(coinjoin_old_queue_walk_leaves_dfcn_scale_queues)
+{
+    class Queues : public CCoinJoinBaseManager
+    {
+    public:
+        void Add(int nDenom) EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue)
+        {
+            LOCK(cs_vecqueue);
+            vecCoinJoinQueue.emplace_back(nDenom, COutPoint{uint256::ONE, uint32_t(vecCoinJoinQueue.size())}, uint256{},
+                                          GetAdjustedTime(), /*fReady=*/false);
+        }
+        bool Tried(int nDenom) EXCLUSIVE_LOCKS_REQUIRED(!cs_vecqueue)
+        {
+            LOCK(cs_vecqueue);
+            for (const auto& dsq : vecCoinJoinQueue) {
+                if (dsq.nDenom == nDenom) return dsq.fTried;
+            }
+            BOOST_FAIL("no queue of this nDenom");
+            return false;
+        }
+    } queues;
+    const int several{(1 << 0) | (1 << 1)};
+    for (const int nDenom : {1 << 5, several, 1 << 0, 1 << 7, 1 << 6}) queues.Add(nDenom);
+
+    std::vector<int> walked;
+    CCoinJoinQueue dsq;
+    while (queues.GetQueueItemAndTry(dsq)) walked.push_back(dsq.nDenom);
+    BOOST_CHECK(walked == (std::vector<int>{several, 1 << 0}));
+    BOOST_CHECK(queues.Tried(several) && queues.Tried(1 << 0));
+    for (const int bit : {1 << 5, 1 << 6, 1 << 7}) {
+        BOOST_CHECK_MESSAGE(!queues.Tried(bit), "the old walk leaves a DFCN-scale queue untried");
     }
 }
 
