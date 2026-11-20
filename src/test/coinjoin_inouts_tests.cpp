@@ -455,6 +455,51 @@ BOOST_AUTO_TEST_CASE(dfcn_scale_session_gate_by_next_height)
     BOOST_CHECK(CoinJoin::DfcnScaleSessionsOpenAt(400, unset));
 }
 
+// CJ4-B2b: U, the height from which the client may mix the DFCN-scale amounts, is H + 576 in 64 bits, or regtest's
+// override (cj4use); none while H is unset or when the override is the largest int (never). The client's gate counts the
+// next block's height as the masternode's does: on the tip U - 2 the next block may still use only the five old bits, on
+// U - 1 all eight (design note § 9.2).
+BOOST_AUTO_TEST_CASE(dfcn_scale_mixing_height)
+{
+    constexpr int unset{std::numeric_limits<int>::max()};
+    using CoinJoin::DfcnScaleMixingHeight;
+    using CoinJoin::DfcnScaleMixingOpenAt;
+    static_assert(CoinJoin::DFCN_SCALE_MIXING_DELAY == 576);
+
+    // H unset: no U, with or without an override, at any tip.
+    BOOST_CHECK(!DfcnScaleMixingHeight(unset, std::nullopt).has_value());
+    BOOST_CHECK(!DfcnScaleMixingHeight(unset, 1000).has_value());
+    for (const int tip : {0, 1000, unset - 1, unset}) {
+        BOOST_CHECK(!DfcnScaleMixingOpenAt(unset, std::nullopt, tip));
+        BOOST_CHECK(!DfcnScaleMixingOpenAt(unset, 1000, tip));
+    }
+
+    // H = 1000: U = 1576; the tips U - 2 and U - 1.
+    BOOST_CHECK(DfcnScaleMixingHeight(1000, std::nullopt) == std::optional<int64_t>{1576});
+    BOOST_CHECK(!DfcnScaleMixingOpenAt(1000, std::nullopt, 1574));
+    BOOST_CHECK(DfcnScaleMixingOpenAt(1000, std::nullopt, 1575));
+    BOOST_CHECK(DfcnScaleMixingOpenAt(1000, std::nullopt, 1576));
+    // Below U and at H the masternodes take the bits, the clients do not yet use them.
+    BOOST_CHECK(CoinJoin::DfcnScaleSessionsOpenAt(1000, 999) && !DfcnScaleMixingOpenAt(1000, std::nullopt, 999));
+
+    // The override replaces H + 576, above H and when it is H itself; the largest int is never.
+    BOOST_CHECK(DfcnScaleMixingHeight(1000, 1100) == std::optional<int64_t>{1100});
+    BOOST_CHECK(!DfcnScaleMixingOpenAt(1000, 1100, 1098));
+    BOOST_CHECK(DfcnScaleMixingOpenAt(1000, 1100, 1099));
+    BOOST_CHECK(DfcnScaleMixingHeight(1000, 1000) == std::optional<int64_t>{1000});
+    BOOST_CHECK(!DfcnScaleMixingOpenAt(1000, 1000, 998));
+    BOOST_CHECK(DfcnScaleMixingOpenAt(1000, 1000, 999));
+    BOOST_CHECK(!DfcnScaleMixingHeight(1000, unset).has_value());
+    BOOST_CHECK(!DfcnScaleMixingOpenAt(1000, unset, unset));
+
+    // H near the largest int: U goes past it in 64 bits, and the next height of the largest tip is counted in 64 bits.
+    BOOST_CHECK(DfcnScaleMixingHeight(unset - 1, std::nullopt) == std::optional<int64_t>{int64_t{unset} - 1 + 576});
+    static_assert(!DfcnScaleMixingOpenAt(unset - 1, std::nullopt, unset));
+    // U = INT_MAX: the tips INT_MAX - 2 and INT_MAX - 1 are U - 2 and U - 1.
+    static_assert(!DfcnScaleMixingOpenAt(unset - 576, std::nullopt, unset - 2));
+    static_assert(DfcnScaleMixingOpenAt(unset - 576, std::nullopt, unset - 1));
+}
+
 // The session amount check of a masternode (IsValidInOuts) reads the wire table: an entry of 100.001 DFCN coins
 // is valid in a bit-5 session and is refused with ERR_DENOM, charging the collateral, in a bit-0 session.
 class InOutsProbe : public CCoinJoinBaseSession

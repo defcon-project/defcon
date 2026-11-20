@@ -71,6 +71,9 @@ public:
     //! With ONLY_FULLY_MIXED or ONLY_READY_TO_MIX: the five denominations of v23.0.0 only, as the mixing client's
     //! selectors ask (CJ4); otherwise those coin types take all eight
     bool m_old_denominations_only = false;
+    //! With ONLY_FULLY_MIXED or ONLY_READY_TO_MIX: the three DFCN-scale denominations only (CJ4-B2b). A coin of the five
+    //! old amounts is left out before it is asked about its rounds, so the old round cache sees no query from this call.
+    bool m_dfcn_scale_only = false;
 
     CCoinControl(CoinType coin_type = CoinType::ALL_COINS);
 

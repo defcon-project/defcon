@@ -13,6 +13,7 @@
 
 #include <limits>
 #include <map>
+#include <optional>
 #include <vector>
 
 namespace Consensus {
@@ -340,6 +341,10 @@ struct Params {
 
     /** Shared v23.1 activation height H. Unset until the release bundle is scheduled. */
     int nV231ActivationHeight{std::numeric_limits<int>::max()};
+    /** Regtest only (-testactivationheight=cj4use@U): the height from which the mixing client may mix the DFCN-scale
+     *  amounts, in place of H + 576 (CoinJoin::DfcnScaleMixingHeight). Not consensus: the client's policy, kept here
+     *  because the activation arguments land here. Unset everywhere else. */
+    std::optional<int> nDfcnScaleMixingHeightOverride{};
     LLMQType llmqTypeDIP0024InstantSend{LLMQType::LLMQ_NONE};
     /** The InstantSend profile that takes over at and above
      *  nInstantSendV2ActivationHeight, resolved from the chain tip by both the

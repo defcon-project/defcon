@@ -3021,13 +3021,14 @@ void CWallet::AvailableCoins(std::vector<COutput> &vCoins, const CCoinControl* c
             // depends on the order of its queries.
             std::optional<bool> fully_mixed_wanted;
             const bool old_denominations_only{coinControl && coinControl->m_old_denominations_only};
+            const bool dfcn_scale_only{coinControl && coinControl->m_dfcn_scale_only};
             switch (nCoinType) {
                 // The three by any of the eight amounts (CJ4): a "mixed only" payment spends a fully mixed DFCN-scale
                 // coin, and listunspent's filters list such coins by their rounds from the binary's start (coinType=3
-                // leaves them out). The mixing client's selectors ask for the five only.
+                // leaves them out). The mixing client asks for the five, or for the three DFCN-scale ones (CJ4-B2b).
                 case CoinType::ONLY_FULLY_MIXED: {
                     if (CoinJoin::IsDenominatedAmount(pcoin->tx->vout[i].nValue)) {
-                        found = IsFullyMixed(COutPoint(wtxid, i));
+                        found = !dfcn_scale_only && IsFullyMixed(COutPoint(wtxid, i));
                     } else {
                         found = !old_denominations_only && CoinJoin::IsKnownDenominationAmount(pcoin->tx->vout[i].nValue);
                         fully_mixed_wanted = true;
@@ -3036,7 +3037,7 @@ void CWallet::AvailableCoins(std::vector<COutput> &vCoins, const CCoinControl* c
                 }
                 case CoinType::ONLY_READY_TO_MIX: {
                     if (CoinJoin::IsDenominatedAmount(pcoin->tx->vout[i].nValue)) {
-                        found = !IsFullyMixed(COutPoint(wtxid, i));
+                        found = !dfcn_scale_only && !IsFullyMixed(COutPoint(wtxid, i));
                     } else {
                         found = !old_denominations_only && CoinJoin::IsKnownDenominationAmount(pcoin->tx->vout[i].nValue);
                         fully_mixed_wanted = false;
@@ -3709,9 +3710,8 @@ bool CWallet::SelectTxDSInsByDenomination(int nDenom, CAmount nValueMax, std::ve
 
     vecTxDSInRet.clear();
 
-    // A bit the wallet does not use (the DFCN-scale bits 5-7 of the wire table) is turned away here,
-    // before any coin is looked at, exactly as v23.0.0 turns away a bit it does not know.
-    if (!CoinJoin::IsValidDenomination(nDenom) || CoinJoin::IsDfcnScaleDenomination(nDenom)) {
+    // An nDenom that is no single bit of the wire table is turned away before any coin is looked at, as in v23.0.0.
+    if (!CoinJoin::IsValidDenomination(nDenom)) {
         return false;
     }
     // A fully locked wallet signs nothing (the caller's unlock check may be older than this call).
@@ -3720,7 +3720,13 @@ bool CWallet::SelectTxDSInsByDenomination(int nDenom, CAmount nValueMax, std::ve
 
     CCoinControl coin_control;
     coin_control.nCoinType = CoinType::ONLY_READY_TO_MIX;
-    coin_control.m_old_denominations_only = true; // the five amounts of v23.0.0, as B1a lists them (CJ4)
+    if (CoinJoin::IsDfcnScaleDenomination(nDenom)) {
+        // A DFCN-scale bit (CJ4-B2b) lists the DFCN-scale coins only, so no coin of the five amounts is asked about its
+        // rounds. No height gate here: a session accepted before U, or on a tip that fell below it, ends as it began.
+        coin_control.m_dfcn_scale_only = true;
+    } else {
+        coin_control.m_old_denominations_only = true; // the five amounts of v23.0.0, as B1a lists them (CJ4)
+    }
     AvailableCoins(vCoins, &coin_control);
     WalletCJLogPrint(this, "CWallet::%s -- vCoins.size(): %d\n", __func__, vCoins.size());
 
@@ -3982,6 +3988,29 @@ bool CWallet::SelectDenominatedAmounts(CAmount nValueMax, std::set<CAmount>& set
     }
 
     return nValueTotal >= CoinJoin::GetSmallestDenomination();
+}
+
+std::array<CAmount, 3> CWallet::GetDfcnScaleMixingWork() const
+{
+    LOCK(cs_wallet);
+
+    std::vector<COutput> coins;
+    CCoinControl coin_control;
+    coin_control.nCoinType = CoinType::ONLY_READY_TO_MIX;
+    coin_control.m_dfcn_scale_only = true; // no coin of the five amounts is asked about its rounds
+    AvailableCoins(coins, &coin_control);
+    const auto node_inputs{NodeMixingInputs(*this, coins)};
+
+    std::array<CAmount, 3> work{};
+    for (const auto& out : coins) {
+        const CAmount value{out.tx->tx->vout[out.i].nValue};
+        const int denom{CoinJoin::AmountToDenomination(value)};
+        if (!CoinJoin::IsDfcnScaleDenomination(denom) || !IsMixingCandidate(*this, out, node_inputs)) continue;
+        for (size_t bit = 0; bit < work.size(); ++bit) {
+            if (denom == (1 << (5 + bit))) work[bit] += value;
+        }
+    }
+    return work;
 }
 
 int CWallet::CountInputsWithAmount(CAmount nInputAmount) const

@@ -44,6 +44,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <future>
 #include <functional>
@@ -457,9 +458,10 @@ private:
 };
 } // namespace
 
-// CJ4-A: the wallet turns a DFCN-scale bit (5-7) away before it lists any coin, as v23.0.0 turns away a bit it does
-// not know. CWallet is final, so the listing is observed through its COINJOIN log line.
-BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_bit_returns_before_listing_coins, CTransactionBuilderTestSetup)
+// CJ4-B2b2: the selector lists the wallet's coins for a DFCN-scale bit (5-7), as for an old one (CJ4-A turned these bits
+// away), while an nDenom that is no single bit of the wire table returns before any coin is listed, as in v23.0.0.
+// CWallet is final, so the listing is observed through its COINJOIN log line.
+BOOST_FIXTURE_TEST_CASE(coinjoin_selector_lists_coins_for_dfcn_scale_bits, CTransactionBuilderTestSetup)
 {
     CoinJoinLogLines log;
     const std::string listing{"CWallet::SelectTxDSInsByDenomination -- vCoins.size():"};
@@ -469,9 +471,13 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_bit_returns_before_listing_coins, CT
     wallet->SelectTxDSInsByDenomination(1 << 0, MAX_MONEY, selected);
     BOOST_CHECK(log.Logged(listing));
     for (const int bit : {1 << 5, 1 << 6, 1 << 7}) {
-        BOOST_CHECK(!wallet->SelectTxDSInsByDenomination(bit, MAX_MONEY, selected));
+        BOOST_CHECK(!wallet->SelectTxDSInsByDenomination(bit, MAX_MONEY, selected)); // the fixture has no such coin
         BOOST_CHECK(selected.empty());
-        BOOST_CHECK_MESSAGE(!log.Logged(listing), "a DFCN-scale bit returns before the wallet lists its coins");
+        BOOST_CHECK_MESSAGE(log.Logged(listing), "a DFCN-scale bit lists the wallet's coins");
+    }
+    for (const int nDenom : {0, (1 << 0) | (1 << 1), 1 << 8}) {
+        BOOST_CHECK(!wallet->SelectTxDSInsByDenomination(nDenom, MAX_MONEY, selected));
+        BOOST_CHECK_MESSAGE(!log.Logged(listing), "an nDenom of no single bit returns before the wallet lists its coins");
     }
 }
 
@@ -1286,6 +1292,12 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_rounds_and_balances, CTransactionBui
         BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->UnlockCoin(chain.prevout)));
         BOOST_CHECK(with_coin.second > 0);
         BOOST_CHECK_MESSAGE(with_coin == without_coin, "the old client does not fund from a fully mixed DFCN-scale candidate");
+        // Nor is it DFCN-scale mixing work (CJ4-B2b2): locking it leaves the work as it was.
+        const auto work_with{wallet->GetDfcnScaleMixingWork()};
+        BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->LockCoin(chain.prevout)));
+        const auto work_without{wallet->GetDfcnScaleMixingWork()};
+        BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->UnlockCoin(chain.prevout)));
+        BOOST_CHECK_MESSAGE(work_with == work_without, "a fully mixed DFCN-scale coin is no mixing work");
     }
     {
         std::vector<COutput> nondenominated;
@@ -1455,6 +1467,25 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_rounds_and_balances, CTransactionBui
         }
     }
 
+    // CJ4-B2b2: the DFCN-scale selector keeps the budget per round count, with each coin's own count: a 0-round and a
+    // 1-round coin of one amount, neither fully mixed (16 rounds wanted here), every other coin locked; a budget of one
+    // coin returns both, each with its count. A common budget, or every DFCN-scale coin read as round 0, returns one.
+    {
+        CCoinJoinClientOptions::SetRounds(16);
+        const In zero{coin(new_key(true), amount)};
+        const In one{mix_once(coin(new_key(true), amount), new_key(true))};
+        BOOST_REQUIRE(rounds(zero.prevout) == 0 && rounds(one.prevout) == 1);
+        LockAllBut({zero.prevout, one.prevout});
+        std::vector<CTxDSIn> selected;
+        BOOST_CHECK(wallet->SelectTxDSInsByDenomination(1 << 5, amount, selected));
+        std::map<COutPoint, int> by_outpoint;
+        for (const auto& in : selected) by_outpoint.emplace(in.prevout, in.nRounds);
+        BOOST_CHECK_MESSAGE(by_outpoint == (std::map<COutPoint, int>{{zero.prevout, 0}, {one.prevout, 1}}),
+                            "the DFCN-scale selector keeps the budget per round count");
+        WITH_LOCK(wallet->cs_wallet, wallet->UnlockAllCoins());
+        CCoinJoinClientOptions::SetRounds(1);
+    }
+
     // With CoinJoin disabled the DFCN-scale sums are zero, as GetBalance's mixing fields are (the salt guards read both).
     CCoinJoinClientOptions::SetEnabled(false);
     {
@@ -1526,6 +1557,7 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_tally_leaves_dfcn_scale_candidates_out, CTransa
     }
     const auto with_balances{balances()};
     BOOST_CHECK_EQUAL(with_balances.first, 3 * COIN + amount + 2 * COIN);
+    BOOST_CHECK_EQUAL(with_balances.second, 3 * COIN + amount + 2 * COIN); // the P2PK coin funds the creator's list too
 
     // Five-amount control, the wallet without its candidates: the same spendable coins and balances, each rank its sum.
     WITH_LOCK(wallet->cs_wallet, wallet->LockCoin(cand_a); wallet->LockCoin(cand_b));
@@ -1682,6 +1714,93 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_old_makers_leave_dfcn_scale_candidates, CTransa
                             "the creator finds no group with anything to spend");
         BOOST_CHECK(!Spent(out(k2, amount)) && !Spent(out(k2, tiny)));
     }));
+}
+
+// CJ4-B2b2: the wallet side of the DFCN-scale attempt, which no caller uses yet. For a DFCN-scale bit the selector takes
+// durable candidates of that amount within the budget per round count and each script once (B1a's and B1b's rules); the
+// work function sums each bit's durable candidates that are not fully mixed; neither asks a coin of the five old amounts
+// about its rounds, so the old round cache's queries stay v23.0.0's. Five-amount control: an old bit asks the old coin.
+BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_selector_and_work, CTransactionBuilderTestSetup)
+{
+    struct RestoreEnabled {
+        const bool before{CCoinJoinClientOptions::IsEnabled()};
+        ~RestoreEnabled() { CCoinJoinClientOptions::SetEnabled(before); }
+    } restore_enabled;
+    CCoinJoinClientOptions::SetEnabled(true);
+    const CAmount amount{CoinJoin::DenominationToAmount(1 << 5)};     // 100.001
+    const CAmount amount6{CoinJoin::DenominationToAmount(1 << 6)};    // 1000.01
+    const CAmount old_amount{CoinJoin::DenominationToAmount(1 << 0)}; // 10.0001
+    const auto p2pkh = [](const CKey& key) { return GetScriptForDestination(PKHash(key.GetPubKey())); };
+
+    // A: two 100.001 to one script; B, C: one each; D: 1000.01; E: 100.001 the user locks; P: a P2PK 100.001; O: an old
+    // 10.0001. F: 100.001 in the mempool, neither confirmed nor InstantSend-locked. The selector takes one coin per
+    // transaction (inherited), so A's coins, B and C come in transactions of their own.
+    const CKey a{NewWalletKey()}, b{NewWalletKey()}, c{NewWalletKey()}, d{NewWalletKey()}, e{NewWalletKey()},
+        p{NewWalletKey()}, o{NewWalletKey()}, f{NewWalletKey()};
+    const CScript p2pk_p{GetScriptForRawPubKey(p.GetPubKey())};
+    const auto pay_one = [&](const CScript& script, CAmount value) {
+        return OutputOf(PayOutputs({{script, value}}, true), script, value);
+    };
+    const std::set<COutPoint> candidates_a{pay_one(p2pkh(a), amount), pay_one(p2pkh(a), amount)};
+    BOOST_REQUIRE_EQUAL(candidates_a.size(), 2U);
+    const COutPoint coin_b{pay_one(p2pkh(b), amount)}, coin_c{pay_one(p2pkh(c), amount)};
+    const CTransactionRef pay{PayOutputs({{p2pkh(d), amount6}, {p2pkh(e), amount}, {p2pk_p, amount}, {p2pkh(o), old_amount}},
+                                         true)};
+    const COutPoint coin_d{OutputOf(pay, p2pkh(d), amount6)}, coin_e{OutputOf(pay, p2pkh(e), amount)},
+        old_coin{OutputOf(pay, p2pkh(o), old_amount)};
+    BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->LockCoin(coin_e)));
+    PayOutputs({{p2pkh(f), amount}}, false);
+
+    // The work: A's two coins, B and C for bit 5, D for bit 6, nothing for bit 7; not the locked, the P2PK or the
+    // mempool coin.
+    BOOST_CHECK_MESSAGE(wallet->GetDfcnScaleMixingWork() == (std::array<CAmount, 3>{4 * amount, amount6, 0}),
+                        "the work is each bit's durable candidates");
+
+    // The selector for bit 5: one of A's coins, B and C (a script once per round count), within the budget.
+    std::vector<CTxDSIn> selected;
+    for (const auto& [budget, expected] : std::vector<std::pair<CAmount, size_t>>{{MAX_MONEY, 3}, {3 * amount, 3}, {2 * amount, 2}}) {
+        BOOST_CHECK(wallet->SelectTxDSInsByDenomination(1 << 5, budget, selected));
+        std::set<CScript> scripts;
+        for (const auto& in : selected) {
+            BOOST_CHECK(candidates_a.count(in.prevout) || in.prevout == coin_b || in.prevout == coin_c);
+            BOOST_CHECK_EQUAL(in.nRounds, 0);
+            scripts.insert(in.prevPubKey);
+        }
+        BOOST_CHECK_MESSAGE(selected.size() == expected && scripts.size() == expected,
+                            "the DFCN-scale selector keeps the budget and takes a script once");
+    }
+    BOOST_CHECK(wallet->SelectTxDSInsByDenomination(1 << 6, MAX_MONEY, selected));
+    BOOST_CHECK(selected.size() == 1 && selected[0].prevout == coin_d);
+    BOOST_CHECK(!wallet->SelectTxDSInsByDenomination(1 << 7, MAX_MONEY, selected));
+
+    // No question to the old round cache: after clearing it, the work and a DFCN-scale selection log no round count for
+    // the old coin; an old bit's selection does (the control).
+    CoinJoinLogLines log;
+    wallet->ClearCoinJoinRoundsCache();
+    log.Logged(""); // forget the lines so far
+    (void)wallet->GetDfcnScaleMixingWork();
+    wallet->SelectTxDSInsByDenomination(1 << 5, MAX_MONEY, selected);
+    BOOST_CHECK_MESSAGE(!log.Logged(old_coin.ToStringShort()), "the DFCN-scale work and selector do not ask an old coin");
+    wallet->SelectTxDSInsByDenomination(1 << 0, MAX_MONEY, selected);
+    BOOST_CHECK_MESSAGE(log.Logged(old_coin.ToStringShort()), "an old bit asks the old coin about its rounds");
+    // The flag keeps ONLY_FULLY_MIXED off the old coins as well.
+    wallet->ClearCoinJoinRoundsCache();
+    log.Logged("");
+    {
+        std::vector<COutput> coins;
+        CCoinControl coin_control;
+        coin_control.nCoinType = CoinType::ONLY_FULLY_MIXED;
+        coin_control.m_dfcn_scale_only = true;
+        LOCK(wallet->cs_wallet);
+        wallet->AvailableCoins(coins, &coin_control);
+    }
+    BOOST_CHECK_MESSAGE(!log.Logged(old_coin.ToStringShort()), "ONLY_FULLY_MIXED with the flag does not ask an old coin");
+
+    // No cut in the work: six more bit-5 candidates make ten, past one session's nine.
+    PayOutputs({{p2pkh(NewWalletKey()), amount}, {p2pkh(NewWalletKey()), amount}, {p2pkh(NewWalletKey()), amount},
+                {p2pkh(NewWalletKey()), amount}, {p2pkh(NewWalletKey()), amount}, {p2pkh(NewWalletKey()), amount}},
+               true);
+    BOOST_CHECK_MESSAGE(wallet->GetDfcnScaleMixingWork()[0] == 10 * amount, "the work has no cut");
 }
 
 // CJ4-B2b1: the old client's queue walk asks for the five bits of v23.0.0. A queue of a DFCN-scale bit stays untried; an

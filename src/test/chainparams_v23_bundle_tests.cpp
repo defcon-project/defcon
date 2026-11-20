@@ -20,6 +20,7 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <chainparamsbase.h>
+#include <coinjoin/common.h>
 #include <consensus/params.h>
 #include <llmq/options.h>
 #include <llmq/params.h>
@@ -866,6 +867,49 @@ BOOST_AUTO_TEST_CASE(v231_regtest_name_sets_only_the_height)
 
     alone.ForceSetArg("-testactivationheight", "v231@0");
     BOOST_CHECK_EXCEPTION(CreateChainParams(alone, CBaseChainParams::REGTEST), std::runtime_error, HasReason("must be positive"));
+}
+
+// CJ4-B2b: cj4use sets U on regtest in place of H + 576. It is checked after the whole list, so it may come before v231;
+// it is refused without v231 and below it (design note § 9.2). Without it nothing changes.
+BOOST_AUTO_TEST_CASE(cj4use_regtest_name_sets_the_mixing_height)
+{
+    const auto make = [](const std::vector<std::string>& heights) {
+        ArgsManager args;
+        args.AddArg("-testactivationheight", "", ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
+        std::vector<std::string> strings{"test"};
+        for (const auto& height : heights) strings.push_back("-testactivationheight=" + height);
+        std::vector<const char*> argv;
+        for (const auto& s : strings) argv.push_back(s.c_str());
+        std::string error;
+        BOOST_REQUIRE_MESSAGE(args.ParseParameters(static_cast<int>(argv.size()), argv.data(), error), error);
+        return CreateChainParams(args, CBaseChainParams::REGTEST);
+    };
+    const std::vector<std::string> v231{"superblocksretired@720", "mn_rr@2147483647"};
+    const auto with = [&](std::vector<std::string> first, std::vector<std::string> last) {
+        first.insert(first.end(), v231.begin(), v231.end());
+        first.insert(first.end(), last.begin(), last.end());
+        return first;
+    };
+
+    // Without cj4use: no override, U = H + 576.
+    BOOST_CHECK(!make(with({"v231@720"}, {}))->GetConsensus().nDfcnScaleMixingHeightOverride.has_value());
+    // After v231 and before it in the list alike.
+    for (const auto& heights : {with({"v231@720"}, {"cj4use@800"}), with({"cj4use@800"}, {"v231@720"})}) {
+        const auto params{make(heights)};
+        BOOST_CHECK(params->GetConsensus().nDfcnScaleMixingHeightOverride == std::optional<int>{800});
+        BOOST_CHECK_EQUAL(params->GetConsensus().nV231ActivationHeight, 720);
+        // The client's gate from the parsed parameters: closed on the tip 798, open on 799.
+        const auto& c{params->GetConsensus()};
+        BOOST_CHECK(!CoinJoin::DfcnScaleMixingOpenAt(c.nV231ActivationHeight, c.nDfcnScaleMixingHeightOverride, 798));
+        BOOST_CHECK(CoinJoin::DfcnScaleMixingOpenAt(c.nV231ActivationHeight, c.nDfcnScaleMixingHeightOverride, 799));
+    }
+    // U = H is allowed; the largest int means never.
+    BOOST_CHECK(make(with({"v231@720"}, {"cj4use@720"}))->GetConsensus().nDfcnScaleMixingHeightOverride == std::optional<int>{720});
+    BOOST_CHECK(make(with({"v231@720"}, {"cj4use@2147483647"}))->GetConsensus().nDfcnScaleMixingHeightOverride ==
+                std::optional<int>{std::numeric_limits<int>::max()});
+    // Refused: below H, and without H.
+    BOOST_CHECK_EXCEPTION(make(with({"cj4use@719"}, {"v231@720"})), std::runtime_error, HasReason("is below v231@720"));
+    BOOST_CHECK_EXCEPTION(make({"cj4use@800"}), std::runtime_error, HasReason("needs v231"));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
