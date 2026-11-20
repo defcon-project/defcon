@@ -562,17 +562,21 @@ QWidget#OverviewPage QLabel#modernOverviewSubtitle {
    mid-digit -- worst on the watch-only column, which sits last. The stock Dark
    theme sets no fixed dimensions anywhere and never had the fault. Letting the
    content set the minimum is both the fix and the rule: a balance is the one
-   thing in this window that must never be half-shown. */
+   thing in this window that must never be half-shown.
+   The page cards (these, the staking and network cards, the Send and Receive
+   cards) cover 85 % of the wave backdrop under them (U18): #0b1727 at 0.85,
+   so the waves show through and the text keeps its contrast. The controls on
+   them (fields, buttons) keep their opaque fill. */
 QWidget#OverviewPage QFrame#frame,
 QWidget#OverviewPage QFrame#frameCoinJoin,
 QWidget#OverviewPage QFrame#frame_2 {
-    background-color: #0b1727;
+    background-color: rgba(11, 23, 39, 0.85);
     border: 1px solid #20344c;
     border-radius: 10px;
 }
 
 QWidget#OverviewPage QFrame#frameCoinJoin {
-    background-color: #0b1727;
+    background-color: rgba(11, 23, 39, 0.85);
     max-width: 16777215px;
     max-height: 16777215px;
 }
@@ -651,7 +655,7 @@ QWidget#OverviewPage QFrame#frameCoinJoin QPushButton#toggleCoinJoin {
    the page's one blue button. The state is a step larger than the amounts;
    the line under it takes the muted color of the labels. */
 QWidget#OverviewPage QFrame#frameStaking {
-    background-color: #0b1727;
+    background-color: rgba(11, 23, 39, 0.85);
     border: 1px solid #20344c;
     border-radius: 10px;
 }
@@ -910,7 +914,7 @@ Overview network card
 ******************************************************/
 
 QWidget#OverviewPage QFrame#networkCard {
-    background-color: #0b1727;
+    background-color: rgba(11, 23, 39, 0.85);
     border: 1px solid #20344c;
     border-radius: 10px;
 }
@@ -1350,9 +1354,15 @@ SendCoinsDialog[abyssPaymentPage="true"] QFrame#frameFee,
 SendCoinsEntry[abyssRecipientCard="true"] QFrame#SendCoins,
 ReceiveCoinsDialog QFrame#frame2,
 ReceiveCoinsDialog QFrame#frame {
-    background: #0b1727;
+    background: rgba(11, 23, 39, 0.85);
     border: 1px solid #20344c;
     border-radius: 10px;
+}
+/* The request history is the card's own surface: it lets the card show
+   through, its stripe a light tint over it (as #0e1f33 was over #0b1727). */
+ReceiveCoinsDialog QFrame#frame QTableView#recentRequestsView {
+    background-color: transparent;
+    alternate-background-color: rgba(120, 170, 230, 0.05);
 }
 SendCoinsEntry[abyssRecipientCard="true"] QWidget#abyssRecipientContent {
     background: transparent;
@@ -1389,7 +1399,7 @@ ReceiveCoinsDialog QWidget#abyssReceiveContent {
     border: none;
 }
 ReceiveCoinsDialog QFrame#abyssReceiveCard {
-    background: #0b1727;
+    background: rgba(11, 23, 39, 0.85);
     border: 1px solid #20344c;
     border-radius: 10px;
 }
