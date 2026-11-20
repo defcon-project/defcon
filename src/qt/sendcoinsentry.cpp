@@ -188,6 +188,9 @@ void SendCoinsEntry::updateThemePresentation(bool modern)
         label->setAlignment(modern ? Qt::AlignLeft | Qt::AlignVCenter : Qt::Alignment(label->property("abyssOriginalAlignment").toInt()));
         GUIUtil::setFont({label}, GUIUtil::FontWeight::Normal, modern ? 13 : 15);
     }
+    // Abyss: a payment request's long message wraps in the card's width
+    // instead of widening the recipients (the classic form keeps one line).
+    ui->messageTextLabel->setWordWrap(modern);
     // Move child layouts with their QObject ownership detached.
     for (QLayout* child : {static_cast<QLayout*>(ui->payToLayout), static_cast<QLayout*>(ui->horizontalLayoutAmount)}) {
         if (modern) ui->gridLayout->removeItem(child);

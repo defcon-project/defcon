@@ -7445,6 +7445,228 @@ void AbyssTests::smallWindow()
     }
 }
 
+void AbyssTests::sendSummaryBelow()
+{
+    // Below the width the Send page's two columns need, the summary stands
+    // under the recipients and a narrow window scrolls down only (U11-D/2a).
+    // The width is the page's room in the wallet's scroll area, not the
+    // window's: at the breakpoint and above it the page is as before. Stacked,
+    // the recipients do not scroll on their own; the page does, and a new
+    // recipient is brought into its view. A classic theme never stacks.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Window geometry requires minimal:enable_fonts or a native platform");
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name); // Keep this test's isolated QSettings scope.
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.addWallet(fixture.model.get());
+    window.gotoSendCoinsPage();
+    window.show(); Settle();
+    // Tall enough that no vertical bar takes from the page's room; shown, the
+    // window is held to the test platform's screen, resized after it keeps the size.
+    constexpr int tall{2000};
+    window.resize(1500, tall); Settle();
+    if (auto* overlay = window.findChild<ModalOverlay*>()) overlay->hide();
+    Settle();
+    // The wallet has two SendCoinsDialogs, Send and CoinJoin: the one on show.
+    SendCoinsDialog* send = nullptr;
+    for (auto* page : window.findChildren<SendCoinsDialog*>()) {
+        if (page->isVisible()) send = page;
+    }
+    QVERIFY(send && window.walletFrame);
+    auto* scroll = window.walletFrame->findChild<QScrollArea*>("abyssPageScroll");
+    auto* fields = send->findChild<QScrollArea*>("abyssSendFieldsScroll");
+    auto* summary = send->findChild<QFrame*>("abyssSendSummary");
+    auto* body = summary && summary->parentWidget() ? qobject_cast<QBoxLayout*>(summary->parentWidget()->layout()) : nullptr;
+    QVERIFY(scroll && fields && summary && body);
+    const auto state = [&]() -> QString {
+        return QString("window %1x%2 room %3 viewport %4x%5 page scroll %6/%7 at %23 breakpoint %8 stacked %9 fields %10,%11 %12x%13 scroll %14/%15 "
+                       "widget %16x%17 minimum %18 summary %19,%20 %21x%22")
+            .arg(window.width()).arg(window.height()).arg(scroll->maximumViewportSize().width())
+            .arg(scroll->viewport()->width()).arg(scroll->viewport()->height())
+            .arg(scroll->horizontalScrollBar()->maximum()).arg(scroll->verticalScrollBar()->maximum())
+            .arg(send->bodyBreakpoint()).arg(send->m_body_stacked)
+            .arg(fields->x()).arg(fields->y()).arg(fields->width()).arg(fields->height())
+            .arg(fields->horizontalScrollBar()->maximum()).arg(fields->verticalScrollBar()->maximum())
+            .arg(fields->widget()->width()).arg(fields->widget()->height()).arg(fields->widget()->minimumSizeHint().width())
+            .arg(summary->x()).arg(summary->y()).arg(summary->width()).arg(summary->height())
+            .arg(scroll->verticalScrollBar()->value());
+    };
+    // Side by side: the summary to the right of the recipients, level with
+    // them. Stacked: under them, from the same left edge and as wide.
+    const auto side_by_side = [&] {
+        return body->direction() == QBoxLayout::LeftToRight && summary->x() > fields->geometry().right() && summary->y() == fields->y();
+    };
+    const auto stacked = [&] {
+        return body->direction() == QBoxLayout::TopToBottom && summary->y() > fields->geometry().bottom() &&
+               summary->x() == fields->x() && summary->width() == fields->width();
+    };
+
+    // With room: side by side, nothing scrolls.
+    QVERIFY2(side_by_side(), qPrintable(state()));
+    QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0 && fields->horizontalScrollBar()->maximum() == 0 &&
+                 scroll->verticalScrollBar()->maximum() == 0 && fields->verticalScrollBar()->maximum() == 0,
+             qPrintable(state()));
+    const int breakpoint = send->bodyBreakpoint();
+    QVERIFY2(breakpoint > summary->minimumWidth(), qPrintable(state()));
+    const int around = window.width() - scroll->maximumViewportSize().width();
+
+    // At the breakpoint: still side by side, and in a short window too, where
+    // vertical bars are on show, neither the page nor the recipients scroll across.
+    window.resize(breakpoint + around, tall); Settle();
+    QVERIFY2(scroll->maximumViewportSize().width() == breakpoint, qPrintable(state()));
+    QVERIFY2(side_by_side() && scroll->horizontalScrollBar()->maximum() == 0 && fields->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    window.resize(breakpoint + around, 420); Settle();
+    qInfo().noquote() << "SEND_BREAKPOINT short, side by side:" << state();
+    QVERIFY2(side_by_side() && scroll->horizontalScrollBar()->maximum() == 0 && fields->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+
+    // A pixel less: stacked, the summary as wide as the recipients; the
+    // recipients take their height and do not scroll on their own.
+    window.resize(breakpoint + around - 1, tall); Settle();
+    QVERIFY2(stacked(), qPrintable(state()));
+    QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0 && fields->verticalScrollBar()->maximum() == 0 &&
+                 fields->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    // Short: the page scrolls down, and only down.
+    window.resize(breakpoint + around - 1, 420); Settle();
+    qInfo().noquote() << "SEND_BREAKPOINT short, stacked:" << state();
+    QVERIFY2(stacked() && scroll->verticalScrollBar()->maximum() > 0 && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    QVERIFY2(fields->verticalScrollBar()->maximum() == 0 && fields->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+
+    // A new recipient, stacked: brought into the page's view.
+    for (int i = 0; i < 3; ++i) {
+        SendCoinsEntry* entry = send->addEntry();
+        Settle();
+        QWidget* address = entry->addressField();
+        QVERIFY2(address->visibleRegion() == QRegion(address->rect()),
+                 qPrintable(QString("recipient %1 not in view: %2").arg(i + 2).arg(state())));
+    }
+    QVERIFY2(stacked() && fields->verticalScrollBar()->maximum() == 0, qPrintable(state()));
+
+    // A payment request taken on the Send page on show, side by side in a short
+    // window with recipients already there: its message is one word wider than
+    // the recipients' column side by side (it fits the page stacked), so the
+    // summary moves under them only after addEntry brought the empty card into
+    // view. The card is in the page's view with the request's content.
+    const QString request_address = QString::fromStdString(EncodeDestination(PKHash(fixture.chain.coinbaseKey.GetPubKey())));
+    window.resize(breakpoint + around, 420); Settle();
+    QVERIFY2(side_by_side() && fields->verticalScrollBar()->maximum() > 0, qPrintable(state()));
+    const QFontMetrics message_metrics = send->findChild<SendCoinsEntry*>()->findChild<QLabel*>("messageTextLabel")->fontMetrics();
+    SendCoinsRecipient wide_request;
+    wide_request.address = request_address;
+    while (message_metrics.horizontalAdvance(wide_request.message) < fields->width() + 60) wide_request.message += QLatin1Char('x');
+    QVERIFY(window.handlePaymentRequest(wide_request));
+    Settle();
+    SendCoinsEntry* wide_entry = nullptr;
+    for (auto* entry : send->findChildren<SendCoinsEntry*>()) {
+        if (entry->findChild<QLabel*>("messageTextLabel")->text() == wide_request.message) wide_entry = entry;
+    }
+    QVERIFY(wide_entry);
+    qInfo().noquote() << "SEND_BREAKPOINT payment request on show:" << state();
+    QVERIFY2(stacked() && fields->verticalScrollBar()->maximum() == 0 && scroll->horizontalScrollBar()->maximum() == 0 &&
+                 fields->horizontalScrollBar()->maximum() == 0,
+             qPrintable(state()));
+    QWidget* wide_address = wide_entry->addressField();
+    QVERIFY2(wide_address->visibleRegion() == QRegion(wide_address->rect()),
+             qPrintable(QString("the requested recipient is not in view after the summary moved: %1").arg(state())));
+    send->removeEntry(wide_entry);
+    Settle();
+
+    // The least window: stacked, and it scrolls down only.
+    const QSize least = window.modernWindowSize(QSize(480, 360));
+    window.resize(least); Settle();
+    qInfo().noquote() << "SEND_BREAKPOINT least window:" << state();
+    QVERIFY2(stacked() && scroll->verticalScrollBar()->maximum() > 0 && fields->verticalScrollBar()->maximum() == 0, qPrintable(state()));
+    QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0 && fields->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+
+    // What the recipients hold makes neither the page nor the summary wider,
+    // and the recipients do not scroll down on their own.
+    const auto page_fits = [&] {
+        return scroll->horizontalScrollBar()->maximum() == 0 && summary->width() <= scroll->viewport()->width() &&
+               fields->verticalScrollBar()->maximum() == 0;
+    };
+    // A payment request taken on another page, with recipients already there:
+    // BitcoinGUI hands it to the hidden Send page, then shows the page. The new
+    // recipient is in view then, and its long message wraps in the card, whole,
+    // so the recipients do not scroll sideways either.
+    QString words;
+    for (int i = 0; i < 40; ++i) words += QString("word%1 ").arg(i);
+    SendCoinsRecipient request;
+    request.address = request_address;
+    request.message = words.trimmed();
+    window.gotoHistoryPage(); Settle();
+    QVERIFY(!send->isVisible());
+    QVERIFY(window.handlePaymentRequest(request));
+    Settle();
+    QVERIFY(send->isVisible());
+    SendCoinsEntry* requested = nullptr;
+    for (auto* entry : send->findChildren<SendCoinsEntry*>()) {
+        if (entry->findChild<QLabel*>("messageTextLabel")->text() == request.message) requested = entry;
+    }
+    QVERIFY(requested);
+    auto* message = requested->findChild<QLabel*>("messageTextLabel");
+    QWidget* requested_address = requested->addressField();
+    qInfo().noquote() << "SEND_BREAKPOINT payment request:" << state();
+    QVERIFY2(requested_address->visibleRegion() == QRegion(requested_address->rect()),
+             qPrintable(QString("the requested recipient is not in view: %1").arg(state())));
+    QVERIFY2(message->isVisible() && message->height() > 2 * message->fontMetrics().lineSpacing(),
+             qPrintable(QString("message %1x%2: %3").arg(message->width()).arg(message->height()).arg(state())));
+    QVERIFY2(stacked() && page_fits() && fields->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    // The room below the summary, to the page's end in the wallet's scroll area.
+    const auto below_summary = [&] {
+        return scroll->widget()->height() - summary->mapTo(scroll->widget(), QPoint(0, summary->height())).y();
+    };
+    const int below_wrapped = below_summary();
+    // An unbroken word wider than the page (no label can break it; the base
+    // scrolls the recipients sideways for it too): the recipients scroll
+    // sideways in their own area, under their own bar; the page does not. The
+    // card is lower than with the wrapped message: the page's height follows.
+    SendCoinsRecipient unbroken = request;
+    unbroken.message = QString(300, QLatin1Char('x'));
+    requested->setValue(unbroken);
+    Settle();
+    qInfo().noquote() << "SEND_BREAKPOINT unbroken message:" << state();
+    QVERIFY2(stacked() && page_fits() && fields->horizontalScrollBar()->maximum() > 0, qPrintable(state()));
+    QVERIFY2(below_summary() == below_wrapped,
+             qPrintable(QString("the page's height does not follow the summary: %1 below it, %2 with the wrapped message: %3")
+                            .arg(below_summary()).arg(below_wrapped).arg(state())));
+    requested->clear();
+    Settle();
+    // Coin control with a long address book label for the custom change
+    // address (that label keeps one line, as in the base): the same.
+    QVERIFY(QMetaObject::invokeMethod(send, "coinControlFeatureChanged", Q_ARG(bool, true)));
+    auto* change = send->findChild<QCheckBox*>("checkBoxCoinControlChange");
+    auto* change_label = send->findChild<QLabel*>("labelCoinControlChangeLabel");
+    QVERIFY(change && change_label);
+    change->setChecked(true);
+    change_label->setText(words.trimmed());
+    Settle();
+    qInfo().noquote() << "SEND_BREAKPOINT long change label:" << state();
+    QVERIFY2(change_label->isVisible() && stacked() && page_fits() && fields->horizontalScrollBar()->maximum() > 0, qPrintable(state()));
+    change->setChecked(false);
+    change_label->clear();
+    QVERIFY(QMetaObject::invokeMethod(send, "coinControlFeatureChanged", Q_ARG(bool, false)));
+    Settle();
+    QVERIFY2(stacked() && page_fits() && fields->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+
+    // A classic theme never stacks; back in Abyss the narrow window stacks again.
+    Theme("Light"); Settle();
+    QVERIFY2(!send->m_body_stacked && body->direction() == QBoxLayout::LeftToRight, qPrintable(state()));
+    QCOMPARE(summary->maximumWidth(), 260);
+    Theme("Abyss"); Settle();
+    window.resize(least); Settle();
+    QVERIFY2(stacked(), qPrintable(state()));
+
+    // Wide again: as before, the summary at its own width beside the recipients.
+    window.resize(1500, tall); Settle();
+    QVERIFY2(side_by_side() && summary->maximumWidth() == 260 && !fields->sizePolicy().hasHeightForWidth(), qPrintable(state()));
+}
+
 void AbyssTests::overviewBreakpoint()
 {
     // Below the width the Overview's columns need side by side, the Recent

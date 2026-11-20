@@ -11,6 +11,7 @@
 #include <QDialog>
 #include <QMessageBox>
 #include <QMargins>
+#include <QPointer>
 #include <QShowEvent>
 #include <QString>
 #include <QTimer>
@@ -73,6 +74,8 @@ protected:
     //! The column's width and the figures' own size decide how the coin
     //! control figures are arranged in Abyss (arrangeCoinControlFigures).
     bool eventFilter(QObject* watched, QEvent* event) override;
+    //! Finds the wallet's page scroll area and places the summary for its room (updateBody).
+    void showEvent(QShowEvent* event) override;
 
 private:
     Ui::SendCoinsDialog *ui;
@@ -141,6 +144,20 @@ private:
     //! 0 while the figures are in the form's own row (the classic themes).
     int m_coin_figure_columns{0};
     bool m_arranging_figures{false};
+    //! Abyss: below the width the two columns need (bodyBreakpoint) the summary
+    //! stands under the recipients, so a narrow window scrolls down only.
+    void watchPageArea();
+    int bodyBreakpoint() const;
+    void updateBody();
+    //! Stacked: scrolls the page's scroll area to a recipient's field.
+    void ensureVisibleOnPage(QWidget* target);
+    //! Stacked: the page's scroll area takes the page's new height.
+    void updatePageHeight();
+    //! The wallet's page scroll area (Abyss), whose room decides it.
+    QScrollArea* m_page_area{nullptr};
+    bool m_body_stacked{false};
+    //! A recipient's field added while the page was hidden, for showEvent.
+    QPointer<QWidget> m_show_target;
 
 private Q_SLOTS:
     void sendButtonClicked(bool checked);
