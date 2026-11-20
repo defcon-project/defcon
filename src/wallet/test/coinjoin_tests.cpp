@@ -10,14 +10,22 @@
 #include <coinjoin/options.h>
 #include <coinjoin/util.h>
 #include <consensus/amount.h>
+#include <consensus/consensus.h>
+#include <consensus/merkle.h>
 #include <interfaces/coinjoin.h>
+#include <interfaces/wallet.h>
 #include <key.h>
 #include <key_io.h>
 #include <llmq/context.h>
 #include <llmq/instantsend.h>
 #include <logging.h>
 #include <node/context.h>
+#include <chainparams.h>
+#include <evo/evodb.h>
+#include <llmq/chainlocks.h>
 #include <script/descriptor.h>
+#include <script/sign.h>
+#include <script/signingprovider.h>
 #include <script/standard.h>
 #include <spork.h>
 #include <util/check.h>
@@ -25,6 +33,7 @@
 #include <util/time.h>
 #include <util/translation.h>
 #include <policy/settings.h>
+#include <pow.h>
 #include <validation.h>
 #include <txmempool.h>
 #include <consensus/validation.h>
@@ -940,6 +949,475 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_ready_step_keeps_session_budget, CTransactionBu
         BOOST_CHECK_MESSAGE(pairs.size() == 2 && entry_scripts.size() == 2, "an entry names each script once");
         BOOST_CHECK(locked().empty());
     }));
+}
+
+// CJ4-B2a: the wallet recognises the DFCN-scale amounts (bits 5-7) from the binary's start. A DFCN-scale output counts
+// its rounds on a branch of its own (0 unless its transaction is a real mix of its amount; exact, never cached), the old
+// amounts keep v23.0.0's count, the mixing target's balance keeps the five old amounts while two new fields carry the
+// DFCN-scale coins, and the client still starts no DFCN-scale queue. Every transaction here is valid and mined; the mixes
+// spend own coins and coins of keys outside the wallet.
+BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_rounds_and_balances, CTransactionBuilderTestSetup)
+{
+    struct RestoreOptions {
+        const bool enabled{CCoinJoinClientOptions::IsEnabled()};
+        const int rounds{CCoinJoinClientOptions::GetRounds()};
+        ~RestoreOptions()
+        {
+            CCoinJoinClientOptions::SetEnabled(enabled);
+            CCoinJoinClientOptions::SetRounds(rounds);
+        }
+    } restore_options;
+    CCoinJoinClientOptions::SetEnabled(true);
+    CCoinJoinClientOptions::SetRounds(1); // fully mixed from 1 + GetRandomRounds() rounds on
+    const CAmount amount{CoinJoin::DenominationToAmount(1 << 5)};     // 100.001
+    const CAmount old_amount{CoinJoin::DenominationToAmount(1 << 0)}; // 10.0001
+    BOOST_REQUIRE_EQUAL(10 * old_amount, amount);
+    const int acp{SIGHASH_ALL | SIGHASH_ANYONECANPAY};
+
+    const auto new_key = [&](bool mine) {
+        CKey key;
+        key.MakeNewKey(true);
+        if (mine) {
+            LOCK(wallet->cs_wallet);
+            BOOST_REQUIRE(wallet->GetLegacyScriptPubKeyMan()->AddKeyPubKey(key, key.GetPubKey()));
+        }
+        return key;
+    };
+    const auto p2pkh = [](const CKey& key) { return GetScriptForDestination(PKHash(key.GetPubKey())); };
+    const auto out_of = [](const CTransactionRef& tx, const CScript& script) {
+        for (uint32_t i = 0; i < tx->vout.size(); ++i) {
+            if (tx->vout[i].scriptPubKey == script) return COutPoint{tx->GetHash(), i};
+        }
+        BOOST_FAIL("no output to the script");
+        return COutPoint{};
+    };
+    const auto rounds = [&](const COutPoint& outpoint) { return wallet->GetRealOutpointCoinJoinRounds(outpoint); };
+    struct In {
+        COutPoint prevout;
+        CTransactionRef prev_tx;
+        CKey key;
+        CScript redeem{}; // for a P2SH coin
+    };
+    // A confirmed coin of `value` to `key` (P2PKH, P2PK, or P2SH of `redeem`), paid from the wallet's ordinary funds. The
+    // own DFCN-scale coins the test still holds for a later spend are locked while it pays, so the payment never takes
+    // one of them, whatever its coin type (ONLY_NONDENOMINATED) leaves out.
+    const auto coin = [&](const CKey& key, CAmount value, bool p2pk = false, const CScript& redeem = CScript()) {
+        const CScript script{!redeem.empty() ? GetScriptForDestination(ScriptHash(redeem)) :
+                             p2pk ? GetScriptForRawPubKey(key.GetPubKey()) : p2pkh(key)};
+        std::vector<COutPoint> locked_now;
+        {
+            LOCK(wallet->cs_wallet);
+            std::vector<COutput> available;
+            wallet->AvailableCoins(available);
+            for (const auto& out : available) {
+                if (!CoinJoin::IsDfcnScaleDenomination(CoinJoin::AmountToDenomination(out.tx->tx->vout[out.i].nValue))) continue;
+                const COutPoint outpoint{out.tx->GetHash(), static_cast<uint32_t>(out.i)};
+                if (wallet->LockCoin(outpoint)) locked_now.push_back(outpoint);
+            }
+        }
+        const CTransactionRef tx{PayOutputs({{script, value}}, true)};
+        {
+            LOCK(wallet->cs_wallet);
+            for (const auto& outpoint : locked_now) BOOST_REQUIRE(wallet->UnlockCoin(outpoint));
+        }
+        return In{out_of(tx, script), tx, key, redeem};
+    };
+    // A mined, zero-fee spend of `ins` to `outs`, each input signed with its key and `hash_type`; inputs and outputs in
+    // BIP69 order, or the outputs in reverse BIP69 order when `bip69` is false. A non-empty `own_prefix` goes before the
+    // signature of every own input (valid in a block: the signatures do not cover scriptSigs). make_spend builds and
+    // checks it, mine gives it to the wallet and mines it, spend does both.
+    const auto make_spend = [&](std::vector<In> ins, std::vector<CTxOut> outs, bool bip69, int hash_type, const CScript& own_prefix = CScript()) {
+        std::sort(ins.begin(), ins.end(), [](const In& a, const In& b) { return CompareInputBIP69()(CTxIn(a.prevout), CTxIn(b.prevout)); });
+        std::sort(outs.begin(), outs.end(), CompareOutputBIP69());
+        if (!bip69) std::reverse(outs.begin(), outs.end());
+        CMutableTransaction mtx;
+        for (const auto& in : ins) mtx.vin.emplace_back(in.prevout);
+        mtx.vout = outs;
+        for (size_t i = 0; i < ins.size(); ++i) {
+            FillableSigningProvider provider;
+            BOOST_REQUIRE(provider.AddKey(ins[i].key));
+            if (!ins[i].redeem.empty()) BOOST_REQUIRE(provider.AddCScript(ins[i].redeem));
+            BOOST_REQUIRE(SignSignature(provider, *ins[i].prev_tx, mtx, i, hash_type));
+        }
+        for (size_t i = 0; i < ins.size() && !own_prefix.empty(); ++i) {
+            if (WITH_LOCK(wallet->cs_wallet, return wallet->IsMine(ins[i].prev_tx->vout[ins[i].prevout.n]) & ISMINE_SPENDABLE)) {
+                mtx.vin[i].scriptSig.insert(mtx.vin[i].scriptSig.begin(), own_prefix.begin(), own_prefix.end());
+            }
+        }
+        {
+            // The block that will mine it is valid; if not, the reject reason says why.
+            const CBlock block{CreateBlock({mtx}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()), m_node.chainman->ActiveChainstate())};
+            LOCK(cs_main);
+            BlockValidationState state;
+            BOOST_REQUIRE_MESSAGE(TestBlockValidity(state, *Assert(m_node.llmq_ctx)->clhandler, *Assert(m_node.evodb), Params(),
+                                                    m_node.chainman->ActiveChainstate(), block,
+                                                    m_node.chainman->ActiveChain().Tip(), /*fCheckPOW=*/true,
+                                                    /*fCheckMerkleRoot=*/true),
+                                  "the spend's block is valid: " + state.ToString());
+        }
+        return mtx;
+    };
+    const auto mine = [&](const CMutableTransaction& mtx) {
+        const CTransactionRef tx{MakeTransactionRef(mtx)};
+        {
+            LOCK2(wallet->cs_wallet, cs_main);
+            wallet->CommitTransaction(tx, {}, {});
+        }
+        Confirm(tx);
+        return tx;
+    };
+    const auto spend = [&](std::vector<In> ins, std::vector<CTxOut> outs, bool bip69, int hash_type, const CScript& own_prefix = CScript()) {
+        return mine(make_spend(std::move(ins), std::move(outs), bip69, hash_type, own_prefix));
+    };
+    // A real mix of one own coin and one foreign coin to a new own and a new foreign address.
+    const auto mix_once = [&](const In& own, const CKey& own_to) {
+        const In foreign{coin(new_key(false), amount)};
+        const CTransactionRef tx{spend({own, foreign}, {CTxOut(amount, p2pkh(own_to)), CTxOut(amount, p2pkh(new_key(false)))}, true, acp)};
+        return In{out_of(tx, p2pkh(own_to)), tx, own_to};
+    };
+
+    // An ordinary incoming DFCN-scale coin, paid by another party (no own input), reads 0 (v23.0.0 read -2: no
+    // denomination) and is recognised.
+    const CKey a_key{new_key(true)};
+    const CTransactionRef a_tx{spend({coin(new_key(false), amount)}, {CTxOut(amount, p2pkh(a_key))}, true, SIGHASH_ALL)};
+    const In a{out_of(a_tx, p2pkh(a_key)), a_tx, a_key};
+    BOOST_CHECK_MESSAGE(rounds(a.prevout) == 0, "an ordinary incoming DFCN-scale coin reads 0");
+    BOOST_CHECK(wallet->IsDenominated(a.prevout));
+
+    // Real mixes: one round each, four in a row (fully mixed at 1 + GetRandomRounds() rounds).
+    In chain{a};
+    for (int r = 1; r <= 4; ++r) {
+        chain = mix_once(chain, new_key(true));
+        BOOST_CHECK_MESSAGE(rounds(chain.prevout) == r, "each real DFCN-scale mix counts one round more");
+    }
+    BOOST_REQUIRE_GE(4, 1 + CCoinJoinClientOptions::GetRandomRounds());
+    BOOST_CHECK(wallet->IsFullyMixed(chain.prevout));
+
+    // Not a real mix, each 0: outputs out of BIP69 order; an output to an own input's script; an own P2PK input; an own
+    // P2SH input in the client's scriptSig shape; an own input signed without ANYONECANPAY, also behind an extra push;
+    // own debit unequal to own credit (two own inputs, one own output).
+    std::vector<COutPoint> unmixed;
+    {
+        const In own{coin(new_key(true), amount)};
+        const CKey to{new_key(true)};
+        const auto tx{spend({own, coin(new_key(false), amount)}, {CTxOut(amount, p2pkh(to)), CTxOut(amount, p2pkh(new_key(false)))}, false, acp)};
+        BOOST_CHECK_MESSAGE(rounds(out_of(tx, p2pkh(to))) == 0, "outputs out of BIP69 order give 0");
+        unmixed.push_back(out_of(tx, p2pkh(to)));
+    }
+    {
+        const In own{coin(new_key(true), amount)};
+        const auto tx{spend({own, coin(new_key(false), amount)}, {CTxOut(amount, p2pkh(own.key)), CTxOut(amount, p2pkh(new_key(false)))}, true, acp)};
+        BOOST_CHECK_MESSAGE(rounds(out_of(tx, p2pkh(own.key))) == 0, "an output to an own input's script gives 0");
+        unmixed.push_back(out_of(tx, p2pkh(own.key)));
+    }
+    {
+        const In own{coin(new_key(true), amount, /*p2pk=*/true)};
+        BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->IsMine(own.prev_tx->vout[own.prevout.n]) & ISMINE_SPENDABLE));
+        const CKey to{new_key(true)};
+        const auto tx{spend({own, coin(new_key(false), amount)}, {CTxOut(amount, p2pkh(to)), CTxOut(amount, p2pkh(new_key(false)))}, true, acp)};
+        BOOST_CHECK_MESSAGE(rounds(out_of(tx, p2pkh(to))) == 0, "an own P2PK input gives 0");
+        unmixed.push_back(out_of(tx, p2pkh(to)));
+    }
+    {
+        // An own P2SH input in the client's two-push shape (<signature> <redeem script>, the redeem script a P2PK of an
+        // own key): the P2PKH check, not the shape, gives 0 here.
+        const CKey key{new_key(true)};
+        const CScript redeem{GetScriptForRawPubKey(key.GetPubKey())};
+        BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->GetLegacyScriptPubKeyMan()->AddCScript(redeem)));
+        const In own{coin(key, amount, /*p2pk=*/false, redeem)};
+        BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->IsMine(own.prev_tx->vout[own.prevout.n]) & ISMINE_SPENDABLE));
+        const CKey to{new_key(true)};
+        const auto tx{spend({own, coin(new_key(false), amount)}, {CTxOut(amount, p2pkh(to)), CTxOut(amount, p2pkh(new_key(false)))}, true, acp)};
+        BOOST_CHECK_MESSAGE(rounds(out_of(tx, p2pkh(to))) == 0, "an own P2SH input in the client's shape gives 0");
+        unmixed.push_back(out_of(tx, p2pkh(to)));
+    }
+    {
+        const In own{coin(new_key(true), amount)};
+        const CKey to{new_key(true)};
+        const auto tx{spend({own, coin(new_key(false), amount)}, {CTxOut(amount, p2pkh(to)), CTxOut(amount, p2pkh(new_key(false)))}, true, SIGHASH_ALL)};
+        BOOST_CHECK_MESSAGE(rounds(out_of(tx, p2pkh(to))) == 0, "an own input signed without ANYONECANPAY gives 0");
+        unmixed.push_back(out_of(tx, p2pkh(to)));
+    }
+    {
+        // The same, behind a push that ends in the ANYONECANPAY hash type: OP_CHECKSIG still reads the SIGHASH_ALL one.
+        const In own{coin(new_key(true), amount)};
+        const CKey to{new_key(true)};
+        const CScript prefix{CScript() << std::vector<unsigned char>{0x01, SIGHASH_ALL | SIGHASH_ANYONECANPAY}};
+        const auto tx{spend({own, coin(new_key(false), amount)}, {CTxOut(amount, p2pkh(to)), CTxOut(amount, p2pkh(new_key(false)))}, true, SIGHASH_ALL, prefix)};
+        BOOST_CHECK_MESSAGE(rounds(out_of(tx, p2pkh(to))) == 0, "an own SIGHASH_ALL input behind an extra push gives 0");
+        unmixed.push_back(out_of(tx, p2pkh(to)));
+    }
+    {
+        const CKey to{new_key(true)};
+        const auto tx{spend({coin(new_key(true), amount), coin(new_key(true), amount), coin(new_key(false), amount)},
+                            {CTxOut(amount, p2pkh(to)), CTxOut(amount, p2pkh(new_key(false))), CTxOut(amount, p2pkh(new_key(false)))}, true, acp)};
+        BOOST_CHECK_MESSAGE(rounds(out_of(tx, p2pkh(to))) == 0, "own debit unequal to own credit gives 0");
+        unmixed.push_back(out_of(tx, p2pkh(to)));
+    }
+
+    // Old amounts keep v23.0.0's count: a zero-fee, all-old spend of an old coin counts one round (the control); an old
+    // coin beside a DFCN-scale sibling reads 0; an old coin whose parent is a DFCN-scale mix output reads 0 (the parent
+    // is no denomination to the old count), while the parent still reads its own count.
+    const In old_coin{coin(new_key(true), old_amount)};
+    const CKey old_to{new_key(true)};
+    const COutPoint old_mixed{MixOnce(old_coin.prevout, old_amount, p2pkh(old_to))};
+    BOOST_CHECK_EQUAL(rounds(old_mixed), 1);
+    {
+        const CKey to_old{new_key(true)}, to_new{new_key(true)};
+        const auto tx{spend({coin(new_key(true), old_amount), coin(new_key(true), amount)}, {CTxOut(old_amount, p2pkh(to_old)), CTxOut(amount, p2pkh(to_new))}, true, SIGHASH_ALL)};
+        BOOST_CHECK_MESSAGE(rounds(out_of(tx, p2pkh(to_old))) == 0, "an old coin beside a DFCN-scale sibling reads 0");
+        unmixed.push_back(out_of(tx, p2pkh(to_new)));
+    }
+    {
+        const In parent{mix_once(coin(new_key(true), amount), new_key(true))};
+        BOOST_REQUIRE_EQUAL(rounds(parent.prevout), 1);
+        std::vector<CTxOut> outs;
+        std::vector<CKey> keys;
+        for (int i = 0; i < 10; ++i) {
+            keys.push_back(new_key(true));
+            outs.emplace_back(old_amount, p2pkh(keys.back()));
+        }
+        const auto tx{spend({parent}, outs, true, SIGHASH_ALL)};
+        BOOST_CHECK_MESSAGE(rounds(out_of(tx, p2pkh(keys.front()))) == 0, "an old coin with a DFCN-scale parent reads 0");
+        BOOST_CHECK_MESSAGE(rounds(parent.prevout) == 1, "the DFCN-scale parent keeps its own count");
+    }
+
+    // Balances: the target's figure keeps the five old amounts (here only the old mixed coin can be fully mixed: the
+    // other old coins have 0 rounds); the fully mixed DFCN-scale coin and all unspent own DFCN-scale coins fill the two
+    // DFCN-scale sums a caller asks GetBalance for. A transaction with a DFCN-scale output caches no mixed credit.
+    {
+        LOCK(wallet->cs_wallet);
+        CAmount dfcn_mixed{-1}, dfcn_all{-1};
+        const auto bal{wallet->GetBalance(0, true, false, nullptr, &dfcn_mixed, &dfcn_all)};
+        const CAmount old_anonymized{wallet->IsFullyMixed(old_mixed) ? old_amount : 0};
+        BOOST_CHECK_MESSAGE(bal.m_anonymized == old_anonymized, "the target's mixed balance keeps the five old amounts");
+        BOOST_CHECK_EQUAL(wallet->GetBalance().m_anonymized, bal.m_anonymized); // asking for the DFCN-scale sums changes nothing else
+        BOOST_CHECK_MESSAGE(dfcn_mixed == amount, "the fully mixed DFCN-scale coin is the DFCN-scale mixed balance");
+        BOOST_CHECK_MESSAGE(dfcn_all == amount * CAmount(1 + unmixed.size()), "every unspent own DFCN-scale coin counts");
+        BOOST_CHECK_MESSAGE(!wallet->GetWalletTx(chain.prevout.hash)->m_amounts[CWalletTx::ANON_CREDIT].m_cached[ISMINE_SPENDABLE],
+                            "a transaction with a DFCN-scale output caches no mixed credit");
+        BOOST_CHECK(wallet->GetWalletTx(old_mixed.hash)->m_amounts[CWalletTx::ANON_CREDIT].m_cached[ISMINE_SPENDABLE]);
+    }
+
+    // Coin types: a DFCN-scale coin is ready to mix or fully mixed by its rounds; the client still starts no queue of a
+    // DFCN-scale bit (the amounts it may start one for are the old ones only).
+    const auto ready{ReadyToMix(*wallet)};
+    for (const auto& outpoint : unmixed) BOOST_CHECK_MESSAGE(ready.count(outpoint), "an unmixed DFCN-scale coin is ready to mix");
+    BOOST_CHECK(!ready.count(chain.prevout));
+    {
+        std::vector<COutput> mixed;
+        CCoinControl coin_control;
+        coin_control.nCoinType = CoinType::ONLY_FULLY_MIXED;
+        LOCK(wallet->cs_wallet);
+        wallet->AvailableCoins(mixed, &coin_control);
+        BOOST_CHECK_MESSAGE(std::any_of(mixed.begin(), mixed.end(), [&](const COutput& out) { return COutPoint{out.tx->GetHash(), static_cast<uint32_t>(out.i)} == chain.prevout; }),
+                            "a fully mixed DFCN-scale coin is fully mixed for a mixed-only payment");
+    }
+    {
+        // A real mixed-only payment of most of the coin: its input is the fully mixed DFCN-scale coin (no change; the
+        // rest is its fee).
+        std::vector<CRecipient> recipients{{p2pkh(new_key(false)), amount - 50000, false}};
+        CTransactionRef tx;
+        CAmount fee;
+        int change_pos{-1};
+        bilingual_str error;
+        CCoinControl coin_control;
+        coin_control.UseCoinJoin(true);
+        coin_control.m_feerate = CFeeRate(1000);
+        FeeCalculation fee_calc;
+        const bool created{wallet->CreateTransaction(recipients, tx, fee, change_pos, error, coin_control, fee_calc)};
+        BOOST_CHECK_MESSAGE(created && tx->vin.size() == 1 && tx->vin[0].prevout == chain.prevout && tx->vout.size() == 1 && fee == 50000,
+                            "a mixed-only payment spends the fully mixed DFCN-scale coin: " + error.original);
+    }
+    {
+        // The old client's funding stays v23.0.0's: a fully mixed DFCN-scale coin is still funds there (B2b leaves every
+        // DFCN-scale candidate out), so locking it lowers both anonymizable balances by its amount.
+        const auto funding = [&] {
+            return std::make_pair(wallet->GetAnonymizableBalance(/*fSkipDenominated=*/false),
+                                  wallet->GetAnonymizableBalance(/*fSkipDenominated=*/true));
+        };
+        const auto with_coin{funding()};
+        BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->LockCoin(chain.prevout)));
+        const auto without_coin{funding()};
+        BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->UnlockCoin(chain.prevout)));
+        BOOST_CHECK_MESSAGE(with_coin.first - without_coin.first == amount && with_coin.second - without_coin.second == amount,
+                            "the old client still funds from a fully mixed DFCN-scale coin, as v23.0.0");
+    }
+    {
+        std::vector<COutput> nondenominated;
+        CCoinControl coin_control;
+        coin_control.nCoinType = CoinType::ONLY_NONDENOMINATED;
+        LOCK(wallet->cs_wallet);
+        wallet->AvailableCoins(nondenominated, &coin_control);
+        BOOST_CHECK(!nondenominated.empty()); // the wallet's ordinary funds
+        BOOST_CHECK_MESSAGE(std::none_of(nondenominated.begin(), nondenominated.end(), [](const COutput& out) { return CoinJoin::IsDfcnScaleDenomination(CoinJoin::AmountToDenomination(out.tx->tx->vout[out.i].nValue)); }),
+                            "coin type 3 leaves the DFCN-scale coins out");
+    }
+    std::set<CAmount> amounts;
+    wallet->SelectDenominatedAmounts(MAX_MONEY, amounts);
+    BOOST_CHECK_MESSAGE(!amounts.count(amount), "the client starts no DFCN-scale queue yet");
+
+    // What the GUI reads: a mixed-only payment may spend the fully mixed DFCN-scale coin, and a DFCN-scale mix shows as a
+    // mixing transaction.
+    {
+        const auto gui_wallet{interfaces::MakeWallet(wallet)};
+        CCoinControl coin_control;
+        coin_control.UseCoinJoin(true);
+        const auto bal{WITH_LOCK(wallet->cs_wallet, return wallet->GetBalance(0, coin_control.m_avoid_address_reuse, false, &coin_control))};
+        BOOST_CHECK_MESSAGE(gui_wallet->getAvailableBalance(coin_control) == bal.m_anonymized + amount,
+                            "a mixed-only payment can spend the fully mixed DFCN-scale coin");
+        BOOST_CHECK_MESSAGE(gui_wallet->getWalletTx(chain.prevout.hash).is_denominate, "a DFCN-scale mix shows as a mixing transaction");
+    }
+
+    // Generated coins: an own DFCN-scale coinbase output counts only once mature, as the old denominated balance holds
+    // generated coins (the salt guards read both).
+    {
+        const auto dfcn_denominated = [&] {
+            CAmount all{-1};
+            wallet->GetBalance(0, true, false, nullptr, nullptr, &all);
+            return all;
+        };
+        const auto tell_wallet = [&] {
+            LOCK2(wallet->cs_wallet, cs_main);
+            wallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+        };
+        const CAmount before{dfcn_denominated()};
+        const CScript miner{GetScriptForRawPubKey(coinbaseKey.GetPubKey())};
+        CBlock block{CreateBlock({}, miner, m_node.chainman->ActiveChainstate())};
+        CMutableTransaction coinbase{*block.vtx[0]};
+        const auto miner_out{std::find_if(coinbase.vout.begin(), coinbase.vout.end(), [&](const CTxOut& out) { return out.scriptPubKey == miner; })};
+        BOOST_REQUIRE(miner_out != coinbase.vout.end() && miner_out->nValue > amount);
+        miner_out->nValue -= amount;
+        coinbase.vout.emplace_back(amount, p2pkh(new_key(true)));
+        block.vtx[0] = MakeTransactionRef(coinbase);
+        block.hashMerkleRoot = BlockMerkleRoot(block);
+        while (!CheckProofOfWork(block.GetHash(), block.nBits, Params().GetConsensus())) ++block.nNonce;
+        BOOST_REQUIRE(Assert(m_node.chainman)->ProcessNewBlock(Params(), std::make_shared<const CBlock>(block), true, nullptr));
+        const int height{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Height())};
+        BOOST_REQUIRE(WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip()->GetBlockHash()) == block.GetHash());
+        wallet->blockConnected(block, height);
+        tell_wallet();
+        BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->GetWalletTx(block.vtx[0]->GetHash()) != nullptr));
+        BOOST_CHECK_MESSAGE(dfcn_denominated() == before, "an immature generated DFCN-scale coin does not count");
+        for (int i = 0; i < COINBASE_MATURITY; ++i) CreateAndProcessBlock({}, miner);
+        tell_wallet();
+        BOOST_CHECK_MESSAGE(dfcn_denominated() == before + amount, "a mature generated DFCN-scale coin counts");
+    }
+
+    // A DFCN-scale output asked about before the wallet knows its transaction (the old code keeps -1 for it) reads its
+    // own count once the wallet learns the transaction.
+    {
+        const In own{mix_once(coin(new_key(true), amount), new_key(true))}; // one round
+        const CKey to{new_key(true)};
+        const CMutableTransaction mtx{make_spend({own, coin(new_key(false), amount)}, {CTxOut(amount, p2pkh(to)), CTxOut(amount, p2pkh(new_key(false)))}, true, acp)};
+        const CTransactionRef preview{MakeTransactionRef(mtx)};
+        const COutPoint later{out_of(preview, p2pkh(to))};
+        BOOST_REQUIRE_EQUAL(rounds(later), -1);
+        mine(mtx);
+        BOOST_CHECK_MESSAGE(rounds(later) == 2, "a DFCN-scale output asked about before its transaction was known reads its count");
+    }
+
+    // The old amounts keep v23.0.0's query order, on which their round cache depends: a zero-fee own spend of 20.0002 to
+    // two 10.0001 coins, the first spent on through eighteen zero-fee old spends. Coin type 2, held to the first spend's
+    // depth, asks the spent coin's rounds before skipping it, as v23.0.0 does, and caches 0, so the chain's end reads 18;
+    // asked first, the end would read 19, the depth guard answering for the first spend's ordinary input.
+    {
+        const In twenty{coin(new_key(true), 2 * old_amount)};
+        const CKey key_a{new_key(true)}, key_b{new_key(true)};
+        const CTransactionRef split{spend({twenty}, {CTxOut(old_amount, p2pkh(key_a)), CTxOut(old_amount, p2pkh(key_b))}, true, SIGHASH_ALL)};
+        In link{out_of(split, p2pkh(key_a)), split, key_a};
+        for (int i = 0; i < 18; ++i) {
+            const CKey next{new_key(true)};
+            const CTransactionRef tx{spend({link}, {CTxOut(old_amount, p2pkh(next))}, true, SIGHASH_ALL)};
+            link = In{out_of(tx, p2pkh(next)), tx, next};
+        }
+        BOOST_REQUIRE_EQUAL(MAX_COINJOIN_ROUNDS + CCoinJoinClientOptions::GetRandomRounds(), 19);
+        {
+            std::vector<COutput> ready;
+            CCoinControl coin_control;
+            coin_control.nCoinType = CoinType::ONLY_READY_TO_MIX;
+            LOCK(wallet->cs_wallet);
+            coin_control.m_min_depth = coin_control.m_max_depth = wallet->GetWalletTx(split->GetHash())->GetDepthInMainChain();
+            wallet->AvailableCoins(ready, &coin_control);
+        }
+        BOOST_CHECK_MESSAGE(rounds(link.prevout) == 18, "the old amounts' round count follows v23.0.0's query order");
+    }
+
+    // Coin types 1 and 2 walk and limit every other coin as v23.0.0 does, and the DFCN-scale coins join after the walk
+    // under the same limits. One transaction, alone at its depth, pays two DFCN-scale coins and then two 10.0001 coins,
+    // in that fixed output order: a count limit of three, or a sum limit one duff above the two old coins, lists both
+    // old coins and the first DFCN-scale coin only (inline, the walk would meet the DFCN-scale coins first; without the
+    // limits after the walk, both DFCN-scale coins would join).
+    {
+        const CKey d1{new_key(true)}, d2{new_key(true)}, o1{new_key(true)}, o2{new_key(true)};
+        const In funds{coin(new_key(true), 2 * amount + 2 * old_amount)};
+        const CTransactionRef four{spend({funds}, {CTxOut(amount, p2pkh(d1)), CTxOut(amount, p2pkh(d2)), CTxOut(old_amount, p2pkh(o1)), CTxOut(old_amount, p2pkh(o2))},
+                                         /*bip69=*/false, SIGHASH_ALL)}; // reverse BIP69: the large amounts first
+        BOOST_REQUIRE(four->vout[0].nValue == amount && four->vout[1].nValue == amount && four->vout[2].nValue == old_amount && four->vout[3].nValue == old_amount);
+        const auto list = [&](CAmount min_sum, uint64_t max_count) {
+            LOCK(wallet->cs_wallet);
+            std::vector<COutput> coins;
+            CCoinControl coin_control;
+            coin_control.nCoinType = CoinType::ONLY_READY_TO_MIX;
+            coin_control.m_min_depth = coin_control.m_max_depth = wallet->GetWalletTx(four->GetHash())->GetDepthInMainChain();
+            wallet->AvailableCoins(coins, &coin_control, 1, MAX_MONEY, min_sum, max_count);
+            std::vector<int> ret;
+            for (const auto& out : coins) {
+                BOOST_REQUIRE(out.tx->GetHash() == four->GetHash());
+                ret.push_back(out.i);
+            }
+            std::sort(ret.begin(), ret.end());
+            return ret;
+        };
+        BOOST_REQUIRE(list(MAX_MONEY, 0) == std::vector<int>({0, 1, 2, 3}));
+        const std::vector<int> expected{0, 2, 3};
+        BOOST_CHECK_MESSAGE(list(MAX_MONEY, 3) == expected, "a count limit meets the old coins first and stops at the first DFCN-scale coin");
+        BOOST_CHECK_MESSAGE(list(2 * old_amount + 1, 0) == expected, "a sum limit meets the old coins first and stops at the first DFCN-scale coin");
+    }
+
+    // The fee ceiling of a mixed-only payment on the multi-coin path (the note's one hundred 10 000.1 coins paying
+    // 1 000 000 DFCN, scaled to the fixture's funds): two fully mixed DFCN-scale coins, each smaller than the payment,
+    // cover all but 0.101 DFCN of it, which without change would be the fee. Refused at the default ceiling of 0.1 DFCN;
+    // with the ceiling raised, the same payment takes two DFCN-scale coins and leaves exactly that fee.
+    {
+        In second{coin(new_key(true), amount)};
+        for (int r = 1; r <= 4; ++r) second = mix_once(second, new_key(true));
+        BOOST_REQUIRE(WITH_LOCK(wallet->cs_wallet, return wallet->IsFullyMixed(second.prevout)));
+        BOOST_REQUIRE_EQUAL(wallet->m_default_max_tx_fee, COIN / 10);
+        const CAmount target{2 * amount - 10100000};
+        const auto pay = [&](CTransactionRef& tx, CAmount& fee) {
+            std::vector<CRecipient> recipients{{p2pkh(new_key(false)), target, false}};
+            int change_pos{-1};
+            bilingual_str error;
+            CCoinControl coin_control;
+            coin_control.UseCoinJoin(true);
+            coin_control.m_feerate = CFeeRate(1000);
+            FeeCalculation fee_calc;
+            return wallet->CreateTransaction(recipients, tx, fee, change_pos, error, coin_control, fee_calc);
+        };
+        CTransactionRef tx;
+        CAmount fee{0};
+        BOOST_CHECK_MESSAGE(!pay(tx, fee), "a mixed-only payment above the fee ceiling is refused");
+        wallet->m_default_max_tx_fee = COIN;
+        const bool paid{pay(tx, fee)};
+        wallet->m_default_max_tx_fee = COIN / 10;
+        BOOST_REQUIRE_MESSAGE(paid, "the same payment under a raised ceiling");
+        BOOST_CHECK_EQUAL(tx->vin.size(), 2U);
+        BOOST_CHECK_EQUAL(tx->vout.size(), 1U);
+        BOOST_CHECK_EQUAL(fee, 10100000);
+        LOCK(wallet->cs_wallet);
+        for (const auto& in : tx->vin) {
+            BOOST_CHECK(wallet->GetWalletTx(in.prevout.hash)->tx->vout[in.prevout.n].nValue == amount && wallet->IsFullyMixed(in.prevout));
+        }
+    }
+
+    // With CoinJoin disabled the DFCN-scale sums are zero, as GetBalance's mixing fields are (the salt guards read both).
+    CCoinJoinClientOptions::SetEnabled(false);
+    {
+        CAmount dfcn_mixed{-1}, dfcn_all{-1};
+        wallet->GetBalance(0, true, false, nullptr, &dfcn_mixed, &dfcn_all);
+        BOOST_CHECK_MESSAGE(dfcn_mixed == 0 && dfcn_all == 0, "with CoinJoin disabled the balance has no DFCN-scale coins");
+    }
 }
 
 BOOST_FIXTURE_TEST_CASE(CTransactionBuilderTest, CTransactionBuilderTestSetup)

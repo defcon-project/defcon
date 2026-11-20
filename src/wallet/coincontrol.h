@@ -68,6 +68,9 @@ public:
     int m_max_depth = DEFAULT_MAX_DEPTH;
     //! Controls which types of coins are allowed to be used (default: ALL_COINS)
     CoinType nCoinType = CoinType::ALL_COINS;
+    //! With ONLY_FULLY_MIXED or ONLY_READY_TO_MIX: the five denominations of v23.0.0 only, as the mixing client's
+    //! selectors ask (CJ4); otherwise those coin types take all eight
+    bool m_old_denominations_only = false;
 
     CCoinControl(CoinType coin_type = CoinType::ALL_COINS);
 

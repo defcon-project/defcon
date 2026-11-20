@@ -2905,7 +2905,8 @@ static RPCHelpMan getbalances()
 
     LOCK(wallet.cs_wallet);
 
-    const auto bal = wallet.GetBalance();
+    CAmount dfcn_scale_anonymized{0}; // CJ4: the fully mixed DFCN-scale coins, shown with the mixed balance
+    const auto bal = wallet.GetBalance(0, true, false, nullptr, &dfcn_scale_anonymized);
     UniValue balances{UniValue::VOBJ};
     {
         UniValue balances_mine{UniValue::VOBJ};
@@ -2918,7 +2919,8 @@ static RPCHelpMan getbalances()
             const auto full_bal = wallet.GetBalance(0, false);
             balances_mine.pushKV("used", ValueFromAmount(full_bal.m_mine_trusted + full_bal.m_mine_untrusted_pending - bal.m_mine_trusted - bal.m_mine_untrusted_pending));
         }
-        balances_mine.pushKV("coinjoin", ValueFromAmount(bal.m_anonymized));
+        // Mixed coins of all eight amounts (CJ4); the mixing target counts only the five of v23.0.0.
+        balances_mine.pushKV("coinjoin", ValueFromAmount(bal.m_anonymized + dfcn_scale_anonymized));
         balances.pushKV("mine", balances_mine);
     }
     auto spk_man = wallet.GetLegacyScriptPubKeyMan();
@@ -2999,13 +3001,14 @@ static RPCHelpMan getwalletinfo()
     bool fHDEnabled = spk_man && spk_man->GetHDChain(hdChainCurrent);
     UniValue obj(UniValue::VOBJ);
 
-    const auto bal = pwallet->GetBalance();
+    CAmount dfcn_scale_anonymized{0}; // CJ4: the fully mixed DFCN-scale coins, shown with the mixed balance
+    const auto bal = pwallet->GetBalance(0, true, false, nullptr, &dfcn_scale_anonymized);
     int64_t kp_oldest = pwallet->GetOldestKeyPoolTime();
     obj.pushKV("walletname", pwallet->GetName());
     obj.pushKV("walletversion", pwallet->GetVersion());
     obj.pushKV("format", pwallet->GetDatabase().Format());
     obj.pushKV("balance", ValueFromAmount(bal.m_mine_trusted));
-    obj.pushKV("coinjoin_balance",       ValueFromAmount(bal.m_anonymized));
+    obj.pushKV("coinjoin_balance",       ValueFromAmount(bal.m_anonymized + dfcn_scale_anonymized));
     obj.pushKV("unconfirmed_balance", ValueFromAmount(bal.m_mine_untrusted_pending));
     obj.pushKV("immature_balance", ValueFromAmount(bal.m_mine_immature));
     obj.pushKV("txcount",       (int)pwallet->mapWallet.size());
@@ -3583,7 +3586,10 @@ static RPCHelpMan listunspent()
                     {"minimumSumAmount", RPCArg::Type::AMOUNT, RPCArg::DefaultHint{"unlimited"}, "Minimum sum value of all UTXOs in " + CURRENCY_UNIT + ""},
                     {"coinType", RPCArg::Type::NUM, RPCArg::Default{0}, "Filter coinTypes as follows:\n"
                         "0=ALL_COINS, 1=ONLY_FULLY_MIXED, 2=ONLY_READY_TO_MIX, 3=ONLY_NONDENOMINATED,\n"
-                        "4=ONLY_MASTERNODE_COLLATERAL, 5=ONLY_COINJOIN_COLLATERAL" },
+                        "4=ONLY_MASTERNODE_COLLATERAL, 5=ONLY_COINJOIN_COLLATERAL\n"
+                        "1 and 2 also list the DFCN-scale amounts (100.001, 1000.01, 10000.1) by their rounds, and 3 leaves them out;\n"
+                        "the client mixes those amounts only from 576 blocks after the v23.1 activation height, and an\n"
+                        "exact-amount P2PK output listed there is not a mixing candidate." },
                 },
                 "query_options"},
         },

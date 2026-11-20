@@ -44,6 +44,7 @@
 #include <wallet/fees.h>
 #include <warnings.h>
 
+#include <coinjoin/coinjoin.h>
 #include <coinjoin/common.h>
 #include <coinjoin/options.h>
 #include <evo/providertx.h>
@@ -1542,6 +1543,99 @@ CAmount CWallet::GetDebit(const CTxIn &txin, const isminefilter& filter) const
     return 0;
 }
 
+namespace {
+/** A DFCN-scale denomination (bits 5-7, CJ4), which the wallet counts apart from the five amounts of v23.0.0. */
+bool IsDfcnScaleAmount(CAmount amount)
+{
+    return CoinJoin::IsDfcnScaleDenomination(CoinJoin::AmountToDenomination(amount));
+}
+
+/** Whether a P2PKH input's scriptSig has the mixing client's shape, <signature> <public key> and nothing else, with a
+ *  signature that commits with SIGHASH_ALL | SIGHASH_ANYONECANPAY. Only in that shape is the first push the signature
+ *  OP_CHECKSIG reads: a valid spend may carry more pushes before it. */
+bool SignedAllAnyoneCanPay(const CScript& script_sig)
+{
+    std::vector<std::vector<unsigned char>> pushes;
+    CScript::const_iterator pc{script_sig.begin()};
+    opcodetype opcode;
+    std::vector<unsigned char> data;
+    while (pc < script_sig.end()) {
+        if (!script_sig.GetOp(pc, opcode, data) || opcode > OP_PUSHDATA4) return false;
+        pushes.push_back(data);
+    }
+    return pushes.size() == 2 && !pushes[0].empty() && pushes[0].back() == (SIGHASH_ALL | SIGHASH_ANYONECANPAY);
+}
+
+/** Whether `wtx` is a real mix of `amount` for this wallet (CJ4-B note § 5): as many inputs as outputs, their count a
+ *  pool's; every output of this amount, P2PKH, the scripts pairwise different and none an own input's previous script;
+ *  inputs and outputs in BIP69 order; at least one own input, each spending an own P2PKH output of this amount and
+ *  signed SIGHASH_ALL | SIGHASH_ANYONECANPAY; own debit equal to own credit, summed from the transaction itself. */
+bool IsRealDfcnScaleMix(const CWallet& wallet, const CWalletTx& wtx, CAmount amount) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
+{
+    const CTransaction& tx{*wtx.tx};
+    const size_t count{tx.vin.size()};
+    // The pool's bounds from the chain parameters, as CoinJoin::GetMinPoolParticipants() and
+    // GetMaxPoolInputOutputCount() read them (in a library the wallet tool does not link).
+    if (count != tx.vout.size() || count < size_t(Params().PoolMinParticipants()) ||
+        count > size_t(Params().PoolMaxParticipants()) * COINJOIN_ENTRY_MAX_SIZE) {
+        return false;
+    }
+    if (!std::is_sorted(tx.vin.begin(), tx.vin.end(), CompareInputBIP69()) ||
+        !std::is_sorted(tx.vout.begin(), tx.vout.end(), CompareOutputBIP69())) {
+        return false;
+    }
+    std::set<CScript> scripts;
+    for (const auto& out : tx.vout) {
+        if (out.nValue != amount || !out.scriptPubKey.IsPayToPublicKeyHash() || !scripts.insert(out.scriptPubKey).second) {
+            return false;
+        }
+    }
+    CAmount debit{0};
+    bool own_input{false};
+    for (const auto& in : tx.vin) {
+        const CWalletTx* prev{wallet.GetWalletTx(in.prevout.hash)};
+        if (prev == nullptr || in.prevout.n >= prev->tx->vout.size()) continue;
+        const CTxOut& prev_out{prev->tx->vout[in.prevout.n]};
+        if (!(wallet.IsMine(prev_out) & ISMINE_SPENDABLE)) continue;
+        own_input = true;
+        if (prev_out.nValue != amount || !prev_out.scriptPubKey.IsPayToPublicKeyHash() ||
+            scripts.count(prev_out.scriptPubKey) || !SignedAllAnyoneCanPay(in.scriptSig)) {
+            return false;
+        }
+        debit += prev_out.nValue;
+    }
+    if (!own_input) return false;
+    CAmount credit{0};
+    for (const auto& out : tx.vout) {
+        if (wallet.IsMine(out) & ISMINE_SPENDABLE) credit += out.nValue;
+    }
+    return debit == credit;
+}
+
+/** min(rounds, budget) of a DFCN-scale output: 0 unless its transaction is a real mix of its amount, else the fewest
+ *  rounds among its own inputs plus one. Exact and never cached across queries: `memo` holds (outpoint, budget) for
+ *  this one query only. */
+int DfcnScaleRounds(const CWallet& wallet, const COutPoint& outpoint, int budget,
+                    std::map<std::pair<COutPoint, int>, int>& memo) EXCLUSIVE_LOCKS_REQUIRED(wallet.cs_wallet)
+{
+    if (budget <= 0) return 0;
+    if (const auto it{memo.find({outpoint, budget})}; it != memo.end()) return it->second;
+    int rounds{0};
+    const CWalletTx* wtx{wallet.GetWalletTx(outpoint.hash)};
+    if (wtx != nullptr && wtx->tx != nullptr && outpoint.n < wtx->tx->vout.size() &&
+        IsRealDfcnScaleMix(wallet, *wtx, wtx->tx->vout[outpoint.n].nValue)) {
+        int shortest{budget - 1};
+        for (const auto& in : wtx->tx->vin) {
+            if (!(wallet.IsMine(in) & ISMINE_SPENDABLE)) continue;
+            shortest = std::min(shortest, DfcnScaleRounds(wallet, in.prevout, budget - 1, memo));
+        }
+        rounds = shortest + 1;
+    }
+    memo.emplace(std::make_pair(outpoint, budget), rounds);
+    return rounds;
+}
+} // namespace
+
 // Recursively determine the rounds of a given input (How deep is the CoinJoin chain for a given input)
 int CWallet::GetRealOutpointCoinJoinRounds(const COutPoint& outpoint, int nRounds) const
 {
@@ -1554,15 +1648,33 @@ int CWallet::GetRealOutpointCoinJoinRounds(const COutPoint& outpoint, int nRound
         return nRoundsMax - 1;
     }
 
-    auto pair = mapOutpointRoundsCache.emplace(outpoint, -10);
-    auto nRoundsRef = &pair.first->second;
-    if (!pair.second) {
+    // CJ4: one search finds the cached answer or the place for a new one. The cache holds only what the code below found
+    // for an output that is not DFCN-scale, or -1 for an output of a transaction the wallet did not know then, which may
+    // be DFCN-scale now; any other cached answer is returned as is.
+    const auto cached = mapOutpointRoundsCache.lower_bound(outpoint);
+    const bool fCached{cached != mapOutpointRoundsCache.end() && cached->first == outpoint};
+    if (fCached && cached->second != -1) {
         // we already processed it, just return what we have
-        return *nRoundsRef;
+        return cached->second;
     }
 
     // TODO wtx should refer to a CWalletTx object, not a pointer, based on surrounding code
     const CWalletTx* wtx = GetWalletTx(outpoint.hash);
+
+    // CJ4: an output of a DFCN-scale amount is counted by its own branch, exact and never cached, also when the wallet
+    // learns its transaction after an earlier query; as the parent of an old-amount coin it is no denomination, as in
+    // v23.0.0, and that answer is not cached either.
+    if (wtx != nullptr && wtx->tx != nullptr && outpoint.n < wtx->tx->vout.size() && IsDfcnScaleAmount(wtx->tx->vout[outpoint.n].nValue)) {
+        if (nRounds > 0) return -2;
+        std::map<std::pair<COutPoint, int>, int> memo;
+        return DfcnScaleRounds(*this, outpoint, nRoundsMax, memo);
+    }
+    if (fCached) {
+        // the -1 of a transaction the wallet did not know then, returned as v23.0.0 returns it
+        return cached->second;
+    }
+
+    auto nRoundsRef = &mapOutpointRoundsCache.emplace_hint(cached, outpoint, -10)->second;
 
     if (wtx == nullptr || wtx->tx == nullptr) {
         // no such tx in this wallet
@@ -1660,7 +1772,8 @@ bool CWallet::IsDenominated(const COutPoint& outpoint) const
         return false;
     }
 
-    return CoinJoin::IsDenominatedAmount(it->second.tx->vout[outpoint.n].nValue);
+    // Any of the eight amounts (CJ4): the wallet recognises a DFCN-scale coin from the binary's start.
+    return CoinJoin::IsKnownDenominationAmount(it->second.tx->vout[outpoint.n].nValue);
 }
 
 bool CWallet::IsFullyMixed(const COutPoint& outpoint) const
@@ -2468,6 +2581,9 @@ CAmount CWalletTx::GetAnonymizedCredit(const CCoinControl* coinControl) const
     if (IsCoinBase() || GetDepthInMainChain() < 0)
         return 0;
 
+    // CJ4: the cache is never written for a transaction with a DFCN-scale output (below), so it is never read for one
+    // either, and a later change in what the wallet knows of its history is never hidden behind a cached answer
+    // (CJ4-B note § 5).
     if (coinControl == nullptr && m_amounts[ANON_CREDIT].m_cached[ISMINE_SPENDABLE])
         return m_amounts[ANON_CREDIT].m_value[ISMINE_SPENDABLE];
 
@@ -2491,10 +2607,46 @@ CAmount CWalletTx::GetAnonymizedCredit(const CCoinControl* coinControl) const
         }
     }
 
-    if (coinControl == nullptr) {
+    if (coinControl == nullptr && !HasDfcnScaleOutput()) {
         m_amounts[ANON_CREDIT].Set(ISMINE_SPENDABLE, nCredit);
     }
 
+    return nCredit;
+}
+
+bool CWalletTx::HasDfcnScaleOutput() const
+{
+    if (!m_dfcn_scale_output) {
+        m_dfcn_scale_output = std::any_of(tx->vout.begin(), tx->vout.end(), [](const CTxOut& out) { return IsDfcnScaleAmount(out.nValue); });
+    }
+    return *m_dfcn_scale_output;
+}
+
+CAmount CWalletTx::GetDfcnScaleCredit(bool fFullyMixedOnly, const CCoinControl* coinControl) const
+{
+    if (!pwallet || !HasDfcnScaleOutput())
+        return 0;
+
+    AssertLockHeld(pwallet->cs_wallet);
+
+    // Generated coins count once mature (a coinstake too), as GetDenominatedCredit holds them; conflicted txes never
+    if (GetBlocksToMaturity() > 0 || GetDepthInMainChain() < 0)
+        return 0;
+
+    CAmount nCredit = 0;
+    const uint256 hashTx = GetHash();
+    for (unsigned int i = 0; i < tx->vout.size(); i++) {
+        const CTxOut& txout = tx->vout[i];
+        // The amount and the key first: the rest is work only for an own DFCN-scale output
+        if (!IsDfcnScaleAmount(txout.nValue) || !(pwallet->IsMine(txout) & ISMINE_SPENDABLE)) continue;
+        const COutPoint outpoint(hashTx, i);
+        if (coinControl != nullptr && coinControl->HasSelected() && !coinControl->IsSelected(outpoint)) continue;
+        if (pwallet->IsSpent(hashTx, i)) continue;
+        if (fFullyMixedOnly && !pwallet->IsFullyMixed(outpoint)) continue;
+        nCredit += txout.nValue;
+        if (!MoneyRange(nCredit))
+            throw std::runtime_error(std::string(__func__) + ": value out of range");
+    }
     return nCredit;
 }
 
@@ -2693,10 +2845,14 @@ std::unordered_set<const CWalletTx*, WalletTxHasher> CWallet::GetSpendableTXs() 
     return ret;
 }
 
-CWallet::Balance CWallet::GetBalance(const int min_depth, const bool avoid_reuse, const bool fAddLocked, const CCoinControl* coinControl) const
+CWallet::Balance CWallet::GetBalance(const int min_depth, const bool avoid_reuse, const bool fAddLocked, const CCoinControl* coinControl,
+                                     CAmount* dfcn_scale_anonymized, CAmount* dfcn_scale_denominated) const
 {
     Balance ret;
     isminefilter reuse_filter = avoid_reuse ? ISMINE_NO : ISMINE_USED;
+    if (dfcn_scale_anonymized) *dfcn_scale_anonymized = 0;
+    if (dfcn_scale_denominated) *dfcn_scale_denominated = 0;
+    const bool fDfcnScale{dfcn_scale_anonymized != nullptr || dfcn_scale_denominated != nullptr};
     {
         LOCK(cs_wallet);
         std::set<uint256> trusted_parents;
@@ -2719,6 +2875,10 @@ CWallet::Balance CWallet::GetBalance(const int min_depth, const bool avoid_reuse
                 ret.m_anonymized += pcoin->GetAnonymizedCredit(coinControl);
                 ret.m_denominated_trusted += pcoin->GetDenominatedCredit(false);
                 ret.m_denominated_untrusted_pending += pcoin->GetDenominatedCredit(true);
+                if (fDfcnScale && pcoin->HasDfcnScaleOutput()) { // CJ4: only for a caller that asks
+                    if (dfcn_scale_anonymized) *dfcn_scale_anonymized += pcoin->GetDfcnScaleCredit(/*fFullyMixedOnly=*/true, coinControl);
+                    if (dfcn_scale_denominated) *dfcn_scale_denominated += pcoin->GetDfcnScaleCredit(/*fFullyMixedOnly=*/false);
+                }
             }
         }
     }
@@ -2758,7 +2918,10 @@ float CWallet::GetAverageAnonymizedRounds() const
 
     LOCK(cs_wallet);
     for (const auto& outpoint : setWalletUTXO) {
-        if(!IsDenominated(outpoint)) continue;
+        // The five amounts of v23.0.0, as the mixing target counts them (CJ4-B note § 1.4).
+        const auto it = mapWallet.find(outpoint.hash);
+        if (it == mapWallet.end() || outpoint.n >= it->second.tx->vout.size() ||
+            !CoinJoin::IsDenominatedAmount(it->second.tx->vout[outpoint.n].nValue)) continue;
 
         nTotal += GetCappedOutpointCoinJoinRounds(outpoint);
         nCount++;
@@ -2824,6 +2987,7 @@ void CWallet::AvailableCoins(std::vector<COutput> &vCoins, const CCoinControl* c
     const bool only_safe = {coinControl ? !coinControl->m_include_unsafe_inputs : true};
 
     std::set<uint256> trusted_parents;
+    std::vector<COutput> dfcn_scale_coins; // CJ4: see after the walk
     for (auto pcoin : GetSpendableTXs()) {
         const uint256& wtxid = pcoin->GetHash();
 
@@ -2852,21 +3016,37 @@ void CWallet::AvailableCoins(std::vector<COutput> &vCoins, const CCoinControl* c
 
         for (unsigned int i = 0; i < pcoin->tx->vout.size(); i++) {
             bool found = false;
+            // Coin types 1 and 2 ask a DFCN-scale coin whether it is fully mixed below, once it is an own unspent coin (CJ4:
+            // its rounds walk its history uncached). The five amounts are asked here, as in v23.0.0, whose round cache
+            // depends on the order of its queries.
+            std::optional<bool> fully_mixed_wanted;
+            const bool old_denominations_only{coinControl && coinControl->m_old_denominations_only};
             switch (nCoinType) {
+                // The three by any of the eight amounts (CJ4): a "mixed only" payment spends a fully mixed DFCN-scale
+                // coin, and listunspent's filters list such coins by their rounds from the binary's start (coinType=3
+                // leaves them out). The mixing client's selectors ask for the five only.
                 case CoinType::ONLY_FULLY_MIXED: {
-                    found = CoinJoin::IsDenominatedAmount(pcoin->tx->vout[i].nValue) &&
-                            IsFullyMixed(COutPoint(wtxid, i));
+                    if (CoinJoin::IsDenominatedAmount(pcoin->tx->vout[i].nValue)) {
+                        found = IsFullyMixed(COutPoint(wtxid, i));
+                    } else {
+                        found = !old_denominations_only && CoinJoin::IsKnownDenominationAmount(pcoin->tx->vout[i].nValue);
+                        fully_mixed_wanted = true;
+                    }
                     break;
                 }
                 case CoinType::ONLY_READY_TO_MIX: {
-                    found = CoinJoin::IsDenominatedAmount(pcoin->tx->vout[i].nValue) &&
-                            !IsFullyMixed(COutPoint(wtxid, i));
+                    if (CoinJoin::IsDenominatedAmount(pcoin->tx->vout[i].nValue)) {
+                        found = !IsFullyMixed(COutPoint(wtxid, i));
+                    } else {
+                        found = !old_denominations_only && CoinJoin::IsKnownDenominationAmount(pcoin->tx->vout[i].nValue);
+                        fully_mixed_wanted = false;
+                    }
                     break;
                 }
                 case CoinType::ONLY_NONDENOMINATED: {
                     // NOTE: do not use collateral amounts
                     found = !CoinJoin::IsCollateralAmount(pcoin->tx->vout[i].nValue) &&
-                            !CoinJoin::IsDenominatedAmount(pcoin->tx->vout[i].nValue);
+                            !CoinJoin::IsKnownDenominationAmount(pcoin->tx->vout[i].nValue);
                     break;
                 }
                 case CoinType::ONLY_MASTERNODE_COLLATERAL: {
@@ -2907,6 +3087,10 @@ void CWallet::AvailableCoins(std::vector<COutput> &vCoins, const CCoinControl* c
                 continue;
             }
 
+            if (fully_mixed_wanted && IsFullyMixed(COutPoint(wtxid, i)) != *fully_mixed_wanted) {
+                continue;
+            }
+
             if (!allow_used_addresses && IsSpentKey(wtxid, i)) {
                 continue;
             }
@@ -2915,6 +3099,12 @@ void CWallet::AvailableCoins(std::vector<COutput> &vCoins, const CCoinControl* c
 
             bool solvable = provider ? IsSolvable(*provider, pcoin->tx->vout[i].scriptPubKey) : false;
             bool spendable = ((mine & ISMINE_SPENDABLE) != ISMINE_NO) || (((mine & ISMINE_WATCH_ONLY) != ISMINE_NO) && (coinControl && coinControl->fAllowWatchOnly && solvable));
+
+            if (fully_mixed_wanted) {
+                // CJ4: a DFCN-scale coin joins the list after the walk, below
+                dfcn_scale_coins.push_back(COutput(pcoin, i, nDepth, spendable, solvable, safeTx, (coinControl && coinControl->fAllowWatchOnly)));
+                continue;
+            }
 
             vCoins.push_back(COutput(pcoin, i, nDepth, spendable, solvable, safeTx, (coinControl && coinControl->fAllowWatchOnly)));
 
@@ -2932,6 +3122,18 @@ void CWallet::AvailableCoins(std::vector<COutput> &vCoins, const CCoinControl* c
                 return;
             }
         }
+    }
+
+    // CJ4: the DFCN-scale coins of coin types 1 and 2 come after the walk, under the same limits, so the walk asks and
+    // limits every other coin exactly as v23.0.0 does (its round cache depends on the order of its queries).
+    for (auto& out : dfcn_scale_coins) {
+        const CAmount value{out.tx->tx->vout[out.i].nValue};
+        vCoins.push_back(std::move(out));
+        if (nMinimumSumAmount != MAX_MONEY) {
+            nTotal += value;
+            if (nTotal >= nMinimumSumAmount) return;
+        }
+        if (nMaximumCount > 0 && vCoins.size() >= nMaximumCount) return;
     }
 }
 
@@ -3504,6 +3706,7 @@ bool CWallet::SelectTxDSInsByDenomination(int nDenom, CAmount nValueMax, std::ve
 
     CCoinControl coin_control;
     coin_control.nCoinType = CoinType::ONLY_READY_TO_MIX;
+    coin_control.m_old_denominations_only = true; // the five amounts of v23.0.0, as B1a lists them (CJ4)
     AvailableCoins(vCoins, &coin_control);
     WalletCJLogPrint(this, "CWallet::%s -- vCoins.size(): %d\n", __func__, vCoins.size());
 
@@ -3663,8 +3866,9 @@ std::vector<CompactTallyItem> CWallet::SelectCoinsGroupedByAddresses(bool fSkipD
                 // ignore outputs that are 10 times smaller then the smallest denomination
                 // otherwise they will just lead to higher fee / lower priority
                 if(wtx.tx->vout[i].nValue <= nSmallestDenom/10) continue;
-                // ignore mixed
-                if (IsFullyMixed(COutPoint(outpoint.hash, i))) continue;
+                // ignore mixed: coins of the five amounts of v23.0.0 only, which alone could be fully mixed there; a
+                // DFCN-scale coin stays funds here as in v23.0.0, whatever its rounds (CJ4-B2b leaves the candidates out)
+                if (CoinJoin::IsDenominatedAmount(wtx.tx->vout[i].nValue) && IsFullyMixed(COutPoint(outpoint.hash, i))) continue;
             }
 
             if (itTallyItem == mapTally.end()) {
@@ -3720,6 +3924,8 @@ bool CWallet::SelectDenominatedAmounts(CAmount nValueMax, std::set<CAmount>& set
     std::vector<COutput> vCoins;
     CCoinControl coin_control;
     coin_control.nCoinType = CoinType::ONLY_READY_TO_MIX;
+    // The five amounts of v23.0.0 only (CJ4): the client does not start a queue of a DFCN-scale bit (CJ4-B2b adds it).
+    coin_control.m_old_denominations_only = true;
     AvailableCoins(vCoins, &coin_control);
     // larger denoms first
     std::sort(vCoins.rbegin(), vCoins.rend(), CompareByPriority());

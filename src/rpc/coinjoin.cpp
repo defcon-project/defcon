@@ -243,10 +243,12 @@ static RPCHelpMan coinjoinsalt_generate()
         });
     }
 
-    const auto wallet_balance{wallet->GetBalance()};
+    CAmount dfcn_scale_denominated{0}; // CJ4: the DFCN-scale coins too, in the same walk
+    const auto wallet_balance{wallet->GetBalance(0, true, false, nullptr, nullptr, &dfcn_scale_denominated)};
     const bool has_balance{(wallet_balance.m_anonymized
                           + wallet_balance.m_denominated_trusted
-                          + wallet_balance.m_denominated_untrusted_pending) > 0};
+                          + wallet_balance.m_denominated_untrusted_pending
+                          + dfcn_scale_denominated) > 0};
     if (!enable_overwrite && has_balance) {
         throw JSONRPCError(RPC_WALLET_ERROR,
                            strprintf("Wallet \"%s\" has CoinJoin balance, cannot continue!", str_wallet));
@@ -346,10 +348,12 @@ static RPCHelpMan coinjoinsalt_set()
         });
     }
 
-    const auto wallet_balance{wallet->GetBalance()};
+    CAmount dfcn_scale_denominated{0}; // CJ4: the DFCN-scale coins too, in the same walk
+    const auto wallet_balance{wallet->GetBalance(0, true, false, nullptr, nullptr, &dfcn_scale_denominated)};
     const bool has_balance{(wallet_balance.m_anonymized
                           + wallet_balance.m_denominated_trusted
-                          + wallet_balance.m_denominated_untrusted_pending) > 0};
+                          + wallet_balance.m_denominated_untrusted_pending
+                          + dfcn_scale_denominated) > 0};
     if (has_balance && !enable_overwrite) {
         throw JSONRPCError(RPC_WALLET_ERROR,
                            strprintf("Wallet \"%s\" has CoinJoin balance, cannot continue!", str_wallet));
