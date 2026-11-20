@@ -32,6 +32,7 @@
 #include <wallet/walletutil.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <map>
 #include <memory>
@@ -1130,6 +1131,10 @@ public:
     // Coin selection
     bool SelectTxDSInsByDenomination(int nDenom, CAmount nValueMax, std::vector<CTxDSIn>& vecTxDSInRet);
     bool SelectDenominatedAmounts(CAmount nValueMax, std::set<CAmount>& setAmountsRet) const;
+    /** The DFCN-scale mixing work (CJ4-B2b): for bits 5, 6 and 7, the sum of the wallet's coins of that amount that are
+     *  not fully mixed and are durable mixing candidates (P2PKH, own key, spendable, not locked, an input the node takes
+     *  now). No cut: a session's budget is cut where it chooses its queue and at the ready step. */
+    std::array<CAmount, 3> GetDfcnScaleMixingWork() const;
 
     std::vector<CompactTallyItem> SelectCoinsGroupedByAddresses(bool fSkipDenominated = true, bool fAnonymizable = true, bool fSkipUnconfirmed = true, int nMaxOupointsPerAddress = -1) const;
 

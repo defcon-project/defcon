@@ -11,6 +11,7 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <util/ranges.h>
 
@@ -155,6 +156,30 @@ constexpr bool DfcnScaleSessionsOpenAt(int activation_height, int tip_height)
 {
     if (activation_height == std::numeric_limits<int>::max()) return false;
     return int64_t{tip_height} + 1 >= int64_t{activation_height};
+}
+
+/** Blocks from H to U, the height from which the mixing client may mix the DFCN-scale amounts (CJ4-B): the masternodes
+ *  open these bits from H, so the clients start only once the masternodes have had time to upgrade. */
+static constexpr int DFCN_SCALE_MIXING_DELAY{576};
+
+/** U, in 64 bits: H + DFCN_SCALE_MIXING_DELAY, or regtest's override (cj4use); none while H is unset, nor when the
+ *  override is the largest int, which stands for never as for every activation argument. */
+constexpr std::optional<int64_t> DfcnScaleMixingHeight(int activation_height, std::optional<int> override_height)
+{
+    if (activation_height == std::numeric_limits<int>::max()) return std::nullopt;
+    if (override_height) {
+        if (*override_height == std::numeric_limits<int>::max()) return std::nullopt;
+        return int64_t{*override_height};
+    }
+    return int64_t{activation_height} + DFCN_SCALE_MIXING_DELAY;
+}
+
+/** Whether the mixing client whose tip is at `tip_height` may run a DFCN-scale attempt: from U, counted by the height
+ *  of the next block as DfcnScaleSessionsOpenAt counts H. */
+constexpr bool DfcnScaleMixingOpenAt(int activation_height, std::optional<int> override_height, int tip_height)
+{
+    const std::optional<int64_t> mixing_height{DfcnScaleMixingHeight(activation_height, override_height)};
+    return mixing_height.has_value() && int64_t{tip_height} + 1 >= *mixing_height;
 }
 
 /*
