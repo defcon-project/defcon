@@ -14,6 +14,7 @@
         <file alias="ru">locale/dash_ru.qm</file>
         <file alias="tr">locale/dash_tr.qm</file>
         <file alias="uk">locale/dash_uk.qm</file>
+        <file alias="vi">locale/dash_vi.qm</file>
         <file alias="zh_CN">locale/dash_zh_CN.qm</file>
         <file alias="zh_TW">locale/dash_zh_TW.qm</file>
     </qresource>
