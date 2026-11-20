@@ -52,6 +52,31 @@ namespace llmq {
 void StoreInstantSendLockForTest(CInstantSendManager& manager, const CInstantSendLock& islock);
 } // namespace llmq
 
+// The client session's test seams (friends of CCoinJoinClientSession): the ready step's selection and the whole ready
+// step with a given session budget, and one dry PrepareDenominate over a range of round counts.
+bool SelectDenominateForTest(CCoinJoinClientSession& session, CAmount nBudget, std::vector<CTxDSIn>& vecTxDSInRet)
+{
+    session.m_session_budget = nBudget;
+    LOCK(session.m_wallet->cs_wallet);
+    std::string strError;
+    return session.SelectDenominate(strError, vecTxDSInRet);
+}
+
+bool SubmitDenominateForTest(CCoinJoinClientSession& session, CAmount nBudget, CConnman& connman)
+{
+    session.m_session_budget = nBudget;
+    return session.SubmitDenominate(connman);
+}
+
+bool PrepareDenominateForTest(CCoinJoinClientSession& session, int nMinRounds, int nMaxRounds,
+                              const std::vector<CTxDSIn>& vecTxDSIn,
+                              std::vector<std::pair<CTxDSIn, CTxOut>>& vecPSInOutPairsRet)
+{
+    LOCK(session.m_wallet->cs_wallet);
+    std::string strError;
+    return session.PrepareDenominate(nMinRounds, nMaxRounds, strError, vecTxDSIn, vecPSInOutPairsRet, /*fDryRun=*/true);
+}
+
 BOOST_FIXTURE_TEST_SUITE(coinjoin_tests, BasicTestingSetup)
 
 BOOST_FIXTURE_TEST_CASE(coinjoin_options_tests, TestingSetup)
@@ -827,6 +852,94 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_selectors_take_only_mixing_candidates, CTransac
     BOOST_REQUIRE(ReadyToMix(*wallet).count(late));
     BOOST_CHECK_MESSAGE(inputs(*wallet, MAX_MONEY) == std::vector<COutPoint>{b},
                         "a coin the node holds unconfirmed and unlocked is not a candidate");
+}
+
+// CJ4-B1b: the ready step takes no more than the budget its session joined or started the queue with (at most what one
+// session of its bit mixes, GetMaxPoolAmount(nDenom)), refuses a session without one, and an entry names a script once
+// also when a range of round counts meets one script twice. A session of the fixture's wallet without a masternode:
+// SendDenominate stops at the empty collateral after PrepareDenominate has locked the entry's inputs, so the wallet's
+// locked coins show what the ready step took.
+BOOST_FIXTURE_TEST_CASE(coinjoin_ready_step_keeps_session_budget, CTransactionBuilderTestSetup)
+{
+    // The process-wide CoinJoin switch is put back however the case ends.
+    struct RestoreEnabled {
+        const bool before{CCoinJoinClientOptions::IsEnabled()};
+        ~RestoreEnabled() { CCoinJoinClientOptions::SetEnabled(before); }
+    } restore_enabled;
+    CCoinJoinClientOptions::SetEnabled(true);
+    const int bit{1 << 0};
+    const CAmount amount{CoinJoin::DenominationToAmount(bit)}; // 10.0001
+
+    // One session's most: v23.0.0's 90.0009 DFCN for the five old bits, nine coins of the amount for a DFCN-scale bit.
+    for (int b = 0; b < 5; ++b) BOOST_CHECK_EQUAL(CoinJoin::GetMaxPoolAmount(1 << b), CoinJoin::GetMaxPoolAmount());
+    for (int b = 5; b < 8; ++b) {
+        BOOST_CHECK_EQUAL(CoinJoin::GetMaxPoolAmount(1 << b), 9 * CoinJoin::DenominationToAmount(1 << b));
+    }
+
+    // Twelve confirmed round-0 coins of 10.0001, each to a script of its own.
+    std::map<COutPoint, CScript> coins;
+    for (int i = 0; i < 12; ++i) {
+        CKey key;
+        key.MakeNewKey(true);
+        {
+            LOCK(wallet->cs_wallet);
+            BOOST_REQUIRE(wallet->GetLegacyScriptPubKeyMan()->AddKeyPubKey(key, key.GetPubKey()));
+        }
+        const CScript script{GetScriptForDestination(PKHash(key.GetPubKey()))};
+        coins.emplace(COutPoint{PayOutputs({{script, amount}}, true)->GetHash(), 0}, script);
+    }
+    const auto locked = [&]() { return WITH_LOCK(wallet->cs_wallet, return wallet->ListLockedCoins()); };
+    BOOST_REQUIRE(locked().empty());
+
+    BOOST_REQUIRE(m_node.cj_ctx->walletman->DoForClient(wallet->GetName(), [&](CCoinJoinClientManager& clientman) {
+        CCoinJoinClientSession session(wallet, *m_node.cj_ctx->walletman, clientman, *m_node.dmnman, *m_node.mn_metaman,
+                                       *m_node.mn_sync, *m_node.llmq_ctx->isman, m_node.cj_ctx->queueman,
+                                       /*is_masternode=*/false);
+        session.nSessionDenom = bit;
+
+        // The ready step's selection, before its random skips: exactly three of the twelve coins for a budget of
+        // three, each a fixture coin; v23.0.0's fixed 90.0009 DFCN selects nine.
+        std::vector<CTxDSIn> selected;
+        BOOST_CHECK(SelectDenominateForTest(session, 3 * amount, selected));
+        BOOST_CHECK_MESSAGE(selected.size() == 3, "the ready step selects within the session's budget");
+        for (const auto& in : selected) BOOST_CHECK(coins.count(in.prevout));
+        BOOST_CHECK(locked().empty());
+
+        // The ready step with a budget of three coins (each run: the inputs it locked, then unlocked again): never
+        // more than three, each a candidate of this denomination, each script once. v23.0.0's fixed 90.0009 DFCN
+        // would take up to nine of the twelve.
+        for (int i = 0; i < 5; ++i) {
+            BOOST_CHECK(!SubmitDenominateForTest(session, 3 * amount, *m_node.connman)); // stops at the empty collateral
+            const auto taken{locked()};
+            std::set<CScript> scripts;
+            for (const auto& outpoint : taken) {
+                BOOST_CHECK(coins.count(outpoint));
+                if (coins.count(outpoint)) scripts.insert(coins.at(outpoint));
+            }
+            BOOST_CHECK_MESSAGE(!taken.empty() && taken.size() <= 3, "the ready step keeps the session's budget");
+            BOOST_CHECK_EQUAL(scripts.size(), taken.size());
+            session.UnlockCoins();
+            BOOST_REQUIRE(locked().empty());
+        }
+
+        // A session without a budget takes nothing.
+        BOOST_CHECK(!SubmitDenominateForTest(session, 0, *m_node.connman));
+        BOOST_CHECK_MESSAGE(locked().empty(), "a session without a budget takes no input");
+
+        // One script in two round counts (A's coin of round 0 and A's coin of round 1) with B's of round 0: over the
+        // range 0-1 the entry takes A once and B, never A twice.
+        const auto it{coins.begin()};
+        const COutPoint a0{it->first}, a1{std::next(it)->first}, b0{std::next(it, 2)->first};
+        const CScript script_a{it->second}, script_b{std::next(it, 2)->second};
+        const std::vector<CTxDSIn> ins{CTxDSIn(CTxIn(a0), script_a, 0), CTxDSIn(CTxIn(a1), script_a, 1),
+                                       CTxDSIn(CTxIn(b0), script_b, 0)};
+        std::vector<std::pair<CTxDSIn, CTxOut>> pairs;
+        BOOST_CHECK(PrepareDenominateForTest(session, 0, 1, ins, pairs));
+        std::set<CScript> entry_scripts;
+        for (const auto& [in, out] : pairs) entry_scripts.insert(in.prevPubKey);
+        BOOST_CHECK_MESSAGE(pairs.size() == 2 && entry_scripts.size() == 2, "an entry names each script once");
+        BOOST_CHECK(locked().empty());
+    }));
 }
 
 BOOST_FIXTURE_TEST_CASE(CTransactionBuilderTest, CTransactionBuilderTestSetup)
