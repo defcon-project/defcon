@@ -177,6 +177,11 @@ public:
     //! populates the values.
     virtual void findCoins(std::map<COutPoint, Coin>& coins) = 0;
 
+    //! Whether each outpoint can be a CoinJoin input now, as a masternode checks one: an unspent output of the
+    //! current chain or the mempool that no mempool transaction spends, confirmed, or in the mempool with an
+    //! InstantSend lock. All of it is read under one lock of the chain and the mempool.
+    virtual void findMixingInputs(std::map<COutPoint, bool>& inputs) = 0;
+
     //! Estimate fraction of total transactions verified if blocks up to
     //! the specified block hash are verified.
     virtual double guessVerificationProgress(const uint256& block_hash) = 0;
