@@ -3666,6 +3666,23 @@ std::map<COutPoint, bool> NodeMixingInputs(const CWallet& wallet, const std::vec
     return inputs;
 }
 
+/** The static part of the mixing-candidate rule: a P2PKH output the wallet holds the private key of (`spendable`) and can
+ *  sign. A watch-only coin is not spendable; a wallet without private keys (its descriptors public only) counts its coins
+ *  as spendable, yet cannot sign them. No reorg, lock or depth changes the answer. */
+bool IsMixableOutput(const CWallet& wallet, const CTxOut& txout, bool spendable)
+{
+    return txout.scriptPubKey.IsPayToPublicKeyHash() && spendable &&
+           !wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+}
+
+/** A DFCN-scale mixing candidate (CJ4-B2b): a mixable output of exactly a DFCN-scale amount, mixed or not, whose key the
+ *  wallet holds. The old client's collateral maker and denomination funding never spend one, at any height. */
+bool IsDfcnScaleCandidate(const CWallet& wallet, const CTxOut& txout)
+{
+    return CoinJoin::IsDfcnScaleDenomination(CoinJoin::AmountToDenomination(txout.nValue)) &&
+           IsMixableOutput(wallet, txout, /*spendable=*/true);
+}
+
 /** Whether a ready-to-mix coin can be a mixing input as the masternode checks one: a P2PKH output this wallet holds the
  *  private key of, which the node can take as an input now (`node_inputs`). The masternode refuses any other input, and
  *  for a wrong script it charges the collateral. The selectors test this before a coin takes any of their budget;
@@ -3673,10 +3690,7 @@ std::map<COutPoint, bool> NodeMixingInputs(const CWallet& wallet, const std::vec
  *  amounts outside the wallet's list. */
 bool IsMixingCandidate(const CWallet& wallet, const COutput& out, const std::map<COutPoint, bool>& node_inputs)
 {
-    if (!out.tx->tx->vout[out.i].scriptPubKey.IsPayToPublicKeyHash()) return false;
-    // A watch-only coin is not spendable; a wallet without private keys (its descriptors public only) counts its coins
-    // as spendable, yet cannot sign them.
-    if (!out.fSpendable || wallet.IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) return false;
+    if (!IsMixableOutput(wallet, out.tx->tx->vout[out.i], out.fSpendable)) return false;
     // The node's chain, mempool and InstantSend locks now, not the wallet's depth, spends, mempool flag and cached lock,
     // which lag behind its notifications.
     const auto it{node_inputs.find(COutPoint{out.tx->GetHash(), static_cast<uint32_t>(out.i)})};
@@ -3828,6 +3842,7 @@ std::vector<CompactTallyItem> CWallet::SelectCoinsGroupedByAddresses(bool fSkipD
 
     // Tally
     std::map<CTxDestination, CompactTallyItem> mapTally;
+    std::map<CTxDestination, int64_t> mapRankCoins; // the coins a group's rank counted, for a group with a candidate
     std::set<uint256> setWalletTxesCounted;
     for (const auto& outpoint : setWalletUTXO) {
 
@@ -3853,7 +3868,18 @@ std::vector<CompactTallyItem> CWallet::SelectCoinsGroupedByAddresses(bool fSkipD
             if(!(mine & filter)) continue;
 
             auto itTallyItem = mapTally.find(txdest);
-            if (nMaxOupointsPerAddress != -1 && itTallyItem != mapTally.end() && int64_t(itTallyItem->second.vecInputCoins.size()) >= nMaxOupointsPerAddress) continue;
+            // A DFCN-scale candidate (CJ4-B2b) is no funds to the old client: it counts toward its group's rank, the
+            // total v23.0.0 computes and orders the groups by, never toward what the group may spend. Each count has
+            // v23.0.0's cut: the rank is v23.0.0's for the wallet with its candidates, the spendable coins are v23.0.0's
+            // for the wallet without them, and either takes its first coin whatever the cut, as v23.0.0 takes a new
+            // group's. A group without a candidate has one count, so it stops where v23.0.0 stops, before the coin's
+            // amount is looked at, and its coins are tallied exactly as in v23.0.0.
+            const int64_t nSpendCoins{itTallyItem == mapTally.end() ? 0 : int64_t(itTallyItem->second.vecInputCoins.size())};
+            const auto itRankCoins{mapRankCoins.empty() ? mapRankCoins.end() : mapRankCoins.find(txdest)};
+            const int64_t nRankCoins{itRankCoins == mapRankCoins.end() ? nSpendCoins : itRankCoins->second};
+            const auto room = [&](int64_t coins) { return nMaxOupointsPerAddress == -1 || coins == 0 || coins < nMaxOupointsPerAddress; };
+            const bool fRank{room(nRankCoins)};
+            if (!fRank && !room(nSpendCoins)) continue;
 
             if(IsSpent(outpoint.hash, i) || IsLockedCoin(outpoint.hash, i)) continue;
 
@@ -3867,24 +3893,38 @@ std::vector<CompactTallyItem> CWallet::SelectCoinsGroupedByAddresses(bool fSkipD
                 // otherwise they will just lead to higher fee / lower priority
                 if(wtx.tx->vout[i].nValue <= nSmallestDenom/10) continue;
                 // ignore mixed: coins of the five amounts of v23.0.0 only, which alone could be fully mixed there; a
-                // DFCN-scale coin stays funds here as in v23.0.0, whatever its rounds (CJ4-B2b leaves the candidates out)
+                // DFCN-scale coin that is no candidate (P2PK, P2SH) stays funds as in v23.0.0, whatever its rounds
                 if (CoinJoin::IsDenominatedAmount(wtx.tx->vout[i].nValue) && IsFullyMixed(COutPoint(outpoint.hash, i))) continue;
             }
+
+            // Only a coin v23.0.0's filters let through is tested as a candidate; no filter depends on it (a candidate is
+            // no five-amount coin, so it never asks IsFullyMixed). A candidate needs the rank's room.
+            const bool fCandidate{IsDfcnScaleCandidate(*this, wtx.tx->vout[i])};
+            const bool fSpend{!fCandidate && room(nSpendCoins)};
+            if (!fRank && !fSpend) continue;
 
             if (itTallyItem == mapTally.end()) {
                 itTallyItem = mapTally.emplace(txdest, CompactTallyItem()).first;
                 itTallyItem->second.txdest = txdest;
             }
-            itTallyItem->second.nAmount += wtx.tx->vout[i].nValue;
-            itTallyItem->second.vecInputCoins.emplace_back(wtx.tx, i);
+            if (fRank) {
+                itTallyItem->second.nRankAmount += wtx.tx->vout[i].nValue;
+                if (fCandidate || itRankCoins != mapRankCoins.end()) mapRankCoins[txdest] = nRankCoins + 1;
+            }
+            if (fSpend) {
+                itTallyItem->second.nAmount += wtx.tx->vout[i].nValue;
+                itTallyItem->second.vecInputCoins.emplace_back(wtx.tx, i);
+            }
         }
     }
 
     // construct resulting vector
     // NOTE: vecTallyRet is "sorted" by txdest (i.e. address), just like mapTally
+    // The groups are v23.0.0's for the wallet with its candidates, so the old client sorts v23.0.0's list; after sorting
+    // it leaves out a group with too little to spend (CJ4-B2b).
     std::vector<CompactTallyItem> vecTallyRet;
     for (const auto& item : mapTally) {
-        if(fAnonymizable && item.second.nAmount < nSmallestDenom) continue;
+        if(fAnonymizable && item.second.nRankAmount < nSmallestDenom) continue;
         vecTallyRet.push_back(item.second);
     }
 

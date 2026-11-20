@@ -152,7 +152,10 @@ enum {
 struct CompactTallyItem
 {
     CTxDestination txdest;
-    CAmount nAmount{0};
+    CAmount nAmount{0}; // what the group may spend: the sum of vecInputCoins
+    /** The total v23.0.0 computes for the group, its DFCN-scale mixing candidates counted (CJ4-B2b), which the old
+     *  client orders the groups by; equal to nAmount for a group without one. */
+    CAmount nRankAmount{0};
     std::vector<CInputCoin> vecInputCoins;
     CompactTallyItem() = default;
 };
