@@ -27,6 +27,7 @@ namespace Ui {
 }
 
 QT_BEGIN_NAMESPACE
+class QBoxLayout;
 class QEvent;
 class QFrame;
 class QLabel;
@@ -182,6 +183,22 @@ private:
     void updateSkyBadge();
     //! Put the badge in the free middle of the bar, or hide it if it does not fit there.
     void placeSkyBadge();
+    //! The line between the tip's age and the node's state, on one line only.
+    QFrame* m_net_separator{nullptr};
+    //! Abyss, stacked, where the page's room is less than the bar needs on
+    //! one line: the bar stands in three lines (updateNetworkWrap).
+    bool m_net_wrapped{false};
+    //! While the bar stands in lines, the one with the peers and the words fitNetworkWords() picks.
+    QBoxLayout* m_net_peers_line{nullptr};
+    //! Give the bar the layout m_net_wrapped asks for: one line as it always had, or three.
+    void buildNetworkLayout();
+    //! What the bar needs on one line with its short words, whichever way it stands now.
+    int networkOneLineWidth() const;
+    //! That need when updateNetworkWrap() last looked.
+    int m_net_one_line{0};
+    //! Puts the bar on one line or in three, as the stacked page's room asks,
+    //! and has the width pass measure again where its one-line need changed.
+    void updateNetworkWrap();
     //! Under the total: the balance the next sky level starts at, or that this is the top.
     QLabel* m_next_level{nullptr};
     void updateNextLevel();
@@ -268,6 +285,10 @@ private:
     void updateColumns();
     //! The row of cards as the theme and m_stacked want it: direction, spacers, stretch.
     void applyColumnLayout();
+    //! The balances card's minimum width side by side, from the last width pass.
+    int m_balance_card_floor{0};
+    //! Abyss: the balances card keeps that floor side by side, and has none of its own stacked.
+    void applyBalanceCardFloor();
     //! The page's minimum width with the columns side by side (Abyss).
     int twoColumnWidth() const;
     //! The height the page needs at this width with its columns side by side,

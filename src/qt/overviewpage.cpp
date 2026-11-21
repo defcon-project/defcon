@@ -66,6 +66,11 @@
 //! Abyss: the gap between the two columns, across while they stand side by
 //! side, downwards while one stands under the other.
 static constexpr int ABYSS_COLUMN_GAP{12};
+//! The network bar: its padding, the room between its entries, and between
+//! its lines where a narrow page breaks it.
+static constexpr QMargins NETWORK_MARGINS{16, 12, 16, 12};
+static constexpr int NETWORK_SPACING{18};
+static constexpr int NETWORK_LINE_SPACING{8};
 
 Q_DECLARE_METATYPE(interfaces::WalletBalances)
 
@@ -261,9 +266,6 @@ OverviewPage::OverviewPage(QWidget* parent) :
     // its age, then how far along the node is, then the company it keeps.
     networkCard = new QFrame(this);
     networkCard->setObjectName("networkCard");
-    auto* networkLayout = new QHBoxLayout(networkCard);
-    networkLayout->setContentsMargins(16, 12, 16, 12);
-    networkLayout->setSpacing(18);
     std::vector<QWidget*> network_words;
     std::vector<QWidget*> network_values;
     enum class Value { None, Before, After };
@@ -290,14 +292,12 @@ OverviewPage::OverviewPage(QWidget* parent) :
         }
         layout->addWidget(value == Value::Before ? item.value : item.text);
         if (value != Value::None) layout->addWidget(value == Value::Before ? item.text : item.value);
-        networkLayout->addWidget(item.widget);
     };
     entry(m_net_block, "networkBlock", tr("Block"), Value::After);
     entry(m_net_age, "networkAge", QString(), Value::None);
-    auto* networkSeparator = new QFrame(networkCard);
-    networkSeparator->setObjectName("networkSeparator");
-    networkSeparator->setFixedSize(1, 20);
-    networkLayout->addWidget(networkSeparator);
+    m_net_separator = new QFrame(networkCard);
+    m_net_separator->setObjectName("networkSeparator");
+    m_net_separator->setFixedSize(1, 20);
     entry(m_net_synced, "networkSynced", tr("Synced"), Value::None);
     entry(m_net_chainlock, "networkChainLocked", tr("ChainLocked"), Value::None);
     entry(m_net_syncing, "networkSyncing", QString(), Value::None);
@@ -308,11 +308,10 @@ OverviewPage::OverviewPage(QWidget* parent) :
     m_net_progress->setMinimumWidth(60);
     m_net_progress->setMaximumWidth(165);
     m_net_progress->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    networkLayout->addWidget(m_net_progress);
-    networkLayout->addStretch();
     entry(m_net_peers, "networkPeers", QString(), Value::Before);
     entry(m_net_masternodes, "networkMasternodes", tr("MN"), Value::Before);
     entry(m_net_mempool, "networkMempool", tr("tx"), Value::Before);
+    buildNetworkLayout();
     m_net_block.widget->setToolTip(tr("The newest block this wallet knows of"));
     m_net_age.widget->setToolTip(tr("How long ago that block was made"));
     m_net_synced.widget->setToolTip(tr("The blockchain and the masternode data are up to date"));
@@ -604,6 +603,11 @@ void OverviewPage::paintEvent(QPaintEvent* event)
 void OverviewPage::updateThemePresentation()
 {
     const bool modern = GUIUtil::isModernTheme();
+    // Into a theme or out of it, the balances card's floor is read again from
+    // the new stylesheet by the first width pass (the stylesheet's minimum the
+    // card has then, m_inherited_minimum_widths); until then nothing sets the
+    // card's minimum from the old floor, so that it cannot be what is read.
+    if (modern != m_modern_presentation) m_balance_card_floor = 0;
     if (modernHeader) {
         modernHeader->setVisible(modern);
     }
@@ -798,6 +802,8 @@ void OverviewPage::setNetworkStatus(const NetworkStatus& status)
     m_net_mempool.widget->setVisible(!syncing && status.mempool.has_value());
     m_net_mempool.value->setText(GroupDigits(status.mempool.value_or(0)));
     m_shown_masternodes = status.masternodes;
+    // Longer words or numbers may no longer fit on one line, shorter ones may again.
+    updateNetworkWrap();
     fitNetworkWords();
 
     // The card's own border turns amber while syncing. Only the card is
@@ -823,16 +829,20 @@ void OverviewPage::fitNetworkWords()
     // What the bar asks for without these two words, whichever are up now. An
     // explicit minimum outranks the label's own size hint: without it the longer
     // words would hold the window at their width, and it could never get narrow
-    // enough to fall back on the short ones.
-    const int others = networkCard->layout()->sizeHint().width() -
-                       advance(m_net_masternodes, m_net_masternodes.text->text()) -
+    // enough to fall back on the short ones. Broken into lines, the words'
+    // line is what counts, within the bar's padding.
+    const int line = m_net_peers_line ? m_net_peers_line->sizeHint().width() + networkCard->contentsMargins().left() +
+                                            networkCard->contentsMargins().right() + NETWORK_MARGINS.left() + NETWORK_MARGINS.right()
+                                      : networkCard->layout()->sizeHint().width();
+    const int others = line - advance(m_net_masternodes, m_net_masternodes.text->text()) -
                        advance(m_net_mempool, m_net_mempool.text->text());
     constexpr int ROUNDING{4};
     // The level's badge comes first: it takes the bar's free middle, so the
     // words are long only where both fit. While syncing, the expanding
     // progress track takes some of that middle as well, up to its maximum.
+    // Broken into lines, the bar shows no badge and the track has its own line.
     const int track_growth = m_net_progress->isHidden() ? 0 : std::max(0, m_net_progress->maximumWidth() - m_net_progress->sizeHint().width());
-    const int badge = m_sky_badge_wanted ? m_net_sky.widget->sizeHint().width() + track_growth : 0;
+    const int badge = m_sky_badge_wanted && !m_net_wrapped ? m_net_sky.widget->sizeHint().width() + track_growth : 0;
     const bool room = networkCard->width() >= others + advance(m_net_masternodes, masternodes) + advance(m_net_mempool, mempool) + badge + ROUNDING;
     m_net_masternodes.text->setMinimumWidth(QFontMetrics(m_net_masternodes.text->font()).horizontalAdvance(short_masternodes));
     m_net_mempool.text->setMinimumWidth(QFontMetrics(m_net_mempool.text->font()).horizontalAdvance(short_mempool));
@@ -878,13 +888,109 @@ void OverviewPage::placeSkyBadge()
         if (!entry->isHidden()) left = std::max(left, entry->geometry().right() + 1);
     }
     const int right = m_net_peers.widget->geometry().left();
-    const int spacing = networkCard->layout()->spacing();
     const QSize size = badge->sizeHint();
     // The bar's own spacing on both sides where there is room, a little less at a pinch.
-    const int margin = std::min(spacing, (right - left - size.width()) / 2);
-    const bool fits = m_sky_badge_wanted && networkCard->isVisible() && margin >= 6;
+    const int margin = std::min(NETWORK_SPACING, (right - left - size.width()) / 2);
+    // A bar broken into lines has no free middle: the badge stays out, as on one line with no room.
+    const bool fits = m_sky_badge_wanted && !m_net_wrapped && networkCard->isVisible() && margin >= 6;
     if (fits) badge->setGeometry(right - margin - size.width(), (networkCard->height() - size.height()) / 2, size.width(), size.height());
     if (badge->isHidden() == fits) badge->setVisible(fits);
+}
+
+void OverviewPage::buildNetworkLayout()
+{
+    // Built anew, never rearranged: on one line the bar has the very layout
+    // it always had, so nothing on it moves by a pixel.
+    delete networkCard->layout();
+    m_net_peers_line = nullptr;
+    const auto add = [](QBoxLayout* line, std::initializer_list<QWidget*> entries) {
+        for (QWidget* entry : entries) line->addWidget(entry);
+    };
+    if (!m_net_wrapped) {
+        auto* layout = new QHBoxLayout(networkCard);
+        layout->setContentsMargins(NETWORK_MARGINS);
+        layout->setSpacing(NETWORK_SPACING);
+        add(layout, {m_net_block.widget, m_net_age.widget, m_net_separator, m_net_synced.widget, m_net_chainlock.widget,
+                     m_net_syncing.widget, m_net_progress});
+        layout->addStretch();
+        add(layout, {m_net_peers.widget, m_net_masternodes.widget, m_net_mempool.widget});
+        // Hidden only while the bar was broken into lines.
+        if (m_net_separator->isHidden() && m_net_separator->testAttribute(Qt::WA_WState_ExplicitShowHide)) m_net_separator->show();
+        return;
+    }
+    // Three lines: the tip and its age, the node's state, its company. The
+    // separator stands between the first two on one line only.
+    auto* layout = new QVBoxLayout(networkCard);
+    layout->setContentsMargins(NETWORK_MARGINS);
+    layout->setSpacing(NETWORK_LINE_SPACING);
+    const auto line = [&](std::initializer_list<QWidget*> entries) {
+        auto* row = new QHBoxLayout();
+        row->setSpacing(NETWORK_SPACING);
+        layout->addLayout(row);
+        add(row, entries);
+        row->addStretch();
+        return row;
+    };
+    line({m_net_block.widget, m_net_age.widget});
+    line({m_net_synced.widget, m_net_chainlock.widget, m_net_syncing.widget, m_net_progress});
+    m_net_peers_line = line({m_net_peers.widget, m_net_masternodes.widget, m_net_mempool.widget});
+    m_net_separator->hide();
+}
+
+int OverviewPage::networkOneLineWidth() const
+{
+    // What the bar asks for on one line, the words short, as its layout counts
+    // it: the entries on show, the bar's spacing between them (none beside the
+    // stretch, which is empty), its padding and the card's border. The
+    // separator counts even while the bar is broken into lines and hides it.
+    const QMargins card = networkCard->contentsMargins();
+    int width = card.left() + card.right() + NETWORK_MARGINS.left() + NETWORK_MARGINS.right();
+    int shown = 0;
+    for (QWidget* entry : {m_net_block.widget, m_net_age.widget, static_cast<QWidget*>(m_net_separator), m_net_synced.widget,
+                           m_net_chainlock.widget, m_net_syncing.widget, static_cast<QWidget*>(m_net_progress), m_net_peers.widget,
+                           m_net_masternodes.widget, m_net_mempool.widget}) {
+        if (entry == m_net_separator) {
+            width += m_net_separator->minimumWidth();
+        } else {
+            QWidgetItem item(entry);
+            if (item.isEmpty()) continue;
+            width += item.minimumSize().width();
+        }
+        ++shown;
+    }
+    return width + std::max(0, shown - 1) * NETWORK_SPACING;
+}
+
+void OverviewPage::updateNetworkWrap()
+{
+    // Stacked, where the page's room in the scroll area is less than the bar
+    // needs on one line, the bar breaks into lines. The room is the viewport
+    // as it stands, as for the columns: the lines only add height, so a
+    // vertical bar they bring on keeps them.
+    if (networkCard == nullptr) return;
+    const int one_line = networkOneLineWidth();
+    // What the bar needs on one line counts for the breakpoint whichever way
+    // it stands (twoColumnWidth): when it changes, the width pass measures again.
+    const bool one_line_changed = one_line != m_net_one_line;
+    m_net_one_line = one_line;
+    bool wrapped = false;
+    if (m_stacked && m_area != nullptr) {
+        const QMargins page = contentsMargins();
+        const QMargins rows = ui->topLayout->contentsMargins();
+        const int room = m_area->viewport()->width() - page.left() - page.right() - rows.left() - rows.right();
+        wrapped = room < one_line;
+    }
+    if (wrapped != m_net_wrapped) {
+        m_net_wrapped = wrapped;
+        buildNetworkLayout();
+        // The card's minimum is the new layout's from now, not from its first
+        // layout request: the page's minimum is read from it before that.
+        networkCard->layout()->activate();
+        fitNetworkWords();
+    } else if (!one_line_changed) {
+        return;
+    }
+    scheduleBalanceWidths();
 }
 
 void OverviewPage::updateSkyBadge()
@@ -1127,11 +1233,26 @@ int OverviewPage::twoColumnWidth() const
 {
     // Side by side, the row of cards is the left column, the gap and the right
     // column (Abyss gives the row no spacing and its side spacers no width);
-    // the page is as wide as its widest row, within its margins.
-    int widest = ui->verticalLayout_2->minimumSize().width() + ABYSS_COLUMN_GAP + ui->verticalLayout_3->minimumSize().width();
+    // the page is as wide as its widest row, within its margins. Stacked, the
+    // balances card has no floor of its own and the network bar may stand in
+    // lines (applyBalanceCardFloor, updateNetworkWrap); side by side both are
+    // as they were, and this is what the columns need then.
+    // The left column as the side-by-side layout measures it: the widest of
+    // its cards, the balances card at its floor (not its own minimum, which
+    // stacked counts its border too), within the column's margins.
+    const QMargins left = ui->verticalLayout_2->contentsMargins();
+    int left_column = m_balance_card_floor;
+    for (int item = 0; item < ui->verticalLayout_2->count(); ++item) {
+        QLayoutItem* card = ui->verticalLayout_2->itemAt(item);
+        if (card->widget() != ui->frame && !card->isEmpty()) left_column = std::max(left_column, card->minimumSize().width());
+    }
+    left_column += left.left() + left.right();
+    int widest = left_column + ABYSS_COLUMN_GAP + ui->verticalLayout_3->minimumSize().width();
     for (int item = 0; item < ui->topLayout->count(); ++item) {
         QLayoutItem* row = ui->topLayout->itemAt(item);
-        if (row->layout() != ui->horizontalLayout) widest = std::max(widest, row->minimumSize().width());
+        if (row->layout() == ui->horizontalLayout) continue;
+        const bool bar_in_lines = m_net_wrapped && row->widget() == networkCard && !row->isEmpty();
+        widest = std::max(widest, bar_in_lines ? networkOneLineWidth() : row->minimumSize().width());
     }
     const QMargins margins = ui->topLayout->contentsMargins();
     return margins.left() + margins.right() + widest;
@@ -1170,13 +1291,27 @@ void OverviewPage::updateColumns()
             stacked = sideBySideNeed(m_two_column_width) > room.height();
         }
     }
-    if (stacked == m_stacked) return;
-    m_stacked = stacked;
-    applyColumnLayout();
-    ui->horizontalLayout->invalidate();
-    ui->topLayout->invalidate();
-    // The page's minimum follows: the two columns' side by side, the widest row's stacked.
-    scheduleBalanceWidths();
+    if (stacked != m_stacked) {
+        m_stacked = stacked;
+        applyBalanceCardFloor();
+        applyColumnLayout();
+        ui->horizontalLayout->invalidate();
+        ui->topLayout->invalidate();
+        // The page's minimum follows: the two columns' side by side, the widest row's stacked.
+        scheduleBalanceWidths();
+    }
+    updateNetworkWrap();
+}
+
+void OverviewPage::applyBalanceCardFloor()
+{
+    // Side by side, the balances card keeps its floor: general.css's 490 px,
+    // or what its amounts need beyond that. Stacked it has none of its own,
+    // and what its labels and amounts need is its minimum, so a narrow page
+    // is not held wider than they are; an amount is never cut either way.
+    if (!GUIUtil::isModernTheme() || m_balance_card_floor <= 0) return;
+    const int wanted = m_stacked ? 0 : m_balance_card_floor;
+    if (ui->frame->minimumWidth() != wanted) ui->frame->setMinimumWidth(wanted);
 }
 
 int OverviewPage::sideBySideNeed(int width)
@@ -1203,15 +1338,33 @@ int OverviewPage::sideBySideNeed(int width)
     const EmptyStateWidget::Fit fit = m_transactions_empty->fit();
     m_stacked = false;
     applyColumnLayout();
+    // Side by side, the balances card has its floor and the network bar its one line.
+    const bool was_wrapped = m_net_wrapped;
+    applyBalanceCardFloor();
+    if (was_wrapped) {
+        m_net_wrapped = false;
+        buildNetworkLayout();
+        networkCard->layout()->activate();
+    }
     invalidate();
     // Laid out at the width, as tall as it needs: the total's card has its
     // side-by-side width, and the font is fitted to it.
     ui->topLayout->setGeometry(QRect(0, 0, width, std::max(need(), height())).marginsRemoved(contentsMargins()));
     fitTotalFont();
     invalidate();
+    // The balances card's minimum height is what its layout set when it last
+    // ran; the total's fitted height reaches it only when that layout runs
+    // again, so it runs now, not at the next event.
+    ui->frame->layout()->activate();
     const int side_by_side = need();
     m_stacked = was_stacked;
     applyColumnLayout();
+    applyBalanceCardFloor();
+    if (was_wrapped) {
+        m_net_wrapped = true;
+        buildNetworkLayout();
+        networkCard->layout()->activate();
+    }
     m_transactions_empty->restoreFit(fit);
     invalidate();
     ui->topLayout->setGeometry(contentsRect());
@@ -1413,6 +1566,12 @@ void OverviewPage::applyBalanceWidths()
         if (widget->layout()) {
             for (QLayout* nested : widget->findChildren<QLayout*>()) nested->invalidate();
             widget->layout()->invalidate();
+            if (widget == ui->frame) {
+                // Its floor side by side; stacked it has none (applyBalanceCardFloor).
+                m_balance_card_floor = std::max(wanted, widget->layout()->minimumSize().width());
+                applyBalanceCardFloor();
+                continue;
+            }
             if (widget == this) {
                 // Where the scroll area gives the page less than its columns
                 // need side by side, they stack; the form's minimum is a
