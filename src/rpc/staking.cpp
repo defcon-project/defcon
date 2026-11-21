@@ -68,6 +68,7 @@ static RPCHelpMan getstakinginfo()
                                 {RPCResult::Type::STR_AMOUNT, "too_small", /*optional=*/true, "Under the minimum stakeable amount"},
                                 {RPCResult::Type::STR_AMOUNT, "too_large", /*optional=*/true, "Over the maximum stakeable amount"},
                                 {RPCResult::Type::STR_AMOUNT, "collateral_amount", /*optional=*/true, "Exactly a masternode collateral amount"},
+                                {RPCResult::Type::STR_AMOUNT, "coinjoin", /*optional=*/true, "Exactly a CoinJoin denomination amount (one of the eight), which does not stake"},
                                 {RPCResult::Type::STR_AMOUNT, "too_young", /*optional=*/true, "Not yet old enough to stake"},
                                 {RPCResult::Type::STR_AMOUNT, "too_old", /*optional=*/true, "Older than the stake age limit"},
                             }},
@@ -225,6 +226,7 @@ static RPCHelpMan getstakinginfo()
             if (skipped.below_min > 0)  excluded.pushKV("too_small", ValueFromAmount(skipped.below_min));
             if (skipped.above_max > 0)  excluded.pushKV("too_large", ValueFromAmount(skipped.above_max));
             if (skipped.collateral > 0) excluded.pushKV("collateral_amount", ValueFromAmount(skipped.collateral));
+            if (skipped.coinjoin > 0)   excluded.pushKV("coinjoin", ValueFromAmount(skipped.coinjoin));
             if (skipped.too_young > 0)  excluded.pushKV("too_young", ValueFromAmount(skipped.too_young));
             if (skipped.too_old > 0)    excluded.pushKV("too_old", ValueFromAmount(skipped.too_old));
             obj2.pushKV("excluded", excluded);

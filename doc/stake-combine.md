@@ -10,7 +10,8 @@ additional eligible, unlocked outputs from the SAME wallet. The default
 addresses on chain. `-stakecombinescope=key` restricts gathering to the winning
 key. Masternode collateral amounts, CoinJoin denominations and CoinJoin
 collateral amounts are excluded in both scopes, and a stake won by an output of
-such a CoinJoin amount (possible only where the staking floor is zero) takes no
+a CoinJoin collateral amount (possible only where the staking floor is zero; a
+coin of exactly a CoinJoin denomination amount does not stake at all) takes no
 additional input. Additional inputs are selected after the kernel is found and
 do not increase its winning weight.
 

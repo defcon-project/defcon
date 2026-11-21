@@ -105,6 +105,7 @@ enum class StakeEligibility {
     BelowMin,    //!< under stakeValueRange[0]
     AboveMax,    //!< over stakeValueRange[1]
     Collateral,  //!< exactly a masternode collateral amount
+    CoinJoinAmount, //!< exactly one of the eight CoinJoin denomination amounts (CJ4-B; on mainnet 10 000.1 DFCN)
     TooYoung,    //!< under stakeAgeRange[0]
     TooOld,      //!< over stakeAgeRange[1], where that bound still applies
 };
@@ -114,7 +115,7 @@ enum class StakeEligibility {
  *
  * A wallet can show a full balance and stake nothing at all, and until now the
  * only trace of why was a coin's absence from a loop: no message, no log line,
- * no count. Seven rules can each remove a coin silently and one of them removes
+ * no count. Eight rules can each remove a coin silently and several of them remove
  * it for good, so the reason is worth reporting.
  */
 struct StakeSkipReport
@@ -124,6 +125,7 @@ struct StakeSkipReport
     CAmount below_min{0};
     CAmount above_max{0};
     CAmount collateral{0};
+    CAmount coinjoin{0};
     CAmount too_young{0};
     CAmount too_old{0};
 
@@ -143,8 +145,9 @@ struct StakeWalletInfo
  *
  * `immature` clears with depth and `too_young` with time, so both describe
  * coins that are on their way in. The rest do not move: an amount under the
- * floor, over the ceiling, equal to a masternode collateral, or held at a BLS
- * address stays out until someone spends it into a different shape, and
+ * floor, over the ceiling, equal to a masternode collateral or to a CoinJoin
+ * denomination, or held at a BLS address stays out until someone spends it into
+ * a different shape, and
  * `too_old` only ever drifts further out of range.
  */
 CAmount PermanentlyExcluded(const StakeSkipReport& report);
@@ -339,7 +342,9 @@ class CStakeWallet
          * How a coinstake's credit is laid out: whole while it is under twice
          * `target`, otherwise in equal pieces of about `target` -- at most
          * MAX_STAKE_SPLIT_OUTPUTS plus two collateral-avoidance pieces. An empty
-         * result means no eligible layout exists; the caller must not publish it.
+         * result means none of the layouts it tries (whole, or n to n + 2 pieces
+         * of equal whole cents with the remainder on the first) is eligible; the
+         * caller must not publish it.
          * Takes the target rather than reading it from the wallet so the
          * decision can be exercised on its own.
          */

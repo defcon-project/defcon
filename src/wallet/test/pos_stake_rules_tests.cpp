@@ -56,13 +56,14 @@ Consensus::Params MainnetLikeLimits()
     return params;
 }
 
-//! The full stakeable rule -- both bounds and the collateral exclusions.
+//! The full stakeable rule -- both bounds, the collateral exclusions and the CoinJoin denomination amounts.
 bool Stakeable(const Consensus::Params& params, CAmount value)
 {
     return value >= params.stakeValueRange[0] &&
            value <= params.stakeValueRange[1] &&
            value != params.regularMnCollateral &&
-           value != params.evoMnCollateral;
+           value != params.evoMnCollateral &&
+           !CoinJoin::IsKnownDenominationAmount(value);
 }
 } // namespace
 
@@ -711,6 +712,69 @@ BOOST_AUTO_TEST_CASE(the_coinjoin_amount_rule_is_exact)
     }
 }
 
+/**
+ * CJ4-B (design note § 7, § 9.5): a coin of exactly one of the eight CoinJoin denomination amounts does not stake, with
+ * a reason of its own after the collateral check, and a satoshi either way stakes. Under mainnet-like limits only
+ * 10 000.1 DFCN is above the floor; where the floor is zero all eight are. The reason counts as permanent.
+ */
+BOOST_AUTO_TEST_CASE(coinjoin_amounts_do_not_stake)
+{
+    Consensus::Params mainnet = MainnetLikeLimits();
+    Consensus::Params zero_floor = MainnetLikeLimits();
+    zero_floor.stakeValueRange[0] = 0;
+    const CStakeWallet main_staker(nullptr, mainnet);
+    const CStakeWallet zero_staker(nullptr, zero_floor);
+    const int deep = COINBASE_MATURITY + 2;
+    const auto why = [&](const CStakeWallet& staker, CAmount value) {
+        return staker.ClassifyForStaking(value, deep, TxoutType::PUBKEYHASH, mainnet.stakeAgeRange[0],
+                                         mainnet.nPosKernelV2ActivationHeight);
+    };
+
+    const CAmount top{CoinJoin::DenominationToAmount(1 << 7)}; // 10 000.1
+    BOOST_CHECK_MESSAGE(why(main_staker, top) == StakeEligibility::CoinJoinAmount, "a 10 000.1 DFCN coin does not stake");
+    BOOST_CHECK(why(main_staker, top - 1) == StakeEligibility::Eligible);
+    BOOST_CHECK(why(main_staker, top + 1) == StakeEligibility::Eligible);
+    BOOST_CHECK(why(main_staker, CoinJoin::DenominationToAmount(1 << 6)) == StakeEligibility::BelowMin);
+    for (int bit = 0; bit < 8; ++bit) {
+        const CAmount amount{CoinJoin::DenominationToAmount(1 << bit)};
+        BOOST_CHECK_MESSAGE(why(zero_staker, amount) == StakeEligibility::CoinJoinAmount,
+                            "where the floor is zero no CoinJoin amount stakes");
+        BOOST_CHECK(why(zero_staker, amount - 1) == StakeEligibility::Eligible);
+        BOOST_CHECK(why(zero_staker, amount + 1) == StakeEligibility::Eligible);
+    }
+
+    StakeSkipReport report;
+    report.Add(StakeEligibility::CoinJoinAmount, top);
+    BOOST_CHECK_EQUAL(report.coinjoin, top);
+    BOOST_CHECK_EQUAL(report.Total(), top);
+    BOOST_CHECK_MESSAGE(PermanentlyExcluded(report) == top, "a CoinJoin amount stays out until it is spent");
+    BOOST_CHECK(DescribePermanentExclusions(report).find("coinjoin") != std::string::npos);
+}
+
+/**
+ * CJ4-B (design note § 9.5): a stake split makes no piece of exactly a CoinJoin amount. Where the floor is zero and the
+ * target 20 000, a 10 000.1 credit is not kept whole; equal halves that would each be 10 000.1 take one more piece.
+ */
+BOOST_AUTO_TEST_CASE(a_stake_split_avoids_the_coinjoin_amounts)
+{
+    Consensus::Params zero_floor = MainnetLikeLimits();
+    zero_floor.stakeValueRange[0] = 0;
+    const CStakeWallet staker(nullptr, zero_floor);
+    const CAmount top{CoinJoin::DenominationToAmount(1 << 7)};
+    const auto clean = [&](CAmount credit, CAmount target, size_t pieces_at_least) {
+        const std::vector<CAmount> pieces = staker.SplitStakeCredit(credit, target);
+        CAmount sum{0};
+        bool none{!pieces.empty()};
+        for (const CAmount piece : pieces) {
+            sum += piece;
+            none = none && !CoinJoin::IsKnownDenominationAmount(piece);
+        }
+        return none && sum == credit && pieces.size() >= pieces_at_least;
+    };
+    BOOST_CHECK_MESSAGE(clean(top, 20000 * COIN, 2), "a 10 000.1 credit is split, not kept whole");
+    BOOST_CHECK_MESSAGE(clean(2 * top, 10000 * COIN, 3), "a split that would land on 10 000.1 takes one more piece");
+}
+
 namespace {
 //! One wallet, two keys, and outputs that differ only in amount: at each key
 //! every CoinJoin denomination and three collateral amounts, and beside them
@@ -867,8 +931,10 @@ BOOST_FIXTURE_TEST_CASE(staking_never_combines_a_coinjoin_amount_in_either_scope
     BOOST_CHECK_EQUAL(three.plan.skipped.size, controls_held.size() + controls_other.size() - 3);
     BOOST_CHECK_EQUAL(three.plan.skipped.Total(), three.plan.skipped.size);
 
-    // Where the floor is zero a mixed coin can win a stake itself. It then wins
-    // alone: nothing is taken with it, and nothing is scanned or counted.
+    // The combine plan's own rule for a CoinJoin-amount kernel, given one directly: it wins
+    // alone, nothing taken with it, nothing scanned or counted. (The staking classifier no
+    // longer offers a denomination as a kernel; a collateral amount where the floor is zero
+    // still reaches this path.)
     BOOST_REQUIRE(coinjoin.count(coinjoin_kernel));
     Consensus::Params zero_floor = Params().GetConsensus();
     BOOST_REQUIRE_EQUAL(zero_floor.stakeValueRange[0], CAmount{0});
@@ -1567,6 +1633,85 @@ BOOST_AUTO_TEST_CASE(continuous_consolidation_reduces_fragmentation_over_repeate
     CAmount total = 0;
     for (const CAmount value : coins) { total += value; BOOST_CHECK(Stakeable(params, value)); }
     BOOST_CHECK_EQUAL(total, starting + rewards);
+}
+
+namespace {
+//! A wallet of one key holding a mature 10 000.1 DFCN coin and a mature coin one satoshi larger, nothing else.
+struct CoinJoinAmountStakeSetup : public TestChain100Setup {
+    const CAmount top{CoinJoin::DenominationToAmount(1 << 7)};
+    std::shared_ptr<CWallet> wallet;
+    int64_t funding_time{0}; //!< the time of the block holding both coins, from which their age counts
+
+    CoinJoinAmountStakeSetup()
+    {
+        CKey key;
+        key.MakeNewKey(true);
+        const CScript script = GetScriptForDestination(PKHash(key.GetPubKey()));
+        std::vector<CMutableTransaction> funding;
+        for (int i = 0; i < 2; ++i) {
+            CMutableTransaction tx;
+            tx.vin.emplace_back(COutPoint(m_coinbase_txns[i]->GetHash(), 0));
+            tx.vout.emplace_back(top + i, script);
+            BOOST_REQUIRE(m_coinbase_txns[i]->vout[0].nValue >= CTransaction(tx).GetValueOut());
+            FillableSigningProvider keystore;
+            keystore.AddKey(coinbaseKey);
+            BOOST_REQUIRE(SignSignature(keystore, *m_coinbase_txns[i], tx, 0, SIGHASH_ALL));
+            funding.push_back(tx);
+        }
+        const CBlock block = CreateAndProcessBlock(funding, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+        funding_time = block.GetBlockTime();
+        for (int i = 0; i < COINBASE_MATURITY + 5; ++i) {
+            CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+        }
+        wallet = std::make_shared<CWallet>(m_node.chain.get(), m_node.coinjoin_loader.get(), "", CreateMockWalletDatabase());
+        {
+            LOCK(wallet->cs_wallet);
+            wallet->SetLastBlockProcessed(m_node.chainman->ActiveChain().Height(), m_node.chainman->ActiveChain().Tip()->GetBlockHash());
+        }
+        wallet->LoadWallet();
+        {
+            auto* spk_man = wallet->GetOrCreateLegacyScriptPubKeyMan();
+            LOCK2(wallet->cs_wallet, spk_man->cs_KeyStore);
+            BOOST_REQUIRE(spk_man->AddKeyPubKey(key, key.GetPubKey()));
+        }
+        {
+            WalletRescanReserver reserver(*wallet);
+            reserver.reserve();
+            const CWallet::ScanResult result = wallet->ScanForWalletTransactions(
+                m_node.chainman->ActiveChain().Genesis()->GetBlockHash(), /*start_height=*/0, /*max_height=*/{}, reserver, /*fUpdate=*/true);
+            BOOST_REQUIRE_EQUAL(result.status, CWallet::ScanResult::SUCCESS);
+        }
+        BOOST_REQUIRE(AddWallet(wallet));
+    }
+    ~CoinJoinAmountStakeSetup() { RemoveWallet(wallet, std::nullopt); }
+};
+} // namespace
+
+/**
+ * CJ4-B (design note § 9.5): under mainnet-like limits a mature 10 000.1 DFCN coin has no weight and is reported once,
+ * under coinjoin, in the total and as permanently excluded; the coin one satoshi larger stakes from exactly the minimum
+ * age, counted from the block holding both, and a second earlier it is too young. The minter and getstakinginfo read
+ * both from GetStakingInfo.
+ */
+BOOST_FIXTURE_TEST_CASE(a_coinjoin_amount_has_no_weight, CoinJoinAmountStakeSetup)
+{
+    Consensus::Params params = MainnetLikeLimits();
+    const CStakeWallet staker(wallet, params);
+    const int height{params.nPosKernelV2ActivationHeight};
+    const StakeWalletInfo at_age = staker.GetStakingInfo(funding_time + params.stakeAgeRange[0], height);
+    BOOST_CHECK_MESSAGE(at_age.weight == static_cast<uint64_t>(top + 1), "only the coin a satoshi off the CoinJoin amount weighs");
+    BOOST_CHECK_EQUAL(at_age.excluded.coinjoin, top);
+    BOOST_CHECK_EQUAL(at_age.excluded.Total(), top);
+    BOOST_CHECK_EQUAL(PermanentlyExcluded(at_age.excluded), top);
+    // The minter's hourly warning asks ExplainExcludedCoins on its own: the same answer.
+    const StakeSkipReport own = staker.ExplainExcludedCoins(funding_time + params.stakeAgeRange[0], height);
+    BOOST_CHECK_EQUAL(own.coinjoin, top);
+    BOOST_CHECK_EQUAL(PermanentlyExcluded(own), top);
+    // A second before the minimum age the other coin is too young; the CoinJoin amount is still counted once, as such.
+    const StakeWalletInfo young = staker.GetStakingInfo(funding_time + params.stakeAgeRange[0] - 1, height);
+    BOOST_CHECK_EQUAL(young.weight, uint64_t{0});
+    BOOST_CHECK_EQUAL(young.excluded.too_young, top + 1);
+    BOOST_CHECK_EQUAL(young.excluded.coinjoin, top);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
