@@ -10,11 +10,19 @@ the first starts a bit-5 queue at the masternode it names, which opens a session
 queue at the same masternode, which takes it into the same session; with mocktime past the queue time the masternode
 starts the session, and both mix: one transaction, the two candidates in and two outputs of 100.001 DFCN out, mined,
 and each wallet's new coin counts one round where the candidate counted none.
+
+The DSTX by protocol version (CJ4-B2d1): two peers of the mixing masternode, one at 70243 and one at 70242 (what
+v23.0.0 advertises). The 70243 peer is offered the mix as a DSTX and gets it; the 70242 peer is offered neither the
+DSTX nor the transaction, while it is offered an ordinary transaction sent after the mix, and once the mix may be
+asked for unannounced, a request for it as a DSTX is answered as not found and one as a transaction gets it.
 """
 
 from decimal import Decimal
 import re
+import time
 
+from test_framework.messages import CInv, MSG_TX, msg_getdata
+from test_framework.p2p import P2PInterface, p2p_lock
 from test_framework.test_framework import DashTestFramework
 from test_framework.util import assert_equal
 
@@ -25,10 +33,51 @@ NEW_BIT = 32                   # 100.001 DFCN
 CANDIDATE = Decimal("100.001")
 ORDINARY = Decimal("0.0013")   # less than the old path's minimum without collateral: it stops at "Not enough funds"
 QUEUE_TIMEOUT = 30             # src/coinjoin/coinjoin.h: COINJOIN_QUEUE_TIMEOUT (a client waits 10 s longer)
+OLD_VERSION = 70242            # src/version.h: Q60_SWITCHOVER_PROTO_VERSION, what v23.0.0 advertises
+NEW_VERSION = 70243            # src/version.h: COINJOIN_DFCN_DENOMS_PROTO_VERSION
+MSG_DSTX = 16                  # src/protocol.h
+UNCONDITIONAL_RELAY_DELAY = 2 * 60  # src/net_processing.cpp: a transaction this old may be asked for unannounced
 
 
 def is_p2pkh(script_hex):
     return len(script_hex) == 50 and script_hex.startswith("76a914") and script_hex.endswith("88ac")
+
+
+class VersionedPeer(P2PInterface):
+    """A peer that advertises the given protocol version and keeps what it is offered and sent."""
+
+    def __init__(self, version):
+        super().__init__()
+        self.version = version
+        self.offered = set()  # (inv type, hash) of every item announced to it
+        self.dstxes = {}      # txid -> the DSTX it received
+        self.txids = set()    # every transaction it received
+        self.received = []    # in order: ("dstx", MSG_DSTX, txid), ("tx", MSG_TX, txid), ("notfound", inv type, hash)
+
+    def peer_connect_send_version(self, services):
+        super().peer_connect_send_version(services)
+        self.on_connection_send_msg.nVersion = self.version
+
+    def on_inv(self, message):
+        self.offered.update((i.type, i.hash) for i in message.inv)
+        super().on_inv(message)  # asks for every item
+
+    def on_dstx(self, message):
+        message.dstx.tx.calc_sha256()
+        self.dstxes[message.dstx.tx.sha256] = message.dstx
+        self.received.append(("dstx", MSG_DSTX, message.dstx.tx.sha256))
+
+    def on_tx(self, message):
+        message.tx.calc_sha256()
+        self.txids.add(message.tx.sha256)
+        self.received.append(("tx", MSG_TX, message.tx.sha256))
+
+    def on_notfound(self, message):
+        self.received.extend(("notfound", i.type, i.hash) for i in message.vec)
+
+    def received_since(self, start, txid):
+        """What it received about the transaction after the first start answers (call with p2p_lock held)."""
+        return [answer for answer in self.received[start:] if answer[2] == txid]
 
 
 class P2PCoinJoinDfcnMixTest(DashTestFramework):
@@ -123,6 +172,15 @@ class P2PCoinJoinDfcnMixTest(DashTestFramework):
         assert_equal(joined.group(1), session_id)
         assert_equal(self.wait_logged(clients[1], client_offsets[1], rb"Set nSessionID to (\d+)\.").group(1), session_id)
 
+        self.log.info("Two peers of that masternode: one at %d, one at %d (v23.0.0)", NEW_VERSION, OLD_VERSION)
+        new_peer = mn.node.add_p2p_connection(VersionedPeer(NEW_VERSION), uacomment="new-peer")
+        old_peer = mn.node.add_p2p_connection(VersionedPeer(OLD_VERSION), uacomment="old-peer")
+        # each test connection's own version, as the masternode recorded it
+        versions = {p["subver"]: p["version"] for p in mn.node.getpeerinfo() if "-peer)" in p["subver"]}
+        assert_equal(sorted(versions.values()), [OLD_VERSION, NEW_VERSION])
+        assert_equal([v for s, v in versions.items() if "(new-peer)" in s], [NEW_VERSION])
+        assert_equal([v for s, v in versions.items() if "(old-peer)" in s], [OLD_VERSION])
+
         self.log.info("With mocktime past the queue time the masternode starts the session, and the two wallets mix")
         ready_offset = mn.node.debug_log_bytes()
         self.bump_mocktime(QUEUE_TIMEOUT + 1)
@@ -132,6 +190,51 @@ class P2PCoinJoinDfcnMixTest(DashTestFramework):
         assert_equal({(vin["txid"], vin["vout"]) for vin in mix["vin"]}, {(c["txid"], c["vout"]) for c in candidates})
         for wallet in wallets:
             wallet.coinjoin("stop")
+
+        self.log.info("The %d peer is offered the mix as a DSTX and gets it; the %d peer is offered nothing of it",
+                      NEW_VERSION, OLD_VERSION)
+        mix_hash = int(mix["txid"], 16)
+        assert mix["txid"] in mn.node.getrawmempool()
+        # An ordinary transaction after the mix: once the 70242 peer is offered it, the masternode's inventory round
+        # that held the mix for that peer is over.
+        marker_hash = int(controller.sendtoaddress(controller.getnewaddress(), 1), 16)
+
+        def offered():
+            # The inventory trickle runs on the mocked clock: three seconds of it per check, which with this half
+            # second and wait_until's own half second is about three each second, as sync_mempools gives.
+            time.sleep(0.5)
+            self.bump_mocktime(3)
+            with p2p_lock:
+                return ((MSG_DSTX, mix_hash) in new_peer.offered and mix_hash in new_peer.dstxes and
+                        (MSG_TX, marker_hash) in old_peer.offered)
+        self.wait_until(offered, timeout=60)
+        old_peer.sync_with_ping()
+        with p2p_lock:
+            assert (MSG_DSTX, mix_hash) not in old_peer.offered, "the 70242 peer was offered the DSTX"
+            assert (MSG_TX, mix_hash) not in old_peer.offered, "the 70242 peer was offered the mix as a transaction"
+            assert mix_hash not in old_peer.dstxes and mix_hash not in old_peer.txids
+            assert_equal(new_peer.dstxes[mix_hash].m_protxHash, int(protx, 16))
+
+        self.log.info("Once the mix may be asked for unannounced, the %d peer's request for it as a DSTX is not found, "
+                      "and one as a transaction gets it", OLD_VERSION)
+        self.bump_mocktime(UNCONDITIONAL_RELAY_DELAY + 1)
+        # Each request's answer on its own, between the request and its ping: about the mix, the DSTX request gets
+        # exactly one not-found item and the transaction request exactly the transaction (as
+        # src/test/coinjoin_dstx_relay_tests.cpp checks per request).
+        with p2p_lock:
+            start = len(old_peer.received)
+        old_peer.send_and_ping(msg_getdata([CInv(MSG_DSTX, mix_hash)]))
+        with p2p_lock:
+            got = old_peer.received_since(start, mix_hash)
+            start = len(old_peer.received)
+        assert ("dstx", MSG_DSTX, mix_hash) not in got, "the 70242 peer was sent the DSTX"
+        assert got == [("notfound", MSG_DSTX, mix_hash)], "the 70242 peer's DSTX request got %r, not one not-found item" % got
+        old_peer.send_and_ping(msg_getdata([CInv(MSG_TX, mix_hash)]))
+        with p2p_lock:
+            got = old_peer.received_since(start, mix_hash)
+        assert ("dstx", MSG_DSTX, mix_hash) not in got, "the 70242 peer was sent the DSTX for its transaction request"
+        assert got == [("tx", MSG_TX, mix_hash)], "the 70242 peer's transaction request got %r, not the transaction alone" % got
+        assert old_peer.is_connected and new_peer.is_connected
         self.generate(controller, 1)
 
         self.log.info("Each wallet's new coin counts one round")

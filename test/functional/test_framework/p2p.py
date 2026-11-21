@@ -44,6 +44,7 @@ from test_framework.messages import (
     msg_clsig,
     msg_cmpctblock,
     msg_dssu,
+    msg_dstx,
     msg_filteradd,
     msg_filterclear,
     msg_filterload,
@@ -150,6 +151,7 @@ MESSAGEMAP = {
     # Dash Specific
     b"clsig": msg_clsig,
     b"dssu": msg_dssu,
+    b"dstx": msg_dstx,
     b"getmnlistd": msg_getmnlistd,
     b"getsporks": None,
     b"govsync": None,
@@ -593,6 +595,7 @@ class P2PInterface(P2PConnection):
     def on_mnlistdiff(self, message): pass
     def on_clsig(self, message): pass
     def on_dssu(self, message): pass
+    def on_dstx(self, message): pass
     def on_islock(self, message): pass
     def on_isdlock(self, message): pass
 
