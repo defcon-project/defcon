@@ -7,10 +7,11 @@ Wallet changes
   from any address of the wallet. A wallet that mixed and staked could therefore spend some of its
   mixed coins and mixing collaterals with each win and pay them to its staking address, which
   linked them on the chain. Staking and `combineoutputs` now leave out every output whose amount
-  is a CoinJoin denomination (10.0001, 1.00001, 0.100001, 0.0100001 or 0.00100001 DFCN) or a
-  CoinJoin collateral amount (0.0001 to 0.0004 DFCN), in both scopes. On test networks, where any
-  amount can stake, a stake won by such a coin takes no other output with it. Only the wallet
-  changes; blocks and network rules stay the same.
+  is a CoinJoin denomination (10 000.1, 1 000.01, 100.001, 10.0001, 1.00001, 0.100001, 0.0100001
+  or 0.00100001 DFCN) or a CoinJoin collateral amount (0.0001 to 0.0004 DFCN), in both scopes.
+  On test networks, where the staking floor is zero, a stake won by a coin of a CoinJoin
+  collateral amount takes no other output with it. Only the wallet changes; blocks and network
+  rules stay the same.
 - Known limitation: the rule goes by amount, so an ordinary output of exactly one of these amounts
   is left out too; it can still be spent normally. Coins combined before this change stay linked,
   and with the default scope staking still links the wallet's other addresses.

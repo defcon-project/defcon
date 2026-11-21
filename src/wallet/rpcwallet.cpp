@@ -2541,7 +2541,7 @@ static RPCHelpMan combineoutputs()
             if (is_collateral_amount(txout.nValue)) continue;
             // Nor a CoinJoin denomination or collateral amount: combining one
             // would link mixed coins to each other and to the wallet's other addresses.
-            if (CoinJoin::IsDenominatedOrCollateralAmount(txout.nValue)) continue;
+            if (CoinJoin::IsKnownDenominationOrCollateralAmount(txout.nValue)) continue;
             std::vector<std::vector<unsigned char>> solutions;
             const TxoutType type = Solver(txout.scriptPubKey, solutions);
             if (type != TxoutType::PUBKEY && type != TxoutType::PUBKEYHASH) continue;

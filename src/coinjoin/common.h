@@ -197,11 +197,17 @@ constexpr bool IsCollateralAmount(CAmount nInputAmount)
 }
 
 /** A denomination or a collateral amount: the amounts CoinJoin itself spends in v23.0.0,
- *  which CoinType::ONLY_NONDENOMINATED leaves out together with the DFCN-scale amounts (CJ4).
- *  Stake combining and combineoutputs never spend an output of such an amount. */
+ *  which CoinType::ONLY_NONDENOMINATED leaves out together with the DFCN-scale amounts (CJ4). */
 constexpr bool IsDenominatedOrCollateralAmount(CAmount nInputAmount)
 {
     return IsDenominatedAmount(nInputAmount) || IsCollateralAmount(nInputAmount);
+}
+
+/** Any of the eight wire-table amounts or a collateral amount: what CoinType::ONLY_NONDENOMINATED
+ *  leaves out. Stake combining and combineoutputs never spend an output of such an amount (CJ4-B). */
+constexpr bool IsKnownDenominationOrCollateralAmount(CAmount nInputAmount)
+{
+    return IsKnownDenominationAmount(nInputAmount) || IsCollateralAmount(nInputAmount);
 }
 
 constexpr int CalculateAmountPriority(CAmount nInputAmount)

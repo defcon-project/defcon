@@ -743,7 +743,7 @@ CStakeWallet::CombineChoice CStakeWallet::PlanCombine(CWallet& wallet, const COu
     // combining would tie that mixed coin to the wallet's other outputs. Such a
     // kernel can win only where the staking floor is zero (testnet, regtest).
     // Nothing is scanned, so nothing is counted.
-    if (CoinJoin::IsDenominatedOrCollateralAmount(kernel_value)) {
+    if (CoinJoin::IsKnownDenominationOrCollateralAmount(kernel_value)) {
         choice.plan = PlanCoinstake(kernel_value, reward, {}, target, /*max_extra=*/0, allowance, rest_allowance);
         return choice;
     }
@@ -763,7 +763,7 @@ CStakeWallet::CombineChoice CStakeWallet::PlanCombine(CWallet& wallet, const COu
         // Never a CoinJoin denomination or collateral amount, in either scope:
         // combining one would tie mixed coins to each other and to the staking
         // key. Like a masternode collateral amount, it is not counted below.
-        if (CoinJoin::IsDenominatedOrCollateralAmount(txout.nValue)) continue;
+        if (CoinJoin::IsKnownDenominationOrCollateralAmount(txout.nValue)) continue;
         const bool stakeable = txout.nValue >= params.stakeValueRange[0];
         // A stake of a whole target or more is left as it is by design.
         if (stakeable && txout.nValue > target) continue;
