@@ -28,11 +28,12 @@ What is checked:
 - CJ4-B: a batch with one, two or three pieces where any piece is exactly
   10 000.1 DFCN, a CoinJoin denomination that staking skips, fails as not
   stakeable in the preview and in the send alike (one piece: staking_only;
-  more: output_size), and the same batch a duff larger per piece is stakeable;
-  two 100.001 DFCN coins are no candidates. With descriptors, the preview sizes
-  each batch for the script the send pays to: pkh(), sh(pkh()) and pk()
-  receiving descriptors (pk() pays to P2PKH), and P2PKH with none active,
-  where the send fails at its address request.
+  more: output_size), and a batch of as many pieces where every output is
+  10 000.1 DFCN and a duff is stakeable; two 100.001 DFCN coins are no
+  candidates. With descriptors, the preview sizes each batch for the script
+  the send pays to: pkh(), sh(pkh()) and pk() receiving descriptors (pk()
+  pays to P2PKH), and P2PKH with none active, where the send fails at its
+  address request.
 """
 
 from decimal import Decimal, ROUND_CEILING
@@ -417,6 +418,7 @@ class WalletCombineOutputsTest(BitcoinTestFramework):
             self.fund(funder, enc_w.getnewaddress(), Decimal("4"))
         enc_w.walletlock()
         self.generatetoaddress(node, 1, mine_to)
+
         def previews_take_nothing():
             pool = enc_w.getwalletinfo()
             descriptors = enc_w.listdescriptors() if self.options.descriptors else None
