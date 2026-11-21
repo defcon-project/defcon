@@ -57,9 +57,9 @@ constexpr std::array<CAmount, 8> vecDenominationsByBit{
 };
 
 /** The wallet's list, in descending order: what the mixing target counts and what
- *  the wallet creates, selects for its queues and excludes from staking as a
- *  denomination. It stays the five amounts of v23.0.0; the DFCN-scale amounts are
- *  recognised from the wire table, not created. */
+ *  the wallet creates and selects for its queues. It stays the five amounts of
+ *  v23.0.0; the DFCN-scale amounts are recognised from the wire table, not created.
+ *  Staking excludes all eight wire-table amounts (IsKnownDenominationAmount, CJ4-B). */
 constexpr std::array<CAmount, 5> vecStandardDenominations{
         (10 * COIN) + 10000,
         (1 * COIN) + 1000,

@@ -15,7 +15,8 @@ restricts gathering to the winning key. `-stakecombine=0` disables gathering and
 uses the original split policy. Neither mode sends independent maintenance
 transactions. No funds are taken from a different loaded wallet. CoinJoin
 denominations and CoinJoin collateral amounts never join, in either scope, and a
-stake won by one takes no other output.
+stake won by a CoinJoin collateral amount takes no other output (a coin of exactly
+a CoinJoin denomination amount does not stake at all).
 
 ## Policy
 

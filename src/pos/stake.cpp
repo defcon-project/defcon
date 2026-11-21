@@ -37,6 +37,7 @@ void StakeSkipReport::Add(StakeEligibility why, CAmount value)
     case StakeEligibility::BelowMin:   below_min  += value; break;
     case StakeEligibility::AboveMax:   above_max  += value; break;
     case StakeEligibility::Collateral: collateral += value; break;
+    case StakeEligibility::CoinJoinAmount: coinjoin += value; break;
     case StakeEligibility::TooYoung:   too_young  += value; break;
     case StakeEligibility::TooOld:     too_old    += value; break;
     } // no default case, so the compiler can warn about missing cases
@@ -44,12 +45,12 @@ void StakeSkipReport::Add(StakeEligibility why, CAmount value)
 
 CAmount StakeSkipReport::Total() const
 {
-    return immature + bls + below_min + above_max + collateral + too_young + too_old;
+    return immature + bls + below_min + above_max + collateral + coinjoin + too_young + too_old;
 }
 
 CAmount PermanentlyExcluded(const StakeSkipReport& report)
 {
-    return report.bls + report.below_min + report.above_max + report.collateral + report.too_old;
+    return report.bls + report.below_min + report.above_max + report.collateral + report.coinjoin + report.too_old;
 }
 
 bool ShouldWarnAboutExcludedValue(const StakeSkipReport& report, CAmount min_stake_value)
@@ -90,6 +91,7 @@ std::string DescribePermanentExclusions(const StakeSkipReport& report)
         {"too_small", report.below_min},
         {"too_large", report.above_max},
         {"collateral_amount", report.collateral},
+        {"coinjoin", report.coinjoin},
         {"bls", report.bls},
         {"too_old", report.too_old},
     };
@@ -118,6 +120,9 @@ StakeEligibility CStakeWallet::ClassifyForStaking(CAmount value, int depth,
     if (value == params.regularMnCollateral || value == params.evoMnCollateral) {
         return StakeEligibility::Collateral;
     }
+    // A coin of exactly a CoinJoin denomination amount (any of the eight) does not stake (CJ4-B, design note § 7).
+    // Kernel selection, the weight and the report all ask this classifier.
+    if (CoinJoin::IsKnownDenominationAmount(value)) return StakeEligibility::CoinJoinAmount;
     if (inputAge < params.stakeAgeRange[0]) return StakeEligibility::TooYoung;
     // Both halves of this rule now match validation. The v2 age-cap GATE is
     // resolved from the height being mined, as validation resolves it, and the
@@ -278,7 +283,8 @@ std::vector<CAmount> CStakeWallet::SplitStakeCredit(CAmount nCredit, CAmount tar
         return value >= params.stakeValueRange[0] &&
                value <= params.stakeValueRange[1] &&
                value != params.regularMnCollateral &&
-               value != params.evoMnCollateral;
+               value != params.evoMnCollateral &&
+               !CoinJoin::IsKnownDenominationAmount(value); // nor a CoinJoin denomination amount (CJ4-B)
     };
 
     if ((target <= 0 || nCredit < (split_above > 0 ? split_above : 2 * target)) && stakeable(nCredit)) {
@@ -306,7 +312,9 @@ std::vector<CAmount> CStakeWallet::SplitStakeCredit(CAmount nCredit, CAmount tar
             return outputs;
         }
     }
-    return {}; // No safe layout; never silently return an ineligible output.
+    // No safe layout (also a credit too small to split around a CoinJoin amount in whole cents, which a staking
+    // reward never is); never silently return an ineligible output.
+    return {};
 }
 
 CAmount CStakeWallet::CompactStakeTarget(CAmount base_target) const
