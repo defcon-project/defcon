@@ -79,6 +79,7 @@ from test_framework.messages import (
     msg_verack,
     msg_version,
     MSG_BLOCK,
+    MSG_DSTX,
     MSG_TX,
     MSG_TYPE_MASK,
     NODE_NETWORK,
@@ -1011,3 +1012,40 @@ class P2PTxInvStore(P2PInterface):
         self.wait_until(lambda: set(self.tx_invs_received.keys()) == set([int(tx, 16) for tx in txns]), timeout=timeout)
         # Flush messages and wait for the getdatas to be processed
         self.sync_with_ping()
+
+
+class P2PVersionedPeer(P2PInterface):
+    """A P2PInterface that advertises the given protocol version and keeps what it is offered and sent."""
+
+    def __init__(self, version):
+        super().__init__()
+        self.version = version
+        self.offered = set()  # (inv type, hash) of every item announced to it
+        self.dstxes = {}      # txid -> the DSTX it received
+        self.txids = set()    # every transaction it received
+        self.received = []    # in order: ("dstx", MSG_DSTX, txid), ("tx", MSG_TX, txid), ("notfound", inv type, hash)
+
+    def peer_connect_send_version(self, services):
+        super().peer_connect_send_version(services)
+        self.on_connection_send_msg.nVersion = self.version
+
+    def on_inv(self, message):
+        self.offered.update((i.type, i.hash) for i in message.inv)
+        super().on_inv(message)  # asks for every item
+
+    def on_dstx(self, message):
+        message.dstx.tx.calc_sha256()
+        self.dstxes[message.dstx.tx.sha256] = message.dstx
+        self.received.append(("dstx", MSG_DSTX, message.dstx.tx.sha256))
+
+    def on_tx(self, message):
+        message.tx.calc_sha256()
+        self.txids.add(message.tx.sha256)
+        self.received.append(("tx", MSG_TX, message.tx.sha256))
+
+    def on_notfound(self, message):
+        self.received.extend(("notfound", i.type, i.hash) for i in message.vec)
+
+    def received_since(self, start, txid):
+        """What it received about the transaction after the first start answers (call with p2p_lock held)."""
+        return [answer for answer in self.received[start:] if answer[2] == txid]
