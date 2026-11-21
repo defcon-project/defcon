@@ -381,6 +381,7 @@ BOOST_AUTO_TEST_CASE(dfcn_scale_denominations_wire_table_and_wallet_api)
         BOOST_CHECK(CoinJoin::IsValidDenomination(bit));
         BOOST_CHECK(CoinJoin::IsKnownDenominationAmount(amount));
         BOOST_CHECK(CoinJoin::IsDenominatedAmount(amount));
+        BOOST_CHECK(CoinJoin::IsKnownDenominationOrCollateralAmount(amount));
         BOOST_CHECK(!CoinJoin::IsDfcnScaleDenomination(bit));
     }
     for (const auto& [bit, amount] : new_bits) {
@@ -392,6 +393,8 @@ BOOST_AUTO_TEST_CASE(dfcn_scale_denominations_wire_table_and_wallet_api)
         // The wallet API answers as v23.0.0 does: not a denomination, an ordinary amount.
         BOOST_CHECK(!CoinJoin::IsDenominatedAmount(amount));
         BOOST_CHECK(!CoinJoin::IsDenominatedOrCollateralAmount(amount));
+        // Combining leaves it out all the same (CJ4-B).
+        BOOST_CHECK(CoinJoin::IsKnownDenominationOrCollateralAmount(amount));
         BOOST_CHECK_EQUAL(CoinJoin::CalculateAmountPriority(amount), -1 * (amount / COIN));
         const auto wallet_denoms{CoinJoin::GetStandardDenominations()};
         BOOST_CHECK(std::find(wallet_denoms.begin(), wallet_denoms.end(), amount) == wallet_denoms.end());

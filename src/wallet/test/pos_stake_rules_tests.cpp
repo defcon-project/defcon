@@ -697,17 +697,24 @@ BOOST_FIXTURE_TEST_CASE(a_full_block_counts_every_combine_candidate_under_size, 
 
 BOOST_AUTO_TEST_CASE(the_coinjoin_amount_rule_is_exact)
 {
-    // What staking and combineoutputs leave out: the five denominations and
-    // the collateral range, inclusive, and nothing next to them.
-    for (const CAmount denom : CoinJoin::GetStandardDenominations()) {
-        BOOST_CHECK(CoinJoin::IsDenominatedOrCollateralAmount(denom));
+    // What stake combining and combineoutputs leave out: the eight denominations
+    // of the wire table and the collateral range, inclusive, and nothing next to them.
+    for (int bit = 0; bit < 8; ++bit) {
+        const CAmount denom{CoinJoin::DenominationToAmount(1 << bit)};
+        BOOST_CHECK(CoinJoin::IsKnownDenominationOrCollateralAmount(denom));
+        BOOST_CHECK(!CoinJoin::IsKnownDenominationOrCollateralAmount(denom - 1));
+        BOOST_CHECK(!CoinJoin::IsKnownDenominationOrCollateralAmount(denom + 1));
+        // The wallet list's own rule stays the five amounts of v23.0.0.
+        BOOST_CHECK_EQUAL(CoinJoin::IsDenominatedOrCollateralAmount(denom), bit < 5);
         BOOST_CHECK(!CoinJoin::IsDenominatedOrCollateralAmount(denom - 1));
         BOOST_CHECK(!CoinJoin::IsDenominatedOrCollateralAmount(denom + 1));
     }
     for (const CAmount collateral : {CoinJoin::GetCollateralAmount(), CAmount{25000}, CoinJoin::GetMaxCollateralAmount()}) {
+        BOOST_CHECK(CoinJoin::IsKnownDenominationOrCollateralAmount(collateral));
         BOOST_CHECK(CoinJoin::IsDenominatedOrCollateralAmount(collateral));
     }
     for (const CAmount other : {CAmount{0}, CoinJoin::GetCollateralAmount() - 1, CoinJoin::GetMaxCollateralAmount() + 1, COIN, 10 * COIN}) {
+        BOOST_CHECK(!CoinJoin::IsKnownDenominationOrCollateralAmount(other));
         BOOST_CHECK(!CoinJoin::IsDenominatedOrCollateralAmount(other));
     }
 }
@@ -777,8 +784,9 @@ BOOST_AUTO_TEST_CASE(a_stake_split_avoids_the_coinjoin_amounts)
 
 namespace {
 //! One wallet, two keys, and outputs that differ only in amount: at each key
-//! every CoinJoin denomination and three collateral amounts, and beside them
-//! near misses that are neither. One transaction, the same scripts and the
+//! every CoinJoin denomination of the wallet's list, three collateral amounts and
+//! the DFCN-scale 100.001 and 1000.01 DFCN (CJ4-B), and beside them near misses
+//! that are neither. Two transactions in one block, the same scripts and the
 //! same depth, so only the amount rule can keep the CoinJoin ones out.
 struct CoinJoinDecoySetup : public TestChain100Setup {
     //! Stakeable under MainnetLikeLimits too, so neither plan is empty.
@@ -786,12 +794,14 @@ struct CoinJoinDecoySetup : public TestChain100Setup {
     CKey held;  //!< the kernel's key
     CKey other; //!< another key of the same wallet
     COutPoint kernel;
-    COutPoint coinjoin_kernel; //!< the largest denomination at held, as a kernel where the floor is zero
+    COutPoint coinjoin_kernel; //!< the largest of the wallet list's five denominations at held, as a kernel where the floor is zero
     CAmount coinjoin_kernel_value{CoinJoin::GetStandardDenominations()[0]};
-    std::set<COutPoint> coinjoin;       //!< 8 CoinJoin amounts at each key
-    std::set<COutPoint> controls_held;  //!< 9999 and 40001 sat, each denomination + 1 sat
-    std::set<COutPoint> controls_other; //!< 9999 and 40001 sat, each denomination - 1 sat
-    CAmount control_total{0};
+    COutPoint dfcn_scale_kernel; //!< the 100.001 DFCN coin at held, as a kernel where the floor is zero
+    CAmount dfcn_scale_kernel_value{CoinJoin::DenominationToAmount(1 << 5)};
+    std::set<COutPoint> coinjoin;       //!< 10 CoinJoin amounts at each key
+    std::set<COutPoint> controls_held;  //!< 9999 and 40001 sat, each of the seven denominations + 1 sat
+    std::set<COutPoint> controls_other; //!< 9999 and 40001 sat, each of the seven denominations - 1 sat
+    std::map<COutPoint, CAmount> control_value;
     std::shared_ptr<CWallet> wallet;
 
     CoinJoinDecoySetup()
@@ -826,19 +836,41 @@ struct CoinJoinDecoySetup : public TestChain100Setup {
         for (const CAmount value : above) pay(value, to_held, controls_held);
         for (const CAmount value : below) pay(value, to_other, controls_other);
         BOOST_REQUIRE(m_coinbase_txns[0]->vout[0].nValue >= CTransaction(funding).GetValueOut());
+
+        // The DFCN-scale amounts the wallet does not create (bits 5 and 6), from a second coinbase.
+        CMutableTransaction dfcn_scale;
+        dfcn_scale.vin.emplace_back(COutPoint(m_coinbase_txns[1]->GetHash(), 0));
+        std::vector<std::pair<size_t, std::set<COutPoint>*>> placed_dfcn_scale;
+        for (const int bit : {5, 6}) {
+            const CAmount denom{CoinJoin::DenominationToAmount(1 << bit)};
+            for (const auto& [value, script, into] : {std::make_tuple(denom, to_held, &coinjoin), std::make_tuple(denom, to_other, &coinjoin),
+                                                      std::make_tuple(denom + 1, to_held, &controls_held),
+                                                      std::make_tuple(denom - 1, to_other, &controls_other)}) {
+                placed_dfcn_scale.emplace_back(dfcn_scale.vout.size(), into);
+                dfcn_scale.vout.emplace_back(value, script);
+            }
+        }
+        BOOST_REQUIRE(m_coinbase_txns[1]->vout[0].nValue >= CTransaction(dfcn_scale).GetValueOut());
+        BOOST_REQUIRE(dfcn_scale.vout[0] == CTxOut(dfcn_scale_kernel_value, to_held));
         {
             FillableSigningProvider keystore;
             keystore.AddKey(coinbaseKey);
             BOOST_REQUIRE(SignSignature(keystore, *m_coinbase_txns[0], funding, 0, SIGHASH_ALL));
+            BOOST_REQUIRE(SignSignature(keystore, *m_coinbase_txns[1], dfcn_scale, 0, SIGHASH_ALL));
         }
         const uint256 txid = funding.GetHash();
         kernel = COutPoint(txid, 0);
         coinjoin_kernel = COutPoint(txid, static_cast<uint32_t>(coinjoin_kernel_n));
-        for (const auto& [n, into] : placed) into->emplace(txid, static_cast<uint32_t>(n));
-        for (const auto* controls : {&controls_held, &controls_other}) {
-            for (const COutPoint& outpoint : *controls) control_total += funding.vout[outpoint.n].nValue;
+        dfcn_scale_kernel = COutPoint(dfcn_scale.GetHash(), 0);
+        for (const auto& [tx, positions] : {std::make_pair(&funding, &placed), std::make_pair(&dfcn_scale, &placed_dfcn_scale)}) {
+            const uint256 hash = tx->GetHash();
+            for (const auto& [n, into] : *positions) {
+                const COutPoint outpoint(hash, static_cast<uint32_t>(n));
+                into->insert(outpoint);
+                if (into != &coinjoin) control_value.emplace(outpoint, tx->vout[n].nValue);
+            }
         }
-        CreateAndProcessBlock({funding}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+        CreateAndProcessBlock({funding, dfcn_scale}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
         for (int i = 0; i < COINBASE_MATURITY + 5; ++i) {
             CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
         }
@@ -936,18 +968,22 @@ BOOST_FIXTURE_TEST_CASE(staking_never_combines_a_coinjoin_amount_in_either_scope
     // longer offers a denomination as a kernel; a collateral amount where the floor is zero
     // still reaches this path.)
     BOOST_REQUIRE(coinjoin.count(coinjoin_kernel));
+    BOOST_REQUIRE(coinjoin.count(dfcn_scale_kernel));
     Consensus::Params zero_floor = Params().GetConsensus();
     BOOST_REQUIRE_EQUAL(zero_floor.stakeValueRange[0], CAmount{0});
     CStakeWallet regtest_staker(wallet, zero_floor);
-    for (const bool wallet_scope : {true, false}) {
-        wallet->m_stake_combine_wallet = wallet_scope;
-        const std::string context = strprintf("CoinJoin kernel, scope %s", wallet_scope ? "wallet" : "key");
-        const auto alone = regtest_staker.PlanCombine(*wallet, coinjoin_kernel, held.GetPubKey(), coinjoin_kernel_value,
-                                                      GetProofOfStakeReward(), MIN_STAKE_TARGET, /*max_extra=*/19, MAX_MONEY, MAX_MONEY);
-        BOOST_CHECK_MESSAGE(alone.refs.empty(), context);
-        BOOST_CHECK_MESSAGE(alone.plan.extra_inputs.empty(), context);
-        BOOST_CHECK_MESSAGE(!alone.plan.output_values.empty(), context);
-        BOOST_CHECK_MESSAGE(alone.plan.skipped.Total() == 0, context);
+    for (const auto& [kernel_outpoint, kernel_value, name] : {std::make_tuple(coinjoin_kernel, coinjoin_kernel_value, "10.0001"),
+                                                               std::make_tuple(dfcn_scale_kernel, dfcn_scale_kernel_value, "100.001")}) {
+        for (const bool wallet_scope : {true, false}) {
+            wallet->m_stake_combine_wallet = wallet_scope;
+            const std::string context = strprintf("CoinJoin kernel %s DFCN, scope %s", name, wallet_scope ? "wallet" : "key");
+            const auto alone = regtest_staker.PlanCombine(*wallet, kernel_outpoint, held.GetPubKey(), kernel_value,
+                                                          GetProofOfStakeReward(), MIN_STAKE_TARGET, /*max_extra=*/19, MAX_MONEY, MAX_MONEY);
+            BOOST_CHECK_MESSAGE(alone.refs.empty(), context);
+            BOOST_CHECK_MESSAGE(alone.plan.extra_inputs.empty(), context);
+            BOOST_CHECK_MESSAGE(!alone.plan.output_values.empty(), context);
+            BOOST_CHECK_MESSAGE(alone.plan.skipped.Total() == 0, context);
+        }
     }
 }
 
@@ -962,15 +998,43 @@ BOOST_FIXTURE_TEST_CASE(combineoutputs_never_takes_a_coinjoin_amount, CoinJoinDe
     }
     BOOST_REQUIRE(combine);
     // A dry run with every default: on regtest max_amount is the smaller
-    // masternode collateral (1000), far above every output but the kernel.
+    // masternode collateral (1000), which is also its highest value. It leaves
+    // out the kernel and the outputs at 1000.01 DFCN and a satoshi either side; the
+    // 100.001 DFCN coins are left out by the amount rule alone, a satoshi either side is taken.
+    const CAmount max_amount{1000 * COIN};
+    BOOST_REQUIRE_EQUAL(std::min(Params().GetConsensus().regularMnCollateral, Params().GetConsensus().evoMnCollateral), max_amount);
     JSONRPCRequest request;
     request.params.setArray();
     UniValue result;
     BOOST_REQUIRE(combine->actor(request, result, /*last_handler=*/true));
-    const int64_t expected = controls_held.size() + controls_other.size();
+    int64_t expected{0};
+    CAmount expected_amount{0};
+    bool dfcn_scale_controls{false};
+    for (const auto& [outpoint, value] : control_value) {
+        if (value >= max_amount) continue;
+        ++expected;
+        expected_amount += value;
+        dfcn_scale_controls |= value == CoinJoin::DenominationToAmount(1 << 5) + 1;
+    }
+    BOOST_REQUIRE(dfcn_scale_controls);
     BOOST_CHECK(find_value(result, "dry_run").get_bool());
     BOOST_CHECK_EQUAL(find_value(result, "candidates").get_int64(), expected);
-    BOOST_CHECK_EQUAL(AmountFromValue(find_value(result, "candidate_amount")), control_total);
+    BOOST_CHECK_EQUAL(AmountFromValue(find_value(result, "candidate_amount")), expected_amount);
+    // Which coins, not only how many: swapping the two 100.001 DFCN coins for their two
+    // neighbours would keep the count and the sum. In [D - 1, D) only D - 1 is a candidate,
+    // in [D, D + 2) only D + 1.
+    const CAmount d{CoinJoin::DenominationToAmount(1 << 5)};
+    for (const auto& [low, high, only] : {std::make_tuple(d - 1, d, d - 1), std::make_tuple(d, d + 2, d + 1)}) {
+        JSONRPCRequest narrow;
+        narrow.params.setArray();
+        narrow.params.push_back(true);                   // dry_run
+        narrow.params.push_back(ValueFromAmount(high)); // max_amount, exclusive
+        narrow.params.push_back(ValueFromAmount(low));  // min_amount
+        UniValue narrowed;
+        BOOST_REQUIRE(combine->actor(narrow, narrowed, /*last_handler=*/true));
+        BOOST_CHECK_EQUAL(find_value(narrowed, "candidates").get_int64(), 1);
+        BOOST_CHECK_EQUAL(AmountFromValue(find_value(narrowed, "candidate_amount")), only);
+    }
     const UniValue& batches = find_value(result, "batches");
     BOOST_REQUIRE_EQUAL(batches.size(), 1u);
     BOOST_CHECK_EQUAL(find_value(batches[0], "inputs").get_int64(), expected);
