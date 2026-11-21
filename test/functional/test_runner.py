@@ -199,6 +199,8 @@ BASE_SCRIPTS = [
     'rpc_masternode_lists_unconnected.py',
     'p2p_coinjoin_inputs.py',
     'p2p_coinjoin_dfcn_denoms.py',
+    'p2p_coinjoin_dfcn_attempt.py',
+    'p2p_coinjoin_dfcn_mix.py',
     'feature_import_corrupt_pos_block.py',
     'feature_notifications.py',
     # vv Tests less than 60s vv
