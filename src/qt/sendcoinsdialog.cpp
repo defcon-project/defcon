@@ -48,6 +48,57 @@
 
 #define SEND_CONFIRM_DELAY   3
 
+namespace {
+//! Abyss: the summary column's width beside the recipients.
+constexpr int ABYSS_SUMMARY_MAX_WIDTH{260};
+
+//! Abyss: the recipients' scroll area. Beside the summary it scrolls the
+//! fields on its own, as it always did. With the summary under it (a narrow
+//! page, SendCoinsDialog::updateBody) it grows to the fields' whole height for
+//! its width, so the wallet's page scroll area is the one that scrolls and the
+//! page scrolls down only. It does not hand the fields' least width on to the
+//! page: fields wider than the page (a long unbroken word in a label) scroll
+//! sideways here, as they always did, and the page and the summary keep the
+//! page's width.
+class SendFieldsScroll : public QScrollArea
+{
+public:
+    using QScrollArea::QScrollArea;
+    void setGrow(bool grow)
+    {
+        if (grow == m_grow) return;
+        m_grow = grow;
+        // QWidget::hasHeightForWidth() reads this flag for a widget with no layout.
+        QSizePolicy policy = sizePolicy();
+        policy.setHeightForWidth(grow);
+        setSizePolicy(policy);
+        updateGeometry();
+    }
+    int heightForWidth(int width) const override
+    {
+        if (!m_grow || widget() == nullptr) return QScrollArea::heightForWidth(width);
+        const int frame = 2 * frameWidth();
+        // Fields wider than this area are laid out at their least width, under
+        // the bar they then scroll sideways with.
+        const int least = widget()->minimumSizeHint().width();
+        const int inner = std::max(width - frame, least);
+        const int bar = width - frame < least ? horizontalScrollBar()->sizeHint().height() : 0;
+        return frame + bar + (widget()->hasHeightForWidth() ? widget()->heightForWidth(inner) : widget()->sizeHint().height());
+    }
+
+protected:
+    bool event(QEvent* event) override
+    {
+        // The fields' size changed (a recipient added, a card grown): hand it on.
+        if (event->type() == QEvent::LayoutRequest && m_grow) updateGeometry();
+        return QScrollArea::event(event);
+    }
+
+private:
+    bool m_grow{false};
+};
+} // namespace
+
 static constexpr std::array confTargets{2, 4, 6, 12, 24, 48, 144, 504, 1008};
 int getConfTargetForIndex(int index) {
     if (index+1 > static_cast<int>(confTargets.size())) {
@@ -709,18 +760,20 @@ void SendCoinsDialog::updateThemePresentation()
             auto* left = new QVBoxLayout(fields);
             left->setContentsMargins(0, 0, 0, 0);
             left->setSpacing(12);
-            auto* field_scroll = new QScrollArea(m_modern_body);
+            auto* field_scroll = new SendFieldsScroll(m_modern_body);
             m_modern_scroll = field_scroll;
             field_scroll->setObjectName("abyssSendFieldsScroll");
             field_scroll->setFrameShape(QFrame::NoFrame);
             field_scroll->setWidgetResizable(true);
             field_scroll->setWidget(fields);
             field_scroll->viewport()->installEventFilter(this);
+            // The fields' least width decides where the summary goes (updateBody).
+            fields->installEventFilter(this);
             auto* summary = new QFrame(m_modern_body);
             m_modern_summary = summary;
             summary->setObjectName("abyssSendSummary");
             summary->setMinimumWidth(200);
-            summary->setMaximumWidth(260);
+            summary->setMaximumWidth(ABYSS_SUMMARY_MAX_WIDTH);
             auto* right = new QVBoxLayout(summary);
             right->setContentsMargins(16, 16, 16, 16);
             right->setSpacing(12);
@@ -875,6 +928,7 @@ void SendCoinsDialog::updateThemePresentation()
         }
         m_modern_layout = modern;
         arrangeCoinControlFigures();
+        updateBody();
     }
     for (int i = 0; i < ui->entries->count(); ++i) {
         if (auto* entry = qobject_cast<SendCoinsEntry*>(ui->entries->itemAt(i)->widget())) {
@@ -971,7 +1025,81 @@ bool SendCoinsDialog::eventFilter(QObject* watched, QEvent* event)
         (watched == ui->widgetCoinControl && event->type() == QEvent::LayoutRequest)) {
         arrangeCoinControlFigures();
     }
+    // The page's room in the wallet's scroll area, or the fields' least width, changed.
+    if ((m_page_area && watched == m_page_area->viewport() && event->type() == QEvent::Resize && isVisible()) ||
+        (m_modern_scroll && watched == m_modern_scroll->widget() && event->type() == QEvent::LayoutRequest)) {
+        updateBody();
+    }
+    // Stacked, the fields' height is the page's: when they grow or shrink (a
+    // card's message replaced), the wallet's scroll area takes the page's new
+    // height.
+    if (m_modern_scroll && watched == m_modern_scroll->widget() && event->type() == QEvent::LayoutRequest &&
+        m_body_stacked && m_page_area && isVisible()) {
+        updatePageHeight();
+    }
     return QDialog::eventFilter(watched, event);
+}
+
+void SendCoinsDialog::showEvent(QShowEvent* event)
+{
+    QDialog::showEvent(event);
+    // A hidden page does not follow the room; it catches up when shown.
+    watchPageArea();
+    updateBody();
+    // A recipient added while the page was hidden (a payment request taken on
+    // another page) is brought into the page's view now that it has its room.
+    if (QWidget* target = m_show_target.data()) {
+        m_show_target.clear();
+        if (m_body_stacked && m_page_area) ensureVisibleOnPage(target);
+    }
+}
+
+void SendCoinsDialog::watchPageArea()
+{
+    QScrollArea* area = nullptr;
+    for (QWidget* parent = parentWidget(); parent != nullptr && area == nullptr; parent = parent->parentWidget()) {
+        area = qobject_cast<QScrollArea*>(parent);
+    }
+    if (area == m_page_area) return;
+    if (m_page_area) m_page_area->viewport()->removeEventFilter(this);
+    m_page_area = area;
+    if (m_page_area) m_page_area->viewport()->installEventFilter(this);
+}
+
+int SendCoinsDialog::bodyBreakpoint() const
+{
+    if (!m_modern_scroll || !m_modern_summary || !m_page_area) return 0;
+    // The two columns side by side need the page's margins, the fields' least
+    // width, the gap and the summary's width beside them -- its most: the
+    // fields' scroll area hides their least width from the row, which gives the
+    // summary its own width first -- and room for a vertical bar in the fields'
+    // scroll area and in the page's: with one on show, the fields still need
+    // not scroll sideways.
+    const QMargins margins = ui->verticalLayout->contentsMargins();
+    const int gap = m_modern_body->layout()->spacing();
+    return margins.left() + margins.right() + m_modern_scroll->widget()->minimumSizeHint().width() + gap +
+           ABYSS_SUMMARY_MAX_WIDTH + m_modern_scroll->verticalScrollBar()->sizeHint().width() +
+           m_page_area->verticalScrollBar()->sizeHint().width();
+}
+
+void SendCoinsDialog::updateBody()
+{
+    if (!m_modern_body || !m_modern_scroll || !m_modern_summary) return;
+    // Stacked where the page's room in the wallet's scroll area with no bar is
+    // less than the two columns need (that room does not depend on the page's
+    // own bar, so the decision cannot feed back); above that, as before.
+    const bool stacked = m_modern_layout && m_page_area && m_page_area->maximumViewportSize().width() < bodyBreakpoint();
+    if (stacked == m_body_stacked) return;
+    m_body_stacked = stacked;
+    auto* body = qobject_cast<QBoxLayout*>(m_modern_body->layout());
+    body->setDirection(stacked ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    // Stacked, the fields take their height and the summary stands right under
+    // them, as wide as the page; the room to spare stays below it.
+    body->setStretchFactor(m_modern_scroll, stacked ? 0 : 1);
+    body->setStretchFactor(m_modern_summary, stacked ? 1 : 0);
+    m_modern_summary->setMaximumWidth(stacked ? QWIDGETSIZE_MAX : ABYSS_SUMMARY_MAX_WIDTH);
+    static_cast<SendFieldsScroll*>(m_modern_scroll)->setGrow(stacked);
+    body->invalidate();
 }
 
 void SendCoinsDialog::updatePaymentSummary()
@@ -1038,12 +1166,43 @@ void SendCoinsDialog::ensureRecipientVisible(SendCoinsEntry* entry, bool validat
         ui->entries->invalidate();
         ui->scrollAreaWidgetContents->updateGeometry();
         m_modern_scroll->widget()->layout()->invalidate();
+        // The summary's place for the fields as they are now: a payment
+        // request's message may have just widened them (pasteEntry).
+        updateBody();
         QEvent request(QEvent::LayoutRequest);
         QApplication::sendEvent(m_modern_scroll, &request);
-        recipientScrollArea()->ensureWidgetVisible(validation ? entry->validationTarget() : entry->addressField());
+        QWidget* target = validation ? entry->validationTarget() : entry->addressField();
+        recipientScrollArea()->ensureWidgetVisible(target);
+        // Stacked, the fields do not scroll on their own: the page does. A
+        // hidden page has no room in the wallet's scroll area yet (that is
+        // another page's): it does so when shown (showEvent).
+        if (!isVisible()) {
+            m_show_target = target;
+        } else if (m_body_stacked && m_page_area) {
+            ensureVisibleOnPage(target);
+        }
     } else {
         recipientScrollArea()->ensureWidgetVisible(entry);
     }
+}
+
+void SendCoinsDialog::ensureVisibleOnPage(QWidget* target)
+{
+    updatePageHeight();
+    m_page_area->ensureWidgetVisible(target);
+}
+
+void SendCoinsDialog::updatePageHeight()
+{
+    // The page's scroll area takes the page's new height for its width: each
+    // level's cached height for width up to it is refreshed (the layouts'
+    // items keep it until their widget's updateGeometry).
+    for (QWidget* up = m_modern_scroll; up != nullptr && up != m_page_area->viewport(); up = up->parentWidget()) {
+        up->updateGeometry();
+        if (up->layout()) up->layout()->invalidate();
+    }
+    QEvent page_request(QEvent::LayoutRequest);
+    QApplication::sendEvent(m_page_area, &page_request);
 }
 
 void SendCoinsDialog::changeEvent(QEvent* event)
@@ -1135,6 +1294,9 @@ void SendCoinsDialog::pasteEntry(const SendCoinsRecipient &rv)
 
     entry->setValue(rv);
     updateTabsAndLabels();
+    // Abyss: in view with the request's content (its message may have moved
+    // the summary under the fields since addEntry brought the card into view).
+    if (m_modern_layout) ensureRecipientVisible(entry, false);
 }
 
 bool SendCoinsDialog::handlePaymentRequest(const SendCoinsRecipient &rv)
