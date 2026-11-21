@@ -165,6 +165,7 @@ SendCoinsDialog::SendCoinsDialog(bool _fCoinJoin, QWidget* parent) :
 
     connect(ui->addButton, &QPushButton::clicked, this, &SendCoinsDialog::addEntry);
     connect(ui->clearButton, &QPushButton::clicked, this, &SendCoinsDialog::clear);
+    connect(qApp, &QApplication::focusChanged, this, &SendCoinsDialog::followFocus);
 
     // Coin Control
     connect(ui->pushButtonCoinControl, &QPushButton::clicked, this, &SendCoinsDialog::coinControlButtonClicked);
@@ -1189,6 +1190,29 @@ void SendCoinsDialog::ensureRecipientVisible(SendCoinsEntry* entry, bool validat
         }
     } else {
         recipientScrollArea()->ensureWidgetVisible(entry);
+    }
+}
+
+void SendCoinsDialog::followFocus(QWidget* old, QWidget* now)
+{
+    // Abyss: a scroll area brings a field into view on Tab only when the focus
+    // moves inside it (QScrollArea::focusNextPrevChild). Focus coming into the
+    // recipients from outside them (Tab from the header's Clear button to Add
+    // Recipient, Shift+Tab from the summary), or into the Send page from
+    // outside the wallet's page scroll area (Tab from the window's controls),
+    // is brought into that area's view here: the recipients' first, then the
+    // page's, so the page's sees the field where it ends up. This runs as the
+    // focus moves, before a scroll area's own Tab step.
+    if (!m_modern_layout || !m_modern_scroll || now == nullptr || !isAncestorOf(now)) return;
+    // A click gives the focus where the pointer is: nothing moves under it
+    // before the button is released.
+    if (QGuiApplication::mouseButtons() != Qt::NoButton) return;
+    QWidget* recipients = m_modern_scroll->widget();
+    if (recipients != nullptr && recipients->isAncestorOf(now) && !(old != nullptr && recipients->isAncestorOf(old))) {
+        m_modern_scroll->ensureWidgetVisible(now);
+    }
+    if (m_page_area != nullptr && !(old != nullptr && m_page_area->isAncestorOf(old))) {
+        m_page_area->ensureWidgetVisible(now);
     }
 }
 

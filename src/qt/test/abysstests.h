@@ -53,6 +53,7 @@ private Q_SLOTS:
     void smallWindow();
     void overviewBreakpoint();
     void sendSummaryBelow();
+    void focusScrollsIntoView();
     void hoverMenus();
     void topMenuPairs();
     void topMenusHover();

@@ -93,6 +93,7 @@
 #include <QStringList>
 #include <QAction>
 #include <QSignalSpy>
+#include <QStyleHints>
 #include <QToolButton>
 #include <QToolBar>
 #include <QTranslator>
@@ -7694,6 +7695,191 @@ void AbyssTests::sendSummaryBelow()
     QVERIFY2(side_by_side() && summary->maximumWidth() == 260 && !fields->sizePolicy().hasHeightForWidth() &&
                  fields->verticalScrollBarPolicy() == Qt::ScrollBarAsNeeded,
              qPrintable(state()));
+}
+
+void AbyssTests::focusScrollsIntoView()
+{
+    // Tab from field to field on the Abyss Send page in a short wallet window
+    // keeps the focused field wholly in view: side by side, where the
+    // recipients' own area scrolls inside the page's scroll area, and stacked,
+    // where the page's scrolls (U11-D/2b).
+    if (!GUIUtil::fontsLoaded()) QSKIP("Window geometry requires minimal:enable_fonts or a native platform");
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.addWallet(fixture.model.get());
+    window.gotoSendCoinsPage();
+    window.show(); Settle();
+    window.resize(1500, 2000); Settle();
+    // The sync overlay keeps the focus on its close button while it is up:
+    // closed as the user closes it.
+    if (auto* overlay = window.findChild<ModalOverlay*>()) overlay->showHide(true, true);
+    QApplication::setActiveWindow(&window);
+    Settle();
+    SendCoinsDialog* send = nullptr;
+    for (auto* page : window.findChildren<SendCoinsDialog*>()) {
+        if (page->isVisible()) send = page;
+    }
+    QVERIFY(send && window.walletFrame);
+    auto* scroll = window.walletFrame->findChild<QScrollArea*>("abyssPageScroll");
+    auto* fields = send->findChild<QScrollArea*>("abyssSendFieldsScroll");
+    QVERIFY(scroll && fields);
+    const int breakpoint = send->bodyBreakpoint();
+    const int around = window.width() - scroll->maximumViewportSize().width();
+    for (int i = 0; i < 4; ++i) send->addEntry();
+    Settle();
+    QList<SendCoinsEntry*> entries;
+    for (auto* entry : send->findChildren<SendCoinsEntry*>()) {
+        if (entry->isVisible()) entries << entry;
+    }
+    QCOMPARE(entries.size(), 5);
+    for (const bool stacked : {false, true}) {
+        window.resize(breakpoint + around - (stacked ? 1 : 0), 420); Settle();
+        QCOMPARE(send->m_body_stacked, stacked);
+        scroll->verticalScrollBar()->setValue(0);
+        fields->verticalScrollBar()->setValue(0);
+        Settle();
+        // Forward from the first recipient's address, then backward from the
+        // Send button (Shift+Tab comes into the recipients from below them).
+        for (const bool forward : {true, false}) {
+            QWidget* start = forward ? entries.first()->addressField() : static_cast<QWidget*>(send->findChild<QPushButton*>("sendButton"));
+            QVERIFY(start);
+            start->setFocus(Qt::OtherFocusReason);
+            Settle();
+            QVERIFY2(QApplication::focusWidget() == start,
+                     qPrintable(QString("focus on %1").arg(QApplication::focusWidget() ? QApplication::focusWidget()->objectName() : "nothing")));
+            QSet<QWidget*> checked_widgets;
+            for (int step = 0; step < 120; ++step) {
+                if (forward) {
+                    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+                } else {
+                    QTest::keyClick(QApplication::focusWidget(), Qt::Key_Backtab, Qt::ShiftModifier);
+                }
+                Settle();
+                QWidget* focused = QApplication::focusWidget();
+                if (focused == nullptr || !send->isAncestorOf(focused)) break;
+                if (!focused->isVisible() || focused->height() > scroll->viewport()->height()) continue;
+                checked_widgets.insert(focused);
+                QVERIFY2(focused->visibleRegion() == QRegion(focused->rect()),
+                         qPrintable(QString("%1, %2 %3: %4 (%5) not wholly in view: visible %6 of %7x%8; page scroll %9/%10, recipients' scroll %11/%12")
+                                        .arg(stacked ? "stacked" : "side by side").arg(forward ? "Tab" : "Shift+Tab").arg(step + 1)
+                                        .arg(focused->metaObject()->className()).arg(focused->objectName())
+                                        .arg(focused->visibleRegion().boundingRect().height()).arg(focused->width()).arg(focused->height())
+                                        .arg(scroll->verticalScrollBar()->value()).arg(scroll->verticalScrollBar()->maximum())
+                                        .arg(fields->verticalScrollBar()->value()).arg(fields->verticalScrollBar()->maximum())));
+            }
+            qInfo().noquote() << "FOCUS_VISIBLE" << (stacked ? "stacked" : "side by side") << (forward ? "Tab" : "Shift+Tab")
+                              << "different fields checked:" << checked_widgets.size();
+            QVERIFY2(checked_widgets.size() >= 10, qPrintable(QString("only %1 different fields reached").arg(checked_widgets.size())));
+        }
+        // The two steps that come into the recipients from outside them, each
+        // from a scroll position that leaves its target out of view: Clear
+        // (the header) to Add Recipient (under the recipients), and Shift+Tab
+        // from Send (the summary) to the last recipient's last field.
+        auto* clear_button = send->findChild<QPushButton*>("clearButton");
+        auto* add_button = send->findChild<QPushButton*>("addButton");
+        auto* send_button = send->findChild<QPushButton*>("sendButton");
+        QVERIFY(clear_button && add_button && send_button);
+        const auto wholly = [&](QWidget* widget, const char* what) {
+            return QString("%1, %2: %3 (%4) visible %5 of %6; page scroll %7/%8, recipients' scroll %9/%10")
+                                  .arg(stacked ? "stacked" : "side by side").arg(what).arg(widget ? widget->metaObject()->className() : "nothing")
+                                  .arg(widget ? widget->objectName() : QString()).arg(widget ? widget->visibleRegion().boundingRect().height() : -1)
+                                  .arg(widget ? widget->height() : -1)
+                                  .arg(scroll->verticalScrollBar()->value()).arg(scroll->verticalScrollBar()->maximum())
+                                  .arg(fields->verticalScrollBar()->value()).arg(fields->verticalScrollBar()->maximum());
+        };
+        // These buttons take the platform's focus policy (Qt::TabFocus without
+        // Qt::ClickFocus in some native styles): the steps below set their own;
+        // Tab reaches a button only where Tab goes to every control.
+        for (QPushButton* button : {clear_button, add_button, send_button}) button->setFocusPolicy(Qt::StrongFocus);
+        if (QGuiApplication::styleHints()->tabFocusBehavior() == Qt::TabFocusAllControls) {
+            clear_button->setFocus(Qt::OtherFocusReason);
+            fields->verticalScrollBar()->setValue(0);
+            Settle();
+            QTest::keyClick(clear_button, Qt::Key_Tab);
+            Settle();
+            QVERIFY2(QApplication::focusWidget() == add_button && add_button->visibleRegion() == QRegion(add_button->rect()),
+                     qPrintable(wholly(QApplication::focusWidget(), "Clear, Tab")));
+        } else {
+            qInfo() << "focusScrollsIntoView: Tab goes to text controls only here; Clear to Add Recipient not checked";
+        }
+        send_button->setFocus(Qt::OtherFocusReason);
+        fields->verticalScrollBar()->setValue(0);
+        Settle();
+        QTest::keyClick(send_button, Qt::Key_Backtab, Qt::ShiftModifier);
+        Settle();
+        QWidget* last_field = QApplication::focusWidget();
+        QVERIFY2(last_field && entries.last()->isAncestorOf(last_field) && last_field->visibleRegion() == QRegion(last_field->rect()),
+                 qPrintable(wholly(last_field, "Send, Shift+Tab")));
+        // Into the Send page from the window's controls, outside the wallet's
+        // page scroll area, with the page scrolled away from the top: the
+        // field the focus comes to is in view.
+        QWidget* outside = nullptr;
+        for (auto* button : window.findChildren<QAbstractButton*>()) {
+            if (button->isVisible() && button->isEnabled() && (button->focusPolicy() & Qt::TabFocus) && !scroll->isAncestorOf(button)) {
+                outside = button;
+                break;
+            }
+        }
+        QVERIFY(outside);
+        outside->setFocus(Qt::OtherFocusReason);
+        Settle();
+        scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
+        fields->verticalScrollBar()->setValue(fields->verticalScrollBar()->maximum());
+        Settle();
+        // The first stop on the page is in view: wholly, or, taller than the
+        // view (the recipients' scroll area is a stop of its own, as it always
+        // was), across the view's whole height.
+        QWidget* entered = nullptr;
+        for (int step = 0; step < 80 && entered == nullptr; ++step) {
+            QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+            Settle();
+            QWidget* focused = QApplication::focusWidget();
+            if (focused && send->isAncestorOf(focused)) entered = focused;
+        }
+        QVERIFY2(entered && entered->visibleRegion().boundingRect().height() == std::min(entered->height(), scroll->viewport()->height()) &&
+                     (entered->height() > scroll->viewport()->height() || entered->visibleRegion() == QRegion(entered->rect())),
+                 qPrintable(wholly(entered, "from the window's controls, Tab")));
+        qInfo().noquote() << "FOCUS_VISIBLE" << (stacked ? "stacked" : "side by side") << "entered from" << outside->metaObject()->className()
+                          << outside->objectName() << "at" << entered->metaObject()->className() << entered->objectName();
+        if (stacked) continue;
+        // A click on a button only partly in the recipients' view, with the
+        // focus outside them: nothing moves while the button is down, so the
+        // release lands on it (one click), at the same window point.
+        QAbstractButton* balance = entries[2]->findChild<QAbstractButton*>("useAvailableBalanceButton");
+        QVERIFY(balance);
+        balance->setFocusPolicy(Qt::StrongFocus);
+        send_button->setFocus(Qt::OtherFocusReason);
+        scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
+        Settle();
+        const int top = balance->mapTo(fields->widget(), QPoint(0, 0)).y();
+        fields->verticalScrollBar()->setValue(top - fields->viewport()->height() + 6);
+        Settle();
+        const QPoint local(balance->width() / 2, 2);
+        QVERIFY2(fields->viewport()->rect().contains(balance->mapTo(fields->viewport(), local)) &&
+                     scroll->viewport()->rect().contains(balance->mapTo(scroll->viewport(), local)),
+                 qPrintable(wholly(balance, "the click's point not on show")));
+        const QPoint at = balance->mapTo(&window, local);
+        const int recipients_scroll = fields->verticalScrollBar()->value();
+        QSignalSpy clicked(balance, &QAbstractButton::clicked);
+        // The release always follows the press (a failed check between them
+        // would leave the button down for the cases after this one).
+        QTest::mousePress(window.windowHandle(), Qt::LeftButton, Qt::NoModifier, at);
+        const bool focus_on_press = QApplication::focusWidget() == balance;
+        QTest::mouseRelease(window.windowHandle(), Qt::LeftButton, Qt::NoModifier, at);
+        Settle();
+        QVERIFY2(focus_on_press && clicked.count() == 1 && fields->verticalScrollBar()->value() == recipients_scroll,
+                 qPrintable(QString("focus on the button at the press %1, clicks %2, recipients' scroll %3 then %4").arg(focus_on_press)
+                                .arg(clicked.count()).arg(recipients_scroll).arg(fields->verticalScrollBar()->value())));
+    }
 }
 
 void AbyssTests::overviewBreakpoint()

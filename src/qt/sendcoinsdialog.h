@@ -153,6 +153,9 @@ private:
     void ensureVisibleOnPage(QWidget* target);
     //! Stacked: the page's scroll area takes the page's new height.
     void updatePageHeight();
+    //! Abyss: a field the keyboard focus comes to from outside the recipients,
+    //! or from outside the page's scroll area, is brought into that area's view.
+    void followFocus(QWidget* old, QWidget* now);
     //! The wallet's page scroll area (Abyss), whose room decides it.
     QScrollArea* m_page_area{nullptr};
     bool m_body_stacked{false};
