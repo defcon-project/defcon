@@ -121,6 +121,7 @@
 35   rpc_blockchain.py                      # the chain calls: chain info, transaction statistics, the UTXO set summary, headers, block verbosity, the hash rate
 35   wallet_staking_info_multiwallet.py     # getstakinginfo with seven wallets: each row stays its wallet's while the staking list is rebuilt; both wallets
 35   p2p_coinjoin_dfcn_mix.py               # two wallets mix a DFCN-scale amount through a masternode from U, each new coin one round; a 70243 peer is offered and sent the DSTX, a 70242 (v23.0.0) peer neither, and its request for it is not found
+35   p2p_coinjoin_dfcn_old_mix.py           # between H and U two wallets mix 1.00001 through a masternode while each holds a free and a user-locked 1000.01 candidate, both untouched; a 70243 and a 70242 (v23.0.0) peer both get the old DSTX
 34   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
 33   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 32   rpc_verifyislock.py                    # the lock-verifying RPCs

@@ -201,6 +201,7 @@ BASE_SCRIPTS = [
     'p2p_coinjoin_dfcn_denoms.py',
     'p2p_coinjoin_dfcn_attempt.py',
     'p2p_coinjoin_dfcn_mix.py',
+    'p2p_coinjoin_dfcn_old_mix.py',
     'wallet_staking_coinjoin_amount.py',
     'feature_import_corrupt_pos_block.py',
     'feature_notifications.py',

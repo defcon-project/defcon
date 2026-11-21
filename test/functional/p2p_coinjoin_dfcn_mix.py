@@ -21,8 +21,8 @@ from decimal import Decimal
 import re
 import time
 
-from test_framework.messages import CInv, MSG_TX, msg_getdata
-from test_framework.p2p import P2PInterface, p2p_lock
+from test_framework.messages import CInv, MSG_DSTX, MSG_TX, msg_getdata
+from test_framework.p2p import P2PVersionedPeer, p2p_lock
 from test_framework.test_framework import DashTestFramework
 from test_framework.util import assert_equal
 
@@ -35,49 +35,11 @@ ORDINARY = Decimal("0.0013")   # less than the old path's minimum without collat
 QUEUE_TIMEOUT = 30             # src/coinjoin/coinjoin.h: COINJOIN_QUEUE_TIMEOUT (a client waits 10 s longer)
 OLD_VERSION = 70242            # src/version.h: Q60_SWITCHOVER_PROTO_VERSION, what v23.0.0 advertises
 NEW_VERSION = 70243            # src/version.h: COINJOIN_DFCN_DENOMS_PROTO_VERSION
-MSG_DSTX = 16                  # src/protocol.h
 UNCONDITIONAL_RELAY_DELAY = 2 * 60  # src/net_processing.cpp: a transaction this old may be asked for unannounced
 
 
 def is_p2pkh(script_hex):
     return len(script_hex) == 50 and script_hex.startswith("76a914") and script_hex.endswith("88ac")
-
-
-class VersionedPeer(P2PInterface):
-    """A peer that advertises the given protocol version and keeps what it is offered and sent."""
-
-    def __init__(self, version):
-        super().__init__()
-        self.version = version
-        self.offered = set()  # (inv type, hash) of every item announced to it
-        self.dstxes = {}      # txid -> the DSTX it received
-        self.txids = set()    # every transaction it received
-        self.received = []    # in order: ("dstx", MSG_DSTX, txid), ("tx", MSG_TX, txid), ("notfound", inv type, hash)
-
-    def peer_connect_send_version(self, services):
-        super().peer_connect_send_version(services)
-        self.on_connection_send_msg.nVersion = self.version
-
-    def on_inv(self, message):
-        self.offered.update((i.type, i.hash) for i in message.inv)
-        super().on_inv(message)  # asks for every item
-
-    def on_dstx(self, message):
-        message.dstx.tx.calc_sha256()
-        self.dstxes[message.dstx.tx.sha256] = message.dstx
-        self.received.append(("dstx", MSG_DSTX, message.dstx.tx.sha256))
-
-    def on_tx(self, message):
-        message.tx.calc_sha256()
-        self.txids.add(message.tx.sha256)
-        self.received.append(("tx", MSG_TX, message.tx.sha256))
-
-    def on_notfound(self, message):
-        self.received.extend(("notfound", i.type, i.hash) for i in message.vec)
-
-    def received_since(self, start, txid):
-        """What it received about the transaction after the first start answers (call with p2p_lock held)."""
-        return [answer for answer in self.received[start:] if answer[2] == txid]
 
 
 class P2PCoinJoinDfcnMixTest(DashTestFramework):
@@ -173,8 +135,8 @@ class P2PCoinJoinDfcnMixTest(DashTestFramework):
         assert_equal(self.wait_logged(clients[1], client_offsets[1], rb"Set nSessionID to (\d+)\.").group(1), session_id)
 
         self.log.info("Two peers of that masternode: one at %d, one at %d (v23.0.0)", NEW_VERSION, OLD_VERSION)
-        new_peer = mn.node.add_p2p_connection(VersionedPeer(NEW_VERSION), uacomment="new-peer")
-        old_peer = mn.node.add_p2p_connection(VersionedPeer(OLD_VERSION), uacomment="old-peer")
+        new_peer = mn.node.add_p2p_connection(P2PVersionedPeer(NEW_VERSION), uacomment="new-peer")
+        old_peer = mn.node.add_p2p_connection(P2PVersionedPeer(OLD_VERSION), uacomment="old-peer")
         # each test connection's own version, as the masternode recorded it
         versions = {p["subver"]: p["version"] for p in mn.node.getpeerinfo() if "-peer)" in p["subver"]}
         assert_equal(sorted(versions.values()), [OLD_VERSION, NEW_VERSION])
