@@ -21,13 +21,23 @@ What is checked:
 - never taken: a locked output, one at or above max_amount (which on regtest
   is the masternode collateral amount), an unconfirmed one, and anything of
   another wallet;
-- an encrypted, locked wallet can dry-run but not send;
+- an encrypted, locked wallet can dry-run but not send, and its previews take
+  no key, with a partly used key pool and (legacy) an empty one;
 - output_size lays each batch out in equal outputs;
-- invalid arguments are refused.
+- invalid arguments are refused;
+- CJ4-B: a batch with one, two or three pieces where any piece is exactly
+  10 000.1 DFCN, a CoinJoin denomination that staking skips, fails as not
+  stakeable in the preview and in the send alike (one piece: staking_only;
+  more: output_size), and the same batch a duff larger per piece is stakeable;
+  two 100.001 DFCN coins are no candidates. With descriptors, the preview sizes
+  each batch for the script the send pays to: pkh(), sh(pkh()) and pk()
+  receiving descriptors (pk() pays to P2PKH), and P2PKH with none active,
+  where the send fails at its address request.
 """
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING
 
+from test_framework.descriptors import descsum_create
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
     assert_equal,
@@ -39,6 +49,19 @@ from test_framework.util import (
 # default max_amount is the smaller collateral amount
 REGULAR_MN_COLLATERAL = Decimal("1000")
 DUST_COUNT = 25
+# the largest DFCN-scale CoinJoin denomination: staking skips a coin of exactly this amount
+TOP_DENOM = Decimal("10000.1")
+DUFF = Decimal("0.00000001")
+STAKE_ERROR = "Batch cannot be laid out within staking amount limits"
+# inputs per batch for one, two and three pieces, each input below max_amount
+INPUTS = {1: 11, 2: 21, 3: 31}
+FEE_RATE = Decimal("0.0001")  # per kB: ten duffs a byte, so two bytes of script show in the fee
+XPRV = "tprv8ZgxMBicQKsPcwuZGKp8TeWppSuLMiLe2d9PupB14QpPeQsqoj3LneJLhGHH13xESfvASyd4EFLJvLrG8b7DrLxEuV7hpF9uUc6XruKA1Wq"
+
+
+def assert_refused(batch, where):
+    """The batch failed as not stakeable; where (preview or send) names the call in a failure."""
+    assert batch.get("error") == STAKE_ERROR, "%s not refused: %s" % (where, batch)
 
 
 class WalletCombineOutputsTest(BitcoinTestFramework):
@@ -65,6 +88,169 @@ class WalletCombineOutputsTest(BitcoinTestFramework):
     @staticmethod
     def unspent(wallet, minconf=0):
         return {(u["txid"], u["vout"]): u for u in wallet.listunspent(minconf)}
+
+    @staticmethod
+    def lock_at(wallet, address):
+        coins = wallet.listunspent(1, 9999999, [address])
+        assert_equal(len(coins), 1)
+        assert wallet.lockunspent(False, [{"txid": coins[0]["txid"], "vout": coins[0]["vout"]}])
+
+    def exact_pieces(self, node, funder, mine_to, w, addresses, k, sends, script_type):
+        """One batch of k pieces (k = 1: staking_only; otherwise output_size 10 000.1) from coins in a band of its own.
+
+        The fee depends on the number of inputs and on the script paid to, not on the amounts: a preview of n coins
+        gives it, then one of the coins is locked and a coin of the same kind takes its place, so that a piece is
+        exactly 10 000.1 while the smallest (two pieces) or the largest (three) output is not (below), and after that
+        one so that every piece is 10 000.1 and a duff. sends: whether a send gets an address. Returns the fee and the
+        size of the preview.
+        """
+        n = INPUTS[k]
+        band = (k * TOP_DENOM / n).quantize(Decimal("0.01"), rounding=ROUND_CEILING) + Decimal("0.01")
+        args = {"min_amount": band - 1, "max_amount": band + 1}
+        if k == 1:
+            args["staking_only"] = True
+        else:
+            args["output_size"] = TOP_DENOM
+        body = [next(addresses) for _ in range(n)]
+        funder.sendmany("", {address: band for address in body})
+        self.generatetoaddress(node, 1, mine_to)
+        probe = w.combineoutputs(**args)
+        assert_equal(probe["candidates"], n)
+        assert_equal(len(probe["batches"]), 1)
+        batch = probe["batches"][0]
+        assert "error" not in batch, batch
+        assert_equal(len(batch["outputs"]), k)
+        fee = Decimal(str(batch["fee"]))
+        size = batch["size"]
+
+        def replace(locked, total):
+            self.lock_at(w, locked)
+            address = next(addresses)
+            amount = total - (n - 1) * band
+            assert band - 1 <= amount < band + 1, amount
+            funder.sendtoaddress(address, amount)
+            self.generatetoaddress(node, 1, mine_to)
+            return address
+
+        # The RPC lays out k recipients: the first gets amount_in - each * (k - 1), every other each = amount_in / k;
+        # each pays fee / k, the first also the remainder s; the transaction's outputs are then sorted by amount.
+        # Two pieces: the smallest output, the first, is 10 000.1 less a duff, so a check of the first output alone
+        # passes the batch; with s > 0 the other piece is exactly 10 000.1 (the first ends a duff lower), with s = 0
+        # the other piece is a duff lower and the first, the larger, is exactly 10 000.1. Three pieces: three duffs
+        # more, so the largest output, the last, is 10 000.1 and a duff and a check of the last output alone passes
+        # the batch: [D, D + 1, D + 1] with s > 0, [D, D, D + 1] with s = 0.
+        q, s = divmod(int(fee / DUFF), k)
+        if k == 1:
+            total = TOP_DENOM + fee
+        elif s > 0:
+            total = k * (TOP_DENOM + q * DUFF) + (s - 1) * DUFF
+        else:
+            total = k * (TOP_DENOM + (q - 1) * DUFF) + DUFF
+        if k == 3:
+            total += 3 * DUFF
+        exact = replace(body[-1], total)
+        self.log.info("%d piece(s) with 10 000.1 DFCN among them: refused in the preview and in the send", k)
+        res = w.combineoutputs(**args)
+        assert_equal(res["candidates"], n)
+        assert_equal(len(res["batches"]), 1)
+        assert_refused(res["batches"][0], "preview")
+        assert_equal(Decimal(str(res["batches"][0]["amount_in"])), total)
+        assert "outputs" not in res["batches"][0]
+        if k == 1:
+            # without staking_only the piece is laid out and reported as not stakeable
+            plain = w.combineoutputs(min_amount=band - 1, max_amount=band + 1)["batches"][0]
+            assert "error" not in plain, plain
+            assert_equal(plain["stakeable_amounts"], False)
+            assert_equal([Decimal(str(v)) for v in plain["outputs"]], [TOP_DENOM])
+            assert_equal(Decimal(str(plain["fee"])), fee)
+        before = self.unspent(w)
+        mempool_before = set(node.getrawmempool())
+        if sends:
+            res = w.combineoutputs(dry_run=False, **args)
+            assert "address" in res
+            assert_equal(len(res["batches"]), 1)
+            assert_refused(res["batches"][0], "send")
+            assert "txid" not in res["batches"][0]
+        else:
+            assert_raises_rpc_error(-12, "No addresses available", w.combineoutputs, dry_run=False, **args)
+        assert_equal(self.unspent(w), before)
+        assert_equal(set(node.getrawmempool()), mempool_before)
+
+        replace(exact, k * (TOP_DENOM + DUFF) + fee)
+        self.log.info("%d piece(s) of 10 000.1 DFCN and a duff: stakeable", k)
+        res = w.combineoutputs(**args)
+        batch = res["batches"][0]
+        assert "error" not in batch, batch
+        assert_equal(batch["stakeable_amounts"], True)
+        assert_equal([Decimal(str(v)) for v in batch["outputs"]], [TOP_DENOM + DUFF] * k)
+        assert_equal(Decimal(str(batch["fee"])), fee)
+        assert_equal(batch["size"], size)
+        if not sends:
+            assert_raises_rpc_error(-12, "No addresses available", w.combineoutputs, dry_run=False, **args)
+            return fee, size
+        res = w.combineoutputs(dry_run=False, **args)
+        sent = res["batches"][0]
+        assert "error" not in sent, sent
+        assert_equal(sent["stakeable_amounts"], True)
+        assert_equal(Decimal(str(sent["fee"])), fee)
+        tx = node.getrawtransaction(sent["txid"], True)
+        assert_equal(len(tx["vout"]), k)
+        for out in tx["vout"]:
+            assert_equal(out["value"], TOP_DENOM + DUFF)
+            spk = out["scriptPubKey"]
+            assert_equal(spk["type"], script_type)
+            assert spk.get("address") == res["address"] or res["address"] in spk.get("addresses", [])
+        self.generatetoaddress(node, 1, mine_to)
+        return fee, size
+
+    def test_coinjoin_amount_pieces(self, node, funder, mine_to):
+        self.log.info("Two confirmed 100.001 DFCN coins are no candidates")
+        node.createwallet(wallet_name="two", descriptors=self.options.descriptors)
+        two = node.get_wallet_rpc("two")
+        two.keypoolrefill(5)
+        funder.sendmany("", {two.getnewaddress(): Decimal("100.001"), two.getnewaddress(): Decimal("100.001")})
+        self.generatetoaddress(node, 1, mine_to)
+        res = two.combineoutputs()
+        assert_equal(res["candidates"], 0)
+        assert_equal(res["batches"], [])
+
+        if not self.options.descriptors:
+            node.createwallet(wallet_name="cj_legacy", descriptors=False)
+            w = node.get_wallet_rpc("cj_legacy")
+            w.keypoolrefill(80)
+            w.settxfee(FEE_RATE)
+            addresses = iter([w.getnewaddress() for _ in range(70)])
+            for k in (1, 2, 3):
+                self.exact_pieces(node, funder, mine_to, w, addresses, k, True, "pubkeyhash")
+            return
+
+        # Every wallet holds P2PKH coins of an inactive pkh() descriptor, so the inputs are alike and only the
+        # receiving descriptor, which the send pays to, differs.
+        kinds = [("pkh", "pkh(%s/21/*)", "pubkeyhash"), ("shpkh", "sh(pkh(%s/22/*))", "scripthash"),
+                 ("pk", "pk(%s/23/*)", "pubkeyhash"), ("inactive", None, None)]
+        fee = {}
+        size = {}
+        for path, (name, receiving, script_type) in enumerate(kinds, start=11):
+            self.log.info("Exact pieces, receiving descriptor: %s", receiving % "xprv" if receiving else "none active")
+            node.createwallet(wallet_name="cj_" + name, blank=True, descriptors=True)
+            w = node.get_wallet_rpc("cj_" + name)
+            funding = descsum_create("pkh(%s/%d/*)" % (XPRV, path))
+            requests = [{"desc": funding, "timestamp": "now", "active": False, "range": [0, 99]}]
+            if receiving:
+                requests.append({"desc": descsum_create(receiving % XPRV), "timestamp": "now", "active": True, "range": [0, 9]})
+            for result in w.importdescriptors(requests):
+                assert result["success"], result
+            w.settxfee(FEE_RATE)
+            addresses = iter(node.deriveaddresses(funding, [0, 99]))
+            for k in (1, 2, 3):
+                fee[name, k], size[name, k] = self.exact_pieces(node, funder, mine_to, w, addresses, k, receiving is not None, script_type)
+        for k in (1, 2, 3):
+            # pk() pays to P2PKH; with no active receiving descriptor the preview sizes as before, P2PKH
+            assert_equal(size["pk", k], size["pkh", k])
+            assert_equal(size["inactive", k], size["pkh", k])
+            # a P2SH output script is two bytes shorter than a P2PKH one
+            assert_equal(size["pkh", k] - size["shpkh", k], 2 * k)
+            assert_greater_than(fee["pkh", k], fee["shpkh", k])
 
     def run_test(self):
         node = self.nodes[0]
@@ -231,20 +417,46 @@ class WalletCombineOutputsTest(BitcoinTestFramework):
             self.fund(funder, enc_w.getnewaddress(), Decimal("4"))
         enc_w.walletlock()
         self.generatetoaddress(node, 1, mine_to)
-        locked_pool = enc_w.getwalletinfo()
-        for _ in range(3):
-            res = enc_w.combineoutputs()
-        for field in ("keypoolsize", "keypoolsize_hd_internal"):
-            assert_equal(locked_pool.get(field), enc_w.getwalletinfo().get(field))
-        assert_equal(res["candidates"], 3)
-        assert_equal(res["batches"][0]["inputs"], 3)
+        def previews_take_nothing():
+            pool = enc_w.getwalletinfo()
+            descriptors = enc_w.listdescriptors() if self.options.descriptors else None
+            for _ in range(3):
+                res = enc_w.combineoutputs()
+                # each preview builds its batch: the three 4 DFCN coins less the fee, in one output
+                assert_equal(res["candidates"], 3)
+                assert_equal(len(res["batches"]), 1)
+                batch = res["batches"][0]
+                assert "error" not in batch, batch
+                assert_equal(batch["inputs"], 3)
+                assert_equal([Decimal(str(v)) for v in batch["outputs"]], [Decimal("12") - Decimal(str(batch["fee"]))])
+            for field in ("keypoolsize", "keypoolsize_hd_internal"):
+                assert_equal(pool.get(field), enc_w.getwalletinfo().get(field))
+            if descriptors is not None:
+                assert_equal(descriptors, enc_w.listdescriptors())
+            return pool
+
+        previews_take_nothing()
         assert_raises_rpc_error(-13, "passphrase", enc_w.combineoutputs, dry_run=False)
         # nothing was sent by the refused call
         assert_equal(len(self.unspent(enc_w, 1)), 3)
+        if not self.options.descriptors:
+            # the locked legacy wallet's key pools used up, external and internal: the previews still take nothing
+            # and top nothing up
+            while enc_w.getwalletinfo()["keypoolsize"] > 0:
+                enc_w.getnewaddress()
+            while enc_w.getwalletinfo()["keypoolsize_hd_internal"] > 0:
+                enc_w.getrawchangeaddress()
+            assert_raises_rpc_error(-12, "Keypool ran out", enc_w.getnewaddress)
+            assert_raises_rpc_error(-12, "Keypool ran out", enc_w.getrawchangeaddress)
+            empty = previews_take_nothing()
+            assert_equal(empty["keypoolsize"], 0)
+            assert_equal(empty["keypoolsize_hd_internal"], 0)
         enc_w.walletpassphrase('pass', 60, True)
         assert_equal(enc_w.combineoutputs()['candidates'], 3)
         assert_raises_rpc_error(-13, 'passphrase', enc_w.combineoutputs, dry_run=False)
         enc_w.walletlock()
+
+        self.test_coinjoin_amount_pieces(node, funder, mine_to)
 
         self.log.info("A rejected batch reports abandonment only after its inputs are released")
         node.createwallet(wallet_name="rejected", descriptors=self.options.descriptors)
