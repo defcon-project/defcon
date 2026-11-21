@@ -565,8 +565,8 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
         ssTx << psbtx;
         GUIUtil::setClipboard(EncodeBase64(ssTx.str()).c_str());
         QMessageBox msgBox;
-        msgBox.setText("Unsigned Transaction");
-        msgBox.setInformativeText("The PSBT has been copied to the clipboard. You can also save it.");
+        msgBox.setText(tr("Unsigned Transaction", "PSBT copied"));
+        msgBox.setInformativeText(tr("The PSBT has been copied to the clipboard. You can also save it."));
         msgBox.setStandardButtons(QMessageBox::Save | QMessageBox::Discard);
         msgBox.setDefaultButton(QMessageBox::Discard);
         switch (msgBox.exec()) {
@@ -636,7 +636,7 @@ bool SendCoinsDialog::saveUnsignedTransaction(QFile& file, const char* data, siz
         Q_EMIT message(tr("Save Transaction Data"), tr("Could not write file %1.").arg(file.fileName()), CClientUIInterface::MSG_ERROR);
         return false;
     }
-    Q_EMIT message(tr("PSBT saved"), "PSBT saved to disk", CClientUIInterface::MSG_INFORMATION);
+    Q_EMIT message(tr("PSBT saved"), tr("PSBT saved to disk."), CClientUIInterface::MSG_INFORMATION);
     return true;
 }
 

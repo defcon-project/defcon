@@ -10156,7 +10156,7 @@ void AbyssTests::savedFilesReported()
         QSignalSpy messages(&send, &SendCoinsDialog::message);
         const std::string psbt = bytes_of(psbtx);
         std::vector<std::pair<bool, unsigned int>> results;
-        check("unsigned.psbt", QByteArray::fromStdString(psbt), "PSBT saved to disk", [&](QFile& file) {
+        check("unsigned.psbt", QByteArray::fromStdString(psbt), "PSBT saved to disk.", [&](QFile& file) {
             messages.clear();
             const bool saved = send.saveUnsignedTransaction(file, psbt.data(), psbt.size());
             if (messages.count() != 1) return Report{QString("%1 messages").arg(messages.count()), saved};
@@ -10219,6 +10219,140 @@ void AbyssTests::savedFilesReported()
             return Report{dialog.m_status_label->text(), is_error(dialog.m_status_label)};
         });
     }
+}
+
+void AbyssTests::psbtMessagesTranslated()
+{
+    // The Send page of a wallet without private keys drafts a PSBT: a box says
+    // that it is copied to the clipboard and offers to save it, and a saved
+    // file is reported as saved. These are the page's words for translators,
+    // as the PSBT dialog's are: under a translation they show translated,
+    // without one as written. The box's title carries Bitcoin Core's
+    // disambiguation ("PSBT copied"). Nothing is broadcast.
+    class PsbtWords : public QTranslator
+    {
+    public:
+        using QTranslator::QTranslator;
+        QString translate(const char* context, const char* source, const char* disambiguation, int n) const override
+        {
+            Q_UNUSED(n);
+            if (qstrcmp(context, "SendCoinsDialog") != 0) return QString();
+            if (qstrcmp(source, "Unsigned Transaction") == 0 && qstrcmp(disambiguation, "PSBT copied") == 0) {
+                return QString::fromUtf8("Unsignierte Transaktion");
+            }
+            if (qstrcmp(source, "The PSBT has been copied to the clipboard. You can also save it.") == 0) {
+                return QString::fromUtf8("Die PSBT wurde in die Zwischenablage kopiert. Sie können sie auch speichern.");
+            }
+            if (qstrcmp(source, "PSBT saved to disk.") == 0) return QString::fromUtf8("PSBT auf dem Datenträger gespeichert.");
+            return QString();
+        }
+        bool isEmpty() const override { return false; }
+    };
+    RestoreAppearance restore;
+    WalletFixture fixture(m_node, /*dummy_database=*/false, WALLET_FLAG_DESCRIPTORS | WALLET_FLAG_DISABLE_PRIVATE_KEYS);
+    CKey key;
+    key.MakeNewKey(true);
+    const CPubKey pubkey = key.GetPubKey();
+    {
+        FlatSigningProvider provider;
+        std::string error;
+        std::unique_ptr<Descriptor> parsed = Parse("pkh(" + HexStr(pubkey) + ")", provider, error, /*require_checksum=*/false);
+        QVERIFY2(parsed, error.c_str());
+        WalletDescriptor descriptor(std::move(parsed), /*creation_time=*/1, /*range_start=*/0, /*range_end=*/0, /*next_index=*/0);
+        QVERIFY(fixture.wallet->AddWalletDescriptor(descriptor, provider, "", /*internal=*/false));
+    }
+    QVERIFY(fixture.model->wallet().privateKeysDisabled());
+    const CTxDestination watched = PKHash(pubkey);
+    // A coin of its own, ten blocks deep (its input is made up; nothing checks it).
+    const CBlockIndex* tip = WITH_LOCK(::cs_main, return fixture.chain.m_node.chainman->ActiveChain().Tip());
+    QVERIFY(tip && tip->nHeight > 20);
+    {
+        LOCK(fixture.wallet->cs_wallet);
+        fixture.wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+    const CBlockIndex* deep = tip->GetAncestor(tip->nHeight - 10);
+    QVERIFY(deep);
+    CMutableTransaction fund;
+    fund.vin.emplace_back(COutPoint(uint256S("0c00000000000000000000000000000000000000000000000000000000000000"), 0));
+    fund.vout.emplace_back(10 * COIN, GetScriptForDestination(watched));
+    QVERIFY(fixture.wallet->AddToWallet(MakeTransactionRef(std::move(fund)), CWalletTx::Confirmation(CWalletTx::CONFIRMED, deep->nHeight, deep->GetBlockHash(), 1)));
+
+    SendCoinsDialog send(false, nullptr);
+    send.setModel(fixture.model.get());
+    // The wallet has no key to make a change address from: the change goes back to the watched one.
+    send.m_coin_control->destChange = watched;
+    const QString payee = QString::fromStdString(EncodeDestination(PKHash(fixture.chain.coinbaseKey.GetPubKey())));
+    // The confirmation is accepted; the box after it is noted and discarded.
+    struct Box {
+        QString text;
+        QString informative;
+        QMessageBox::StandardButtons buttons;
+    };
+    std::vector<Box> boxes;
+    int confirmations = 0;
+    QTimer closer;
+    closer.setInterval(10);
+    QObject::connect(&closer, &QTimer::timeout, &send, [&] {
+        auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        if (!box || !box->isVisible()) return;
+        if (box->inherits("SendConfirmationDialog")) {
+            ++confirmations;
+            QAbstractButton* yes = box->button(QMessageBox::Yes);
+            yes->setEnabled(true);
+            yes->click();
+            return;
+        }
+        boxes.push_back({box->text(), box->informativeText(), box->standardButtons()});
+        box->done(QMessageBox::Discard);
+    });
+    // One draft from a filled form (a discarded draft clears it; the form's entry is the last one made).
+    const auto draft = [&] {
+        boxes.clear();
+        confirmations = 0;
+        const QList<SendCoinsEntry*> entries = send.findChildren<SendCoinsEntry*>();
+        if (entries.isEmpty()) return false;
+        auto* pay_to = entries.last()->findChild<QLineEdit*>("payTo");
+        auto* amount = entries.last()->findChild<BitcoinAmountField*>("payAmount");
+        if (!pay_to || !amount) return false;
+        pay_to->setText(payee);
+        amount->setValue(COIN);
+        closer.start();
+        const bool invoked = QMetaObject::invokeMethod(&send, "sendButtonClicked", Q_ARG(bool, false));
+        closer.stop();
+        Settle();
+        return invoked;
+    };
+    const auto shown = [&] {
+        QStringList parts;
+        for (const Box& box : boxes) parts << box.text + " / " + box.informative;
+        return QString("%1 confirmations, boxes: %2").arg(confirmations).arg(parts.join("; "));
+    };
+
+    // Without a translation: as written.
+    QVERIFY(draft());
+    QVERIFY2(confirmations == 1 && boxes.size() == 1, qPrintable(shown()));
+    QCOMPARE(int(boxes.front().buttons), int(QMessageBox::Save | QMessageBox::Discard));
+    QCOMPARE(boxes.front().text, QString("Unsigned Transaction"));
+    QCOMPARE(boxes.front().informative, QString("The PSBT has been copied to the clipboard. You can also save it."));
+
+    // Under a translation: the box and the saved file's notice translated.
+    PsbtWords words;
+    QVERIFY(qApp->installTranslator(&words));
+    const auto remove = interfaces::MakeHandler([&words] { qApp->removeTranslator(&words); });
+    QVERIFY(draft());
+    QVERIFY2(confirmations == 1 && boxes.size() == 1, qPrintable(shown()));
+    QCOMPARE(int(boxes.front().buttons), int(QMessageBox::Save | QMessageBox::Discard));
+    QCOMPARE(boxes.front().text, QString::fromUtf8("Unsignierte Transaktion"));
+    QCOMPARE(boxes.front().informative, QString::fromUtf8("Die PSBT wurde in die Zwischenablage kopiert. Sie können sie auch speichern."));
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QFile file(QDir(directory.path()).filePath("unsigned.psbt"));
+    const std::string psbt("not looked at here");
+    QSignalSpy messages(&send, &SendCoinsDialog::message);
+    QVERIFY(send.saveUnsignedTransaction(file, psbt.data(), psbt.size()));
+    QCOMPARE(messages.count(), 1);
+    QCOMPARE(messages.first().at(1).toString(), QString::fromUtf8("PSBT auf dem Datenträger gespeichert."));
+    QCOMPARE(messages.first().at(2).toUInt(), static_cast<unsigned int>(CClientUIInterface::MSG_INFORMATION));
 }
 
 void AbyssTests::translationLink()

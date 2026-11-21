@@ -86,6 +86,7 @@ private Q_SLOTS:
     void walletGoneWhileAdding();
     void saveFileWhole();
     void savedFilesReported();
+    void psbtMessagesTranslated();
     void pageHeaders();
     void primaryButtons();
     void overviewColumns();
