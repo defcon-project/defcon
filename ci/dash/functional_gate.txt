@@ -120,6 +120,7 @@
 39   wallet_import_rescan.py                # importaddress, importpubkey, importprivkey and importmulti, with and without rescan, and a key timestamp past the rescan window
 35   rpc_blockchain.py                      # the chain calls: chain info, transaction statistics, the UTXO set summary, headers, block verbosity, the hash rate
 35   wallet_staking_info_multiwallet.py     # getstakinginfo with seven wallets: each row stays its wallet's while the staking list is rebuilt; both wallets
+35   p2p_coinjoin_dfcn_mix.py               # two wallets mix a DFCN-scale amount through a masternode from U, each new coin one round; a 70243 peer is offered and sent the DSTX, a 70242 (v23.0.0) peer neither, and its request for it is not found
 34   feature_llmq_is_nonrotated_verify.py   # a non-masternode accepts an InstantSend lock signed by a non-rotating quorum older than one cycle (#238)
 33   feature_addressindex_coinstake.py      # the address index's mature/immature split on a coinstake (#221)
 32   rpc_verifyislock.py                    # the lock-verifying RPCs
@@ -143,6 +144,7 @@
 22   feature_evodb_reconcile.py             # an evodb that stopped short of the coins tip is rebuilt at startup, with its log line
 21   feature_llmq_is_nonrotation.py         # an InstantSend lock on a quorum that does not rotate
 20   p2p_blockfilters.py                    # BIP157 compact block filters over the peer protocol: getcfilters, getcfheaders and getcfcheckpt, across a reorg
+20   p2p_coinjoin_dfcn_attempt.py           # the mixing client: the old attempt on the tip U-2, the DFCN-scale one from U-1, its collateral, then a bit-5 queue at a masternode
 19   feature_v23_bundle_heights.py          # the v23 bundle's own regtest name on a running chain: three of its heights observed where the one number puts them
 19   rpc_verifychainlock.py                 # the lock-verifying RPCs
 19   p2p_epoll_eof.py                       # a short message and the peer's FIN queued together: the message is handled; both transports
