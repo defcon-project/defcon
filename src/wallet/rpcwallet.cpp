@@ -2412,6 +2412,23 @@ static RPCHelpMan lockunspent()
     };
 }
 
+/**
+ * The script a combineoutputs send pays to, for sizing its preview without taking a key: a script the active receiving
+ * descriptor has already derived, turned into the address a send gets from it (ExtractDestination, then that
+ * destination's script, as GetNewDestination does: pk() pays to P2PKH, sh(pkh()) to P2SH). A legacy wallet pays to
+ * P2PKH; a wallet without an active receiving descriptor, whose send gets no address, is sized as P2PKH too.
+ */
+static CScript CombinePreviewScript(const CWallet& wallet)
+{
+    if (const auto* desc_spk_man = dynamic_cast<DescriptorScriptPubKeyMan*>(wallet.GetScriptPubKeyMan(/*internal=*/false))) {
+        for (const CScript& derived : desc_spk_man->GetScriptPubKeys()) {
+            CTxDestination dest;
+            if (ExtractDestination(derived, dest)) return GetScriptForDestination(dest);
+        }
+    }
+    return GetScriptForDestination(PKHash());
+}
+
 static RPCHelpMan combineoutputs()
 {
     return RPCHelpMan{"combineoutputs",
@@ -2434,7 +2451,7 @@ static RPCHelpMan combineoutputs()
             {"batch_size", RPCArg::Type::NUM, RPCArg::Default{500}, "Inputs per transaction, 2 to 600: a transaction has to stay under the 100,000-byte standard size"},
             {"output_size", RPCArg::Type::AMOUNT, RPCArg::Default{0}, "0 pays each batch to one output. Otherwise equal outputs of about this size, each stakeable"},
             {"minconf", RPCArg::Type::NUM, RPCArg::Default{1}, "Only outputs with at least this many confirmations"},
-            {"staking_only", RPCArg::Type::BOOL, RPCArg::Default{false}, "Require every output to be within the staking amount limits after fees; outputs still need age and confirmations"},
+            {"staking_only", RPCArg::Type::BOOL, RPCArg::Default{false}, "Require every output amount to be stakeable after fees (see stakeable_amounts); outputs still need age and confirmations"},
         },
         RPCResult{
             RPCResult::Type::OBJ, "", "",
@@ -2450,7 +2467,7 @@ static RPCHelpMan combineoutputs()
                         {RPCResult::Type::NUM, "inputs", "Outputs spent by this batch"},
                         {RPCResult::Type::STR_AMOUNT, "amount_in", "Their total"},
                         {RPCResult::Type::STR_AMOUNT, "fee", /*optional=*/true, "The fee, paid out of amount_in"},
-                        {RPCResult::Type::BOOL, "stakeable_amounts", /*optional=*/true, "All output amounts meet staking limits; does not imply maturity or active staking"},
+                        {RPCResult::Type::BOOL, "stakeable_amounts", /*optional=*/true, "All output amounts meet staking limits, and none is exactly a masternode collateral or CoinJoin denomination amount; does not imply maturity or active staking"},
                         {RPCResult::Type::NUM, "size", /*optional=*/true, "Signed transaction size in bytes; upper estimate in a dry run"},
                         {RPCResult::Type::NUM, "estimated_signed_size", /*optional=*/true, "Upper estimate of signed transaction size in bytes"},
                         {RPCResult::Type::STR, "status", /*optional=*/true, "Submission state: recorded, submitted, rejected_abandoned, or unknown"},
@@ -2560,9 +2577,12 @@ static RPCHelpMan combineoutputs()
     result.pushKV("candidate_amount", ValueFromAmount(candidate_amount));
 
     // One destination for the whole call: a dry run sizes the transaction with
-    // a script of the same length and takes no key from the pool.
+    // the kind of script a send would pay to and takes no key from the pool.
+    // With fewer than two candidates nothing is built and neither is asked for.
     CScript destination = GetScriptForDestination(PKHash());
-    if (!dry_run && candidates.size() >= 2) {
+    if (dry_run && candidates.size() >= 2) {
+        destination = CombinePreviewScript(*pwallet);
+    } else if (!dry_run && candidates.size() >= 2) {
         CTxDestination dest;
         bilingual_str error;
         if (!pwallet->GetNewDestination("combined", dest, error)) {
@@ -2667,8 +2687,11 @@ static RPCHelpMan combineoutputs()
             continue;
         }
 
+        // The staking classifier's amount rule (ClassifyForStaking), for every output: within the limits, and not
+        // exactly a masternode collateral or one of the eight CoinJoin denomination amounts.
         const bool stakeable_amounts = std::all_of(tx->vout.begin(), tx->vout.end(), [&](const CTxOut& out) {
-            return out.nValue >= consensus.stakeValueRange[0] && out.nValue <= consensus.stakeValueRange[1] && !is_collateral_amount(out.nValue);
+            return out.nValue >= consensus.stakeValueRange[0] && out.nValue <= consensus.stakeValueRange[1] &&
+                   !is_collateral_amount(out.nValue) && !CoinJoin::IsKnownDenominationAmount(out.nValue);
         });
         if ((staking_only || output_size > 0) && !stakeable_amounts) {
             entry.pushKV("error", "Batch cannot be laid out within staking amount limits");

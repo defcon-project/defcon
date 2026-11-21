@@ -56,9 +56,10 @@ defcon-cli -rpcwallet=49m combineoutputs
 defcon-cli -rpcwallet=49m -named combineoutputs staking_only=true
 ```
 
-The preview does not send, reserve inputs, or consume change keys. It reports
-the estimated signed size, fees, output values and `stakeable_amounts` for
-each batch. A later call selects again from the current wallet state.
+The preview does not send, reserve inputs, or consume change keys. It sizes
+each batch for the kind of address the send would pay to, and reports the
+estimated signed size, fees, output values and `stakeable_amounts` for each
+batch. A later call selects again from the current wallet state.
 
 After reviewing the preview, `dry_run=false` executes the request:
 
@@ -67,7 +68,8 @@ defcon-cli -rpcwallet=49m -named combineoutputs dry_run=false staking_only=true
 ```
 
 `staking_only=true` requires all output amounts to meet staking limits after
-fees. The new outputs still need the required age and confirmations before
+fees, none of exactly a masternode collateral or CoinJoin denomination amount.
+The new outputs still need the required age and confirmations before
 staking. With the default `staking_only=false` and `output_size=0`, combining
 does not guarantee staking-sized outputs. With a nonzero `output_size`, the
 output amounts must also satisfy the staking limits.
