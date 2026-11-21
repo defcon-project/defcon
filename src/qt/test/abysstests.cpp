@@ -7472,6 +7472,7 @@ void AbyssTests::sendSummaryBelow()
     // window is held to the test platform's screen, resized after it keeps the size.
     constexpr int tall{2000};
     window.resize(1500, tall); Settle();
+    qInfo().noquote() << "SEND_BREAKPOINT DPR" << window.devicePixelRatioF();
     if (auto* overlay = window.findChild<ModalOverlay*>()) overlay->hide();
     Settle();
     // The wallet has two SendCoinsDialogs, Send and CoinJoin: the one on show.
@@ -7617,6 +7618,32 @@ void AbyssTests::sendSummaryBelow()
     QVERIFY2(message->isVisible() && message->height() > 2 * message->fontMetrics().lineSpacing(),
              qPrintable(QString("message %1x%2: %3").arg(message->width()).arg(message->height()).arg(state())));
     QVERIFY2(stacked() && page_fits() && fields->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    // A moment in which the recipients' area is shorter than the recipients
+    // (the page laying out) leaves no vertical bar behind once the area has
+    // its height again, also when the wrapped message takes a line more at the
+    // width such a bar leaves (natively at 175 % one stayed, U11-D/2a-1).
+    // The message grows by one narrow letter or space at a time (a few pixels,
+    // less than the bar), so its last line comes to end within the bar's width
+    // of the edge whatever the platform's font metrics.
+    const int vertical_bar = fields->verticalScrollBar()->sizeHint().width();
+    const auto takes_a_line_more = [&] {
+        return message->heightForWidth(message->width() - vertical_bar) > message->heightForWidth(message->width());
+    };
+    const QString narrow = QStringLiteral(" il ti li fi jr");
+    SendCoinsRecipient longer = request;
+    for (int i = 0; i < 300 && !takes_a_line_more(); ++i) {
+        longer.message += narrow.at(i % narrow.size());
+        message->setText(longer.message);
+    }
+    QVERIFY2(takes_a_line_more(), qPrintable(QString("no message found that takes a line more %1 px narrower: %2").arg(vertical_bar).arg(state())));
+    requested->setValue(longer);
+    Settle();
+    QVERIFY2(takes_a_line_more() && stacked() && page_fits() && fields->viewport()->width() == fields->width(), qPrintable(state()));
+    fields->resize(fields->width(), fields->height() - 50);
+    body->invalidate();
+    Settle();
+    QVERIFY2(stacked() && page_fits() && fields->viewport()->width() == fields->width(),
+             qPrintable(QString("a vertical bar stayed in the recipients' area: viewport %1: %2").arg(fields->viewport()->width()).arg(state())));
     // The room below the summary, to the page's end in the wallet's scroll area.
     const auto below_summary = [&] {
         return scroll->widget()->height() - summary->mapTo(scroll->widget(), QPoint(0, summary->height())).y();
@@ -7664,7 +7691,9 @@ void AbyssTests::sendSummaryBelow()
 
     // Wide again: as before, the summary at its own width beside the recipients.
     window.resize(1500, tall); Settle();
-    QVERIFY2(side_by_side() && summary->maximumWidth() == 260 && !fields->sizePolicy().hasHeightForWidth(), qPrintable(state()));
+    QVERIFY2(side_by_side() && summary->maximumWidth() == 260 && !fields->sizePolicy().hasHeightForWidth() &&
+                 fields->verticalScrollBarPolicy() == Qt::ScrollBarAsNeeded,
+             qPrintable(state()));
 }
 
 void AbyssTests::overviewBreakpoint()

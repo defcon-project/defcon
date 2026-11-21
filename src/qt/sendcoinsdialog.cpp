@@ -72,6 +72,12 @@ public:
         QSizePolicy policy = sizePolicy();
         policy.setHeightForWidth(grow);
         setSizePolicy(policy);
+        // Grown, the area is as tall as the fields for its whole width, so it
+        // never scrolls down on its own: no vertical bar. One shown for a moment
+        // (the area shorter than the fields while the page lays out) would stay,
+        // since QScrollArea asks the fields' height for the width the bar leaves,
+        // where wrapped text can take a line more. Beside the summary, as before.
+        setVerticalScrollBarPolicy(grow ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
         updateGeometry();
     }
     int heightForWidth(int width) const override
