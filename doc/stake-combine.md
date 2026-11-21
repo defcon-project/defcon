@@ -59,7 +59,9 @@ defcon-cli -rpcwallet=49m -named combineoutputs staking_only=true
 The preview does not send, reserve inputs, or consume change keys. It sizes
 each batch for the kind of address the send would pay to, and reports the
 estimated signed size, fees, output values and `stakeable_amounts` for each
-batch. A later call selects again from the current wallet state.
+batch it builds. A batch that cannot be built, or whose amounts fail the
+requested staking limits, reports only its input count, `amount_in` and an
+`error`. A later call selects again from the current wallet state.
 
 After reviewing the preview, `dry_run=false` executes the request:
 
