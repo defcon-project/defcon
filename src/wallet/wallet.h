@@ -336,6 +336,15 @@ int CalculateMaximumSignedInputSize(const CTxOut& txout, const CWallet* pwallet,
  */
 int BlocksToMaturity(bool is_coinbase, bool is_coinstake, int chain_depth);
 
+/** The memo of the DFCN-scale round count (CJ4) for one walk over the wallet's coins: (transaction, budget) ->
+ *  min(rounds, budget). It is a local of a caller that holds cs_wallet from its first use to its last, so it never
+ *  answers after the wallet changed and the count stays exact; nothing keeps one between two queries. */
+using DfcnScaleRoundsMemo = std::map<std::pair<uint256, int>, int>;
+
+/** For tests: how many transactions the DFCN-scale round count has examined in this process, one for each memo entry
+ *  it had to compute. A walk that shares a memo examines a transaction once for each budget it reaches it with. */
+uint64_t DfcnScaleRoundsExaminedForTest();
+
 /**
  * A transaction with a bunch of additional info that only the owner cares about.
  * It includes any unrecorded transactions needed to link it back to the block chain.
@@ -572,8 +581,9 @@ public:
     CAmount GetAnonymizedCredit(const CCoinControl* coinControl = nullptr) const NO_THREAD_SAFETY_ANALYSIS;
     /** Whether an output of this transaction has a DFCN-scale amount (CJ4). */
     bool HasDfcnScaleOutput() const;
-    /** The unspent DFCN-scale outputs (CJ4) this wallet can spend, the fully mixed ones only if asked; never cached. */
-    CAmount GetDfcnScaleCredit(bool fFullyMixedOnly, const CCoinControl* coinControl = nullptr) const NO_THREAD_SAFETY_ANALYSIS;
+    /** The unspent DFCN-scale outputs (CJ4) this wallet can spend, the fully mixed ones only if asked; never cached.
+     *  `memo` is the caller's, for the round counts of its one walk over the wallet's coins. */
+    CAmount GetDfcnScaleCredit(bool fFullyMixedOnly, const CCoinControl* coinControl = nullptr, DfcnScaleRoundsMemo* memo = nullptr) const NO_THREAD_SAFETY_ANALYSIS;
     CAmount GetDenominatedCredit(bool unconfirmed, bool fUseCache=true) const NO_THREAD_SAFETY_ANALYSIS;
 
     /** Get the marginal bytes if spending the specified output from this transaction */
@@ -1141,15 +1151,16 @@ public:
     bool HasCollateralInputs(bool fOnlyConfirmed = true) const;
     int  CountInputsWithAmount(CAmount nInputAmount) const;
 
-    // get the CoinJoin chain depth for a given input
-    int GetRealOutpointCoinJoinRounds(const COutPoint& outpoint, int nRounds = 0) const;
+    // get the CoinJoin chain depth for a given input; a caller that asks about many coins under one cs_wallet lock
+    // passes its DfcnScaleRoundsMemo, so the DFCN-scale coins' histories are walked once for all of them (CJ4)
+    int GetRealOutpointCoinJoinRounds(const COutPoint& outpoint, int nRounds = 0, DfcnScaleRoundsMemo* dfcn_scale_memo = nullptr) const;
     // respect current settings
     int GetCappedOutpointCoinJoinRounds(const COutPoint& outpoint) const;
     // drop the internal cache to let Get...Rounds recalculate CJ balance from scratch and notify UI
     void ClearCoinJoinRoundsCache();
 
     bool IsDenominated(const COutPoint& outpoint) const;
-    bool IsFullyMixed(const COutPoint& outpoint) const;
+    bool IsFullyMixed(const COutPoint& outpoint, DfcnScaleRoundsMemo* dfcn_scale_memo = nullptr) const;
 
     bool IsSpent(const uint256& hash, unsigned int n) const EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
