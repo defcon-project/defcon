@@ -35,6 +35,7 @@
 #include <util/translation.h>
 #include <policy/settings.h>
 #include <pow.h>
+#include <random.h>
 #include <validation.h>
 #include <txmempool.h>
 #include <consensus/validation.h>
@@ -46,6 +47,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <future>
 #include <functional>
@@ -1341,6 +1343,17 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_rounds_and_balances, CTransactionBui
         BOOST_CHECK_MESSAGE(gui_wallet->getAvailableBalance(coin_control) == bal.m_anonymized + amount,
                             "a mixed-only payment can spend the fully mixed DFCN-scale coin");
         BOOST_CHECK_MESSAGE(gui_wallet->getWalletTx(chain.prevout.hash).is_denominate, "a DFCN-scale mix shows as a mixing transaction");
+        // The balances the GUI shows (QT-CJ4): the fully mixed DFCN-scale coin in a field of its own, from the same
+        // walk as the old mixed balance, which keeps the five old amounts; a change of that field alone is a change.
+        CAmount dfcn_mixed{-1};
+        const auto all{WITH_LOCK(wallet->cs_wallet, return wallet->GetBalance(0, true, false, nullptr, &dfcn_mixed))};
+        const interfaces::WalletBalances balances{gui_wallet->getBalances()};
+        BOOST_CHECK_EQUAL(dfcn_mixed, amount);
+        BOOST_CHECK_EQUAL(balances.dfcn_scale_anonymized_balance, dfcn_mixed);
+        BOOST_CHECK_EQUAL(balances.anonymized_balance, all.m_anonymized);
+        interfaces::WalletBalances without_dfcn{balances};
+        without_dfcn.dfcn_scale_anonymized_balance = 0;
+        BOOST_CHECK(balances.balanceChanged(without_dfcn));
     }
 
     // Generated coins: an own DFCN-scale coinbase output counts only once mature, as the old denominated balance holds
@@ -2251,6 +2264,122 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_attempt, CTransactionBuilderTestSetu
     LockAllBut({mixed, mixed_small});
     BOOST_CHECK(MakeCollateralAmountsForTest(session));
     BOOST_CHECK(Spent(mixed) && Spent(mixed_small));
+}
+
+// The CoinJoin salt is written and read under cs_wallet (QT-CJ4, review r6, R13). The wallet's balances, which the GUI
+// polls, ask IsFullyMixed under that lock, and IsFullyMixed reads the salt for a coin at the rounds' threshold, while
+// `coinjoinsalt` sets a new salt from an RPC thread. v23.0.0 wrote the salt without the lock.
+BOOST_FIXTURE_TEST_CASE(coinjoin_salt_set_under_wallet_lock, CTransactionBuilderTestSetup)
+{
+    struct RestoreOptions {
+        const bool enabled{CCoinJoinClientOptions::IsEnabled()};
+        ~RestoreOptions() { CCoinJoinClientOptions::SetEnabled(enabled); }
+    } restore_options;
+    CCoinJoinClientOptions::SetEnabled(true);
+    const int target{CCoinJoinClientOptions::GetRounds()};
+    BOOST_REQUIRE_GT(CCoinJoinClientOptions::GetRandomRounds(), 0);
+    const CAmount amount{CoinJoin::DenominationToAmount(1 << 5)}; // 100.001
+
+    // An own DFCN-scale coin of exactly the target's rounds, the one coin of R13. The wallet counts a round by the
+    // mix's shape (an own and a foreign input, the own one signed ALL|ANYONECANPAY, a new own and a foreign P2PKH
+    // output, BIP69 order), so the mixes are given to it as confirmed, with made-up foreign inputs, and are not mined.
+    const CBlockIndex* tip{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip())};
+    const auto p2pkh = [](const CKey& key) { return GetScriptForDestination(PKHash(key.GetPubKey())); };
+    uint8_t made_up{0};
+    const auto foreign_input = [&] {
+        uint256 hash;
+        *hash.begin() = ++made_up;
+        return COutPoint{hash, 0};
+    };
+    const auto confirmed = [&](const CMutableTransaction& mtx) {
+        const CTransactionRef tx{MakeTransactionRef(mtx)};
+        BOOST_REQUIRE(wallet->AddToWallet(tx, CWalletTx::Confirmation(CWalletTx::CONFIRMED, tip->nHeight, tip->GetBlockHash(), 1)));
+        return tx;
+    };
+    CMutableTransaction fund;
+    fund.vin.emplace_back(foreign_input());
+    fund.vout.emplace_back(amount, p2pkh(NewWalletKey()));
+    COutPoint coin{confirmed(fund)->GetHash(), 0};
+    for (int round = 0; round < target; ++round) {
+        const CScript to{p2pkh(NewWalletKey())};
+        CKey other;
+        other.MakeNewKey(true);
+        CMutableTransaction mtx;
+        mtx.vin.emplace_back(coin);
+        mtx.vin.emplace_back(foreign_input());
+        mtx.vout.emplace_back(amount, to);
+        mtx.vout.emplace_back(amount, p2pkh(other));
+        std::sort(mtx.vin.begin(), mtx.vin.end(), CompareInputBIP69());
+        std::sort(mtx.vout.begin(), mtx.vout.end(), CompareOutputBIP69());
+        for (CTxIn& in : mtx.vin) {
+            if (in.prevout == coin) {
+                in.scriptSig = CScript() << std::vector<unsigned char>(71, static_cast<unsigned char>(SIGHASH_ALL | SIGHASH_ANYONECANPAY))
+                                         << std::vector<unsigned char>(33, static_cast<unsigned char>(2));
+            }
+        }
+        const CTransactionRef tx{confirmed(mtx)};
+        coin = COutPoint{tx->GetHash(), tx->vout[0].scriptPubKey == to ? 0U : 1U};
+    }
+    BOOST_REQUIRE_EQUAL(wallet->GetRealOutpointCoinJoinRounds(coin), target);
+
+    // At the threshold the salt decides: one salt says "fully mixed" and another "mix again", and the balance the GUI
+    // reads follows the salt set last.
+    const auto gui_wallet{interfaces::MakeWallet(wallet)};
+    const auto dfcn_mixed = [&] { return gui_wallet->getBalances().dfcn_scale_anonymized_balance; };
+    BOOST_REQUIRE(!wallet->GetCoinJoinSalt().IsNull());
+    const bool first_answer{wallet->IsFullyMixed(coin)};
+    BOOST_CHECK_EQUAL(dfcn_mixed(), first_answer ? amount : 0);
+    uint256 other_salt;
+    for (int i = 0; i < 64 && other_salt.IsNull(); ++i) {
+        const uint256 candidate{GetRandHash()};
+        BOOST_REQUIRE(wallet->SetCoinJoinSalt(candidate));
+        if (wallet->IsFullyMixed(coin) != first_answer) other_salt = candidate;
+    }
+    BOOST_REQUIRE_MESSAGE(!other_salt.IsNull(), "a coin at the rounds' threshold is fully mixed by one salt and not by another");
+    BOOST_CHECK(wallet->GetCoinJoinSalt() == other_salt);
+    BOOST_CHECK_EQUAL(dfcn_mixed(), first_answer ? 0 : amount);
+
+    // The write waits for the wallet's lock: while this thread holds it, a thread that sets a new salt does not finish,
+    // and this thread still reads the salt it read before.
+    const uint256 new_salt{GetRandHash()};
+    std::promise<void> started;
+    std::future<bool> set;
+    {
+        LOCK(wallet->cs_wallet);
+        set = std::async(std::launch::async, [&] {
+            started.set_value();
+            return wallet->SetCoinJoinSalt(new_salt);
+        });
+        started.get_future().wait();
+        BOOST_CHECK_MESSAGE(set.wait_for(std::chrono::milliseconds(500)) == std::future_status::timeout,
+                            "a new salt is not written while another thread holds the wallet's lock");
+        BOOST_CHECK(wallet->GetCoinJoinSalt() == other_salt);
+    }
+    BOOST_REQUIRE(set.wait_for(std::chrono::seconds(60)) == std::future_status::ready);
+    BOOST_CHECK(set.get());
+    BOOST_CHECK(wallet->GetCoinJoinSalt() == new_salt);
+
+    // The two beside each other, as the GUI's poll and the RPC run (the case for ThreadSanitizer: a write outside the
+    // lock is a data race here): every figure read is a whole one, of one salt or of another.
+    std::atomic<bool> done{false};
+    bool all_set{true};
+    std::thread setter([&] {
+        for (int i = 0; i < 100; ++i) all_set = wallet->SetCoinJoinSalt(GetRandHash()) && all_set;
+        done = true;
+    });
+    int reads{0};
+    bool whole{true};
+    do {
+        const CAmount figure{dfcn_mixed()};
+        whole = whole && (figure == 0 || figure == amount);
+        (void)gui_wallet->isFullyMixed(coin);
+        ++reads;
+    } while (!done);
+    setter.join();
+    BOOST_CHECK(all_set);
+    BOOST_CHECK_MESSAGE(whole, "each balance read beside the salt changes is the whole coin or nothing");
+    BOOST_CHECK_GT(reads, 0);
+    BOOST_CHECK_EQUAL(dfcn_mixed(), wallet->IsFullyMixed(coin) ? amount : 0);
 }
 
 BOOST_FIXTURE_TEST_CASE(CTransactionBuilderTest, CTransactionBuilderTestSetup)

@@ -1349,7 +1349,8 @@ void SendCoinsDialog::setBalance(const interfaces::WalletBalances& balances)
             balance = balances.watch_only_balance;
             ui->labelBalanceName->setText(tr("Watch-only balance:"));
         } else if (m_coin_control->IsUsingCoinJoin()) {
-            balance = balances.anonymized_balance;
+            // The fully mixed coins of all eight amounts (CJ4), as getAvailableBalance spends them.
+            balance = balances.anonymized_balance + balances.dfcn_scale_anonymized_balance;
         } else {
             balance = balances.balance;
         }

@@ -120,7 +120,10 @@ public:
     virtual CAmount getMinCollateralAmount() = 0;
     virtual CAmount getMaxCollateralAmount() = 0;
     virtual CAmount getSmallestDenomination() = 0;
+    //! The wallet's list: the five amounts of v23.0.0.
     virtual bool isDenominated(CAmount nAmount) = 0;
+    //! Any of the eight amounts of the wire table: the five and the DFCN-scale ones (CJ4).
+    virtual bool isKnownDenomination(CAmount nAmount) = 0;
 };
 }
 

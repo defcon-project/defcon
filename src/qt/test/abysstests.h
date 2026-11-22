@@ -97,6 +97,7 @@ private Q_SLOTS:
     void stakingCard();
     void stakingBanner();
     void coinJoinCardConditional();
+    void coinJoinDfcnScaleShown();
     void nextLevelLine();
     void stakingWindow();
     void stakingSyncGates();

@@ -1392,7 +1392,7 @@ void OverviewPage::updateCoinJoinCard()
         return;
     }
     // Mixed coins are a reason to show the card; a balance never received is not.
-    const bool mixed = m_balances.balance != -1 && m_balances.anonymized_balance > 0;
+    const bool mixed = m_balances.balance != -1 && m_balances.anonymized_balance + m_balances.dfcn_scale_anonymized_balance > 0;
     const bool card = m_coinjoin_disabled ? m_coinjoin_card_pinned :
                       m_coinjoin_enabled && (m_coinjoin_mixing || mixed || m_coinjoin_card_pinned);
     if (ui->frameCoinJoin->isHidden() == card) ui->frameCoinJoin->setVisible(card);
@@ -1647,7 +1647,7 @@ void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
             setBalanceText(ui->labelBalance, unit, balances.balance);
             setBalanceText(ui->labelUnconfirmed, unit, balances.unconfirmed_balance);
             setBalanceText(ui->labelImmature, unit, balances.immature_balance);
-            setBalanceText(ui->labelAnonymized, unit, balances.anonymized_balance);
+            setBalanceText(ui->labelAnonymized, unit, balances.anonymized_balance + balances.dfcn_scale_anonymized_balance);
             setBalanceText(ui->labelTotal, unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance);
             setBalanceText(ui->labelWatchAvailable, unit, balances.watch_only_balance);
             setBalanceText(ui->labelWatchPending, unit, balances.unconfirmed_watch_only_balance);
@@ -1658,7 +1658,7 @@ void OverviewPage::setBalance(const interfaces::WalletBalances& balances)
             setBalanceText(ui->labelBalance, unit, balances.balance);
             setBalanceText(ui->labelUnconfirmed, unit, balances.unconfirmed_balance);
             setBalanceText(ui->labelImmature, unit, balances.immature_balance);
-            setBalanceText(ui->labelAnonymized, unit, balances.anonymized_balance);
+            setBalanceText(ui->labelAnonymized, unit, balances.anonymized_balance + balances.dfcn_scale_anonymized_balance);
             setBalanceText(ui->labelTotal, unit, balances.balance + balances.unconfirmed_balance + balances.immature_balance);
     }
     // only show immature (newly mined) balance if it's non-zero, so as not to complicate things
