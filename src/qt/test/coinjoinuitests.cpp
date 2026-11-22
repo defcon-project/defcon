@@ -8,6 +8,9 @@
 
 #include <qt/test/coinjoinuitests.h>
 
+#include <chainparams.h>
+#include <coinjoin/common.h>
+#include <consensus/amount.h>
 #include <interfaces/node.h>
 #include <qt/forms/ui_optionsdialog.h>
 #include <qt/guiutil.h>
@@ -15,6 +18,9 @@
 #include <qt/optionsmodel.h>
 #include <qt/utilitydialog.h>
 #include <util/system.h>
+#ifdef ENABLE_WALLET
+#include <wallet/wallet.h>
+#endif
 
 #include <univalue.h>
 
@@ -29,8 +35,11 @@
 #include <QSettings>
 #include <QSpinBox>
 #include <QString>
+#include <QStringList>
 #include <QWidget>
 
+#include <cstdint>
+#include <limits>
 #include <map>
 #include <optional>
 #include <utility>
@@ -38,6 +47,26 @@
 namespace {
 //! An amount of whole DFCN as the English texts write it ("10,000").
 QString Written(int amount) { return QLocale(QLocale::English).toString(amount); }
+
+//! An amount as the texts write one to type into an amount field: no
+//! separators, no trailing zeros ("10000.1").
+QString Typed(CAmount amount)
+{
+    QString text = QString("%1.%2").arg(amount / COIN).arg(amount % COIN, 8, 10, QLatin1Char('0'));
+    while (text.endsWith('0')) text.chop(1);
+    if (text.endsWith('.')) text.chop(1);
+    return text;
+}
+
+//! The larger (DFCN-scale) amounts, bits 5-7 of the wire table, as typed.
+QStringList LargerAmounts()
+{
+    QStringList amounts;
+    for (size_t bit = 5; bit < CoinJoin::vecDenominationsByBit.size(); ++bit) {
+        amounts << Typed(CoinJoin::vecDenominationsByBit[bit]);
+    }
+    return amounts;
+}
 } // namespace
 
 void CoinJoinUiTests::initTestCase()
@@ -48,13 +77,14 @@ void CoinJoinUiTests::initTestCase()
 
 void CoinJoinUiTests::targetFieldIsCapped()
 {
-    // The CoinJoin amounts are the small ones of the chain this one forked
-    // from (at most about 10 DFCN), and the largest one has no count limit: a
-    // target in the millions, which the field allowed, splits the balance into
-    // that many coins of 10 DFCN. The options form caps the field and says
-    // why. The form is read on its own: the dialog raises the cap only for a
-    // target saved above it (savedTargetKept), and it cannot be built without
-    // the application fonts.
+    // The amounts the wallet makes are the small ones of the chain this one
+    // forked from (at most about 10 DFCN), and the largest one has no count
+    // limit: a target in the millions, which the field allowed, splits the
+    // balance into that many coins of 10 DFCN. The options form caps the field
+    // and says why, and that the larger amounts, which the wallet does not
+    // make, are mixed apart from the target. The form is read on its own: the
+    // dialog raises the cap only for a target saved above it
+    // (savedTargetKept), and it cannot be built without the application fonts.
     QDialog dialog;
     Ui::OptionsDialog form;
     form.setupUi(&dialog);
@@ -68,15 +98,111 @@ void CoinJoinUiTests::targetFieldIsCapped()
     const QString tip = target->toolTip();
     QVERIFY2(tip.startsWith(QString("At most %1 DFCN.").arg(Written(target->maximum()))), qPrintable(tip));
     QVERIFY2(tip.contains("the standard amounts are at most about 10 DFCN", Qt::CaseInsensitive), qPrintable(tip));
-    // The label keeps the tooltip it had.
-    QCOMPARE(form.lblCoinJoinAmountText->toolTip(), QString("This amount acts as a threshold to turn off mixing once it's reached."));
+    // The larger amounts by their values in the wire table: the target does not count them.
+    const QStringList larger = LargerAmounts();
+    QCOMPARE(larger.size(), 3);
+    QVERIFY2(tip.endsWith(QString(" Coins of %1, %2 and %3 DFCN are mixed apart from this target.").arg(larger[0], larger[1], larger[2])), qPrintable(tip));
+    // The label says which mixing the target turns off.
+    QCOMPARE(form.lblCoinJoinAmountText->toolTip(), QString("This amount acts as a threshold to turn off mixing of the standard amounts once it's reached."));
+}
+
+void CoinJoinUiTests::helpDescribesLargerAmounts()
+{
+    // The three larger amounts are bits 5-7 of the wire table: the wallet mixes
+    // them and counts none of them toward the target, but makes none; the
+    // user does. The help names them as they are typed, says which wallets the
+    // recipe is for, gives the recipe, and says from which block they are
+    // mixed: the height the mixing client reads, or that this version has
+    // none yet.
+    const QString start = "Mixing these amounts starts at block 123456. From then on, while mixing is switched on,";
+    const QString no_start = "The block at which mixing these amounts starts is not set in this version yet. "
+                             "From then on, while mixing is switched on,";
+    const QString set = HelpMessageDialog::coinJoinHelp(int64_t{123456});
+    const QString unset = HelpMessageDialog::coinJoinHelp(std::nullopt);
+    QVERIFY2(set.contains(start) && !set.contains("is not set in this version"), qPrintable(set));
+    QVERIFY2(unset.contains(no_start) && !unset.contains("starts at block"), qPrintable(unset));
+    // Apart from that sentence the two are one text.
+    QCOMPARE(QString(set).replace(start, no_start), unset);
+    // The dialog shows the text of the chain's own height: none while the
+    // activation height is unset, as on every network today, and the height
+    // the client mixes from once it is set. The chain's two values are put back.
+    auto& consensus = const_cast<Consensus::Params&>(Params().GetConsensus());
+    struct PutBack {
+        Consensus::Params& params;
+        const int height;
+        const std::optional<int> mixing_override;
+        ~PutBack()
+        {
+            params.nV231ActivationHeight = height;
+            params.nDfcnScaleMixingHeightOverride = mixing_override;
+        }
+    } put_back{consensus, consensus.nV231ActivationHeight, consensus.nDfcnScaleMixingHeightOverride};
+    const auto shown = [] {
+        HelpMessageDialog help(nullptr, HelpMessageDialog::pshelp);
+        auto* message = help.findChild<QLabel*>("aboutMessage");
+        return message ? message->text() : QString();
+    };
+    consensus.nV231ActivationHeight = std::numeric_limits<int>::max();
+    consensus.nDfcnScaleMixingHeightOverride = std::nullopt;
+    QCOMPARE(shown(), unset);
+    consensus.nV231ActivationHeight = 123456 - CoinJoin::DFCN_SCALE_MIXING_DELAY;
+    QCOMPARE(shown(), set);
+
+    // The section stands between the list and the size section.
+    const int list_end = set.indexOf("</ul>");
+    const int section = set.indexOf("<hr><b>Larger amounts</b>");
+    const int size = set.indexOf("<hr><b>How much to mix</b>");
+    QVERIFY2(list_end > 0 && section > list_end && size > section, qPrintable(set));
+    const QString text = set.mid(section, size - section);
+    // Which wallets the recipe is for stands before its steps: a coin paid to
+    // an address the wallet does not track as its own would leave its balance.
+    const int condition = text.indexOf("Use this recipe only in a wallet whose receiving and change addresses are its own "
+                                       "spendable P2PKH addresses, as they are by default");
+    const int steps = text.indexOf("<ol");
+    QVERIFY2(condition > 0 && steps > condition, qPrintable(text));
+    // The amounts by their values in the wire table, none of them one the wallet makes.
+    for (size_t bit = 5; bit < CoinJoin::vecDenominationsByBit.size(); ++bit) {
+        const CAmount amount = CoinJoin::vecDenominationsByBit[bit];
+        QVERIFY(CoinJoin::IsDfcnScaleDenomination(CoinJoin::AmountToDenomination(amount)));
+        QVERIFY(!CoinJoin::IsDenominatedAmount(amount));
+    }
+    const QStringList larger = LargerAmounts();
+    QCOMPARE(larger.size(), 3);
+    for (const QString& expected : {QString("three more amounts: %1, %2 and %3 DFCN").arg(larger[0], larger[1], larger[2]),
+                                    QString("Your wallet mixes coins of these amounts, but it does not make them"),
+                                    QString("Create a new receiving address for each coin you want, and one more"),
+                                    QString("Pay exactly %1, %2 or %3 DFCN to each coin's address and 0.01 DFCN to the last one")
+                                        .arg(larger[0], larger[1], larger[2]),
+                                    QString("with \"Subtract fee from amount\" switched off for every recipient"),
+                                    QString("a wallet that was given other active descriptors may not recognise the coins it pays to itself"),
+                                    QString("mixes every coin of these amounts that it holds on such an address, whatever the target balance is"),
+                                    QString("To keep a coin out, lock it before you start mixing: enable the coin control features in Options, "
+                                            "then use Inputs… on the Send page"),
+                                    QString("The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts"),
+                                    QString("A normal payment can spend these coins like any other coin, mixed or not"),
+                                    // Locking is for before mixing starts: a session that has sent its
+                                    // collateral counts on its coin until its entry is in.
+                                    QString("Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself"),
+                                    // While mixing runs, a payment's coins are to be of no CoinJoin amount at
+                                    // all: a session of a standard amount counts on its coin in the same way.
+                                    QString("While mixing is running, choose coins that are not of a standard or a larger amount, "
+                                            "and neither lock nor spend a coin of these amounts that is waiting to be mixed "
+                                            "until its session has ended"),
+                                    QString("A session needs other wallets that mix the same amount at the same time")}) {
+        QVERIFY2(text.contains(expected), qPrintable(expected));
+    }
+    QVERIFY2(!text.contains("%1"), qPrintable(text));
+    // What the list before it says about staking covers these amounts too.
+    QVERIFY2(set.left(section).contains("coins of exactly a standard amount, or of one of the larger amounts below, "
+                                        "do not earn staking rewards, whether they are mixed or not"),
+             qPrintable(set));
 }
 
 void CoinJoinUiTests::helpStatesThePracticalSize()
 {
-    // The help says what the small amounts mean in practice, in a section of
-    // its own after the list (the text before it is unchanged, so its
-    // translations stay valid), and names the field's cap.
+    // The help says what the small amounts mean in practice and what a
+    // payment from mixed coins needs, in a section of its own at the end, and
+    // names the field's cap and the wallet's default fee limit.
     QDialog dialog;
     Ui::OptionsDialog form;
     form.setupUi(&dialog);
@@ -84,30 +210,43 @@ void CoinJoinUiTests::helpStatesThePracticalSize()
     auto* message = help.findChild<QLabel*>("aboutMessage");
     QVERIFY(message);
     const QString text = message->text();
-    const int list_end = text.indexOf("</ul>");
+    const int larger = text.indexOf("<hr><b>Larger amounts</b>");
     const int section = text.indexOf("<hr><b>How much to mix</b>");
-    QVERIFY2(list_end > 0 && section > list_end, qPrintable(text));
+    QVERIFY2(larger > 0 && section > larger, qPrintable(text));
     const QString added = text.mid(section);
-    for (const QString& expected : {QString("at most about 10 DFCN, so CoinJoin is meant for smaller sums"),
-                                    QString("one payment from mixed coins can be at most about 6,700 DFCN"),
-                                    QString("send a larger amount in several payments"),
+    for (const QString& expected : {QString("at most about 10 DFCN, so on their own they suit smaller sums"),
                                     QString("The target balance in Options goes up to %1 DFCN").arg(Written(form.coinJoinAmount->maximum())),
-                                    QString("a thousand mixed coins or more")}) {
+                                    QString("a thousand mixed coins or more"),
+                                    QString("one payment from coins of the standard amounts can be at most about 6,700 DFCN"),
+                                    QString("For more, use the larger amounts"),
+                                    QString("A payment from your CoinJoin balance has no change"),
+                                    QString("what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default"),
+                                    // Both ends of what a payment from larger coins can leave over, and the
+                                    // setting that would take the difference from the recipient as well.
+                                    QString("switch off \"Subtract fee from amount\" for every recipient and send a little less than the coins add up to"),
+                                    // The upper end is the wallet's own limit; 0.1 DFCN is only its default.
+                                    QString("the difference is the fee, so it has to cover the normal network fee and stay within the wallet's fee limit")}) {
         QVERIFY2(added.contains(expected), qPrintable(expected));
     }
+#ifdef ENABLE_WALLET
+    // The fee limit the text names is the wallet's default.
+    QCOMPARE(Typed(DEFAULT_TRANSACTION_MAXFEE), QString("0.1"));
+#endif
     QVERIFY2(!added.contains("%1"), qPrintable(added));
     QVERIFY2(text.endsWith("</p>"), qPrintable(added));
-    // The section is below the help's first screen: with DEFCON_QT_SCREENSHOTS
-    // set, a picture of the help scrolled to its end, for review.
+    // Most of the help is below its first screen: with DEFCON_QT_SCREENSHOTS
+    // set, a picture of the whole text and one of the help scrolled to its
+    // end, for review.
     const QString output = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
     if (!output.isEmpty()) {
         help.show();
         QApplication::processEvents();
+        QVERIFY(QDir().mkpath(output));
+        QVERIFY(message->grab().save(QDir(output).filePath("coinjoin-help-text.png")));
         auto* scroll = help.findChild<QScrollArea*>("scrollArea");
         QVERIFY(scroll);
         scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());
         QApplication::processEvents();
-        QVERIFY(QDir().mkpath(output));
         QVERIFY(help.grab().save(QDir(output).filePath("coinjoin-help-end.png")));
     }
 }
