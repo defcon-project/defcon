@@ -466,7 +466,7 @@
 <context>
     <name>BitcoinGUI</name>
     <message>
-        <location filename="../bitcoingui.cpp" line="+1021"/>
+        <location filename="../bitcoingui.cpp" line="+1023"/>
         <source>&amp;Overview</source>
         <translation>&amp;Overview</translation>
     </message>
@@ -476,7 +476,7 @@
         <translation>Show general overview of wallet</translation>
     </message>
     <message>
-        <location line="-636"/>
+        <location line="-638"/>
         <source>&amp;Send</source>
         <translation>&amp;Send</translation>
     </message>
@@ -597,7 +597,7 @@
         <translation>Main Window</translation>
     </message>
     <message>
-        <location line="+268"/>
+        <location line="+270"/>
         <source>&amp;Transactions</source>
         <translation>&amp;Transactions</translation>
     </message>
@@ -617,7 +617,7 @@
         <translation>Browse masternodes</translation>
     </message>
     <message>
-        <location line="-646"/>
+        <location line="-648"/>
         <source>E&amp;xit</source>
         <translation>E&amp;xit</translation>
     </message>
@@ -769,7 +769,7 @@
         <translation>default wallet</translation>
     </message>
     <message>
-        <location line="+1304"/>
+        <location line="+1306"/>
         <source>%1 client</source>
         <translation>%1 client</translation>
     </message>
@@ -786,7 +786,7 @@
         <translation>Wallet is &lt;b&gt;unencrypted&lt;/b&gt;</translation>
     </message>
     <message>
-        <location line="-2450"/>
+        <location line="-2452"/>
         <source>&amp;File</source>
         <translation>&amp;File</translation>
     </message>
@@ -846,7 +846,7 @@
         <translation>&amp;Help</translation>
     </message>
     <message>
-        <location line="+193"/>
+        <location line="+195"/>
         <source>Tabs toolbar</source>
         <translation>Tabs toolbar</translation>
     </message>
@@ -879,7 +879,7 @@
         <translation>%1 behind</translation>
     </message>
     <message>
-        <location line="-2107"/>
+        <location line="-2109"/>
         <source>Close Wallet…</source>
         <translation>Close Wallet…</translation>
     </message>
@@ -910,12 +910,12 @@
     </message>
     <message>
         <location line="+1"/>
-        <location line="+603"/>
+        <location line="+605"/>
         <source>Manage multisignature addresses and partially signed transactions</source>
         <translation>Manage multisignature addresses and partially signed transactions</translation>
     </message>
     <message>
-        <location line="-601"/>
+        <location line="-603"/>
         <source>Sign messages with your DeFCoN addresses to prove you own them</source>
         <translation>Sign messages with your DeFCoN addresses to prove you own them</translation>
     </message>
@@ -985,7 +985,7 @@
         <translation>Wallet &amp;config file</translation>
     </message>
     <message>
-        <location line="+169"/>
+        <location line="+171"/>
         <source>M&amp;ultisig</source>
         <translation>M&amp;ultisig</translation>
     </message>
@@ -1451,7 +1451,7 @@
         <translation>(%1 locked)</translation>
     </message>
     <message>
-        <location line="+157"/>
+        <location line="+159"/>
         <source>yes</source>
         <translation>yes</translation>
     </message>
@@ -1846,20 +1846,24 @@
 <context>
     <name>EmptyStateWidget</name>
     <message>
-        <location filename="../emptystatewidget.cpp" line="+122"/>
-        <location line="+49"/>
-        <source>Loading…</source>
-        <translation>Loading…</translation>
-    </message>
-    <message>
-        <location line="-5"/>
+        <location filename="../emptystatewidget.cpp" line="+134"/>
         <source>No matching results</source>
         <translation>No matching results</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Waiting for synchronization</source>
+        <translation>Waiting for synchronization</translation>
     </message>
     <message>
         <location line="+1"/>
         <source>Try a different search or clear your filters.</source>
         <translation>Try a different search or clear your filters.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Your transactions will appear here as the wallet catches up with the network.</source>
+        <translation>Your transactions will appear here as the wallet catches up with the network.</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -1931,7 +1935,7 @@
 <context>
     <name>HelpMessageDialog</name>
     <message>
-        <location filename="../utilitydialog.cpp" line="+41"/>
+        <location filename="../utilitydialog.cpp" line="+42"/>
         <source>version</source>
         <translation>version</translation>
     </message>
@@ -1946,14 +1950,35 @@
         <translation>Command-line options</translation>
     </message>
     <message>
-        <location line="+47"/>
+        <location line="+46"/>
         <source>%1 information</source>
         <translation>%1 information</translation>
     </message>
     <message>
-        <location line="+4"/>
-        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type=&quot;1&quot;&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type=&quot;1&quot;&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</translation>
+        <location line="+32"/>
+        <source>Mixing these amounts starts at block %1.</source>
+        <translation>Mixing these amounts starts at block %1.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The block at which mixing these amounts starts is not set in this version yet.</source>
+        <translation>The block at which mixing these amounts starts is not set in this version yet.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type=&quot;1&quot;&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; coins of exactly a standard amount, or of one of the larger amounts below, do not earn staking rewards, whether they are mixed or not, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed in the standard amounts.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type=&quot;1&quot;&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; coins of exactly a standard amount, or of one of the larger amounts below, do not earn staking rewards, whether they are mixed or not, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed in the standard amounts.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <location line="+36"/>
+        <source>&lt;hr&gt;&lt;b&gt;Larger amounts&lt;/b&gt;&lt;p&gt;For larger sums there are three more amounts: 100.001, 1000.01 and 10000.1 DFCN. Your wallet mixes coins of these amounts, but it does not make them. You make them with one normal payment to yourself. Use this recipe only in a wallet whose receiving and change addresses are its own spendable P2PKH addresses, as they are by default: a wallet that was given other active descriptors may not recognise the coins it pays to itself.&lt;/p&gt;&lt;ol type=&quot;1&quot;&gt;&lt;li&gt;Create a new receiving address for each coin you want, and one more.&lt;/li&gt;&lt;li&gt;On the Send page, add a recipient for each of these addresses. Pay exactly 100.001, 1000.01 or 10000.1 DFCN to each coin&apos;s address and 0.01 DFCN to the last one, with &quot;Subtract fee from amount&quot; switched off for every recipient.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 From then on, while mixing is switched on, your wallet mixes every coin of these amounts that it holds on such an address, whatever the target balance is. To keep a coin out, lock it before you start mixing: enable the coin control features in Options, then use Inputs… on the Send page.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts. If your wallet has no ordinary, unmixed balance left for them, mixing these amounts can wait.&lt;/li&gt;&lt;li&gt;A normal payment can spend these coins like any other coin, mixed or not. Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself. While mixing is running, choose coins that are not of a standard or a larger amount, and neither lock nor spend a coin of these amounts that is waiting to be mixed until its session has ended: a session that loses its coin can cost a collateral.&lt;/li&gt;&lt;li&gt;A session needs other wallets that mix the same amount at the same time, so a larger amount can wait longer for its rounds.&lt;/li&gt;&lt;/ul&gt;</source>
+        <extracomment>%1 is the sentence about the block at which mixing the larger amounts starts; it is translated on its own.</extracomment>
+        <translation>&lt;hr&gt;&lt;b&gt;Larger amounts&lt;/b&gt;&lt;p&gt;For larger sums there are three more amounts: 100.001, 1000.01 and 10000.1 DFCN. Your wallet mixes coins of these amounts, but it does not make them. You make them with one normal payment to yourself. Use this recipe only in a wallet whose receiving and change addresses are its own spendable P2PKH addresses, as they are by default: a wallet that was given other active descriptors may not recognise the coins it pays to itself.&lt;/p&gt;&lt;ol type=&quot;1&quot;&gt;&lt;li&gt;Create a new receiving address for each coin you want, and one more.&lt;/li&gt;&lt;li&gt;On the Send page, add a recipient for each of these addresses. Pay exactly 100.001, 1000.01 or 10000.1 DFCN to each coin&apos;s address and 0.01 DFCN to the last one, with &quot;Subtract fee from amount&quot; switched off for every recipient.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 From then on, while mixing is switched on, your wallet mixes every coin of these amounts that it holds on such an address, whatever the target balance is. To keep a coin out, lock it before you start mixing: enable the coin control features in Options, then use Inputs… on the Send page.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts. If your wallet has no ordinary, unmixed balance left for them, mixing these amounts can wait.&lt;/li&gt;&lt;li&gt;A normal payment can spend these coins like any other coin, mixed or not. Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself. While mixing is running, choose coins that are not of a standard or a larger amount, and neither lock nor spend a coin of these amounts that is waiting to be mixed until its session has ended: a session that loses its coin can cost a collateral.&lt;/li&gt;&lt;li&gt;A session needs other wallets that mix the same amount at the same time, so a larger amount can wait longer for its rounds.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <location line="+31"/>
+        <source>&lt;hr&gt;&lt;b&gt;How much to mix&lt;/b&gt;&lt;p&gt;The standard amounts are at most about 10 DFCN, so on their own they suit smaller sums. The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more, and a payment can hold only so many coins: one payment from coins of the standard amounts can be at most about 6,700 DFCN. For more, use the larger amounts.&lt;/p&gt;&lt;p&gt;A payment from your %1 balance has no change. The mixed coins have to add up to the amount you send; what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default. With coins of the larger amounts, switch off &quot;Subtract fee from amount&quot; for every recipient and send a little less than the coins add up to: the difference is the fee, so it has to cover the normal network fee and stay within the wallet&apos;s fee limit. Or keep coins of the standard amounts to make up the rest.&lt;/p&gt;</source>
+        <translation>&lt;hr&gt;&lt;b&gt;How much to mix&lt;/b&gt;&lt;p&gt;The standard amounts are at most about 10 DFCN, so on their own they suit smaller sums. The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more, and a payment can hold only so many coins: one payment from coins of the standard amounts can be at most about 6,700 DFCN. For more, use the larger amounts.&lt;/p&gt;&lt;p&gt;A payment from your %1 balance has no change. The mixed coins have to add up to the amount you send; what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default. With coins of the larger amounts, switch off &quot;Subtract fee from amount&quot; for every recipient and send a little less than the coins add up to: the difference is the fee, so it has to cover the normal network fee and stay within the wallet&apos;s fee limit. Or keep coins of the standard amounts to make up the rest.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2344,12 +2369,12 @@
     </message>
     <message>
         <location line="+7"/>
-        <location line="+84"/>
+        <location line="+86"/>
         <source>Create multisig</source>
         <translation>Create multisig</translation>
     </message>
     <message>
-        <location line="-83"/>
+        <location line="-85"/>
         <source>Clear result</source>
         <translation>Clear result</translation>
     </message>
@@ -2404,7 +2429,7 @@
         <translation>Show raw RPC result</translation>
     </message>
     <message>
-        <location line="+41"/>
+        <location line="+43"/>
         <source>Descriptor wallets require manual import with importdescriptors.</source>
         <translation>Descriptor wallets require manual import with importdescriptors.</translation>
     </message>
@@ -2534,12 +2559,12 @@
         <translation>Multisig Setup</translation>
     </message>
     <message>
-        <location line="+5"/>
+        <location line="+13"/>
         <source>Could not write file %1.</source>
         <translation>Could not write file %1.</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+3"/>
         <source>Setup saved to %1. Share this file with your cosigners; it contains no private keys.</source>
         <translation>Setup saved to %1. Share this file with your cosigners; it contains no private keys.</translation>
     </message>
@@ -2719,7 +2744,7 @@
         <translation>Remove the selected entry from this list. The wallet itself keeps tracking the address.</translation>
     </message>
     <message>
-        <location line="+85"/>
+        <location line="+87"/>
         <source>%1-of-%2</source>
         <translation>%1-of-%2</translation>
     </message>
@@ -2730,12 +2755,12 @@
     </message>
     <message>
         <location line="+15"/>
-        <location line="+179"/>
+        <location line="+185"/>
         <source>Cannot spend from this profile: %1</source>
         <translation>Cannot spend from this profile: %1</translation>
     </message>
     <message>
-        <location line="-152"/>
+        <location line="-158"/>
         <source>No wallet loaded.</source>
         <translation>No wallet loaded.</translation>
     </message>
@@ -2816,12 +2841,12 @@ Note: transactions received before now will only appear after a rescan.</transla
         <translation>Export Multisig Setup</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+13"/>
         <source>Could not write file %1.</source>
         <translation>Could not write file %1.</translation>
     </message>
     <message>
-        <location line="+4"/>
+        <location line="+3"/>
         <source>Setup saved to %1. Share this file with your cosigners; it contains no private keys.</source>
         <translation>Setup saved to %1. Share this file with your cosigners; it contains no private keys.</translation>
     </message>
@@ -2944,7 +2969,7 @@ Only the list entry is removed. If the address was imported into the wallet it r
 <context>
     <name>MultisigSpendDialog</name>
     <message>
-        <location filename="../multisigspenddialog.cpp" line="+117"/>
+        <location filename="../multisigspenddialog.cpp" line="+118"/>
         <source>Spend from Multisig</source>
         <translation>Spend from Multisig</translation>
     </message>
@@ -3124,7 +3149,7 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>Copy</translation>
     </message>
     <message>
-        <location line="+13"/>
+        <location line="+15"/>
         <source>Close</source>
         <translation>Close</translation>
     </message>
@@ -3198,12 +3223,12 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <location line="+2"/>
-        <location line="+285"/>
+        <location line="+296"/>
         <source>unknown destination</source>
         <translation>unknown destination</translation>
     </message>
     <message>
-        <location line="-281"/>
+        <location line="-292"/>
         <source>Change: %1 (back to the multisig address)</source>
         <translation>Change: %1 (back to the multisig address)</translation>
     </message>
@@ -3214,12 +3239,12 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <location line="+4"/>
-        <location line="+331"/>
+        <location line="+342"/>
         <source>Fee: %1</source>
         <translation>Fee: %1</translation>
     </message>
     <message>
-        <location line="-330"/>
+        <location line="-341"/>
         <source>Fee: unknown</source>
         <translation>Fee: unknown</translation>
     </message>
@@ -3304,7 +3329,7 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>PSBT copied to clipboard. Send it to your cosigner.</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+7"/>
         <source>multisig</source>
         <translation>multisig</translation>
     </message>
@@ -3320,7 +3345,12 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>Partially Signed Transaction (Binary)</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+16"/>
+        <source>Could not write file %1.</source>
+        <translation>Could not write file %1.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>PSBT saved to %1.</source>
         <translation>PSBT saved to %1.</translation>
     </message>
@@ -3767,17 +3797,17 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>Mixing rounds</translation>
     </message>
     <message>
-        <location line="+20"/>
-        <source>This amount acts as a threshold to turn off mixing once it&apos;s reached.</source>
-        <translation>This amount acts as a threshold to turn off mixing once it&apos;s reached.</translation>
-    </message>
-    <message>
-        <location line="+15"/>
+        <location line="+35"/>
         <source>Target balance</source>
         <translation>Target balance</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+7"/>
+        <source>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins. Coins of 100.001, 1000.01 and 10000.1 DFCN are mixed apart from this target.</source>
+        <translation>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins. Coins of 100.001, 1000.01 and 10000.1 DFCN are mixed apart from this target.</translation>
+    </message>
+    <message>
+        <location line="+19"/>
         <source>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</source>
         <translation>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</translation>
     </message>
@@ -3846,12 +3876,12 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Options set in this dialog are overridden by the command line or in the configuration file:</translation>
     </message>
     <message>
-        <location line="-955"/>
+        <location line="-958"/>
         <source>Minimize instead of exit the application when the window is closed. When this option is enabled, the application will be closed only after selecting Exit in the menu.</source>
         <translation>Minimize instead of exit the application when the window is closed. When this option is enabled, the application will be closed only after selecting Exit in the menu.</translation>
     </message>
     <message>
-        <location line="+493"/>
+        <location line="+496"/>
         <source>Automatically open the DeFCoN client port on the router. This only works when your router supports UPnP and it is enabled.</source>
         <translation>Automatically open the DeFCoN client port on the router. This only works when your router supports UPnP and it is enabled.</translation>
     </message>
@@ -3882,7 +3912,7 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>&amp;Third party transaction URLs</translation>
     </message>
     <message>
-        <location line="-706"/>
+        <location line="-709"/>
         <source>Whether to show coin control features or not.</source>
         <translation>Whether to show coin control features or not.</translation>
     </message>
@@ -3922,7 +3952,12 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Enabling pruning significantly reduces the disk space required to store transactions. All blocks are still fully validated. Reverting this setting requires re-downloading the entire blockchain.</translation>
     </message>
     <message>
-        <location line="+484"/>
+        <location line="+350"/>
+        <source>This amount acts as a threshold to turn off mixing of the standard amounts once it&apos;s reached.</source>
+        <translation>This amount acts as a threshold to turn off mixing of the standard amounts once it&apos;s reached.</translation>
+    </message>
+    <message>
+        <location line="+137"/>
         <source>Map port using &amp;UPnP</source>
         <translation>Map port using &amp;UPnP</translation>
     </message>
@@ -3971,7 +4006,7 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Tor</translation>
     </message>
     <message>
-        <location line="-668"/>
+        <location line="-671"/>
         <source>Show only a tray icon after minimizing the window.</source>
         <translation>Show only a tray icon after minimizing the window.</translation>
     </message>
@@ -3991,7 +4026,7 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>&amp;Display</translation>
     </message>
     <message>
-        <location line="+764"/>
+        <location line="+767"/>
         <source>Use separate SOCKS&amp;5 proxy to reach peers via Tor onion services:</source>
         <translation>Use separate SOCKS&amp;5 proxy to reach peers via Tor onion services:</translation>
     </message>
@@ -4051,7 +4086,7 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>default</translation>
     </message>
     <message>
-        <location line="+253"/>
+        <location line="+295"/>
         <source>Confirm options reset</source>
         <translation>Confirm options reset</translation>
     </message>
@@ -4217,12 +4252,12 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>The denominations you submitted to the Masternode.&lt;br&gt;To mix, other users must submit the exact same denominations.</translation>
     </message>
     <message>
-        <location filename="../overviewpage.cpp" line="+679"/>
+        <location filename="../overviewpage.cpp" line="+692"/>
         <source>out of sync</source>
         <translation>out of sync</translation>
     </message>
     <message>
-        <location line="+978"/>
+        <location line="+1286"/>
         <source>Automatic backups are disabled, no mixing available!</source>
         <translation>Automatic backups are disabled, no mixing available!</translation>
     </message>
@@ -4233,7 +4268,7 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>No inputs detected</translation>
     </message>
     <message>
-        <location line="-1300"/>
+        <location line="-1611"/>
         <source>Overview</source>
         <translation>Overview</translation>
     </message>
@@ -4243,12 +4278,12 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Wallet overview and recent activity.</translation>
     </message>
     <message>
-        <location line="+42"/>
+        <location line="+38"/>
         <source>Block</source>
         <translation>Block</translation>
     </message>
     <message>
-        <location line="+6"/>
+        <location line="+5"/>
         <source>Synced</source>
         <translation>Synced</translation>
     </message>
@@ -4258,19 +4293,19 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>ChainLocked</translation>
     </message>
     <message>
-        <location line="+12"/>
-        <location line="+502"/>
+        <location line="+10"/>
+        <location line="+515"/>
         <source>MN</source>
         <translation>MN</translation>
     </message>
     <message>
-        <location line="-501"/>
-        <location line="+502"/>
+        <location line="-514"/>
+        <location line="+515"/>
         <source>tx</source>
         <translation>tx</translation>
     </message>
     <message>
-        <location line="-501"/>
+        <location line="-513"/>
         <source>The newest block this wallet knows of</source>
         <translation>The newest block this wallet knows of</translation>
     </message>
@@ -4321,12 +4356,12 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <location line="+15"/>
-        <location line="+648"/>
+        <location line="+772"/>
         <source>Staking</source>
         <translation>Staking</translation>
     </message>
     <message>
-        <location line="-599"/>
+        <location line="-723"/>
         <source>%1: off</source>
         <translation>%1: off</translation>
     </message>
@@ -4366,7 +4401,7 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Discreet mode activated for the Overview tab. To unmask the values, uncheck Settings-&gt;Discreet mode.</translation>
     </message>
     <message>
-        <location line="+224"/>
+        <location line="+234"/>
         <source>under a minute</source>
         <translation>under a minute</translation>
     </message>
@@ -4476,7 +4511,7 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>peers</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+25"/>
         <source>masternode</source>
         <translation>masternode</translation>
     </message>
@@ -4494,7 +4529,7 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>in mempool</translation>
     </message>
     <message>
-        <location line="+76"/>
+        <location line="+176"/>
         <source>Night sky level: %1</source>
         <translation>Night sky level: %1</translation>
     </message>
@@ -4524,7 +4559,7 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>The night sky behind the wallet grows with the balance: %1 now.</translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+51"/>
         <source>Not available</source>
         <translation>Not available</translation>
     </message>
@@ -4535,22 +4570,12 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <location line="+3"/>
-        <location line="+17"/>
+        <location line="+23"/>
         <source>Off</source>
         <translation>Off</translation>
     </message>
     <message>
-        <location line="-14"/>
-        <source>The node&apos;s staking thread is not running. See debug.log.</source>
-        <translation>The node&apos;s staking thread is not running. See debug.log.</translation>
-    </message>
-    <message>
-        <location line="+1"/>
-        <source>This node runs without staking (-staking=0).</source>
-        <translation>This node runs without staking (-staking=0).</translation>
-    </message>
-    <message>
-        <location line="+9"/>
+        <location line="-4"/>
         <source>Paused: wallet locked</source>
         <translation>Paused: wallet locked</translation>
     </message>
@@ -4576,13 +4601,13 @@ https://app.transifex.com/defcon/defcon/</translation>
     </message>
     <message>
         <location line="+1"/>
-        <location line="+12"/>
+        <location line="+15"/>
         <location line="+7"/>
         <source>Pause staking</source>
         <translation>Pause staking</translation>
     </message>
     <message>
-        <location line="-15"/>
+        <location line="-18"/>
         <source>Ready</source>
         <translation>Ready</translation>
     </message>
@@ -4602,17 +4627,37 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Looking for coins to stake.</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+10"/>
         <source>This wallet is staking. A reward comes with each block it stakes.</source>
         <translation>This wallet is staking. A reward comes with each block it stakes.</translation>
     </message>
     <message>
-        <location line="+10"/>
+        <location line="-8"/>
         <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
         <translation>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</translation>
     </message>
+    <message>
+        <location line="-38"/>
+        <source>Staking stopped and will retry soon. If it stays off, restart the wallet.</source>
+        <translation>Staking stopped and will retry soon. If it stays off, restart the wallet.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The staking thread is not running. The debug log file has the reason.</source>
+        <translation>The staking thread is not running. The debug log file has the reason.</translation>
+    </message>
+    <message>
+        <location line="+2"/>
+        <source>Staking is turned off in the startup settings. To stake, turn it on and restart.</source>
+        <translation>Staking is turned off in the startup settings. To stake, turn it on and restart.</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The wallet was started with -staking=0, in its configuration file or on its command line.</source>
+        <translation>The wallet was started with -staking=0, in its configuration file or on its command line.</translation>
+    </message>
     <message numerus="yes">
-        <location line="+512"/>
+        <location line="+757"/>
         <location line="+17"/>
         <location line="+6"/>
         <location line="+11"/>
@@ -4780,7 +4825,7 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Close</translation>
     </message>
     <message>
-        <location filename="../psbtoperationsdialog.cpp" line="+58"/>
+        <location filename="../psbtoperationsdialog.cpp" line="+67"/>
         <source>Failed to load transaction: %1</source>
         <translation>Failed to load transaction: %1</translation>
     </message>
@@ -4830,7 +4875,7 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>PSBT copied to clipboard.</translation>
     </message>
     <message>
-        <location line="+23"/>
+        <location line="+20"/>
         <source>Save Transaction Data</source>
         <translation>Save Transaction Data</translation>
     </message>
@@ -4841,7 +4886,12 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Partially Signed Transaction (Binary)</translation>
     </message>
     <message>
-        <location line="+7"/>
+        <location line="+16"/>
+        <source>Could not write file %1.</source>
+        <translation>Could not write file %1.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>PSBT saved to disk.</source>
         <translation>PSBT saved to disk.</translation>
     </message>
@@ -5176,7 +5226,7 @@ Due to discontinued support, you should request the merchant to provide you with
         <translation>Error: Failed to load application fonts.</translation>
     </message>
     <message>
-        <location line="+14"/>
+        <location line="+15"/>
         <source>Error: Specified font-family invalid. Valid values: %1.</source>
         <translation>Error: Specified font-family invalid. Valid values: %1.</translation>
     </message>
@@ -5216,7 +5266,7 @@ Due to discontinued support, you should request the merchant to provide you with
         <translation>Amount</translation>
     </message>
     <message>
-        <location filename="../guiutil.cpp" line="+519"/>
+        <location filename="../guiutil.cpp" line="+531"/>
         <source>Enter a DeFCoN address (e.g. %1)</source>
         <translation>Enter a DeFCoN address (e.g. %1)</translation>
     </message>
@@ -5236,12 +5286,12 @@ Due to discontinued support, you should request the merchant to provide you with
         <translation>This can also be adjusted later in the &quot;Appearance&quot; tab of the preferences.</translation>
     </message>
     <message>
-        <location line="+324"/>
+        <location line="+377"/>
         <source>Ctrl+W</source>
         <translation>Ctrl+W</translation>
     </message>
     <message>
-        <location line="+1215"/>
+        <location line="+1282"/>
         <source>Unroutable</source>
         <translation>Unroutable</translation>
     </message>
@@ -6755,12 +6805,12 @@ For more information on using this console, type %6.
     </message>
     <message>
         <location line="+32"/>
-        <location line="+307"/>
+        <location line="+308"/>
         <source>Could not unlock wallet.</source>
         <translation>Could not unlock wallet.</translation>
     </message>
     <message>
-        <location line="-253"/>
+        <location line="-254"/>
         <source>Receive DeFCoN</source>
         <translation>Receive DeFCoN</translation>
     </message>
@@ -6772,7 +6822,7 @@ For more information on using this console, type %6.
     <message>
         <location line="-58"/>
         <location line="+7"/>
-        <location line="+309"/>
+        <location line="+310"/>
         <source>Could not generate new address</source>
         <translation>Could not generate new address</translation>
     </message>
@@ -6877,7 +6927,7 @@ For more information on using this console, type %6.
     <name>SendCoinsDialog</name>
     <message>
         <location filename="../forms/sendcoinsdialog.ui" line="+14"/>
-        <location filename="../sendcoinsdialog.cpp" line="+1178"/>
+        <location filename="../sendcoinsdialog.cpp" line="+1409"/>
         <source>Send Coins</source>
         <translation>Send Coins</translation>
     </message>
@@ -7018,7 +7068,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <location line="+165"/>
-        <location filename="../sendcoinsdialog.cpp" line="-1015"/>
+        <location filename="../sendcoinsdialog.cpp" line="-1187"/>
         <source>Confirm the send action</source>
         <translation>Confirm the send action</translation>
     </message>
@@ -7094,7 +7144,7 @@ For more information on using this console, type %6.
         <translation>%1 (%2 blocks)</translation>
     </message>
     <message>
-        <location line="+165"/>
+        <location line="+166"/>
         <source>This will produce a Partially Signed Transaction (PSBT) which you can save or copy and then sign with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.</source>
         <translation>This will produce a Partially Signed Transaction (PSBT) which you can save or copy and then sign with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.</translation>
     </message>
@@ -7120,7 +7170,7 @@ For more information on using this console, type %6.
         <translation>&lt;b&gt;(%1 of %2 entries displayed)&lt;/b&gt;</translation>
     </message>
     <message>
-        <location line="-248"/>
+        <location line="-249"/>
         <source>S&amp;end mixed funds</source>
         <translation>S&amp;end mixed funds</translation>
     </message>
@@ -7135,17 +7185,17 @@ For more information on using this console, type %6.
         <translation>Cr&amp;eate Unsigned</translation>
     </message>
     <message>
-        <location line="+110"/>
+        <location line="+122"/>
         <source> from wallet &apos;%1&apos;</source>
         <translation> from wallet &apos;%1&apos;</translation>
     </message>
     <message>
-        <location line="+11"/>
+        <location line="+3"/>
         <source>%1 to &apos;%2&apos;</source>
         <translation>%1 to &apos;%2&apos;</translation>
     </message>
     <message>
-        <location line="+18"/>
+        <location line="+15"/>
         <source>Do you want to draft this transaction?</source>
         <translation>Do you want to draft this transaction?</translation>
     </message>
@@ -7219,42 +7269,64 @@ For more information on using this console, type %6.
     </message>
     <message>
         <location line="+44"/>
+        <location line="+48"/>
         <source>Save Transaction Data</source>
         <translation>Save Transaction Data</translation>
     </message>
     <message>
-        <location line="+9"/>
+        <location line="+3"/>
         <source>PSBT saved</source>
         <translation>PSBT saved</translation>
     </message>
     <message>
-        <location line="+582"/>
+        <location line="+711"/>
         <source>Watch-only balance:</source>
         <translation>Watch-only balance:</translation>
     </message>
     <message>
-        <location line="-635"/>
+        <location line="-806"/>
         <source>Send</source>
         <translation>Send</translation>
     </message>
     <message>
-        <location line="-242"/>
+        <location line="-243"/>
         <source>Creates a Partially Signed Blockchain Transaction (PSBT) for use with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.</source>
         <translation>Creates a Partially Signed Blockchain Transaction (PSBT) for use with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.</translation>
     </message>
     <message>
-        <location line="+225"/>
+        <location line="+226"/>
         <source>To review recipient list click &quot;Show Details…&quot;</source>
         <translation>To review recipient list click &quot;Show Details…&quot;</translation>
     </message>
     <message>
-        <location line="+63"/>
+        <location line="+41"/>
+        <source>Unsigned Transaction</source>
+        <comment>PSBT copied</comment>
+        <translation>Unsigned Transaction</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>The PSBT has been copied to the clipboard. You can also save it.</source>
+        <translation>The PSBT has been copied to the clipboard. You can also save it.</translation>
+    </message>
+    <message>
+        <location line="+21"/>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Partially Signed Transaction (Binary)</translation>
     </message>
     <message>
-        <location line="+146"/>
+        <location line="+46"/>
+        <source>Could not write file %1.</source>
+        <translation>Could not write file %1.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
+        <source>PSBT saved to disk.</source>
+        <translation>PSBT saved to disk.</translation>
+    </message>
+    <message>
+        <location line="+121"/>
         <source>Send DeFCoN</source>
         <translation>Send DeFCoN</translation>
     </message>
@@ -7264,7 +7336,7 @@ For more information on using this console, type %6.
         <translation>Send to one or more recipients.</translation>
     </message>
     <message>
-        <location line="+25"/>
+        <location line="+27"/>
         <source>Payment summary</source>
         <translation>Payment summary</translation>
     </message>
@@ -7289,7 +7361,7 @@ For more information on using this console, type %6.
         <translation>The final transaction fee is shown in the confirmation dialog.</translation>
     </message>
     <message>
-        <location line="+421"/>
+        <location line="+566"/>
         <source>The recipient address is not valid. Please recheck.</source>
         <translation>The recipient address is not valid. Please recheck.</translation>
     </message>
@@ -7324,7 +7396,7 @@ For more information on using this console, type %6.
         <translation>A fee higher than %1 is considered an absurdly high fee.</translation>
     </message>
     <message numerus="yes">
-        <location line="+119"/>
+        <location line="+126"/>
         <source>Estimated to begin confirmation within %n block(s).</source>
         <translation>
             <numerusform>Estimated to begin confirmation within %n block.</numerusform>
@@ -7332,7 +7404,7 @@ For more information on using this console, type %6.
         </translation>
     </message>
     <message>
-        <location line="+101"/>
+        <location line="+104"/>
         <source>Warning: Invalid DeFCoN address</source>
         <translation>Warning: Invalid DeFCoN address</translation>
     </message>
@@ -7467,7 +7539,7 @@ For more information on using this console, type %6.
         <translation>Memo:</translation>
     </message>
     <message>
-        <location filename="../sendcoinsentry.cpp" line="+80"/>
+        <location filename="../sendcoinsentry.cpp" line="+179"/>
         <source>Recipient</source>
         <translation>Recipient</translation>
     </message>
@@ -7475,7 +7547,7 @@ For more information on using this console, type %6.
 <context>
     <name>ShutdownWindow</name>
     <message>
-        <location filename="../utilitydialog.cpp" line="+78"/>
+        <location filename="../utilitydialog.cpp" line="+53"/>
         <source>%1 is shutting down…</source>
         <translation>%1 is shutting down…</translation>
     </message>
@@ -8405,7 +8477,12 @@ For more information on using this console, type %6.
         <translation>(n/a)</translation>
     </message>
     <message>
-        <location line="+254"/>
+        <location line="+210"/>
+        <source>Watch-only address</source>
+        <translation>Watch-only address</translation>
+    </message>
+    <message>
+        <location line="+56"/>
         <source>(no label)</source>
         <translation>(no label)</translation>
     </message>
@@ -8443,15 +8520,15 @@ For more information on using this console, type %6.
 <context>
     <name>TransactionView</name>
     <message>
-        <location filename="../transactionview.cpp" line="+71"/>
+        <location filename="../transactionview.cpp" line="+252"/>
         <location line="+13"/>
-        <location line="+674"/>
+        <location line="+677"/>
         <location line="+1"/>
         <source>All</source>
         <translation>All</translation>
     </message>
     <message>
-        <location line="-687"/>
+        <location line="-690"/>
         <source>Today</source>
         <translation>Today</translation>
     </message>
@@ -8526,12 +8603,7 @@ For more information on using this console, type %6.
         <translation>To yourself</translation>
     </message>
     <message>
-        <location line="+1"/>
-        <source>Mined</source>
-        <translation>Mined</translation>
-    </message>
-    <message>
-        <location line="+1"/>
+        <location line="+3"/>
         <source>Platform Transfer</source>
         <translation>Platform Transfer</translation>
     </message>
@@ -8561,7 +8633,7 @@ For more information on using this console, type %6.
         <translation>Min amount</translation>
     </message>
     <message>
-        <location line="+49"/>
+        <location line="+50"/>
         <source>No transactions yet</source>
         <translation>No transactions yet</translation>
     </message>
@@ -8631,7 +8703,7 @@ For more information on using this console, type %6.
         <translation>Show address &amp;QR code</translation>
     </message>
     <message>
-        <location line="+248"/>
+        <location line="+249"/>
         <source>Export Transaction History</source>
         <translation>Export Transaction History</translation>
     </message>
@@ -8648,11 +8720,12 @@ For more information on using this console, type %6.
     </message>
     <message>
         <location line="+2"/>
+        <location line="+326"/>
         <source>Watch-only</source>
         <translation>Watch-only</translation>
     </message>
     <message>
-        <location line="+1"/>
+        <location line="-325"/>
         <source>Date</source>
         <translation>Date</translation>
     </message>
@@ -8736,11 +8809,26 @@ For more information on using this console, type %6.
         <source>Show only transactions of at least this amount</source>
         <translation>Show only transactions of at least this amount</translation>
     </message>
+    <message>
+        <location line="+6"/>
+        <source>All addresses</source>
+        <translation>All addresses</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Spendable only</source>
+        <translation>Spendable only</translation>
+    </message>
+    <message>
+        <location line="+6"/>
+        <source>Show only transactions of these addresses</source>
+        <translation>Show only transactions of these addresses</translation>
+    </message>
 </context>
 <context>
     <name>TxViewDelegate</name>
     <message>
-        <location filename="../overviewpage.cpp" line="-1649"/>
+        <location filename="../overviewpage.cpp" line="-1960"/>
         <source>Amount: %1</source>
         <translation>Amount: %1</translation>
     </message>
@@ -8814,7 +8902,7 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Open wallet</translation>
     </message>
     <message>
-        <location line="+260"/>
+        <location line="+269"/>
         <location line="+10"/>
         <location line="+10"/>
         <source>Error</source>
@@ -8877,7 +8965,12 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Selected amount:</translation>
     </message>
     <message>
-        <location line="+410"/>
+        <location line="+248"/>
+        <source>Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason.</source>
+        <translation>Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason.</translation>
+    </message>
+    <message>
+        <location line="+165"/>
         <source>Wallet Data</source>
         <extracomment>Name of the wallet data file format.</extracomment>
         <translation>Wallet Data</translation>
@@ -8888,7 +8981,7 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Backup Wallet</translation>
     </message>
     <message>
-        <location line="-324"/>
+        <location line="-327"/>
         <source>Transactions</source>
         <translation>Transactions</translation>
     </message>
@@ -8938,14 +9031,9 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Proposals on the network and how the votes stand.</translation>
     </message>
     <message>
-        <location line="+152"/>
+        <location line="+155"/>
         <source>Staking</source>
         <translation>Staking</translation>
-    </message>
-    <message>
-        <location line="+0"/>
-        <source>Staking could not be started for this wallet. See debug.log for details.</source>
-        <translation>Staking could not be started for this wallet. See debug.log for details.</translation>
     </message>
     <message>
         <location line="+171"/>
@@ -8991,7 +9079,7 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>This is a pre-release test build - use at your own risk - do not use for mining or merchant applications</translation>
     </message>
     <message>
-        <location line="+48"/>
+        <location line="+51"/>
         <source>Warning: We do not appear to fully agree with our peers! You may need to upgrade, or other nodes may need to upgrade.</source>
         <translation>Warning: We do not appear to fully agree with our peers! You may need to upgrade, or other nodes may need to upgrade.</translation>
     </message>
@@ -9071,7 +9159,7 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Failed to listen on any port. Use -listen=0 if you want this.</translation>
     </message>
     <message>
-        <location line="-245"/>
+        <location line="-248"/>
         <source>-maxtxfee is set very high! Fees this large could be paid on a single transaction.</source>
         <translation>-maxtxfee is set very high! Fees this large could be paid on a single transaction.</translation>
     </message>
@@ -9136,7 +9224,7 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Transaction needs a BLS change address, but the wallet is locked or the BLS key could not be saved.</translation>
     </message>
     <message>
-        <location line="+12"/>
+        <location line="+15"/>
         <source>Unsupported category-specific logging level -loglevel=%s. Expected -loglevel=&lt;category&gt;:&lt;loglevel&gt;. Valid categories: %s. Valid loglevels: %s.</source>
         <translation>Unsupported category-specific logging level -loglevel=%s. Expected -loglevel=&lt;category&gt;:&lt;loglevel&gt;. Valid categories: %s. Valid loglevels: %s.</translation>
     </message>
@@ -9361,7 +9449,7 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Invalid script detected.</translation>
     </message>
     <message>
-        <location line="-238"/>
+        <location line="-241"/>
         <source>Failed to create backup, file already exists! This could happen if you restarted wallet in less than 60 seconds. You can continue if you are ok with this.</source>
         <translation>Failed to create backup, file already exists! This could happen if you restarted wallet in less than 60 seconds. You can continue if you are ok with this.</translation>
     </message>
@@ -9392,6 +9480,11 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <location line="+10"/>
+        <source>Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.</source>
+        <translation>Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.</translation>
+    </message>
+    <message>
+        <location line="+3"/>
         <source>Transaction needs a change address, but we can&apos;t generate it. Please call keypoolrefill first.</source>
         <translation>Transaction needs a change address, but we can&apos;t generate it. Please call keypoolrefill first.</translation>
     </message>
@@ -9776,7 +9869,7 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>see debug.log for details.</translation>
     </message>
     <message>
-        <location line="-398"/>
+        <location line="-401"/>
         <source>The %s developers</source>
         <translation>The %s developers</translation>
     </message>
@@ -9921,7 +10014,7 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>This is the transaction fee you may pay when fee estimates are not available.</translation>
     </message>
     <message>
-        <location line="+15"/>
+        <location line="+18"/>
         <source>Unable to replay blocks. You will need to rebuild the database using -reindex-chainstate.</source>
         <translation>Unable to replay blocks. You will need to rebuild the database using -reindex-chainstate.</translation>
     </message>
@@ -10186,12 +10279,12 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Last queue was created too recently.</translation>
     </message>
     <message>
-        <location line="-263"/>
+        <location line="-266"/>
         <source>Cannot provide specific connections and have addrman find outgoing connections at the same time.</source>
         <translation>Cannot provide specific connections and have addrman find outgoing connections at the same time.</translation>
     </message>
     <message>
-        <location line="+264"/>
+        <location line="+267"/>
         <source>Last successful action was too recent.</source>
         <translation>Last successful action was too recent.</translation>
     </message>
@@ -10316,7 +10409,7 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Your entries added successfully.</translation>
     </message>
     <message>
-        <location filename="../bitcoin.cpp" line="-588"/>
+        <location filename="../bitcoin.cpp" line="-589"/>
         <source>Settings file could not be read</source>
         <translation>Settings file could not be read</translation>
     </message>

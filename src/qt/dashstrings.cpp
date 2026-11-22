@@ -170,6 +170,9 @@ QT_TRANSLATE_NOOP("defcon", ""
 "Transaction needs a BLS change address, but the wallet is locked or the BLS "
 "key could not be saved."),
 QT_TRANSLATE_NOOP("defcon", ""
+"Transaction needs a BLS change address, which a wallet without private keys "
+"cannot make. Choose a change address."),
+QT_TRANSLATE_NOOP("defcon", ""
 "Transaction needs a change address, but we can't generate it. Please call "
 "keypoolrefill first."),
 QT_TRANSLATE_NOOP("defcon", ""
