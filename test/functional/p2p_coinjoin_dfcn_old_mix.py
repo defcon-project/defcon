@@ -6,8 +6,9 @@
 
 H is 400, U (cj4use) 430. Each of two client wallets holds two coins of exactly 1.00001 DFCN (an old denomination),
 0.0013 DFCN of ordinary funds and two 1000.01 DFCN candidates, one of them locked by the user before mixing starts,
-all paid by another wallet, and an old target of 10 DFCN. Between H and U the old path runs: each makes its
-collateral from the 0.0013 and no denominations (a candidate is no funds to it, whatever its target); the first
+all paid by another wallet in two transactions, one 1.00001 coin in each, so that a mixing entry may take both (it
+takes one input per parent transaction), and an old target of 10 DFCN. Between H and U the old path runs: each makes
+its collateral from the 0.0013 alone and no denominations (a candidate is no funds to it, whatever its target); the first
 starts a queue for 1.00001 at the masternode it names, the second joins it there, and with mocktime past the queue
 time both mix: one transaction whose inputs are the wallets' 1.00001 coins, at least one of each, and whose outputs
 are all 1.00001, mined, each new coin one round. Neither candidate is touched: both stay unspent, the user's lock
@@ -17,7 +18,6 @@ v23.0.0 advertises), are both offered the old DSTX and get it.
 
 from decimal import Decimal
 import re
-import time
 
 from test_framework.messages import MSG_DSTX
 from test_framework.p2p import P2PVersionedPeer, p2p_lock
@@ -86,23 +86,27 @@ class P2PCoinJoinDfcnOldMixTest(DashTestFramework):
             client.createwallet(wallet_name="mixer", descriptors=True)
             wallet = client.get_wallet_rpc("mixer")
             wallets.append(wallet)
-            for amount in (OLD_DENOM, OLD_DENOM, ORDINARY, CANDIDATE, CANDIDATE):
+            for amount in (OLD_DENOM, ORDINARY, CANDIDATE, CANDIDATE):
                 outputs[wallet.getnewaddress()] = amount
         controller.sendmany("", outputs)
+        # the second 1.00001 coin of each in a transaction of its own
+        controller.sendmany("", {wallet.getnewaddress(): OLD_DENOM for wallet in wallets})
         self.generate(controller, H - controller.getblockcount())
         assert_equal(controller.getblockcount(), H)
-        old_coins, free, locked = [], [], []
+        old_coins, free, locked, ordinary = [], [], [], []
         for wallet in wallets:
             coins = wallet.listunspent(1)
             assert_equal(sorted(Decimal(str(u["amount"])) for u in coins), [ORDINARY, OLD_DENOM, OLD_DENOM, CANDIDATE, CANDIDATE])
             old_coins.append({outpoint(u) for u in coins if Decimal(str(u["amount"])) == OLD_DENOM})
+            assert_equal(len({txid for txid, _ in old_coins[-1]}), 2)
+            ordinary.append(next(outpoint(u) for u in coins if Decimal(str(u["amount"])) == ORDINARY))
             candidates = [u for u in coins if Decimal(str(u["amount"])) == CANDIDATE]
             free.append(outpoint(candidates[0]))
             locked.append(outpoint(candidates[1]))
             assert wallet.lockunspent(False, [{"txid": locked[-1][0], "vout": locked[-1][1]}])
         client_offsets = [client.debug_log_bytes() for client in clients]
 
-        self.log.info("H <= tip < U: each client's old attempt makes its collateral from the 0.0013 DFCN, and no "
+        self.log.info("H <= tip < U: each client's old attempt makes its collateral from the 0.0013 DFCN alone, and no "
                       "denominations: the old target (10 DFCN) wants more, but a candidate is no funds to it")
         for client, wallet, offset in zip(clients, wallets, client_offsets):
             assert_equal(wallet.coinjoin("start"), "Mixing started successfully")
@@ -110,8 +114,12 @@ class P2PCoinJoinDfcnOldMixTest(DashTestFramework):
             wallet.coinjoin("stop")
         self.sync_mempools()
         self.generate(controller, 1)
+        block = controller.getblock(controller.getbestblockhash(), 2)
         for i, (client, wallet) in enumerate(zip(clients, wallets)):
             assert free[i] in {outpoint(u) for u in wallet.listunspent(1)}, "the free candidate was spent"
+            makers = [tx for tx in block["tx"] if any((vin.get("txid"), vin.get("vout")) == ordinary[i] for vin in tx["vin"])]
+            assert_equal(len(makers), 1)
+            assert_equal([(vin["txid"], vin["vout"]) for vin in makers[0]["vin"]], [ordinary[i]])
             assert controller.gettxout(*locked[i]) is not None, "the locked candidate was spent"
             assert all(u["confirmations"] > 0 for u in wallet.listunspent(0))
             log = self.logged_text(client, client_offsets[i])
@@ -157,15 +165,15 @@ class P2PCoinJoinDfcnOldMixTest(DashTestFramework):
         spent = {(vin["txid"], vin["vout"]) for vin in mix["vin"]}
         assert spent <= old_coins[0] | old_coins[1], "the mix spent a coin other than the wallets' 1.00001 coins"
         assert spent & old_coins[0] and spent & old_coins[1], "the mix lacks one of the wallets"
+        self.log.info("The mix takes %d of the first wallet's 1.00001 coins and %d of the second's",
+                      len(spent & old_coins[0]), len(spent & old_coins[1]))
 
         self.log.info("Both peers, the %d one and the %d one, are offered the old DSTX and get it", NEW_VERSION, OLD_VERSION)
         mix_hash = int(mix["txid"], 16)
 
         def offered():
-            # The inventory trickle runs on the mocked clock: three seconds of it per check, which with this half
-            # second and wait_until's own half second is about three each second, as sync_mempools gives.
-            time.sleep(0.5)
-            self.bump_mocktime(3)
+            # A masternode offers its peers its inventory at once (on a masternode fSendTrickle is always set,
+            # src/net_processing.cpp: SendMessages), so no clock is moved for it.
             with p2p_lock:
                 return all((MSG_DSTX, mix_hash) in peer.offered and mix_hash in peer.dstxes for peer in (new_peer, old_peer))
         self.wait_until(offered, timeout=60)

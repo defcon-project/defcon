@@ -162,8 +162,10 @@ class P2PCoinJoinDfcnMixTest(DashTestFramework):
         marker_hash = int(controller.sendtoaddress(controller.getnewaddress(), 1), 16)
 
         def offered():
-            # The inventory trickle runs on the mocked clock: three seconds of it per check, which with this half
-            # second and wait_until's own half second is about three each second, as sync_mempools gives.
+            # The masternode offers its peers its inventory at once (on a masternode fSendTrickle is always set,
+            # src/net_processing.cpp: SendMessages); the clock is for the marker, which reaches the masternode through
+            # nodes whose inventory trickle runs on the mocked clock: three seconds of it per check, which with this
+            # half second and wait_until's own half second is about three each second, as sync_mempools gives.
             time.sleep(0.5)
             self.bump_mocktime(3)
             with p2p_lock:
