@@ -7556,6 +7556,12 @@ void AbyssTests::sendSummaryBelow()
     // summary moves under them only after addEntry brought the empty card into
     // view. The card is in the page's view with the request's content.
     const QString request_address = QString::fromStdString(EncodeDestination(PKHash(fixture.chain.coinbaseKey.GetPubKey())));
+    // First in the least window's height: side by side, the page and the
+    // recipients both scroll down, and with both vertical bars on show neither
+    // scrolls across (the breakpoint keeps room for both bars).
+    window.resize(breakpoint + around, window.modernWindowSize(QSize(480, 360)).height()); Settle();
+    QVERIFY2(side_by_side() && scroll->verticalScrollBar()->maximum() > 0 && fields->verticalScrollBar()->maximum() > 0, qPrintable(state()));
+    QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0 && fields->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
     window.resize(breakpoint + around, 420); Settle();
     QVERIFY2(side_by_side() && fields->verticalScrollBar()->maximum() > 0, qPrintable(state()));
     const QFontMetrics message_metrics = send->findChild<SendCoinsEntry*>()->findChild<QLabel*>("messageTextLabel")->fontMetrics();
@@ -7695,6 +7701,33 @@ void AbyssTests::sendSummaryBelow()
     QVERIFY2(side_by_side() && summary->maximumWidth() == 260 && !fields->sizePolicy().hasHeightForWidth() &&
                  fields->verticalScrollBarPolicy() == Qt::ScrollBarAsNeeded,
              qPrintable(state()));
+
+    // A payment request into the one empty recipient, which takes it in its
+    // own card: stacked, in a short window scrolled down to the summary, the
+    // card stays the only one, holds the request's address and comes into the
+    // page's view.
+    auto* entries = send->findChild<QLayout*>("entries");
+    QVERIFY(entries);
+    send->clear(); Settle();
+    QCOMPARE(entries->count(), 1);
+    auto* only = qobject_cast<SendCoinsEntry*>(entries->itemAt(0)->widget());
+    QVERIFY(only && only->isClear());
+    window.resize(breakpoint + around - 1, 420); Settle();
+    QVERIFY2(stacked() && scroll->verticalScrollBar()->maximum() > 0, qPrintable(state()));
+    scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum()); Settle();
+    auto* only_address = qobject_cast<QLineEdit*>(only->addressField());
+    QVERIFY(only_address);
+    QVERIFY2(only_address->visibleRegion() != QRegion(only_address->rect()),
+             qPrintable(QString("the empty recipient is in view before the request: %1").arg(state())));
+    SendCoinsRecipient into_empty;
+    into_empty.address = request_address;
+    QVERIFY(window.handlePaymentRequest(into_empty));
+    Settle();
+    QCOMPARE(entries->count(), 1);
+    QCOMPARE(qobject_cast<SendCoinsEntry*>(entries->itemAt(0)->widget()), only);
+    QCOMPARE(only_address->text(), request_address);
+    QVERIFY2(stacked() && only_address->visibleRegion() == QRegion(only_address->rect()),
+             qPrintable(QString("the request's recipient is not in view: %1").arg(state())));
 }
 
 void AbyssTests::focusScrollsIntoView()
@@ -8387,8 +8420,10 @@ void AbyssTests::overviewLeastWidth()
     // A classic theme has no bar and does not stack. Switched to it from the
     // least window, made that small there and switched back (a desktop grows
     // the window on the way, fitWalletPage), the least window stacks again;
-    // widened, the balances card has its floor as before: the floor is the
-    // stylesheet's number, not read back from the card. (The breakpoint is not
+    // widened, the balances card has its floor as before: the floor is what
+    // the new stylesheet gives the card, read from the styled card by the
+    // first width pass after the switch, not a minimum left from the stacked
+    // columns. (The breakpoint is not
     // compared: the form's 960 px minimum, which held it above the 958 px the
     // columns need, is bounded by the screen in a classic theme, the test
     // platform's 240 px, and comes back as that; the base does the same.)
@@ -8456,12 +8491,18 @@ void AbyssTests::overviewLeastWidth()
     window.resize(least); Settle();
     OverviewPage::NetworkStatus fed;
     fed.height = 999999999;
-    fed.block_age = 59 * 60;
     fed.chain_synced = fed.data_synced = true;
     fed.chain_locked = false;
+    // Long values, though each line still fits the least window with a
+    // desktop's font at DPR 1: there, a 59-minute age beside the nine-digit
+    // tip, and five digits for each count beside the short words, made the
+    // first and the third line each 5 px wider than the window's room, and the
+    // page scrolled, as it should. The tip keeps its nine digits: the
+    // breakpoint follows them further down.
+    fed.block_age = 60;
     fed.peers = 125;
-    fed.masternodes = 99999;
-    fed.mempool = 99999;
+    fed.masternodes = 9999;
+    fed.mempool = 9999;
     overview->setNetworkStatus(fed); Settle();
     QVERIFY2(stacked() && three_lines() && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
     // In lines, the masternode and mempool words are chosen by their own
@@ -8480,7 +8521,7 @@ void AbyssTests::overviewLeastWidth()
              qPrintable(masternode_words->text() + " / " + mempool_words->text() + ": " + state()));
     window.resize(700 + around, tall); Settle();
     QVERIFY2(stacked() && three_lines() && words_fit() && mempool_words->text() == OverviewPage::tr("in mempool") &&
-                 masternode_words->text() != OverviewPage::tr("MN"),
+                 masternode_words->text() == OverviewPage::tr("masternodes", "", *fed.masternodes),
              qPrintable(masternode_words->text() + " / " + mempool_words->text() + ": " + state()));
     window.resize(least); Settle();
     QVERIFY2(stacked() && three_lines() && masternode_words->text() == OverviewPage::tr("MN"), qPrintable(state()));
@@ -10679,6 +10720,22 @@ void AbyssTests::psbtMessagesTranslated()
     fund.vout.emplace_back(10 * COIN, GetScriptForDestination(watched));
     QVERIFY(fixture.wallet->AddToWallet(MakeTransactionRef(std::move(fund)), CWalletTx::Confirmation(CWalletTx::CONFIRMED, deep->nHeight, deep->GetBlockHash(), 1)));
 
+    // The page starts from the saved fee choice and writes its own back when
+    // it goes. A saved custom fee of 1 DFCN/kB (an earlier case's, a desktop's)
+    // is over the wallet's maximum for this draft, which would fail before its
+    // box: the recommended fee is chosen here, and the saved choice comes back
+    // after the page is gone (declared before it, so destroyed after it).
+    struct SavedFee {
+        QVariant radio{QSettings().value("nFeeRadio")};
+        QVariant fee{QSettings().value("nTransactionFee")};
+        ~SavedFee()
+        {
+            if (radio.isValid()) QSettings().setValue("nFeeRadio", radio); else QSettings().remove("nFeeRadio");
+            if (fee.isValid()) QSettings().setValue("nTransactionFee", fee); else QSettings().remove("nTransactionFee");
+        }
+    } saved_fee;
+    QSettings().setValue("nTransactionFee", qint64(COIN));
+    QSettings().setValue("nFeeRadio", 0);
     SendCoinsDialog send(false, nullptr);
     send.setModel(fixture.model.get());
     // The wallet has no key to make a change address from: the change goes back to the watched one.
