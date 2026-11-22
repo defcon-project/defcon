@@ -5358,7 +5358,7 @@ Bu konsolun kullanımı hakkında daha fazla bilgi için %6 yazın.
     </message>
     <message>
         <source>Request payment to %1</source>
-        <translation>%1 adresine ödeme talep et</translation>
+        <translation>Ödeme talebi – %1</translation>
     </message>
     <message>
         <source>Payment information</source>
@@ -7958,7 +7958,7 @@ Cüzdan yüklemek için Dosya &gt; Cüzdan aç yolunu izleyin.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>Girdi ve çıktı boyutları tutarsız.</translation>
+        <translation>Girdi ve çıktı sayıları tutarsız.</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>

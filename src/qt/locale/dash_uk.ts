@@ -7958,7 +7958,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>Розміри входів і виходів не збігаються.</translation>
+        <translation>Кількість входів і виходів не збігається.</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>

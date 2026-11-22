@@ -4092,19 +4092,19 @@ Devido ao fim do suporte, solicite ao comerciante um URI compatível com BIP21 o
     </message>
     <message>
         <source>Error: Specified font-family invalid. Valid values: %1.</source>
-        <translation>Erro: Família de fontes especificada é inválida. Valores válidos: %1.</translation>
+        <translation>Erro: O valor especificado de font-family é inválido. Valores válidos: %1.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-normal invalid. Valid range %1 to %2.</source>
-        <translation>Erro: Peso da fonte especificado é inválido. Intervalo válido %1 a %2.</translation>
+        <translation>Erro: O valor especificado de font-weight-normal é inválido. Intervalo válido de %1 a %2.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-bold invalid. Valid range %1 to %2.</source>
-        <translation>Erro: Peso especificado da fonte negrito é inválido. Intervalo válido %1 a %2.</translation>
+        <translation>Erro: O valor especificado de font-weight-bold é inválido. Intervalo válido de %1 a %2.</translation>
     </message>
     <message>
         <source>Error: Specified font-scale invalid. Valid range %1 to %2.</source>
-        <translation>Erro: Escala especificada da fonte é inválida. Intervalo válido %1 a %2.</translation>
+        <translation>Erro: O valor especificado de font-scale é inválido. Intervalo válido de %1 a %2.</translation>
     </message>
     <message>
         <source>Error: Invalid -custom-css-dir path.</source>
@@ -7958,7 +7958,7 @@ Acesse Arquivo &gt; Abrir carteira para carregar uma carteira.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>Incompatibilidade de tamanho de entradas x saídas.</translation>
+        <translation>O número de entradas não corresponde ao número de saídas.</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>

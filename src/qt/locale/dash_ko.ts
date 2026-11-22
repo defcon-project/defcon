@@ -4092,19 +4092,19 @@ Due to discontinued support, you should request the merchant to provide you with
     </message>
     <message>
         <source>Error: Specified font-family invalid. Valid values: %1.</source>
-        <translation>오류: 지정된 글꼴 집합이 유효하지 않습니다. 유효한 값: %1</translation>
+        <translation>오류: 지정된 font-family 값이 유효하지 않습니다. 유효한 값: %1.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-normal invalid. Valid range %1 to %2.</source>
-        <translation>오류: 지정된 글꼴-두께-일반이 유효하지 않습니다. 유효 범위는 %1에서 %2 사이입니다.</translation>
+        <translation>오류: 지정된 font-weight-normal 값이 유효하지 않습니다. 유효 범위는 %1에서 %2 사이입니다.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-bold invalid. Valid range %1 to %2.</source>
-        <translation>오류: 지정된 글꼴-두께-굵게가 유효하지 않습니다. 유효 범위는 %1에서 %2 사이입니다.</translation>
+        <translation>오류: 지정된 font-weight-bold 값이 유효하지 않습니다. 유효 범위는 %1에서 %2 사이입니다.</translation>
     </message>
     <message>
         <source>Error: Specified font-scale invalid. Valid range %1 to %2.</source>
-        <translation>오류: 지정된 글꼴 크기가 유효하지 않습니다. 유효 범위는 %1에서 %2 사이입니다.</translation>
+        <translation>오류: 지정된 font-scale 값이 유효하지 않습니다. 유효 범위는 %1에서 %2 사이입니다.</translation>
     </message>
     <message>
         <source>Error: Invalid -custom-css-dir path.</source>
@@ -5358,7 +5358,7 @@ For more information on using this console, type %6.
     </message>
     <message>
         <source>Request payment to %1</source>
-        <translation>%1 주소로 지불 요청</translation>
+        <translation>지불 요청 – %1</translation>
     </message>
     <message>
         <source>Payment information</source>
@@ -7958,7 +7958,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>입력과 출력 크기가 일치하지 않습니다.</translation>
+        <translation>입력과 출력의 개수가 일치하지 않습니다.</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>

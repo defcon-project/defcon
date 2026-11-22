@@ -4092,7 +4092,7 @@ Debido a la retirada del soporte, solicite al comerciante un URI compatible con 
     </message>
     <message>
         <source>Error: Specified font-family invalid. Valid values: %1.</source>
-        <translation>Error: La familia de fuentes especificada no es válida. Valores válidos: %1.</translation>
+        <translation>Error: El valor especificado de font-family no es válido. Valores válidos: %1.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-normal invalid. Valid range %1 to %2.</source>
@@ -4104,7 +4104,7 @@ Debido a la retirada del soporte, solicite al comerciante un URI compatible con 
     </message>
     <message>
         <source>Error: Specified font-scale invalid. Valid range %1 to %2.</source>
-        <translation>Error: La escala de fuente especificada no es válida. Rango válido %1 a %2.</translation>
+        <translation>Error: El valor especificado de font-scale no es válido. Rango válido %1 a %2.</translation>
     </message>
     <message>
         <source>Error: Invalid -custom-css-dir path.</source>
@@ -7958,7 +7958,7 @@ Vaya a Archivo &gt; Abrir billetera para cargar una.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>El tamaño de las entradas frente vs las salidas no coincide.</translation>
+        <translation>El número de entradas no coincide con el de salidas.</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>

@@ -4092,19 +4092,19 @@ En raison d'un support interrompu, vous devriez demander au vendeur de vous comm
     </message>
     <message>
         <source>Error: Specified font-family invalid. Valid values: %1.</source>
-        <translation>Erreur : la famille de polices spécifiée est invalide. Valeurs valides : %1.</translation>
+        <translation>Erreur : la valeur indiquée pour font-family est invalide. Valeurs valides : %1.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-normal invalid. Valid range %1 to %2.</source>
-        <translation>Erreur : la valeur de graisse des caractères normaux est invalide. Écart valide de %1 à %2.</translation>
+        <translation>Erreur : la valeur indiquée pour font-weight-normal est invalide. Plage valide de %1 à %2.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-bold invalid. Valid range %1 to %2.</source>
-        <translation>Erreur : la valeur de graisse des caractères gras est invalide. Écart valide de %1 à %2.</translation>
+        <translation>Erreur : la valeur indiquée pour font-weight-bold est invalide. Plage valide de %1 à %2.</translation>
     </message>
     <message>
         <source>Error: Specified font-scale invalid. Valid range %1 to %2.</source>
-        <translation>Erreur : la taille de caractères indiquée est invalide. Écart valide de %1 à %2.</translation>
+        <translation>Erreur : la valeur indiquée pour font-scale est invalide. Plage valide de %1 à %2.</translation>
     </message>
     <message>
         <source>Error: Invalid -custom-css-dir path.</source>
@@ -7958,7 +7958,7 @@ Allez à Fichier &gt; Ouvrir le portefeuille pour charger un portefeuille.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>Différence de taille entre entrées et sorties.</translation>
+        <translation>Le nombre d'entrées ne correspond pas au nombre de sorties.</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>
