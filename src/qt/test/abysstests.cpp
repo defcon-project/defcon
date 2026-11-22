@@ -152,6 +152,7 @@
 #include <QTableWidget>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
 #include <QTest>
 #include <QTextStream>
@@ -9886,6 +9887,252 @@ void AbyssTests::coinJoinCardConditional()
     Theme("Light"); Settle();
     QVERIFY(stood_card->isVisible());
     QVERIFY(stood_row->isHidden());
+}
+
+void AbyssTests::coinJoinDfcnScaleShown()
+{
+    // CJ4 (freeze list F05): the wallet takes coins of the three DFCN-scale
+    // amounts as CoinJoin coins. The mixed balance that the Overview and the
+    // CoinJoin Send page show counts the fully mixed ones too (the mixing
+    // progress keeps the five old amounts' figures), and a CoinJoin send's
+    // coin control knows all eight amounts and lists them among its coins; a
+    // normal send's keeps the five of v23.0.0. All themes.
+    RestoreAppearance restore;
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    QVERIFY(fixture.client->coinJoinOptions().isEnabled());
+    const CAmount old_mixed = 5 * COIN;
+    const CAmount dfcn_mixed = (100 * COIN) + 100000; // 100.001 DFCN
+    QVERIFY(fixture.client->coinJoinOptions().isKnownDenomination(dfcn_mixed));
+    QVERIFY(!fixture.client->coinJoinOptions().isDenominated(dfcn_mixed));
+
+    // The Overview: the mixed label reads the sum, as a page given the sum as
+    // its mixed balance does; mixed DFCN-scale coins alone open the Abyss card.
+    const auto overview_mixed = [&](CAmount anonymized, CAmount dfcn_scale, bool* card_shown) {
+        OverviewPage page;
+        page.setClientModel(fixture.client.get());
+        page.setWalletModel(fixture.model.get());
+        page.resize(1280, 850);
+        page.show(); Settle();
+        page.coinJoinStatus(true); Settle();
+        interfaces::WalletBalances balances;
+        balances.anonymized_balance = anonymized;
+        balances.dfcn_scale_anonymized_balance = dfcn_scale;
+        page.setBalance(balances); Settle();
+        if (card_shown) *card_shown = page.findChild<QFrame*>("frameCoinJoin")->isVisible();
+        return page.findChild<QLabel*>("labelAnonymized")->text();
+    };
+    bool card_shown{false};
+    const QString both = overview_mixed(old_mixed, dfcn_mixed, nullptr);
+    QCOMPARE(both, overview_mixed(old_mixed + dfcn_mixed, 0, nullptr));
+    QVERIFY2(both != overview_mixed(old_mixed, 0, nullptr), qPrintable(both));
+    overview_mixed(0, dfcn_mixed, &card_shown);
+    QVERIFY(card_shown);
+
+    // The CoinJoin Send page's balance: the fully mixed coins of all eight
+    // amounts, which its "use available balance" spends (getAvailableBalance).
+    const int unit = fixture.model->getOptionsModel()->getDisplayUnit();
+    for (const char* theme : {"Abyss", "Light"}) {
+        Theme(theme); Settle();
+        SendCoinsDialog coinjoin(true);
+        coinjoin.setModel(fixture.model.get());
+        interfaces::WalletBalances balances;
+        balances.balance = 2000 * COIN;
+        balances.anonymized_balance = old_mixed;
+        balances.dfcn_scale_anonymized_balance = dfcn_mixed;
+        coinjoin.setBalance(balances); Settle();
+        const QString sum = BitcoinUnits::formatWithUnit(unit, old_mixed + dfcn_mixed);
+        // The CoinJoin Send page keeps the classic form in every theme (the
+        // Abyss payment summary belongs to the normal Send page), so this
+        // label is the one on show, in Abyss too (Astra r1, R3).
+        auto* balance = coinjoin.findChild<QLabel*>("labelBalance");
+        QVERIFY2(balance && !balance->isHidden() && !coinjoin.m_summary_balance, theme);
+        QCOMPARE(balance->text(), sum);
+    }
+
+    // Coin control: confirmed coins of the wallet, ten blocks deep (the inputs
+    // made up; nothing is broadcast): an ordinary amount, an old denomination
+    // and a DFCN-scale one, none of them mixed, and a fully mixed DFCN-scale one.
+    const QString own = fixture.model->getAddressTableModel()->addRow(AddressTableModel::Receive, "", "");
+    QVERIFY(!own.isEmpty());
+    const CBlockIndex* tip = WITH_LOCK(::cs_main, return fixture.chain.m_node.chainman->ActiveChain().Tip());
+    QVERIFY(tip && tip->nHeight > 20);
+    {
+        LOCK(fixture.wallet->cs_wallet);
+        fixture.wallet->SetLastBlockProcessed(tip->nHeight, tip->GetBlockHash());
+    }
+    const CBlockIndex* deep = tip->GetAncestor(tip->nHeight - 10);
+    QVERIFY(deep);
+    const auto coin = [&](CAmount amount, uint8_t seed) {
+        CMutableTransaction fund;
+        uint256 prevout;
+        *prevout.begin() = seed;
+        fund.vin.emplace_back(COutPoint(prevout, 0));
+        fund.vout.emplace_back(amount, GetScriptForDestination(DecodeDestination(own.toStdString())));
+        const CTransactionRef tx = MakeTransactionRef(std::move(fund));
+        return fixture.wallet->AddToWallet(tx, CWalletTx::Confirmation(CWalletTx::CONFIRMED, deep->nHeight, deep->GetBlockHash(), 1)) ?
+               QString::fromStdString(tx->GetHash().ToString()) : QString();
+    };
+    const QString ordinary = coin(10 * COIN, 1);
+    const QString old_denomination = coin((10 * COIN) + 10000, 2); // 10.0001 DFCN
+    const QString dfcn_scale = coin(dfcn_mixed, 3);
+    QVERIFY(!ordinary.isEmpty() && !old_denomination.isEmpty() && !dfcn_scale.isEmpty());
+    const COutPoint dfcn_outpoint(uint256S(dfcn_scale.toStdString()), 0);
+    // The fully mixed one: mixes in a row from a coin of its own, each as the
+    // wallet counts a round of a DFCN-scale coin (an own and a foreign input,
+    // the own one with a signature of SIGHASH_ALL | SIGHASH_ANYONECANPAY, paid
+    // to a new own and a foreign address, in BIP69 order), until the wallet
+    // calls the coin fully mixed.
+    uint8_t foreign{16};
+    const auto mix = [&](const COutPoint& from) {
+        const QString to = fixture.model->getAddressTableModel()->addRow(AddressTableModel::Receive, "", "");
+        if (to.isEmpty()) return COutPoint();
+        const CScript to_script = GetScriptForDestination(DecodeDestination(to.toStdString()));
+        uint256 other;
+        *other.begin() = ++foreign;
+        CMutableTransaction mtx;
+        mtx.vin.emplace_back(from);
+        mtx.vin.emplace_back(COutPoint(other, 0));
+        mtx.vout.emplace_back(dfcn_mixed, to_script);
+        mtx.vout.emplace_back(dfcn_mixed, GetScriptForDestination(PKHash(uint160(std::vector<unsigned char>(20, foreign)))));
+        std::sort(mtx.vin.begin(), mtx.vin.end(), CompareInputBIP69());
+        std::sort(mtx.vout.begin(), mtx.vout.end(), CompareOutputBIP69());
+        for (CTxIn& in : mtx.vin) {
+            if (in.prevout == from) {
+                in.scriptSig = CScript() << std::vector<unsigned char>(71, static_cast<unsigned char>(SIGHASH_ALL | SIGHASH_ANYONECANPAY))
+                                         << std::vector<unsigned char>(33, static_cast<unsigned char>(2));
+            }
+        }
+        const CTransactionRef tx = MakeTransactionRef(mtx);
+        if (!fixture.wallet->AddToWallet(tx, CWalletTx::Confirmation(CWalletTx::CONFIRMED, deep->nHeight, deep->GetBlockHash(), 1))) return COutPoint();
+        return COutPoint(tx->GetHash(), tx->vout[0].scriptPubKey == to_script ? 0 : 1);
+    };
+    const QString mixed_from = coin(dfcn_mixed, 4);
+    QVERIFY(!mixed_from.isEmpty());
+    COutPoint mixed_outpoint(uint256S(mixed_from.toStdString()), 0);
+    for (int round = 0; round < 20 && !mixed_outpoint.IsNull() && !fixture.model->isFullyMixed(mixed_outpoint); ++round) {
+        mixed_outpoint = mix(mixed_outpoint);
+    }
+    QVERIFY(!mixed_outpoint.IsNull() && fixture.model->isFullyMixed(mixed_outpoint));
+    QVERIFY(!fixture.model->isFullyMixed(dfcn_outpoint));
+    const QString mixed = QString::fromStdString(mixed_outpoint.hash.GetHex());
+    // The coins a dialog lists: each output row keeps its transaction's hash
+    // (the address column's first user role, as the dialog's own lock reads it).
+    const auto listed = [](CoinControlDialog& dialog) {
+        QSet<QString> hashes;
+        auto* tree = dialog.findChild<QTreeWidget*>("treeWidget");
+        if (tree == nullptr) return hashes;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it) {
+            const QString hash = (*it)->data(3, Qt::UserRole).toString();
+            if (hash.length() == 64) hashes.insert(hash);
+        }
+        return hashes;
+    };
+    const auto row = [](CoinControlDialog& dialog, const QString& hash) -> QTreeWidgetItem* {
+        auto* tree = dialog.findChild<QTreeWidget*>("treeWidget");
+        if (tree == nullptr) return nullptr;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it) {
+            if ((*it)->data(3, Qt::UserRole).toString() == hash) return *it;
+        }
+        return nullptr;
+    };
+    // A row's context menu, opened as a right click on the row opens it: the
+    // entry of that text is chosen if it is enabled; the menu closes either way.
+    const auto choose = [](CoinControlDialog& dialog, QTreeWidgetItem* item, const QString& entry) {
+        auto* tree = dialog.findChild<QTreeWidget*>("treeWidget");
+        bool chosen{false};
+        QTimer opened;
+        opened.setInterval(10);
+        QObject::connect(&opened, &QTimer::timeout, &dialog, [&] {
+            for (QMenu* menu : dialog.findChildren<QMenu*>()) {
+                if (!menu->isVisible()) continue;
+                opened.stop();
+                for (QAction* action : menu->actions()) {
+                    if (action->text() == entry && action->isEnabled()) {
+                        action->trigger();
+                        chosen = true;
+                    }
+                }
+                menu->close();
+            }
+        });
+        opened.start();
+        tree->scrollToItem(item);
+        Q_EMIT tree->customContextMenuRequested(tree->visualItemRect(item).center());
+        opened.stop();
+        return chosen;
+    };
+    const auto names = [](const QSet<QString>& hashes) { return QStringList(hashes.values()).join(", "); };
+    for (const char* theme : {"Abyss", "Light"}) {
+        Theme(theme); Settle();
+        // A normal send, as v23.0.0: the five old amounts hidden by default,
+        // the DFCN-scale coins listed (Astra r4, R1). Opened with nothing
+        // selected, the coin is there; checked by hand, it is selected and
+        // listed when the dialog opens again (r5, R11).
+        CCoinControl normal;
+        for (int opened = 1; opened <= 2; ++opened) {
+            CoinControlDialog normal_dialog(normal, fixture.model.get());
+            const QSet<QString> normal_listed = listed(normal_dialog);
+            QVERIFY2(normal_listed.contains(ordinary) && !normal_listed.contains(old_denomination) && normal_listed.contains(dfcn_scale) &&
+                         normal_listed.contains(mixed) && normal.IsSelected(dfcn_outpoint) == (opened == 2),
+                     qPrintable(QString("%1, opened %2 time(s): normal send lists %3; the DFCN-scale coin selected: %4")
+                                    .arg(theme).arg(opened).arg(names(normal_listed)).arg(normal.IsSelected(dfcn_outpoint))));
+            if (opened == 1) {
+                QTreeWidgetItem* item = row(normal_dialog, dfcn_scale);
+                QVERIFY(item && !item->isDisabled());
+                item->setCheckState(0, Qt::Checked);
+                QVERIFY(normal.IsSelected(dfcn_outpoint));
+            }
+        }
+
+        // A CoinJoin send; the unmixed DFCN-scale coin is locked before the
+        // dialog lists it (r5, R1). The first view lists the coins the send
+        // can spend: here the fully mixed DFCN-scale coin alone.
+        CCoinControl mixing;
+        mixing.UseCoinJoin(true);
+        QVERIFY(fixture.model->wallet().lockCoin(dfcn_outpoint, /*write_to_db=*/false));
+        CoinControlDialog mixing_dialog(mixing, fixture.model.get());
+        mixing_dialog.show(); Settle();
+        const QSet<QString> spendable_listed = listed(mixing_dialog);
+        QVERIFY2(spendable_listed == QSet<QString>{mixed},
+                 qPrintable(QString("%1: CoinJoin send lists as spendable %2").arg(theme, names(spendable_listed))));
+        QTreeWidgetItem* spendable = row(mixing_dialog, mixed);
+        QVERIFY(spendable && !spendable->isDisabled());
+        spendable->setCheckState(0, Qt::Checked);
+        QVERIFY(mixing.IsSelected(mixed_outpoint));
+        // All its coins shown: the old denomination and both DFCN-scale coins,
+        // not the ordinary one; the selected coin stays listed and selected.
+        auto* hide = mixing_dialog.findChild<QPushButton*>("hideButton");
+        QVERIFY(hide && !hide->isHidden()); // CoinJoin is on: the button is there
+        hide->click(); Settle();
+        const QSet<QString> mixing_listed = listed(mixing_dialog);
+        QVERIFY2(!mixing_listed.contains(ordinary) && mixing_listed.contains(old_denomination) && mixing_listed.contains(dfcn_scale) &&
+                     mixing_listed.contains(mixed) && mixing.IsSelected(mixed_outpoint),
+                 qPrintable(QString("%1: CoinJoin send lists %2; the fully mixed coin selected: %3")
+                                .arg(theme, names(mixing_listed)).arg(mixing.IsSelected(mixed_outpoint))));
+        // The unmixed coin's row is disabled, and stays so when its context
+        // menu unlocks the coin: the send could not spend it (r5, R1).
+        QTreeWidgetItem* unmixed = row(mixing_dialog, dfcn_scale);
+        QVERIFY(unmixed && unmixed->isDisabled());
+        QVERIFY(choose(mixing_dialog, unmixed, CoinControlDialog::tr("&Unlock unspent")));
+        QVERIFY(!fixture.model->wallet().isLockedCoin(dfcn_outpoint));
+        QVERIFY2(unmixed->isDisabled(), theme);
+        // The fully mixed coin, locked and unlocked the same way, can be selected again.
+        spendable = row(mixing_dialog, mixed);
+        QVERIFY(spendable && !spendable->isDisabled() && spendable->checkState(0) == Qt::Checked);
+        QVERIFY(choose(mixing_dialog, spendable, CoinControlDialog::tr("L&ock unspent")));
+        QVERIFY(fixture.model->wallet().isLockedCoin(mixed_outpoint) && spendable->isDisabled() && !mixing.IsSelected(mixed_outpoint));
+        QVERIFY(choose(mixing_dialog, spendable, CoinControlDialog::tr("&Unlock unspent")));
+        QVERIFY2(!fixture.model->wallet().isLockedCoin(mixed_outpoint) && !spendable->isDisabled(), theme);
+        // "Select all" then takes the coin the send can spend, and no other.
+        auto* select_all = mixing_dialog.findChild<QPushButton*>("pushButtonSelectAll");
+        QVERIFY(select_all);
+        select_all->click(); Settle();
+        std::vector<COutPoint> selected;
+        mixing.ListSelected(selected);
+        QVERIFY2(selected == std::vector<COutPoint>{mixed_outpoint},
+                 qPrintable(QString("%1: \"select all\" of a CoinJoin send selects %2 coin(s)").arg(theme).arg(selected.size())));
+    }
 }
 
 void AbyssTests::nextLevelLine()

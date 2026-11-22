@@ -937,13 +937,14 @@ private:
     /** Pulled from wallet DB ("cj_salt") and used when mixing a random number of rounds.
      *  This salt is needed to prevent an attacker from learning how many extra times
      *  the input was mixed based only on information in the blockchain.
+     *  Written and read under cs_wallet: `coinjoinsalt` may set a new salt while another thread asks IsFullyMixed.
      */
-    uint256 nCoinJoinSalt;
+    uint256 nCoinJoinSalt GUARDED_BY(cs_wallet);
 
     /**
      * Populates nCoinJoinSalt with value from database (and migrates salt stored with legacy key).
      */
-    void InitCJSaltFromDb();
+    void InitCJSaltFromDb() EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
     /** Height of last block processed is used by wallet to know depth of transactions
      * without relying on Chain interface beyond asynchronous updates. For safety, we
@@ -1018,8 +1019,9 @@ public:
     /**
      * Get an existing CoinJoin salt. Will attempt to read database (and migrate legacy salts) if
      * nCoinJoinSalt is empty but will skip database read if nCoinJoinSalt is populated.
+     * Returns a copy, taken under cs_wallet.
      **/
-    const uint256& GetCoinJoinSalt();
+    uint256 GetCoinJoinSalt();
 
     /**
      * Write a new CoinJoin salt. This will directly write the new salt value into the wallet database.

@@ -385,12 +385,15 @@ public:
     }
     WalletBalances getBalances() override
     {
-        const auto bal = m_wallet->GetBalance();
+        // The DFCN-scale mixed coins in the same walk under the same lock (CJ4; zero while CoinJoin is disabled).
+        CAmount dfcn_scale_anonymized{0};
+        const auto bal = m_wallet->GetBalance(/*min_depth=*/0, /*avoid_reuse=*/true, /*fAddLocked=*/false, /*coinControl=*/nullptr, &dfcn_scale_anonymized);
         WalletBalances result;
         result.balance = bal.m_mine_trusted;
         result.unconfirmed_balance = bal.m_mine_untrusted_pending;
         result.immature_balance = bal.m_mine_immature;
         result.anonymized_balance = bal.m_anonymized;
+        result.dfcn_scale_anonymized_balance = dfcn_scale_anonymized;
         result.have_watch_only = haveWatchOnly();
         if (result.have_watch_only) {
             result.watch_only_balance = bal.m_watchonly_trusted;

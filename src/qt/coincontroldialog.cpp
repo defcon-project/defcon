@@ -311,7 +311,9 @@ void CoinControlDialog::unlockCoin()
 {
     COutPoint outpt(uint256S(contextMenuItem->data(COLUMN_ADDRESS, TxHashRole).toString().toStdString()), contextMenuItem->data(COLUMN_ADDRESS, VOutRole).toUInt());
     model->wallet().unlockCoin(outpt);
-    contextMenuItem->setDisabled(false);
+    // In a CoinJoin send that shows all its coins, a coin that is not fully
+    // mixed stays disabled, as updateView() lists it: the send could not spend it.
+    contextMenuItem->setDisabled(m_coin_control.IsUsingCoinJoin() && !fHideAdditional && !model->isFullyMixed(outpt));
     contextMenuItem->setIcon(COLUMN_CHECKBOX, QIcon());
     updateLabelLocked();
 }
@@ -705,7 +707,13 @@ void CoinControlDialog::updateView()
             const interfaces::WalletTxOut& out = std::get<1>(outpair);
             bool fFullyMixed{false};
             CAmount nAmount = out.txout.nValue;
-            bool fCoinJoinAmount = model->node().coinJoinOptions().isDenominated(nAmount) || model->node().coinJoinOptions().isCollateralAmount(nAmount);
+            // A CoinJoin send knows any of the eight amounts a mixed coin may
+            // have (CJ4); a normal send keeps the five of v23.0.0, so a coin it
+            // lists and selects is still listed when the dialog opens again.
+            // A collateral counts either way.
+            bool fCoinJoinAmount = (m_coin_control.IsUsingCoinJoin() ? model->node().coinJoinOptions().isKnownDenomination(nAmount)
+                                                                     : model->node().coinJoinOptions().isDenominated(nAmount)) ||
+                                   model->node().coinJoinOptions().isCollateralAmount(nAmount);
 
             if (m_coin_control.IsUsingCoinJoin()) {
                 fFullyMixed = model->isFullyMixed(output);

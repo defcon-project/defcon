@@ -381,6 +381,8 @@ struct WalletBalances
     CAmount unconfirmed_balance = 0;
     CAmount immature_balance = 0;
     CAmount anonymized_balance = 0;
+    //! CJ4: the fully mixed DFCN-scale coins, kept apart from anonymized_balance, which the mixing target's figures read.
+    CAmount dfcn_scale_anonymized_balance = 0;
     bool have_watch_only = false;
     CAmount watch_only_balance = 0;
     CAmount unconfirmed_watch_only_balance = 0;
@@ -389,6 +391,7 @@ struct WalletBalances
     bool balanceChanged(const WalletBalances& prev) const
     {
         return balance != prev.balance || unconfirmed_balance != prev.unconfirmed_balance ||  anonymized_balance != prev.anonymized_balance ||
+               dfcn_scale_anonymized_balance != prev.dfcn_scale_anonymized_balance ||
                immature_balance != prev.immature_balance || watch_only_balance != prev.watch_only_balance ||
                unconfirmed_watch_only_balance != prev.unconfirmed_watch_only_balance ||
                immature_watch_only_balance != prev.immature_watch_only_balance;

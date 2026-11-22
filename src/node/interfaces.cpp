@@ -289,6 +289,10 @@ public:
     {
         return ::CoinJoin::IsDenominatedAmount(nAmount);
     }
+    bool isKnownDenomination(CAmount nAmount) override
+    {
+        return ::CoinJoin::IsKnownDenominationAmount(nAmount);
+    }
 };
 
 class NodeImpl : public Node

@@ -1788,7 +1788,8 @@ bool CWallet::IsFullyMixed(const COutPoint& outpoint) const
     // N rounds 50% N+1 25% N+2 12.5%... until we reach N + GetRandomRounds() rounds where we stop.
     if (nRounds < CCoinJoinClientOptions::GetRounds() + CCoinJoinClientOptions::GetRandomRounds()) {
         CDataStream ss(SER_GETHASH, PROTOCOL_VERSION);
-        ss << outpoint << nCoinJoinSalt;
+        // A copy taken under the lock: `coinjoinsalt` may set a new salt from another thread.
+        ss << outpoint << WITH_LOCK(cs_wallet, return nCoinJoinSalt);
         uint256 nHash;
         CSHA256().Write((const unsigned char*)ss.data(), ss.size()).Finalize(nHash.begin());
         if (ReadLE64(nHash.begin()) % 2 == 0) {
@@ -3195,8 +3196,9 @@ const CTxOut& CWallet::FindNonChangeParentOutput(const CTransaction& tx, int out
     return ptx->vout[n];
 }
 
-const uint256& CWallet::GetCoinJoinSalt()
+uint256 CWallet::GetCoinJoinSalt()
 {
+    LOCK(cs_wallet);
     if (nCoinJoinSalt.IsNull()) {
         InitCJSaltFromDb();
     }
@@ -3205,6 +3207,7 @@ const uint256& CWallet::GetCoinJoinSalt()
 
 void CWallet::InitCJSaltFromDb()
 {
+    AssertLockHeld(cs_wallet);
     assert(nCoinJoinSalt.IsNull());
 
     WalletBatch batch(GetDatabase());
@@ -3216,6 +3219,7 @@ void CWallet::InitCJSaltFromDb()
 
 bool CWallet::SetCoinJoinSalt(const uint256& cj_salt)
 {
+    LOCK(cs_wallet); // the salt is written under the lock its readers hold
     WalletBatch batch(GetDatabase());
     // Only store new salt in CWallet if database write is successful
     if (batch.WriteCoinJoinSalt(cj_salt)) {
