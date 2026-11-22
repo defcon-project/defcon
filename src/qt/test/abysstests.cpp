@@ -8490,15 +8490,16 @@ void AbyssTests::overviewLeastWidth()
     overview->setClientModel(nullptr);
     window.resize(least); Settle();
     OverviewPage::NetworkStatus fed;
-    fed.height = 999999999;
     fed.chain_synced = fed.data_synced = true;
     fed.chain_locked = false;
     // Long values, though each line still fits the least window with a
-    // desktop's font at DPR 1: there, a 59-minute age beside the nine-digit
-    // tip, and five digits for each count beside the short words, made the
-    // first and the third line each 5 px wider than the window's room, and the
-    // page scrolled, as it should. The tip keeps its nine digits: the
-    // breakpoint follows them further down.
+    // desktop's font at DPR 1: there, a 59-minute age beside a nine-digit tip,
+    // and five digits for each count beside the short words, made the first
+    // and the third line each 5 px wider than the window's room, and the page
+    // scrolled, as it should. The tip's eight digits go to seven further down,
+    // and its line has to stay narrower than another one: there, 416 px
+    // beside the counts' 427.
+    fed.height = 99999999;
     fed.block_age = 60;
     fed.peers = 125;
     fed.masternodes = 9999;
@@ -8547,20 +8548,20 @@ void AbyssTests::overviewLeastWidth()
     QVERIFY2(locked_need > whole_unlocked, qPrintable(QString("one line %1, the page whole %2 wide; %3").arg(locked_need).arg(whole_unlocked).arg(state())));
     QCOMPARE(frame->pageWhole().width(), locked_need);
     // Then only the tip's digits change, ChainLocked staying on show: the
-    // lines and the card keep their size (the long words' line is the widest),
+    // lines and the card keep their size (the tip's line is not the widest),
     // the bar still decides the breakpoint, and the breakpoint follows what it
     // now needs on one line.
     Settle();
     const int card_minimum = bar->minimumSizeHint().width();
     const QSize card_size = bar->size();
-    fed.height = 99999999;
+    fed.height = 9999999;
     overview->setNetworkStatus(fed); Settle();
     QVERIFY2(stacked() && three_lines() && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
     QVERIFY2(bar->minimumSizeHint().width() == card_minimum && bar->size() == card_size, qPrintable(state()));
     const int shorter_need = one_line_need() + rows_margins.left() + rows_margins.right();
     QVERIFY2(shorter_need < locked_need && shorter_need > whole_unlocked, qPrintable(QString("one line %1, before %2; %3").arg(shorter_need).arg(locked_need).arg(state())));
     QCOMPARE(frame->pageWhole().width(), shorter_need);
-    fed.height = 999999999;
+    fed.height = 99999999;
     locked_words->setText(locked_text);
     fed.chain_locked = false;
     overview->setNetworkStatus(fed); Settle();
