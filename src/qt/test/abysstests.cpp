@@ -8577,12 +8577,17 @@ void AbyssTests::overviewLeastWidth()
     balances.balance = balances.watch_only_balance = 5082097599LL * COIN / 100;
     balances.unconfirmed_balance = balances.unconfirmed_watch_only_balance = 123456789;
     QVERIFY(QMetaObject::invokeMethod(overview, "updateWatchOnlyLabels", Q_ARG(bool, true)));
-    window.resize(1500, tall); Settle();
+    // Wide enough for those amounts side by side with a desktop's font at DPR
+    // 1 too (a 1500 px window stacked them there, at a 1245 px page area), and
+    // within a 2560 px screen.
+    window.resize(2400, tall); Settle();
     int widest_unit = unit_before;
     int widest_floor = 0;
     for (int unit : BitcoinUnits::availableUnits()) {
         QVERIFY(fixture.options->setData(fixture.options->index(OptionsModel::DisplayUnit), unit));
         overview->setBalance(balances); Settle();
+        // Stacked, the card's minimum is 0 and the unit would never count.
+        QVERIFY2(!stacked(), qPrintable(QString("unit %1: %2").arg(BitcoinUnits::name(unit)).arg(state())));
         if (cards->minimumWidth() > widest_floor) {
             widest_floor = cards->minimumWidth();
             widest_unit = unit;
