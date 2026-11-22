@@ -52,6 +52,7 @@ private Q_SLOTS:
     void translucentCards();
     void smallWindow();
     void overviewBreakpoint();
+    void overviewLeastWidth();
     void sendSummaryBelow();
     void focusScrollsIntoView();
     void hoverMenus();

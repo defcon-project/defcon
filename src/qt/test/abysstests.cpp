@@ -8160,6 +8160,408 @@ void AbyssTests::overviewBreakpoint()
     empty_title->setText(empty_text);
 }
 
+void AbyssTests::overviewLeastWidth()
+{
+    // Stacked, the Overview fits the least page area across (U11-D/1b): the
+    // network bar stands in three lines where the page's room is less than it
+    // needs on one, and the balances card has no floor of its own, so the
+    // page scrolls down only. Side by side, and stacked with room for the bar
+    // on one line, everything is as before; a window grown to show the page
+    // whole still gets the columns' figure.
+    if (!GUIUtil::fontsLoaded()) QSKIP("Window geometry requires minimal:enable_fonts or a native platform");
+    const QString shots = qEnvironmentVariable("DEFCON_QT_SCREENSHOTS");
+    RestoreAppearance restore;
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name); // Keep this test's isolated QSettings scope.
+    QVERIFY(style);
+    Theme("Abyss");
+    WalletFixture fixture(m_node);
+    BitcoinGUI window(m_node, style.get());
+    interfaces::BlockAndHeaderTipInfo tip{};
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    window.addWallet(fixture.model.get());
+    window.gotoOverviewPage();
+    window.show(); Settle();
+    auto* overview = window.findChild<OverviewPage*>();
+    auto* staking_icon = window.findChild<QLabel*>("labelStakingIcon");
+    QVERIFY(overview && staking_icon);
+    // The staking card holds still while the figures are compared (overviewBreakpoint).
+    for (QTimer* tick : staking_icon->findChildren<QTimer*>(QString(), Qt::FindDirectChildrenOnly)) tick->stop();
+    window.setStakingStatus(); Settle();
+    constexpr int tall{2000};
+    window.resize(1500, tall); Settle();
+    auto* frame = window.walletFrame;
+    QVERIFY(frame);
+    auto* scroll = frame->findChild<QScrollArea*>("abyssPageScroll");
+    auto* cards = overview->findChild<QFrame*>("frame");
+    auto* bar = overview->findChild<QFrame*>("networkCard");
+    auto* row = overview->findChild<QHBoxLayout*>("horizontalLayout");
+    QVERIFY(scroll && cards && bar && row);
+    auto* separator = bar->findChild<QFrame*>("networkSeparator");
+    auto* progress = bar->findChild<QProgressBar*>("networkSyncProgress");
+    QVERIFY(separator && progress);
+    const auto entry = [&](const char* name) { return bar->findChild<QWidget*>(name); };
+    QWidget* block = entry("networkBlock");
+    QWidget* age = entry("networkAge");
+    QWidget* peers = entry("networkPeers");
+    QVERIFY(block && age && peers);
+    std::vector<QWidget*> states;
+    for (const char* name : {"networkSynced", "networkChainLocked", "networkSyncing"}) {
+        QWidget* widget = entry(name);
+        QVERIFY2(widget, name);
+        states.push_back(widget);
+    }
+    states.push_back(progress);
+    std::vector<QWidget*> company{peers, entry("networkMasternodes"), entry("networkMempool")};
+    QVERIFY(company[1] && company[2]);
+    // The bar's entries in the order they stand on one line.
+    std::vector<QWidget*> line_order{block, age, separator};
+    line_order.insert(line_order.end(), states.begin(), states.end());
+    line_order.insert(line_order.end(), company.begin(), company.end());
+    const auto hide_overlay = [&] {
+        if (auto* overlay = window.findChild<ModalOverlay*>()) overlay->hide();
+        Settle();
+    };
+    hide_overlay();
+    const auto shot = [&](const QString& name) {
+        if (shots.isEmpty()) return true;
+        hide_overlay();
+        return QDir().mkpath(shots) && window.grab().save(QDir(shots).filePath(name + ".png"));
+    };
+    // A QString, not the QStringBuilder of its temporaries (QT_USE_QSTRINGBUILDER).
+    const auto state = [&]() -> QString {
+        QStringList places;
+        for (QWidget* widget : line_order) {
+            if (widget->isVisible()) places << QString("%1 %2,%3 %4x%5").arg(widget->objectName()).arg(widget->x()).arg(widget->y()).arg(widget->width()).arg(widget->height());
+        }
+        return QString("window %1x%2 viewport %3x%4 page %5x%6 page minimum %7 scroll %8/%9 cards %10 (minimum %11) bar %12x%13 (minimum %14): ")
+                   .arg(window.width()).arg(window.height()).arg(scroll->viewport()->width()).arg(scroll->viewport()->height())
+                   .arg(overview->width()).arg(overview->height()).arg(overview->minimumWidth())
+                   .arg(scroll->horizontalScrollBar()->maximum()).arg(scroll->verticalScrollBar()->maximum())
+                   .arg(cards->width()).arg(cards->minimumWidth()).arg(bar->width()).arg(bar->height()).arg(bar->minimumSizeHint().width()) +
+               places.join(", ");
+    };
+    // Each row of the page and of its columns, with its minimum width.
+    const auto widths = [&]() -> QString {
+        QStringList parts;
+        for (const char* name : {"topLayout", "verticalLayout_2", "verticalLayout_3"}) {
+            QLayout* layout = overview->findChild<QLayout*>(name);
+            if (layout == nullptr) continue;
+            for (int item = 0; item < layout->count(); ++item) {
+                QLayoutItem* part = layout->itemAt(item);
+                if (part->isEmpty()) continue;
+                const QString what = part->widget() ? part->widget()->objectName() : part->layout() ? part->layout()->objectName() : QString("spacer");
+                parts << QString("%1 %2").arg(what).arg(part->minimumSize().width());
+            }
+        }
+        return parts.join(", ");
+    };
+    const auto shown = [](const std::vector<QWidget*>& widgets) {
+        std::vector<QWidget*> on_show;
+        for (QWidget* widget : widgets) {
+            if (widget->isVisible()) on_show.push_back(widget);
+        }
+        return on_show;
+    };
+    // Level with another entry: that entry's middle row runs through it. A
+    // line centres each entry in its height, to the pixel: the separator (20
+    // px) and the track (6 px) stand a pixel higher than a 23 px entry's middle.
+    const auto level = [](const QWidget* widget, const QWidget* with) {
+        const int row = with->geometry().center().y();
+        return widget->y() <= row && widget->geometry().bottom() >= row;
+    };
+    // One line: every entry on show level with the block.
+    const auto one_line = [&] {
+        if (!separator->isVisible()) return false;
+        for (QWidget* widget : shown(line_order)) {
+            if (!level(widget, block)) return false;
+        }
+        return true;
+    };
+    // Three lines: the tip and its age, under them the node's state, under
+    // that its company, each line from the bar's left padding; no separator.
+    const auto three_lines = [&] {
+        const std::vector<QWidget*> state_on_show = shown(states);
+        if (separator->isVisible() || state_on_show.empty() || !level(age, block)) return false;
+        int state_bottom = 0;
+        for (QWidget* widget : state_on_show) {
+            if (!level(widget, state_on_show.front()) || widget->y() <= std::max(block->geometry().bottom(), age->geometry().bottom())) return false;
+            state_bottom = std::max(state_bottom, widget->geometry().bottom());
+        }
+        for (QWidget* widget : shown(company)) {
+            if (!level(widget, peers) || widget->y() <= state_bottom) return false;
+        }
+        return block->x() == state_on_show.front()->x() && block->x() == peers->x();
+    };
+    const auto stacked = [&] { return row->direction() == QBoxLayout::TopToBottom; };
+    // Every amount on show on the balances card whole: its text fits its label.
+    const auto amounts_whole = [&] {
+        for (const char* name : {"labelBalance", "labelUnconfirmed", "labelImmature", "labelTotal", "labelWatchAvailable",
+                                 "labelWatchPending", "labelWatchImmature", "labelWatchTotal"}) {
+            auto* label = cards->findChild<QLabel*>(name);
+            if (label == nullptr || (label->isVisible() && !AmountFits(label))) return QString(name);
+        }
+        return QString();
+    };
+
+    // Side by side: the bar on one line, the balances card at its floor.
+    QVERIFY2(!stacked() && one_line(), qPrintable(state()));
+    const int breakpoint = overview->minimumWidth();
+    const int floor = cards->minimumWidth();
+    // The floor is the active stylesheet's minimum for the card, its border
+    // included (a frame of the same name on a page of the same name, polished
+    // apart), or what its labels and amounts need beyond that.
+    QWidget probe_page;
+    probe_page.setObjectName("OverviewPage");
+    auto* probe = new QFrame(&probe_page);
+    probe->setObjectName("frame");
+    probe->ensurePolished();
+    const int stylesheet_floor = probe->minimumWidth();
+    QVERIFY2(stylesheet_floor >= 490 && floor == std::max(stylesheet_floor, cards->layout()->minimumSize().width()),
+             qPrintable(QString("the stylesheet's floor %1; %2").arg(stylesheet_floor).arg(state())));
+    const int around = window.width() - scroll->viewport()->width();
+    window.resize(breakpoint + around, tall); Settle();
+    QVERIFY2(!stacked() && scroll->viewport()->width() == breakpoint, qPrintable(state()));
+    const QSize side_by_side_whole = frame->pageWhole();
+    // What the bar needs on one line, its words short: its layout's minimum,
+    // and the sum of what the entries on show need, the bar's spacing between
+    // them, its padding and the card's border.
+    const QMargins border = bar->contentsMargins();
+    int need = border.left() + border.right() + 16 + 16;
+    int on_show = 0;
+    for (QWidget* widget : line_order) {
+        if (!widget->isVisible()) continue;
+        need += QWidgetItem(widget).minimumSize().width();
+        ++on_show;
+    }
+    need += (on_show - 1) * 18;
+    QVERIFY2(bar->minimumSizeHint().width() == need, qPrintable(QString("need %1; %2").arg(need).arg(state())));
+
+    // The least window: stacked, the bar in three lines, the balances card
+    // under its floor with every amount whole; the page scrolls down only.
+    const QSize least = window.modernWindowSize(QSize(480, 360));
+    window.resize(least); Settle();
+    qInfo().noquote() << "OVERVIEW_LEAST rows:" << widths();
+    QVERIFY2(stacked() && three_lines(), qPrintable(state()));
+    QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0 && overview->minimumWidth() <= scroll->viewport()->width(), qPrintable(state()));
+    QVERIFY2(scroll->verticalScrollBar()->maximum() > 0, qPrintable(state()));
+    QVERIFY2(cards->width() < floor && amounts_whole().isEmpty(), qPrintable(amounts_whole() + " " + state()));
+    for (QWidget* widget : shown(line_order)) {
+        QVERIFY2(bar->contentsRect().contains(widget->geometry()), qPrintable(widget->objectName() + " " + state()));
+    }
+    QVERIFY(shot("overview-least-lines"));
+    // A window grown to show the page whole gets the columns' figure, measured
+    // with the bar on one line and the balances card at its floor, whichever
+    // way they stand (compared below, with the figures from the two states at
+    // the threshold); the page stays as it was.
+    const QSize whole_least = frame->pageWhole();
+    Settle();
+    QVERIFY2(stacked() && three_lines() && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+
+    // Stacked, with exactly the room the bar needs on one line: one line; a
+    // pixel less: three lines. Neither scrolls across.
+    const QMargins page = overview->contentsMargins() + overview->layout()->contentsMargins();
+    const int sides = page.left() + page.right();
+    window.resize(need + sides + around, tall); Settle();
+    QVERIFY2(scroll->viewport()->width() == need + sides && scroll->verticalScrollBar()->maximum() == 0, qPrintable(state()));
+    QVERIFY2(stacked() && one_line() && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    QVERIFY(shot("overview-least-one-line"));
+    const QSize whole_one_line = frame->pageWhole();
+    Settle();
+    window.resize(need + sides + around - 1, tall); Settle();
+    QVERIFY2(stacked() && three_lines() && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    const QSize whole_lines = frame->pageWhole();
+    Settle();
+    QVERIFY2(stacked() && three_lines() && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    QCOMPARE(whole_one_line, side_by_side_whole);
+    QCOMPARE(whole_lines, side_by_side_whole);
+    QCOMPARE(whole_least, side_by_side_whole);
+
+    // Side by side again: one line, the card at its floor, the breakpoint as before.
+    window.resize(1500, tall); Settle();
+    QVERIFY2(!stacked() && one_line(), qPrintable(state()));
+    QVERIFY2(cards->minimumWidth() == floor && overview->minimumWidth() == breakpoint, qPrintable(state()));
+
+    // A classic theme has no bar and does not stack. Switched to it from the
+    // least window, made that small there and switched back (a desktop grows
+    // the window on the way, fitWalletPage), the least window stacks again;
+    // widened, the balances card has its floor as before: the floor is the
+    // stylesheet's number, not read back from the card. (The breakpoint is not
+    // compared: the form's 960 px minimum, which held it above the 958 px the
+    // columns need, is bounded by the screen in a classic theme, the test
+    // platform's 240 px, and comes back as that; the base does the same.)
+    window.resize(least); Settle();
+    QVERIFY2(stacked() && three_lines(), qPrintable(state()));
+    Theme("Light"); Settle();
+    QVERIFY2(!bar->isVisible() && !stacked(), qPrintable(state()));
+    window.resize(least); Settle();
+    Theme("Abyss"); Settle();
+    window.resize(least); Settle();
+    QVERIFY2(stacked() && three_lines() && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    window.resize(1500, tall); Settle();
+    QVERIFY2(!stacked() && one_line() && cards->minimumWidth() == floor, qPrintable(state()));
+    // The floor is read from the new stylesheet by the first width pass after
+    // the page turns. Here the switch into Abyss runs without an event loop,
+    // as a real one does, with the page's own turn held back and given by
+    // hand after its children (the card) have the new stylesheet. Between the
+    // turn and that first pass the columns stand side by side and then stack
+    // (the scroll area resized at once, wide and narrow); then the pass, and
+    // only it, is delivered. The card's minimum, lowered for the stacked
+    // columns, is not what the pass reads as the floor. (While the page has
+    // not turned yet, the window's own switch may already stack it; the card
+    // gets the stylesheet's minimum back after that, as in a real switch.)
+    struct HoldStyleChange : QObject {
+        bool eventFilter(QObject*, QEvent* event) override { return event->type() == QEvent::StyleChange; }
+    } hold;
+    Theme("Light"); Settle();
+    window.resize(least); Settle();
+    overview->installEventFilter(&hold);
+    QSettings().setValue("theme", "Abyss");
+    GUIUtil::loadTheme(true);
+    overview->removeEventFilter(&hold);
+    QVERIFY2(!bar->isVisible(), qPrintable("the page turned before its event: " + state()));
+    QEvent turn(QEvent::StyleChange);
+    QApplication::sendEvent(overview, &turn);
+    QVERIFY2(bar->isVisible(), qPrintable(state()));
+    scroll->resize(1500, scroll->height());
+    QVERIFY2(!stacked(), qPrintable(state()));
+    scroll->resize(480, scroll->height());
+    QVERIFY2(stacked(), qPrintable(state()));
+    QCoreApplication::sendPostedEvents(overview, QEvent::MetaCall);
+    Settle();
+    window.resize(1500, tall); Settle();
+    QVERIFY2(!stacked() && one_line() && cards->minimumWidth() == floor, qPrintable(state()));
+
+    // In lines, what the bar needs on one line still counts for the
+    // breakpoint: a state that makes it longer (ChainLocked shown) measures
+    // again, though the lines and the card keep their size. The bar is fed here
+    // (the page lets its model go); the ChainLocked words are made long, as a
+    // long translation might be, but no wider than the bar's room for a line:
+    // on one line the bar then needs more than the columns.
+    const QMargins rows_margins = overview->layout()->contentsMargins();
+    const auto one_line_need = [&] {
+        // As above; the separator counts while hidden in lines too.
+        int width = border.left() + border.right() + 16 + 16;
+        int entries = 0;
+        for (QWidget* widget : line_order) {
+            if (widget != separator && !widget->isVisible()) continue;
+            width += widget == separator ? separator->minimumWidth() : QWidgetItem(widget).minimumSize().width();
+            ++entries;
+        }
+        return width + (entries - 1) * 18;
+    };
+    overview->setClientModel(nullptr);
+    window.resize(least); Settle();
+    OverviewPage::NetworkStatus fed;
+    fed.height = 999999999;
+    fed.block_age = 59 * 60;
+    fed.chain_synced = fed.data_synced = true;
+    fed.chain_locked = false;
+    fed.peers = 125;
+    fed.masternodes = 99999;
+    fed.mempool = 99999;
+    overview->setNetworkStatus(fed); Settle();
+    QVERIFY2(stacked() && three_lines() && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    // In lines, the masternode and mempool words are chosen by their own
+    // line's room: short in the least window, in words where the line has
+    // room for them; either way the words fit their labels.
+    auto* masternode_words = company[1]->findChild<QLabel*>("networkText");
+    auto* mempool_words = company[2]->findChild<QLabel*>("networkText");
+    QVERIFY(masternode_words && mempool_words && company[2]->isVisible());
+    const auto words_fit = [&] {
+        for (QLabel* label : {masternode_words, mempool_words}) {
+            if (QFontMetrics(label->font()).horizontalAdvance(label->text()) > label->contentsRect().width()) return false;
+        }
+        return true;
+    };
+    QVERIFY2(masternode_words->text() == OverviewPage::tr("MN") && mempool_words->text() == OverviewPage::tr("tx") && words_fit(),
+             qPrintable(masternode_words->text() + " / " + mempool_words->text() + ": " + state()));
+    window.resize(700 + around, tall); Settle();
+    QVERIFY2(stacked() && three_lines() && words_fit() && mempool_words->text() == OverviewPage::tr("in mempool") &&
+                 masternode_words->text() != OverviewPage::tr("MN"),
+             qPrintable(masternode_words->text() + " / " + mempool_words->text() + ": " + state()));
+    window.resize(least); Settle();
+    QVERIFY2(stacked() && three_lines() && masternode_words->text() == OverviewPage::tr("MN"), qPrintable(state()));
+    QWidget* synced = entry("networkSynced");
+    QWidget* locked = entry("networkChainLocked");
+    auto* locked_words = locked ? locked->findChild<QLabel*>("networkText") : nullptr;
+    QVERIFY(synced && locked && locked_words && synced->isVisible() && !locked->isVisible());
+    const QString locked_text = locked_words->text();
+    const int line_room = bar->contentsRect().width() - 16 - 16 - 14;
+    QString long_words = locked_text;
+    for (int i = 0; i < 200; ++i) {
+        locked_words->setText(long_words + QStringLiteral(" locked"));
+        if (synced->minimumSizeHint().width() + 18 + locked->minimumSizeHint().width() > line_room) break;
+        long_words += QStringLiteral(" locked");
+    }
+    locked_words->setText(long_words);
+    Settle();
+    const int whole_unlocked = frame->pageWhole().width();
+    fed.chain_locked = true;
+    overview->setNetworkStatus(fed); Settle();
+    QVERIFY2(stacked() && three_lines() && locked->isVisible() && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    const int locked_need = one_line_need() + rows_margins.left() + rows_margins.right();
+    QVERIFY2(locked_need > whole_unlocked, qPrintable(QString("one line %1, the page whole %2 wide; %3").arg(locked_need).arg(whole_unlocked).arg(state())));
+    QCOMPARE(frame->pageWhole().width(), locked_need);
+    // Then only the tip's digits change, ChainLocked staying on show: the
+    // lines and the card keep their size (the long words' line is the widest),
+    // the bar still decides the breakpoint, and the breakpoint follows what it
+    // now needs on one line.
+    Settle();
+    const int card_minimum = bar->minimumSizeHint().width();
+    const QSize card_size = bar->size();
+    fed.height = 99999999;
+    overview->setNetworkStatus(fed); Settle();
+    QVERIFY2(stacked() && three_lines() && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    QVERIFY2(bar->minimumSizeHint().width() == card_minimum && bar->size() == card_size, qPrintable(state()));
+    const int shorter_need = one_line_need() + rows_margins.left() + rows_margins.right();
+    QVERIFY2(shorter_need < locked_need && shorter_need > whole_unlocked, qPrintable(QString("one line %1, before %2; %3").arg(shorter_need).arg(locked_need).arg(state())));
+    QCOMPARE(frame->pageWhole().width(), shorter_need);
+    fed.height = 999999999;
+    locked_words->setText(locked_text);
+    fed.chain_locked = false;
+    overview->setNetworkStatus(fed); Settle();
+    QCOMPARE(frame->pageWhole().width(), whole_unlocked);
+
+    // Where the balances card decides the breakpoint (long amounts with their
+    // watch-only column, in the unit that writes them longest), the columns
+    // turn at the same pixel whichever way the window is resized: stacked, the
+    // card counts at its side-by-side floor, not at its own minimum, which
+    // counts its border as well.
+    const int unit_before = fixture.options->getDisplayUnit();
+    interfaces::WalletBalances balances{};
+    balances.balance = balances.watch_only_balance = 5082097599LL * COIN / 100;
+    balances.unconfirmed_balance = balances.unconfirmed_watch_only_balance = 123456789;
+    QVERIFY(QMetaObject::invokeMethod(overview, "updateWatchOnlyLabels", Q_ARG(bool, true)));
+    window.resize(1500, tall); Settle();
+    int widest_unit = unit_before;
+    int widest_floor = 0;
+    for (int unit : BitcoinUnits::availableUnits()) {
+        QVERIFY(fixture.options->setData(fixture.options->index(OptionsModel::DisplayUnit), unit));
+        overview->setBalance(balances); Settle();
+        if (cards->minimumWidth() > widest_floor) {
+            widest_floor = cards->minimumWidth();
+            widest_unit = unit;
+        }
+    }
+    QVERIFY(fixture.options->setData(fixture.options->index(OptionsModel::DisplayUnit), widest_unit));
+    overview->setBalance(balances); Settle();
+    const int card_breakpoint = overview->minimumWidth();
+    QVERIFY2(!stacked() && cards->minimumWidth() > floor && card_breakpoint > breakpoint && amounts_whole().isEmpty(),
+             qPrintable(amounts_whole() + " " + state()));
+    window.resize(card_breakpoint + around, tall); Settle();
+    QVERIFY2(!stacked() && scroll->viewport()->width() == card_breakpoint && scroll->horizontalScrollBar()->maximum() == 0, qPrintable(state()));
+    window.resize(card_breakpoint + around - 1, tall); Settle();
+    QVERIFY2(stacked() && scroll->horizontalScrollBar()->maximum() == 0 && amounts_whole().isEmpty(), qPrintable(amounts_whole() + " " + state()));
+    QCOMPARE(frame->pageWhole().width(), card_breakpoint);
+    window.resize(card_breakpoint + around, tall); Settle();
+    QVERIFY2(!stacked() && scroll->horizontalScrollBar()->maximum() == 0 && overview->minimumWidth() == card_breakpoint, qPrintable(state()));
+    QVERIFY(QMetaObject::invokeMethod(overview, "updateWatchOnlyLabels", Q_ARG(bool, false)));
+    QVERIFY(fixture.options->setData(fixture.options->index(OptionsModel::DisplayUnit), unit_before));
+}
+
 void AbyssTests::hoverMenus()
 {
     // AbyssMenus::HoverMenus on buttons of its own, small enough for minimal's
