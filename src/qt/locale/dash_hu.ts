@@ -1466,16 +1466,20 @@
 <context>
     <name>EmptyStateWidget</name>
     <message>
-        <source>Loading…</source>
-        <translation>Betöltés…</translation>
-    </message>
-    <message>
         <source>No matching results</source>
         <translation>Nincs találat</translation>
     </message>
     <message>
+        <source>Waiting for synchronization</source>
+        <translation>Várakozás a szinkronizálásra</translation>
+    </message>
+    <message>
         <source>Try a different search or clear your filters.</source>
         <translation>Próbáljon más keresőkifejezést, vagy törölje a szűrőket.</translation>
+    </message>
+    <message>
+        <source>Your transactions will appear here as the wallet catches up with the network.</source>
+        <translation>A hálózattal való szinkronizálás során itt jelennek meg a tranzakciói.</translation>
     </message>
     <message>
         <source>Clear filters</source>
@@ -1551,8 +1555,25 @@
         <translation>%1 – információ</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;A(z) %1 alapjai&lt;/h3&gt;&lt;p&gt;A(z) %1 jelentősen megnehezíti a DFCN eredetének visszakövetését. Közös tranzakciókban keveri az Ön érméit más DeFCoN-felhasználók érméivel. Érméi végig a tárcájában maradnak, és csak Ön költheti el őket.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Hogyan működik?&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;A tárca az egyenleg egy részét szabványos összegekre bontja. Ezek rendre valamivel meghaladják a 0,001, 0,01, 0,1, 1 és 10 DFCN-t: az utóbbira példa a 10,0001 DFCN. Mindenki ugyanazokat a címleteket használja, így az érmék egyformának látszanak.&lt;/li&gt;&lt;li&gt;A tárca az egyik címlethez csatlakozik egy masternode-nál várakozó keverési menethez, vagy új menet indítását kéri egy véletlenszerűen kiválasztott masternode-tól.&lt;/li&gt;&lt;li&gt;Legalább %2 résztvevő csatlakozása után a masternode egy tranzakcióba foglalja az érméiket. Minden tárca csak a saját részét ellenőrzi és írja alá, majd ugyanazokat az összegeket kapja vissza a saját új címeire.&lt;/li&gt;&lt;li&gt;Minden befejezett menet egy kör. A tárca ezt többször megismétli. A körök száma és a célegyenleg a Beállításokban adható meg.&lt;/li&gt;&lt;li&gt;A keverés a háttérben fut, amíg a tárca nyitva van. Amikor a(z) %1 egyenlegéből küld, az érméi már kevertek.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Tudnivalók&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; a főhálózaton a kevert érmék értéke kisebb a stakinghez szükséges minimumnál, ezért ezek után nem jár stakingjutalom. A staking sosem vonja össze őket vagy a keverési biztosítékokat a többi érmével. A beállításokban megadott célegyenleg határozza meg hozzávetőlegesen a keverendő összeget.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Díjak:&lt;/b&gt; a keverési tranzakciók díjmentesek. A szabványos címletek létrehozása a szokásos kis hálózati díjjal jár. A visszaélések megelőzésére időnként egy apró, körülbelül 0,0001 DFCN értékű biztosíték a hálózathoz kerül.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Adatvédelem:&lt;/b&gt; a menetet lebonyolító masternode látja a részt vevő érméket, és nincs garancia arra, hogy a többi résztvevő mind különböző személy. Több körrel nehezebb követni az érméket. Ha sok kevert érmét egyetlen fizetésben küld el, azok ismét összekapcsolhatóvá válhatnak.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Titkosított tárca:&lt;/b&gt; ha a tárca a keverés indításakor zárolva van, bekéri a jelmondatot, és csak keveréshez oldja fel magát. A küldéshez továbbra is szükség van a jelmondatra.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Biztonsági mentések:&lt;/b&gt; minden kör legfeljebb 9 új címet használ fel. A(z) %1 használatához engedélyezni kell az automatikus tárcamentést, amely alapértelmezés szerint be van kapcsolva.&lt;/li&gt;&lt;/ul&gt;</translation>
+        <source>Mixing these amounts starts at block %1.</source>
+        <translation>A nagyobb címletek keverésének kezdő blokkmagassága %1.</translation>
+    </message>
+    <message>
+        <source>The block at which mixing these amounts starts is not set in this version yet.</source>
+        <translation>Ebben a verzióban még nincs megadva, milyen blokkmagasságnál kezdődik a nagyobb címletek keverése.</translation>
+    </message>
+    <message>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; coins of exactly a standard amount, or of one of the larger amounts below, do not earn staking rewards, whether they are mixed or not, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed in the standard amounts.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;A(z) %1 alapjai&lt;/h3&gt;&lt;p&gt;A(z) %1 jelentősen megnehezíti a DFCN eredetének visszakövetését. Közös tranzakciókban keveri az Ön érméit más DeFCoN-felhasználók érméivel. Érméi végig a tárcájában maradnak, és csak Ön költheti el őket.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Hogyan működik?&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;A tárca az egyenleg egy részét szabványos címletekre bontja. Ezek rendre valamivel meghaladják a 0.001, 0.01, 0.1, 1 és 10 DFCN-t. Az utóbbira példa a 10.0001 DFCN. Mindenki ugyanazokat a címleteket használja, így az érmék egyformának látszanak.&lt;/li&gt;&lt;li&gt;A tárca az egyik ilyen címlettel csatlakozik egy masternode-nál várakozó keverési menethez, vagy új menet indítását kéri egy véletlenszerűen kiválasztott masternode-tól.&lt;/li&gt;&lt;li&gt;Legalább %2 résztvevő csatlakozása után a masternode egy tranzakcióba foglalja az érméiket. Minden tárca csak a saját részét ellenőrzi és írja alá, majd ugyanazokat az összegeket kapja vissza a saját új címeire.&lt;/li&gt;&lt;li&gt;Minden befejezett menet egy kör. A tárca ezt többször megismétli. A keverési körök száma és a célegyenleg a Beállításokban adható meg.&lt;/li&gt;&lt;li&gt;A keverés a háttérben fut, amíg a tárca nyitva van. Amikor a(z) %1 egyenlegéből küld, az érméi már kevertek.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Tudnivalók&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; ha egy érme értéke pontosan megegyezik valamelyik szabványos címlettel vagy az alább felsorolt nagyobb címletek egyikével, nem jár utána stakingjutalom, akár kevert az érme, akár nem. A staking sosem vonja össze az ilyen érméket vagy a keverési biztosítékokat a többi érmével. A Beállításokban megadott célegyenleg határozza meg, hogy hozzávetőleg mekkora összeget kever a tárca szabványos címletekben.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Díjak:&lt;/b&gt; a keverési tranzakciók díjmentesek. A szabványos címletek létrehozása a szokásos kis hálózati díjjal jár. A visszaélések megelőzésére időnként egy apró, körülbelül 0.0001 DFCN értékű biztosíték a hálózathoz kerül.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Adatvédelem:&lt;/b&gt; a menetet lebonyolító masternode látja a részt vevő érméket, és nincs garancia arra, hogy a többi résztvevő mind különböző személy. Több körrel nehezebb követni az érméket. Ha sok kevert érmét egyetlen fizetésben küld el, azok ismét összekapcsolhatóvá válhatnak.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Titkosított tárca:&lt;/b&gt; ha a tárca a keverés indításakor zárolva van, bekéri a jelmondatot, és csak keveréshez oldja fel magát. A küldéshez továbbra is szükség van a jelmondatra.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Biztonsági mentések:&lt;/b&gt; minden kör legfeljebb 9 új címet használ fel. A(z) %1 használatához engedélyezni kell az automatikus tárcamentést, amely alapértelmezés szerint be van kapcsolva.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;Larger amounts&lt;/b&gt;&lt;p&gt;For larger sums there are three more amounts: 100.001, 1000.01 and 10000.1 DFCN. Your wallet mixes coins of these amounts, but it does not make them. You make them with one normal payment to yourself. Use this recipe only in a wallet whose receiving and change addresses are its own spendable P2PKH addresses, as they are by default: a wallet that was given other active descriptors may not recognise the coins it pays to itself.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Create a new receiving address for each coin you want, and one more.&lt;/li&gt;&lt;li&gt;On the Send page, add a recipient for each of these addresses. Pay exactly 100.001, 1000.01 or 10000.1 DFCN to each coin's address and 0.01 DFCN to the last one, with "Subtract fee from amount" switched off for every recipient.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 From then on, while mixing is switched on, your wallet mixes every coin of these amounts that it holds on such an address, whatever the target balance is. To keep a coin out, lock it before you start mixing: enable the coin control features in Options, then use Inputs… on the Send page.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts. If your wallet has no ordinary, unmixed balance left for them, mixing these amounts can wait.&lt;/li&gt;&lt;li&gt;A normal payment can spend these coins like any other coin, mixed or not. Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself. While mixing is running, choose coins that are not of a standard or a larger amount, and neither lock nor spend a coin of these amounts that is waiting to be mixed until its session has ended: a session that loses its coin can cost a collateral.&lt;/li&gt;&lt;li&gt;A session needs other wallets that mix the same amount at the same time, so a larger amount can wait longer for its rounds.&lt;/li&gt;&lt;/ul&gt;</source>
+        <extracomment>%1 is the sentence about the block at which mixing the larger amounts starts; it is translated on its own.</extracomment>
+        <translation>&lt;hr&gt;&lt;b&gt;Nagyobb címletek&lt;/b&gt;&lt;p&gt;Nagyobb összegekhez három további címlet használható (100.001, 1000.01 és 10000.1 DFCN). Az ilyen címletű érméket a tárca keveri, de nem hozza létre. Ezeket Ön egyetlen, saját magának küldött normál fizetéssel hozhatja létre. Csak olyan tárcában kövesse ezeket a lépéseket, amely a saját P2PKH-címeit használja fogadási címként és visszajárócímként, és el tudja költeni az ezekre érkező érméket. Alapértelmezés szerint ilyen címeket használ a tárca. Ha a tárcához más aktív leírókat adtak meg, előfordulhat, hogy nem ismeri fel a saját magának küldött érméket.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Minden létrehozandó érméhez készítsen egy új fogadási címet, majd ezeken felül még egyet.&lt;/li&gt;&lt;li&gt;A Küldés oldalon adjon hozzá mindegyik címhez egy címzettet. Az egyes érmék címére pontosan 100.001, 1000.01 vagy 10000.1 DFCN-t küldjön, az utolsó címre pedig 0.01 DFCN-t. A „Díj levonása az összegből” beállítás minden címzettnél legyen kikapcsolva.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 Ettől kezdve, amíg a keverés be van kapcsolva, a tárca a célegyenlegtől függetlenül minden olyan érmét kever, amely e címletek valamelyikének felel meg, és ilyen címen van. Ha egy érmét ki szeretne hagyni a keverésből, zárolja a keverés megkezdése előtt. Ehhez a Beállításokban jelölje be az „Érmekiválasztás engedélyezése” jelölőnégyzetet, majd használja a Küldés oldalon a „Bemenetek…” gombot.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;A 0.01 DFCN a tárca normál egyenlegére kerül, ebből fedezhetők az ilyen címletek keverési biztosítékai. Ha a tárcában nem marad normál, keveretlen egyenleg a biztosítékokra, előfordulhat, hogy a tárca csak később tudja keverni ezeket a címleteket.&lt;/li&gt;&lt;li&gt;Normál fizetéssel ezek az érmék ugyanúgy elkölthetők, mint bármely más érme, akár kevertek, akár nem. A megtartani kívánt érméket a keverés megkezdése előtt zárolja, vagy válassza ki saját maga a fizetéshez felhasznált érméket. Amíg a keverés fut, olyan érméket válasszon, amelyek sem a szabványos, sem a nagyobb címletek közé nem tartoznak. Ha egy szabványos vagy nagyobb címletű érme keverésre vár, a menet végéig ne zárolja és ne is költse el. Ha az érme kiesik a menetből, elveszhet a biztosíték.&lt;/li&gt;&lt;li&gt;A menethez más tárcák is kellenek, amelyek ugyanakkor ugyanazt a címletet keverik. Nagyobb címletnél ezért hosszabb lehet a várakozás a keverési körökre.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;How much to mix&lt;/b&gt;&lt;p&gt;The standard amounts are at most about 10 DFCN, so on their own they suit smaller sums. The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more, and a payment can hold only so many coins: one payment from coins of the standard amounts can be at most about 6,700 DFCN. For more, use the larger amounts.&lt;/p&gt;&lt;p&gt;A payment from your %1 balance has no change. The mixed coins have to add up to the amount you send; what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default. With coins of the larger amounts, switch off "Subtract fee from amount" for every recipient and send a little less than the coins add up to: the difference is the fee, so it has to cover the normal network fee and stay within the wallet's fee limit. Or keep coins of the standard amounts to make up the rest.&lt;/p&gt;</source>
+        <translation>&lt;hr&gt;&lt;b&gt;Mennyit érdemes keverni?&lt;/b&gt;&lt;p&gt;A szabványos címletek értéke legfeljebb körülbelül 10 DFCN, így önmagukban kisebb összegekhez alkalmasak. A Beállításokban a célegyenleg felső határa 10 000 DFCN, ami már legalább ezer kevert érmét jelent. Egy fizetésbe csak korlátozott számú érme fér, ezért szabványos címletű érmékből egy fizetéssel legfeljebb körülbelül 6 700 DFCN küldhető. Ennél nagyobb összeghez használja a nagyobb címleteket.&lt;/p&gt;&lt;p&gt;A(z) %1 egyenlegéből indított fizetésnél nincs visszajáró. A küldendő összeget a kevert érmékből kell összeállítani. A teljes fennmaradó összeg a díj, amely alapértelmezés szerint legfeljebb 0.1 DFCN lehet. Ha nagyobb címletű érmékkel fizet, minden címzettnél kapcsolja ki a „Díj levonása az összegből” beállítást, és küldjön valamivel kevesebbet az érmék együttes értékénél. A különbözet a díj, ezért fedeznie kell a szokásos hálózati díjat, és nem haladhatja meg a tárca díjkorlátját. Úgy is összeállíthatja a küldendő összeget, hogy a hiányzó részhez szabványos címletű érméket tart meg.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2638,6 +2659,10 @@ Csak a listabejegyzés törlődik. Ha a címet importálta a tárcába, a tárca
         <translation>Részlegesen aláírt tranzakció (bináris)</translation>
     </message>
     <message>
+        <source>Could not write file %1.</source>
+        <translation>Nem sikerült írni a fájlt: %1.</translation>
+    </message>
+    <message>
         <source>PSBT saved to %1.</source>
         <translation>A PSBT mentve ide: %1.</translation>
     </message>
@@ -2999,12 +3024,12 @@ Csak a listabejegyzés törlődik. Ha a címet importálta a tárcába, a tárca
         <translation>Keverési körök</translation>
     </message>
     <message>
-        <source>This amount acts as a threshold to turn off mixing once it's reached.</source>
-        <translation>A keverés leáll, amint a kevert egyenleg eléri ezt az összeget.</translation>
-    </message>
-    <message>
         <source>Target balance</source>
         <translation>Célegyenleg</translation>
+    </message>
+    <message>
+        <source>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins. Coins of 100.001, 1000.01 and 10000.1 DFCN are mixed apart from this target.</source>
+        <translation>Legfeljebb 10 000 DFCN. A szabványos címletek értéke legfeljebb körülbelül 10 DFCN, így nagyobb célegyenleg esetén a tárca több ezer érmére bontaná az egyenleget. A nagyobb címletű érméket (100.001, 1000.01 és 10000.1 DFCN) a tárca a célegyenlegtől függetlenül keveri.</translation>
     </message>
     <message>
         <source>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</source>
@@ -3119,6 +3144,10 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Enabling pruning significantly reduces the disk space required to store transactions. All blocks are still fully validated. Reverting this setting requires re-downloading the entire blockchain.</source>
         <translation>A blokkok ritkítása jelentősen csökkenti a tranzakciók tárolásához szükséges lemezterületet. A program továbbra is minden blokkot teljes körűen ellenőriz. A beállítás visszavonásához újra le kell tölteni a teljes blokkláncot.</translation>
+    </message>
+    <message>
+        <source>This amount acts as a threshold to turn off mixing of the standard amounts once it's reached.</source>
+        <translation>A szabványos címletek keverése leáll, amint az ezekben megkevert összeg eléri a célt.</translation>
     </message>
     <message>
         <source>Map port using &amp;UPnP</source>
@@ -3592,14 +3621,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Kikapcsolva</translation>
     </message>
     <message>
-        <source>The node's staking thread is not running. See debug.log.</source>
-        <translation>A csomópont stakingszála nem fut. A részleteket a debug.log fájlban találja.</translation>
-    </message>
-    <message>
-        <source>This node runs without staking (-staking=0).</source>
-        <translation>Ezen a csomóponton a staking ki van kapcsolva (-staking=0).</translation>
-    </message>
-    <message>
         <source>Paused: wallet locked</source>
         <translation>Szünetel: a tárca zárolva</translation>
     </message>
@@ -3646,6 +3667,22 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
         <translation>Kimaradnak az éretlen vagy túl fiatal érmék, a minimumnál kisebb vagy a maximumnál nagyobb tétek, valamint a pontosan egy masternode-biztosítéknak megfelelő érmék.</translation>
+    </message>
+    <message>
+        <source>Staking stopped and will retry soon. If it stays off, restart the wallet.</source>
+        <translation>A staking leállt. A tárca hamarosan újra megpróbálja elindítani. Ha a staking továbbra sem indul el, indítsa újra a tárcát.</translation>
+    </message>
+    <message>
+        <source>The staking thread is not running. The debug log file has the reason.</source>
+        <translation>A stakingszál nem fut. Az okot a hibakeresési naplófájlban találja.</translation>
+    </message>
+    <message>
+        <source>Staking is turned off in the startup settings. To stake, turn it on and restart.</source>
+        <translation>A staking ki van kapcsolva az indítási beállításokban. A használatához kapcsolja be, majd indítsa újra a tárcát.</translation>
+    </message>
+    <message>
+        <source>The wallet was started with -staking=0, in its configuration file or on its command line.</source>
+        <translation>A tárca a konfigurációs fájlban vagy a parancssorban megadott -staking=0 beállítással indult.</translation>
     </message>
     <message numerus="yes">
         <source>%n Rounds</source>
@@ -3818,6 +3855,10 @@ https://app.transifex.com/defcon/defcon/</translation>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Részlegesen aláírt tranzakció (bináris)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>Nem sikerült írni a fájlt: %1.</translation>
     </message>
     <message>
         <source>PSBT saved to disk.</source>
@@ -5691,9 +5732,26 @@ A konzol használatáról a(z) %6 paranccsal kaphat további információt.
         <translation>A címzettek listájának áttekintéséhez kattintson a „Részletek megjelenítése…” gombra</translation>
     </message>
     <message>
+        <source>Unsigned Transaction</source>
+        <comment>PSBT copied</comment>
+        <translation>Aláíratlan tranzakció</translation>
+    </message>
+    <message>
+        <source>The PSBT has been copied to the clipboard. You can also save it.</source>
+        <translation>A PSBT a vágólapra másolva. El is mentheti.</translation>
+    </message>
+    <message>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Részlegesen aláírt tranzakció (bináris)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>Nem sikerült írni a fájlt: %1.</translation>
+    </message>
+    <message>
+        <source>PSBT saved to disk.</source>
+        <translation>A PSBT lemezre mentve.</translation>
     </message>
     <message>
         <source>Send DeFCoN</source>
@@ -6583,6 +6641,10 @@ A konzol használatáról a(z) %6 paranccsal kaphat további információt.
         <translation>(n. a.)</translation>
     </message>
     <message>
+        <source>Watch-only address</source>
+        <translation>Csak megfigyelhető cím</translation>
+    </message>
+    <message>
         <source>(no label)</source>
         <translation>(nincs címke)</translation>
     </message>
@@ -6676,10 +6738,6 @@ A konzol használatáról a(z) %6 paranccsal kaphat további információt.
     <message>
         <source>To yourself</source>
         <translation>Saját részre</translation>
-    </message>
-    <message>
-        <source>Mined</source>
-        <translation>Bányászott</translation>
     </message>
     <message>
         <source>Platform Transfer</source>
@@ -6846,6 +6904,18 @@ A konzol használatáról a(z) %6 paranccsal kaphat további információt.
         <source>Show only transactions of at least this amount</source>
         <translation>Csak a legalább ekkora összegű tranzakciók megjelenítése</translation>
     </message>
+    <message>
+        <source>All addresses</source>
+        <translation>Minden cím</translation>
+    </message>
+    <message>
+        <source>Spendable only</source>
+        <translation>Csak elkölthető</translation>
+    </message>
+    <message>
+        <source>Show only transactions of these addresses</source>
+        <translation>Csak ezekhez a címekhez tartozó tranzakciók megjelenítése</translation>
+    </message>
 </context>
 <context>
     <name>TxViewDelegate</name>
@@ -6961,6 +7031,10 @@ Tárca betöltéséhez válassza a Fájl &gt; Tárca megnyitása menüpontot.
         <translation>Kijelölt összeg:</translation>
     </message>
     <message>
+        <source>Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason.</source>
+        <translation>A stakinget nem sikerült elindítani ebben a tárcában. Egy perc múlva próbálja meg újra. Ha továbbra sem indul el, az okot a hibakeresési naplófájlban találja.</translation>
+    </message>
+    <message>
         <source>Wallet Data</source>
         <extracomment>Name of the wallet data file format.</extracomment>
         <translation>Tárcaadatok</translation>
@@ -7012,10 +7086,6 @@ Tárca betöltéséhez válassza a Fájl &gt; Tárca megnyitása menüpontot.
     <message>
         <source>Staking</source>
         <translation>Staking</translation>
-    </message>
-    <message>
-        <source>Staking could not be started for this wallet. See debug.log for details.</source>
-        <translation>A stakinget nem sikerült elindítani ebben a tárcában. A részleteket a debug.log fájlban találja.</translation>
     </message>
     <message>
         <source>Backup Failed</source>
@@ -7371,6 +7441,10 @@ Tárca betöltéséhez válassza a Fájl &gt; Tárca megnyitása menüpontot.
     <message>
         <source>Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments.</source>
         <translation>A hálózati verziószöveg teljes hossza (%i) meghaladja a megengedett értéket (%i). Csökkentse a uacomment bejegyzések számát vagy méretét.</translation>
+    </message>
+    <message>
+        <source>Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.</source>
+        <translation>A tranzakcióhoz BLS-visszajárócím szükséges. Privát kulcsok nélkül a tárca nem tud ilyen címet létrehozni. Válasszon visszajárócímet.</translation>
     </message>
     <message>
         <source>Transaction needs a change address, but we can't generate it. Please call keypoolrefill first.</source>

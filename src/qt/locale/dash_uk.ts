@@ -1466,16 +1466,20 @@
 <context>
     <name>EmptyStateWidget</name>
     <message>
-        <source>Loading…</source>
-        <translation>Завантаження…</translation>
-    </message>
-    <message>
         <source>No matching results</source>
         <translation>Збігів не знайдено</translation>
     </message>
     <message>
+        <source>Waiting for synchronization</source>
+        <translation>Очікування синхронізації</translation>
+    </message>
+    <message>
         <source>Try a different search or clear your filters.</source>
         <translation>Спробуйте інший пошуковий запит або скиньте фільтри.</translation>
+    </message>
+    <message>
+        <source>Your transactions will appear here as the wallet catches up with the network.</source>
+        <translation>У міру синхронізації гаманця з мережею тут з’являтимуться ваші транзакції.</translation>
     </message>
     <message>
         <source>Clear filters</source>
@@ -1551,8 +1555,25 @@
         <translation>Інформація про %1</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;Основи %1&lt;/h3&gt;&lt;p&gt;%1 значно ускладнює відстеження походження ваших DFCN. Ваші монети змішуються з монетами інших користувачів DeFCoN у спільних транзакціях. Вони ніколи не залишають вашого гаманця, і лише ви можете їх витратити.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Як це працює&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Гаманець ділить частину балансу на стандартні суми, трохи більші за 0.001, 0.01, 0.1, 1 і 10 DFCN, наприклад 10.0001 DFCN. Усі використовують однакові суми, тому монети виглядають однаково.&lt;/li&gt;&lt;li&gt;Для однієї з цих сум гаманець приєднується до сеансу змішування, що очікує на учасників на мастерноді, або просить випадково вибрану мастерноду розпочати новий сеанс.&lt;/li&gt;&lt;li&gt;Коли кількість учасників досягає щонайменше %2, мастернода об’єднує їхні монети в одну транзакцію. Кожен гаманець перевіряє та підписує лише свою частину й отримує ті самі суми на власні нові адреси.&lt;/li&gt;&lt;li&gt;Кожен завершений сеанс — один раунд. Гаманець повторює цю процедуру кілька разів. Кількість раундів і цільовий баланс можна задати в параметрах.&lt;/li&gt;&lt;li&gt;Змішування відбувається у фоновому режимі, поки гаманець відкрито. На момент надсилання з балансу %1 ваші монети вже змішані.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Варто знати&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Стейкінг:&lt;/b&gt; в основній мережі номінал змішаних монет менший за мінімальну суму для стейкінгу, тому вони не приносять винагород за стейкінг. Під час стейкінгу ні змішані монети, ні застава для змішування не об’єднуються з іншими вашими монетами. Цільовий баланс у параметрах задає приблизну суму для змішування.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Комісії:&lt;/b&gt; транзакції змішування безкоштовні. За створення стандартних сум стягується звичайна невелика мережева комісія. Час від часу для запобігання зловживанням мережі передається невелика застава — близько 0.0001 DFCN.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Приватність:&lt;/b&gt; мастернода, що проводить сеанс, бачить, які монети беруть у ньому участь. Немає гарантії, що інші учасники — різні люди. Що більше раундів, то важче відстежити ваші монети. Надсилання багатьох змішаних монет одним платежем може знову встановити зв’язок між ними.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Зашифрований гаманець:&lt;/b&gt; якщо на початку змішування гаманець заблоковано, він запитає парольну фразу й розблокується лише для змішування. Для надсилання парольна фраза все одно знадобиться.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Резервні копії:&lt;/b&gt; кожен раунд використовує до 9 нових адрес. Для %1 потрібне автоматичне резервне копіювання гаманця. Типово його ввімкнено.&lt;/li&gt;&lt;/ul&gt;</translation>
+        <source>Mixing these amounts starts at block %1.</source>
+        <translation>Змішування цих сум починається з блока %1.</translation>
+    </message>
+    <message>
+        <source>The block at which mixing these amounts starts is not set in this version yet.</source>
+        <translation>У цій версії ще не задано блок, з якого починається змішування цих сум.</translation>
+    </message>
+    <message>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; coins of exactly a standard amount, or of one of the larger amounts below, do not earn staking rewards, whether they are mixed or not, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed in the standard amounts.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;Основи %1&lt;/h3&gt;&lt;p&gt;%1 значно ускладнює відстеження походження ваших DFCN. Ваші монети змішуються з монетами інших користувачів DeFCoN у спільних транзакціях. Вони ніколи не залишають вашого гаманця, і лише ви можете їх витратити.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Як це працює&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Гаманець ділить частину балансу на стандартні суми, трохи більші за 0.001, 0.01, 0.1, 1 і 10 DFCN, наприклад 10.0001 DFCN. Усі використовують однакові суми, тому монети виглядають однаково.&lt;/li&gt;&lt;li&gt;Для однієї з цих сум гаманець приєднується до сеансу змішування, що очікує на учасників на мастерноді, або просить випадково вибрану мастерноду розпочати новий сеанс.&lt;/li&gt;&lt;li&gt;Коли кількість учасників досягає щонайменше %2, мастернода об’єднує їхні монети в одну транзакцію. Кожен гаманець перевіряє та підписує лише свою частину й отримує ті самі суми на власні нові адреси.&lt;/li&gt;&lt;li&gt;Кожен завершений сеанс — один раунд. Гаманець повторює цю процедуру кілька разів. У вікні «Параметри…» можна налаштувати «Раунди змішування» та «Цільовий баланс».&lt;/li&gt;&lt;li&gt;Змішування відбувається у фоновому режимі, поки гаманець відкрито. На момент надсилання з балансу %1 ваші монети вже змішані.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Варто знати&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Стейкінг:&lt;/b&gt; монети, номінал яких точно дорівнює одній зі стандартних сум або одній із наведених нижче більших сум, не приносять винагород за стейкінг незалежно від того, чи їх уже змішано. Стейкінг ніколи не об’єднує ні ці монети, ні застави для змішування з іншими вашими монетами. Параметр «Цільовий баланс» у вікні «Параметри…» визначає, скільки приблизно коштів буде змішано стандартними сумами.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Комісії:&lt;/b&gt; транзакції змішування безкоштовні. За створення стандартних сум стягується звичайна невелика мережева комісія. Час від часу для запобігання зловживанням мережі передається невелика застава — близько 0.0001 DFCN.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Приватність:&lt;/b&gt; мастернода, що проводить сеанс, бачить, які монети беруть у ньому участь. Немає гарантії, що інші учасники — різні люди. Що більше раундів, то важче відстежити ваші монети. Надсилання багатьох змішаних монет одним платежем може знову встановити зв’язок між ними.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Зашифрований гаманець:&lt;/b&gt; якщо на початку змішування гаманець заблоковано, він запитає парольну фразу й розблокується лише для змішування. Для надсилання парольна фраза все одно знадобиться.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Резервні копії:&lt;/b&gt; кожен раунд використовує до 9 нових адрес. Для %1 потрібне автоматичне резервне копіювання гаманця. Типово його ввімкнено.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;Larger amounts&lt;/b&gt;&lt;p&gt;For larger sums there are three more amounts: 100.001, 1000.01 and 10000.1 DFCN. Your wallet mixes coins of these amounts, but it does not make them. You make them with one normal payment to yourself. Use this recipe only in a wallet whose receiving and change addresses are its own spendable P2PKH addresses, as they are by default: a wallet that was given other active descriptors may not recognise the coins it pays to itself.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Create a new receiving address for each coin you want, and one more.&lt;/li&gt;&lt;li&gt;On the Send page, add a recipient for each of these addresses. Pay exactly 100.001, 1000.01 or 10000.1 DFCN to each coin's address and 0.01 DFCN to the last one, with "Subtract fee from amount" switched off for every recipient.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 From then on, while mixing is switched on, your wallet mixes every coin of these amounts that it holds on such an address, whatever the target balance is. To keep a coin out, lock it before you start mixing: enable the coin control features in Options, then use Inputs… on the Send page.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts. If your wallet has no ordinary, unmixed balance left for them, mixing these amounts can wait.&lt;/li&gt;&lt;li&gt;A normal payment can spend these coins like any other coin, mixed or not. Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself. While mixing is running, choose coins that are not of a standard or a larger amount, and neither lock nor spend a coin of these amounts that is waiting to be mixed until its session has ended: a session that loses its coin can cost a collateral.&lt;/li&gt;&lt;li&gt;A session needs other wallets that mix the same amount at the same time, so a larger amount can wait longer for its rounds.&lt;/li&gt;&lt;/ul&gt;</source>
+        <extracomment>%1 is the sentence about the block at which mixing the larger amounts starts; it is translated on its own.</extracomment>
+        <translation>&lt;hr&gt;&lt;b&gt;Більші суми&lt;/b&gt;&lt;p&gt;Для змішування більшої кількості коштів передбачено ще три суми: 100.001, 1000.01 і 10000.1 DFCN. Гаманець змішує монети цих сум, але не створює їх. Щоб їх створити, надішліть собі один звичайний платіж. Цей спосіб підходить лише для гаманця, у якому адреси отримання та адреси для решти — це власні адреси P2PKH, з яких гаманець може витрачати кошти. Типово гаманець використовує саме такі адреси. Якщо для гаманця задано інші активні дескриптори, він може не розпізнати монети, які надсилає сам собі.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Створіть нову адресу отримання для кожної потрібної монети та ще одну додаткову адресу.&lt;/li&gt;&lt;li&gt;На сторінці «Надіслати» додайте по одному одержувачу для кожної з цих адрес. На адресу кожної монети надішліть рівно 100.001, 1000.01 або 10000.1 DFCN, а на останню адресу — 0.01 DFCN. Для кожного одержувача параметр «Відняти комісію від суми» має бути вимкнено.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 Відтоді, поки змішування ввімкнено, гаманець змішує кожну монету однієї з цих сум, яку зберігає на такій адресі, незалежно від значення параметра «Цільовий баланс». Щоб не змішувати певну монету, заблокуйте її до початку змішування. Для цього у вікні «Параметри…» позначте пункт «Увімкнути керування монетами», а потім на сторінці «Надіслати» виберіть «Входи…».&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Ці 0.01 DFCN — звичайні кошти для застав під час змішування більших сум. Якщо в гаманці не залишилося звичайних незмішаних коштів для цих застав, змішування більших сум може затриматися.&lt;/li&gt;&lt;li&gt;Ці монети, змішані чи ні, можна витратити у звичайному платежі, як і будь-які інші. До початку змішування заблокуйте монети, які хочете зберегти, або самостійно виберіть монети для платежу. Поки триває змішування, для платежу вибирайте монети, номінал яких не дорівнює жодній зі стандартних або більших сум. Якщо монета однієї з цих сум очікує на змішування, не блокуйте й не витрачайте її, доки не завершиться сеанс, у якому вона бере участь. Якщо монета вибуде із сеансу, ви можете втратити заставу.&lt;/li&gt;&lt;li&gt;Для сеансу потрібні інші гаманці, які одночасно змішують монети тієї самої суми. Тому для більших сум очікування раундів може тривати довше.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;How much to mix&lt;/b&gt;&lt;p&gt;The standard amounts are at most about 10 DFCN, so on their own they suit smaller sums. The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more, and a payment can hold only so many coins: one payment from coins of the standard amounts can be at most about 6,700 DFCN. For more, use the larger amounts.&lt;/p&gt;&lt;p&gt;A payment from your %1 balance has no change. The mixed coins have to add up to the amount you send; what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default. With coins of the larger amounts, switch off "Subtract fee from amount" for every recipient and send a little less than the coins add up to: the difference is the fee, so it has to cover the normal network fee and stay within the wallet's fee limit. Or keep coins of the standard amounts to make up the rest.&lt;/p&gt;</source>
+        <translation>&lt;hr&gt;&lt;b&gt;Скільки коштів змішувати&lt;/b&gt;&lt;p&gt;Найбільша зі стандартних сум становить близько 10 DFCN, тож самі по собі стандартні суми підходять для змішування невеликої кількості коштів. У вікні «Параметри…» для параметра «Цільовий баланс» можна задати до 10 000 DFCN. Такий баланс — це вже щонайменше тисяча змішаних монет. Кількість монет в одному платежі обмежена, тому одним платежем із монет стандартних сум можна надіслати щонайбільше близько 6 700 DFCN. Щоб надіслати більше, використовуйте монети більших сум.&lt;/p&gt;&lt;p&gt;Платіж із балансу %1 не має решти. Зі змішаних монет потрібно набрати стільки, скільки ви хочете надіслати. Увесь надлишок іде на комісію, яка типово не може перевищувати 0.1 DFCN. Якщо використовуєте монети більших сум, вимкніть «Відняти комісію від суми» для кожного одержувача й надішліть трохи менше за загальну вартість монет. Різниця піде на комісію, тож вона має покривати звичайну мережеву комісію й не перевищувати ліміт комісії гаманця. Або залиште монети стандартних сум, щоб доповнити ними платіж до потрібної величини.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2638,6 +2659,10 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>Частково підписана транзакція (двійковий формат)</translation>
     </message>
     <message>
+        <source>Could not write file %1.</source>
+        <translation>Не вдалося записати файл %1.</translation>
+    </message>
+    <message>
         <source>PSBT saved to %1.</source>
         <translation>PSBT збережено у %1.</translation>
     </message>
@@ -2999,12 +3024,12 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>Раунди змішування</translation>
     </message>
     <message>
-        <source>This amount acts as a threshold to turn off mixing once it's reached.</source>
-        <translation>Змішування припиниться, щойно буде досягнуто цієї суми.</translation>
-    </message>
-    <message>
         <source>Target balance</source>
         <translation>Цільовий баланс</translation>
+    </message>
+    <message>
+        <source>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins. Coins of 100.001, 1000.01 and 10000.1 DFCN are mixed apart from this target.</source>
+        <translation>Щонайбільше 10 000 DFCN. Найбільша зі стандартних сум становить близько 10 DFCN, тож за вищого цільового балансу ваші кошти було б розділено на тисячі монет. Монети більших сум — 100.001, 1000.01 і 10000.1 DFCN — змішуються незалежно від цільового балансу.</translation>
     </message>
     <message>
         <source>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</source>
@@ -3119,6 +3144,10 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Enabling pruning significantly reduces the disk space required to store transactions. All blocks are still fully validated. Reverting this setting requires re-downloading the entire blockchain.</source>
         <translation>Обрізання значно зменшує місце на диску, потрібне для зберігання транзакцій. Усі блоки й далі проходять повну перевірку. Для скасування цього налаштування знадобиться знову завантажити весь блокчейн.</translation>
+    </message>
+    <message>
+        <source>This amount acts as a threshold to turn off mixing of the standard amounts once it's reached.</source>
+        <translation>Змішування стандартних сум припиниться, щойно буде досягнуто цієї суми.</translation>
     </message>
     <message>
         <source>Map port using &amp;UPnP</source>
@@ -3592,14 +3621,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Вимкнено</translation>
     </message>
     <message>
-        <source>The node's staking thread is not running. See debug.log.</source>
-        <translation>Потік стейкінгу на цьому вузлі не працює. Докладніше див. у debug.log.</translation>
-    </message>
-    <message>
-        <source>This node runs without staking (-staking=0).</source>
-        <translation>Стейкінг на цьому вузлі вимкнено (-staking=0).</translation>
-    </message>
-    <message>
         <source>Paused: wallet locked</source>
         <translation>Призупинено: гаманець заблоковано</translation>
     </message>
@@ -3646,6 +3667,22 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
         <translation>Монети не беруть участі, якщо вони незрілі або надто молоді, їхня сума менша за мінімальну чи більша за максимальну для стейкінгу або точно дорівнює заставі мастерноди.</translation>
+    </message>
+    <message>
+        <source>Staking stopped and will retry soon. If it stays off, restart the wallet.</source>
+        <translation>Стейкінг зупинився. Незабаром гаманець спробує запустити його знову. Якщо стейкінг не відновиться, перезапустіть гаманець.</translation>
+    </message>
+    <message>
+        <source>The staking thread is not running. The debug log file has the reason.</source>
+        <translation>Потік стейкінгу не працює. Причину вказано у файлі журналу налагодження.</translation>
+    </message>
+    <message>
+        <source>Staking is turned off in the startup settings. To stake, turn it on and restart.</source>
+        <translation>Стейкінг вимкнено в параметрах запуску. Щоб розпочати стейкінг, увімкніть його й перезапустіть гаманець.</translation>
+    </message>
+    <message>
+        <source>The wallet was started with -staking=0, in its configuration file or on its command line.</source>
+        <translation>Гаманець запущено з параметром -staking=0, заданим у файлі конфігурації або в командному рядку.</translation>
     </message>
     <message numerus="yes">
         <source>%n Rounds</source>
@@ -3818,6 +3855,10 @@ https://app.transifex.com/defcon/defcon/</translation>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Частково підписана транзакція (двійковий формат)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>Не вдалося записати файл %1.</translation>
     </message>
     <message>
         <source>PSBT saved to disk.</source>
@@ -5691,9 +5732,26 @@ For more information on using this console, type %6.
         <translation>Щоб переглянути список одержувачів, натисніть «Показати подробиці…»</translation>
     </message>
     <message>
+        <source>Unsigned Transaction</source>
+        <comment>PSBT copied</comment>
+        <translation>Непідписана транзакція</translation>
+    </message>
+    <message>
+        <source>The PSBT has been copied to the clipboard. You can also save it.</source>
+        <translation>PSBT скопійовано до буфера обміну. Ви також можете зберегти PSBT.</translation>
+    </message>
+    <message>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Частково підписана транзакція (двійковий формат)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>Не вдалося записати файл %1.</translation>
+    </message>
+    <message>
+        <source>PSBT saved to disk.</source>
+        <translation>PSBT збережено на диск.</translation>
     </message>
     <message>
         <source>Send DeFCoN</source>
@@ -6583,6 +6641,10 @@ For more information on using this console, type %6.
         <translation>(н/д)</translation>
     </message>
     <message>
+        <source>Watch-only address</source>
+        <translation>Адреса лише для спостереження</translation>
+    </message>
+    <message>
         <source>(no label)</source>
         <translation>(без мітки)</translation>
     </message>
@@ -6676,10 +6738,6 @@ For more information on using this console, type %6.
     <message>
         <source>To yourself</source>
         <translation>Собі</translation>
-    </message>
-    <message>
-        <source>Mined</source>
-        <translation>Видобуто</translation>
     </message>
     <message>
         <source>Platform Transfer</source>
@@ -6846,6 +6904,18 @@ For more information on using this console, type %6.
         <source>Show only transactions of at least this amount</source>
         <translation>Показувати лише транзакції на суму не меншу за вказану</translation>
     </message>
+    <message>
+        <source>All addresses</source>
+        <translation>Усі адреси</translation>
+    </message>
+    <message>
+        <source>Spendable only</source>
+        <translation>Лише доступні для витрачання</translation>
+    </message>
+    <message>
+        <source>Show only transactions of these addresses</source>
+        <translation>Показувати лише транзакції цих адрес</translation>
+    </message>
 </context>
 <context>
     <name>TxViewDelegate</name>
@@ -6961,6 +7031,10 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>Вибрана сума:</translation>
     </message>
     <message>
+        <source>Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason.</source>
+        <translation>Не вдалося запустити стейкінг для цього гаманця. Спробуйте ще раз за хвилину. Якщо стейкінг так і не запуститься, причину вказано у файлі журналу налагодження.</translation>
+    </message>
+    <message>
         <source>Wallet Data</source>
         <extracomment>Name of the wallet data file format.</extracomment>
         <translation>Дані гаманця</translation>
@@ -7012,10 +7086,6 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Staking</source>
         <translation>Стейкінг</translation>
-    </message>
-    <message>
-        <source>Staking could not be started for this wallet. See debug.log for details.</source>
-        <translation>Не вдалося запустити стейкінг для цього гаманця. Докладніше див. у debug.log.</translation>
     </message>
     <message>
         <source>Backup Failed</source>
@@ -7371,6 +7441,10 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments.</source>
         <translation>Загальна довжина рядка версії мережі (%i) перевищує максимальну (%i). Зменште кількість або довжину коментарів uacomments.</translation>
+    </message>
+    <message>
+        <source>Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.</source>
+        <translation>Для транзакції потрібна BLS-адреса для решти, яку гаманець без приватних ключів не може створити. Виберіть адресу для решти.</translation>
     </message>
     <message>
         <source>Transaction needs a change address, but we can't generate it. Please call keypoolrefill first.</source>

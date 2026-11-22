@@ -1466,16 +1466,20 @@
 <context>
     <name>EmptyStateWidget</name>
     <message>
-        <source>Loading…</source>
-        <translation>Yükleniyor…</translation>
-    </message>
-    <message>
         <source>No matching results</source>
         <translation>Eşleşen sonuç yok</translation>
     </message>
     <message>
+        <source>Waiting for synchronization</source>
+        <translation>Senkronizasyon bekleniyor</translation>
+    </message>
+    <message>
         <source>Try a different search or clear your filters.</source>
         <translation>Başka bir arama yapın veya filtrelerinizi temizleyin.</translation>
+    </message>
+    <message>
+        <source>Your transactions will appear here as the wallet catches up with the network.</source>
+        <translation>Cüzdanınız ağla senkronize oldukça işlemleriniz burada görünecek.</translation>
     </message>
     <message>
         <source>Clear filters</source>
@@ -1551,8 +1555,25 @@
         <translation>%1 bilgileri</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;%1 hakkında temel bilgiler&lt;/h3&gt;&lt;p&gt;%1, DFCN’nizin kaynağının izlenmesini çok daha zor hale getirir. Koinlerinizi ortak işlemlerde diğer DeFCoN kullanıcılarının koinleriyle karıştırır. Koinleriniz cüzdanınızdan hiç çıkmaz ve onları yalnızca siz harcayabilirsiniz.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Nasıl çalışır?&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Cüzdanınız bakiyenizin bir kısmını 0.001, 0.01, 0.1, 1 ve 10 DFCN’den biraz yüksek standart tutarlara böler. Örneğin 10.0001 DFCN. Herkes aynı tutarları kullandığından koinler birbirine benzer.&lt;/li&gt;&lt;li&gt;Bu tutarlardan biri için cüzdanınız bir ana düğümde bekleyen karıştırma oturumuna katılır veya rastgele seçilen bir ana düğümden yeni bir oturum başlatmasını ister.&lt;/li&gt;&lt;li&gt;En az %2 katılımcı katıldığında ana düğüm, koinlerini tek bir işlemde birleştirir. Her cüzdan yalnızca kendi bölümünü denetleyip imzalar ve aynı tutarları kendisine ait yeni adreslere geri alır.&lt;/li&gt;&lt;li&gt;Tamamlanan her oturum bir turdur. Cüzdanınız bunu birkaç kez tekrarlar. Tur sayısını ve hedef bakiyeyi Seçenekler bölümünde ayarlayabilirsiniz.&lt;/li&gt;&lt;li&gt;Cüzdan açıkken karıştırma arka planda çalışır. %1 bakiyenizden gönderim yaptığınızda koinleriniz zaten karıştırılmıştır.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Bilmeniz gerekenler&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; Ana ağda karıştırılmış koinler asgari staking tutarından küçüktür, dolayısıyla staking ödülü kazanmazlar. Staking bu koinleri veya karıştırma teminatlarını diğer koinlerinizle hiçbir zaman birleştirmez. Seçenekler bölümündeki hedef bakiye yaklaşık ne kadar koinin karıştırılacağını belirler.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Ücretler:&lt;/b&gt; Karıştırma işlemleri ücretsizdir. Standart tutarları oluştururken normal, düşük bir ağ ücreti ödenir. Kötüye kullanımı önlemek için zaman zaman yaklaşık 0.0001 DFCN’lik küçük bir teminat ağa ödenir.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Gizlilik:&lt;/b&gt; Oturumu yürüten ana düğüm hangi koinlerin katıldığını görür. Diğer katılımcıların farklı kişiler olması garanti değildir. Daha fazla tur, koinlerinizin izlenmesini zorlaştırır. Çok sayıda karıştırılmış koini tek ödemede birlikte göndermek aralarında yeniden bağ kurulmasına yol açabilir.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Şifreli cüzdan:&lt;/b&gt; Karıştırmayı başlattığınızda cüzdan kilitliyse parolanızı ister ve kilidi yalnızca karıştırma için açar. Gönderim için yine parola gerekir.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Yedekler:&lt;/b&gt; Her turda en fazla 9 yeni adres kullanılır. %1 için otomatik cüzdan yedeklemenin açık olması gerekir. Bu ayar varsayılan olarak açıktır.&lt;/li&gt;&lt;/ul&gt;</translation>
+        <source>Mixing these amounts starts at block %1.</source>
+        <translation>Bu tutarlardaki koinlerin karıştırılması %1 numaralı blokta başlar.</translation>
+    </message>
+    <message>
+        <source>The block at which mixing these amounts starts is not set in this version yet.</source>
+        <translation>Bu sürümde bu tutarlardaki koinlerin hangi blokta karıştırılmaya başlanacağı henüz belirlenmedi.</translation>
+    </message>
+    <message>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; coins of exactly a standard amount, or of one of the larger amounts below, do not earn staking rewards, whether they are mixed or not, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed in the standard amounts.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;%1 hakkında temel bilgiler&lt;/h3&gt;&lt;p&gt;%1, DFCN’nizin kaynağının izlenmesini çok daha zor hale getirir. Koinlerinizi ortak işlemlerde diğer DeFCoN kullanıcılarının koinleriyle karıştırır. Koinleriniz cüzdanınızdan hiç çıkmaz ve onları yalnızca siz harcayabilirsiniz.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Nasıl çalışır?&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Cüzdanınız bakiyenizin bir kısmını 0.001, 0.01, 0.1, 1 ve 10 DFCN’den biraz yüksek standart tutarlara böler. Örneğin 10.0001 DFCN. Herkes aynı tutarları kullandığından koinler birbirine benzer.&lt;/li&gt;&lt;li&gt;Bu tutarlardan biri için cüzdanınız bir ana düğümde bekleyen karıştırma oturumuna katılır veya rastgele seçilen bir ana düğümden yeni bir oturum başlatmasını ister.&lt;/li&gt;&lt;li&gt;En az %2 katılımcı katıldığında ana düğüm, koinlerini tek bir işlemde birleştirir. Her cüzdan yalnızca kendi bölümünü denetleyip imzalar ve aynı tutarları kendisine ait yeni adreslere geri alır.&lt;/li&gt;&lt;li&gt;Tamamlanan her oturum bir turdur. Cüzdanınız bunu birkaç kez tekrarlar. Seçenekler… bölümünde Karıştırma Turları ve Hedef bakiye ayarlarını değiştirebilirsiniz.&lt;/li&gt;&lt;li&gt;Cüzdan açıkken karıştırma arka planda çalışır. %1 bakiyenizden gönderim yaptığınızda koinleriniz zaten karıştırılmıştır.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Bilmeniz gerekenler&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; Değeri standart tutarlardan birine veya aşağıdaki daha büyük tutarlardan birine tam olarak eşit olan koinler, karıştırılmış olsun ya da olmasın, staking ödülü kazanmaz. Staking bu koinleri veya karıştırma teminatlarını diğer koinlerinizle hiçbir zaman birleştirmez. Seçenekler… bölümündeki Hedef bakiye ayarı, bakiyenizin yaklaşık ne kadarının standart tutarlarda karıştırılacağını belirler.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Ücretler:&lt;/b&gt; Karıştırma işlemleri ücretsizdir. Standart tutarları oluştururken normal, düşük bir ağ ücreti ödenir. Kötüye kullanımı önlemek için zaman zaman yaklaşık 0.0001 DFCN’lik küçük bir teminat ağa ödenir.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Gizlilik:&lt;/b&gt; Oturumu yürüten ana düğüm hangi koinlerin katıldığını görür. Diğer katılımcıların farklı kişiler olması garanti değildir. Daha fazla tur, koinlerinizin izlenmesini zorlaştırır. Çok sayıda karıştırılmış koini tek ödemede birlikte göndermek aralarında yeniden bağ kurulmasına yol açabilir.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Şifreli cüzdan:&lt;/b&gt; Karıştırmayı başlattığınızda cüzdan kilitliyse parolanızı ister ve kilidi yalnızca karıştırma için açar. Gönderim için yine parola gerekir.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Yedekler:&lt;/b&gt; Her turda en fazla 9 yeni adres kullanılır. %1 için otomatik cüzdan yedeklemenin açık olması gerekir. Bu ayar varsayılan olarak açıktır.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;Larger amounts&lt;/b&gt;&lt;p&gt;For larger sums there are three more amounts: 100.001, 1000.01 and 10000.1 DFCN. Your wallet mixes coins of these amounts, but it does not make them. You make them with one normal payment to yourself. Use this recipe only in a wallet whose receiving and change addresses are its own spendable P2PKH addresses, as they are by default: a wallet that was given other active descriptors may not recognise the coins it pays to itself.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Create a new receiving address for each coin you want, and one more.&lt;/li&gt;&lt;li&gt;On the Send page, add a recipient for each of these addresses. Pay exactly 100.001, 1000.01 or 10000.1 DFCN to each coin's address and 0.01 DFCN to the last one, with "Subtract fee from amount" switched off for every recipient.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 From then on, while mixing is switched on, your wallet mixes every coin of these amounts that it holds on such an address, whatever the target balance is. To keep a coin out, lock it before you start mixing: enable the coin control features in Options, then use Inputs… on the Send page.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts. If your wallet has no ordinary, unmixed balance left for them, mixing these amounts can wait.&lt;/li&gt;&lt;li&gt;A normal payment can spend these coins like any other coin, mixed or not. Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself. While mixing is running, choose coins that are not of a standard or a larger amount, and neither lock nor spend a coin of these amounts that is waiting to be mixed until its session has ended: a session that loses its coin can cost a collateral.&lt;/li&gt;&lt;li&gt;A session needs other wallets that mix the same amount at the same time, so a larger amount can wait longer for its rounds.&lt;/li&gt;&lt;/ul&gt;</source>
+        <extracomment>%1 is the sentence about the block at which mixing the larger amounts starts; it is translated on its own.</extracomment>
+        <translation>&lt;hr&gt;&lt;b&gt;Daha büyük tutarlar&lt;/b&gt;&lt;p&gt;Daha yüksek meblağlar için üç tutar daha vardır: 100.001, 1000.01 ve 10000.1 DFCN. Cüzdanınız bu tutarlardaki koinleri karıştırır, ancak bunları kendisi oluşturmaz. Kendinize tek bir normal ödeme yaparak bunları siz oluşturursunuz. Varsayılan ayarlarda alım ve para üstü adresleri, cüzdanın kendisine ait ve harcama yapabildiği P2PKH adresleridir. Bu yöntemi yalnızca bu koşulu sağlayan cüzdanlarda kullanın. Başka etkin tanımlayıcılar verilmiş bir cüzdan, kendisine gönderdiği koinleri tanımayabilir.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;İstediğiniz her koin için yeni bir alım adresi oluşturun, ardından bir alım adresi daha oluşturun.&lt;/li&gt;&lt;li&gt;Gönder sayfasında bu adreslerin her biri için bir alıcı ekleyin. Her alıcı için “Ücreti tutardan düş” seçeneği kapalıyken her koinin adresine tam olarak 100.001, 1000.01 veya 10000.1 DFCN, son adrese de 0.01 DFCN ödeyin.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 O andan itibaren karıştırma açık olduğu sürece cüzdanınız, hedef bakiye ne olursa olsun, böyle bir adreste tuttuğu bu tutarlardaki her koini karıştırır. Bir koini karıştırma dışında tutmak için karıştırmayı başlatmadan önce o koini kilitleyin. Bunun için Seçenekler… bölümünde “Koin kontrolü özelliklerini etkinleştir” seçeneğini açın, ardından Gönder sayfasındaki Girdiler… düğmesini kullanın.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Bu 0.01 DFCN, bu tutarlardaki koinlerin karıştırma teminatları için kullanılan normal paradır. Cüzdanınızda bu teminatlar için normal, karıştırılmamış bakiye kalmazsa bu tutarlardaki koinlerin karıştırılması gecikebilir.&lt;/li&gt;&lt;li&gt;Karıştırılmış olsun ya da olmasın, bu koinler de diğer koinler gibi normal bir ödemede harcanabilir. Saklamak istediklerinizi karıştırmayı başlatmadan önce kilitleyin veya ödemede harcanacak koinleri kendiniz seçin. Karıştırma sürerken değeri standart tutarlardan veya daha büyük tutarlardan herhangi birine eşit olmayan koinleri seçin. Bu tutarlarda olup karıştırılmayı bekleyen bir koini oturumu sona erene kadar ne kilitleyin ne de harcayın. Koinini kaybeden bir oturum size bir teminata mal olabilir.&lt;/li&gt;&lt;li&gt;Bir oturum için aynı tutarı aynı anda karıştıran başka cüzdanlar gerekir. Bu nedenle daha büyük tutardaki bir koin, karıştırma turları için daha uzun süre bekleyebilir.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;How much to mix&lt;/b&gt;&lt;p&gt;The standard amounts are at most about 10 DFCN, so on their own they suit smaller sums. The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more, and a payment can hold only so many coins: one payment from coins of the standard amounts can be at most about 6,700 DFCN. For more, use the larger amounts.&lt;/p&gt;&lt;p&gt;A payment from your %1 balance has no change. The mixed coins have to add up to the amount you send; what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default. With coins of the larger amounts, switch off "Subtract fee from amount" for every recipient and send a little less than the coins add up to: the difference is the fee, so it has to cover the normal network fee and stay within the wallet's fee limit. Or keep coins of the standard amounts to make up the rest.&lt;/p&gt;</source>
+        <translation>&lt;hr&gt;&lt;b&gt;Ne kadar karıştırmalı?&lt;/b&gt;&lt;p&gt;Standart tutarlar en fazla yaklaşık 10 DFCN olduğundan tek başlarına daha küçük meblağlara uygundur. Seçenekler… bölümündeki Hedef bakiye ayarı 10 000 DFCN’ye kadar çıkar. Bu bile en az bin karıştırılmış koin demektir. Tek bir ödemede kullanılabilecek koin sayısı sınırlı olduğundan standart tutarlardaki koinlerle tek seferde en fazla yaklaşık 6 700 DFCN ödenebilir. Daha fazlası için daha büyük tutarları kullanın.&lt;/p&gt;&lt;p&gt;%1 bakiyenizden yaptığınız ödemelerde para üstü çıkmaz. Karıştırılmış koinlerin toplamı göndereceğiniz miktarı karşılamalıdır. Geriye kalan kısım ücrete gider ve ücret varsayılan olarak en fazla 0.1 DFCN olabilir. Daha büyük tutarlardaki koinlerle ödeme yaparken her alıcı için “Ücreti tutardan düş” seçeneğini kapatın ve koinlerin toplamından biraz daha az gönderin. Aradaki fark ücrettir. Bu fark normal ağ ücretini karşılamalı ve cüzdanın ücret sınırını aşmamalıdır. Ya da kalan kısmı tamamlamak için elinizde standart tutarlarda koin bulundurun.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2638,6 +2659,10 @@ Yalnızca liste kaydı kaldırılır. Adres cüzdana aktarılmışsa cüzdan adr
         <translation>Kısmen imzalanmış işlem (ikili)</translation>
     </message>
     <message>
+        <source>Could not write file %1.</source>
+        <translation>%1 dosyasına yazılamadı.</translation>
+    </message>
+    <message>
         <source>PSBT saved to %1.</source>
         <translation>PSBT %1 dosyasına kaydedildi.</translation>
     </message>
@@ -2999,12 +3024,12 @@ Yalnızca liste kaydı kaldırılır. Adres cüzdana aktarılmışsa cüzdan adr
         <translation>Karıştırma Turları</translation>
     </message>
     <message>
-        <source>This amount acts as a threshold to turn off mixing once it's reached.</source>
-        <translation>Bu tutara ulaşıldığında karıştırma durur.</translation>
-    </message>
-    <message>
         <source>Target balance</source>
         <translation>Hedef bakiye</translation>
+    </message>
+    <message>
+        <source>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins. Coins of 100.001, 1000.01 and 10000.1 DFCN are mixed apart from this target.</source>
+        <translation>En fazla 10 000 DFCN. Standart tutarlar en fazla yaklaşık 10 DFCN olduğundan daha yüksek bir hedef, bakiyenizi binlerce koine böler. 100.001, 1000.01 ve 10000.1 DFCN değerindeki koinler bu hedeften bağımsız olarak karıştırılır.</translation>
     </message>
     <message>
         <source>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</source>
@@ -3119,6 +3144,10 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Enabling pruning significantly reduces the disk space required to store transactions. All blocks are still fully validated. Reverting this setting requires re-downloading the entire blockchain.</source>
         <translation>Budamayı etkinleştirmek, işlemleri saklamak için gereken disk alanını önemli ölçüde azaltır. Yine de tüm bloklar eksiksiz doğrulanır. Bu ayarı geri almak için tüm blok zincirinin yeniden indirilmesi gerekir.</translation>
+    </message>
+    <message>
+        <source>This amount acts as a threshold to turn off mixing of the standard amounts once it's reached.</source>
+        <translation>Bu tutara ulaşıldığında standart tutarlardaki koinlerin karıştırılması durur.</translation>
     </message>
     <message>
         <source>Map port using &amp;UPnP</source>
@@ -3592,14 +3621,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Kapalı</translation>
     </message>
     <message>
-        <source>The node's staking thread is not running. See debug.log.</source>
-        <translation>Düğümün staking iş parçacığı çalışmıyor. debug.log dosyasına bakın.</translation>
-    </message>
-    <message>
-        <source>This node runs without staking (-staking=0).</source>
-        <translation>Bu düğümde staking kapalı (-staking=0).</translation>
-    </message>
-    <message>
         <source>Paused: wallet locked</source>
         <translation>Duraklatıldı: cüzdan kilitli</translation>
     </message>
@@ -3646,6 +3667,22 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
         <translation>Henüz olgunlaşmamış veya yeterince eski olmayan, en küçük staking tutarının altındaki veya en büyüğünün üzerindeki koinler ile tam olarak ana düğüm teminatına eşit koinler staking dışında kalır.</translation>
+    </message>
+    <message>
+        <source>Staking stopped and will retry soon. If it stays off, restart the wallet.</source>
+        <translation>Staking durdu. Kısa süre sonra yeniden denenecek. Kapalı kalırsa cüzdanı yeniden başlatın.</translation>
+    </message>
+    <message>
+        <source>The staking thread is not running. The debug log file has the reason.</source>
+        <translation>Staking iş parçacığı çalışmıyor. Nedenini hata ayıklama günlük dosyasında bulabilirsiniz.</translation>
+    </message>
+    <message>
+        <source>Staking is turned off in the startup settings. To stake, turn it on and restart.</source>
+        <translation>Başlangıç ayarlarında staking kapalı. Staking yapmak için bu ayarı açıp cüzdanı yeniden başlatın.</translation>
+    </message>
+    <message>
+        <source>The wallet was started with -staking=0, in its configuration file or on its command line.</source>
+        <translation>Cüzdan, yapılandırma dosyasında veya komut satırında -staking=0 belirtilerek başlatıldı.</translation>
     </message>
     <message numerus="yes">
         <source>%n Rounds</source>
@@ -3818,6 +3855,10 @@ https://app.transifex.com/defcon/defcon/</translation>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Kısmen imzalanmış işlem (ikili)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>%1 dosyasına yazılamadı.</translation>
     </message>
     <message>
         <source>PSBT saved to disk.</source>
@@ -5691,9 +5732,26 @@ Bu konsolun kullanımı hakkında daha fazla bilgi için %6 yazın.
         <translation>Alıcı listesini incelemek için “Ayrıntıları göster…” düğmesine tıklayın</translation>
     </message>
     <message>
+        <source>Unsigned Transaction</source>
+        <comment>PSBT copied</comment>
+        <translation>İmzasız işlem</translation>
+    </message>
+    <message>
+        <source>The PSBT has been copied to the clipboard. You can also save it.</source>
+        <translation>PSBT panoya kopyalandı. Ayrıca kaydedebilirsiniz.</translation>
+    </message>
+    <message>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Kısmen imzalanmış işlem (ikili)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>%1 dosyasına yazılamadı.</translation>
+    </message>
+    <message>
+        <source>PSBT saved to disk.</source>
+        <translation>PSBT diske kaydedildi.</translation>
     </message>
     <message>
         <source>Send DeFCoN</source>
@@ -6583,6 +6641,10 @@ Bu konsolun kullanımı hakkında daha fazla bilgi için %6 yazın.
         <translation>(mevcut değil)</translation>
     </message>
     <message>
+        <source>Watch-only address</source>
+        <translation>Yalnızca izlenen adres</translation>
+    </message>
+    <message>
         <source>(no label)</source>
         <translation>(etiket yok)</translation>
     </message>
@@ -6676,10 +6738,6 @@ Bu konsolun kullanımı hakkında daha fazla bilgi için %6 yazın.
     <message>
         <source>To yourself</source>
         <translation>Kendinize</translation>
-    </message>
-    <message>
-        <source>Mined</source>
-        <translation>Madenden çıkarılan</translation>
     </message>
     <message>
         <source>Platform Transfer</source>
@@ -6846,6 +6904,18 @@ Bu konsolun kullanımı hakkında daha fazla bilgi için %6 yazın.
         <source>Show only transactions of at least this amount</source>
         <translation>Yalnızca en az bu tutardaki işlemleri göster</translation>
     </message>
+    <message>
+        <source>All addresses</source>
+        <translation>Tüm adresler</translation>
+    </message>
+    <message>
+        <source>Spendable only</source>
+        <translation>Yalnızca harcanabilir adresler</translation>
+    </message>
+    <message>
+        <source>Show only transactions of these addresses</source>
+        <translation>Yalnızca bu adreslere ait işlemleri göster</translation>
+    </message>
 </context>
 <context>
     <name>TxViewDelegate</name>
@@ -6961,6 +7031,10 @@ Cüzdan yüklemek için Dosya &gt; Cüzdan aç yolunu izleyin.
         <translation>Seçilen tutar:</translation>
     </message>
     <message>
+        <source>Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason.</source>
+        <translation>Bu cüzdan için staking başlatılamadı. Lütfen bir dakika sonra yeniden deneyin. Yine başlamazsa nedenini hata ayıklama günlük dosyasında bulabilirsiniz.</translation>
+    </message>
+    <message>
         <source>Wallet Data</source>
         <extracomment>Name of the wallet data file format.</extracomment>
         <translation>Cüzdan verileri</translation>
@@ -7012,10 +7086,6 @@ Cüzdan yüklemek için Dosya &gt; Cüzdan aç yolunu izleyin.
     <message>
         <source>Staking</source>
         <translation>Staking</translation>
-    </message>
-    <message>
-        <source>Staking could not be started for this wallet. See debug.log for details.</source>
-        <translation>Bu cüzdan için staking başlatılamadı. Ayrıntılar için debug.log dosyasına bakın.</translation>
     </message>
     <message>
         <source>Backup Failed</source>
@@ -7371,6 +7441,10 @@ Cüzdan yüklemek için Dosya &gt; Cüzdan aç yolunu izleyin.
     <message>
         <source>Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments.</source>
         <translation>Ağ sürümü metninin toplam uzunluğu (%i) en büyük uzunluğu (%i) aşıyor. Kullanıcı aracısı açıklamalarının sayısını veya uzunluğunu azaltın.</translation>
+    </message>
+    <message>
+        <source>Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.</source>
+        <translation>İşlem için BLS para üstü adresi gerekiyor. Özel anahtarı olmayan bir cüzdan bu adresi oluşturamaz. Bir para üstü adresi seçin.</translation>
     </message>
     <message>
         <source>Transaction needs a change address, but we can't generate it. Please call keypoolrefill first.</source>

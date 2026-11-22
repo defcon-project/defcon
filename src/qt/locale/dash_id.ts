@@ -1466,16 +1466,20 @@
 <context>
     <name>EmptyStateWidget</name>
     <message>
-        <source>Loading…</source>
-        <translation>Memuat…</translation>
-    </message>
-    <message>
         <source>No matching results</source>
         <translation>Tidak ada hasil yang cocok</translation>
     </message>
     <message>
+        <source>Waiting for synchronization</source>
+        <translation>Menunggu sinkronisasi</translation>
+    </message>
+    <message>
         <source>Try a different search or clear your filters.</source>
         <translation>Coba pencarian lain atau hapus filter Anda.</translation>
+    </message>
+    <message>
+        <source>Your transactions will appear here as the wallet catches up with the network.</source>
+        <translation>Transaksi Anda akan muncul di sini seiring berlangsungnya sinkronisasi dompet dengan jaringan.</translation>
     </message>
     <message>
         <source>Clear filters</source>
@@ -1551,8 +1555,25 @@
         <translation>Informasi %1</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;Dasar-dasar %1&lt;/h3&gt;&lt;p&gt;%1 membuat asal DFCN Anda jauh lebih sulit dilacak. Koin Anda dicampur dengan koin pengguna DeFCoN lain dalam transaksi bersama. Koin Anda tidak pernah keluar dari dompet Anda dan hanya Anda yang dapat membelanjakannya.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Cara kerja&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Dompet memecah sebagian saldo Anda menjadi pecahan standar yang nilainya sedikit lebih besar dari 0,001, 0,01, 0,1, 1, dan 10 DFCN, misalnya 10,0001 DFCN. Semua orang menggunakan pecahan yang sama sehingga koin-koin itu tampak serupa.&lt;/li&gt;&lt;li&gt;Untuk salah satu pecahan ini, dompet bergabung dengan sesi pencampuran yang sedang menunggu peserta pada suatu masternode atau meminta masternode yang dipilih secara acak untuk memulai sesi baru.&lt;/li&gt;&lt;li&gt;Setelah setidaknya %2 peserta bergabung, masternode menggabungkan koin mereka dalam satu transaksi. Setiap dompet memeriksa dan menandatangani bagiannya sendiri saja, lalu menerima kembali pecahan yang sama di alamat barunya sendiri.&lt;/li&gt;&lt;li&gt;Setiap sesi yang selesai dihitung sebagai satu putaran. Dompet mengulanginya beberapa kali. Anda dapat mengatur jumlah putaran dan target saldo di Opsi.&lt;/li&gt;&lt;li&gt;Pencampuran berjalan di latar belakang selama dompet terbuka. Saat Anda mengirim dari saldo %1, koin Anda sudah tercampur.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Hal yang perlu diketahui&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; di jaringan utama, nilai koin hasil pencampuran lebih kecil dari jumlah minimum untuk staking sehingga koin tersebut tidak menghasilkan imbalan staking. Staking tidak pernah menggabungkan koin tersebut maupun jaminan pencampuran dengan koin Anda yang lain. Target saldo di Opsi menentukan perkiraan jumlah yang dicampur.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Biaya:&lt;/b&gt; transaksi pencampuran gratis. Pembuatan pecahan standar dikenai biaya jaringan kecil seperti biasa. Sesekali sejumlah kecil jaminan, sekitar 0,0001 DFCN, dibayarkan ke jaringan untuk mencegah penyalahgunaan.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privasi:&lt;/b&gt; masternode yang menjalankan sesi dapat melihat koin yang ikut serta, dan peserta lain belum tentu orang yang berbeda. Semakin banyak putaran, semakin sulit koin Anda dilacak. Mengirim banyak koin hasil pencampuran sekaligus dalam satu pembayaran dapat mengaitkan koin-koin itu kembali.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Dompet terenkripsi:&lt;/b&gt; jika dompet terkunci saat Anda memulai pencampuran, dompet akan meminta frasa sandi dan membuka kuncinya hanya untuk pencampuran. Pengiriman tetap memerlukan frasa sandi.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Cadangan:&lt;/b&gt; setiap putaran menggunakan hingga 9 alamat baru. %1 memerlukan pencadangan dompet otomatis. Fitur ini aktif secara bawaan.&lt;/li&gt;&lt;/ul&gt;</translation>
+        <source>Mixing these amounts starts at block %1.</source>
+        <translation>Pencampuran pecahan ini dimulai pada blok %1.</translation>
+    </message>
+    <message>
+        <source>The block at which mixing these amounts starts is not set in this version yet.</source>
+        <translation>Dalam versi ini, blok awal untuk pencampuran pecahan ini belum ditetapkan.</translation>
+    </message>
+    <message>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; coins of exactly a standard amount, or of one of the larger amounts below, do not earn staking rewards, whether they are mixed or not, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed in the standard amounts.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;Dasar-dasar %1&lt;/h3&gt;&lt;p&gt;%1 membuat asal DFCN Anda jauh lebih sulit dilacak. Koin Anda dicampur dengan koin pengguna DeFCoN lain dalam transaksi bersama. Koin Anda tidak pernah keluar dari dompet Anda dan hanya Anda yang dapat membelanjakannya.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Cara kerja&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Dompet memecah sebagian saldo Anda menjadi pecahan standar yang nilainya sedikit lebih besar dari 0.001, 0.01, 0.1, 1, dan 10 DFCN, misalnya 10.0001 DFCN. Semua orang menggunakan pecahan yang sama sehingga koin-koin itu tampak serupa.&lt;/li&gt;&lt;li&gt;Untuk salah satu pecahan ini, dompet bergabung dengan sesi pencampuran yang sedang menunggu peserta pada suatu masternode atau meminta masternode yang dipilih secara acak untuk memulai sesi baru.&lt;/li&gt;&lt;li&gt;Setelah setidaknya %2 peserta bergabung, masternode menggabungkan koin mereka dalam satu transaksi. Setiap dompet memeriksa dan menandatangani bagiannya sendiri saja, lalu menerima kembali pecahan yang sama di alamat barunya sendiri.&lt;/li&gt;&lt;li&gt;Setiap sesi yang selesai dihitung sebagai satu putaran. Dompet mengulanginya beberapa kali. Di Opsi…, Anda dapat mengatur Putaran pencampuran dan Target saldo.&lt;/li&gt;&lt;li&gt;Pencampuran berjalan di latar belakang selama dompet terbuka. Saat Anda mengirim dari saldo %1, koin Anda sudah tercampur.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Hal yang perlu diketahui&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; koin yang nilainya tepat sama dengan salah satu pecahan standar atau salah satu pecahan yang lebih besar di bawah ini tidak menghasilkan imbalan staking, baik sudah dicampur maupun belum. Staking tidak pernah menggabungkan koin tersebut maupun jaminan pencampuran dengan koin Anda yang lain. Pengaturan Target saldo di Opsi… menentukan perkiraan jumlah yang dicampur dalam pecahan standar.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Biaya:&lt;/b&gt; transaksi pencampuran gratis. Pembuatan pecahan standar dikenai biaya jaringan kecil seperti biasa. Sesekali sejumlah kecil jaminan, sekitar 0.0001 DFCN, dibayarkan ke jaringan untuk mencegah penyalahgunaan.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privasi:&lt;/b&gt; masternode yang menjalankan sesi dapat melihat koin yang ikut serta, dan peserta lain belum tentu orang yang berbeda. Semakin banyak putaran, semakin sulit koin Anda dilacak. Mengirim banyak koin hasil pencampuran sekaligus dalam satu pembayaran dapat mengaitkan koin-koin itu kembali.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Dompet terenkripsi:&lt;/b&gt; jika dompet terkunci saat Anda memulai pencampuran, dompet akan meminta frasa sandi dan membuka kuncinya hanya untuk pencampuran. Pengiriman tetap memerlukan frasa sandi.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Cadangan:&lt;/b&gt; setiap putaran menggunakan hingga 9 alamat baru. %1 memerlukan pencadangan dompet otomatis. Fitur ini aktif secara bawaan.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;Larger amounts&lt;/b&gt;&lt;p&gt;For larger sums there are three more amounts: 100.001, 1000.01 and 10000.1 DFCN. Your wallet mixes coins of these amounts, but it does not make them. You make them with one normal payment to yourself. Use this recipe only in a wallet whose receiving and change addresses are its own spendable P2PKH addresses, as they are by default: a wallet that was given other active descriptors may not recognise the coins it pays to itself.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Create a new receiving address for each coin you want, and one more.&lt;/li&gt;&lt;li&gt;On the Send page, add a recipient for each of these addresses. Pay exactly 100.001, 1000.01 or 10000.1 DFCN to each coin's address and 0.01 DFCN to the last one, with "Subtract fee from amount" switched off for every recipient.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 From then on, while mixing is switched on, your wallet mixes every coin of these amounts that it holds on such an address, whatever the target balance is. To keep a coin out, lock it before you start mixing: enable the coin control features in Options, then use Inputs… on the Send page.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts. If your wallet has no ordinary, unmixed balance left for them, mixing these amounts can wait.&lt;/li&gt;&lt;li&gt;A normal payment can spend these coins like any other coin, mixed or not. Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself. While mixing is running, choose coins that are not of a standard or a larger amount, and neither lock nor spend a coin of these amounts that is waiting to be mixed until its session has ended: a session that loses its coin can cost a collateral.&lt;/li&gt;&lt;li&gt;A session needs other wallets that mix the same amount at the same time, so a larger amount can wait longer for its rounds.&lt;/li&gt;&lt;/ul&gt;</source>
+        <extracomment>%1 is the sentence about the block at which mixing the larger amounts starts; it is translated on its own.</extracomment>
+        <translation>&lt;hr&gt;&lt;b&gt;Pecahan yang lebih besar&lt;/b&gt;&lt;p&gt;Untuk jumlah yang lebih besar, tersedia tiga pecahan tambahan, yaitu 100.001, 1000.01, dan 10000.1 DFCN. Dompet Anda mencampur koin dengan pecahan tersebut, tetapi tidak membuatnya. Untuk membuatnya, lakukan satu pembayaran biasa kepada diri sendiri. Ikuti langkah-langkah ini hanya jika alamat penerimaan dan alamat kembalian dompet Anda adalah alamat P2PKH milik dompet itu sendiri dan dompet dapat membelanjakan koin dari alamat tersebut, seperti pada pengaturan bawaan. Dompet yang diberi deskriptor aktif lain mungkin tidak mengenali koin yang dikirimnya ke alamatnya sendiri.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Buat satu alamat penerimaan baru untuk setiap koin yang Anda inginkan, lalu buat satu alamat penerimaan tambahan.&lt;/li&gt;&lt;li&gt;Di halaman Kirim, tambahkan satu penerima untuk setiap alamat tersebut. Nonaktifkan "Potong biaya dari jumlah pembayaran" untuk setiap penerima. Kirim tepat 100.001, 1000.01, atau 10000.1 DFCN ke alamat masing-masing koin dan 0.01 DFCN ke alamat terakhir.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 Sejak saat itu, selama pencampuran aktif, dompet Anda mencampur setiap koin dengan salah satu pecahan tersebut yang disimpannya di alamat seperti itu, berapa pun target saldonya. Agar suatu koin tidak ikut dicampur, kunci koin itu sebelum Anda memulai pencampuran. Untuk menguncinya, pilih Aktifkan fitur kontrol koin di Opsi…, lalu gunakan Masukan… di halaman Kirim.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Dana sebesar 0.01 DFCN itu adalah dana biasa untuk jaminan pencampuran pecahan tersebut. Jika dompet Anda tidak lagi memiliki saldo biasa yang belum dicampur untuk jaminan itu, pencampuran pecahan tersebut mungkin harus menunggu.&lt;/li&gt;&lt;li&gt;Dalam pembayaran biasa, koin tersebut dapat dibelanjakan seperti koin lainnya, baik sudah dicampur maupun belum. Kunci koin yang ingin Anda simpan sebelum memulai pencampuran, atau pilih sendiri koin yang akan digunakan untuk pembayaran. Selama pencampuran berlangsung, pilih koin yang nilainya tidak sama dengan pecahan standar maupun pecahan yang lebih besar. Jika koin dengan salah satu pecahan tersebut sedang menunggu untuk dicampur, jangan mengunci atau membelanjakannya sampai sesinya berakhir. Jika koin itu tidak lagi tersedia untuk sesi tersebut, Anda bisa kehilangan jaminan.&lt;/li&gt;&lt;li&gt;Sebuah sesi memerlukan dompet lain yang mencampur pecahan yang sama pada saat yang sama. Karena itu, koin dengan pecahan yang lebih besar mungkin harus menunggu lebih lama untuk menjalani putaran pencampuran.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;How much to mix&lt;/b&gt;&lt;p&gt;The standard amounts are at most about 10 DFCN, so on their own they suit smaller sums. The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more, and a payment can hold only so many coins: one payment from coins of the standard amounts can be at most about 6,700 DFCN. For more, use the larger amounts.&lt;/p&gt;&lt;p&gt;A payment from your %1 balance has no change. The mixed coins have to add up to the amount you send; what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default. With coins of the larger amounts, switch off "Subtract fee from amount" for every recipient and send a little less than the coins add up to: the difference is the fee, so it has to cover the normal network fee and stay within the wallet's fee limit. Or keep coins of the standard amounts to make up the rest.&lt;/p&gt;</source>
+        <translation>&lt;hr&gt;&lt;b&gt;Berapa banyak yang perlu dicampur?&lt;/b&gt;&lt;p&gt;Nilai pecahan standar paling tinggi sekitar 10 DFCN. Jika digunakan tanpa pecahan lain, pecahan standar cocok untuk jumlah yang lebih kecil. Di Opsi…, Target saldo dapat diatur hingga 10 000 DFCN. Jumlah itu saja sudah setara dengan seribu koin hasil pencampuran atau lebih. Jumlah koin dalam satu pembayaran terbatas, sehingga nilai satu pembayaran dengan koin pecahan standar paling tinggi sekitar 6 700 DFCN. Untuk membayar lebih dari itu, gunakan pecahan yang lebih besar.&lt;/p&gt;&lt;p&gt;Pembayaran dari saldo %1 Anda tidak menghasilkan kembalian. Total nilai koin yang sudah dicampur harus mencukupi jumlah yang Anda kirim. Sisanya menjadi biaya, yang secara bawaan tidak boleh melebihi 0.1 DFCN. Jika menggunakan koin dengan pecahan yang lebih besar, nonaktifkan "Potong biaya dari jumlah pembayaran" untuk setiap penerima dan kirim sedikit kurang dari total nilai koin. Selisihnya menjadi biaya, jadi selisih tersebut harus cukup untuk membayar biaya jaringan biasa dan tidak boleh melebihi batas biaya dompet. Anda juga dapat menyimpan koin pecahan standar untuk melengkapi jumlah yang diperlukan.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2638,6 +2659,10 @@ Hanya entri daftar yang dihapus. Jika alamat telah diimpor ke dompet, alamat ter
         <translation>Transaksi yang ditandatangani sebagian (biner)</translation>
     </message>
     <message>
+        <source>Could not write file %1.</source>
+        <translation>Gagal menulis berkas %1.</translation>
+    </message>
+    <message>
         <source>PSBT saved to %1.</source>
         <translation>PSBT disimpan ke %1.</translation>
     </message>
@@ -2999,12 +3024,12 @@ Hanya entri daftar yang dihapus. Jika alamat telah diimpor ke dompet, alamat ter
         <translation>Putaran pencampuran</translation>
     </message>
     <message>
-        <source>This amount acts as a threshold to turn off mixing once it's reached.</source>
-        <translation>Pencampuran berhenti ketika saldo yang sudah dicampur mencapai jumlah ini.</translation>
-    </message>
-    <message>
         <source>Target balance</source>
         <translation>Target saldo</translation>
+    </message>
+    <message>
+        <source>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins. Coins of 100.001, 1000.01 and 10000.1 DFCN are mixed apart from this target.</source>
+        <translation>Maksimum 10 000 DFCN. Nilai pecahan standar paling tinggi sekitar 10 DFCN sehingga target yang lebih tinggi akan memecah saldo Anda menjadi ribuan koin. Koin dengan pecahan yang lebih besar (100.001, 1000.01, dan 10000.1 DFCN) dicampur terlepas dari target ini.</translation>
     </message>
     <message>
         <source>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</source>
@@ -3119,6 +3144,10 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Enabling pruning significantly reduces the disk space required to store transactions. All blocks are still fully validated. Reverting this setting requires re-downloading the entire blockchain.</source>
         <translation>Pemangkasan secara signifikan mengurangi ruang disk yang diperlukan untuk menyimpan transaksi. Semua blok tetap divalidasi sepenuhnya. Mengembalikan pengaturan ini memerlukan pengunduhan ulang seluruh blockchain.</translation>
+    </message>
+    <message>
+        <source>This amount acts as a threshold to turn off mixing of the standard amounts once it's reached.</source>
+        <translation>Pencampuran pecahan standar berhenti ketika jumlah yang sudah dicampur dalam pecahan tersebut mencapai jumlah ini.</translation>
     </message>
     <message>
         <source>Map port using &amp;UPnP</source>
@@ -3592,14 +3621,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Nonaktif</translation>
     </message>
     <message>
-        <source>The node's staking thread is not running. See debug.log.</source>
-        <translation>Utas staking simpul tidak berjalan. Lihat debug.log.</translation>
-    </message>
-    <message>
-        <source>This node runs without staking (-staking=0).</source>
-        <translation>Simpul ini berjalan tanpa staking (-staking=0).</translation>
-    </message>
-    <message>
         <source>Paused: wallet locked</source>
         <translation>Dijeda: dompet terkunci</translation>
     </message>
@@ -3646,6 +3667,22 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
         <translation>Koin tidak diikutsertakan jika belum matang atau terlalu muda, nilainya di bawah batas minimum atau di atas batas maksimum staking, atau nilainya sama persis dengan jaminan masternode.</translation>
+    </message>
+    <message>
+        <source>Staking stopped and will retry soon. If it stays off, restart the wallet.</source>
+        <translation>Staking terhenti. Dompet akan segera mencoba lagi. Jika staking tetap tidak berjalan, mulai ulang dompet.</translation>
+    </message>
+    <message>
+        <source>The staking thread is not running. The debug log file has the reason.</source>
+        <translation>Utas staking tidak berjalan. Penyebabnya tercatat dalam berkas log debug.</translation>
+    </message>
+    <message>
+        <source>Staking is turned off in the startup settings. To stake, turn it on and restart.</source>
+        <translation>Staking dinonaktifkan dalam pengaturan yang berlaku saat dompet dimulai. Untuk melakukan staking, aktifkan fitur ini lalu mulai ulang dompet.</translation>
+    </message>
+    <message>
+        <source>The wallet was started with -staking=0, in its configuration file or on its command line.</source>
+        <translation>Dompet dijalankan dengan -staking=0 yang ditetapkan dalam berkas konfigurasi atau pada baris perintah.</translation>
     </message>
     <message numerus="yes">
         <source>%n Rounds</source>
@@ -3818,6 +3855,10 @@ https://app.transifex.com/defcon/defcon/</translation>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Transaksi yang ditandatangani sebagian (biner)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>Gagal menulis berkas %1.</translation>
     </message>
     <message>
         <source>PSBT saved to disk.</source>
@@ -5691,9 +5732,26 @@ Untuk informasi lebih lanjut tentang penggunaan konsol ini, ketik %6.
         <translation>Untuk memeriksa daftar penerima, klik "Tampilkan perincian…"</translation>
     </message>
     <message>
+        <source>Unsigned Transaction</source>
+        <comment>PSBT copied</comment>
+        <translation>Transaksi tanpa tanda tangan</translation>
+    </message>
+    <message>
+        <source>The PSBT has been copied to the clipboard. You can also save it.</source>
+        <translation>PSBT telah disalin ke papan klip. Anda juga dapat menyimpannya.</translation>
+    </message>
+    <message>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Transaksi yang ditandatangani sebagian (biner)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>Gagal menulis berkas %1.</translation>
+    </message>
+    <message>
+        <source>PSBT saved to disk.</source>
+        <translation>PSBT disimpan ke disk.</translation>
     </message>
     <message>
         <source>Send DeFCoN</source>
@@ -6583,6 +6641,10 @@ Untuk informasi lebih lanjut tentang penggunaan konsol ini, ketik %6.
         <translation>(tidak tersedia)</translation>
     </message>
     <message>
+        <source>Watch-only address</source>
+        <translation>Alamat khusus pantau</translation>
+    </message>
+    <message>
         <source>(no label)</source>
         <translation>(tanpa label)</translation>
     </message>
@@ -6676,10 +6738,6 @@ Untuk informasi lebih lanjut tentang penggunaan konsol ini, ketik %6.
     <message>
         <source>To yourself</source>
         <translation>Ke diri sendiri</translation>
-    </message>
-    <message>
-        <source>Mined</source>
-        <translation>Hasil penambangan</translation>
     </message>
     <message>
         <source>Platform Transfer</source>
@@ -6846,6 +6904,18 @@ Untuk informasi lebih lanjut tentang penggunaan konsol ini, ketik %6.
         <source>Show only transactions of at least this amount</source>
         <translation>Tampilkan hanya transaksi dengan jumlah sekurang-kurangnya sebesar ini</translation>
     </message>
+    <message>
+        <source>All addresses</source>
+        <translation>Semua alamat</translation>
+    </message>
+    <message>
+        <source>Spendable only</source>
+        <translation>Hanya yang dapat dibelanjakan</translation>
+    </message>
+    <message>
+        <source>Show only transactions of these addresses</source>
+        <translation>Tampilkan hanya transaksi yang melibatkan alamat-alamat ini</translation>
+    </message>
 </context>
 <context>
     <name>TxViewDelegate</name>
@@ -6961,6 +7031,10 @@ Pilih Berkas &gt; Buka dompet untuk memuat dompet.
         <translation>Jumlah yang dipilih:</translation>
     </message>
     <message>
+        <source>Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason.</source>
+        <translation>Gagal memulai staking untuk dompet ini. Coba lagi dalam satu menit. Jika staking masih belum berjalan, lihat penyebabnya dalam berkas log debug.</translation>
+    </message>
+    <message>
         <source>Wallet Data</source>
         <extracomment>Name of the wallet data file format.</extracomment>
         <translation>Data dompet</translation>
@@ -7012,10 +7086,6 @@ Pilih Berkas &gt; Buka dompet untuk memuat dompet.
     <message>
         <source>Staking</source>
         <translation>Staking</translation>
-    </message>
-    <message>
-        <source>Staking could not be started for this wallet. See debug.log for details.</source>
-        <translation>Gagal memulai staking untuk dompet ini. Lihat debug.log untuk perincian.</translation>
     </message>
     <message>
         <source>Backup Failed</source>
@@ -7371,6 +7441,10 @@ Pilih Berkas &gt; Buka dompet untuk memuat dompet.
     <message>
         <source>Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments.</source>
         <translation>Panjang total string versi jaringan (%i) melebihi panjang maksimum (%i). Kurangi jumlah atau ukuran uacomments.</translation>
+    </message>
+    <message>
+        <source>Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.</source>
+        <translation>Transaksi memerlukan alamat kembalian BLS. Dompet tanpa kunci privat tidak dapat membuat alamat tersebut. Pilih alamat kembalian.</translation>
     </message>
     <message>
         <source>Transaction needs a change address, but we can't generate it. Please call keypoolrefill first.</source>
