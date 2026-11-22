@@ -9,7 +9,7 @@ funds, so its old path stops at "Not enough funds to mix.". From U each makes it
 the first starts a bit-5 queue at the masternode it names, which opens a session for bit 32; the second joins that
 queue at the same masternode, which takes it into the same session; with mocktime past the queue time the masternode
 starts the session, and both mix: one transaction, the two candidates in and two outputs of 100.001 DFCN out, mined,
-and each wallet's new coin counts one round where the candidate counted none.
+and each wallet's new coin counts one round where the candidate counted none, also once the wallet is reopened.
 
 The DSTX by protocol version (CJ4-B2d1): two peers of the mixing masternode, one at 70243 and one at 70242 (what
 v23.0.0 advertises). The 70243 peer is offered the mix as a DSTX and gets it; the 70242 peer is offered neither the
@@ -201,12 +201,15 @@ class P2PCoinJoinDfcnMixTest(DashTestFramework):
         assert old_peer.is_connected and new_peer.is_connected
         self.generate(controller, 1)
 
-        self.log.info("Each wallet's new coin counts one round")
-        for wallet in wallets:
+        self.log.info("Each wallet's new coin counts one round, also with the wallet reopened (unloadwallet, loadwallet)")
+        for client, wallet in zip(clients, wallets):
             new = [u for u in wallet.listunspent(1) if u["txid"] == mix["txid"]]
             assert_equal(len(new), 1)
             assert_equal(Decimal(str(new[0]["amount"])), CANDIDATE)
             assert_equal(new[0]["coinjoin_rounds"], 1)
+            wallet.unloadwallet()
+            client.loadwallet("mixer")
+            assert_equal([u for u in wallet.listunspent(1) if u["txid"] == mix["txid"]], new)
 
 
 if __name__ == '__main__':
