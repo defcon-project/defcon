@@ -23,6 +23,7 @@ from test_framework.util import (
     assert_raises_rpc_error,
     force_finish_mnsync,
 )
+from test_framework.wallet_util import get_generate_key
 
 # See coinjoin/options.h
 COINJOIN_ROUNDS_DEFAULT = 4
@@ -242,8 +243,8 @@ class CoinJoinTest(BitcoinTestFramework):
         def script_of(addr):
             return w3.getaddressinfo(addr)['scriptPubKey']
 
-        def mix(own_txid, own_vout):
-            foreign = w4.getnewaddress()
+        def mix(own_txid, own_vout, foreign=None):
+            foreign = foreign or w4.getnewaddress()
             foreign_txid = w4.sendtoaddress(foreign, amount)
             self.generate(node, 1, sync_fun=self.no_op)
             foreign_vout = next(u['vout'] for u in w4.listunspent(1, 9999999, [foreign]) if u['txid'] == foreign_txid)
@@ -259,12 +260,30 @@ class CoinJoinTest(BitcoinTestFramework):
             tx = w3.decoderawtransaction(signed['hex'])
             return tx['txid'], next(o['n'] for o in tx['vout'] if o['scriptPubKey']['hex'] == script_of(own_to))
 
+        # The other party's coin in the last mix is paid to a key the test holds, imported into w4 without a rescan,
+        # so that w3 can import it later in either wallet type (a descriptor wallet has no dumpprivkey).
+        other_key = get_generate_key()
+        w4.importprivkey(other_key.privkey, '', False)
+        history = [txid]  # the incoming payment, then each mix
         for r in range(1, 6):
-            txid, vout = mix(txid, vout)
+            txid, vout = mix(txid, vout, other_key.p2pkh_addr if r == 5 else None)
+            history.append(txid)
             assert_equal(entry(txid, vout)['coinjoin_rounds'], r)
         assert_equal(types_of(txid, vout), [0, 1])  # fully mixed: neither ready to mix nor an ordinary coin
         assert_equal(w3.getbalances()['mine']['coinjoin'], amount)
         assert_equal(w3.getwalletinfo()['coinjoin_balance'], amount)
+
+        self.log.info('Reopened (unloadwallet, loadwallet), w3 reads the last mix, its round count and the mixed balance as before')
+
+        def read():
+            mix_tx = w3.gettransaction(txid)
+            return (entry(txid, vout)['coinjoin_rounds'], types_of(txid, vout), w3.getbalances()['mine'],
+                    w3.getwalletinfo()['coinjoin_balance'], mix_tx['amount'], mix_tx['details'])
+        before = read()
+        assert_equal(before[0], 5)
+        w3.unloadwallet()
+        node.loadwallet('w3')
+        assert_equal(read(), before)
 
         self.log.info('The salt guard with the fully mixed coin, w3\'s only DFCN-scale coin; generate\'s own guard comes first')
         assert_raises_rpc_error(-4, 'Wallet "w3" has CoinJoin balance, cannot continue!', w3.coinjoinsalt, 'set', salt)
@@ -276,6 +295,82 @@ class CoinJoinTest(BitcoinTestFramework):
         node.loadwallet('w3')
         w3 = node.get_wallet_rpc('w3')
         assert_equal(w3.coinjoinsalt('set', uint256_to_string(random.getrandbits(256))), True)
+
+        # The history changes below make the coin no longer fully mixed, so they run after the salt guard's checks on
+        # the fully mixed coin, CoinJoin enabled again (and the rounds setting, which a restart resets).
+        self.restart_node(0, extra_args=self.extra_args[0])
+        node.loadwallet('w3')
+        w3 = node.get_wallet_rpc('w3')
+        w3.setcoinjoinrounds(COINJOIN_ROUNDS_MIN)
+
+        self.log.info('The last mix\'s history changed (note § 9.3): its ancestors removed, imported again from the '
+                      'parent back, then the other party\'s key of its input imported; each time the figures change as '
+                      'expected, and a reopened wallet reads them as the live one')
+        # The whole own history before the last mix: the incoming payment and the four earlier mixes. All of it goes,
+        # so that no removal leaves an own output its removed spender used to spend (such an output reads unspent
+        # again, which a live wallet's setWalletUTXO does not learn until it is reopened: a follow-up of the note's
+        # § 8, as in v23.0.0).
+        ancestors = []
+        for ancestor in history[:-1]:
+            ancestor_tx = w3.gettransaction(ancestor)
+            ancestors.append((ancestor, ancestor_tx['hex'], node.gettxoutproof([ancestor], ancestor_tx['blockhash'])))
+
+        def figures():
+            # the last mix's own output: its round count and coin types; the mixed balance, both ways
+            return (entry(txid, vout)['coinjoin_rounds'], types_of(txid, vout), w3.getbalances()['mine']['coinjoin'],
+                    w3.getwalletinfo()['coinjoin_balance'])
+
+        def debit():
+            # the last mix's own debit as gettransaction gives it (its fee is the outputs less the own debit when an
+            # input is the wallet's, and absent otherwise), with the transaction's details
+            mix_tx = w3.gettransaction(txid)
+            outputs = sum(Decimal(str(o['value'])) for o in w3.decoderawtransaction(mix_tx['hex'])['vout'])
+            return (outputs - mix_tx['fee'] if 'fee' in mix_tx else 0), mix_tx['details']
+
+        def reopen():
+            w3.unloadwallet()
+            node.loadwallet('w3')
+
+        fully_mixed = figures()
+        assert_equal(fully_mixed, (5, [0, 1], amount, amount))
+        mixed_debit = debit()
+        assert_equal(mixed_debit[0], amount)  # the own input only
+
+        self.log.info('removeprunedfunds of the ancestors: the last mix has no own input, so it is no mix: no debit, 0 '
+                      'rounds, ready to mix, nothing mixed')
+        for ancestor, _, _ in ancestors:
+            w3.removeprunedfunds(ancestor)
+        removed = (figures(), debit())
+        assert_equal(removed[0], (0, [0, 2], 0, 0))
+        assert_equal(removed[1][0], 0)
+        reopen()
+        assert_equal((figures(), debit()), removed)
+
+        self.log.info('importprunedfunds of the ancestors, the parent first: each one known adds one round, five again '
+                      'with the incoming payment, fully mixed, live and reopened')
+        for rounds, (_, ancestor_hex, proof) in enumerate(reversed(ancestors), start=1):
+            w3.importprunedfunds(ancestor_hex, proof)
+            # the round count sums the debit from each transaction itself: the history known so far, from the end
+            assert_equal(entry(txid, vout)['coinjoin_rounds'], rounds)
+        assert_equal(figures(), fully_mixed)
+        # gettransaction's debit is cached: a wallet keeps a transaction's cached debit when its parent arrives later
+        # (AddToWallet breaks the new transaction's caches, not its children's; v23.0.0 alike, utemterv2 F33). Live it
+        # is the value read with the ancestors removed or the right one, nothing else; reopened it is the right one.
+        live_debit = debit()
+        assert live_debit in (removed[1], mixed_debit), "the live debit after the imports is %r" % (live_debit,)
+        reopen()
+        assert_equal(figures(), fully_mixed)
+        assert_equal(debit(), mixed_debit)
+
+        self.log.info('The other party\'s key of the last mix\'s input imported, with a rescan: both inputs are w3\'s, one '
+                      'output is not, so its own debit (both inputs) exceeds its own credit and it is no mix: 0 rounds, '
+                      'nothing mixed')
+        w3.importprivkey(other_key.privkey, '', True)
+        imported = (figures(), debit())
+        assert_equal(imported[0], (0, [0, 2], 0, 0))
+        assert_equal(imported[1][0], 2 * amount)
+        reopen()
+        assert_equal((figures(), debit()), imported)
         w3.unloadwallet()
 
 if __name__ == '__main__':
