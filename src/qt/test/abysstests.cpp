@@ -43,6 +43,7 @@
 #include <qt/starfieldwidget.h>
 #include <qt/qrimagewidget.h>
 #include <qt/qrdialog.h>
+#include <qt/qvalidatedlineedit.h>
 #include <qt/qvaluecombobox.h>
 #include <qt/transactionfilterproxy.h>
 #include <qt/transactionrecord.h>
@@ -7883,6 +7884,48 @@ void AbyssTests::focusScrollsIntoView()
                  qPrintable(wholly(entered, "from the window's controls, Tab")));
         qInfo().noquote() << "FOCUS_VISIBLE" << (stacked ? "stacked" : "side by side") << "entered from" << outside->metaObject()->className()
                           << outside->objectName() << "at" << entered->metaObject()->className() << entered->objectName();
+        // A failed check on Send brings the recipient it stops at into view
+        // through both scroll areas (#516 Astra r4 R5; paymentPages checks a
+        // standalone Send dialog, with no page scroll area around it). The
+        // last recipient's address is wrong, the others are right, and the
+        // scroll areas start where that field is out of view. After the click
+        // the field is marked and wholly on show; the focus stays on Send, as
+        // it always did.
+        {
+            const QString payee = QString::fromStdString(EncodeDestination(PKHash(fixture.chain.coinbaseKey.GetPubKey())));
+            for (SendCoinsEntry* entry : entries) {
+                entry->setAddress(entry == entries.last() ? QStringLiteral("not an address") : payee);
+                entry->setAmount(COIN);
+            }
+            auto* bad_address = qobject_cast<QValidatedLineEdit*>(entries.last()->addressField());
+            QVERIFY(bad_address && send_button->isEnabled());
+            // Counted by a typed connection (a QSignalSpy warns about the
+            // unregistered uint256; Astra r1, R3).
+            int sent = 0;
+            const QMetaObject::Connection counting = QObject::connect(send, &SendCoinsDialog::coinsSent, send, [&sent] { ++sent; });
+            const auto stop_counting = interfaces::MakeHandler([&counting] { QObject::disconnect(counting); });
+            int clicks = 0;
+            for (const bool page_at_end : {false, true}) {
+                send_button->setFocus(Qt::OtherFocusReason);
+                scroll->verticalScrollBar()->setValue(page_at_end ? scroll->verticalScrollBar()->maximum() : 0);
+                fields->verticalScrollBar()->setValue(0);
+                Settle();
+                const char* where = page_at_end ? "Send, the page scrolled to its end" : "Send, the page at its top";
+                if (bad_address->visibleRegion() == QRegion(bad_address->rect())) {
+                    qInfo().noquote() << "FOCUS_VISIBLE" << (stacked ? "stacked" : "side by side") << where << ": the field is in view already";
+                    continue;
+                }
+                send_button->click(); Settle();
+                ++clicks;
+                QVERIFY2(sent == 0 && !bad_address->isValid() && QApplication::focusWidget() == send_button &&
+                             bad_address->visibleRegion() == QRegion(bad_address->rect()),
+                         qPrintable(wholly(bad_address, where) + QString("; sent %1, marked %2, focus on %3").arg(sent).arg(!bad_address->isValid())
+                                                                     .arg(QApplication::focusWidget() ? QApplication::focusWidget()->objectName() : "nothing")));
+            }
+            QVERIFY2(clicks > 0, stacked ? "stacked: the field was in view from both starts" : "side by side: the field was in view from both starts");
+            for (SendCoinsEntry* entry : entries) entry->clear();
+            Settle();
+        }
         if (stacked) continue;
         // A click on a button only partly in the recipients' view, with the
         // focus outside them: nothing moves while the button is down, so the
@@ -7956,6 +7999,48 @@ void AbyssTests::overviewBreakpoint()
     for (QTimer* tick : staking_icon->findChildren<QTimer*>(QString(), Qt::FindDirectChildrenOnly)) tick->stop();
     window.setStakingStatus(); Settle();
     qInfo("OVERVIEW_BREAKPOINT_STAKING before the first tick: %s; after it: %s", qPrintable(staking_before), qPrintable(staking_said()));
+    // The network bar holds still too. The client model's poll redraws it
+    // every MODEL_UPDATE_DELAY from the node's state as it is then (synced or
+    // not, the progress, the counts, the tip's age off the clock), and what
+    // the bar needs on one line counts for the breakpoint (U11-D/1b): a
+    // redraw between a measure and the resize after it can move the figure
+    // (QT-T1's one failure at the font step). The page lets its model go and
+    // is fed one state, as in overviewLeastWidth.
+    auto* network = overview->findChild<QFrame*>("networkCard");
+    auto* network_block = network ? network->findChild<QWidget*>("networkBlock") : nullptr;
+    auto* network_age = network ? network->findChild<QWidget*>("networkAge") : nullptr;
+    auto* tip_value = network_block ? network_block->findChild<QLabel*>("networkValue") : nullptr;
+    auto* age_text = network_age ? network_age->findChild<QLabel*>("networkText") : nullptr;
+    QVERIFY(tip_value && age_text);
+    // Every word on show, for the failure messages (QT-T1 Astra r1 R3); the
+    // masternode and mempool words follow the room, the tip and its age the
+    // state alone.
+    const auto bar_words = [&] {
+        QStringList words;
+        for (auto* label : network->findChildren<QLabel*>()) {
+            if (label->isVisible() && !label->text().isEmpty()) words << label->text();
+        }
+        return words.join(' ');
+    };
+    // A QString, not the QStringBuilder of its temporaries (QT_USE_QSTRINGBUILDER).
+    const auto held = [&]() -> QString { return tip_value->text() + ", " + age_text->text(); };
+    overview->setClientModel(nullptr);
+    OverviewPage::NetworkStatus fed;
+    fed.chain_synced = fed.data_synced = fed.chain_locked = true;
+    fed.height = 165577;
+    fed.block_age = 60;
+    fed.peers = 8;
+    fed.masternodes = 120;
+    fed.mempool = 3;
+    overview->setNetworkStatus(fed);
+    // The labels take the state at once: read before any queued event comes
+    // round (Astra r1, R1).
+    const QString fed_held = held();
+    // A poll after the page let its model go leaves the bar as fed; one is
+    // made here rather than waited for.
+    QVERIFY(QMetaObject::invokeMethod(fixture.client.get(), "mempoolSizeChanged", Qt::DirectConnection, Q_ARG(long, 7), Q_ARG(size_t, 0)));
+    Settle();
+    QVERIFY2(held() == fed_held, qPrintable(QString("after a poll: bar \"%1\", fed \"%2\"").arg(held(), fed_held)));
     // Tall enough that no vertical scroll bar takes from the viewport's width,
     // stacked or not: the breakpoint is read off the viewport.
     constexpr int tall{2000};
@@ -7988,7 +8073,7 @@ void AbyssTests::overviewBreakpoint()
             .arg(scroll->horizontalScrollBar()->maximum()).arg(scroll->verticalScrollBar()->maximum())
             .arg(cards->x()).arg(cards->y()).arg(cards->width()).arg(cards->height())
             .arg(recent->x()).arg(recent->y()).arg(recent->width()).arg(recent->height()) +
-            QString(" list minimum %1").arg(transactions->minimumHeight());
+            QString(" list minimum %1 bar %2 \"%3\"").arg(transactions->minimumHeight()).arg(network->width()).arg(bar_words());
     };
     // The page's rows and the left column's cards, each as tall as it stands
     // and its minimum, and the staking card's state.
@@ -8145,6 +8230,10 @@ void AbyssTests::overviewBreakpoint()
     Theme("Abyss"); Settle();
     window.resize(least); Settle();
     QVERIFY2(stacked(), qPrintable(state()));
+
+    // The bar still shows the state it was fed: the model's poll, had the
+    // page kept it, would have redrawn it long before this.
+    QVERIFY2(held() == fed_held, qPrintable(QString("bar \"%1\", fed \"%2\"").arg(held(), fed_held)));
 
     // The breakpoint is what the columns measure, not the form's 960 px: with
     // a larger font they need more, and the row turns a pixel under that.
@@ -13067,8 +13156,13 @@ void AbyssTests::receiveFits()
         // With room to spare: the native trial at 175% (U2) had the history line
         // 20 pixels short with the form open, where this platform measured 36 to
         // spare -- so the native page has some 56 less, and 60 is asked for here.
+        // On a native platform the page itself is measured, and the line only
+        // has to fit (natively at DPR 2 and 1.75 it has 46 to spare; QT-T2).
+        const bool virtual_platform = QGuiApplication::platformName() == QLatin1String("minimal") ||
+                                      QGuiApplication::platformName() == QLatin1String("offscreen");
+        const int wanted = virtual_platform ? 60 : 0;
         const int spare = scroll->viewport()->height() - (scroll->widget() ? scroll->widget()->minimumSizeHint().height() : 0);
-        if (spare < 60) found << QString("%1: only %2 px to spare under the history line").arg(at).arg(spare);
+        if (spare < wanted) found << QString("%1: only %2 px to spare under the history line").arg(at).arg(spare);
         for (QWidget* part : {static_cast<QWidget*>(card), static_cast<QWidget*>(create), static_cast<QWidget*>(none), static_cast<QWidget*>(history)}) {
             const QRect inside = OnPage(*receive, part);
             if (!receive->rect().contains(inside) || part->visibleRegion() != QRegion(part->rect())) {
