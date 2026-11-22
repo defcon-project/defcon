@@ -1180,12 +1180,15 @@ void SendCoinsDialog::ensureRecipientVisible(SendCoinsEntry* entry, bool validat
         QApplication::sendEvent(m_modern_scroll, &request);
         QWidget* target = validation ? entry->validationTarget() : entry->addressField();
         recipientScrollArea()->ensureWidgetVisible(target);
-        // Stacked, the fields do not scroll on their own: the page does. A
-        // hidden page has no room in the wallet's scroll area yet (that is
-        // another page's): it does so when shown (showEvent).
+        // Then the page's scroll area, as followFocus does: stacked, the
+        // fields do not scroll on their own and the page does; side by side,
+        // in a short window the recipients' own view may stand partly out of
+        // the page's. A hidden page has no room in the wallet's scroll area
+        // yet (that is another page's): stacked, it does so when shown
+        // (showEvent).
         if (!isVisible()) {
             m_show_target = target;
-        } else if (m_body_stacked && m_page_area) {
+        } else if (m_page_area) {
             ensureVisibleOnPage(target);
         }
     } else {
