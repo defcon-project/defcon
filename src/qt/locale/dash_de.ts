@@ -95,7 +95,7 @@
     </message>
     <message>
         <source>Show address &amp;QR code</source>
-        <translation>Adresse und QR-Code anzeigen</translation>
+        <translation>Adresse und &amp;QR-Code anzeigen</translation>
     </message>
     <message>
         <source>No saved addresses</source>
@@ -502,7 +502,7 @@
     </message>
     <message>
         <source>&amp;About %1</source>
-        <translation>Über %1</translation>
+        <translation>Ü&amp;ber %1</translation>
     </message>
     <message>
         <source>Modify configuration options for %1</source>
@@ -4092,19 +4092,19 @@ Da die Unterstützung eingestellt wurde, sollten Sie den Händler bitten, Ihnen 
     </message>
     <message>
         <source>Error: Specified font-family invalid. Valid values: %1.</source>
-        <translation>Fehler: Die angegebene Schriftfamilie ist ungültig. Gültige Werte: %1.</translation>
+        <translation>Fehler: Der angegebene Wert für font-family ist ungültig. Gültige Werte: %1.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-normal invalid. Valid range %1 to %2.</source>
-        <translation>Fehler: Angegebenes Schriftgewicht-normal ungültig. Gültiger Bereich %1 bis %2.</translation>
+        <translation>Fehler: Der angegebene Wert für font-weight-normal ist ungültig. Gültiger Bereich %1 bis %2.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-bold invalid. Valid range %1 to %2.</source>
-        <translation>Fehler: Angegebenes Schriftgewicht-fett ungültig. Gültiger Bereich %1 bis %2.</translation>
+        <translation>Fehler: Der angegebene Wert für font-weight-bold ist ungültig. Gültiger Bereich %1 bis %2.</translation>
     </message>
     <message>
         <source>Error: Specified font-scale invalid. Valid range %1 to %2.</source>
-        <translation>Fehler: Angegebener Schriftgrad ungültig. Gültiger Bereich %1 bis %2.</translation>
+        <translation>Fehler: Der angegebene Wert für font-scale ist ungültig. Gültiger Bereich %1 bis %2.</translation>
     </message>
     <message>
         <source>Error: Invalid -custom-css-dir path.</source>
@@ -5604,7 +5604,7 @@ Für mehr Information, wie diese Konsole zu nutzen ist, %6 tippen.
     </message>
     <message>
         <source> from wallet '%1'</source>
-        <translation>von Wallet '%1'</translation>
+        <translation> von Wallet '%1'</translation>
     </message>
     <message>
         <source>%1 to '%2'</source>
@@ -7446,7 +7446,7 @@ Gehen Sie zu "Datei" &gt; "Wallet öffnen" um Wallet zu laden
     </message>
     <message>
         <source>Error: Keypool ran out, please call keypoolrefill first</source>
-        <translation>Fehler: keypool aufgebraucht, bitte zuerst keypoorefill aufrufen</translation>
+        <translation>Fehler: keypool aufgebraucht, bitte zuerst keypoolrefill aufrufen</translation>
     </message>
     <message>
         <source>Error: No addresses available.</source>
@@ -7958,7 +7958,7 @@ Gehen Sie zu "Datei" &gt; "Wallet öffnen" um Wallet zu laden
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>Input vs. Output Größenunterschied</translation>
+        <translation>Die Anzahl der Inputs und Outputs stimmt nicht überein.</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>

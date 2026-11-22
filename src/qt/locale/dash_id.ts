@@ -7958,7 +7958,7 @@ Pilih Berkas &gt; Buka dompet untuk memuat dompet.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>Ukuran masukan dan keluaran tidak cocok.</translation>
+        <translation>Jumlah masukan dan keluaran tidak cocok.</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>

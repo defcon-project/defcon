@@ -4092,19 +4092,19 @@ Due to discontinued support, you should request the merchant to provide you with
     </message>
     <message>
         <source>Error: Specified font-family invalid. Valid values: %1.</source>
-        <translation>エラー：指定されたフォントファミリが無効です。有効値：%1。</translation>
+        <translation>エラー：指定された font-family の値が無効です。有効値：%1。</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-normal invalid. Valid range %1 to %2.</source>
-        <translation>エラー：指定された文字の太さ（通常）は無効です。有効範囲は、%1～%2です。</translation>
+        <translation>エラー：指定された font-weight-normal の値が無効です。有効範囲は、%1～%2です。</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-bold invalid. Valid range %1 to %2.</source>
-        <translation>エラー：指定された文字の太さ（太字）は無効です。有効範囲は、%1～%2です。</translation>
+        <translation>エラー：指定された font-weight-bold の値が無効です。有効範囲は、%1～%2です。</translation>
     </message>
     <message>
         <source>Error: Specified font-scale invalid. Valid range %1 to %2.</source>
-        <translation>エラー：指定された文字の大きさは無効です。有効範囲は、%1～%2です。</translation>
+        <translation>エラー：指定された font-scale の値が無効です。有効範囲は、%1～%2です。</translation>
     </message>
     <message>
         <source>Error: Invalid -custom-css-dir path.</source>
@@ -7502,7 +7502,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>Invalid masternodeblsprivkey. Please see documentation.</source>
-        <translation>マスターノードBLS秘密鍵が無効です。ドキュメントをお読み下さい。</translation>
+        <translation>masternodeblsprivkey が無効です。ドキュメントをお読み下さい。</translation>
     </message>
     <message>
         <source>Masternode queue is full.</source>
@@ -7958,7 +7958,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>インプットとアウトプットのサイズがミスマッチです。</translation>
+        <translation>インプットとアウトプットの数が一致しません。</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>

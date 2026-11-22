@@ -4092,7 +4092,7 @@ A causa dell'interruzione del supporto, dovresti richiedere al commerciante di f
     </message>
     <message>
         <source>Error: Specified font-family invalid. Valid values: %1.</source>
-        <translation>Errore: La famiglia di caratteri specificata non è valida. Valori validi: %1.</translation>
+        <translation>Errore: il valore specificato per font-family non è valido. Valori validi: %1.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-normal invalid. Valid range %1 to %2.</source>
@@ -4100,11 +4100,11 @@ A causa dell'interruzione del supporto, dovresti richiedere al commerciante di f
     </message>
     <message>
         <source>Error: Specified font-weight-bold invalid. Valid range %1 to %2.</source>
-        <translation>Errore: il valore del carattere specificato in grassetto non è valido. Intervallo valido da %1 a %2.</translation>
+        <translation>Errore: il valore specificato per font-weight-bold non è valido. Intervallo valido da %1 a %2.</translation>
     </message>
     <message>
         <source>Error: Specified font-scale invalid. Valid range %1 to %2.</source>
-        <translation>Errore: scala dei caratteri specificata non valida. Intervallo valido da %1 a %2.</translation>
+        <translation>Errore: il valore specificato per font-scale non è valido. Intervallo valido da %1 a %2.</translation>
     </message>
     <message>
         <source>Error: Invalid -custom-css-dir path.</source>
@@ -7958,7 +7958,7 @@ Vai su File &gt; Apri portafoglio per caricarne uno.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>Le dimensioni degli input e degli output non corrispondono.</translation>
+        <translation>Il numero di input non corrisponde al numero di output.</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>

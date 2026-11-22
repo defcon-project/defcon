@@ -4092,19 +4092,19 @@ Poproś sprzedawcę o URI zgodny z BIP21 lub użyj portfela, który nadal obsłu
     </message>
     <message>
         <source>Error: Specified font-family invalid. Valid values: %1.</source>
-        <translation>Błąd: Wybrana rodzina czcionki jest nieważna. Właściwe wartości wynoszą: %1</translation>
+        <translation>Błąd: Podana wartość font-family jest nieprawidłowa. Prawidłowe wartości: %1.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-normal invalid. Valid range %1 to %2.</source>
-        <translation>Błąd: Wybrana waga normalnej czcionki jest nieważna. Właściwy przedział wynosi od: %1 do %2.</translation>
+        <translation>Błąd: Podana wartość font-weight-normal jest nieprawidłowa. Prawidłowy zakres: od %1 do %2.</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-bold invalid. Valid range %1 to %2.</source>
-        <translation>Błąd: Wybrana waga pogrubionej czcionki jest nieważna. Właściwy przedział wynosi od: %1 do %2.</translation>
+        <translation>Błąd: Podana wartość font-weight-bold jest nieprawidłowa. Prawidłowy zakres: od %1 do %2.</translation>
     </message>
     <message>
         <source>Error: Specified font-scale invalid. Valid range %1 to %2.</source>
-        <translation>Błąd: Wybrana skala czcionki jest nieważna. Właściwy przedział wynosi od %1 do %2</translation>
+        <translation>Błąd: Podana wartość font-scale jest nieprawidłowa. Prawidłowy zakres: od %1 do %2.</translation>
     </message>
     <message>
         <source>Error: Invalid -custom-css-dir path.</source>
@@ -7958,7 +7958,7 @@ Przejdź do Plik &gt; Otwórz portfel, aby załadować portfel.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>Niezgodność wielkości wejść i wyjść.</translation>
+        <translation>Liczba wejść nie zgadza się z liczbą wyjść.</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>

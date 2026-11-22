@@ -2578,7 +2578,7 @@ Only the list entry is removed. If the address was imported into the wallet it r
     </message>
     <message>
         <source>(%1 of %2 inputs already finalized)</source>
-        <translation>（已有 %1/%2 个输入已最终确定）</translation>
+        <translation>（%1/%2 个输入已最终确定）</translation>
     </message>
     <message>
         <source>Missing: %1</source>
@@ -4092,19 +4092,19 @@ Due to discontinued support, you should request the merchant to provide you with
     </message>
     <message>
         <source>Error: Specified font-family invalid. Valid values: %1.</source>
-        <translation>错误: 指定的字体系列无效. 有效值: %1.</translation>
+        <translation>错误：指定的 font-family 值无效。有效值：%1。</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-normal invalid. Valid range %1 to %2.</source>
-        <translation>错误: 指定的字体粗细正常无效. 有效范围 %1 到%2.</translation>
+        <translation>错误：指定的 font-weight-normal 值无效。有效范围为 %1 到 %2。</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-bold invalid. Valid range %1 to %2.</source>
-        <translation>错误: 指定的字体粗体无效. 有效范围 %1 到 %2.</translation>
+        <translation>错误：指定的 font-weight-bold 值无效。有效范围为 %1 到 %2。</translation>
     </message>
     <message>
         <source>Error: Specified font-scale invalid. Valid range %1 to %2.</source>
-        <translation>错误: 指定的字体大小无效. 有效范围%1 至 %2.</translation>
+        <translation>错误：指定的 font-scale 值无效。有效范围为 %1 到 %2。</translation>
     </message>
     <message>
         <source>Error: Invalid -custom-css-dir path.</source>
@@ -7958,7 +7958,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>输入对输出大小不匹配.</translation>
+        <translation>输入与输出的数量不匹配。</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>

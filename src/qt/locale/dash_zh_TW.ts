@@ -4092,7 +4092,7 @@ Due to discontinued support, you should request the merchant to provide you with
     </message>
     <message>
         <source>Error: Specified font-family invalid. Valid values: %1.</source>
-        <translation>錯誤: 指定的字體系列無效。 有效值: %1.</translation>
+        <translation>錯誤：指定的字體系列 font-family 無效。有效值：%1。</translation>
     </message>
     <message>
         <source>Error: Specified font-weight-normal invalid. Valid range %1 to %2.</source>
@@ -4104,7 +4104,7 @@ Due to discontinued support, you should request the merchant to provide you with
     </message>
     <message>
         <source>Error: Specified font-scale invalid. Valid range %1 to %2.</source>
-        <translation>錯誤: 指定的字體比例無效。 有效範圍 %1 到 %2。</translation>
+        <translation>錯誤：指定的字體比例 font-scale 無效。有效範圍為 %1 到 %2。</translation>
     </message>
     <message>
         <source>Error: Invalid -custom-css-dir path.</source>
@@ -7958,7 +7958,7 @@ Go to File &gt; Open Wallet to load a wallet.
     </message>
     <message>
         <source>Inputs vs outputs size mismatch.</source>
-        <translation>輸入與輸出大小不相符。</translation>
+        <translation>輸入與輸出的數量不相符。</translation>
     </message>
     <message>
         <source>Invalid '%s'. Allowed values: 128, 160, 192, 224, 256.</source>
