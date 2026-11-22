@@ -117,6 +117,7 @@
 40   tool_wallet.py                         # defcon-wallet: create, info, dump and createfromdump, salvage; both wallets
 40   feature_dsl_list_change.py             # the Sentinel tick speaks from the epoch base's list: a masternode registered or revoked mid-epoch (SF1-L)
 40   feature_masternode_connect_race.py     # a restarted masternode another node reached first: connect_nodes closes that connection, and its own one stays
+40   p2p_coinjoin_dfcn_bits.py              # from U two wallets whose old denominations differ (10.0001, 0.100001) still mix their common 100.001 through a masternode, each new coin one round, the old coins untouched
 39   wallet_import_rescan.py                # importaddress, importpubkey, importprivkey and importmulti, with and without rescan, and a key timestamp past the rescan window
 35   rpc_blockchain.py                      # the chain calls: chain info, transaction statistics, the UTXO set summary, headers, block verbosity, the hash rate
 35   wallet_staking_info_multiwallet.py     # getstakinginfo with seven wallets: each row stays its wallet's while the staking list is rebuilt; both wallets
