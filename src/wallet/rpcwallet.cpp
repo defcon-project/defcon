@@ -3752,6 +3752,7 @@ static RPCHelpMan listunspent()
     LOCK(pwallet->cs_wallet);
 
     const bool avoid_reuse = pwallet->IsWalletFlagSet(WALLET_FLAG_AVOID_REUSE);
+    DfcnScaleRoundsMemo dfcn_scale_memo; // CJ4: the listed DFCN-scale coins' histories are walked once for all of them
 
     for (const COutput& out : vecOutputs) {
         CTxDestination address;
@@ -3800,7 +3801,7 @@ static RPCHelpMan listunspent()
         }
         if (avoid_reuse) entry.pushKV("reused", reused);
         entry.pushKV("safe", out.fSafe);
-        entry.pushKV("coinjoin_rounds", pwallet->GetRealOutpointCoinJoinRounds(COutPoint(out.tx->GetHash(), out.i)));
+        entry.pushKV("coinjoin_rounds", pwallet->GetRealOutpointCoinJoinRounds(COutPoint(out.tx->GetHash(), out.i), 0, &dfcn_scale_memo));
         results.push_back(entry);
     }
 

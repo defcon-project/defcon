@@ -1517,6 +1517,119 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_rounds_and_balances, CTransactionBui
         CCoinJoinClientOptions::SetRounds(1);
     }
 
+    // F04: the round count's memo has one entry per transaction and budget, whichever output of the transaction is asked,
+    // and a caller that asks about many coins under one lock shares one memo among them, each coin with the answer it
+    // gets alone.
+    {
+        // Two own coins, one with a round behind it and one with none, mixed with a foreign coin: both own outputs read the
+        // fewest rounds among the own inputs plus one, and the second one asked adds nothing to the caller's memo.
+        const In one_round{mix_once(coin(new_key(true), amount), new_key(true))};
+        const In no_round{coin(new_key(true), amount)};
+        const CKey to_a{new_key(true)}, to_b{new_key(true)};
+        const CTransactionRef joint{spend({one_round, no_round, coin(new_key(false), amount)},
+                                          {CTxOut(amount, p2pkh(to_a)), CTxOut(amount, p2pkh(to_b)), CTxOut(amount, p2pkh(new_key(false)))}, true, acp)};
+        const COutPoint out_a{out_of(joint, p2pkh(to_a))}, out_b{out_of(joint, p2pkh(to_b))};
+        BOOST_CHECK_MESSAGE(rounds(out_a) == 1 && rounds(out_b) == 1, "a mix's own outputs read the fewest rounds among its own inputs plus one");
+        {
+            LOCK(wallet->cs_wallet);
+            DfcnScaleRoundsMemo memo;
+            BOOST_CHECK_EQUAL(wallet->GetRealOutpointCoinJoinRounds(out_a, 0, &memo), 1);
+            const size_t walked{memo.size()};
+            BOOST_CHECK_MESSAGE(walked > 0, "the caller's memo holds the walk");
+            BOOST_CHECK_EQUAL(wallet->GetRealOutpointCoinJoinRounds(out_b, 0, &memo), 1);
+            BOOST_CHECK_MESSAGE(memo.size() == walked, "a transaction's second output adds nothing to the walk");
+        }
+
+        // Twenty real mixes in a row (the other party's coin is carried along): the count stops at the cap of 19, and one
+        // memo shared by the last coin and its parent, which the last coin's walk reaches with a smaller budget, gives the
+        // parent the answer it gets alone.
+        In own{coin(new_key(true), amount)}, other{coin(new_key(false), amount)};
+        std::vector<COutPoint> line;
+        for (int r = 1; r <= 20; ++r) {
+            const CKey own_to{new_key(true)}, other_to{new_key(false)};
+            const CTransactionRef tx{spend({own, other}, {CTxOut(amount, p2pkh(own_to)), CTxOut(amount, p2pkh(other_to))}, true, acp)};
+            own = In{out_of(tx, p2pkh(own_to)), tx, own_to};
+            other = In{out_of(tx, p2pkh(other_to)), tx, other_to};
+            line.push_back(own.prevout);
+        }
+        BOOST_REQUIRE_EQUAL(MAX_COINJOIN_ROUNDS + CCoinJoinClientOptions::GetRandomRounds(), 19);
+        BOOST_CHECK_MESSAGE(rounds(line[17]) == 18 && rounds(line[18]) == 19 && rounds(line[19]) == 19, "the count stops at the cap");
+        {
+            LOCK(wallet->cs_wallet);
+            DfcnScaleRoundsMemo memo;
+            BOOST_CHECK_EQUAL(wallet->GetRealOutpointCoinJoinRounds(line[19], 0, &memo), 19);
+            BOOST_CHECK_MESSAGE(wallet->GetRealOutpointCoinJoinRounds(line[18], 0, &memo) == 19,
+                                "a walk shared with a deeper coin keeps each budget's answer apart");
+        }
+
+        // The balance's and the list's one walk: the fully mixed DFCN-scale coins are those each coin's own count names.
+        {
+            LOCK(wallet->cs_wallet);
+            std::vector<COutput> all, listed;
+            wallet->AvailableCoins(all);
+            std::set<COutPoint> expected, got;
+            CAmount expected_sum{0};
+            for (const auto& out : all) {
+                const CAmount value{out.tx->tx->vout[out.i].nValue};
+                const COutPoint outpoint{out.tx->GetHash(), static_cast<uint32_t>(out.i)};
+                if (!out.fSpendable || !CoinJoin::IsDfcnScaleDenomination(CoinJoin::AmountToDenomination(value)) || !wallet->IsFullyMixed(outpoint)) continue;
+                expected.insert(outpoint);
+                expected_sum += value;
+            }
+            BOOST_REQUIRE(expected.count(line[19]) && expected.count(chain.prevout) && expected.size() >= 3);
+            CCoinControl coin_control;
+            coin_control.nCoinType = CoinType::ONLY_FULLY_MIXED;
+            coin_control.m_dfcn_scale_only = true;
+            wallet->AvailableCoins(listed, &coin_control);
+            for (const auto& out : listed) {
+                if (out.fSpendable) got.emplace(out.tx->GetHash(), static_cast<uint32_t>(out.i));
+            }
+            CAmount dfcn_mixed{-1};
+            wallet->GetBalance(0, true, false, nullptr, &dfcn_mixed);
+            BOOST_CHECK_MESSAGE(got == expected && dfcn_mixed == expected_sum, "one walk for all coins gives each coin the answer it gets alone");
+        }
+
+        // The work itself, counted in the transactions a walk examines. The two deepest own coins and a foreign coin mixed
+        // once more: two fully mixed sibling outputs with one history. Asked one by one, each walks that history. Preset
+        // for a mixed-only payment that may take other inputs too (as FundTransaction asks), SelectCoins walks it once for
+        // both. And a balance examines as much the second time as the first: nothing of a walk is kept between queries.
+        const CKey to_c{new_key(true)}, to_d{new_key(true)};
+        const CTransactionRef deep{spend({chain, own, coin(new_key(false), amount)},
+                                         {CTxOut(amount, p2pkh(to_c)), CTxOut(amount, p2pkh(to_d)), CTxOut(amount, p2pkh(new_key(false)))}, true, acp)};
+        const COutPoint sib_a{out_of(deep, p2pkh(to_c))}, sib_b{out_of(deep, p2pkh(to_d))};
+        LOCK(wallet->cs_wallet);
+        uint64_t mark{DfcnScaleRoundsExaminedForTest()};
+        const auto examined = [&mark] { // the transactions examined since the last call
+            const uint64_t now{DfcnScaleRoundsExaminedForTest()}, since{now - mark};
+            mark = now;
+            return since;
+        };
+        BOOST_REQUIRE(wallet->IsFullyMixed(sib_a));
+        const uint64_t alone{examined()};
+        BOOST_REQUIRE(alone > 1);
+        BOOST_REQUIRE(wallet->IsFullyMixed(sib_b));
+        BOOST_CHECK_EQUAL(examined(), alone);
+        CCoinControl preset;
+        preset.UseCoinJoin(true);
+        preset.fAllowOtherInputs = true;
+        preset.Select(sib_a);
+        preset.Select(sib_b);
+        std::set<CInputCoin> selected;
+        CAmount selected_value{0};
+        CoinSelectionParams selection_params;
+        bool bnb_used{false};
+        const bool selected_ok{wallet->SelectCoins({}, amount, selected, selected_value, preset, selection_params, bnb_used)};
+        const uint64_t for_presets{examined()};
+        BOOST_CHECK(selected_ok && selected.size() == 2 && selected_value == 2 * amount);
+        BOOST_CHECK_MESSAGE(for_presets == alone, "the preset coins' common history is walked once");
+        CAmount sum_first{-1}, sum_again{-2};
+        wallet->GetBalance(0, true, false, nullptr, &sum_first);
+        const uint64_t first{examined()};
+        wallet->GetBalance(0, true, false, nullptr, &sum_again);
+        const uint64_t again{examined()};
+        BOOST_CHECK_MESSAGE(first > 0 && again == first && sum_again == sum_first, "nothing of a walk is kept for the next query");
+    }
+
     // With CoinJoin disabled the DFCN-scale sums are zero, as GetBalance's mixing fields are (the salt guards read both).
     CCoinJoinClientOptions::SetEnabled(false);
     {
