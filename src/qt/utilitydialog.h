@@ -6,7 +6,11 @@
 #define BITCOIN_QT_UTILITYDIALOG_H
 
 #include <QDialog>
+#include <QString>
 #include <QWidget>
+
+#include <cstdint>
+#include <optional>
 
 QT_BEGIN_NAMESPACE
 class QMainWindow;
@@ -33,6 +37,11 @@ public:
 
     void printToConsole();
     void showOrPrint();
+
+    /** The CoinJoin help's text. `mixing_height` is the block from which the
+     *  mixing client mixes the larger (DFCN-scale) amounts, if this chain has
+     *  one (CoinJoin::DfcnScaleMixingHeight). */
+    static QString coinJoinHelp(std::optional<int64_t> mixing_height);
 
 private:
     Ui::HelpMessageDialog *ui;

@@ -21,6 +21,7 @@ public:
 private Q_SLOTS:
     void initTestCase();
     void targetFieldIsCapped();
+    void helpDescribesLargerAmounts();
     void helpStatesThePracticalSize();
     void savedTargetKept();
 
