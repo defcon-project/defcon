@@ -1466,16 +1466,20 @@
 <context>
     <name>EmptyStateWidget</name>
     <message>
-        <source>Loading…</source>
-        <translation>載入中…</translation>
-    </message>
-    <message>
         <source>No matching results</source>
         <translation>沒有相符的結果</translation>
     </message>
     <message>
+        <source>Waiting for synchronization</source>
+        <translation>等待同步</translation>
+    </message>
+    <message>
         <source>Try a different search or clear your filters.</source>
         <translation>請嘗試其他搜尋字詞，或清除篩選條件。</translation>
+    </message>
+    <message>
+        <source>Your transactions will appear here as the wallet catches up with the network.</source>
+        <translation>隨著錢包與網路同步，您的交易會陸續顯示在這裡。</translation>
     </message>
     <message>
         <source>Clear filters</source>
@@ -1551,8 +1555,25 @@
         <translation>%1 資訊</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;%1 基本概念&lt;/h3&gt;&lt;p&gt;%1 讓人更難追查您的 DFCN 來源。它透過共同交易，將您的幣與其他 DeFCoN 使用者的幣混合。您的幣始終留在自己的錢包裡，只有您能花用。&lt;/p&gt;&lt;hr&gt;&lt;b&gt;運作方式&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;錢包會將部分餘額拆分為幾種標準面額，分別略高於 0.001、0.01、0.1、1 和 10 DFCN，例如 10.0001 DFCN。所有人使用相同的面額，因此這些幣看起來都一樣。&lt;/li&gt;&lt;li&gt;針對其中一種面額，錢包會加入主節點上等待參與者的混合工作階段，或隨機選擇一個主節點，請它開啟新的工作階段。&lt;/li&gt;&lt;li&gt;至少有 %2 名參與者加入後，主節點便會將各方的幣合併為一筆交易。每個錢包只檢查並簽署自己的部分，再透過自己的新位址收回相同面額的幣。&lt;/li&gt;&lt;li&gt;每完成一個工作階段就算一輪。錢包會重複執行好幾輪。您可以在「選項」中設定輪數和目標餘額。&lt;/li&gt;&lt;li&gt;開啟錢包時，混合會在背景進行。從 %1 餘額付款時，使用的是已混合的幣。&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;注意事項&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;質押：&lt;/b&gt;在主網上，混合後的幣低於最低質押金額，因此無法獲得質押獎勵。質押時也絕不會將這些幣或混合用的擔保金與其他幣合併。「選項」中的目標餘額決定大約要混合多少資金。&lt;/li&gt;&lt;li&gt;&lt;b&gt;手續費：&lt;/b&gt;混合交易本身免費。建立標準面額時會收取一般的小額網路手續費。為防止濫用，偶爾會將約 0.0001 DFCN 的小額擔保金付給網路。&lt;/li&gt;&lt;li&gt;&lt;b&gt;隱私：&lt;/b&gt;主持工作階段的主節點看得到哪些幣參與混合，其他參與者也可能是同一人。混合輪數越多，您的幣就越難追蹤。在一筆付款中同時花用多筆已混合的幣，可能讓這些幣再次產生關聯。&lt;/li&gt;&lt;li&gt;&lt;b&gt;加密錢包：&lt;/b&gt;開始混合時若錢包已鎖定，系統會要求輸入密碼，僅為混合而解鎖。發送款項時仍需輸入密碼。&lt;/li&gt;&lt;li&gt;&lt;b&gt;備份：&lt;/b&gt;每輪最多使用 9 個新位址。%1 需要啟用錢包自動備份，此功能預設為啟用。&lt;/li&gt;&lt;/ul&gt;</translation>
+        <source>Mixing these amounts starts at block %1.</source>
+        <translation>區塊高度達到 %1 時，就會開始混合這些較大面額的幣。</translation>
+    </message>
+    <message>
+        <source>The block at which mixing these amounts starts is not set in this version yet.</source>
+        <translation>此版本尚未設定從哪個區塊高度開始混合這些較大面額的幣。</translation>
+    </message>
+    <message>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; coins of exactly a standard amount, or of one of the larger amounts below, do not earn staking rewards, whether they are mixed or not, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed in the standard amounts.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;%1 基本概念&lt;/h3&gt;&lt;p&gt;%1 讓人更難追查您的 DFCN 來源。它透過共同交易，將您的幣與其他 DeFCoN 使用者的幣混合。您的幣始終留在自己的錢包裡，只有您能花用。&lt;/p&gt;&lt;hr&gt;&lt;b&gt;運作方式&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;錢包會將部分餘額拆分為幾種標準面額，分別略高於 0.001、0.01、0.1、1 和 10 DFCN，例如 10.0001 DFCN。所有人使用相同的面額，因此這些幣看起來都一樣。&lt;/li&gt;&lt;li&gt;針對其中一種面額，錢包會加入主節點上等待參與者的混合工作階段，或隨機選擇一個主節點，請它開啟新的工作階段。&lt;/li&gt;&lt;li&gt;至少有 %2 名參與者加入後，主節點便會將各方的幣合併為一筆交易。每個錢包只檢查並簽署自己的部分，再透過自己的新位址收回相同面額的幣。&lt;/li&gt;&lt;li&gt;每完成一個工作階段就算一輪。錢包會重複執行好幾輪。您可以在「選項…」中設定「混合輪數」和「目標餘額」。&lt;/li&gt;&lt;li&gt;開啟錢包時，混合會在背景進行。從 %1 餘額付款時，使用的是已混合的幣。&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;注意事項&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;質押：&lt;/b&gt;金額恰好等於某一種標準面額或下列任一較大面額的幣，無論是否混合過，都無法獲得質押獎勵。質押時也絕不會將這些幣或混合用的擔保金與其他幣合併。「選項…」中的「目標餘額」決定大約有多少資金會以標準面額進行混合。&lt;/li&gt;&lt;li&gt;&lt;b&gt;手續費：&lt;/b&gt;混合交易本身免費。建立標準面額時會收取一般的小額網路手續費。為防止濫用，偶爾會將約 0.0001 DFCN 的小額擔保金付給網路。&lt;/li&gt;&lt;li&gt;&lt;b&gt;隱私：&lt;/b&gt;主持工作階段的主節點看得到哪些幣參與混合，其他參與者也可能是同一人。混合輪數越多，您的幣就越難追蹤。在一筆付款中同時花用多筆已混合的幣，可能讓這些幣再次產生關聯。&lt;/li&gt;&lt;li&gt;&lt;b&gt;加密錢包：&lt;/b&gt;開始混合時若錢包已鎖定，系統會要求輸入密碼，僅為混合而解鎖。發送款項時仍需輸入密碼。&lt;/li&gt;&lt;li&gt;&lt;b&gt;備份：&lt;/b&gt;每輪最多使用 9 個新位址。%1 需要啟用錢包自動備份，此功能預設為啟用。&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;Larger amounts&lt;/b&gt;&lt;p&gt;For larger sums there are three more amounts: 100.001, 1000.01 and 10000.1 DFCN. Your wallet mixes coins of these amounts, but it does not make them. You make them with one normal payment to yourself. Use this recipe only in a wallet whose receiving and change addresses are its own spendable P2PKH addresses, as they are by default: a wallet that was given other active descriptors may not recognise the coins it pays to itself.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Create a new receiving address for each coin you want, and one more.&lt;/li&gt;&lt;li&gt;On the Send page, add a recipient for each of these addresses. Pay exactly 100.001, 1000.01 or 10000.1 DFCN to each coin's address and 0.01 DFCN to the last one, with "Subtract fee from amount" switched off for every recipient.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 From then on, while mixing is switched on, your wallet mixes every coin of these amounts that it holds on such an address, whatever the target balance is. To keep a coin out, lock it before you start mixing: enable the coin control features in Options, then use Inputs… on the Send page.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts. If your wallet has no ordinary, unmixed balance left for them, mixing these amounts can wait.&lt;/li&gt;&lt;li&gt;A normal payment can spend these coins like any other coin, mixed or not. Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself. While mixing is running, choose coins that are not of a standard or a larger amount, and neither lock nor spend a coin of these amounts that is waiting to be mixed until its session has ended: a session that loses its coin can cost a collateral.&lt;/li&gt;&lt;li&gt;A session needs other wallets that mix the same amount at the same time, so a larger amount can wait longer for its rounds.&lt;/li&gt;&lt;/ul&gt;</source>
+        <extracomment>%1 is the sentence about the block at which mixing the larger amounts starts; it is translated on its own.</extracomment>
+        <translation>&lt;hr&gt;&lt;b&gt;較大面額&lt;/b&gt;&lt;p&gt;如需混合較大筆資金，另有三種面額可用：100.001、1000.01 和 10000.1 DFCN。錢包會混合這些面額的幣，但不會建立這些幣。您只要按一般方式付一筆款項給自己，就能建立這些幣。只有在收款位址和找零位址都是錢包自己可花用的 P2PKH 位址時，才可使用以下方法。這是錢包的預設設定。如果錢包使用其他已啟用的描述子，就可能無法辨識付給自己的幣。&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;請為每一枚想要的幣各建立一個新的收款位址，最後再多建一個。&lt;/li&gt;&lt;li&gt;在「發送」頁面，為每個位址各新增一位收款人。付給每枚幣所對應位址的金額必須剛好是 100.001、1000.01 或 10000.1 DFCN，最後一個位址則付 0.01 DFCN。每位收款人的「從金額中扣除手續費」都必須取消勾選。&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1從那時起，只要混合功能保持開啟，錢包就會混合存放在這類位址上的每一枚較大面額的幣，不受目標餘額限制。若要讓某枚幣不參與混合，請在開始混合前將它鎖定。先在「選項…」中勾選「開啟錢幣控制功能」，再使用「發送」頁面上的「輸入…」。&lt;/p&gt;&lt;ul&gt;&lt;li&gt;這 0.01 DFCN 是一般資金，用來作為混合這些較大面額時的擔保金。如果錢包沒有剩餘的一般未混合資金可用作擔保金，這些面額的幣可能需要等待才能混合。&lt;/li&gt;&lt;li&gt;無論這些幣是否混合過，都可以像其他幣一樣用於一般付款。請在開始混合前鎖定想保留的幣，或自行選擇用來付款的幣。混合進行期間，請選用既非標準面額也非較大面額的幣。如果某枚標準面額或較大面額的幣正在等待混合，在其工作階段結束前，請勿鎖定或花用它。工作階段若失去參與混合的幣，您可能會損失一筆擔保金。&lt;/li&gt;&lt;li&gt;一個工作階段需要有其他錢包同時混合相同面額的幣，因此較大面額的幣每一輪都可能要等得更久。&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;How much to mix&lt;/b&gt;&lt;p&gt;The standard amounts are at most about 10 DFCN, so on their own they suit smaller sums. The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more, and a payment can hold only so many coins: one payment from coins of the standard amounts can be at most about 6,700 DFCN. For more, use the larger amounts.&lt;/p&gt;&lt;p&gt;A payment from your %1 balance has no change. The mixed coins have to add up to the amount you send; what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default. With coins of the larger amounts, switch off "Subtract fee from amount" for every recipient and send a little less than the coins add up to: the difference is the fee, so it has to cover the normal network fee and stay within the wallet's fee limit. Or keep coins of the standard amounts to make up the rest.&lt;/p&gt;</source>
+        <translation>&lt;hr&gt;&lt;b&gt;要混合多少資金&lt;/b&gt;&lt;p&gt;標準面額最高約為 10 DFCN，因此單用標準面額較適合小額資金。「選項…」中的「目標餘額」最高可設為 10,000 DFCN，這個金額就需要至少一千枚已混合的幣。一筆付款可使用的幣數有限，若全部使用標準面額，一筆最多只能支付約 6,700 DFCN。若要支付更多，請使用較大面額。&lt;/p&gt;&lt;p&gt;從 %1 餘額付款時不會有找零。已混合的幣必須湊足要發送的金額，多出的部分會成為手續費，預設的手續費上限為 0.1 DFCN。使用較大面額的幣時，請對每位收款人取消勾選「從金額中扣除手續費」，並發送略低於這些幣總額的金額。兩者的差額就是手續費，因此必須足以支付一般網路手續費，且不能超過錢包的手續費上限。您也可以保留標準面額的幣來湊足剩餘的金額。&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2638,6 +2659,10 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>部分簽署的交易（二進位）</translation>
     </message>
     <message>
+        <source>Could not write file %1.</source>
+        <translation>無法寫入檔案 %1。</translation>
+    </message>
+    <message>
         <source>PSBT saved to %1.</source>
         <translation>已將 PSBT 儲存至 %1。</translation>
     </message>
@@ -2999,12 +3024,12 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>混合輪數</translation>
     </message>
     <message>
-        <source>This amount acts as a threshold to turn off mixing once it's reached.</source>
-        <translation>此金額為關閉混合交易的門檻。</translation>
-    </message>
-    <message>
         <source>Target balance</source>
         <translation>目標餘額</translation>
+    </message>
+    <message>
+        <source>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins. Coins of 100.001, 1000.01 and 10000.1 DFCN are mixed apart from this target.</source>
+        <translation>最高為 10,000 DFCN。標準面額最高約為 10 DFCN，再提高目標餘額就會把您的餘額拆成數千枚幣。100.001、1000.01 和 10000.1 DFCN 這三種較大面額的幣會另外進行混合，不受此目標餘額限制。</translation>
     </message>
     <message>
         <source>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</source>
@@ -3119,6 +3144,10 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Enabling pruning significantly reduces the disk space required to store transactions. All blocks are still fully validated. Reverting this setting requires re-downloading the entire blockchain.</source>
         <translation>啟用修剪會顯著減少儲存交易所需的磁碟空間。 所有區塊仍然經過充分驗證。 恢復此設定需要重新下載整個區塊鏈。</translation>
+    </message>
+    <message>
+        <source>This amount acts as a threshold to turn off mixing of the standard amounts once it's reached.</source>
+        <translation>以標準面額混合的金額一達到此金額，錢包就會停止混合標準面額的幣。</translation>
     </message>
     <message>
         <source>Map port using &amp;UPnP</source>
@@ -3592,14 +3621,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>已關閉</translation>
     </message>
     <message>
-        <source>The node's staking thread is not running. See debug.log.</source>
-        <translation>節點的質押執行緒未在執行。請查看 debug.log。</translation>
-    </message>
-    <message>
-        <source>This node runs without staking (-staking=0).</source>
-        <translation>此節點的質押功能已關閉 (-staking=0)。</translation>
-    </message>
-    <message>
         <source>Paused: wallet locked</source>
         <translation>已暫停：錢包已鎖定</translation>
     </message>
@@ -3646,6 +3667,22 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
         <translation>尚未成熟、幣齡不足、低於最低或高於最高質押金額，以及金額恰好等於主節點擔保金的幣，都不會用於質押。</translation>
+    </message>
+    <message>
+        <source>Staking stopped and will retry soon. If it stays off, restart the wallet.</source>
+        <translation>質押已停止，錢包很快就會重試。若質押仍未恢復，請重新啟動錢包。</translation>
+    </message>
+    <message>
+        <source>The staking thread is not running. The debug log file has the reason.</source>
+        <translation>質押執行緒未在執行。您可以在除錯紀錄檔中查看原因。</translation>
+    </message>
+    <message>
+        <source>Staking is turned off in the startup settings. To stake, turn it on and restart.</source>
+        <translation>啟動設定已關閉質押功能。若要質押，請啟用此功能並重新啟動錢包。</translation>
+    </message>
+    <message>
+        <source>The wallet was started with -staking=0, in its configuration file or on its command line.</source>
+        <translation>錢包啟動時使用了 -staking=0，此參數來自設定檔或命令列。</translation>
     </message>
     <message numerus="yes">
         <source>%n Rounds</source>
@@ -3818,6 +3855,10 @@ https://app.transifex.com/defcon/defcon/</translation>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>部分簽署的交易 (二進位)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>無法寫入檔案 %1。</translation>
     </message>
     <message>
         <source>PSBT saved to disk.</source>
@@ -5691,9 +5732,26 @@ For more information on using this console, type %6.
         <translation>如要檢查收款人清單，請點選「顯示詳細資料…」。</translation>
     </message>
     <message>
+        <source>Unsigned Transaction</source>
+        <comment>PSBT copied</comment>
+        <translation>未簽名的交易</translation>
+    </message>
+    <message>
+        <source>The PSBT has been copied to the clipboard. You can also save it.</source>
+        <translation>PSBT 已複製到剪貼簿。您也可以將它儲存成檔案。</translation>
+    </message>
+    <message>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>部分簽名交易（二進位）</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>無法寫入檔案 %1。</translation>
+    </message>
+    <message>
+        <source>PSBT saved to disk.</source>
+        <translation>PSBT 儲存到磁碟。</translation>
     </message>
     <message>
         <source>Send DeFCoN</source>
@@ -6583,6 +6641,10 @@ For more information on using this console, type %6.
         <translation>(不適用)</translation>
     </message>
     <message>
+        <source>Watch-only address</source>
+        <translation>僅限查看的位址</translation>
+    </message>
+    <message>
         <source>(no label)</source>
         <translation>(無標記)</translation>
     </message>
@@ -6676,10 +6738,6 @@ For more information on using this console, type %6.
     <message>
         <source>To yourself</source>
         <translation>給自己</translation>
-    </message>
-    <message>
-        <source>Mined</source>
-        <translation>開採所得</translation>
     </message>
     <message>
         <source>Platform Transfer</source>
@@ -6846,6 +6904,18 @@ For more information on using this console, type %6.
         <source>Show only transactions of at least this amount</source>
         <translation>只顯示金額不低於此數值的交易</translation>
     </message>
+    <message>
+        <source>All addresses</source>
+        <translation>所有位址</translation>
+    </message>
+    <message>
+        <source>Spendable only</source>
+        <translation>僅顯示可花費的位址</translation>
+    </message>
+    <message>
+        <source>Show only transactions of these addresses</source>
+        <translation>只顯示這些位址的交易</translation>
+    </message>
 </context>
 <context>
     <name>TxViewDelegate</name>
@@ -6961,6 +7031,10 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>選擇金額:</translation>
     </message>
     <message>
+        <source>Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason.</source>
+        <translation>無法為此錢包啟動質押。請在一分鐘後再試一次。若仍無法啟動，您可以在除錯紀錄檔中查看原因。</translation>
+    </message>
+    <message>
         <source>Wallet Data</source>
         <extracomment>Name of the wallet data file format.</extracomment>
         <translation>錢包資料</translation>
@@ -7012,10 +7086,6 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Staking</source>
         <translation>質押</translation>
-    </message>
-    <message>
-        <source>Staking could not be started for this wallet. See debug.log for details.</source>
-        <translation>無法為此錢包啟動質押。詳情請查看 debug.log。</translation>
     </message>
     <message>
         <source>Backup Failed</source>
@@ -7371,6 +7441,10 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments.</source>
         <translation>網路版本字串的總長度 (%i) 超過長度上限 (%i)。請減少 uacomments 的數量或大小。</translation>
+    </message>
+    <message>
+        <source>Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.</source>
+        <translation>交易需要 BLS 找零位址，但沒有私鑰的錢包無法產生這種位址。請選擇找零位址。</translation>
     </message>
     <message>
         <source>Transaction needs a change address, but we can't generate it. Please call keypoolrefill first.</source>

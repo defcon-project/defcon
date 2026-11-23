@@ -1466,16 +1466,20 @@
 <context>
     <name>EmptyStateWidget</name>
     <message>
-        <source>Loading…</source>
-        <translation>Đang tải…</translation>
-    </message>
-    <message>
         <source>No matching results</source>
         <translation>Không có kết quả phù hợp</translation>
     </message>
     <message>
+        <source>Waiting for synchronization</source>
+        <translation>Đang chờ đồng bộ</translation>
+    </message>
+    <message>
         <source>Try a different search or clear your filters.</source>
         <translation>Hãy tìm bằng từ khoá khác hoặc xoá bộ lọc.</translation>
+    </message>
+    <message>
+        <source>Your transactions will appear here as the wallet catches up with the network.</source>
+        <translation>Các giao dịch của bạn sẽ dần xuất hiện ở đây khi ví đồng bộ với mạng.</translation>
     </message>
     <message>
         <source>Clear filters</source>
@@ -1551,8 +1555,25 @@
         <translation>Thông tin về %1</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;Kiến thức cơ bản về %1&lt;/h3&gt;&lt;p&gt;%1 giúp việc truy vết nguồn gốc DFCN của bạn trở nên khó khăn hơn nhiều. Tiền của bạn được trộn với tiền của những người dùng DeFCoN khác trong các giao dịch chung. Tiền vẫn ở trong ví và chỉ bạn mới có thể chi tiêu.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Cách hoạt động&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Ví chia một phần số dư thành các mệnh giá chuẩn lớn hơn một chút so với 0.001, 0.01, 0.1, 1 và 10 DFCN, ví dụ 10.0001 DFCN. Mọi người đều dùng cùng các mệnh giá nên các đồng tiền trông giống nhau.&lt;/li&gt;&lt;li&gt;Với mỗi khoản như vậy, ví tham gia một phiên trộn đang chờ tại một masternode hoặc yêu cầu một masternode được chọn ngẫu nhiên mở phiên mới.&lt;/li&gt;&lt;li&gt;Khi có ít nhất %2 bên tham gia, masternode gộp tiền của họ vào một giao dịch. Mỗi ví chỉ kiểm tra và ký phần của mình rồi nhận lại đúng các mệnh giá đó tại địa chỉ mới của chính ví.&lt;/li&gt;&lt;li&gt;Mỗi phiên hoàn tất được tính là một vòng. Ví lặp lại quá trình này nhiều lần. Bạn có thể đặt số vòng và số dư mục tiêu trong phần Tuỳ chọn.&lt;/li&gt;&lt;li&gt;Quá trình trộn chạy ngầm khi ví đang mở. Khi bạn gửi tiền từ số dư %1, tiền đó đã được trộn sẵn.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Điều cần biết&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; trên mạng chính, các đồng đã trộn nhỏ hơn mức staking tối thiểu nên không sinh phần thưởng staking. Khi staking, ví không bao giờ gộp chúng hoặc các khoản thế chấp dùng để trộn với tiền khác của bạn. Số dư mục tiêu trong phần Tuỳ chọn quy định gần đúng số tiền được trộn.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Phí:&lt;/b&gt; giao dịch trộn được miễn phí. Việc tạo các mệnh giá chuẩn tốn một khoản phí mạng nhỏ như thường lệ. Thỉnh thoảng một khoản thế chấp rất nhỏ, khoảng 0.0001 DFCN, được trả cho mạng để ngăn lạm dụng.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Quyền riêng tư:&lt;/b&gt; masternode điều phối phiên thấy được những đồng tiền nào tham gia. Những người tham gia khác có thể là cùng một người. Càng nhiều vòng thì tiền càng khó bị truy vết. Việc gửi nhiều đồng đã trộn trong cùng một lần thanh toán có thể làm lộ lại mối liên hệ giữa chúng.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Ví đã mã hoá:&lt;/b&gt; nếu ví đang khoá khi bạn bắt đầu trộn, ví sẽ yêu cầu mật khẩu và chỉ mở khoá để trộn. Việc gửi tiền vẫn cần mật khẩu.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Sao lưu:&lt;/b&gt; mỗi vòng dùng tối đa 9 địa chỉ mới. %1 yêu cầu bật sao lưu ví tự động. Tính năng này được bật theo mặc định.&lt;/li&gt;&lt;/ul&gt;</translation>
+        <source>Mixing these amounts starts at block %1.</source>
+        <translation>Việc trộn các mệnh giá này bắt đầu từ khối %1.</translation>
+    </message>
+    <message>
+        <source>The block at which mixing these amounts starts is not set in this version yet.</source>
+        <translation>Phiên bản này chưa ấn định khối bắt đầu trộn các mệnh giá này.</translation>
+    </message>
+    <message>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; coins of exactly a standard amount, or of one of the larger amounts below, do not earn staking rewards, whether they are mixed or not, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed in the standard amounts.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;Kiến thức cơ bản về %1&lt;/h3&gt;&lt;p&gt;%1 giúp việc truy vết nguồn gốc DFCN của bạn trở nên khó khăn hơn nhiều. Tiền của bạn được trộn với tiền của những người dùng DeFCoN khác trong các giao dịch chung. Tiền vẫn ở trong ví và chỉ bạn mới có thể chi tiêu.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Cách hoạt động&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Ví chia một phần số dư thành các mệnh giá chuẩn lớn hơn một chút so với 0.001, 0.01, 0.1, 1 và 10 DFCN, ví dụ 10.0001 DFCN. Mọi người đều dùng cùng các mệnh giá nên các đồng tiền trông giống nhau.&lt;/li&gt;&lt;li&gt;Với một trong các mệnh giá này, ví tham gia một phiên trộn đang chờ tại một masternode hoặc yêu cầu một masternode được chọn ngẫu nhiên mở phiên mới.&lt;/li&gt;&lt;li&gt;Khi có ít nhất %2 bên tham gia, masternode gộp tiền của họ vào một giao dịch. Mỗi ví chỉ kiểm tra và ký phần của mình rồi nhận lại đúng các mệnh giá đó tại địa chỉ mới của chính ví.&lt;/li&gt;&lt;li&gt;Mỗi phiên hoàn tất được tính là một vòng. Ví lặp lại quá trình này nhiều lần. Bạn có thể đặt Số vòng trộn và Số dư mục tiêu trong phần Tuỳ chọn.&lt;/li&gt;&lt;li&gt;Quá trình trộn chạy ngầm khi ví đang mở. Khi bạn gửi tiền từ số dư %1, tiền đó đã được trộn sẵn.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Điều cần biết&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; các đồng tiền có giá trị đúng bằng một mệnh giá chuẩn hoặc một trong các mệnh giá lớn hơn dưới đây không sinh phần thưởng staking, dù đã trộn hay chưa. Khi staking, ví không bao giờ gộp chúng hoặc các khoản thế chấp dùng để trộn với tiền khác của bạn. Số dư mục tiêu trong phần Tuỳ chọn quy định gần đúng số tiền được trộn theo các mệnh giá chuẩn.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Phí:&lt;/b&gt; giao dịch trộn được miễn phí. Việc tạo các mệnh giá chuẩn tốn một khoản phí mạng nhỏ như thường lệ. Thỉnh thoảng một khoản thế chấp rất nhỏ, khoảng 0.0001 DFCN, được trả cho mạng để ngăn lạm dụng.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Quyền riêng tư:&lt;/b&gt; masternode điều phối phiên thấy được những đồng tiền nào tham gia. Những người tham gia khác có thể là cùng một người. Càng nhiều vòng thì tiền càng khó bị truy vết. Việc gửi nhiều đồng đã trộn trong cùng một lần thanh toán có thể làm lộ lại mối liên hệ giữa chúng.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Ví đã mã hoá:&lt;/b&gt; nếu ví đang khoá khi bạn bắt đầu trộn, ví sẽ yêu cầu mật khẩu và chỉ mở khoá để trộn. Việc gửi tiền vẫn cần mật khẩu.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Sao lưu:&lt;/b&gt; mỗi vòng dùng tối đa 9 địa chỉ mới. %1 yêu cầu bật sao lưu ví tự động. Tính năng này được bật theo mặc định.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;Larger amounts&lt;/b&gt;&lt;p&gt;For larger sums there are three more amounts: 100.001, 1000.01 and 10000.1 DFCN. Your wallet mixes coins of these amounts, but it does not make them. You make them with one normal payment to yourself. Use this recipe only in a wallet whose receiving and change addresses are its own spendable P2PKH addresses, as they are by default: a wallet that was given other active descriptors may not recognise the coins it pays to itself.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Create a new receiving address for each coin you want, and one more.&lt;/li&gt;&lt;li&gt;On the Send page, add a recipient for each of these addresses. Pay exactly 100.001, 1000.01 or 10000.1 DFCN to each coin's address and 0.01 DFCN to the last one, with "Subtract fee from amount" switched off for every recipient.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 From then on, while mixing is switched on, your wallet mixes every coin of these amounts that it holds on such an address, whatever the target balance is. To keep a coin out, lock it before you start mixing: enable the coin control features in Options, then use Inputs… on the Send page.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts. If your wallet has no ordinary, unmixed balance left for them, mixing these amounts can wait.&lt;/li&gt;&lt;li&gt;A normal payment can spend these coins like any other coin, mixed or not. Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself. While mixing is running, choose coins that are not of a standard or a larger amount, and neither lock nor spend a coin of these amounts that is waiting to be mixed until its session has ended: a session that loses its coin can cost a collateral.&lt;/li&gt;&lt;li&gt;A session needs other wallets that mix the same amount at the same time, so a larger amount can wait longer for its rounds.&lt;/li&gt;&lt;/ul&gt;</source>
+        <extracomment>%1 is the sentence about the block at which mixing the larger amounts starts; it is translated on its own.</extracomment>
+        <translation>&lt;hr&gt;&lt;b&gt;Các mệnh giá lớn hơn&lt;/b&gt;&lt;p&gt;Đối với những khoản tiền lớn hơn, còn có ba mệnh giá là 100.001, 1000.01 và 10000.1 DFCN. Ví trộn các đồng tiền có mệnh giá này nhưng không tự tạo ra chúng. Bạn tạo chúng bằng một lần thanh toán thông thường cho chính mình. Chỉ làm theo các bước này nếu địa chỉ nhận và địa chỉ tiền trả lại đều là địa chỉ P2PKH của chính ví và ví có thể chi tiêu từ các địa chỉ đó, như trong cấu hình mặc định. Nếu ví được cấp các bộ mô tả đang hoạt động khác, ví có thể không nhận ra những đồng tiền đã gửi cho chính mình.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Tạo một địa chỉ nhận mới cho mỗi đồng tiền bạn muốn tạo. Sau đó tạo thêm một địa chỉ nhận nữa.&lt;/li&gt;&lt;li&gt;Trên trang Gửi, thêm một người nhận cho mỗi địa chỉ vừa tạo. Tắt “Trừ phí vào số tiền” cho từng người nhận. Gửi đúng 100.001, 1000.01 hoặc 10000.1 DFCN đến địa chỉ của từng đồng tiền và 0.01 DFCN đến địa chỉ cuối cùng.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 Từ đó trở đi, khi tính năng trộn được bật, ví sẽ trộn mọi đồng tiền thuộc các mệnh giá này mà ví giữ tại các địa chỉ như trên, bất kể số dư mục tiêu là bao nhiêu. Để tránh trộn một đồng tiền, hãy khoá đồng tiền đó trước khi bắt đầu trộn. Trong phần Tuỳ chọn, chọn Bật kiểm soát tiền rồi dùng Đầu vào… trên trang Gửi.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Khoản 0.01 DFCN là tiền thông thường dùng làm thế chấp khi trộn các mệnh giá này. Nếu ví không còn số dư thông thường chưa trộn để làm thế chấp, việc trộn các mệnh giá này có thể phải chờ.&lt;/li&gt;&lt;li&gt;Một khoản thanh toán thông thường có thể dùng các đồng tiền này như bất kỳ đồng tiền nào khác, dù đã trộn hay chưa. Hãy khoá những đồng tiền bạn muốn giữ lại trước khi bắt đầu trộn, hoặc tự chọn các đồng tiền dùng để thanh toán. Khi ví đang trộn, hãy chọn những đồng tiền không thuộc mệnh giá chuẩn hay mệnh giá lớn hơn. Nếu một đồng tiền thuộc một trong các mệnh giá này đang chờ trộn, đừng khoá hoặc chi tiêu đồng đó cho đến khi phiên trộn của nó kết thúc. Nếu phiên trộn mất đồng tiền đó, bạn có thể mất một khoản thế chấp.&lt;/li&gt;&lt;li&gt;Mỗi phiên cần có các ví khác cùng trộn một mệnh giá vào cùng thời điểm, nên đồng tiền có mệnh giá lớn hơn có thể phải chờ lâu hơn mới đến lượt tham gia các vòng trộn.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;How much to mix&lt;/b&gt;&lt;p&gt;The standard amounts are at most about 10 DFCN, so on their own they suit smaller sums. The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more, and a payment can hold only so many coins: one payment from coins of the standard amounts can be at most about 6,700 DFCN. For more, use the larger amounts.&lt;/p&gt;&lt;p&gt;A payment from your %1 balance has no change. The mixed coins have to add up to the amount you send; what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default. With coins of the larger amounts, switch off "Subtract fee from amount" for every recipient and send a little less than the coins add up to: the difference is the fee, so it has to cover the normal network fee and stay within the wallet's fee limit. Or keep coins of the standard amounts to make up the rest.&lt;/p&gt;</source>
+        <translation>&lt;hr&gt;&lt;b&gt;Số tiền cần trộn&lt;/b&gt;&lt;p&gt;Mệnh giá chuẩn lớn nhất chỉ khoảng 10 DFCN, nên khi dùng riêng, các mệnh giá chuẩn phù hợp với những khoản tiền nhỏ hơn. Trong phần Tuỳ chọn, Số dư mục tiêu có thể lên đến 10 000 DFCN, tương ứng với ít nhất một nghìn đồng tiền đã trộn. Số đồng tiền có thể dùng trong một lần thanh toán có giới hạn, nên nếu chỉ dùng các đồng tiền có mệnh giá chuẩn, mỗi lần bạn có thể thanh toán tối đa khoảng 6 700 DFCN. Để thanh toán nhiều hơn, hãy dùng các mệnh giá lớn hơn.&lt;/p&gt;&lt;p&gt;Khi thanh toán từ số dư %1, bạn sẽ không có tiền trả lại. Tổng giá trị các đồng tiền đã trộn phải đủ cho số tiền bạn gửi. Phần còn dư được dùng làm phí và theo mặc định, mức phí tối đa là 0.1 DFCN. Khi dùng các đồng tiền có mệnh giá lớn hơn, hãy tắt “Trừ phí vào số tiền” cho từng người nhận và gửi ít hơn một chút so với tổng giá trị các đồng tiền đó. Phần chênh lệch chính là phí, vì vậy khoản này phải đủ trả phí mạng thông thường và không vượt quá giới hạn phí của ví. Bạn cũng có thể giữ lại các đồng tiền có mệnh giá chuẩn để bù phần còn thiếu.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2638,6 +2659,10 @@ Thao tác này chỉ xoá mục trong danh sách. Nếu địa chỉ đã đư�
         <translation>Giao dịch đã ký một phần (nhị phân)</translation>
     </message>
     <message>
+        <source>Could not write file %1.</source>
+        <translation>Không thể ghi tệp %1.</translation>
+    </message>
+    <message>
         <source>PSBT saved to %1.</source>
         <translation>Đã lưu PSBT vào %1.</translation>
     </message>
@@ -2999,12 +3024,12 @@ Thao tác này chỉ xoá mục trong danh sách. Nếu địa chỉ đã đư�
         <translation>Số vòng trộn</translation>
     </message>
     <message>
-        <source>This amount acts as a threshold to turn off mixing once it's reached.</source>
-        <translation>Quá trình trộn sẽ dừng khi đạt đến số tiền này.</translation>
-    </message>
-    <message>
         <source>Target balance</source>
         <translation>Số dư mục tiêu</translation>
+    </message>
+    <message>
+        <source>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins. Coins of 100.001, 1000.01 and 10000.1 DFCN are mixed apart from this target.</source>
+        <translation>Tối đa 10 000 DFCN. Mệnh giá chuẩn lớn nhất chỉ khoảng 10 DFCN, nên nếu đặt số dư mục tiêu cao hơn, ví sẽ chia số dư của bạn thành hàng nghìn đồng tiền. Các đồng tiền có mệnh giá 100.001, 1000.01 và 10000.1 DFCN được trộn độc lập với số dư mục tiêu này.</translation>
     </message>
     <message>
         <source>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</source>
@@ -3119,6 +3144,10 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Enabling pruning significantly reduces the disk space required to store transactions. All blocks are still fully validated. Reverting this setting requires re-downloading the entire blockchain.</source>
         <translation>Bật xén tỉa giúp giảm đáng kể dung lượng đĩa cần để lưu giao dịch. Tất cả các khối vẫn được xác thực đầy đủ. Nếu tắt chế độ này sau đó, bạn sẽ phải tải lại toàn bộ chuỗi khối.</translation>
+    </message>
+    <message>
+        <source>This amount acts as a threshold to turn off mixing of the standard amounts once it's reached.</source>
+        <translation>Việc trộn các mệnh giá chuẩn sẽ dừng khi đạt đến số tiền này.</translation>
     </message>
     <message>
         <source>Map port using &amp;UPnP</source>
@@ -3592,14 +3621,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Tắt</translation>
     </message>
     <message>
-        <source>The node's staking thread is not running. See debug.log.</source>
-        <translation>Luồng staking của nút không chạy. Xem debug.log.</translation>
-    </message>
-    <message>
-        <source>This node runs without staking (-staking=0).</source>
-        <translation>Nút này chạy với staking bị tắt (-staking=0).</translation>
-    </message>
-    <message>
         <source>Paused: wallet locked</source>
         <translation>Tạm dừng: ví đang khoá</translation>
     </message>
@@ -3646,6 +3667,22 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
         <translation>Các đồng tiền chưa đủ điều kiện staking nếu chưa trưởng thành hoặc chưa đủ tuổi, có giá trị dưới mức staking tối thiểu hoặc trên mức tối đa, hoặc có giá trị đúng bằng khoản thế chấp masternode.</translation>
+    </message>
+    <message>
+        <source>Staking stopped and will retry soon. If it stays off, restart the wallet.</source>
+        <translation>Staking đã dừng. Ví sẽ sớm thử lại. Nếu staking vẫn chưa hoạt động trở lại, hãy khởi động lại ví.</translation>
+    </message>
+    <message>
+        <source>The staking thread is not running. The debug log file has the reason.</source>
+        <translation>Luồng staking không chạy. Xem nguyên nhân trong tệp nhật ký gỡ lỗi.</translation>
+    </message>
+    <message>
+        <source>Staking is turned off in the startup settings. To stake, turn it on and restart.</source>
+        <translation>Staking bị tắt trong phần cài đặt khởi động. Để staking, hãy bật lại tính năng này rồi khởi động lại ví.</translation>
+    </message>
+    <message>
+        <source>The wallet was started with -staking=0, in its configuration file or on its command line.</source>
+        <translation>Ví đã khởi động với tuỳ chọn -staking=0 trong tệp cấu hình hoặc trên dòng lệnh.</translation>
     </message>
     <message numerus="yes">
         <source>%n Rounds</source>
@@ -3818,6 +3855,10 @@ https://app.transifex.com/defcon/defcon/</translation>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Giao dịch đã ký một phần (nhị phân)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>Không thể ghi tệp %1.</translation>
     </message>
     <message>
         <source>PSBT saved to disk.</source>
@@ -5691,9 +5732,26 @@ Nhập %5 để xem tổng quan về các lệnh hiện có.
         <translation>Để kiểm tra danh sách người nhận, hãy bấm "Hiện chi tiết…"</translation>
     </message>
     <message>
+        <source>Unsigned Transaction</source>
+        <comment>PSBT copied</comment>
+        <translation>Giao dịch chưa ký</translation>
+    </message>
+    <message>
+        <source>The PSBT has been copied to the clipboard. You can also save it.</source>
+        <translation>Đã sao chép PSBT vào bộ nhớ tạm. Bạn cũng có thể lưu PSBT.</translation>
+    </message>
+    <message>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Giao dịch đã ký một phần (nhị phân)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>Không thể ghi tệp %1.</translation>
+    </message>
+    <message>
+        <source>PSBT saved to disk.</source>
+        <translation>Đã lưu PSBT vào đĩa.</translation>
     </message>
     <message>
         <source>Send DeFCoN</source>
@@ -6583,6 +6641,10 @@ Nhập %5 để xem tổng quan về các lệnh hiện có.
         <translation>(không áp dụng)</translation>
     </message>
     <message>
+        <source>Watch-only address</source>
+        <translation>Địa chỉ chỉ theo dõi</translation>
+    </message>
+    <message>
         <source>(no label)</source>
         <translation>(không có nhãn)</translation>
     </message>
@@ -6676,10 +6738,6 @@ Nhập %5 để xem tổng quan về các lệnh hiện có.
     <message>
         <source>To yourself</source>
         <translation>Đến bản thân bạn</translation>
-    </message>
-    <message>
-        <source>Mined</source>
-        <translation>Được đào</translation>
     </message>
     <message>
         <source>Platform Transfer</source>
@@ -6846,6 +6904,18 @@ Nhập %5 để xem tổng quan về các lệnh hiện có.
         <source>Show only transactions of at least this amount</source>
         <translation>Chỉ hiển thị giao dịch có số tiền ít nhất bằng mức này</translation>
     </message>
+    <message>
+        <source>All addresses</source>
+        <translation>Tất cả địa chỉ</translation>
+    </message>
+    <message>
+        <source>Spendable only</source>
+        <translation>Chỉ các địa chỉ dùng được để chi tiêu</translation>
+    </message>
+    <message>
+        <source>Show only transactions of these addresses</source>
+        <translation>Chỉ hiển thị giao dịch của các địa chỉ này</translation>
+    </message>
 </context>
 <context>
     <name>TxViewDelegate</name>
@@ -6961,6 +7031,10 @@ Vào Tệp &gt; Mở ví để nạp ví.
         <translation>Số tiền đã chọn:</translation>
     </message>
     <message>
+        <source>Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason.</source>
+        <translation>Không thể bắt đầu staking cho ví này. Hãy thử lại sau một phút. Nếu staking vẫn không khởi động, hãy xem nguyên nhân trong tệp nhật ký gỡ lỗi.</translation>
+    </message>
+    <message>
         <source>Wallet Data</source>
         <extracomment>Name of the wallet data file format.</extracomment>
         <translation>Dữ liệu ví</translation>
@@ -7012,10 +7086,6 @@ Vào Tệp &gt; Mở ví để nạp ví.
     <message>
         <source>Staking</source>
         <translation>Staking</translation>
-    </message>
-    <message>
-        <source>Staking could not be started for this wallet. See debug.log for details.</source>
-        <translation>Không thể bắt đầu staking cho ví này. Xem chi tiết trong debug.log.</translation>
     </message>
     <message>
         <source>Backup Failed</source>
@@ -7371,6 +7441,10 @@ Vào Tệp &gt; Mở ví để nạp ví.
     <message>
         <source>Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments.</source>
         <translation>Tổng độ dài của chuỗi phiên bản mạng (%i) vượt qua độ dài tối đa (%i). Hãy giảm số hoặc kích thước của uacomments.</translation>
+    </message>
+    <message>
+        <source>Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.</source>
+        <translation>Giao dịch cần một địa chỉ tiền trả lại BLS. Ví không có khoá riêng thì không thể tạo địa chỉ loại này. Hãy chọn một địa chỉ tiền trả lại.</translation>
     </message>
     <message>
         <source>Transaction needs a change address, but we can't generate it. Please call keypoolrefill first.</source>

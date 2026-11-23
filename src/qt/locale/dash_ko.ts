@@ -1466,16 +1466,20 @@
 <context>
     <name>EmptyStateWidget</name>
     <message>
-        <source>Loading…</source>
-        <translation>불러오는 중…</translation>
-    </message>
-    <message>
         <source>No matching results</source>
         <translation>일치하는 결과 없음</translation>
     </message>
     <message>
+        <source>Waiting for synchronization</source>
+        <translation>동기화 대기 중</translation>
+    </message>
+    <message>
         <source>Try a different search or clear your filters.</source>
         <translation>다른 검색어를 입력하거나 필터를 지우세요.</translation>
+    </message>
+    <message>
+        <source>Your transactions will appear here as the wallet catches up with the network.</source>
+        <translation>지갑이 네트워크와 동기화되면서 거래가 여기에 표시됩니다.</translation>
     </message>
     <message>
         <source>Clear filters</source>
@@ -1551,8 +1555,25 @@
         <translation>%1 정보</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;%1 기본 안내&lt;/h3&gt;&lt;p&gt;%1 기능을 사용하면 DFCN의 출처를 추적하기가 훨씬 어려워집니다. 여러 DeFCoN 사용자의 코인을 공동 거래에서 섞습니다. 코인은 지갑을 떠나지 않으며 본인만 사용할 수 있습니다.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;작동 방식&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;지갑은 잔액 일부를 0.001, 0.01, 0.1, 1, 10 DFCN보다 약간 큰 표준 금액(예: 10.0001 DFCN)으로 나눕니다. 모두 같은 금액을 사용하므로 코인을 구별하기 어렵습니다.&lt;/li&gt;&lt;li&gt;각 금액에 대해 지갑은 마스터노드에서 대기 중인 믹싱 세션에 참여하거나 무작위로 선택한 마스터노드에 새 세션을 요청합니다.&lt;/li&gt;&lt;li&gt;참여자가 %2명 이상 모이면 마스터노드가 참여자들의 코인을 하나의 거래로 합칩니다. 각 지갑은 자기 몫만 확인하고 서명한 다음, 같은 금액을 자신의 새 주소로 돌려받습니다.&lt;/li&gt;&lt;li&gt;세션 하나를 완료하면 한 라운드입니다. 지갑은 이를 여러 번 반복합니다. 옵션에서 라운드 수와 목표 잔액을 설정할 수 있습니다.&lt;/li&gt;&lt;li&gt;지갑이 열려 있는 동안 백그라운드에서 믹싱합니다. %1 잔액에서 보낼 때는 이미 믹싱이 끝난 상태입니다.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;알아두기&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;스테이킹:&lt;/b&gt; 메인넷에서 믹싱한 코인은 최소 스테이킹 금액보다 작아 보상을 받지 못합니다. 스테이킹 과정에서 믹싱한 코인이나 믹싱 담보를 다른 코인과 합치지도 않습니다. 옵션의 목표 잔액으로 대략적인 믹싱 금액을 지정합니다.&lt;/li&gt;&lt;li&gt;&lt;b&gt;수수료:&lt;/b&gt; 믹싱 거래는 무료입니다. 표준 금액으로 나눌 때는 통상적인 소액의 네트워크 수수료가 듭니다. 악용을 방지하기 위해 때때로 약 0.0001 DFCN의 소액 담보가 네트워크로 지급됩니다.&lt;/li&gt;&lt;li&gt;&lt;b&gt;개인정보 보호:&lt;/b&gt; 세션을 운영하는 마스터노드는 어떤 코인이 참여하는지 볼 수 있으며 다른 참여자가 실제로 서로 다른 사람이라는 보장은 없습니다. 라운드를 늘리면 추적이 더 어려워집니다. 믹싱한 코인을 한 번에 많이 보내면 다시 서로 연결될 수 있습니다.&lt;/li&gt;&lt;li&gt;&lt;b&gt;암호화된 지갑:&lt;/b&gt; 믹싱을 시작할 때 지갑이 잠겨 있으면 암호문을 요청하고 믹싱에 한해서만 잠금을 해제합니다. 따라서 코인을 보내려면 여전히 암호문이 필요합니다.&lt;/li&gt;&lt;li&gt;&lt;b&gt;백업:&lt;/b&gt; 각 라운드는 새 주소를 최대 9개 사용합니다. %1 기능에는 지갑 자동 백업이 필요하며 기본적으로 켜져 있습니다.&lt;/li&gt;&lt;/ul&gt;</translation>
+        <source>Mixing these amounts starts at block %1.</source>
+        <translation>이 금액의 코인은 %1번 블록부터 믹싱됩니다.</translation>
+    </message>
+    <message>
+        <source>The block at which mixing these amounts starts is not set in this version yet.</source>
+        <translation>이 버전에서는 이 금액의 코인을 어느 블록부터 믹싱할지 아직 정해지지 않았습니다.</translation>
+    </message>
+    <message>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; coins of exactly a standard amount, or of one of the larger amounts below, do not earn staking rewards, whether they are mixed or not, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed in the standard amounts.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;%1 기본 안내&lt;/h3&gt;&lt;p&gt;%1 기능을 사용하면 DFCN의 출처를 추적하기가 훨씬 어려워집니다. 여러 DeFCoN 사용자의 코인을 공동 거래에서 섞습니다. 코인은 지갑을 떠나지 않으며 본인만 사용할 수 있습니다.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;작동 방식&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;지갑은 잔액 일부를 0.001, 0.01, 0.1, 1, 10 DFCN보다 약간 큰 표준 금액(예: 10.0001 DFCN)으로 나눕니다. 모두 같은 금액을 사용하므로 코인을 구별하기 어렵습니다.&lt;/li&gt;&lt;li&gt;이 금액들 중 하나에 대해 지갑은 마스터노드에서 대기 중인 믹싱 세션에 참여하거나 무작위로 선택한 마스터노드에 새 세션을 요청합니다.&lt;/li&gt;&lt;li&gt;참여자가 %2명 이상 모이면 마스터노드가 참여자들의 코인을 하나의 거래로 합칩니다. 각 지갑은 자기 몫만 확인하고 서명한 다음, 같은 금액을 자신의 새 주소로 돌려받습니다.&lt;/li&gt;&lt;li&gt;세션 하나를 완료하면 한 라운드입니다. 지갑은 이를 여러 번 반복합니다. 옵션에서 믹싱 라운드 수와 목표 잔액을 설정할 수 있습니다.&lt;/li&gt;&lt;li&gt;지갑이 열려 있는 동안 백그라운드에서 믹싱합니다. %1 잔액에서 보낼 때는 이미 믹싱이 끝난 상태입니다.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;알아두기&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;스테이킹:&lt;/b&gt; 금액이 표준 금액이나 아래의 큰 단위 금액 중 하나와 정확히 일치하는 코인은 믹싱 여부와 관계없이 스테이킹 보상을 받지 못합니다. 스테이킹 과정에서 이런 코인이나 믹싱 담보를 다른 코인과 합치는 일도 없습니다. 옵션에서 목표 잔액을 설정하면 표준 금액으로 믹싱할 총액이 대략 정해집니다.&lt;/li&gt;&lt;li&gt;&lt;b&gt;수수료:&lt;/b&gt; 믹싱 거래는 무료입니다. 표준 금액으로 나눌 때는 통상적인 소액의 네트워크 수수료가 듭니다. 악용을 방지하기 위해 때때로 약 0.0001 DFCN의 소액 담보가 네트워크로 지급됩니다.&lt;/li&gt;&lt;li&gt;&lt;b&gt;개인정보 보호:&lt;/b&gt; 세션을 운영하는 마스터노드는 어떤 코인이 참여하는지 볼 수 있으며 다른 참여자가 실제로 서로 다른 사람이라는 보장은 없습니다. 라운드를 늘리면 추적이 더 어려워집니다. 믹싱한 코인을 한 번에 많이 보내면 다시 서로 연결될 수 있습니다.&lt;/li&gt;&lt;li&gt;&lt;b&gt;암호화된 지갑:&lt;/b&gt; 믹싱을 시작할 때 지갑이 잠겨 있으면 암호문을 요청하고 믹싱에 한해서만 잠금을 해제합니다. 따라서 코인을 보내려면 여전히 암호문이 필요합니다.&lt;/li&gt;&lt;li&gt;&lt;b&gt;백업:&lt;/b&gt; 각 라운드는 새 주소를 최대 9개 사용합니다. %1 기능에는 지갑 자동 백업이 필요하며 기본적으로 켜져 있습니다.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;Larger amounts&lt;/b&gt;&lt;p&gt;For larger sums there are three more amounts: 100.001, 1000.01 and 10000.1 DFCN. Your wallet mixes coins of these amounts, but it does not make them. You make them with one normal payment to yourself. Use this recipe only in a wallet whose receiving and change addresses are its own spendable P2PKH addresses, as they are by default: a wallet that was given other active descriptors may not recognise the coins it pays to itself.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Create a new receiving address for each coin you want, and one more.&lt;/li&gt;&lt;li&gt;On the Send page, add a recipient for each of these addresses. Pay exactly 100.001, 1000.01 or 10000.1 DFCN to each coin's address and 0.01 DFCN to the last one, with "Subtract fee from amount" switched off for every recipient.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 From then on, while mixing is switched on, your wallet mixes every coin of these amounts that it holds on such an address, whatever the target balance is. To keep a coin out, lock it before you start mixing: enable the coin control features in Options, then use Inputs… on the Send page.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts. If your wallet has no ordinary, unmixed balance left for them, mixing these amounts can wait.&lt;/li&gt;&lt;li&gt;A normal payment can spend these coins like any other coin, mixed or not. Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself. While mixing is running, choose coins that are not of a standard or a larger amount, and neither lock nor spend a coin of these amounts that is waiting to be mixed until its session has ended: a session that loses its coin can cost a collateral.&lt;/li&gt;&lt;li&gt;A session needs other wallets that mix the same amount at the same time, so a larger amount can wait longer for its rounds.&lt;/li&gt;&lt;/ul&gt;</source>
+        <extracomment>%1 is the sentence about the block at which mixing the larger amounts starts; it is translated on its own.</extracomment>
+        <translation>&lt;hr&gt;&lt;b&gt;큰 단위 금액&lt;/b&gt;&lt;p&gt;큰돈을 믹싱할 때는 100.001, 1000.01, 10000.1 DFCN의 세 가지 금액을 추가로 사용할 수 있습니다. 지갑은 이 금액의 코인을 믹싱하지만 직접 만들지는 않습니다. 일반 거래로 자신에게 한 번 송금하면 이 코인들을 직접 만들 수 있습니다. 기본 설정에서처럼 받기 주소와 잔돈 주소가 모두 지갑 소유의 P2PKH 주소이고 지갑에서 해당 코인을 쓸 수 있을 때만 이 방법을 사용하세요. 다른 활성 디스크립터가 설정된 지갑은 자신에게 보낸 코인을 인식하지 못할 수 있습니다.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;만들려는 코인마다 새 받기 주소를 하나씩 만들고, 주소를 하나 더 만드세요.&lt;/li&gt;&lt;li&gt;보내기 페이지에서 각 주소를 수신자로 추가하세요. 모든 수신자에 대해 “금액에서 수수료 차감”을 끈 상태로 각 코인의 주소에 정확히 100.001, 1000.01 또는 10000.1 DFCN을 보내고 마지막 주소에 0.01 DFCN을 보내세요.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 그때부터 믹싱이 켜져 있는 동안에는 목표 잔액과 관계없이 지갑이 이런 주소에 보유한 해당 금액의 코인을 모두 믹싱합니다. 제외할 코인은 믹싱을 시작하기 전에 잠그세요. 옵션에서 ‘코인 제어 기능 활성화’를 선택한 다음 보내기 페이지에서 ‘입력…’을 사용하세요.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;0.01 DFCN은 이 금액의 코인을 믹싱할 때 담보로 쓰는 일반 자금입니다. 지갑에 담보로 쓸 일반 잔액(믹싱하지 않은 잔액)이 남아 있지 않으면 이 금액의 코인 믹싱이 지연될 수 있습니다.&lt;/li&gt;&lt;li&gt;이 코인들도 믹싱 여부와 관계없이 다른 코인처럼 일반 결제에 쓰일 수 있습니다. 믹싱을 시작하기 전에 보관할 코인을 잠그거나, 결제에 쓸 코인을 직접 선택하세요. 믹싱이 진행 중일 때는 표준 금액과 큰 단위 금액 중 어디에도 해당하지 않는 코인을 선택하세요. 이때 두 종류의 금액 중 하나에 해당하는 코인이 믹싱을 기다리고 있다면 세션이 끝날 때까지 그 코인을 잠그거나 쓰지 마세요. 세션에서 코인이 빠지면 담보를 잃을 수 있습니다.&lt;/li&gt;&lt;li&gt;세션에는 같은 금액을 동시에 믹싱하는 다른 지갑도 필요하므로 큰 단위 금액의 코인은 각 라운드가 시작될 때까지 더 오래 기다릴 수 있습니다.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;How much to mix&lt;/b&gt;&lt;p&gt;The standard amounts are at most about 10 DFCN, so on their own they suit smaller sums. The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more, and a payment can hold only so many coins: one payment from coins of the standard amounts can be at most about 6,700 DFCN. For more, use the larger amounts.&lt;/p&gt;&lt;p&gt;A payment from your %1 balance has no change. The mixed coins have to add up to the amount you send; what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default. With coins of the larger amounts, switch off "Subtract fee from amount" for every recipient and send a little less than the coins add up to: the difference is the fee, so it has to cover the normal network fee and stay within the wallet's fee limit. Or keep coins of the standard amounts to make up the rest.&lt;/p&gt;</source>
+        <translation>&lt;hr&gt;&lt;b&gt;믹싱할 금액&lt;/b&gt;&lt;p&gt;표준 금액은 최대 약 10 DFCN이므로 그 자체로는 소액을 믹싱하기에 적합합니다. 옵션에서 설정할 수 있는 목표 잔액은 최대 10,000 DFCN이며, 이만큼 믹싱하면 코인이 1,000개 이상입니다. 한 번의 결제에 쓸 수 있는 코인 수에는 한계가 있어 표준 금액의 코인으로 한 번에 결제할 수 있는 금액은 최대 약 6,700 DFCN입니다. 이보다 많이 보내려면 큰 단위 금액을 사용하세요.&lt;/p&gt;&lt;p&gt;%1 잔액에서 결제하면 잔돈이 생기지 않습니다. 믹싱한 코인을 합쳐 보낼 금액을 맞춰야 하며, 남는 금액은 수수료가 됩니다. 수수료는 기본적으로 최대 0.1 DFCN입니다. 큰 단위 금액의 코인으로 보낼 때는 모든 수신자에 대해 “금액에서 수수료 차감”을 끄고 코인의 합계보다 조금 적은 금액을 보내세요. 그 차액이 수수료이므로 일반 네트워크 수수료를 충당할 수 있어야 하며 지갑의 수수료 한도를 넘지 않아야 합니다. 또는 나머지 금액을 채울 수 있도록 표준 금액의 코인을 남겨 두세요.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2638,6 +2659,10 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>부분 서명 거래(바이너리)</translation>
     </message>
     <message>
+        <source>Could not write file %1.</source>
+        <translation>파일 %1에 쓸 수 없습니다.</translation>
+    </message>
+    <message>
         <source>PSBT saved to %1.</source>
         <translation>PSBT를 %1에 저장했습니다.</translation>
     </message>
@@ -2999,12 +3024,12 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>믹싱 라운드</translation>
     </message>
     <message>
-        <source>This amount acts as a threshold to turn off mixing once it's reached.</source>
-        <translation>이 금액은 도달 시 믹싱을 종료하기 위한 한계점으로 작동합니다.</translation>
-    </message>
-    <message>
         <source>Target balance</source>
         <translation>목표 잔액</translation>
+    </message>
+    <message>
+        <source>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins. Coins of 100.001, 1000.01 and 10000.1 DFCN are mixed apart from this target.</source>
+        <translation>최대 10,000 DFCN입니다. 표준 금액은 최대 약 10 DFCN이므로 목표 잔액을 더 높게 잡으면 잔액이 수천 개의 코인으로 나뉘게 됩니다. 100.001, 1000.01, 10000.1 DFCN의 큰 단위 금액에 해당하는 코인은 이 목표 잔액과 별도로 믹싱합니다.</translation>
     </message>
     <message>
         <source>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</source>
@@ -3119,6 +3144,10 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Enabling pruning significantly reduces the disk space required to store transactions. All blocks are still fully validated. Reverting this setting requires re-downloading the entire blockchain.</source>
         <translation>정리를 활성화하면 거래를 저장하는 데 필요한 디스크 공간이 크게 줄어듭니다. 모든 블록은 계속해서 완전히 검증됩니다. 이 설정을 되돌리기 위해서는 전체 블록체인을 다시 다운로드 해야 합니다.</translation>
+    </message>
+    <message>
+        <source>This amount acts as a threshold to turn off mixing of the standard amounts once it's reached.</source>
+        <translation>이 금액에 도달하면 표준 금액의 코인 믹싱이 중지됩니다.</translation>
     </message>
     <message>
         <source>Map port using &amp;UPnP</source>
@@ -3592,14 +3621,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>꺼짐</translation>
     </message>
     <message>
-        <source>The node's staking thread is not running. See debug.log.</source>
-        <translation>노드의 스테이킹 스레드가 실행 중이 아닙니다. debug.log를 확인하세요.</translation>
-    </message>
-    <message>
-        <source>This node runs without staking (-staking=0).</source>
-        <translation>이 노드는 스테이킹을 끈 상태로 실행 중입니다(-staking=0).</translation>
-    </message>
-    <message>
         <source>Paused: wallet locked</source>
         <translation>일시 중지: 지갑 잠김</translation>
     </message>
@@ -3646,6 +3667,22 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
         <translation>코인이 아직 성숙하지 않았거나 보유 기간이 짧은 경우, 금액이 스테이킹 범위를 벗어나는 경우 또는 마스터노드 담보 금액과 정확히 일치하는 경우에는 제외됩니다.</translation>
+    </message>
+    <message>
+        <source>Staking stopped and will retry soon. If it stays off, restart the wallet.</source>
+        <translation>스테이킹이 중지되었으며 잠시 후 다시 시도합니다. 계속 꺼져 있으면 지갑을 다시 시작하세요.</translation>
+    </message>
+    <message>
+        <source>The staking thread is not running. The debug log file has the reason.</source>
+        <translation>스테이킹 스레드가 실행 중이 아닙니다. 이유는 디버그 로그 파일에서 확인할 수 있습니다.</translation>
+    </message>
+    <message>
+        <source>Staking is turned off in the startup settings. To stake, turn it on and restart.</source>
+        <translation>시작 설정에서 스테이킹이 꺼져 있습니다. 스테이킹하려면 이 설정을 켜고 지갑을 다시 시작하세요.</translation>
+    </message>
+    <message>
+        <source>The wallet was started with -staking=0, in its configuration file or on its command line.</source>
+        <translation>설정 파일이나 명령줄에 -staking=0 옵션을 지정한 상태로 지갑을 시작했습니다.</translation>
     </message>
     <message numerus="yes">
         <source>%n Rounds</source>
@@ -3818,6 +3855,10 @@ https://app.transifex.com/defcon/defcon/</translation>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>부분 서명 거래(바이너리)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>파일 %1에 쓸 수 없습니다.</translation>
     </message>
     <message>
         <source>PSBT saved to disk.</source>
@@ -5691,9 +5732,26 @@ For more information on using this console, type %6.
         <translation>수신자 목록을 검토하려면 "자세히 보기…"를 누르세요</translation>
     </message>
     <message>
+        <source>Unsigned Transaction</source>
+        <comment>PSBT copied</comment>
+        <translation>미서명 거래</translation>
+    </message>
+    <message>
+        <source>The PSBT has been copied to the clipboard. You can also save it.</source>
+        <translation>PSBT를 클립보드에 복사했습니다. 파일로 저장할 수도 있습니다.</translation>
+    </message>
+    <message>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>부분 서명 거래(바이너리)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>파일 %1에 쓸 수 없습니다.</translation>
+    </message>
+    <message>
+        <source>PSBT saved to disk.</source>
+        <translation>PSBT를 디스크에 저장했습니다.</translation>
     </message>
     <message>
         <source>Send DeFCoN</source>
@@ -6583,6 +6641,10 @@ For more information on using this console, type %6.
         <translation>(해당 사항 없음)</translation>
     </message>
     <message>
+        <source>Watch-only address</source>
+        <translation>조회 전용 주소</translation>
+    </message>
+    <message>
         <source>(no label)</source>
         <translation>(라벨 없음)</translation>
     </message>
@@ -6676,10 +6738,6 @@ For more information on using this console, type %6.
     <message>
         <source>To yourself</source>
         <translation>나에게</translation>
-    </message>
-    <message>
-        <source>Mined</source>
-        <translation>채굴</translation>
     </message>
     <message>
         <source>Platform Transfer</source>
@@ -6846,6 +6904,18 @@ For more information on using this console, type %6.
         <source>Show only transactions of at least this amount</source>
         <translation>이 금액 이상의 거래만 표시</translation>
     </message>
+    <message>
+        <source>All addresses</source>
+        <translation>모든 주소</translation>
+    </message>
+    <message>
+        <source>Spendable only</source>
+        <translation>사용 가능한 주소만</translation>
+    </message>
+    <message>
+        <source>Show only transactions of these addresses</source>
+        <translation>이 주소들의 거래만 표시</translation>
+    </message>
 </context>
 <context>
     <name>TxViewDelegate</name>
@@ -6961,6 +7031,10 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>선택된 금액:</translation>
     </message>
     <message>
+        <source>Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason.</source>
+        <translation>이 지갑의 스테이킹을 시작할 수 없습니다. 1분 후에 다시 시도하세요. 그래도 시작되지 않으면 디버그 로그 파일에서 이유를 확인하세요.</translation>
+    </message>
+    <message>
         <source>Wallet Data</source>
         <extracomment>Name of the wallet data file format.</extracomment>
         <translation>지갑 데이터</translation>
@@ -7012,10 +7086,6 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Staking</source>
         <translation>스테이킹</translation>
-    </message>
-    <message>
-        <source>Staking could not be started for this wallet. See debug.log for details.</source>
-        <translation>이 지갑의 스테이킹을 시작할 수 없습니다. 자세한 내용은 debug.log를 확인하세요.</translation>
     </message>
     <message>
         <source>Backup Failed</source>
@@ -7371,6 +7441,10 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments.</source>
         <translation>네트워크 버전의 총 문자 길이(%i)가 최대 길이(%i)를 초과합니다. UA코멘트의 갯수나 길이를 줄이십시오.</translation>
+    </message>
+    <message>
+        <source>Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.</source>
+        <translation>거래에 BLS 잔돈 주소가 필요하지만 개인 키가 없는 지갑은 이 주소를 만들 수 없습니다. 잔돈 주소를 선택하세요.</translation>
     </message>
     <message>
         <source>Transaction needs a change address, but we can't generate it. Please call keypoolrefill first.</source>

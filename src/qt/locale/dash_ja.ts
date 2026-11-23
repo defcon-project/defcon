@@ -1466,16 +1466,20 @@
 <context>
     <name>EmptyStateWidget</name>
     <message>
-        <source>Loading…</source>
-        <translation>読み込み中…</translation>
-    </message>
-    <message>
         <source>No matching results</source>
         <translation>一致する結果がありません</translation>
     </message>
     <message>
+        <source>Waiting for synchronization</source>
+        <translation>同期を待機中</translation>
+    </message>
+    <message>
         <source>Try a different search or clear your filters.</source>
         <translation>別の語句で検索するか、フィルターを解除してください。</translation>
+    </message>
+    <message>
+        <source>Your transactions will appear here as the wallet catches up with the network.</source>
+        <translation>ウォレットとネットワークの同期が進むにつれて、トランザクションがここに表示されます。</translation>
     </message>
     <message>
         <source>Clear filters</source>
@@ -1551,8 +1555,25 @@
         <translation>%1の情報</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;%1の基本&lt;/h3&gt;&lt;p&gt;%1を利用すると、DFCNの出所を追跡するのが大幅に難しくなります。他のDeFCoNユーザーと共同でトランザクションを作成し、お互いのコインをミキシングします。コインがウォレットの管理を離れることはなく、使用できるのは所有者だけです。&lt;/p&gt;&lt;hr&gt;&lt;b&gt;仕組み&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;ウォレットは残高の一部を、0.001、0.01、0.1、1、10 DFCNをそれぞれわずかに上回る規定の額面（例：10.0001 DFCN）に分けます。全員が同じ額面を使うため、個々のコインを区別しにくくなります。&lt;/li&gt;&lt;li&gt;ウォレットはそのうちの1種類の額面について、マスターノードで参加者を待っているミキシングセッションに参加するか、無作為に選んだマスターノードに新しいセッションの開始を依頼します。&lt;/li&gt;&lt;li&gt;参加者が%2人以上集まると、マスターノードは各参加者のコインを1件のトランザクションにまとめます。各ウォレットは自分の部分だけを確認して署名し、元と同じ額面のコインを自分の新しいアドレスで受け取ります。&lt;/li&gt;&lt;li&gt;セッションが1回完了するたびに1ラウンドとして数えます。ウォレットはこれを数回繰り返します。「オプション」でラウンド数と目標残高を設定できます。&lt;/li&gt;&lt;li&gt;ウォレットを開いている間、ミキシングはバックグラウンドで進みます。%1の残高から送金する際には、コインはすでにミキシング済みです。&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;知っておきたいこと&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;ステーキング：&lt;/b&gt;メインネットでは、ミキシング済みのコインはステーキングの最低額に満たず、ステーキング報酬を獲得できません。ステーキング時にこれらのコインやミキシング用の担保が他のコインと統合されることもありません。「オプション」の目標残高で、ミキシングする金額のおおよその目安を設定できます。&lt;/li&gt;&lt;li&gt;&lt;b&gt;手数料：&lt;/b&gt;ミキシングのトランザクションは無料です。規定の額面に分ける際には、通常の少額のネットワーク手数料がかかります。また、不正利用を防ぐため、約0.0001 DFCNの少額の担保がネットワークに支払われることがあります。&lt;/li&gt;&lt;li&gt;&lt;b&gt;プライバシー：&lt;/b&gt;セッションを運営するマスターノードは、どのコインが参加しているかを把握できます。また、他の参加者がそれぞれ別人とは限りません。ラウンドを重ねるほどコインを追跡しにくくなりますが、ミキシング済みのコインを一度にまとめて送ると、再び関連付けられる可能性があります。&lt;/li&gt;&lt;li&gt;&lt;b&gt;暗号化されたウォレット：&lt;/b&gt;ウォレットがロックされた状態でミキシングを開始すると、パスフレーズの入力が求められ、ミキシングに限りロックが解除されます。送金には引き続きパスフレーズが必要です。&lt;/li&gt;&lt;li&gt;&lt;b&gt;バックアップ：&lt;/b&gt;1ラウンドにつき最大9個の新しいアドレスを使用します。%1にはウォレットの自動バックアップが必要です。自動バックアップはデフォルトで有効です。&lt;/li&gt;&lt;/ul&gt;</translation>
+        <source>Mixing these amounts starts at block %1.</source>
+        <translation>これらの額面のミキシングはブロック%1から始まります。</translation>
+    </message>
+    <message>
+        <source>The block at which mixing these amounts starts is not set in this version yet.</source>
+        <translation>このバージョンでは、これらの額面のミキシングを開始するブロックはまだ設定されていません。</translation>
+    </message>
+    <message>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; coins of exactly a standard amount, or of one of the larger amounts below, do not earn staking rewards, whether they are mixed or not, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed in the standard amounts.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;%1の基本&lt;/h3&gt;&lt;p&gt;%1を利用すると、DFCNの出所を追跡するのが大幅に難しくなります。他のDeFCoNユーザーと共同でトランザクションを作成し、お互いのコインをミキシングします。コインがウォレットの管理を離れることはなく、使用できるのは所有者だけです。&lt;/p&gt;&lt;hr&gt;&lt;b&gt;仕組み&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;ウォレットは残高の一部を、0.001、0.01、0.1、1、10 DFCNをそれぞれわずかに上回る規定の額面（例：10.0001 DFCN）に分けます。全員が同じ額面を使うため、個々のコインを区別しにくくなります。&lt;/li&gt;&lt;li&gt;ウォレットはそのうちの1種類の額面について、マスターノードで参加者を待っているミキシングセッションに参加するか、無作為に選んだマスターノードに新しいセッションの開始を依頼します。&lt;/li&gt;&lt;li&gt;参加者が%2人以上集まると、マスターノードは各参加者のコインを1件のトランザクションにまとめます。各ウォレットは自分の部分だけを確認して署名し、元と同じ額面のコインを自分の新しいアドレスで受け取ります。&lt;/li&gt;&lt;li&gt;セッションが1回完了するたびに1ラウンドとして数えます。ウォレットはこれを数回繰り返します。「オプション…」で「ミキシングラウンド」の回数と「対象残高」を設定できます。&lt;/li&gt;&lt;li&gt;ウォレットを開いている間、ミキシングはバックグラウンドで進みます。%1の残高から送金する際には、コインはすでにミキシング済みです。&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;知っておきたいこと&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;ステーキング：&lt;/b&gt;金額が規定の額面または後述の大きな額面のいずれかにぴったり一致するコインは、ミキシング済みかどうかにかかわらず、ステーキング報酬を獲得できません。ステーキング時にこれらのコインやミキシング用の担保が他のコインと統合されることもありません。「オプション…」の「対象残高」で、規定の額面でミキシングする金額の目安を設定できます。&lt;/li&gt;&lt;li&gt;&lt;b&gt;手数料：&lt;/b&gt;ミキシングのトランザクションは無料です。規定の額面に分ける際には、通常の少額のネットワーク手数料がかかります。また、不正利用を防ぐため、約0.0001 DFCNの少額の担保がネットワークに支払われることがあります。&lt;/li&gt;&lt;li&gt;&lt;b&gt;プライバシー：&lt;/b&gt;セッションを運営するマスターノードは、どのコインが参加しているかを把握できます。また、他の参加者がそれぞれ別人とは限りません。ラウンドを重ねるほどコインを追跡しにくくなりますが、ミキシング済みのコインを一度にまとめて送ると、再び関連付けられる可能性があります。&lt;/li&gt;&lt;li&gt;&lt;b&gt;暗号化されたウォレット：&lt;/b&gt;ウォレットがロックされた状態でミキシングを開始すると、パスフレーズの入力が求められ、ミキシングに限りロックが解除されます。送金には引き続きパスフレーズが必要です。&lt;/li&gt;&lt;li&gt;&lt;b&gt;バックアップ：&lt;/b&gt;1ラウンドにつき最大9個の新しいアドレスを使用します。%1にはウォレットの自動バックアップが必要です。自動バックアップはデフォルトで有効です。&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;Larger amounts&lt;/b&gt;&lt;p&gt;For larger sums there are three more amounts: 100.001, 1000.01 and 10000.1 DFCN. Your wallet mixes coins of these amounts, but it does not make them. You make them with one normal payment to yourself. Use this recipe only in a wallet whose receiving and change addresses are its own spendable P2PKH addresses, as they are by default: a wallet that was given other active descriptors may not recognise the coins it pays to itself.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Create a new receiving address for each coin you want, and one more.&lt;/li&gt;&lt;li&gt;On the Send page, add a recipient for each of these addresses. Pay exactly 100.001, 1000.01 or 10000.1 DFCN to each coin's address and 0.01 DFCN to the last one, with "Subtract fee from amount" switched off for every recipient.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 From then on, while mixing is switched on, your wallet mixes every coin of these amounts that it holds on such an address, whatever the target balance is. To keep a coin out, lock it before you start mixing: enable the coin control features in Options, then use Inputs… on the Send page.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts. If your wallet has no ordinary, unmixed balance left for them, mixing these amounts can wait.&lt;/li&gt;&lt;li&gt;A normal payment can spend these coins like any other coin, mixed or not. Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself. While mixing is running, choose coins that are not of a standard or a larger amount, and neither lock nor spend a coin of these amounts that is waiting to be mixed until its session has ended: a session that loses its coin can cost a collateral.&lt;/li&gt;&lt;li&gt;A session needs other wallets that mix the same amount at the same time, so a larger amount can wait longer for its rounds.&lt;/li&gt;&lt;/ul&gt;</source>
+        <extracomment>%1 is the sentence about the block at which mixing the larger amounts starts; it is translated on its own.</extracomment>
+        <translation>&lt;hr&gt;&lt;b&gt;大きな額面&lt;/b&gt;&lt;p&gt;高額の送金には、100.001、1000.01、10000.1 DFCNの3種類の額面もあります。ウォレットはこれらの額面のコインをミキシングしますが、自動では作成しません。自分宛てに通常の送金を1回行って作成します。この手順を使うには、受取アドレスとチェンジアドレスが、どちらもそのウォレットが所有し、支払いに使えるP2PKHアドレスである必要があります。デフォルトではこの条件を満たしています。別のアクティブなディスクリプターが設定されたウォレットでは、自分宛てに送ったコインを認識できない場合があります。&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;作成したいコイン1枚につき新しい受取アドレスを1つ作成し、さらにもう1つ作成します。&lt;/li&gt;&lt;li&gt;「送金」ページで、これらのアドレスごとに受取人を追加します。すべての受取人について「金額から手数料を差し引く」をオフにし、各コイン用のアドレスには100.001、1000.01、10000.1 DFCNのいずれかの金額を正確に、最後のアドレスには0.01 DFCNを送ります。&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1それ以降、ミキシングが有効な間、ウォレットは「対象残高」の設定にかかわらず、このようなアドレスで保有するこれらの額面のコインをすべてミキシングします。対象から外したいコインは、ミキシングを開始する前にロックしてください。「オプション…」で「コインコントロール機能を有効化」をオンにし、「送金」ページの「インプット…」を使います。&lt;/p&gt;&lt;ul&gt;&lt;li&gt;0.01 DFCNは、これらの額面のミキシング用の担保に充てる通常の資金です。担保に使える通常の未ミキシング残高がウォレットに残っていない場合、これらの額面のミキシングが待機状態になることがあります。&lt;/li&gt;&lt;li&gt;通常の送金では、ミキシング済みかどうかにかかわらず、これらのコインも他のコインと同じように使えます。残しておきたいコインはミキシングを開始する前にロックするか、送金に使うコインを自分で選んでください。ミキシングの実行中は、規定の額面にも大きな額面にも該当しないコインを選んでください。これらの額面のコインがミキシングを待っている場合は、そのセッションが終了するまでロックも使用もしないでください。セッションに必要なコインが使えなくなると、担保を失うことがあります。&lt;/li&gt;&lt;li&gt;セッションには、同じ額面を同時にミキシングする他のウォレットが必要です。そのため、大きな額面では各ラウンドの待ち時間が長くなることがあります。&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;How much to mix&lt;/b&gt;&lt;p&gt;The standard amounts are at most about 10 DFCN, so on their own they suit smaller sums. The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more, and a payment can hold only so many coins: one payment from coins of the standard amounts can be at most about 6,700 DFCN. For more, use the larger amounts.&lt;/p&gt;&lt;p&gt;A payment from your %1 balance has no change. The mixed coins have to add up to the amount you send; what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default. With coins of the larger amounts, switch off "Subtract fee from amount" for every recipient and send a little less than the coins add up to: the difference is the fee, so it has to cover the normal network fee and stay within the wallet's fee limit. Or keep coins of the standard amounts to make up the rest.&lt;/p&gt;</source>
+        <translation>&lt;hr&gt;&lt;b&gt;ミキシングする金額&lt;/b&gt;&lt;p&gt;規定の額面は最大でも約10 DFCNなので、それだけを使う方法は少額の送金に適しています。「オプション…」の「対象残高」の上限は10,000 DFCNで、この金額だけでもミキシング済みのコインが1,000枚以上になります。1回の送金に使えるコインの枚数には限りがあるため、規定の額面のコインだけで一度に送れるのは最大でも約6,700 DFCNです。それより多く送るには、大きな額面を使ってください。&lt;/p&gt;&lt;p&gt;%1の残高からの送金ではチェンジは発生しません。ミキシング済みのコインを組み合わせて送金額をまかなう必要があります。余りは手数料となり、手数料の上限はデフォルトで0.1 DFCNです。大きな額面のコインを使う場合は、すべての受取人について「金額から手数料を差し引く」をオフにし、コインの合計額を少し下回る金額を送ってください。差額が手数料になるため、通常のネットワーク手数料をまかなえ、かつウォレットの手数料上限を超えない金額にする必要があります。あるいは、残りを補えるように規定の額面のコインを残しておいてください。&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2638,6 +2659,10 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>部分署名済みトランザクション（バイナリ）</translation>
     </message>
     <message>
+        <source>Could not write file %1.</source>
+        <translation>ファイル%1に書き込めませんでした。</translation>
+    </message>
+    <message>
         <source>PSBT saved to %1.</source>
         <translation>PSBTを%1に保存しました。</translation>
     </message>
@@ -2999,12 +3024,12 @@ Only the list entry is removed. If the address was imported into the wallet it r
         <translation>ミキシングラウンド</translation>
     </message>
     <message>
-        <source>This amount acts as a threshold to turn off mixing once it's reached.</source>
-        <translation>ミキシング済みの金額がこの値に達すると、ミキシングを停止します。</translation>
-    </message>
-    <message>
         <source>Target balance</source>
         <translation>対象残高</translation>
+    </message>
+    <message>
+        <source>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins. Coins of 100.001, 1000.01 and 10000.1 DFCN are mixed apart from this target.</source>
+        <translation>対象残高の上限は10,000 DFCNです。それ以上に設定すると、規定の額面は最大でも約10 DFCNなので、残高が数千枚のコインに分割されます。100.001、1000.01、10000.1 DFCNの大きな額面のコインは、この対象残高とは別にミキシングされます。</translation>
     </message>
     <message>
         <source>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</source>
@@ -3119,6 +3144,10 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Enabling pruning significantly reduces the disk space required to store transactions. All blocks are still fully validated. Reverting this setting requires re-downloading the entire blockchain.</source>
         <translation>プルーニングを有効にすると、トランザクションを保存するのに必要なディスク容量が大幅に削減されます。すべてのブロックは完全に検証されたままです。この設定を元に戻すには、ブロックチェーン全体を再ダウンロードする必要があります。</translation>
+    </message>
+    <message>
+        <source>This amount acts as a threshold to turn off mixing of the standard amounts once it's reached.</source>
+        <translation>規定の額面でミキシング済みの金額がこの値に達すると、規定の額面のミキシングを停止します。</translation>
     </message>
     <message>
         <source>Map port using &amp;UPnP</source>
@@ -3592,14 +3621,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>オフ</translation>
     </message>
     <message>
-        <source>The node's staking thread is not running. See debug.log.</source>
-        <translation>ノードのステーキングスレッドが動作していません。debug.logを確認してください。</translation>
-    </message>
-    <message>
-        <source>This node runs without staking (-staking=0).</source>
-        <translation>このノードではステーキングが無効です（-staking=0）。</translation>
-    </message>
-    <message>
         <source>Paused: wallet locked</source>
         <translation>一時停止中：ウォレットがロックされています</translation>
     </message>
@@ -3646,6 +3667,22 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
         <translation>未成熟のコイン、必要な時間が経過していないコイン、ステーキングの下限額未満または上限額超のコイン、マスターノードの担保と同額のコインは対象外です。</translation>
+    </message>
+    <message>
+        <source>Staking stopped and will retry soon. If it stays off, restart the wallet.</source>
+        <translation>ステーキングが停止しました。まもなく再試行します。停止したままの場合は、ウォレットを再起動してください。</translation>
+    </message>
+    <message>
+        <source>The staking thread is not running. The debug log file has the reason.</source>
+        <translation>ステーキングスレッドが動作していません。理由はデバッグ用ログファイルに記録されています。</translation>
+    </message>
+    <message>
+        <source>Staking is turned off in the startup settings. To stake, turn it on and restart.</source>
+        <translation>起動設定でステーキングが無効になっています。ステーキングするには、設定を有効にしてウォレットを再起動してください。</translation>
+    </message>
+    <message>
+        <source>The wallet was started with -staking=0, in its configuration file or on its command line.</source>
+        <translation>ウォレットは、設定ファイルまたはコマンドラインで -staking=0 を指定して起動されました。</translation>
     </message>
     <message numerus="yes">
         <source>%n Rounds</source>
@@ -3818,6 +3855,10 @@ https://app.transifex.com/defcon/defcon/</translation>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>部分署名済みトランザクション（バイナリ）</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>ファイル%1に書き込めませんでした。</translation>
     </message>
     <message>
         <source>PSBT saved to disk.</source>
@@ -5691,9 +5732,26 @@ For more information on using this console, type %6.
         <translation>受取人の一覧を確認するには「詳細を表示…」をクリックしてください</translation>
     </message>
     <message>
+        <source>Unsigned Transaction</source>
+        <comment>PSBT copied</comment>
+        <translation>未署名のトランザクション</translation>
+    </message>
+    <message>
+        <source>The PSBT has been copied to the clipboard. You can also save it.</source>
+        <translation>PSBTをクリップボードにコピーしました。保存することもできます。</translation>
+    </message>
+    <message>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>部分署名済みトランザクション（バイナリ）</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>ファイル%1に書き込めませんでした。</translation>
+    </message>
+    <message>
+        <source>PSBT saved to disk.</source>
+        <translation>PSBTをディスクに保存しました。</translation>
     </message>
     <message>
         <source>Send DeFCoN</source>
@@ -6583,6 +6641,10 @@ For more information on using this console, type %6.
         <translation>(n/a)</translation>
     </message>
     <message>
+        <source>Watch-only address</source>
+        <translation>ウォッチオンリーアドレス</translation>
+    </message>
+    <message>
         <source>(no label)</source>
         <translation>（ラベル無し）</translation>
     </message>
@@ -6676,10 +6738,6 @@ For more information on using this console, type %6.
     <message>
         <source>To yourself</source>
         <translation>自分自身へ</translation>
-    </message>
-    <message>
-        <source>Mined</source>
-        <translation>マイニング済</translation>
     </message>
     <message>
         <source>Platform Transfer</source>
@@ -6846,6 +6904,18 @@ For more information on using this console, type %6.
         <source>Show only transactions of at least this amount</source>
         <translation>この金額以上のトランザクションのみを表示します</translation>
     </message>
+    <message>
+        <source>All addresses</source>
+        <translation>すべてのアドレス</translation>
+    </message>
+    <message>
+        <source>Spendable only</source>
+        <translation>使用可能なアドレスのみ</translation>
+    </message>
+    <message>
+        <source>Show only transactions of these addresses</source>
+        <translation>これらのアドレスのトランザクションのみを表示します</translation>
+    </message>
 </context>
 <context>
     <name>TxViewDelegate</name>
@@ -6961,6 +7031,10 @@ Go to File &gt; Open Wallet to load a wallet.
         <translation>選択した額:</translation>
     </message>
     <message>
+        <source>Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason.</source>
+        <translation>このウォレットでステーキングを開始できませんでした。1分後にもう一度お試しください。それでも開始しない場合は、デバッグ用ログファイルで理由を確認できます。</translation>
+    </message>
+    <message>
         <source>Wallet Data</source>
         <extracomment>Name of the wallet data file format.</extracomment>
         <translation>ウォレットデータ</translation>
@@ -7012,10 +7086,6 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Staking</source>
         <translation>ステーキング</translation>
-    </message>
-    <message>
-        <source>Staking could not be started for this wallet. See debug.log for details.</source>
-        <translation>このウォレットでステーキングを開始できませんでした。詳細はdebug.logを確認してください。</translation>
     </message>
     <message>
         <source>Backup Failed</source>
@@ -7371,6 +7441,10 @@ Go to File &gt; Open Wallet to load a wallet.
     <message>
         <source>Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments.</source>
         <translation>ネットワークバージョン文字 (%i) の長さが最大の長さ (%i) を超えています。UAコメントの数や長さを削減してください。</translation>
+    </message>
+    <message>
+        <source>Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.</source>
+        <translation>このトランザクションにはBLSチェンジアドレスが必要ですが、秘密鍵のないウォレットでは生成できません。チェンジアドレスを選択してください。</translation>
     </message>
     <message>
         <source>Transaction needs a change address, but we can't generate it. Please call keypoolrefill first.</source>

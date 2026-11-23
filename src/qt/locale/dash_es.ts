@@ -1466,16 +1466,20 @@
 <context>
     <name>EmptyStateWidget</name>
     <message>
-        <source>Loading…</source>
-        <translation>Cargando…</translation>
-    </message>
-    <message>
         <source>No matching results</source>
         <translation>No hay resultados coincidentes</translation>
     </message>
     <message>
+        <source>Waiting for synchronization</source>
+        <translation>Esperando sincronización</translation>
+    </message>
+    <message>
         <source>Try a different search or clear your filters.</source>
         <translation>Pruebe otra búsqueda o borre los filtros.</translation>
+    </message>
+    <message>
+        <source>Your transactions will appear here as the wallet catches up with the network.</source>
+        <translation>Sus transacciones aparecerán aquí a medida que la billetera se sincronice con la red.</translation>
     </message>
     <message>
         <source>Clear filters</source>
@@ -1551,8 +1555,25 @@
         <translation>%1 Información</translation>
     </message>
     <message>
-        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; on the main network, mixed coins are smaller than the minimum stake, so they do not earn staking rewards, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
-        <translation>&lt;h3&gt;Conceptos básicos de %1&lt;/h3&gt;&lt;p&gt;%1 dificulta mucho rastrear el origen de sus DFCN. Mezcla sus monedas con las de otros usuarios de DeFCoN en transacciones compartidas. Sus monedas nunca salen de su billetera y solo usted puede gastarlas.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Cómo funciona&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Su billetera divide parte del saldo en cantidades estándar ligeramente superiores a 0.001, 0.01, 0.1, 1 y 10 DFCN, por ejemplo 10.0001 DFCN. Todos usan las mismas cantidades, por lo que las monedas parecen iguales.&lt;/li&gt;&lt;li&gt;Para una de estas cantidades, su billetera se une a una sesión de mezcla en espera en un masternode, o pide a un masternode elegido al azar que inicie una nueva.&lt;/li&gt;&lt;li&gt;Cuando se han unido al menos %2 participantes, el masternode combina sus monedas en una sola transacción. Cada billetera verifica y firma solo su propia parte, y recibe las mismas cantidades en nuevas direcciones propias.&lt;/li&gt;&lt;li&gt;Cada sesión completada es una ronda. Su billetera repite el proceso varias veces. Puede configurar el número de rondas y el saldo objetivo en Opciones.&lt;/li&gt;&lt;li&gt;La mezcla se ejecuta en segundo plano mientras la billetera está abierta. Cuando envía desde su saldo %1, las monedas ya están mezcladas.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Información útil&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; en la red principal, las monedas mezcladas son inferiores al mínimo requerido para staking, por lo que no generan recompensas de staking. El staking nunca las combina, ni tampoco las garantías de mezcla, con sus otras monedas. El saldo objetivo de Opciones determina aproximadamente cuánto se mezcla.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Comisiones:&lt;/b&gt; las transacciones de mezcla son gratuitas. Crear las cantidades estándar conlleva una pequeña comisión de red normal. De vez en cuando se entrega a la red una pequeña garantía de unos 0.0001 DFCN para evitar abusos.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacidad:&lt;/b&gt; el masternode que gestiona una sesión ve qué monedas participan en ella, y no se garantiza que los demás participantes sean personas distintas. Más rondas dificultan el rastreo de sus monedas. Enviar muchas monedas mezcladas juntas en un solo pago puede volver a vincularlas.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Billetera cifrada:&lt;/b&gt; si la billetera está bloqueada al iniciar la mezcla, pide su contraseña y se desbloquea solo para mezclar, por lo que los envíos siguen requiriendo la contraseña.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Copias de seguridad:&lt;/b&gt; cada ronda utiliza hasta 9 direcciones nuevas. %1 requiere que las copias de seguridad automáticas de la billetera estén activadas; lo están de forma predeterminada.&lt;/li&gt;&lt;/ul&gt;</translation>
+        <source>Mixing these amounts starts at block %1.</source>
+        <translation>La mezcla de estas cantidades comienza en el bloque %1.</translation>
+    </message>
+    <message>
+        <source>The block at which mixing these amounts starts is not set in this version yet.</source>
+        <translation>En esta versión aún no se ha definido el bloque en el que comenzará la mezcla de estas cantidades.</translation>
+    </message>
+    <message>
+        <source>&lt;h3&gt;%1 basics&lt;/h3&gt;&lt;p&gt;%1 makes it much harder to trace where your DFCN came from. It mixes your coins with the coins of other DeFCoN users in shared transactions. Your coins never leave your wallet, and only you can spend them.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;How it works&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Your wallet splits part of your balance into standard amounts of slightly more than 0.001, 0.01, 0.1, 1 and 10 DFCN, for example 10.0001 DFCN. Everyone uses the same amounts, so the coins look alike.&lt;/li&gt;&lt;li&gt;For one of these amounts, your wallet joins a mixing session that is waiting at a masternode, or asks a randomly chosen masternode to start a new one.&lt;/li&gt;&lt;li&gt;When at least %2 participants have joined, the masternode combines their coins into one transaction. Each wallet checks and signs only its own part, and gets the same amounts back to new addresses of its own.&lt;/li&gt;&lt;li&gt;Each completed session is one round. Your wallet repeats this several times. You can set the number of rounds and the target balance in Options.&lt;/li&gt;&lt;li&gt;Mixing runs in the background while the wallet is open. When you send from your %1 balance, your coins are already mixed.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Good to know&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; coins of exactly a standard amount, or of one of the larger amounts below, do not earn staking rewards, whether they are mixed or not, and staking never combines them or the mixing collaterals with your other coins. The target balance in Options sets roughly how much is mixed in the standard amounts.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Fees:&lt;/b&gt; mixing transactions are free. Creating the standard amounts costs a normal small network fee. Now and then a tiny collateral of about 0.0001 DFCN goes to the network to prevent abuse.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacy:&lt;/b&gt; the masternode running a session sees which coins take part in it, and the other participants are not guaranteed to be different people. More rounds make your coins harder to follow. Sending many mixed coins together in one payment can link them again.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Encrypted wallet:&lt;/b&gt; if the wallet is locked when you start mixing, it asks for your passphrase and unlocks for mixing only, so sending still needs the passphrase.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Backups:&lt;/b&gt; each round uses up to 9 new addresses. %1 needs automatic wallet backups to be switched on; they are on by default.&lt;/li&gt;&lt;/ul&gt;</source>
+        <translation>&lt;h3&gt;Conceptos básicos de %1&lt;/h3&gt;&lt;p&gt;%1 dificulta mucho rastrear el origen de sus DFCN. Mezcla sus monedas con las de otros usuarios de DeFCoN en transacciones compartidas. Sus monedas nunca salen de su billetera y solo usted puede gastarlas.&lt;/p&gt;&lt;hr&gt;&lt;b&gt;Cómo funciona&lt;/b&gt;&lt;ol type="1"&gt;&lt;li&gt;Su billetera divide parte del saldo en cantidades estándar ligeramente superiores a 0.001, 0.01, 0.1, 1 y 10 DFCN, por ejemplo 10.0001 DFCN. Todos usan las mismas cantidades, por lo que las monedas parecen iguales.&lt;/li&gt;&lt;li&gt;Para una de estas cantidades, su billetera se une a una sesión de mezcla en espera en un masternode, o pide a un masternode elegido al azar que inicie una nueva.&lt;/li&gt;&lt;li&gt;Cuando se han unido al menos %2 participantes, el masternode combina sus monedas en una sola transacción. Cada billetera verifica y firma solo su propia parte, y recibe las mismas cantidades en nuevas direcciones propias.&lt;/li&gt;&lt;li&gt;Cada sesión completada es una ronda. Su billetera repite el proceso varias veces. Puede configurar el número de rondas de mezcla y el saldo objetivo en Opciones.&lt;/li&gt;&lt;li&gt;La mezcla se ejecuta en segundo plano mientras la billetera está abierta. Cuando envía desde su saldo %1, las monedas ya están mezcladas.&lt;/li&gt;&lt;/ol&gt;&lt;hr&gt;&lt;b&gt;Información útil&lt;/b&gt;&lt;ul&gt;&lt;li&gt;&lt;b&gt;Staking:&lt;/b&gt; las monedas cuyo valor coincide exactamente con una de las cantidades estándar o con una de las cantidades mayores que se indican más abajo no generan recompensas de staking, estén mezcladas o no. El staking nunca las combina, ni tampoco las garantías de mezcla, con sus otras monedas. El saldo objetivo de Opciones determina aproximadamente cuánto se mezcla en cantidades estándar.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Comisiones:&lt;/b&gt; las transacciones de mezcla son gratuitas. Crear las cantidades estándar conlleva una pequeña comisión de red normal. De vez en cuando se entrega a la red una pequeña garantía de unos 0.0001 DFCN para evitar abusos.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Privacidad:&lt;/b&gt; el masternode que gestiona una sesión ve qué monedas participan en ella, y no se garantiza que los demás participantes sean personas distintas. Más rondas dificultan el rastreo de sus monedas. Enviar muchas monedas mezcladas juntas en un solo pago puede volver a vincularlas.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Billetera cifrada:&lt;/b&gt; si la billetera está bloqueada al iniciar la mezcla, pide su contraseña y se desbloquea solo para mezclar, por lo que los envíos siguen requiriendo la contraseña.&lt;/li&gt;&lt;li&gt;&lt;b&gt;Copias de seguridad:&lt;/b&gt; cada ronda utiliza hasta 9 direcciones nuevas. %1 requiere que las copias de seguridad automáticas de la billetera estén activadas; lo están de forma predeterminada.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;Larger amounts&lt;/b&gt;&lt;p&gt;For larger sums there are three more amounts: 100.001, 1000.01 and 10000.1 DFCN. Your wallet mixes coins of these amounts, but it does not make them. You make them with one normal payment to yourself. Use this recipe only in a wallet whose receiving and change addresses are its own spendable P2PKH addresses, as they are by default: a wallet that was given other active descriptors may not recognise the coins it pays to itself.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Create a new receiving address for each coin you want, and one more.&lt;/li&gt;&lt;li&gt;On the Send page, add a recipient for each of these addresses. Pay exactly 100.001, 1000.01 or 10000.1 DFCN to each coin's address and 0.01 DFCN to the last one, with "Subtract fee from amount" switched off for every recipient.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 From then on, while mixing is switched on, your wallet mixes every coin of these amounts that it holds on such an address, whatever the target balance is. To keep a coin out, lock it before you start mixing: enable the coin control features in Options, then use Inputs… on the Send page.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;The 0.01 DFCN is ordinary money for the mixing collaterals of these amounts. If your wallet has no ordinary, unmixed balance left for them, mixing these amounts can wait.&lt;/li&gt;&lt;li&gt;A normal payment can spend these coins like any other coin, mixed or not. Lock the ones you want to keep before you start mixing, or choose the coins of the payment yourself. While mixing is running, choose coins that are not of a standard or a larger amount, and neither lock nor spend a coin of these amounts that is waiting to be mixed until its session has ended: a session that loses its coin can cost a collateral.&lt;/li&gt;&lt;li&gt;A session needs other wallets that mix the same amount at the same time, so a larger amount can wait longer for its rounds.&lt;/li&gt;&lt;/ul&gt;</source>
+        <extracomment>%1 is the sentence about the block at which mixing the larger amounts starts; it is translated on its own.</extracomment>
+        <translation>&lt;hr&gt;&lt;b&gt;Cantidades mayores&lt;/b&gt;&lt;p&gt;Para sumas más altas hay otras tres cantidades: 100.001, 1000.01 y 10000.1 DFCN. Su billetera mezcla las monedas de estas cantidades, pero no las crea. Para crearlas, envíese a sí mismo un solo pago normal. Use este procedimiento solo en una billetera cuyas direcciones de recepción y de cambio sean direcciones P2PKH propias desde las que pueda gastar, como ocurre de forma predeterminada. Si se han configurado otros descriptores activos en la billetera, es posible que esta no reconozca las monedas que se envía a sí misma.&lt;/p&gt;&lt;ol type="1"&gt;&lt;li&gt;Cree una nueva dirección de recepción para cada moneda que quiera obtener y una dirección más.&lt;/li&gt;&lt;li&gt;En la página Enviar, añada un destinatario por cada una de estas direcciones. Envíe exactamente 100.001, 1000.01 o 10000.1 DFCN a la dirección de cada moneda y 0.01 DFCN a la última dirección, con la opción «Extraer comisión de la cantidad» desactivada para cada destinatario.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;%1 A partir de ese momento, mientras la mezcla esté activada, su billetera mezclará todas las monedas de estas cantidades que tenga en direcciones de ese tipo, independientemente del saldo objetivo. Para excluir una moneda, bloquéela antes de iniciar la mezcla. Para ello, marque «Activar característica coin control» en Opciones y luego use Entradas… en la página Enviar.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Los 0.01 DFCN son fondos ordinarios para las garantías de mezcla de estas cantidades. Si a su billetera no le queda saldo ordinario sin mezclar para cubrir esas garantías, es posible que la mezcla de estas cantidades tenga que esperar.&lt;/li&gt;&lt;li&gt;Puede gastar estas monedas en un pago normal como cualquier otra moneda, estén mezcladas o no. Bloquee las monedas que desee conservar antes de iniciar la mezcla o elija usted mismo las monedas que usará para el pago. Mientras la mezcla esté en marcha, elija monedas cuyo valor no coincida con ninguna de las cantidades estándar ni de las cantidades mayores. Si una moneda de alguna de esas cantidades está en espera de mezclarse, no la bloquee ni la gaste hasta que termine su sesión. Si la sesión pierde la moneda, puede perderse una garantía.&lt;/li&gt;&lt;li&gt;Una sesión necesita otras billeteras que mezclen la misma cantidad al mismo tiempo. Por eso, una moneda de una de las cantidades mayores puede tardar más en completar sus rondas.&lt;/li&gt;&lt;/ul&gt;</translation>
+    </message>
+    <message>
+        <source>&lt;hr&gt;&lt;b&gt;How much to mix&lt;/b&gt;&lt;p&gt;The standard amounts are at most about 10 DFCN, so on their own they suit smaller sums. The target balance in Options goes up to 10,000 DFCN, which already means a thousand mixed coins or more, and a payment can hold only so many coins: one payment from coins of the standard amounts can be at most about 6,700 DFCN. For more, use the larger amounts.&lt;/p&gt;&lt;p&gt;A payment from your %1 balance has no change. The mixed coins have to add up to the amount you send; what is left over goes to the fee, and the fee can be at most 0.1 DFCN by default. With coins of the larger amounts, switch off "Subtract fee from amount" for every recipient and send a little less than the coins add up to: the difference is the fee, so it has to cover the normal network fee and stay within the wallet's fee limit. Or keep coins of the standard amounts to make up the rest.&lt;/p&gt;</source>
+        <translation>&lt;hr&gt;&lt;b&gt;Cuánto mezclar&lt;/b&gt;&lt;p&gt;Las cantidades estándar llegan como máximo a unos 10 DFCN, por lo que por sí solas son adecuadas para sumas pequeñas. En Opciones, el saldo objetivo puede llegar a 10 000 DFCN, lo que ya supone mil monedas mezcladas o más. Un pago solo admite un número limitado de monedas, por lo que un solo pago con monedas de las cantidades estándar puede alcanzar como máximo unos 6 700 DFCN. Para sumas superiores, use las cantidades mayores.&lt;/p&gt;&lt;p&gt;Un pago con su saldo %1 no genera cambio. Las monedas mezcladas deben sumar el importe que envía. Lo que sobre se destina a la comisión, cuyo máximo predeterminado es de 0.1 DFCN. Si usa monedas de las cantidades mayores, desactive «Extraer comisión de la cantidad» para cada destinatario y envíe un poco menos de lo que suman las monedas. La diferencia es la comisión, por lo que debe cubrir la comisión normal de la red y mantenerse dentro del límite de comisiones de la billetera. También puede conservar monedas de las cantidades estándar para completar el importe que falte.&lt;/p&gt;</translation>
     </message>
 </context>
 <context>
@@ -2638,6 +2659,10 @@ Solo se quitará la entrada de la lista. Si la dirección se importó a la bille
         <translation>Transacción parcialmente firmada (binaria)</translation>
     </message>
     <message>
+        <source>Could not write file %1.</source>
+        <translation>No se pudo escribir el archivo %1.</translation>
+    </message>
+    <message>
         <source>PSBT saved to %1.</source>
         <translation>PSBT guardada en %1.</translation>
     </message>
@@ -2999,12 +3024,12 @@ Solo se quitará la entrada de la lista. Si la dirección se importó a la bille
         <translation>Rondas de mezcla</translation>
     </message>
     <message>
-        <source>This amount acts as a threshold to turn off mixing once it's reached.</source>
-        <translation>Esta cantidad actúa como umbral para desactivar la mezcla una vez que se alcance.</translation>
-    </message>
-    <message>
         <source>Target balance</source>
         <translation>Saldo objetivo</translation>
+    </message>
+    <message>
+        <source>At most 10,000 DFCN. The standard amounts are at most about 10 DFCN, so a larger target would split your balance into thousands of coins. Coins of 100.001, 1000.01 and 10000.1 DFCN are mixed apart from this target.</source>
+        <translation>El máximo es de 10 000 DFCN. Las cantidades estándar llegan como máximo a unos 10 DFCN, por lo que un saldo objetivo mayor dividiría su saldo en miles de monedas. Las monedas de 100.001, 1000.01 y 10000.1 DFCN se mezclan independientemente del saldo objetivo.</translation>
     </message>
     <message>
         <source>How many inputs of each denominated amount are created.&lt;br/&gt;Lower these numbers if you want fewer smaller denominations.</source>
@@ -3119,6 +3144,10 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Enabling pruning significantly reduces the disk space required to store transactions. All blocks are still fully validated. Reverting this setting requires re-downloading the entire blockchain.</source>
         <translation>Habilitar el despeje reduce significativamente el espacio en disco necesario para almacenar transacciones. Todos los bloques todavía están completamente validados. Revertir esta configuración requiere volver a descargar toda la cadena de bloques.</translation>
+    </message>
+    <message>
+        <source>This amount acts as a threshold to turn off mixing of the standard amounts once it's reached.</source>
+        <translation>Este importe es el umbral a partir del cual se desactiva la mezcla de las cantidades estándar.</translation>
     </message>
     <message>
         <source>Map port using &amp;UPnP</source>
@@ -3592,14 +3621,6 @@ https://app.transifex.com/defcon/defcon/</translation>
         <translation>Desactivado</translation>
     </message>
     <message>
-        <source>The node's staking thread is not running. See debug.log.</source>
-        <translation>El hilo de staking del nodo no está en ejecución. Consulte debug.log.</translation>
-    </message>
-    <message>
-        <source>This node runs without staking (-staking=0).</source>
-        <translation>Este nodo funciona sin staking (-staking=0).</translation>
-    </message>
-    <message>
         <source>Paused: wallet locked</source>
         <translation>En pausa: billetera bloqueada</translation>
     </message>
@@ -3646,6 +3667,22 @@ https://app.transifex.com/defcon/defcon/</translation>
     <message>
         <source>Coins stay out while immature or too young, under the smallest or over the largest stake, or exactly a masternode collateral.</source>
         <translation>Las monedas quedan excluidas mientras sean inmaduras o demasiado recientes, inferiores al mínimo o superiores al máximo de staking, o iguales al importe exacto de una garantía de masternode.</translation>
+    </message>
+    <message>
+        <source>Staking stopped and will retry soon. If it stays off, restart the wallet.</source>
+        <translation>El staking se ha detenido. En breve se intentará iniciarlo de nuevo. Si sigue inactivo, reinicie la billetera.</translation>
+    </message>
+    <message>
+        <source>The staking thread is not running. The debug log file has the reason.</source>
+        <translation>El hilo de staking no está en ejecución. El motivo figura en el archivo de registro de depuración.</translation>
+    </message>
+    <message>
+        <source>Staking is turned off in the startup settings. To stake, turn it on and restart.</source>
+        <translation>El staking está desactivado en la configuración de inicio. Para hacer staking, actívelo y reinicie la billetera.</translation>
+    </message>
+    <message>
+        <source>The wallet was started with -staking=0, in its configuration file or on its command line.</source>
+        <translation>La billetera se inició con la opción -staking=0 en el archivo de configuración o en la línea de comandos.</translation>
     </message>
     <message numerus="yes">
         <source>%n Rounds</source>
@@ -3818,6 +3855,10 @@ https://app.transifex.com/defcon/defcon/</translation>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Transacción parcialmente firmada (binaria)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>No se pudo escribir el archivo %1.</translation>
     </message>
     <message>
         <source>PSBT saved to disk.</source>
@@ -5691,9 +5732,26 @@ Para obtener más información sobre esta consola, escriba %6.
         <translation>Para revisar la lista de destinatarios, pulse «Mostrar detalles…»</translation>
     </message>
     <message>
+        <source>Unsigned Transaction</source>
+        <comment>PSBT copied</comment>
+        <translation>Transacción sin firmar</translation>
+    </message>
+    <message>
+        <source>The PSBT has been copied to the clipboard. You can also save it.</source>
+        <translation>Se ha copiado la PSBT al portapapeles. También puede guardarla.</translation>
+    </message>
+    <message>
         <source>Partially Signed Transaction (Binary)</source>
         <extracomment>Expanded name of the binary PSBT file format. See: BIP 174.</extracomment>
         <translation>Transacción parcialmente firmada (binaria)</translation>
+    </message>
+    <message>
+        <source>Could not write file %1.</source>
+        <translation>No se pudo escribir el archivo %1.</translation>
+    </message>
+    <message>
+        <source>PSBT saved to disk.</source>
+        <translation>PSBT guardada en disco.</translation>
     </message>
     <message>
         <source>Send DeFCoN</source>
@@ -6583,6 +6641,10 @@ Para obtener más información sobre esta consola, escriba %6.
         <translation>(nd)</translation>
     </message>
     <message>
+        <source>Watch-only address</source>
+        <translation>Dirección de sólo vigilancia</translation>
+    </message>
+    <message>
         <source>(no label)</source>
         <translation>(sin etiqueta)</translation>
     </message>
@@ -6676,10 +6738,6 @@ Para obtener más información sobre esta consola, escriba %6.
     <message>
         <source>To yourself</source>
         <translation>A usted mismo</translation>
-    </message>
-    <message>
-        <source>Mined</source>
-        <translation>Minado</translation>
     </message>
     <message>
         <source>Platform Transfer</source>
@@ -6846,6 +6904,18 @@ Para obtener más información sobre esta consola, escriba %6.
         <source>Show only transactions of at least this amount</source>
         <translation>Mostrar solo las transacciones de al menos esta cantidad</translation>
     </message>
+    <message>
+        <source>All addresses</source>
+        <translation>Todas las direcciones</translation>
+    </message>
+    <message>
+        <source>Spendable only</source>
+        <translation>Solo gastables</translation>
+    </message>
+    <message>
+        <source>Show only transactions of these addresses</source>
+        <translation>Mostrar solo las transacciones de estas direcciones</translation>
+    </message>
 </context>
 <context>
     <name>TxViewDelegate</name>
@@ -6961,6 +7031,10 @@ Vaya a Archivo &gt; Abrir billetera para cargar una.
         <translation>Cantidad seleccionada:</translation>
     </message>
     <message>
+        <source>Staking could not be started for this wallet. Please try again in a minute. If it still does not start, the debug log file has the reason.</source>
+        <translation>No se pudo iniciar el staking para esta billetera. Vuelva a intentarlo en un minuto. Si sigue sin iniciarse, el motivo figura en el archivo de registro de depuración.</translation>
+    </message>
+    <message>
         <source>Wallet Data</source>
         <extracomment>Name of the wallet data file format.</extracomment>
         <translation>Datos de la billetera</translation>
@@ -7012,10 +7086,6 @@ Vaya a Archivo &gt; Abrir billetera para cargar una.
     <message>
         <source>Staking</source>
         <translation>Staking</translation>
-    </message>
-    <message>
-        <source>Staking could not be started for this wallet. See debug.log for details.</source>
-        <translation>No se pudo iniciar el staking para esta billetera. Consulte debug.log para obtener más detalles.</translation>
     </message>
     <message>
         <source>Backup Failed</source>
@@ -7371,6 +7441,10 @@ Vaya a Archivo &gt; Abrir billetera para cargar una.
     <message>
         <source>Total length of network version string (%i) exceeds maximum length (%i). Reduce the number or size of uacomments.</source>
         <translation>La longitud total de la cadena de versión de red (%i) supera la longitud máxima (%i). Reducir el número o tamaño de uacomments.</translation>
+    </message>
+    <message>
+        <source>Transaction needs a BLS change address, which a wallet without private keys cannot make. Choose a change address.</source>
+        <translation>La transacción necesita una dirección BLS de cambio. Una billetera sin claves privadas no puede crearla. Elija una dirección de cambio.</translation>
     </message>
     <message>
         <source>Transaction needs a change address, but we can't generate it. Please call keypoolrefill first.</source>
