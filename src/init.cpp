@@ -1960,6 +1960,10 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             case ChainstateLoadingError::ERROR_LOADCHAINTIP_FAILED:
                 strLoadError = _("Error initializing block database");
                 break;
+            case ChainstateLoadingError::ERROR_V231_BLOCKS_NEED_REVALIDATION:
+                // Not translated: the wallet's texts were closed before this message was added.
+                strLoadError = Untranslated("Blocks at or above the v23.1 activation height were accepted by an earlier version and have to be validated again");
+                break;
             case ChainstateLoadingError::ERROR_GENERIC_BLOCKDB_OPEN_FAILED:
                 strLoadError = _("Error opening block database");
                 break;

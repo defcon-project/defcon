@@ -22,7 +22,13 @@ What it shows:
      the required 5000 and adds a second 5000 is refused too.
   3  llmq_test_v17 leaves the enabled types when the next block is H, on the node
      told to retire it, and stays there on the other.
-  4  The chain goes on at 5000, and -reindex revalidates every block across H.
+  4  The chain goes on at 5000, and -reindex revalidates every block across H. A
+     restart without it takes the chain as it is, before the reindex and after.
+  5  The late upgrade: the node without the height, whose tip is the copy paying
+     10000, is started with the height. It does not start on that chain, and
+     says why. With -reindex it validates what it has stored again: the copy is
+     left out, the honest block H that it had refused becomes its tip, it follows
+     the network from there, and then restarts as any node does.
 
 Each copy is re-signed with the staker's key, so its signature is valid.
 
@@ -32,6 +38,7 @@ height on devnet parameters, and feature_llmq_formation_end.py shows a retiremen
 the chain. No live network, one staker, and no superblock height in the range.
 """
 
+import os
 import time
 from decimal import Decimal
 
@@ -77,6 +84,7 @@ class V231TransitionTest(DashTestFramework):
         height = ["-testactivationheight=v231@%d" % H,
                   "-testactivationheight=superblocksretired@%d" % H,
                   "-llmqformationendheight=%s:%d" % (RETIRED, H)]
+        self.with_height = height
         self.set_dash_test_params(3, 1, extra_args=[
             rules + height + ["-staking=1", "-txindex=1", "-debug=pos"],
             rules,
@@ -271,12 +279,45 @@ class V231TransitionTest(DashTestFramework):
         assert_equal(self.paid_to_masternode(masternode, after), NEW_PAYMENT)
         assert_equal(old.getbestblockhash(), forged_block.hash)
 
+        self.log.info("A restart takes the chain this binary connected across H as it is")
+        self.restart_node(staker.index, extra_args=self.extra_args[staker.index])
+        assert_equal(staker.getbestblockhash(), after)
+
         self.log.info("-reindex revalidates every block across H and arrives at the same tip")
         self.restart_node(staker.index, extra_args=self.extra_args[staker.index] + ["-reindex"])
         self.wait_until(lambda: staker.getblockcount() == H + 1, timeout=REINDEX_TIMEOUT)
         assert_equal(staker.getbestblockhash(), after)
         assert_equal(self.paid_to_masternode(staker, below), OLD_PAYMENT)
         assert_equal(self.paid_to_masternode(staker, at), NEW_PAYMENT)
+
+        self.log.info("So does a restart after the reindex")
+        self.restart_node(staker.index, extra_args=self.extra_args[staker.index])
+        assert_equal(staker.getbestblockhash(), after)
+
+        self.log.info("The late upgrade: with the height, the node whose tip is the copy paying %s does not start on that chain", OLD_PAYMENT)
+        assert_equal(old.getbestblockhash(), forged_block.hash)
+        self.stop_node(old.index)
+        upgraded = self.extra_args[old.index] + self.with_height
+        with old.assert_debug_log(["The active chain holds block %s at height %d" % (forged_block.hash, H), "Restart with -reindex"]):
+            old.assert_start_raises_init_error(
+                upgraded,
+                ": Blocks at or above the v23.1 activation height were accepted by an earlier version and have to be validated again."
+                + os.linesep + "Please restart with -reindex or -reindex-chainstate to recover.")
+
+        self.log.info("-reindex validates what it has stored again: the copy is left out, and the honest block H, which it had refused, is its tip")
+        self.start_node(old.index, extra_args=upgraded + ["-reindex"])
+        self.wait_until(lambda: old.getbestblockhash() == at, timeout=REINDEX_TIMEOUT)
+        assert_equal(self.paid_to_masternode(old, at), NEW_PAYMENT)
+        tips = {tip["hash"]: tip["status"] for tip in old.getchaintips()}
+        assert_equal(tips[at], "active")
+        assert tips.get(forged_block.hash) != "active"
+
+        self.log.info("It follows the network from there, and a restart takes that chain as it is")
+        self.connect_nodes(old.index, masternode.index)
+        self.sync_blocks([old, masternode], timeout=SYNC_TIMEOUT)
+        assert_equal(old.getbestblockhash(), after)
+        self.restart_node(old.index, extra_args=upgraded)
+        assert_equal(old.getbestblockhash(), after)
 
 
 if __name__ == '__main__':
