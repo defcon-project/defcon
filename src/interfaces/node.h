@@ -235,6 +235,10 @@ public:
     //! Is initial block download.
     virtual bool isInitialBlockDownload() = 0;
 
+    //! Is initial block download, for a caller that must not wait for the
+    //! chain lock: no answer while another thread holds it.
+    virtual std::optional<bool> tryIsInitialBlockDownload() = 0;
+
     //! Is masternode.
     virtual bool isMasternode() = 0;
 

@@ -184,6 +184,10 @@ private:
     //! The last value handed to setEncryptionStatus, kept so a theme change can
     //! redraw the padlock in the new colours without asking the wallet again.
     int m_encryption_status{-1};
+    //! The node's last answer to the initial download question, for the staking
+    //! clock: its tick asks without waiting for the chain lock, and a busy lock
+    //! leaves the answer as it was. True until the first answer.
+    bool m_staking_initial_download{true};
     QToolButton* overviewButton = nullptr;
     QToolButton* sendCoinsButton = nullptr;
     QToolButton* coinJoinCoinsButton = nullptr;

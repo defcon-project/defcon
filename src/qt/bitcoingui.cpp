@@ -1688,6 +1688,13 @@ void BitcoinGUI::setClientModel(ClientModel *_clientModel, interfaces::BlockAndH
 #ifdef ENABLE_WALLET
         if(walletFrame)
         {
+            // The staking clock reads the height and the tip's time from the
+            // model's caches, and the first read of each asks the node behind
+            // the chain lock. Asked here, where the window is being set up, so
+            // that no tick of the clock waits for that lock. Only with a
+            // wallet frame: without one the clock reads neither.
+            _clientModel->getNumBlocks();
+            _clientModel->getTipTime();
             walletFrame->setClientModel(_clientModel);
         }
 #endif // ENABLE_WALLET
@@ -3052,7 +3059,15 @@ void BitcoinGUI::setStakingStatus()
         OverviewPage::StakingGates gates;
         gates.mainnet = Params().NetworkIDString() == CBaseChainParams::MAIN;
         gates.masternodes_synced = m_node.masternodeSync().isSynced();
-        gates.initial_download = m_node.isInitialBlockDownload();
+        // Without waiting for the chain lock: this tick runs on the GUI thread
+        // every 1.5 s, and whoever holds that lock for long (a batch of headers
+        // while the chain synchronizes, a flush, verifychain) would hold the
+        // window with it. A busy lock leaves the last answer, which changes
+        // once in a run, when the download ends.
+        if (const std::optional<bool> initial_download = m_node.tryIsInitialBlockDownload()) {
+            m_staking_initial_download = *initial_download;
+        }
+        gates.initial_download = m_staking_initial_download;
         gates.peers = m_node.getNodeCount(ConnectionDirection::Both);
         gates.height = clientModel->getNumBlocks();
         gates.last_pow_block = Params().GetConsensus().lastPowBlock;
