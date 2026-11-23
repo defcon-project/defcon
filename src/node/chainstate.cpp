@@ -434,6 +434,11 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
                 return ChainstateLoadingError::ERROR_LOADCHAINTIP_FAILED;
             }
             assert(chainstate->m_chain.Tip() != nullptr);
+            // The stored chain is taken as it is, so it must not hold a block that an earlier version
+            // connected at or above the v23.1 height.
+            if (chainstate->NeedsV231Revalidation()) {
+                return ChainstateLoadingError::ERROR_V231_BLOCKS_NEED_REVALIDATION;
+            }
         }
     }
 

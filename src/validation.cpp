@@ -2622,6 +2622,14 @@ bool CChainState::ConnectBlock(const CBlock& block, BlockValidationState& state,
         m_blockman.m_dirty_blockindex.insert(pindex);
     }
 
+    // Every rule that starts at the v23.1 height has been checked by now. Record on the block that it passed
+    // them: NeedsV231Revalidation() reads the mark when the chain is loaded, and a block that an earlier
+    // version connected at or above the height does not have it.
+    if (pindex->nHeight >= consensus_params.nV231ActivationHeight && !(pindex->nStatus & BLOCK_V231_RULES)) {
+        pindex->nStatus |= BLOCK_V231_RULES;
+        m_blockman.m_dirty_blockindex.insert(pindex);
+    }
+
     int64_t nTime6 = GetTimeMicros();
 
     if (fAddressIndex) {
@@ -4721,6 +4729,26 @@ bool CChainState::LoadChainTip()
               FormatISO8601DateTime(tip->GetBlockTime()),
               GuessVerificationProgress(m_params.TxData(), tip));
     return true;
+}
+
+bool CChainState::NeedsV231Revalidation() const
+{
+    AssertLockHeld(cs_main);
+    // Loading the chain takes the stored tip as it is and connects nothing again. A version from before v23.1
+    // that ran past the activation height may have connected blocks there under the rules it knew, and such a
+    // block would stay in the active chain although this version refuses it wherever it validates it. The
+    // height is the largest int while it is unset, which no block reaches.
+    const int activation_height{m_params.GetConsensus().nV231ActivationHeight};
+    for (const CBlockIndex* block{m_chain.Tip()}; block != nullptr && block->nHeight >= activation_height; block = block->pprev) {
+        if (!(block->nStatus & BLOCK_V231_RULES)) {
+            LogPrintf("ERROR: The active chain holds block %s at height %d, at or above the v23.1 activation height %d, "
+                      "which a version from before v23.1 connected without the rules of that height. "
+                      "Restart with -reindex.\n",
+                      block->GetBlockHash().ToString(), block->nHeight, activation_height);
+            return true;
+        }
+    }
+    return false;
 }
 
 CVerifyDB::CVerifyDB()

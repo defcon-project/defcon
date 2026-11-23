@@ -830,6 +830,11 @@ public:
     /** Update the chain tip based on database information, i.e. CoinsTip()'s best block. */
     bool LoadChainTip() EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 
+    /** Whether the active chain holds a block at or above the v23.1 activation height that this version did not
+     *  connect itself (it lacks BLOCK_V231_RULES): such a block was never checked against the rules of that
+     *  height, and only a reindex validates it. Read once the chain tip is loaded. */
+    bool NeedsV231Revalidation() const EXCLUSIVE_LOCKS_REQUIRED(cs_main);
+
     //! Dictates whether we need to flush the cache to disk or not.
     //!
     //! @return the state of the size of the coins cache.

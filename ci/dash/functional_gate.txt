@@ -88,7 +88,7 @@
 291  feature_llmq_chainlocks.py             # ChainLocks, with a masternode added dynamically
 279  p2p_unbacked_pos_headers.py            # how many headers without their blocks a node takes, from one peer and above its tip
 260  p2p_unbacked_requested_blocks.py       # a staked block whose parent is held back: the node asks for the first only and keeps none; catching up, a short reorg, submitblock, getblockfrompeer and -loadblock out of order, an initial sync
-249  feature_v231_transition.py             # the v23.1 height on staked blocks: the masternode payment at H - 1 and from H, a forged amount refused, a node without the height, a reindex across H
+249  feature_v231_transition.py             # the v23.1 height on staked blocks: the masternode payment at H - 1 and from H, a forged amount refused, a node without the height, a reindex across H, that node upgraded after H
 215  feature_pos_staking.py                 # real proof-of-stake blocks on regtest; descriptor and legacy wallet
 213  feature_v231_no_payee.py               # from the v23.1 height a staked block with no payable masternode carries no payout at all (#354)
 213  feature_v231_mn_payment_count.py       # from the v23.1 height each expected masternode payment needs a coinbase output of its own: a masternode paid in two equal halves to one address
