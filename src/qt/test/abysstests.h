@@ -104,6 +104,8 @@ private Q_SLOTS:
     void stakingUnlockFlow();
     void stakingStartRefused();
     void stakingTipTime();
+    void stakingTickNoChainWait();
+    void stakingTickNoWalletFrame();
     void overviewColumnsAligned();
     void overviewLockedFits();
     void receiveAddressFirst();

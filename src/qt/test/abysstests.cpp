@@ -163,11 +163,15 @@
 #include <QtMath>
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -11263,6 +11267,108 @@ void AbyssTests::stakingTipTime()
     QCOMPARE(window.stakingTipTime(), now - 30);
     fixture.client->m_test_hook_fill = nullptr;
     Settle();
+}
+
+void AbyssTests::stakingTickNoChainWait()
+{
+    // The staking clock's tick runs on the GUI thread every 1.5 s, so it asks
+    // the node nothing behind the chain lock: while another thread holds
+    // cs_main (a batch of headers during the synchronization, a flush,
+    // verifychain) the tick returns at once and keeps the node's last answer
+    // to the initial download question; with the lock free it takes the
+    // node's answer. Until the node has answered once, the card waits. The
+    // model's two caches the tick reads are filled when a window with a wallet
+    // frame gets its model, not in a tick. One window in this case: on macOS a
+    // second one would meet the first one's dock handler (see the next case).
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    WalletFixture fixture(m_node);
+    // Another thread takes cs_main and keeps it until it is let go, for 20
+    // seconds at most.
+    struct ChainLockHolder {
+        std::atomic<bool> held{false};
+        std::atomic<bool> done{false};
+        std::thread thread;
+        ChainLockHolder() : thread([this] {
+            LOCK(::cs_main);
+            held = true;
+            for (int i = 0; i < 2000 && !done; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            held = false;
+        })
+        {
+            for (int i = 0; i < 10000 && !held; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        ~ChainLockHolder()
+        {
+            done = true;
+            thread.join();
+        }
+    };
+    interfaces::BlockAndHeaderTipInfo tip{};
+    BitcoinGUI window(m_node, style.get());
+    QVERIFY(window.walletFrame != nullptr);
+    fixture.client->m_cached_num_blocks = -1;
+    fixture.client->m_cached_tip_time = -1;
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    QVERIFY(fixture.client->m_cached_num_blocks != -1);
+    QVERIFY(fixture.client->m_cached_tip_time != -1);
+    {
+        // The window's first tick with its model, the lock held elsewhere:
+        // back at once, and no answer yet, so the download counts as on.
+        ChainLockHolder holder;
+        QVERIFY(holder.held);
+        QVERIFY(!m_node.tryIsInitialBlockDownload().has_value());
+        window.setStakingStatus();
+        QVERIFY2(holder.held, "the staking clock's first tick waited for the chain lock");
+        QVERIFY2(window.m_staking_initial_download, "no answer yet: the initial download counts as on");
+    }
+    window.addWallet(fixture.model.get()); Settle(); // the wallet view's part of the tick runs too
+    // The fixture's chain is past its initial download, and the lock is free:
+    // the tick takes the node's answer over the starting value.
+    QVERIFY2(!m_node.isInitialBlockDownload(), "the fixture's chain is past its initial download");
+    QVERIFY(m_node.tryIsInitialBlockDownload() == std::optional<bool>(false));
+    window.m_staking_initial_download = true;
+    window.setStakingStatus();
+    QVERIFY2(!window.m_staking_initial_download, "the tick did not take the node's answer");
+    {
+        // The lock held again: back at once, and the answer the node gave
+        // stays. A busy lock must not bring the initial download back.
+        ChainLockHolder holder;
+        QVERIFY(holder.held);
+        QVERIFY(!m_node.tryIsInitialBlockDownload().has_value());
+        window.setStakingStatus();
+        QVERIFY2(holder.held, "the staking clock's tick waited for the chain lock");
+        QVERIFY2(!window.m_staking_initial_download, "a busy lock brought the initial download back");
+    }
+    window.setStakingStatus();
+    QVERIFY(!window.m_staking_initial_download);
+}
+
+void AbyssTests::stakingTickNoWalletFrame()
+{
+    // Without a wallet frame (-disablewallet) the staking clock feeds no card
+    // and reads neither of the model's two caches, so such a window asks the
+    // node nothing for it when it gets its model. A case of its own, with its
+    // one window: on macOS a window's end deletes the dock handler that the
+    // next window's model set-up would then reach.
+    const QString app_name = QCoreApplication::applicationName();
+    std::unique_ptr<const NetworkStyle> style(NetworkStyle::instantiate(Params().NetworkIDString()));
+    QCoreApplication::setApplicationName(app_name);
+    QVERIFY(style);
+    WalletFixture fixture(m_node);
+    gArgs.ForceSetArg("-disablewallet", "1"); // init() restores the arguments
+    BitcoinGUI window(m_node, style.get());
+    QVERIFY(window.walletFrame == nullptr);
+    interfaces::BlockAndHeaderTipInfo tip{};
+    fixture.client->m_cached_num_blocks = -1;
+    fixture.client->m_cached_tip_time = -1;
+    window.setClientModel(fixture.client.get(), &tip);
+    const auto detach = interfaces::MakeHandler([&window] { window.setClientModel(nullptr); });
+    QVERIFY2(fixture.client->m_cached_num_blocks == -1, "a window without a wallet frame asked the node for the height");
+    QVERIFY2(fixture.client->m_cached_tip_time == -1, "a window without a wallet frame asked the node for the tip's time");
 }
 
 void AbyssTests::overviewColumnsAligned()

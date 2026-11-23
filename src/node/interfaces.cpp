@@ -465,6 +465,14 @@ public:
     bool isInitialBlockDownload() override {
         return chainman().ActiveChainstate().IsInitialBlockDownload();
     }
+    std::optional<bool> tryIsInitialBlockDownload() override
+    {
+        // ActiveChainstate() takes cs_main on every call, also once the
+        // download is over.
+        TRY_LOCK(::cs_main, lock);
+        if (!lock) return std::nullopt;
+        return chainman().ActiveChainstate().IsInitialBlockDownload();
+    }
     bool isMasternode() override
     {
         return m_context->mn_activeman != nullptr;
