@@ -105,6 +105,7 @@
 64   wallet_backup.py                       # backupwallet, restorewallet, dumpwallet and importwallet give back the same balances
 62   feature_dsl_dkg_isolation.py           # a slow node: announcement copies unread, the tick behind the DKG, commitments intact (SF1-A)
 60   wallet_avoidreuse.py                   # the avoid_reuse flag: it persists, is immutable, keeps change as change, keeps reused coins out of sends
+60   feature_v231_retired_commitment.py     # from the v23.1 height a block with a commitment of a quorum type that is not enabled is refused, a null one too; below the height it is taken as before
 58   p2p_tx_download.py                     # transaction announcements: a getdata to each announcing peer in turn, the in-flight limits, expiry
 57   feature_pos_verifychain.py             # R-03: verifychain at level 4 on a proof-of-stake chain, and the indexed restart it gates
 51   feature_pos_double_sign.py             # a stake signed twice is counted once and changes nothing else

@@ -189,6 +189,18 @@ bool CQuorumBlockProcessor::ProcessBlock(const CBlock& block, gsl::not_null<cons
         }
     }
 
+    // From the v23.1 height a block may not carry a commitment of a type that is not enabled for it, null or not.
+    // The loop above counts the enabled types only, and ProcessCommitment() takes a null commitment on its shape,
+    // so the null commitment of a retired type would pass. The miner asks the same question of the same block
+    // (the type as enabled for the new block's predecessor) and never adds one.
+    if (pindex->nHeight >= Params().GetConsensus().nV231ActivationHeight) {
+        for (const auto& entry : qcs) {
+            if (!IsQuorumTypeEnabled(entry.first, pindex->pprev)) {
+                return state.Invalid(BlockValidationResult::BLOCK_CONSENSUS, "bad-qc-not-allowed");
+            }
+        }
+    }
+
     for (const auto& [_, qc] : qcs) {
         if (!ProcessCommitment(pindex->nHeight, blockHash, qc, state, fJustCheck, fBLSChecks)) {
             LogPrintf("[ProcessBlock] failed h[%d] llmqType[%d] version[%d] quorumIndex[%d] quorumHash[%s]\n", pindex->nHeight, ToUnderlying(qc.llmqType), qc.nVersion, qc.quorumIndex, qc.quorumHash.ToString());

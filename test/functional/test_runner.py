@@ -425,6 +425,7 @@ BASE_SCRIPTS = [
     'feature_v231_devnet_argument.py',
     'feature_v231_no_payee.py --legacy-wallet',
     'feature_v231_mn_payment_count.py --legacy-wallet',
+    'feature_v231_retired_commitment.py',
     'rpc_verifychainlock.py',
     'wallet_create_tx.py --legacy-wallet',
     'wallet_send.py --legacy-wallet',
