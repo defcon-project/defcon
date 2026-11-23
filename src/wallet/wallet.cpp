@@ -4220,6 +4220,9 @@ bool CWallet::CreateTransactionInternal(
             bool pick_new_inputs = true;
             CAmount nValueIn = 0;
             CAmount nAmountToSelectAdditional{0};
+            // The part of nFeeRet that the inputs of a mixed-only payment pay, when the fee is subtracted from the
+            // recipients: what the coins hold beyond the amount. The recipients do not pay it as well.
+            CAmount nFeeFromInputs{0};
             // Start with nAmountToSelectAdditional=0 and loop until there is enough to cover the request + fees, try it 500 times.
             int nMaxTries = 500;
             while (--nMaxTries > 0)
@@ -4234,6 +4237,8 @@ bool CWallet::CreateTransactionInternal(
                     assert(nAmountToSelectAdditional >= 0);
                     nValueToSelect += nAmountToSelectAdditional;
                 }
+                // What the recipients pay of the last pass's fee when it is subtracted from their amounts.
+                const CAmount nFeeSubtract{nFeeRet - nFeeFromInputs};
                 // vouts to the payees
                 for (const auto& recipient : vecSend)
                 {
@@ -4242,18 +4247,18 @@ bool CWallet::CreateTransactionInternal(
                     if (recipient.fSubtractFeeFromAmount)
                     {
                         assert(nSubtractFeeFromAmount != 0);
-                        txout.nValue -= nFeeRet / nSubtractFeeFromAmount; // Subtract fee equally from each selected recipient
+                        txout.nValue -= nFeeSubtract / nSubtractFeeFromAmount; // Subtract fee equally from each selected recipient
 
                         if (fFirst) // first receiver pays the remainder not divisible by output count
                         {
                             fFirst = false;
-                            txout.nValue -= nFeeRet % nSubtractFeeFromAmount;
+                            txout.nValue -= nFeeSubtract % nSubtractFeeFromAmount;
                         }
                     }
 
                     if (IsDust(txout, chain().relayDustFee()))
                     {
-                        if (recipient.fSubtractFeeFromAmount && nFeeRet > 0)
+                        if (recipient.fSubtractFeeFromAmount && nFeeSubtract > 0)
                         {
                             if (txout.nValue < 0)
                                 error = _("The transaction amount is too small to pay the fee");
@@ -4328,6 +4333,7 @@ bool CWallet::CreateTransactionInternal(
                 if (!calculateFee(nFeeRet)) {
                     return false;
                 }
+                nFeeFromInputs = 0;
 
                 CTxOut newTxOut;
                 const CAmount nAmountLeft = nValueIn - nValue;
@@ -4344,6 +4350,9 @@ bool CWallet::CreateTransactionInternal(
                     //over pay for denominated transactions
                     if (coin_control.nCoinType == CoinType::ONLY_FULLY_MIXED) {
                         nChangePosInOut = -1;
+                        // With the fee subtracted from the recipients, the next pass takes only the fee the
+                        // transaction needs from them: the rest of the inputs is paid once, by the inputs.
+                        if (nSubtractFeeFromAmount > 0) nFeeFromInputs = getChange();
                         nFeeRet += getChange();
                     } else {
                         // Fill a vout to ourself with zero amount until we know the correct change
@@ -4463,6 +4472,14 @@ bool CWallet::CreateTransactionInternal(
             if (nMaxTries == 0) {
                 error = _("Exceeded max tries.");
                 return false;
+            }
+
+            // A mixed-only payment has no change: the fee it pays is what its inputs hold beyond its outputs. That is
+            // the fee returned, and held against the ceiling below, whatever the last pass's estimate was.
+            if (coin_control.nCoinType == CoinType::ONLY_FULLY_MIXED) {
+                CAmount nValueOut{0};
+                for (const auto& txout : txNew.vout) nValueOut += txout.nValue;
+                nFeeRet = nValueIn - nValueOut;
             }
 
             // The change would go to an address this wallet cannot make.

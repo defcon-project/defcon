@@ -1300,6 +1300,42 @@ BOOST_FIXTURE_TEST_CASE(coinjoin_dfcn_scale_rounds_and_balances, CTransactionBui
                             "a mixed-only payment spends the fully mixed DFCN-scale coin: " + error.original);
     }
     {
+        // The same coin paid with the fee subtracted from the amount. The recipient pays the fee the transaction needs,
+        // and what the coin holds beyond the amount goes to the fee once, as it does without subtracting: the fee the
+        // wallet reports, and holds against the ceiling, is the fee the transaction pays (its input less its output).
+        BOOST_REQUIRE_EQUAL(wallet->m_default_max_tx_fee, COIN / 10);
+        const auto pay = [&](CAmount rest, CTransactionRef& tx, CAmount& fee) {
+            std::vector<CRecipient> recipients{{p2pkh(new_key(false)), amount - rest, /*fSubtractFeeFromAmount=*/true}};
+            int change_pos{-1};
+            bilingual_str error;
+            CCoinControl coin_control;
+            coin_control.UseCoinJoin(true);
+            coin_control.m_feerate = CFeeRate(1000);
+            FeeCalculation fee_calc;
+            return wallet->CreateTransaction(recipients, tx, fee, change_pos, error, coin_control, fee_calc);
+        };
+        CAmount needed{0}; // the fee the transaction needs: the same whatever the rest, its size is the same
+        for (const CAmount rest : {CAmount{0}, CAmount{4000000}, CAmount{6000000}}) { // nothing, 0.04 and 0.06 DFCN
+            CTransactionRef tx;
+            CAmount fee{0};
+            const bool paid{pay(rest, tx, fee)};
+            BOOST_CHECK_MESSAGE(paid, "a mixed-only payment with the fee subtracted from the amount");
+            if (!paid) continue;
+            BOOST_REQUIRE(tx->vin.size() == 1 && tx->vin[0].prevout == chain.prevout && tx->vout.size() == 1);
+            BOOST_CHECK_MESSAGE(fee == amount - tx->vout[0].nValue, "the reported fee is the input less the output");
+            BOOST_CHECK_MESSAGE(fee - rest > 0 && fee - rest < 1000, "the fee holds the rest of the coin once, beside the fee the transaction needs");
+            if (rest == 0) needed = fee;
+        }
+        // At the ceiling and one duff above it: the fee held against the ceiling is the fee the transaction pays.
+        const CAmount at_ceiling{wallet->m_default_max_tx_fee - needed};
+        CTransactionRef tx;
+        CAmount fee{0};
+        BOOST_CHECK_MESSAGE(pay(at_ceiling, tx, fee) && fee == wallet->m_default_max_tx_fee && fee == amount - tx->vout[0].nValue,
+                            "a payment whose fee is the ceiling is made, and pays the ceiling");
+        CTransactionRef refused;
+        BOOST_CHECK_MESSAGE(!pay(at_ceiling + 1, refused, fee), "one duff above the ceiling is refused");
+    }
+    {
         // The old client never funds from a DFCN-scale candidate, mixed or not (CJ4-B2b): locking the fully mixed coin
         // leaves both anonymizable balances as they were, while the wallet's ordinary funds still count.
         const auto funding = [&] {
