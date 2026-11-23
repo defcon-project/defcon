@@ -279,7 +279,9 @@ class LLMQChainLocksTest(DashTestFramework):
 
         for i in range(2):
             self.log.info(f"{'Disable' if i == 0 else 'Enable'} Chainlock")
-            self.nodes[0].sporkupdate("SPORK_19_CHAINLOCKS_ENABLED", 4070908800 if i == 0 else 0)
+            # The second pass turns ChainLocks on without signing (1): a lock signed while the node is added would
+            # reach it, and it would no longer be a node without ChainLock info. Signing is turned on after the checks.
+            self.nodes[0].sporkupdate("SPORK_19_CHAINLOCKS_ENABLED", 4070908800 if i == 0 else 1)
             self.wait_for_sporks_same()
 
             self.log.info("Add a new node and let it sync")
@@ -296,6 +298,10 @@ class LLMQChainLocksTest(DashTestFramework):
             if i == 0:
                 self.log.info("getblockchaininfo: ChainLocks are off, so no lock is shown")
                 self.wait_until(lambda: self.nodes[0].getblockchaininfo()["chainlock"] == {"enabled": False})
+            else:
+                self.log.info("Turn ChainLock signing on again")
+                self.nodes[0].sporkupdate("SPORK_19_CHAINLOCKS_ENABLED", 0)
+                self.wait_for_sporks_same()
 
         self.log.info("Test bestCLHeightDiff restrictions")
         self.test_bestCLHeightDiff()
