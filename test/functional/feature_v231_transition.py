@@ -29,6 +29,11 @@ What it shows:
      says why. With -reindex it validates what it has stored again: the copy is
      left out, the honest block H that it had refused becomes its tip, it follows
      the network from there, and then restarts as any node does.
+  6  Upgraded while still at H - 1 (shown at H, before the copy is offered): the
+     node without the height has refused the honest block H and stored that.
+     Started with the height it does not start on that block index, and says
+     why, with -reindex-chainstate too, before the chain state is wiped;
+     without the height it is at H - 1 as before.
 
 Each copy is re-signed with the staker's key, so its signature is valid.
 
@@ -263,6 +268,28 @@ class V231TransitionTest(DashTestFramework):
         self.log.info("The node without the height refuses the honest block and takes that copy: the amount was all that was wrong")
         assert_equal(old.submitblock(at_raw), "bad-cb-payee")
         assert_equal(old.getbestblockhash(), below)
+
+        self.log.info("Upgraded while still at H - 1: with the height, the node that has refused the honest block H does not start on that block index")
+        assert_equal({tip["hash"]: tip["status"] for tip in old.getchaintips()}[at], "invalid")
+        self.stop_node(old.index)
+        with old.assert_debug_log(["The block index holds block %s at height %d" % (at, H), "Restart with -reindex"]):
+            old.assert_start_raises_init_error(
+                self.extra_args[old.index] + self.with_height,
+                ": Blocks refused at or above the v23.1 activation height have to be validated again."
+                + os.linesep + "Please restart with -reindex or -reindex-chainstate to recover.")
+
+        self.log.info("Nor with -reindex-chainstate, which keeps that block index: it is told before the chain state is wiped")
+        with old.assert_debug_log(["The block index holds block %s at height %d" % (at, H)], unexpected_msgs=["Wiping LevelDB in"]):
+            old.assert_start_raises_init_error(
+                self.extra_args[old.index] + self.with_height + ["-txindex=0", "-reindex-chainstate"],
+                ": Blocks refused at or above the v23.1 activation height have to be validated again."
+                + os.linesep + "Please restart with -reindex or -reindex-chainstate to recover.")
+
+        self.log.info("Back to the node without the height: it is at H - 1 as before, with its chain state")
+        self.start_node(old.index, extra_args=self.extra_args[old.index])
+        assert_equal(old.getblockcount(), H - 1)
+        assert_equal(old.getbestblockhash(), below)
+
         assert_equal(old.submitblock(forged), None)
         assert_equal(old.getbestblockhash(), forged_block.hash)
         assert_equal(self.paid_to_masternode(old, forged_block.hash), OLD_PAYMENT)
