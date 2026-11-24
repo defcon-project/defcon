@@ -1964,6 +1964,10 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
                 // Not translated: the wallet's texts were closed before this message was added.
                 strLoadError = Untranslated("Blocks at or above the v23.1 activation height were accepted by an earlier version and have to be validated again");
                 break;
+            case ChainstateLoadingError::ERROR_V231_REFUSALS_NEED_REVALIDATION:
+                // Not translated, as the message above.
+                strLoadError = Untranslated("Blocks refused at or above the v23.1 activation height have to be validated again");
+                break;
             case ChainstateLoadingError::ERROR_GENERIC_BLOCKDB_OPEN_FAILED:
                 strLoadError = _("Error opening block database");
                 break;

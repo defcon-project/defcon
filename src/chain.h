@@ -131,8 +131,11 @@ enum BlockStatus : uint32_t {
      * Set when this node connects a block at or above the v23.1 activation height, that is, once the block has
      * passed the rules that start at that height. A version from before v23.1 never sets it, so a block such a
      * version connected can be told apart when the chain is loaded. See CChainState::NeedsV231Revalidation().
+     *
+     * 512 is left unused on purpose: development builds from before the startup checks were complete set it for
+     * this, so a block index one of them wrote at or above the height carries no mark and is validated again.
      */
-    BLOCK_V231_RULES         =   512,
+    BLOCK_V231_RULES         =  1024,
 };
 
 /** The block chain is a tree shaped structure starting with the

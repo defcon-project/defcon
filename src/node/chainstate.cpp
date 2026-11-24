@@ -11,6 +11,8 @@
 #include <node/blockstorage.h>
 #include <validation.h>
 
+#include <limits>
+
 #include <bls/bls.h>
 #include <coins.h>
 #include <evo/chainhelper.h>
@@ -265,6 +267,34 @@ static bool ReconcileEvoDBToTip(ChainstateManager& chainman,
     return true;
 }
 
+/** Whether the block index holds a block at or above the v23.1 activation height as refused while no block
+ *  there carries the mark of this version (BLOCK_V231_RULES).
+ *
+ *  A version from before v23.1 refuses the network's blocks from the height on and stores each refusal. Taken
+ *  over, such a refusal keeps the network's chain out: the headers built on the block are refused
+ *  (bad-prevblk) and their senders punished, and the startup takes up one refused branch again at most. This
+ *  version cannot tell such a refusal from one of its own by the entry, but it can by the index: once it has
+ *  connected a block at or above the height, it has started on an index that held no refusal there, and
+ *  every refusal stored since is its own. */
+static bool HoldsRefusalFromBeforeV231(const BlockMap& block_map, const Consensus::Params& consensus_params)
+    EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+{
+    const int activation_height{consensus_params.nV231ActivationHeight};
+    if (activation_height == std::numeric_limits<int>::max()) return false; // unset: nothing to read
+    const CBlockIndex* refused{nullptr};
+    for (const auto& [_, block_index] : block_map) {
+        if (block_index.nHeight < activation_height) continue;
+        if (block_index.nStatus & BLOCK_V231_RULES) return false;
+        if (refused == nullptr && (block_index.nStatus & BLOCK_FAILED_VALID)) refused = &block_index;
+    }
+    if (refused == nullptr) return false;
+    LogPrintf("ERROR: The block index holds block %s at height %d, at or above the v23.1 activation height %d, "
+              "as refused, and no block there that this version connected: the refusal may be an earlier "
+              "version's. Restart with -reindex.\n",
+              refused->GetBlockHash().ToString(), refused->nHeight, activation_height);
+    return true;
+}
+
 std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
                                                      ChainstateManager& chainman,
                                                      CGovernanceManager& govman,
@@ -304,6 +334,33 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
 
     LOCK(cs_main);
 
+    bool block_tree_open{false};
+    if (fReindexChainState && !fReset && consensus_params.nV231ActivationHeight != std::numeric_limits<int>::max()) {
+        // -reindex-chainstate keeps the block index and wipes the databases it rebuilds as they are opened
+        // below. Whether the kept index can be built on has to be known before that, so its entries are read
+        // here, into a map of their own: a rebuild on an index that holds an earlier version's refusal at or
+        // above the v23.1 height would connect a block there, and its mark would hide the refusal from the
+        // next start. The database is opened here once, as it is below, and stays open for the load.
+        auto& block_tree{chainman.m_blockman.m_block_tree_db};
+        block_tree.reset(); // a handle left by an earlier pass of the caller's loop
+        block_tree.reset(new CBlockTreeDB(nBlockTreeDBCache, block_tree_db_in_memory, false));
+        block_tree_open = true;
+        BlockMap kept;
+        const auto insert = [&kept](const uint256& hash) -> CBlockIndex* {
+            if (hash.IsNull()) return nullptr;
+            const auto [it, inserted]{kept.try_emplace(hash)};
+            if (inserted) it->second.phashBlock = &it->first;
+            return &it->second;
+        };
+        if (!block_tree->LoadBlockIndexGuts(consensus_params, insert)) {
+            if (shutdown_requested && shutdown_requested()) return ChainstateLoadingError::SHUTDOWN_PROBED;
+            return ChainstateLoadingError::ERROR_LOADING_BLOCK_DB;
+        }
+        if (HoldsRefusalFromBeforeV231(kept, consensus_params)) {
+            return ChainstateLoadingError::ERROR_V231_REFUSALS_NEED_REVALIDATION;
+        }
+    }
+
     int64_t nEvoDbCache{64 * 1024 * 1024}; // TODO
     evodb.reset();
     evodb = std::make_unique<CEvoDB>(nEvoDbCache, false, fReset || fReindexChainState);
@@ -316,10 +373,12 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
     chainman.m_total_coinsdb_cache = nCoinDBCache;
 
     auto& pblocktree{chainman.m_blockman.m_block_tree_db};
-    // new CBlockTreeDB tries to delete the existing file, which
-    // fails if it's still open from the previous loop. Close it first:
-    pblocktree.reset();
-    pblocktree.reset(new CBlockTreeDB(nBlockTreeDBCache, block_tree_db_in_memory, fReset));
+    if (!block_tree_open) { // else opened above, with these arguments (fReset is false there)
+        // new CBlockTreeDB tries to delete the existing file, which
+        // fails if it's still open from the previous loop. Close it first:
+        pblocktree.reset();
+        pblocktree.reset(new CBlockTreeDB(nBlockTreeDBCache, block_tree_db_in_memory, fReset));
+    }
 
     DashChainstateSetup(chainman, govman, mn_metaman, mn_sync, sporkman, mn_activeman, chain_helper, cpoolman,
                         dmnman, evodb, mnhf_manager, llmq_ctx, mempool, fReset, fReindexChainState,
@@ -439,6 +498,12 @@ std::optional<ChainstateLoadingError> LoadChainstate(bool fReset,
             if (chainstate->NeedsV231Revalidation()) {
                 return ChainstateLoadingError::ERROR_V231_BLOCKS_NEED_REVALIDATION;
             }
+        }
+        // The kept block index must not hold a refusal that an earlier version stored at or above the v23.1
+        // height. Under -reindex-chainstate this was asked above, before anything was wiped, and is not
+        // asked again.
+        if (!fReindexChainState && HoldsRefusalFromBeforeV231(chainman.m_blockman.m_block_index, consensus_params)) {
+            return ChainstateLoadingError::ERROR_V231_REFUSALS_NEED_REVALIDATION;
         }
     }
 
