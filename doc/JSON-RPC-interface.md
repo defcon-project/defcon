@@ -10,7 +10,7 @@ Dialog.
 There are two JSON-RPC endpoints on the server:
 
 1. `/`
-2. `/wallet/<walletname>/`
+2. `/wallet/<walletname>`
 
 ### `/` endpoint
 
@@ -18,7 +18,7 @@ This endpoint is always active.
 It can always service non-wallet requests and can service wallet requests when
 exactly one wallet is loaded.
 
-### `/wallet/<walletname>/` endpoint
+### `/wallet/<walletname>` endpoint
 
 This endpoint is only activated when the wallet component has been compiled in.
 It can service both wallet and non-wallet requests.
@@ -26,17 +26,17 @@ It MUST be used for wallet requests when two or more wallets are loaded.
 
 This is the endpoint used by defcon-cli when a `-rpcwallet=` parameter is passed in.
 
-Best practice would dictate using the `/wallet/<walletname>/` endpoint for ALL
+Best practice would dictate using the `/wallet/<walletname>` endpoint for ALL
 requests when multiple wallets are in use.
 
 ### Examples
 
 ```sh
-# Get block count from the / endpoint when rpcuser=alice and rpcport=38332
-$ curl --user alice --data-binary '{"jsonrpc": "1.0", "id": "0", "method": "getblockcount", "params": []}' -H 'content-type: text/plain;' localhost:38332/
+# Get block count from the / endpoint when rpcuser=alice and rpcport=8193
+$ curl --user alice --data-binary '{"jsonrpc": "1.0", "id": "0", "method": "getblockcount", "params": []}' -H 'content-type: text/plain;' localhost:8193/
 
-# Get balance from the /wallet/walletname endpoint when rpcuser=alice, rpcport=38332 and rpcwallet=desc-wallet
-$ curl --user alice --data-binary '{"jsonrpc": "1.0", "id": "0", "method": "getbalance", "params": []}' -H 'content-type: text/plain;' localhost:38332/wallet/desc-wallet
+# Get balance from the /wallet/walletname endpoint when rpcuser=alice, rpcport=8193 and rpcwallet=desc-wallet
+$ curl --user alice --data-binary '{"jsonrpc": "1.0", "id": "0", "method": "getbalance", "params": []}' -H 'content-type: text/plain;' localhost:8193/wallet/desc-wallet
 
 ```
 
@@ -126,7 +126,7 @@ RPC interface will be abused.
     need to expose the RPC port to the host system.  The default way to
     do this in Docker also exposes the port to the public Internet.
     Instead, expose it only on the host system's localhost, for example:
-    `-p 127.0.0.1:8332:8332`
+    `-p 127.0.0.1:8193:8193`
 
 - **Secure authentication:** By default, DeFCoN Core generates unique
   login credentials each time it restarts and puts them into a file
@@ -184,13 +184,6 @@ wallet would reflect the removal of these mempool transactions in the state.
 However, the wallet may not be up-to-date with the current state of the mempool
 or the state of the mempool by an RPC that returned before this RPC.
 
-## Limitations
+## Connection limits
 
-There is a known issue in the JSON-RPC interface that can cause a node to crash if
-too many http connections are being opened at the same time because the system runs
-out of available file descriptors. To prevent this from happening you might
-want to increase the number of maximum allowed file descriptors in your system
-and try to prevent opening too many connections to your JSON-RPC interface at the
-same time if this is under your control. It is hard to give general advice
-since this depends on your system but if you make several hundred requests at
-once you are definitely at risk of encountering this issue.
+Use bounded client concurrency and keep the RPC listener on a trusted interface. Each open connection consumes a file descriptor. Check the operating system’s limits and the node log if a busy client encounters connection failures.

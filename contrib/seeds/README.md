@@ -2,13 +2,11 @@
 
 `nodes_main.txt` lists the three DeFCoN mainnet bootstrap nodes on port 8192,
 in the same order as `chainparams_seed_main` in
-[`src/chainparamsseeds.h`](/src/chainparamsseeds.h). DNS seeders continue to
-provide dynamic peer discovery.
+[`src/chainparamsseeds.h`](../../src/chainparamsseeds.h). The mainnet configuration also specifies DNS seeders for dynamic peer discovery.
 
 `generate-seeds.py` uses only Python 3's standard library and reads
-`nodes_main.txt`. It emits the mainnet BIP155 seed array. There is currently no
-DeFCoN testnet, so no testnet seed list or array is generated; testnet fixed
-seeds must be added and reviewed when that network launches. Devnet is separate.
+`nodes_main.txt`. It emits the mainnet BIP155 seed array. Testnet has no compiled fixed seeds in this source tree. The generator emits no
+testnet seed array. Devnet uses separate network parameters.
 
 From the repository root, generate a candidate and compare the serialized
 mainnet bytes with the checked-in header:

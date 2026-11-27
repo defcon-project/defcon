@@ -62,11 +62,9 @@ Make automatic outbound connections only to I2P addresses. Inbound and manual
 connections are not affected by this option. It can be specified multiple times
 to allow multiple networks, e.g. onlynet=onion, onlynet=i2p.
 
-I2P support was added upstream in Dash Core 20.0 and there may be fewer I2P
-peers than Tor or IP ones. Therefore, using I2P alone without other networks may
-make a node more susceptible to [Sybil
-attacks](https://en.bitcoin.it/wiki/Weaknesses#Sybil_attack). You can use
-`defcon-cli -addrinfo` to see the number of I2P addresses known to your node.
+I2P support comes from upstream Dash Core 20.0. If your node knows few I2P peers, restricting it to I2P can leave it with
+too few independent connections. Use `defcon-cli -addrinfo` to see how many
+I2P addresses your node knows.
 
 Another consideration with `onlynet=i2p` is that the initial blocks download
 phase when syncing up a new node can be very slow. This phase can be sped up by
@@ -133,11 +131,7 @@ port (`TO_PORT`) is always set to 0 and is not in the control of DeFCoN Core.
 
 ## Bandwidth
 
-By default, your node shares bandwidth and transit tunnels with the I2P network
-in order to increase your anonymity with cover traffic, help the I2P router used
-by your node integrate optimally with the network, and give back to the network.
-It's important that the nodes of a popular application like DeFCoN Core contribute
-as much to the I2P network as they consume.
+Your I2P router can contribute bandwidth and transit tunnels to the I2P network. Configure these separately from the bandwidth used by DeFCoN Core.
 
 It is possible, though strongly discouraged, to change your I2P router
 configuration to limit the amount of I2P traffic relayed by your node.

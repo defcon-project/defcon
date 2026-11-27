@@ -17,14 +17,13 @@ don't have test cases for.
 
 #### Style guidelines
 
-- Where possible, try to adhere to [PEP-8 guidelines](https://www.python.org/dev/peps/pep-0008/)
+- Where possible, try to adhere to [PEP-8 guidelines](https://peps.python.org/pep-0008/)
 - Use a python linter like flake8 before submitting PRs to catch common style
   nits (eg trailing whitespace, unused imports, etc)
-- The oldest supported Python version is specified in [doc/dependencies.md](/doc/dependencies.md).
-  Consider using [pyenv](https://github.com/pyenv/pyenv), which checks [.python-version](/.python-version),
+- Check the [Python dependencies](../../doc/dependencies.md) when adding language features.
+  The checkout includes a [.python-version](../../.python-version) for [pyenv](https://github.com/pyenv/pyenv)
   to prevent accidentally introducing modern syntax from an unsupported Python version.
-  The CI linter job also checks this, but [possibly not in all cases](https://github.com/bitcoin/bitcoin/pull/14884#discussion_r239585126).
-- See [the python lint script](/test/lint/lint-python.sh) that checks for violations that
+- See [the python lint script](../lint/lint-python.py) that checks for violations that
   could lead to bugs and issues in the test code.
 - Use [type hints](https://docs.python.org/3/library/typing.html) in your code to improve code readability
   and to detect possible bugs earlier.
@@ -33,20 +32,20 @@ don't have test cases for.
   in order to reduce the possibility of potential merge conflicts.
 - Use a module-level docstring to describe what the test is testing, and how it
   is testing it.
-- When subclassing the BitcoinTestFramework, place overrides for the
+- When subclassing the `BitcoinTestFramework`, place overrides for the
   `set_test_params()`, `add_options()` and `setup_xxxx()` methods at the top of
   the subclass, then locally-defined helper methods, then the `run_test()` method.
 - Use `f'{x}'` for string formatting in preference to `'{}'.format(x)` or `'%s' % x`.
 
 #### Naming guidelines
 
-- Name the test `<area>_test.py`, where area can be one of the following:
-    - `feature` for tests for full features that aren't wallet/mining/mempool, eg `feature_rbf.py`
+- Name the test `<area>_<description>.py`, where area can be one of the following:
+    - `feature` for tests for full features that aren't wallet/mining/mempool, eg `feature_block.py`
     - `interface` for tests for other interfaces (REST, ZMQ, etc), eg `interface_rest.py`
     - `mempool` for tests for mempool behaviour, eg `mempool_reorg.py`
     - `mining` for tests for mining features, eg `mining_prioritisetransaction.py`
     - `p2p` for tests that explicitly test the p2p interface, eg `p2p_disconnect_ban.py`
-    - `rpc` for tests for individual RPC methods or features, eg `rpc_listtransactions.py`
+    - `rpc` for tests for individual RPC methods or features, eg `rpc_decodescript.py`
     - `tool` for tests for tools, eg `tool_wallet.py`
     - `wallet` for tests for wallet features, eg `wallet_keypool.py`
 - Use an underscore to separate words
@@ -67,11 +66,9 @@ don't have test cases for.
   runtime of the test.
 - Set the `self.setup_clean_chain` variable in `set_test_params()` to `True` to
   initialize an empty blockchain and start from the Genesis block, rather than
-  load a premined blockchain from cache with the default value of `False`. The
-  cached data directories contain a 200-block pre-mined blockchain with the
-  spendable mining rewards being split between four nodes. Each node has 25
-  mature block subsidies (25x500=12500 DASH) in its wallet. Using them is much more
-  efficient than mining blocks in your test.
+  use the default cached regtest chain. The cached fixture provides mature
+  coinbase outputs for wallet tests. The standard setup brings the nodes to height 200
+  before the test runs.
 - When calling RPCs with lots of arguments, consider using named keyword
   arguments instead of positional arguments to make the intent of the call
   clear to readers.
@@ -99,12 +96,12 @@ over the network (`CBlock`, `CTransaction`, etc, along with the network-level
 wrappers for them, `msg_block`, `msg_tx`, etc).
 
 - P2P tests have two threads. One thread handles all network communication
-with the dashd(s) being tested in a callback-based event loop; the other
+with the `defcond` nodes being tested in a callback-based event loop; the other
 implements the test logic.
 
-- `P2PConnection` is the class used to connect to a dashd.  `P2PInterface`
+- `P2PConnection` is the class used to connect to a `defcond` node.  `P2PInterface`
 contains the higher level logic for processing P2P payloads and connecting to
-the Bitcoin Core node application logic. For custom behaviour, subclass the
+the DeFCoN node. For custom behaviour, subclass the
 P2PInterface object and override the callback methods.
 
 `P2PConnection`s can be used as such:
@@ -127,7 +124,7 @@ More examples can be found in [p2p_unrequested_blocks.py](p2p_unrequested_blocks
 
 #### Prototyping tests
 
-The [`TestShell`](test-shell.md) class exposes the BitcoinTestFramework
+The [`TestShell`](test-shell.md) class exposes the `BitcoinTestFramework`
 functionality to interactive Python3 environments and can be used to prototype
 tests. This may be especially useful in a REPL environment with session logging
 utilities, such as
@@ -149,7 +146,7 @@ Base class for functional tests.
 Generally useful functions.
 
 #### [p2p.py](test_framework/p2p.py)
-Test objects for interacting with a dashd node over the p2p interface.
+Test objects for interacting with a DeFCoN node over the P2P interface.
 
 #### [script.py](test_framework/script.py)
 Utilities for manipulating transaction scripts (originally from python-bitcoinlib)
@@ -172,23 +169,20 @@ tool like [hotspot](https://github.com/KDAB/hotspot).
 There are two ways of invoking perf: one is to use the `--perf` flag when
 running tests, which will profile each node during the entire test run: perf
 begins to profile when the node starts and ends when it shuts down. The other
-way is the use the `profile_with_perf` context manager, e.g.
+way is the use the `profile_with_perf` context manager. For example:
 
 ```python
-with node.profile_with_perf("send-big-msgs"):
-    # Perform activity on the node you're interested in profiling, e.g.:
-    for _ in range(10000):
-        node.p2ps[0].send_message(some_large_message)
+with node.profile_with_perf("inspect-chain"):
+    node.getblockchaininfo()
 ```
 
 To see useful textual output, run
 
 ```sh
-perf report -i /path/to/datadir/send-big-msgs.perf.data.xxxx --stdio | c++filt | less
+perf report -i /path/to/datadir/inspect-chain.perf.data.xxxx --stdio | c++filt | less
 ```
 
 #### See also:
 
-- [Installing perf](https://askubuntu.com/q/50145)
 - [Perf examples](https://www.brendangregg.com/perf.html)
 - [Hotspot](https://github.com/KDAB/hotspot): a GUI for perf output analysis

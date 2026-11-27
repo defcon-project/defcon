@@ -1,4 +1,4 @@
-# MacOS Deployment
+# macOS application packaging
 
 The `macdeployqtplus` script should not be run manually. Instead, after building as usual:
 
@@ -6,7 +6,7 @@ The `macdeployqtplus` script should not be run manually. Instead, after building
 make deploy
 ```
 
-When complete, it will have produced `DeFCoN.zip`, holding `Defcon-Qt.app`.
+The deploy target packages `Defcon-Qt.app` as a ZIP. The planned v23.1.0 release package is `defcon-apple.tgz`, containing the unsigned Intel binaries. See the [release checklist](../../doc/release-process.md).
 
 ## SDK Extraction
 
@@ -60,23 +60,4 @@ that it did not extract itself; remove that directory to extract a verified copy
 
 ## Deterministic macOS App Notes
 
-macOS Applications are created on Linux using a recent LLVM.
-
-All builds must target an Apple SDK. These SDKs are free to download, but not redistributable.
-See the SDK Extraction notes above for how to obtain it.
-
-The Guix build process has been designed to avoid including the SDK's files in Guix's outputs.
-All interim tarballs are fully deterministic and may be freely redistributed.
-
-Using an Apple-blessed key to sign binaries is a requirement to produce (distributable) macOS
-binaries. Because this private key cannot be shared, we'll have to be a bit creative in order
-for the build process to remain somewhat deterministic. Here's how it works:
-
-- Builders use Guix to create an unsigned release. This outputs an unsigned ZIP which
-  users may choose to bless, self-codesign, and run. It also outputs an unsigned app structure
-  in the form of a tarball.
-- The Apple keyholder uses this unsigned app to create a detached signature, using the
-  included script. Detached signatures are available from this [repository](https://github.com/dashpay/dash-detached-sigs).
-
-- Builders feed the unsigned app + detached signature back into Guix, which combines the
-  pieces into a deterministic ZIP.
+The [Guix build tools](../guix/README.md) retain the upstream detached-signature workflow for experimental builds. DeFCoN release builds use the [depends system](../../depends/README.md). The public macOS package contains individual command-line and Qt executables. Compare the download with the archive checksum on its [official release page](https://github.com/defcon-project/defcon/releases).

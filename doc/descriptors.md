@@ -1,7 +1,7 @@
 # Support for Output Descriptors in DeFCoN Core
 
-Since Dash Core v0.17, there is support for Output Descriptors. This is a
-simple language which can be used to describe collections of output scripts.
+DeFCoN Core uses output descriptors to describe collections of output scripts.
+The support comes from upstream Dash Core v0.17.
 Supporting RPCs are:
 - `scantxoutset` takes as input descriptors to scan for, and also reports
   specialized descriptors for the matching UTXOs.
@@ -10,17 +10,15 @@ Supporting RPCs are:
 - `deriveaddresses` takes as input a descriptor and computes the corresponding
   addresses.
 - `listunspent` outputs a specialized descriptor for the reported unspent outputs.
-- `getaddressinfo` outputs a descriptor for solvable addresses (since v0.18).
-- `importmulti` takes as input descriptors to import into a legacy wallet
-  (since v0.18).
-- `generatetodescriptor` takes as input a descriptor and generates coins to it
-  (`regtest` only, since v0.19).
-- `utxoupdatepsbt` takes as input descriptors to add information to the psbt
-  (since v0.19).
-- `createmultisig` and `addmultisigaddress` return descriptors as well (since v0.20).
-- `importdescriptors` takes as input descriptors to import into a descriptor wallet
-  (since v0.21).
-- `listdescriptors` outputs descriptors imported into a descriptor wallet (since v22).
+- `getaddressinfo` outputs a descriptor for solvable addresses.
+- `importmulti` takes as input descriptors to import into a legacy wallet.
+- `generatetodescriptor` takes as input a descriptor and mines proof-of-work blocks
+  to it. It exists in builds with the miner enabled and is meant for test chains
+  such as `regtest`.
+- `utxoupdatepsbt` takes as input descriptors to add information to the psbt.
+- `createmultisig` and `addmultisigaddress` return descriptors as well.
+- `importdescriptors` takes as input descriptors to import into a descriptor wallet.
+- `listdescriptors` outputs descriptors imported into a descriptor wallet.
 
 This document describes the language. For the specifics on usage, see the RPC
 documentation for the functions mentioned above.
@@ -43,8 +41,8 @@ Output descriptors currently support:
 - `combo(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)` describes any P2PK, P2PKH with the specified public key.
 - `multi(1,022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4,025cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc)` describes a bare *1-of-2* multisig with the specified public key.
 - `sortedmulti(1,022f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4,025cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc)` describes a bare *1-of-2* multisig with keys sorted lexicographically in the resulting redeemScript.
-- `pkh(xpub68Gmy5EdvgibQVfPdqkBBCHxA5htiqg55crXYuXoQRKfDBFA1WEjWgP6LHhwBZeNK1VTsfTFUHCdrfp1bgwQ9xv5ski8PX9rL2dZXvgGDnw/1/2)` describes a P2PKH output with child key *1/2* of the specified xpub.
-- `pkh([d34db33f/44'/0'/0']xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL/1/*)` describes a set of P2PKH outputs, but additionally specifies that the specified xpub is a child of a master with fingerprint `d34db33f`, and derived using path `44'/0'/0'`.
+- `pkh(pacp8naYvkbfTR3jPyrA1i21r5Dru2iGJWi8TdnQx4V3VYAr9pzpZrH4rvX4U8iriSXe3uyhXwPvJc32dejc4rABkcVcqwzrZw65Nzh5hywdMTA/1/2)` describes a P2PKH output with child key *1/2* of the specified xpub.
+- `pkh([d34db33f/44'/5'/0']pacp8tiwnLvy17BqKgvzGUZJHqZ1pNcN1gggT5Btju8iNXLULybMv6k1x1SZhGmnDSpLViSpjaWxM5NSwKD8Vr4xs5K7BZH8X2cXyJNRjex2srn/1/*)` describes a set of P2PKH outputs, but additionally specifies that the specified xpub is a child of a master with fingerprint `d34db33f`, and derived using path `44'/5'/0'`.
 
 ## Reference
 
@@ -69,15 +67,17 @@ Descriptors consist of several types of expressions. The top level expression is
 - Followed by the actual key, which is either:
   - Hex encoded public keys (66 characters starting with `02` or `03`, or 130 characters starting with `04`).
   - [WIF](https://en.bitcoin.it/wiki/Wallet_import_format) encoded private keys may be specified instead of the corresponding public key, with the same meaning.
-  -`xpub` encoded extended public key or `xprv` encoded private key (as defined in [BIP 32](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)).
+  - A network-encoded extended public key or private key (the key format is defined in [BIP 32](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)).
     - Followed by zero or more `/NUM` unhardened and `/NUM'` hardened BIP32 derivation steps.
     - Optionally followed by a single `/*` or `/*'` final step to denote all (direct) unhardened or hardened children.
     - The usage of hardened derivation steps requires providing the private key.
 - Anywhere a `'` suffix is permitted to denote hardened derivation, the suffix `h` can be used instead.
 
+The terms *xpub* and *xprv* below refer to extended public and private keys. On DeFCoN mainnet their Base58 encodings start with `pacp` and `pacv`. Use a key from the network for which the descriptor will be evaluated.
+
 `ADDR` expressions are any type of supported address:
-- P2PKH addresses (base58, of the form `X...`). Note that P2PKH addresses in descriptors cannot be used for P2PK outputs (use the `pk` function instead).
-- P2SH addresses (base58, of the form `7...`, defined in [BIP 13](https://github.com/bitcoin/bips/blob/master/bip-0013.mediawiki)).
+- P2PKH addresses (mainnet Base58Check version 30, starting with `D`). Note that P2PKH addresses in descriptors cannot be used for P2PK outputs (use the `pk` function instead).
+- P2SH addresses (the address format is defined in [BIP 13](https://github.com/bitcoin/bips/blob/master/bip-0013.mediawiki); DeFCoN mainnet uses Base58Check version 22).
 
 ## Explanation
 
@@ -100,7 +100,7 @@ not contain "p2" for brevity.
 Several pieces of software use multi-signature (multisig) scripts based
 on Bitcoin's OP_CHECKMULTISIG opcode. To support these, we introduce the
 `multi(k,key_1,key_2,...,key_n)` and `sortedmulti(k,key_1,key_2,...,key_n)`
-functions. They represents a *k-of-n*
+functions. They represent a *k-of-n*
 multisig policy, where any *k* out of the *n* provided public keys must
 sign.
 
@@ -122,12 +122,7 @@ are lexicographically ordered as described in BIP67.
 For a good example of a basic M-of-N multisig between multiple participants using descriptor
 wallets and PSBTs, as well as a signing flow, see [this functional test](/test/functional/wallet_multisig_descriptor_psbt.py).
 
-Disclaimers: It is important to note that this example serves as a quick-start and is kept basic for readability. A downside of the approach
-outlined here is that each participant must maintain (and backup) two separate wallets: a signer and the corresponding multisig.
-It should also be noted that privacy best-practices are not "by default" here - participants should take care to only use the signer to sign
-transactions related to the multisig. Lastly, it is not recommended to use anything other than a Bitcoin Core descriptor wallet to serve as your
-signer(s). Other wallets, whether hardware or software, likely impose additional checks and safeguards to prevent users from signing transactions that
-could lead to loss of funds, or are deemed security hazards. Conforming to various 3rd-party checks and verifications is not in the scope of this example.
+Each participant backs up two wallets, the signer and the watch-only multisig wallet. The example uses DeFCoN Core descriptor wallets for signing. Keep each signer dedicated to this multisig. Verify the recipients, change and amounts before signing. Third-party signing devices may require additional checks.
 
 The basic steps are:
 
@@ -136,7 +131,7 @@ The basic steps are:
      corresponding multisig we are about to create. Hint: extract the wallet's xpubs using `listdescriptors` and pick the one from the
      `pkh` descriptor since it's least likely to be accidentally reused (legacy addresses)
   2. Create a watch-only descriptor wallet (blank, private keys disabled). Now the multisig is created by importing the two descriptors:
-     `wsh(sortedmulti(<M>,XPUB1/0/*,XPUB2/0/*,…,XPUBN/0/*))` and `wsh(sortedmulti(<M>,XPUB1/1/*,XPUB2/1/*,…,XPUBN/1/*))`
+     `sh(sortedmulti(<M>,XPUB1/0/*,XPUB2/0/*,…,XPUBN/0/*))` and `sh(sortedmulti(<M>,XPUB1/1/*,XPUB2/1/*,…,XPUBN/1/*))`
      (one descriptor w/ `0` for receiving addresses and another w/ `1` for change). Every participant does this
   3. A receiving address is generated for the multisig. As a check to ensure step 2 was done correctly, every participant
      should verify they get the same addresses
@@ -153,7 +148,7 @@ The basic steps are:
 You may prefer a daisy chained signing flow where each participant signs the PSBT one after another until
 the PSBT has been signed `M` times and is "complete." For the most part, the steps above remain the same, except (6, 7)
 change slightly from signing the original PSBT in parallel to signing it in series. `combinepsbt` is not necessary with
-this signing flow and the last (`m`th) signer can just broadcast the PSBT after signing. Note that a parallel signing flow may be
+this signing flow and the last signer can finalize the completed PSBT and broadcast its extracted transaction. Note that a parallel signing flow may be
 preferable in cases where there are more signers. This signing flow is also included in the test / Python example.
 [The test](/test/functional/wallet_multisig_descriptor_psbt.py) is meant to be documentation as much as it is a functional test, so
 it is kept as simple and readable as possible.
@@ -168,7 +163,9 @@ path consists of a sequence of 0 or more integers (in the range
 *0..2<sup>31</sup>-1*) each optionally followed by `'` or `h`, and
 separated by `/` characters. The string may optionally end with the
 literal `/*` or `/*'` (or `/*h`) to refer to all unhardened or hardened
-child keys in a configurable range (by default `0-1000`, inclusive).
+child keys in a range set by the RPC that uses the descriptor. For example,
+`deriveaddresses` needs an explicit range, and `importdescriptors` without a
+range uses `0` up to, but not including, the `-keypool` size (1000 by default).
 
 Whenever a public key is described using a hardened derivation step, the
 script cannot be computed without access to the corresponding private
@@ -181,12 +178,12 @@ it may be necessary to identify the master key and derivation path an
 xpub was derived with.
 
 For example, when following BIP44, it would be useful to describe a
-change chain directly as `xpub.../44'/0'/0'/1/*` where `xpub...`
+change chain directly as `xpub.../44'/5'/0'/1/*` where `xpub...`
 corresponds with the master key `m`. Unfortunately, since there are
 hardened derivation steps that follow the xpub, this descriptor does not
 let you compute scripts without access to the corresponding private keys.
 Instead, it should be written as `xpub.../1/*`, where xpub corresponds to
-`m/44'/0'/0'`.
+`m/44'/5'/0'`.
 
 When interacting with a hardware device, it may be necessary to include
 the entire path from the master down. BIP174 standardizes this by
@@ -240,6 +237,6 @@ ones. For larger numbers of errors, or other types of errors, there is a
 roughly 1 in a trillion chance of not detecting the errors.
 
 All RPCs in DeFCoN Core will include the checksum in their output. Only
-certain RPCs require checksums on input, including `deriveaddress` and
+certain RPCs require checksums on input, including `deriveaddresses` and
 `importmulti`. The checksum for a descriptor without one can be computed
 using the `getdescriptorinfo` RPC.

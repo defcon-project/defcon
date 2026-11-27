@@ -20,27 +20,22 @@ pkg_add python # (select highest version, e.g. 3.9)
 pkg_add gmp
 pkg_add bash
 pkg_add boost
+```
 
+From a directory owned by your normal user:
+
+```sh
 git clone https://github.com/defcon-project/defcon.git
+cd defcon
 ```
 
 See [dependencies.md](dependencies.md) for a complete overview.
 
-**Important**: From OpenBSD 6.2 onwards a C++11-supporting clang compiler is
-part of the base image, and while building it is necessary to make sure that
-this compiler is used and not ancient g++ 4.2.1. This is done by appending
-`CC=cc CC_FOR_BUILD=cc CXX=c++` to configuration commands. Mixing different
-compilers within the same executable will result in errors.
+Select a compiler and C++ standard library with C++17 support. The examples use the same toolchain for configuration and compilation.
 
 ### Building BerkeleyDB
 
-BerkeleyDB is only necessary for the wallet functionality. To skip this, pass
-`--disable-wallet` to `./configure` and skip to the next section.
-
-It is recommended to use Berkeley DB 4.8. You cannot use the BerkeleyDB library
-from ports, for the same reason as boost above (g++/libstd++ incompatibility).
-If you have to build it yourself, you can use [the installation script included
-in contrib/](/contrib/install_db4.sh) like so:
+Berkeley DB 4.8 is needed for release-compatible legacy wallets. Descriptor wallets use SQLite. For a node without wallet support, use `--disable-wallet`. Build Berkeley DB with the [included script](../contrib/install_db4.sh) if needed:
 
 ```bash
 ./contrib/install_db4.sh `pwd` CC=cc CXX=c++
@@ -110,4 +105,3 @@ If your user is in the `staff` group the limit can be raised with:
 The change will only affect the current shell and processes spawned by it. To
 make the change system-wide, change `datasize-cur` and `datasize-max` in
 `/etc/login.conf`, and reboot.
-

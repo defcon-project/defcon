@@ -6,12 +6,12 @@ This guide describes how to build defcond and command-line utilities on NetBSD.
 
 This guide does not contain instructions for building the GUI.
 
-**This guide has not been tested for building DeFCoN Core and is expected to fail due to missing `bls_dash` and `backtrace`. Please report your results; contributions welcome.**
+**This guide has not been tested for building DeFCoN Core and should be treated as an upstream porting reference. Please report your results; contributions welcome.**
 
 Preparation
 -------------
 
-You will need the following modules, which can be installed via pkgsrc or pkgin:
+You will need the following build dependencies, available through pkgsrc or pkgin:
 
 ```
 autoconf
@@ -23,22 +23,21 @@ gmp
 libevent
 libtool
 pkg-config
-python37
+Python 3.9 or later (tests)
+```
 
+Clone the repository and enter the source tree:
+
+```sh
 git clone https://github.com/defcon-project/defcon.git
+cd defcon
 ```
 
 See [dependencies.md](dependencies.md) for a complete overview.
 
 ### Building BerkeleyDB
 
-BerkeleyDB is only necessary for the wallet functionality. To skip this, pass
-`--disable-wallet` to `./configure` and skip to the next section.
-
-It is recommended to use Berkeley DB 4.8. You cannot use the BerkeleyDB library
-from ports, for the same reason as boost above (g++/libstd++ incompatibility).
-If you have to build it yourself, you can use [the installation script included
-in contrib/](/contrib/install_db4.sh) like so:
+Berkeley DB 4.8 is needed for release-compatible legacy wallets. Descriptor wallets use SQLite. For a node without wallet support, use `--disable-wallet`. Build Berkeley DB with the [included script](../contrib/install_db4.sh) if needed:
 
 ```bash
 ./contrib/install_db4.sh `pwd`

@@ -1,4 +1,4 @@
-# Internal c++ interfaces
+# Internal DeFCoN Core C++ interfaces
 
 The following interfaces are defined here:
 
@@ -6,9 +6,11 @@ The following interfaces are defined here:
 
 * [`ChainClient`](chain.h) — used by node to start & stop `Chain` clients. Added in [#14437](https://github.com/bitcoin/bitcoin/pull/14437).
 
-* [`Node`](node.h) — used by GUI to start & stop bitcoin node. Added in [#10244](https://github.com/bitcoin/bitcoin/pull/10244).
+* [`Node`](node.h) — used by GUI to start and stop the DeFCoN node. Added in [#10244](https://github.com/bitcoin/bitcoin/pull/10244).
 
 * [`Wallet`](wallet.h) — used by GUI to access wallets. Added in [#10244](https://github.com/bitcoin/bitcoin/pull/10244).
+
+* [CoinJoin client and loader](coinjoin.h) — allow the wallet and node components to work with CoinJoin sessions.
 
 * [`Handler`](handler.h) — returned by `handleEvent` methods on interfaces above and used to manage lifetimes of event handlers.
 
@@ -16,4 +18,4 @@ The following interfaces are defined here:
 
 * [`Ipc`](ipc.h) — used by multiprocess code to access `Init` interface across processes. Added in [#6143](https://github.com/dashpay/dash/pull/6143).
 
-The interfaces above define boundaries between major components of bitcoin code (node, wallet, and gui), making it possible for them to run in [different processes](../../doc/multiprocess.md), and be tested, developed, and understood independently. These interfaces are not currently designed to be stable or to be used externally.
+The interfaces above define boundaries between the DeFCoN node, wallet and GUI, making it possible for them to run in [different processes](../../doc/multiprocess.md), and be tested, developed, and understood independently. These interfaces are not currently designed to be stable or to be used externally.

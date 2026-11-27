@@ -1,3 +1,5 @@
+# Writing depends package recipes
+
 Each recipe consists of 3 main parts: defining identifiers, setting build
 variables, and defining build commands.
 
@@ -5,10 +7,10 @@ The package "mylib" will be used here as an example
 
 General tips:
 - mylib_foo is written as $(package)_foo in order to make recipes more similar.
-- Secondary dependency packages relative to the bitcoin binaries/libraries (i.e.
-  those not in `ALLOWED_LIBRARIES` in `contrib/devtools/symbol-check.py`) don't
+- Secondary dependency packages relative to DeFCoN binaries and libraries (i.e.
+  those outside the platform allowlists in [symbol-check.py](../contrib/devtools/symbol-check.py)) don't
   need to be shared and should be built statically whenever possible. See
-  [below](#secondary-dependencies) for more details.
+  [secondary dependencies](#secondary-dependencies) for more details.
 
 ## Identifiers
 Each package is required to define at least these variables:
@@ -162,13 +164,13 @@ From the [Gentoo Wiki entry](https://wiki.gentoo.org/wiki/Project:Quality_Assura
 >  creates. This leads to massive overlinking, which is toxic to the Gentoo
 >  ecosystem, as it leads to a massive number of unnecessary rebuilds.
 
-Where possible, packages are built with Position Independant Code. Either using
+Where possible, packages are built with position-independent code. Either using
 the Autotools `--with-pic` flag, or `CMAKE_POSITION_INDEPENDENT_CODE` with CMake.
 
-## Secondary dependencies:
+## Secondary dependencies
 
-Secondary dependency packages relative to the bitcoin binaries/libraries (i.e.
-those not in `ALLOWED_LIBRARIES` in `contrib/devtools/symbol-check.py`) don't
+Secondary dependency packages relative to DeFCoN binaries and libraries (i.e.
+those outside the platform allowlists in [symbol-check.py](../contrib/devtools/symbol-check.py)) don't
 need to be shared and should be built statically whenever possible. This
 improves general build reliability as illustrated by the following example:
 

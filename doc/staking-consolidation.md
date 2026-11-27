@@ -53,7 +53,7 @@ not invented. Unconfirmed/orphaned transactions are explicitly not described as 
 confirmed consolidation. Counts describe that transaction, not the current total
 wallet count. Labels reflect the current address book, not a historical snapshot.
 
-Linux RPC: `getstakinginfo` exposes the scope, compact target, split threshold and
+The RPC `getstakinginfo` exposes the scope, compact target, split threshold and
 rest-budget policy. `gettransaction` adds `stake_details` for coinstakes, including
 input/output arrays, confirmed state, signed `utxo_delta`, and principal/net reward
 only when all input records are available.

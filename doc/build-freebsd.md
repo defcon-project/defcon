@@ -12,29 +12,30 @@ The following dependencies are **required**:
 
  Library                                                               | Purpose    | Description
  ----------------------------------------------------------------------|------------|----------------------
- [autoconf](https://svnweb.freebsd.org/ports/head/devel/autoconf/)     | Build      | Automatically configure software source code
- [automake](https://svnweb.freebsd.org/ports/head/devel/automake/)     | Build      | Generate makefile (requires autoconf)
- [libtool](https://svnweb.freebsd.org/ports/head/devel/libtool/)       | Build      | Shared library support
- [pkgconf](https://svnweb.freebsd.org/ports/head/devel/pkgconf/)       | Build      | Configure compiler and linker flags
- [git](https://svnweb.freebsd.org/ports/head/devel/git/)               | Clone      | Version control system
- [gmake](https://svnweb.freebsd.org/ports/head/devel/gmake/)           | Compile    | Generate executables
- [boost-libs](https://svnweb.freebsd.org/ports/head/devel/boost-libs/) | Utility    | Library for threading, data structures, etc
- [libevent](https://svnweb.freebsd.org/ports/head/devel/libevent/)     | Networking | OS independent asynchronous networking
+ [autoconf](https://cgit.freebsd.org/ports/tree/devel/autoconf/)     | Build      | Automatically configure software source code
+ [automake](https://cgit.freebsd.org/ports/tree/devel/automake/)     | Build      | Generate makefile (requires autoconf)
+ [libtool](https://cgit.freebsd.org/ports/tree/devel/libtool/)       | Build      | Shared library support
+ [pkgconf](https://cgit.freebsd.org/ports/tree/devel/pkgconf/)       | Build      | Configure compiler and linker flags
+ [git](https://cgit.freebsd.org/ports/tree/devel/git/)               | Clone      | Version control system
+ [gmake](https://cgit.freebsd.org/ports/tree/devel/gmake/)           | Compile    | Generate executables
+ [boost-libs](https://cgit.freebsd.org/ports/tree/devel/boost-libs/) | Utility    | Library for threading, data structures, etc
+ [libevent](https://cgit.freebsd.org/ports/tree/devel/libevent/)     | Networking | OS independent asynchronous networking
 
 
 The following dependencies are **optional**:
 
   Library                                                                    | Purpose          | Description
   ---------------------------------------------------------------------------|------------------|----------------------
-  [db5](https://svnweb.freebsd.org/ports/head/databases/db5/)                | Berkeley DB      | Wallet storage (only needed when wallet enabled)
-  [qt5](https://svnweb.freebsd.org/ports/head/devel/qt5/)                    | GUI              | GUI toolkit (only needed when GUI enabled)
-  [gmp](https://svnweb.freebsd.org/ports/head/math/gmp/)                     | Optimized math routines | Arbitrary precision arithmetic library
-  [libqrencode](https://svnweb.freebsd.org/ports/head/graphics/libqrencode/) | QR codes in GUI  | Generating QR codes (only needed when GUI enabled)
-  [libzmq4](https://svnweb.freebsd.org/ports/head/net/libzmq4/)              | ZMQ notification | Allows generating ZMQ notifications (requires ZMQ version >= 4.0.0)
-  [sqlite3](https://svnweb.freebsd.org/ports/head/databases/sqlite3/)        | SQLite DB        | Wallet storage (only needed when wallet enabled)
-  [python3](https://svnweb.freebsd.org/ports/head/lang/python3/)             | Testing          | Python Interpreter (only needed when running the test suite)
+  [db5](https://cgit.freebsd.org/ports/tree/databases/db5/)                | Berkeley DB      | Wallet storage (only needed when wallet enabled)
+  [qt5](https://cgit.freebsd.org/ports/tree/devel/qt5/)                    | GUI              | GUI toolkit (only needed when GUI enabled)
+  [libqrencode](https://cgit.freebsd.org/ports/tree/graphics/libqrencode/) | QR codes in GUI  | Generating QR codes (only needed when GUI enabled)
+  [libzmq4](https://cgit.freebsd.org/ports/tree/net/libzmq4/)              | ZMQ notification | Allows generating ZMQ notifications (requires ZMQ version >= 4.0.0)
+  [sqlite3](https://cgit.freebsd.org/ports/tree/databases/sqlite3/)        | SQLite DB        | Wallet storage (only needed when wallet enabled)
+  [python3](https://cgit.freebsd.org/ports/tree/lang/python3/)             | Testing          | Python Interpreter (only needed when running the test suite)
 
   See [dependencies.md](dependencies.md) for a complete overview.
+
+GMP is required by the DeFCoN build. Install its headers and library along with the other base dependencies.
 
 ## Preparation
 
@@ -42,23 +43,17 @@ The following dependencies are **optional**:
 Run the following as root to install the base dependencies for building.
 
 ```bash
-pkg install autoconf automake boost-libs git gmake libevent libtool pkgconf
-
+pkg install autoconf automake boost-libs git gmake gmp libevent libtool pkgconf
 ```
 
 ### 2. Clone DeFCoN Core Repo
 Now that `git` and all the required dependencies are installed, let's clone the DeFCoN Core repository to a directory. All build scripts and commands will run from this directory.
 ``` bash
 git clone https://github.com/defcon-project/defcon.git
+cd defcon
 ```
 
 ### 3. Install Optional Dependencies
-
-###### GMP
-
-```bash
-pkg install gmp
-```
 
 #### Wallet Dependencies
 It is not necessary to build wallet functionality to run defcond or the GUI. To enable legacy wallets, you must install `db5`. To enable [descriptor wallets](descriptors.md), `sqlite3` is required. Skip `db5` if you intend to *exclusively* use descriptor wallets
@@ -126,7 +121,7 @@ This explicitly enables the GUI and disables legacy wallet support. If `qt5` is 
 ##### No Wallet or GUI
 ``` bash
 ./autogen.sh
-./configure --without-wallet --with-gui=no MAKE=gmake
+./configure --disable-wallet --with-gui=no MAKE=gmake
 ```
 
 ### 2. Compile

@@ -31,7 +31,7 @@ Comments may appear in two ways:
 ### Network specific options
 
 Network specific options can be:
-- placed into sections with headers `[main]` (not `[mainnet]`), `[test]` (not `[testnet]`) or `[regtest]`;
+- placed into sections with headers `[main]` (not `[mainnet]`), `[test]` (not `[testnet]`), `[devnet]` or `[regtest]`;
 - prefixed with a chain name; e.g., `regtest.maxmempool=100`.
 
 Network specific options take precedence over non-network specific options.
@@ -63,4 +63,4 @@ Windows | `%APPDATA%\Defcon\` | `C:\Users\username\AppData\Roaming\Defcon\defcon
 Linux | `$HOME/.defcon/` | `/home/username/.defcon/defcon.conf`
 macOS | `$HOME/Library/Application Support/Defcon/` | `/Users/username/Library/Application Support/Defcon/defcon.conf`
 
-There is no example `defcon.conf` in this repository; `defcond -help` lists every option with its default.
+There is no example `defcon.conf` in this repository; `defcond -help` lists the options with their defaults; add `-help-debug` to include the debugging options.

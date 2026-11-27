@@ -8,7 +8,7 @@ level of trust within the DeFCoN community.
 
 Other implementations of DeFCoN software may also use the same
 seeds and may be more exposed. In light of this exposure, this
-document establishes some basic expectations for operating dnsseeds.
+document establishes some basic expectations for operating DNS seeds.
 
 0. A DNS seed operating organization or person is expected to follow good
 host security practices, maintain control of applicable infrastructure,
@@ -30,7 +30,7 @@ for the operation of the service or urgent health of the DeFCoN
 network and must not be retained longer than necessary nor disclosed
 to any third party.
 
-5. Information gathered as a result of the operators node-spidering
+5. Information gathered as a result of the operator’s node discovery
 (not from DNS queries) may be freely published or retained, but only
 if this data was not made more complete by biasing node connectivity
 (a violation of expectation (1)).

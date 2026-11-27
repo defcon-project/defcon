@@ -1,12 +1,3 @@
-Description
-------------
+# DeFCoN Core test data
 
-This directory contains data-driven tests for various aspects of Dash.
-
-License
---------
-
-The data files in this directory are distributed under the MIT software
-license, see the accompanying file COPYING or
-https://www.opensource.org/licenses/mit-license.php.
-
+These files provide test vectors for the DeFCoN Core unit tests. The test data is distributed under the [MIT license](../../../COPYING).

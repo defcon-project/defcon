@@ -58,7 +58,7 @@ After running `./autogen.sh`, which generates the `./configure` file, use `./con
 --without-gui
 ```
 
-If you do need the wallet enabled, it is common for devs to add `--with-incompatible-bdb`. This uses your system bdb version for the wallet, so you don't have to find a copy of bdb 4.8. Wallets from such a build will be incompatible with any release binary (and vice versa), so use with caution on mainnet.
+If you do need the wallet enabled, it is common for devs to add `--with-incompatible-bdb`. This uses your system bdb version for the wallet, so you don't have to find a copy of bdb 4.8. Legacy wallet databases created with a different Berkeley DB version may be unreadable by release binaries. This option applies to Berkeley DB wallets.
 
 ### Make use of your threads with `make -j`
 
@@ -102,17 +102,17 @@ git worktree add --checkout ../where-my-checkout-commit-ish-will-live my-checkou
 
 ### Interactive "dummy rebases" for fixups and execs with `git merge-base`
 
-When rebasing, we often want to do a "dummy rebase," whereby we are not rebasing over an updated master but rather over the last common commit with master. This might be useful for rearranging commits, `rebase --autosquash`ing, or `rebase --exec`ing without introducing conflicts that arise from an updated master. In these situations, we can use `git merge-base` to identify the last common commit with master, and rebase off of that.
+When rebasing, we often want to do a "dummy rebase," whereby we are not rebasing over an updated `v22.1.x` but rather over the last common commit with v22.1.x. This might be useful for rearranging commits, `rebase --autosquash`ing, or `rebase --exec`ing without introducing conflicts that arise from an updated v22.1.x. In these situations, we can use `git merge-base` to identify the last common commit with v22.1.x, and rebase off of that.
 
-To squash in `git commit --fixup` commits without rebasing over an updated master, we can do the following:
+To squash in `git commit --fixup` commits without rebasing over an updated v22.1.x, we can do the following:
 
 ```sh
-git rebase -i --autosquash "$(git merge-base master HEAD)"
+git rebase -i --autosquash "$(git merge-base v22.1.x HEAD)"
 ```
 
-To execute `make check` on every commit since last diverged from master, but without rebasing over an updated master, we can do the following:
+To execute `make check` on every commit since last diverged from v22.1.x, but without rebasing over an updated v22.1.x, we can do the following:
 ```sh
-git rebase -i --exec "make check" "$(git merge-base master HEAD)"
+git rebase -i --exec "make check" "$(git merge-base v22.1.x HEAD)"
 ```
 
 -----
@@ -126,7 +126,7 @@ Writing code
 
 ### Format C/C++ diffs with `clang-format-diff.py`
 
-See [contrib/devtools/README.md](/contrib/devtools/README.md#clang-format-diffpy).
+See [the formatter](../contrib/devtools/clang-format-diff.py).
 
 ### Format Python diffs with `yapf-diff.py`
 
@@ -179,10 +179,10 @@ When looking at other's pull requests, it may make sense to add the following se
 ```
 [remote "upstream-pull"]
         fetch = +refs/pull/*/head:refs/remotes/upstream-pull/*
-        url = git@github.com:defcon-project/defcon.git
+        url = https://github.com/defcon-project/defcon.git
 ```
 
-This will add an `upstream-pull` remote to your git repository, which can be fetched using `git fetch --all` or `git fetch upstream-pull`. It will download and store on disk quite a lot of data (all PRs, including merged and closed ones). Afterwards, you can use `upstream-pull/NUMBER/head` in arguments to `git show`, `git checkout` and anywhere a commit id would be acceptable to see the changes from pull request NUMBER.
+This will add an `upstream-pull` remote to your git repository, which can be fetched using `git fetch --all` or `git fetch upstream-pull`. It will download and store on disk quite a lot of data (all PRs, including merged and closed ones). Afterwards, you can use `upstream-pull/NUMBER` in arguments to `git show`, `git checkout` and anywhere a commit id would be acceptable to see the changes from pull request NUMBER.
 
 ### Diff the diffs with `git range-diff`
 
@@ -192,14 +192,14 @@ For example, to identify the differences between your previously reviewed diffs 
 ```
        P1--P2--P3--P4--P5   <-- previously-reviewed-head
       /
-...--m   <-- master
+...--m   <-- v22.1.x
       \
        P1--P2--N3--N4--N5   <-- new-head (with P3 slightly modified)
 ```
 
 You can do:
 ```sh
-git range-diff master previously-reviewed-head new-head
+git range-diff v22.1.x previously-reviewed-head new-head
 ```
 
 Note that `git range-diff` also work for rebases:
@@ -207,7 +207,7 @@ Note that `git range-diff` also work for rebases:
 ```
        P1--P2--P3--P4--P5   <-- previously-reviewed-head
       /
-...--m--m1--m2--m3   <-- master
+...--m--m1--m2--m3   <-- v22.1.x
                   \
                    P1--P2--N3--N4  <-- new-head (with P3 modified, P4 & P5 squashed)
 
