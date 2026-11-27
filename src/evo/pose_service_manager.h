@@ -81,6 +81,8 @@ public:
     /** The epoch and epoch-base hash currently being probed. */
     uint32_t CurrentEpoch() const;
     uint256 CurrentEpochHash() const;
+    //! Both under one lock: a pair that was current together, never one epoch's number with another's base.
+    std::pair<uint32_t, uint256> CurrentEpochAndHash() const;
     //! ProcessResponse's own "aged out" refusal and the store's (ProcessReport), asked ahead of them, so the
     //! caller can refuse an aged-out epoch before it builds the list of the epoch's base block.
     bool ResponseAgedOut(uint32_t nEpoch) const;

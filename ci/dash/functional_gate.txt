@@ -102,6 +102,7 @@
 88   feature_block.py                       # block validity over the peer protocol: invalid transactions, reorgs, coinbase reward and maturity, sigops, size, a long reorg
 87   feature_dsl_sign_wait.py               # wait for late Sentinel reports, with a signing deadline
 81   feature_dsl_commitment_v2.py           # the Sentinel commitment's second bitfield: who the pool judged at all (#231)
+70   feature_dsl_slow_reports.py            # in the Sentinel wave a slow node's pong goes ahead of the reports it is still checking (SF1-C2)
 64   wallet_backup.py                       # backupwallet, restorewallet, dumpwallet and importwallet give back the same balances
 62   feature_dsl_dkg_isolation.py           # a slow node: announcement copies unread, the tick behind the DKG, commitments intact (SF1-A)
 60   wallet_avoidreuse.py                   # the avoid_reuse flag: it persists, is immutable, keeps change as change, keeps reused coins out of sends

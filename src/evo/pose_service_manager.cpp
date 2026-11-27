@@ -121,6 +121,12 @@ uint256 CPoSeServiceManager::CurrentEpochHash() const
     return m_epochBlockHash;
 }
 
+std::pair<uint32_t, uint256> CPoSeServiceManager::CurrentEpochAndHash() const
+{
+    LOCK(m_mutex);
+    return {m_epoch, m_epochBlockHash};
+}
+
 std::vector<uint256> CPoSeServiceManager::PendingChallenges(const CDeterministicMNList& list,
                                                             const uint256& myProTxHash,
                                                             const Consensus::Params& params) const

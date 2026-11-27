@@ -74,6 +74,8 @@
 #include <evo/mnauth.h>
 #include <evo/pose_service_manager.h>
 #include <evo/pose_service_metrics.h>
+#include <evo/pose_service_preverify.h>
+#include <evo/pose_service_sigcache.h>
 #include <evo/pose_service_seen.h>
 #include <evo/pose_service_faults.h>
 #include <evo/simplifiedmns.h>
@@ -492,6 +494,8 @@ struct Peer {
      *  verified masternode, both in
      *  PeerManagerImpl::ChargeDSLMessageBudget; a new connection starts empty. */
     double m_dsl_token_bucket GUARDED_BY(NetEventsInterface::g_msgproc_mutex){0.0};
+    /** The queue sequence number of the head report the gate last logged holding (SF1-C2), so a hold is logged once. */
+    uint64_t m_dsl_gate_logged_seq GUARDED_BY(NetEventsInterface::g_msgproc_mutex){0};
     /** The chain height at which m_dsl_token_bucket was last refilled. It starts
      *  at the height the connection was made, so a peer earns from then on and
      *  not from its first DSL message: a quiet, long-lived peer must not meet
@@ -773,10 +777,7 @@ public:
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex, !m_dsl_tick_mutex);
     void UpdatedBlockTipFinal(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload) override
         EXCLUSIVE_LOCKS_REQUIRED(!m_dsl_tick_mutex);
-    void SynchronousUpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload) override
-    {
-        m_dsl_chain_height.store(pindexNew != nullptr ? pindexNew->nHeight : -1, std::memory_order_relaxed);
-    }
+    void SynchronousUpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload) override;
     void BlockChecked(const CBlock& block, const BlockValidationState& state) override
         EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void NewPoWValidBlock(const CBlockIndex *pindex, const std::shared_ptr<const CBlock>& pblock) override;
@@ -818,6 +819,8 @@ public:
     void RequestObject(NodeId nodeid, const CInv& inv, std::chrono::microseconds current_time,
                        bool is_masternode, bool fForce = false) override EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     size_t GetRequestedObjectCount(NodeId nodeid) const override EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    size_t RunReportPreverifyJobsForTest(size_t max) override;
+    void SetDSLTokensForTest(NodeId nodeid, double tokens) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     bool IsInvInFilter(NodeId nodeid, const uint256& hash) const override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
     void AskPeersForTransaction(const uint256& txid, bool is_masternode) override EXCLUSIVE_LOCKS_REQUIRED(!m_peer_mutex);
 private:
@@ -840,7 +843,7 @@ private:
      *  at the cutoff turn silence into signed reports. Runs at the end of the
      *  block's UpdatedBlockTip event (UpdatedBlockTipFinal); blockchain_synced is
      *  the masternode sync as UpdatedBlockTip found it, earlier in that event. */
-    void ProcessDSLTick(const CBlockIndex* pindexNew, bool blockchain_synced);
+    void ProcessDSLTick(const CBlockIndex* pindexNew, bool blockchain_synced, std::optional<uint64_t> obs_generation);
     /** Hold an announcement before its base block or local epoch tick.
      *  With a connected base, false means the tick already began that epoch
      *  (its drain may still be pending); process the response directly. */
@@ -1118,10 +1121,12 @@ private:
     /** The Sentinel tick of the UpdatedBlockTip event being delivered: UpdatedBlockTip notes its block and whether
      *  the blockchain stage of the masternode sync was done at that point, and UpdatedBlockTipFinal runs the tick
      *  from the note at the end of the same event. Only the validation queue's thread uses it, one event at a time;
-     *  there is at most one note, taken by its own event's end. */
+     *  there is at most one note, taken by its own event's end. It carries the generation of this event's own
+     *  notification (dsl::ObservationMark::EventBegin), if the event has one. */
     struct DSLTickNote {
         const CBlockIndex* pindex{nullptr};
         bool blockchain_synced{false};
+        std::optional<uint64_t> obs_generation;
     };
     Mutex m_dsl_tick_mutex;
     std::optional<DSLTickNote> m_dsl_tick_note GUARDED_BY(m_dsl_tick_mutex);
@@ -1443,6 +1448,62 @@ private:
     std::vector<std::pair<uint256, CTransactionRef>> vExtraTxnForCompact GUARDED_BY(g_cs_orphans);
     /** Offset into vExtraTxnForCompact to insert the next tx */
     size_t vExtraTxnForCompactIt GUARDED_BY(g_cs_orphans) = 0;
+
+    // ---- SF1-C2: the report pre-verifier, and the receive queue's gate in the Sentinel wave window ----
+
+    /** The wave window as one snapshot saw it (DSLWaveWindow), with the epoch and base the counters file it under and,
+     *  for an open one, the generation of this node's observation it was open in (read under the same cs_main). */
+    struct DSLWindow {
+        bool open{false};
+        uint32_t epoch{0};
+        uint256 base;
+        uint64_t generation{0};
+    };
+    /** Whether the wave window is open now: the active tip at or past activation, at the epoch's two wave positions
+     *  (interval - interval/4 up to interval - interval/8 - 2; 18 and 19 of 24), not behind the tip last notified
+     *  synchronously (no rewind under way), and on a masternode its own observation of this epoch finished on this
+     *  base in the current generation. */
+    DSLWindow DSLWaveWindow() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    /** Gives the peer's queued reports at its scan cursor their pre-verification jobs, as far as the peer's stored
+     *  budget covers and nothing shows their processing would stop short of the signature check. */
+    void ScanDSLReports(CNode& pfrom, Peer& peer)
+        EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex, !m_dsl_view_mutex, !::cs_main);
+    /** The list of an epoch's base, where the ordinary path has just resolved it, for the scan (sf1-c2 note 3.1). */
+    void RefreshDSLView(uint32_t epoch, const CBlockIndex* base, const CDeterministicMNList& list)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_dsl_view_mutex, !::cs_main);
+    /** The pre-verifier's limits from the masternode count the budget is sized from, wherever that count is read
+     *  (RefreshDSLBudgetEpoch): waiting jobs above lowered limits go at once, without waiting for another report. */
+    void ApplyDSLPreverifyLimits() EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex);
+
+    /** The tip SynchronousUpdatedBlockTip last saw, the generation every rewind or branch switch moves on, the
+     *  notified tips whose events have not run yet, and this node's own observation of the epoch, marked by the tick
+     *  that emitted its reports (dsl::ObservationMark). Shared with the arming the first notification queues in the
+     *  validation queue, which may outlive this object. */
+    const std::shared_ptr<dsl::ObservationMark> m_dsl_obs;
+    /** The epoch, base and generation whose window opening the counters last recorded (wave_window_open). */
+    std::optional<std::tuple<uint32_t, uint256, uint64_t>> m_dsl_window_opened GUARDED_BY(g_msgproc_mutex);
+
+    /** The scan's view of one epoch: its base, the base's list and the assignments derived from it. Only the
+     *  message thread reads and writes it; a leaf lock. */
+    struct DSLView {
+        uint32_t epoch{0};
+        const CBlockIndex* base{nullptr};
+        CDeterministicMNList list;
+        std::map<uint256, std::vector<uint256>> assigned;
+    };
+    mutable Mutex m_dsl_view_mutex;
+    std::optional<DSLView> m_dsl_view GUARDED_BY(m_dsl_view_mutex);
+
+    /** The pre-verifier's mode (SetDSLPreverifyModeForTest; no option sets it): 0 none, 1 a thread of its own (the
+     *  default), 2 no thread (tests run its jobs). */
+    const int m_dsl_preverify_mode;
+    /** Declared next to last, so it goes right after the store's observer below: its thread stops before anything else
+     *  of this object goes. Shared only so that the observer can hold it weakly. */
+    std::shared_ptr<dsl::ReportPreverifier> m_preverifier;
+    /** The pre-verifier's observer of the store's inserts (CServiceReportStore::AddInsertObserver, which holds it
+     *  weakly): declared last, so it goes first, and the store forgets it -- this object never touches the store to
+     *  leave, so it may go after the store, or when its construction stops half way (SF1-C2). */
+    std::shared_ptr<const dsl::CServiceReportStore::InsertObserver> m_dsl_insert_observer;
 };
 
 // Keeps track of the time (in microseconds) when transactions were requested last time
@@ -2172,6 +2233,8 @@ void PeerManagerImpl::ReattemptInitialBroadcast(CScheduler& scheduler)
 void PeerManagerImpl::FinalizeNode(const CNode& node) {
     NodeId nodeid = node.GetId();
     m_dsl_seen.RemovePeer(nodeid);
+    // The peer's pre-verification jobs, waiting, running or done, no longer hold their places (SF1-C2).
+    if (m_preverifier != nullptr) m_preverifier->DropPeer(nodeid);
     int misbehavior{0};
     int dsl_connected_height{-1};
     LOCK(cs_main);
@@ -2493,6 +2556,61 @@ std::unique_ptr<PeerManager> PeerManager::make(const CChainParams& chainparams, 
 
 /** The exact seen table's capacity for a list of mn_count masternodes (defined with the DSL bounds below). */
 static size_t DSLSeenCapacity(int64_t mn_count, const Consensus::Params& consensus);
+/** The report pre-verifier's limits for a list of mn_count masternodes: the jobs one peer may hold, and all peers
+ *  together (defined with the DSL bounds below). */
+static std::pair<size_t, size_t> DSLPreverifyLimits(int64_t mn_count, const Consensus::Params& consensus);
+
+namespace {
+/** Set by ProcessMessages for one report's processing when the pre-verifier's thread started that report's job: the
+ *  thread has waited out the report's -dsltestprocessdelay, so ReadDSLMessage does not wait again (sf1-c2 note 3.6). */
+thread_local bool g_dsl_report_delay_done{false};
+class ReportDelayDoneScope
+{
+public:
+    explicit ReportDelayDoneScope(bool done) : m_previous(g_dsl_report_delay_done) { g_dsl_report_delay_done = done; }
+    ~ReportDelayDoneScope() { g_dsl_report_delay_done = m_previous; }
+    ReportDelayDoneScope(const ReportDelayDoneScope&) = delete;
+    ReportDelayDoneScope& operator=(const ReportDelayDoneScope&) = delete;
+
+private:
+    const bool m_previous;
+};
+
+/** The pre-verifier of a PeerManager made from now on (SetDSLPreverifyModeForTest): a thread of its own, unless a
+ *  unit test asks for none (0) or for one without a thread whose jobs it runs (2). No option sets it. */
+std::atomic<int> g_dsl_preverify_mode_for_test{1};
+
+/** Tests only (SetDSLOvertakePolicyForTest): the overtake policy the receive queue's gate asks instead of
+ *  DSLOvertakePolicy; nullptr, the default, for that one. */
+std::atomic<int8_t (*)(const CNetMessage&)> g_dsl_overtake_policy_for_test{nullptr};
+
+/** Tests only (SetDSLEmitTestHookForTest): called by the tick once it has reserved the epoch's emission, before the
+ *  observation copy and the emission, with no lock held; nullptr, the default, for none. */
+std::atomic<void (*)()> g_dsl_emit_test_hook{nullptr};
+
+/** Tests only (SetDSLScanTestHookForTest): called by the scan for a report it is about to give a job, before its last
+ *  look at the store, with no lock of the store or the pre-verifier held; nullptr, the default, for none. */
+std::atomic<void (*)()> g_dsl_scan_test_hook{nullptr};
+
+/** Tests only (SetDSLOfferTestHookForTest): called by the scan under the store's lock, between its last look at the
+ *  store (the key free) and the offer; nullptr, the default, for none. */
+std::atomic<void (*)()> g_dsl_offer_test_hook{nullptr};
+
+/** The pre-verifier's store key of a report (PreverifyJob::store_key): what the store keeps one report of. */
+uint256 DSLStoreKey(uint32_t epoch, const uint256& target, const uint256& sentinel)
+{
+    CHashWriter key(SER_GETHASH, 0);
+    key << std::string{"dsl-preverify-store"} << epoch << target << sentinel;
+    return key.GetHash();
+}
+
+} // namespace
+
+void SetDSLPreverifyModeForTest(int mode) { g_dsl_preverify_mode_for_test = mode; }
+void SetDSLOvertakePolicyForTest(int8_t (*policy)(const CNetMessage&)) { g_dsl_overtake_policy_for_test = policy; }
+void SetDSLEmitTestHookForTest(void (*hook)()) { g_dsl_emit_test_hook = hook; }
+void SetDSLScanTestHookForTest(void (*hook)()) { g_dsl_scan_test_hook = hook; }
+void SetDSLOfferTestHookForTest(void (*hook)()) { g_dsl_offer_test_hook = hook; }
 
 PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& connman, AddrMan& addrman, BanMan* banman,
                                  ChainstateManager& chainman, CTxMemPool& pool,
@@ -2522,9 +2640,29 @@ PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& conn
       m_dslman(dslman),
       m_faultinjector(faultinjector),
       m_ignore_incoming_txs(ignore_incoming_txs),
-      m_unbacked_fork_depth{static_cast<int>(gArgs.GetArg("-testunbackedforkdepth", MAX_UNBACKED_FORK_DEPTH))}
+      m_unbacked_fork_depth{static_cast<int>(gArgs.GetArg("-testunbackedforkdepth", MAX_UNBACKED_FORK_DEPTH))},
+      m_dsl_obs{std::make_shared<dsl::ObservationMark>(WITH_LOCK(cs_main, return m_chainman.ActiveChain().Tip()))},
+      m_dsl_preverify_mode{g_dsl_preverify_mode_for_test.load()}
 {
     m_dsl_chain_height.store(WITH_LOCK(cs_main, return m_chainman.ActiveChain().Height()), std::memory_order_relaxed);
+    if (m_dsl_preverify_mode != 0) {
+        m_preverifier = std::make_shared<dsl::ReportPreverifier>(dsl::PreverifyReport, /*threaded=*/m_dsl_preverify_mode == 1);
+        // Until RefreshDSLBudgetEpoch reads the list (at the first Sentinel message), the limits of the masternode
+        // floor, as the budget and the seen table below.
+        const auto [per_peer, total] = DSLPreverifyLimits(0, chainparams.GetConsensus());
+        m_preverifier->SetLimits(per_peer, total);
+        // The store tells the pre-verifier of every report it is about to hold, under its own lock: the jobs of that
+        // key that have not started go in the same step (SF1-C2). The store holds the observer weakly, and the
+        // observer the pre-verifier: each goes with this object, without a word to the store.
+        if (m_dslman != nullptr) {
+            m_dsl_insert_observer = std::make_shared<const dsl::CServiceReportStore::InsertObserver>(
+                [verifier = std::weak_ptr<dsl::ReportPreverifier>{m_preverifier}](uint32_t epoch, const uint256& target,
+                                                                                const uint256& sentinel) {
+                    if (const auto live = verifier.lock()) live->Stored(DSLStoreKey(epoch, target, sentinel));
+                });
+            m_dslman->Store().AddInsertObserver(m_dsl_insert_observer);
+        }
+    }
     // The seen table holds nothing at capacity 0, and RefreshDSLBudgetEpoch sizes it only at the first Sentinel
     // message: until then, the capacity of the masternode floor, so that a relay before it -- a restarted
     // masternode's first announcement -- still leaves its mark (pose_service_seen.h).
@@ -2534,6 +2672,106 @@ PeerManagerImpl::PeerManagerImpl(const CChainParams& chainparams, CConnman& conn
     if (gArgs.GetBoolArg("-txreconciliation", DEFAULT_TXRECONCILIATION_ENABLE)) {
         m_txreconciliation = std::make_unique<TxReconciliationTracker>(TXRECONCILIATION_VERSION);
     }
+}
+
+void PeerManagerImpl::SynchronousUpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload)
+{
+    m_dsl_chain_height.store(pindexNew != nullptr ? pindexNew->nHeight : -1, std::memory_order_relaxed);
+    // A rewind or branch switch clears this node's observation and moves its generation on; every notification queues
+    // the generation for the tick of the event queued with it (dsl::ObservationMark). The first one also queues the
+    // mark's arming: behind every event queued before it -- one queued before this object listened, too -- and ahead
+    // of its own, which validation queues right after this call, under the same cs_main.
+    dsl::NotifyObservationMark(m_dsl_obs, pindexNew);
+}
+
+PeerManagerImpl::DSLWindow PeerManagerImpl::DSLWaveWindow() const
+{
+    AssertLockHeld(::cs_main);
+    DSLWindow window;
+    const Consensus::Params& consensus = m_chainparams.GetConsensus();
+    const CBlockIndex* tip = m_chainman.ActiveChain().Tip();
+    if (tip == nullptr || consensus.nDSLEpochInterval <= 0 || tip->nHeight < consensus.nDSLActivationHeight) return window;
+    const int interval{consensus.nDSLEpochInterval};
+    const int pos{tip->nHeight % interval};
+    window.epoch = static_cast<uint32_t>(tip->nHeight / interval);
+    const CBlockIndex* base = m_chainman.ActiveChain()[tip->nHeight - pos];
+    if (base == nullptr) return window;
+    window.base = base->GetBlockHash();
+    // The wave: from the block the reports are emitted on (as in ProcessDSLTick) up to the one before the signing.
+    if (pos < interval - interval / 4 || pos > interval - interval / 8 - 2) return window;
+    // A tip behind the one last notified synchronously is the middle of a rewind.
+    if (!m_dsl_obs->NotRewinding(tip)) return window;
+    // A masternode opens it only once its own observation of this epoch, on this base, is done.
+    if (m_mn_activeman != nullptr && !m_dsl_obs->Done(window.epoch, window.base)) return window;
+    // The generation it is open in: every notification that moves it on holds cs_main, as this does.
+    window.generation = m_dsl_obs->Generation();
+    window.open = true;
+    return window;
+}
+
+int8_t DSLOvertakePolicy(const CNetMessage& msg)
+{
+    const std::string& type{msg.m_type};
+    if (type == NetMsgType::TX || type == NetMsgType::ISDLOCK || type == NetMsgType::QSIGSESANN ||
+        type == NetMsgType::QSIGSHARESINV || type == NetMsgType::QGETSIGSHARES || type == NetMsgType::QBSIGSHARES ||
+        type == NetMsgType::QSIGSHARE || type == NetMsgType::QSIGREC || type == NetMsgType::PONG) {
+        return NetMessagePollGate::ALWAYS;
+    }
+    // By content: an inventory each of whose entries is a transaction, an InstantSend lock or a recovered signature,
+    // and no longer than its own handler takes without a score (INV and GETDATA: MAX_INV_SZ; NOTFOUND: the objects
+    // and blocks a peer may have in flight). An empty, longer or unreadable one never overtakes.
+    size_t limit;
+    if (type == NetMsgType::INV || type == NetMsgType::GETDATA) {
+        limit = MAX_INV_SZ;
+    } else if (type == NetMsgType::NOTFOUND) {
+        limit = static_cast<size_t>(MAX_PEER_OBJECT_IN_FLIGHT + MAX_BLOCKS_IN_TRANSIT_PER_PEER);
+    } else {
+        return NetMessagePollGate::NEVER;
+    }
+    // Read in place, without a copy, the way the handler's `vRecv >> vInv` reads it: a canonical compact size, then
+    // that many entries of a 4-byte type and a 32-byte hash; bytes after them are not read.
+    const Span<const unsigned char> bytes{MakeUCharSpan(msg.m_recv)};
+    if (bytes.empty()) return NetMessagePollGate::NEVER;
+    size_t pos{1};
+    uint64_t count{bytes[0]};
+    const auto read_le = [&](size_t width) {
+        uint64_t value{0};
+        for (size_t i = 0; i < width; ++i) value |= static_cast<uint64_t>(bytes[pos + i]) << (8 * i);
+        pos += width;
+        return value;
+    };
+    if (count >= 253) {
+        const size_t width{count == 253 ? 2U : count == 254 ? 4U : 8U};
+        const uint64_t least{count == 253 ? 253U : count == 254 ? 0x10000U : 0x100000000ULL};
+        if (bytes.size() < pos + width) return NetMessagePollGate::NEVER;
+        count = read_le(width);
+        if (count < least) return NetMessagePollGate::NEVER; // not canonical: the handler's read throws
+    }
+    constexpr size_t ENTRY{4 + 32};
+    if (count == 0 || count > limit || (bytes.size() - pos) / ENTRY < count) return NetMessagePollGate::NEVER;
+    for (uint64_t i = 0; i < count; ++i, pos += ENTRY - 4) {
+        const uint64_t inv_type{read_le(4)};
+        if (inv_type != MSG_TX && inv_type != MSG_ISDLOCK && inv_type != MSG_QUORUM_RECOVERED_SIG) {
+            return NetMessagePollGate::NEVER;
+        }
+    }
+    return type == NetMsgType::GETDATA ? NetMessagePollGate::IF_SEND_ROOM : NetMessagePollGate::ALWAYS;
+}
+
+size_t PeerManagerImpl::RunReportPreverifyJobsForTest(size_t max)
+{
+    size_t ran{0};
+    while (m_preverifier != nullptr && ran < max && m_preverifier->RunOne()) ++ran;
+    return ran;
+}
+
+void PeerManagerImpl::SetDSLTokensForTest(NodeId nodeid, double tokens)
+{
+    PeerRef peer = GetPeerRef(nodeid);
+    if (peer == nullptr) return;
+    LOCK(NetEventsInterface::g_msgproc_mutex);
+    peer->m_dsl_token_bucket = tokens;
+    peer->m_dsl_token_height = m_best_height;
 }
 
 void PeerManagerImpl::StartScheduledTasks(CScheduler& scheduler)
@@ -2652,6 +2890,9 @@ void PeerManagerImpl::NewPoWValidBlock(const CBlockIndex *pindex, const std::sha
  * in m_chainman.ActiveChain() to our peers.
  */
 void PeerManagerImpl::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *pindexFork, bool fInitialDownload){
+    // The start of this event: its own notification leaves the line (SynchronousUpdatedBlockTip put it there), whether
+    // or not a tick follows -- none does during the initial block download -- and its generation goes with the note.
+    const std::optional<uint64_t> obs_generation = m_dsl_obs->EventBegin(pindexNew);
     const auto perf_key = dsl::PerfEnabled() ? dsl::TipPerfKey(pindexNew, m_chainparams.GetConsensus()) : std::nullopt;
     dsl::LatencyTimer run_timer(perf_key, dsl::PerfMetric::PEERMAN_TIP_RUN);
     m_best_height = pindexNew->nHeight;
@@ -2693,7 +2934,7 @@ void PeerManagerImpl::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlock
     // other subscribers. Whether it may run is decided here, from the masternode sync as it stands at the point the
     // tick has always run at: a later subscriber of the same event can still reset the sync (sentinelfix.md 4.2).
     LOCK(m_dsl_tick_mutex);
-    m_dsl_tick_note = DSLTickNote{pindexNew, m_mn_sync.IsBlockchainSynced()};
+    m_dsl_tick_note = DSLTickNote{pindexNew, m_mn_sync.IsBlockchainSynced(), obs_generation};
 }
 
 void PeerManagerImpl::UpdatedBlockTipFinal(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload)
@@ -2704,7 +2945,7 @@ void PeerManagerImpl::UpdatedBlockTipFinal(const CBlockIndex* pindexNew, const C
     if (!note || note->pindex != pindexNew) return;
     const auto perf_key = dsl::PerfEnabled() ? dsl::TipPerfKey(pindexNew, m_chainparams.GetConsensus()) : std::nullopt;
     dsl::LatencyTimer tick_timer(perf_key, dsl::PerfMetric::DSL_TICK_RUN);
-    ProcessDSLTick(pindexNew, note->blockchain_synced);
+    ProcessDSLTick(pindexNew, note->blockchain_synced, note->obs_generation);
 }
 
 /**
@@ -6061,6 +6302,7 @@ void PeerManagerImpl::ProcessMessage(
                 if (nonce == peer->m_ping_nonce_sent) {
                     // Matching pong received, this ping is no longer outstanding
                     bPingFinished = true;
+                    LogPrint(BCLog::NET, "pong nonce=%016x matched, peer=%d\n", nonce, pfrom.GetId());
                     const auto ping_time = ping_end - peer->m_ping_start.load();
                     if (ping_time.count() >= 0) {
                         // Let connman know about this successful ping-pong
@@ -6549,6 +6791,22 @@ static size_t DSLSeenCapacity(int64_t mn_count, const Consensus::Params& consens
     return static_cast<size_t>(DSL_SEEN_CAP_EPOCHS * DSLHonestEpochCeiling(mn_count, consensus));
 }
 
+/** SF1-C2: the pre-verifier holds at most DSLHonestEpochCeiling jobs of one peer, and this many times as many in all. */
+static constexpr size_t DSL_PREVERIFY_TOTAL_PEERS{16};
+
+static std::pair<size_t, size_t> DSLPreverifyLimits(int64_t mn_count, const Consensus::Params& consensus)
+{
+    const size_t ceiling{static_cast<size_t>(std::max<int64_t>(DSLHonestEpochCeiling(mn_count, consensus), 1))};
+    return {ceiling, ceiling * DSL_PREVERIFY_TOTAL_PEERS};
+}
+
+void PeerManagerImpl::ApplyDSLPreverifyLimits()
+{
+    if (m_preverifier == nullptr) return;
+    const auto [per_peer, total] = DSLPreverifyLimits(m_dsl_budget_mn_count, m_chainparams.GetConsensus());
+    m_preverifier->SetLimits(per_peer, total);
+}
+
 void PeerManagerImpl::RefreshDSLBudgetEpoch()
 {
     const Consensus::Params& consensus = m_chainparams.GetConsensus();
@@ -6566,6 +6824,8 @@ void PeerManagerImpl::RefreshDSLBudgetEpoch()
     m_dsl_outbound_grants.clear();
     m_dsl_seen.SetCapacity(DSLSeenCapacity(m_dsl_budget_mn_count, consensus));
     m_dsl_seen.Expire(static_cast<uint32_t>(epoch));
+    // The pre-verifier's limits follow the count here, where it is read: jobs waiting above lowered limits go now.
+    ApplyDSLPreverifyLimits();
 }
 
 bool PeerManagerImpl::ChargeDSLMessageBudget(const CNode& pfrom, Peer& peer)
@@ -6690,12 +6950,203 @@ bool PeerManagerImpl::ChargeDSLMessageBudget(const CNode& pfrom, Peer& peer)
     return true;
 }
 
+/** SF1-C2 (sf1-c2 note 3.2): at most this many of a peer's queued reports are scanned in one ProcessMessages call, and
+ *  at most one assignment not yet in the view is derived. */
+static constexpr size_t DSL_PREVERIFY_SCAN_MAX{16};
+/** A head report younger than this, with a job not finished, may be held or overtaken in the wave window. */
+static constexpr auto DSL_GATE_YOUNG{5s};
+
+void PeerManagerImpl::RefreshDSLView(uint32_t epoch, const CBlockIndex* base, const CDeterministicMNList& list)
+{
+    if (m_preverifier == nullptr) return;
+    // Only the base's own list: AddReport refuses any other before the signature, so a job from it would be wasted.
+    if (list.GetBlockHash() != base->GetBlockHash()) return;
+    const auto replace = [&]() EXCLUSIVE_LOCKS_REQUIRED(m_dsl_view_mutex) {
+        m_dsl_view = DSLView{epoch, base, list, {}};
+    };
+    {
+        LOCK(m_dsl_view_mutex);
+        // The same epoch and base: the view and its assignments stay.
+        if (m_dsl_view && m_dsl_view->epoch == epoch && m_dsl_view->base == base) return;
+        // A newer epoch, or another base for this one.
+        if (!m_dsl_view || epoch >= m_dsl_view->epoch) {
+            replace();
+            return;
+        }
+    }
+    // An older epoch only once the chain has gone back into it: one look at a retained older epoch leaves the view.
+    const Consensus::Params& consensus = m_chainparams.GetConsensus();
+    const bool rewound = WITH_LOCK(::cs_main, {
+        const CBlockIndex* tip = m_chainman.ActiveChain().Tip();
+        return tip != nullptr && consensus.nDSLEpochInterval > 0 &&
+               static_cast<uint32_t>(tip->nHeight / consensus.nDSLEpochInterval) == epoch;
+    });
+    if (!rewound) return;
+    LOCK(m_dsl_view_mutex);
+    if (m_dsl_view && m_dsl_view->epoch == epoch && m_dsl_view->base == base) return;
+    replace();
+}
+
+void PeerManagerImpl::ScanDSLReports(CNode& pfrom, Peer& peer)
+{
+    AssertLockHeld(g_msgproc_mutex);
+    if (m_preverifier == nullptr || m_preverifier->Failed() || m_dslman == nullptr || m_dmnman == nullptr) return;
+    const Consensus::Params& consensus = m_chainparams.GetConsensus();
+    // Only where the ordinary path would take the peer's report: after the handshake, not in violation of blocks-only
+    // (the connection's kind, -blocksonly and the relay permission, as ProcessMessage asks), not before a masternode
+    // probe's first message, and once Sentinel messages are active, by the same height and test as ProcessDSLMessage.
+    if (!pfrom.fSuccessfullyConnected) return;
+    if (RejectIncomingTxs(pfrom) && NetMessageViolatesBlocksOnly(NetMsgType::POSEREPORT)) return;
+    if (pfrom.m_masternode_probe_connection &&
+        (pfrom.nTimeFirstMessageReceived.load() == 0s || !pfrom.fFirstMessageIsMNAUTH)) {
+        return;
+    }
+    if (m_dsl_chain_height.load(std::memory_order_relaxed) < consensus.nDSLActivationHeight) return;
+    if (consensus.nDSLEpochInterval <= 0) return;
+
+    const bool noban{pfrom.HasPermission(NetPermissionFlags::NoBan)};
+    // The stored budget, as ChargeDSLMessageBudget will find it before its refill: every queued message in front of a
+    // report that costs a token, and a whole token for the report itself. Decided from the queue's counts before a
+    // payload is copied.
+    const double tokens{std::floor(peer.m_dsl_token_bucket)};
+    const auto allowance = [&](size_t main_dsl, size_t scanned_before) -> size_t {
+        if (noban) return DSL_PREVERIFY_SCAN_MAX;
+        const double in_front{static_cast<double>(main_dsl + scanned_before)};
+        return tokens < in_front + 1 ? 0 : static_cast<size_t>(std::min(tokens - in_front, static_cast<double>(DSL_PREVERIFY_SCAN_MAX)));
+    };
+    const ReportScanBatch batch = pfrom.PeekUnscannedReports(DSL_PREVERIFY_SCAN_MAX, dsl::CPoSeServiceReport::WIRE_SIZE, allowance);
+    const bool perf{dsl::PerfEnabled()};
+    const std::pair<uint32_t, uint256> perf_key{perf ? m_dslman->CurrentEpochAndHash() : std::pair<uint32_t, uint256>{}};
+    const uint32_t perf_epoch{perf_key.first};
+    const uint256& perf_base{perf_key.second};
+    if (batch.budget_short) dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::PREVERIFY_BUDGET_SHORT);
+    if (batch.items.empty()) return;
+
+    // The pre-verifier's limits are set where the masternode count they follow is read (RefreshDSLBudgetEpoch).
+    size_t scanned{0};
+    bool cold_derived{false};
+    std::vector<std::pair<uint64_t, std::shared_ptr<NetMessagePrep>>> preps;
+    for (const auto& item : batch.items) {
+        // What the ordinary path checks before the signature, cheapest first; a report it would stop short of the
+        // signature for gets no job.
+        const auto excluded = [&]() {
+            dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::PREVERIFY_EXCLUDED);
+            ++scanned;
+        };
+        if (!item.size_ok) {
+            excluded();
+            continue;
+        }
+        const auto wire = dsl::PeekReportWire(item.payload);
+        if (!wire || !m_dslman->Store().EpochInWindow(wire->nEpoch)) {
+            excluded();
+            continue;
+        }
+        const CBlockIndex* active_base = WITH_LOCK(::cs_main, {
+            const int64_t height = static_cast<int64_t>(wire->nEpoch) * consensus.nDSLEpochInterval;
+            const CBlockIndex* found{nullptr};
+            if (height >= 0 && height <= m_chainman.ActiveChain().Height()) found = m_chainman.ActiveChain()[static_cast<int>(height)];
+            return found;
+        });
+        const bool in_view = active_base != nullptr && WITH_LOCK(m_dsl_view_mutex, return m_dsl_view &&
+                                                                 m_dsl_view->epoch == wire->nEpoch &&
+                                                                 m_dsl_view->base == active_base);
+        if (!in_view || m_dslman->Store().HaveIdenticalReport(*wire) ||
+            m_dslman->Store().HaveReport(wire->nEpoch, wire->targetProTxHash, wire->sentinelProTxHash)) {
+            excluded();
+            continue;
+        }
+        const uint256 base_hash{active_base->GetBlockHash()};
+        // Both ends on the base's list, and the sentinel one the epoch assigned to the target.
+        enum class Verdict { JOB, EXCLUDED, COLD_LATER } verdict{Verdict::EXCLUDED};
+        CBLSPublicKey operator_key;
+        {
+            LOCK(m_dsl_view_mutex);
+            if (m_dsl_view && m_dsl_view->epoch == wire->nEpoch && m_dsl_view->base == active_base) {
+                const auto tdmn = m_dsl_view->list.GetMN(wire->targetProTxHash);
+                const auto sdmn = m_dsl_view->list.GetMN(wire->sentinelProTxHash);
+                if (tdmn && sdmn) {
+                    auto it = m_dsl_view->assigned.find(wire->targetProTxHash);
+                    if (it == m_dsl_view->assigned.end() && !cold_derived) {
+                        cold_derived = true;
+                        dsl::RecordPerf(wire->nEpoch, base_hash, dsl::PerfMetric::PREVERIFY_COLD_ASSIGN);
+                        it = m_dsl_view->assigned
+                                 .emplace(wire->targetProTxHash,
+                                          dsl::CalcSentinelsForMN(m_dsl_view->list, wire->targetProTxHash, base_hash,
+                                                                  static_cast<size_t>(consensus.nDSLSentinelCount)))
+                                 .first;
+                    }
+                    if (it == m_dsl_view->assigned.end()) {
+                        verdict = Verdict::COLD_LATER;
+                    } else if (std::find(it->second.begin(), it->second.end(), wire->sentinelProTxHash) != it->second.end()) {
+                        verdict = Verdict::JOB;
+                        operator_key = sdmn->pdmnState->pubKeyOperator.Get();
+                    }
+                }
+            }
+        }
+        if (verdict == Verdict::COLD_LATER) break; // its assignment is derived in a later call
+        if (verdict == Verdict::EXCLUDED) {
+            excluded();
+            continue;
+        }
+        ++scanned;
+        auto job = std::make_shared<dsl::PreverifyJob>();
+        job->payload = item.payload;
+        job->operator_key = operator_key;
+        job->epoch = wire->nEpoch;
+        job->base_hash = base_hash;
+        job->peer = pfrom.GetId();
+        {
+            CHashWriter key(SER_GETHASH, 0);
+            key << std::string{"dsl-preverify-dup"} << base_hash;
+            key.write(MakeByteSpan(item.payload));
+            job->dup_key = key.GetHash();
+        }
+        job->store_key = DSLStoreKey(wire->nEpoch, wire->targetProTxHash, wire->sentinelProTxHash);
+        // The last look at the store and the offer, as one step under the store's lock: a report of the key the store
+        // takes in after it drops the job there (its insert observer), and one it took in before is seen here. So the
+        // job never starts once the store holds a report of its key (SF1-C2).
+        if (const auto hook = g_dsl_scan_test_hook.load()) hook();
+        bool evicted{false};
+        auto result{dsl::ReportPreverifier::OfferResult::STOPPED};
+        const auto offer = [&] {
+            if (const auto hook = g_dsl_offer_test_hook.load()) hook();
+            result = m_preverifier->Offer(job, &evicted);
+        };
+        if (!m_dslman->Store().IfAbsent(wire->nEpoch, wire->targetProTxHash, wire->sentinelProTxHash, offer)) {
+            dsl::RecordPerf(perf_epoch, perf_base, dsl::PerfMetric::PREVERIFY_EXCLUDED);
+            continue;
+        }
+        if (result == dsl::ReportPreverifier::OfferResult::QUEUED) {
+            preps.emplace_back(item.seq, job->prep); // the queue entry keeps the state only
+            if (evicted) dsl::RecordPerf(wire->nEpoch, base_hash, dsl::PerfMetric::PREVERIFY_EVICTED);
+            LogPrint(BCLog::NET, "DSL preverify -- job for report seq=%d epoch=%d target=%s sentinel=%s%s, peer=%d\n",
+                     item.seq, wire->nEpoch, wire->targetProTxHash.ToString(), wire->sentinelProTxHash.ToString(),
+                     evicted ? " (another peer's waiting job dropped)" : "", pfrom.GetId());
+        } else if (result == dsl::ReportPreverifier::OfferResult::DUP_PENDING) {
+            dsl::RecordPerf(wire->nEpoch, base_hash, dsl::PerfMetric::PREVERIFY_DUP_PENDING);
+        } else {
+            if (result == dsl::ReportPreverifier::OfferResult::QUEUE_FULL) {
+                dsl::RecordPerf(wire->nEpoch, base_hash, dsl::PerfMetric::PREVERIFY_QUEUE_FULL);
+            }
+            LogPrint(BCLog::NET, "DSL preverify -- no job for report seq=%d: %s, peer=%d\n", item.seq,
+                     result == dsl::ReportPreverifier::OfferResult::QUEUE_FULL ? "queue full" : "thread stopped",
+                     pfrom.GetId());
+            if (result == dsl::ReportPreverifier::OfferResult::STOPPED) break;
+        }
+    }
+    if (scanned > 0) pfrom.MarkReportsScanned(scanned, preps);
+}
+
 template <typename T>
 bool PeerManagerImpl::ReadDSLMessage(CDataStream& vRecv, NodeId nodeid, const std::string& msg_type, T& obj)
 {
     // -dsltestprocessdelay: a report or liveness announcement read off the wire costs this much more, read
-    // or not -- the reading is what it stands for.
-    const bool delayed{msg_type == NetMsgType::POSEREPORT || msg_type == NetMsgType::POSERESPONSE};
+    // or not -- the reading is what it stands for. Once per report: not again for one whose pre-verification job
+    // the pre-verifier's thread started, which has waited it out (sf1-c2 note 3.6).
+    const bool delayed{msg_type == NetMsgType::POSERESPONSE ||
+                       (msg_type == NetMsgType::POSEREPORT && !g_dsl_report_delay_done)};
     try {
         vRecv >> obj;
         if (delayed) dsl::TestProcessDelay();
@@ -6925,8 +7376,12 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
                      resp.proTxHash.ToString(), resp.nEpoch);
         }
         // the duplicate check inside ProcessResponse is what terminates the flood
-        const bool accepted = base != nullptr && !aged_out &&
-            m_dslman->ProcessResponse(resp, m_dmnman->GetListForBlock(base), base->GetBlockHash());
+        bool accepted{false};
+        if (base != nullptr && !aged_out) {
+            const auto list = m_dmnman->GetListForBlock(base);
+            RefreshDSLView(resp.nEpoch, base, list); // the scan's view, where the list is resolved anyway
+            accepted = m_dslman->ProcessResponse(resp, list, base->GetBlockHash());
+        }
         LogPrint(BCLog::NET, "DSL -- poseresp epoch=%d proTx=%s accepted=%d, peer=%d\n",
                  resp.nEpoch, resp.proTxHash.ToString(), accepted, pfrom.GetId());
         if (accepted) {
@@ -6980,8 +7435,13 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
             LogPrint(BCLog::DSL, "DSL -- report by %s on %s for epoch %u refused before the list build: epoch aged out\n",
                      report.sentinelProTxHash.ToString(), report.targetProTxHash.ToString(), report.nEpoch);
         }
-        const bool accepted = base != nullptr && !aged_out &&
-            m_dslman->ProcessReport(report, m_dmnman->GetListForBlock(base), base->GetBlockHash(), consensus);
+        bool accepted{false};
+        if (base != nullptr && !aged_out) {
+            const auto list = m_dmnman->GetListForBlock(base);
+            RefreshDSLView(report.nEpoch, base, list); // the scan's view, where the list is resolved anyway
+            const dsl::ScopedVerifyContext admit(dsl::VerifyContext::NET_ADMIT);
+            accepted = m_dslman->ProcessReport(report, list, base->GetBlockHash(), consensus);
+        }
         LogPrint(BCLog::NET, "DSL -- posereport epoch=%d target=%s accepted=%d, peer=%d\n",
                  report.nEpoch, report.targetProTxHash.ToString(), accepted, pfrom.GetId());
         if (accepted) {
@@ -7341,9 +7801,12 @@ void PeerManagerImpl::ForgetDSLEarlyVoucher(NodeId id, int connected_height)
     }
 }
 
-void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew, bool blockchain_synced)
+void PeerManagerImpl::ProcessDSLTick(const CBlockIndex* pindexNew, bool blockchain_synced, std::optional<uint64_t> obs_generation)
 try
 {
+    // obs_generation: the generation of this tick's own event, taken at the event's start (UpdatedBlockTip). A rewind
+    // or branch switch since its notification -- even one that connected this block again -- left it behind, and the
+    // emission below then marks nothing.
     if (m_dslman == nullptr || m_dmnman == nullptr) return;
     const Consensus::Params& consensus = m_chainparams.GetConsensus();
     if (pindexNew->nHeight < consensus.nDSLActivationHeight) return;
@@ -7569,6 +8032,8 @@ try
         !DslFaultHolds(dsl::FaultKind::REPORT_DROP, dsl::FaultKind::REPORT_DELAY, pos,
                        /*normalOffset=*/interval - interval / 4, pindexNew->nHeight, "sentinel reports") &&
         m_dsl_last_emitted_epoch.exchange(epoch) != static_cast<int64_t>(epoch)) {
+        // Tests only: the emission reserved, the observation copy not made yet; no lock is held here.
+        if (const auto hook = g_dsl_emit_test_hook.load()) hook();
         const auto reports = m_dslman->EmitReports(mn_list, myProTxHash, signer, consensus);
         LogPrint(BCLog::NET, "DSL -- emitting %d sentinel reports for epoch %d\n", reports.size(), epoch);
         for (const auto& report : reports) {
@@ -7576,6 +8041,10 @@ try
                 RelayDSLMessage(NetMsgType::POSEREPORT, report, /*skip_id=*/-1);
             }
         }
+        // This node's own observation of the epoch is done: its reports emitted, kept and relayed by this very tick.
+        // The wave window may open (DSLWaveWindow), unless a rewind or branch switch came since this tick's event
+        // was queued. A later tick never marks it: after a rewind that kept the base, the window stays shut.
+        if (obs_generation) m_dsl_obs->Publish(*obs_generation, epoch, pindexBase->GetBlockHash());
     }
 
     // once the reports have had time to pool, a member of the attesting quorum
@@ -7802,14 +8271,98 @@ bool PeerManagerImpl::ProcessMessages(CNode* pfrom, std::atomic<bool>& interrupt
     // Don't bother if send buffer is too full to respond anyway
     if (pfrom->fPauseSend) return false;
 
-    auto poll_result{pfrom->PollMessage()};
+    // SF1-C2 (sf1-c2 note 1-3): jobs for the peer's queued reports, then, if its head report's job has not finished,
+    // a snapshot for the gate. First the watermark and whether the head report may wait at all, which reads no
+    // content. Then the wave window, in a short hold of cs_main. Only if it is open, and without cs_main -- an
+    // inventory may be long, and validation must not wait for its reading -- the overtake policy's verdict on the head
+    // of the other list, if that head was queued at the watermark (read under the queue's mutex, a leaf). Then, in one
+    // more short hold of cs_main, the window again for the decision, with the send occupancy a GETDATA needs.
+    ScanDSLReports(*pfrom, *peer);
+    std::optional<NetMessagePollGate> gate;
+    DSLWindow window;
+    if (m_preverifier != nullptr) {
+        const uint64_t watermark{pfrom->QueueWatermark()};
+        if (pfrom->HeadReportMayWait(DSL_GATE_YOUNG)) {
+            const auto test_policy = g_dsl_overtake_policy_for_test.load();
+            int8_t (*const policy)(const CNetMessage&){test_policy != nullptr ? test_policy : DSLOvertakePolicy};
+            gate.emplace();
+            gate->watermark = watermark;
+            gate->young = DSL_GATE_YOUNG;
+            gate->classify = policy;
+            window = WITH_LOCK(cs_main, return DSLWaveWindow());
+            const int8_t verdict{window.open ? pfrom->ClassifyMainHead(watermark, policy) : int8_t{-1}};
+            if (verdict >= 0) {
+                LOCK(cs_main);
+                window = DSLWaveWindow();
+                if (window.open && verdict == NetMessagePollGate::IF_SEND_ROOM) gate->getdata_ok = m_connman.SendBelowHalfPause(*pfrom);
+            }
+            gate->window_open = window.open;
+            dsl::RecordPerf(window.epoch, window.base, dsl::PerfMetric::GATE_SNAPSHOT);
+            // Once for each epoch, base and generation the window is seen open in.
+            if (window.open) {
+                const std::tuple<uint32_t, uint256, uint64_t> opened{window.epoch, window.base, window.generation};
+                if (m_dsl_window_opened != opened) {
+                    m_dsl_window_opened = opened;
+                    dsl::RecordPerf(window.epoch, window.base, dsl::PerfMetric::WAVE_WINDOW_OPEN);
+                }
+            }
+        }
+    }
+
+    NetMessagePollOutcome outcome;
+    auto poll_result{pfrom->PollMessage(gate ? &*gate : nullptr, &outcome)};
+    if (outcome.stale) dsl::RecordPerf(window.epoch, window.base, dsl::PerfMetric::GATE_SNAPSHOT_STALE);
     if (!poll_result) {
+        if (outcome.gate_held) {
+            // Nothing from this peer in this round: its head report waits for its job (at most DSL_GATE_YOUNG).
+            dsl::RecordPerf(window.epoch, window.base, dsl::PerfMetric::GATE_HOLD);
+            if (peer->m_dsl_gate_logged_seq != outcome.head_seq) {
+                peer->m_dsl_gate_logged_seq = outcome.head_seq;
+                LogPrint(BCLog::NET, "DSL gate -- holding report seq=%d job=%s, peer=%d\n", outcome.head_seq,
+                         outcome.head_state == NetMessagePrep::RUNNING ? "running" : "pending", pfrom->GetId());
+            }
+        }
         // No message to process
         return false;
     }
 
     CNetMessage& msg{poll_result->first};
     bool fMoreWork = poll_result->second;
+
+    if (outcome.overtook) {
+        const auto waited = QueueClockNow() - msg.m_time_steady;
+        dsl::RecordPerf(window.epoch, window.base, dsl::PerfMetric::MSG_OVERTOOK);
+        dsl::RecordPerf(window.epoch, window.base, dsl::PerfMetric::OVERTAKE_WAIT,
+                        static_cast<uint64_t>(std::max<int64_t>(0, std::chrono::duration_cast<std::chrono::nanoseconds>(waited).count())));
+        // A pong's nonce, read from a copy and only from a whole one, so the ping it answers can be matched.
+        std::string nonce;
+        if (msg.m_type == NetMsgType::PONG && msg.m_recv.size() >= sizeof(uint64_t)) {
+            nonce = strprintf(" nonce=%016x", ReadLE64(UCharCast(msg.m_recv.data())));
+        }
+        LogPrint(BCLog::NET, "DSL gate -- %s overtook report seq=%d job=%s%s, peer=%d\n", SanitizeString(msg.m_type),
+                 outcome.head_seq, outcome.head_state == NetMessagePrep::RUNNING ? "running" : "pending", nonce,
+                 pfrom->GetId());
+    }
+
+    // A report taken: its wait in the queue, and its job, if it had one, no longer counts. The job's state says who
+    // waits out the report's -dsltestprocessdelay: the pre-verifier's thread if it started the job, else ReadDSLMessage.
+    bool report_delay_done{false};
+    if (msg.m_type == NetMsgType::POSEREPORT) {
+        if (dsl::PerfEnabled() && m_dslman != nullptr) {
+            const auto lag = QueueClockNow() - msg.m_time_steady;
+            const auto [lag_epoch, lag_base] = m_dslman->CurrentEpochAndHash();
+            dsl::RecordPerf(lag_epoch, lag_base, dsl::PerfMetric::REPORT_ADMIT_LAG,
+                            static_cast<uint64_t>(std::max<int64_t>(0, std::chrono::duration_cast<std::chrono::nanoseconds>(lag).count())));
+        }
+        if (msg.m_prep && m_preverifier != nullptr) {
+            // The receive queue took the report as it handed it out (PollMessage: PENDING -> TAKEN), unless its job had
+            // started, or was dropped, first: a job that started waits out the test delay itself.
+            const uint8_t state{msg.m_prep->state.load()};
+            report_delay_done = state == NetMessagePrep::RUNNING || state == NetMessagePrep::DONE;
+            m_preverifier->Taken(*msg.m_prep);
+        }
+    }
+    const ReportDelayDoneScope report_delay_scope(report_delay_done);
 
     // How long a block, or what announces one, waited behind this peer's earlier messages (and the other
     // peers' turns) before its processing starts, filed at the position of the block the chain waits for.
@@ -8087,7 +8640,10 @@ void PeerManagerImpl::MaybeSendPing(CNode& node_to, Peer& peer, std::chrono::mic
     const CNetMsgMaker msgMaker(node_to.GetCommonVersion());
     bool pingSend = false;
 
-    if (peer.m_ping_queued) {
+    // Read and cleared in one step, so the decision and the log below see the same request, and a request arriving
+    // after it waits for the next round instead of being cleared unsent (SF1-C2).
+    const bool rpc_ping{peer.m_ping_queued.exchange(false)};
+    if (rpc_ping) {
         // RPC ping request by user
         pingSend = true;
     }
@@ -8102,7 +8658,8 @@ void PeerManagerImpl::MaybeSendPing(CNode& node_to, Peer& peer, std::chrono::mic
         while (nonce == 0) {
             GetRandBytes({(unsigned char*)&nonce, sizeof(nonce)});
         }
-        peer.m_ping_queued = false;
+        // The nonce, so a pong can be matched with this ping in the log (SF1-C2), and whether an RPC asked for it.
+        LogPrint(BCLog::NET, "sending ping nonce=%016x%s, peer=%d\n", nonce, rpc_ping ? " (rpc)" : "", node_to.GetId());
         peer.m_ping_start = now;
         peer.m_ping_nonce_sent = nonce;
         m_connman.PushMessage(&node_to, msgMaker.Make(NetMsgType::PING, nonce));

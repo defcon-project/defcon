@@ -145,6 +145,7 @@ BASE_SCRIPTS = [
     'feature_dsl_commit_decision_log.py',
     'feature_dsl_commitment_v2.py',
     'feature_dsl_dkg_isolation.py',
+    'feature_dsl_slow_reports.py',
     'feature_masternode_connect_race.py',
     'feature_dsl_list_change.py',
     'feature_superblock_retirement.py',

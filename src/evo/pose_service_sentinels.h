@@ -130,6 +130,9 @@ public:
     [[nodiscard]] bool VerifySig(const CBLSPublicKey& operatorPubKey, const uint256& epochBlockHash) const;
 };
 
+//! Tests only: empties the signature cache CPoSeServiceReport::VerifySig asks, so the next check of a report misses.
+void ClearReportSignatureCacheForTest();
+
 /**
  * What can be read from a serialized CPoSeServiceReport without decoding its
  * signature. The signature is a compressed point on a curve, and turning those

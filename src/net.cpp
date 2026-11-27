@@ -780,7 +780,7 @@ bool CNode::ReceiveMsgBytes(Span<const uint8_t> msg_bytes, bool& complete)
 {
     complete = false;
     const auto time = GetTime<std::chrono::microseconds>();
-    const auto time_steady = std::chrono::steady_clock::now();
+    const auto time_steady = QueueClockNow();
     LOCK(cs_vRecv);
     m_last_recv = std::chrono::duration_cast<std::chrono::seconds>(time);
     nRecvBytes += msg_bytes.size();
@@ -2380,6 +2380,13 @@ void CConnman::CalculateNumConnectionsChangedStats()
 bool CConnman::ShouldRunInactivityChecks(const CNode& node, std::chrono::seconds now) const
 {
     return node.m_connected + m_peer_connect_timeout < now;
+}
+
+bool CConnman::SendBelowHalfPause(CNode& node) const
+{
+    LOCK(node.cs_vSend);
+    // The occupancy fPauseSend is set from (SocketSendData, PushMessage), against half of its threshold.
+    return node.m_send_memusage + node.m_transport->GetSendMemoryUsage() < nSendBufferMaxSize / 2;
 }
 
 bool CConnman::InactivityCheck(const CNode& node) const
@@ -5051,6 +5058,30 @@ CNode::CNode(NodeId idIn,
     }
 }
 
+namespace {
+//! A test's own time for the receive queue (SetQueueClockMockForTest); zero when unset.
+std::atomic<int64_t> g_queue_clock_mock_ns{0};
+
+bool IsMainListDSL(const std::string& type)
+{
+    return type == NetMsgType::POSECHALLENGE || type == NetMsgType::POSERESPONSE || type == NetMsgType::POSECOMMIT;
+}
+} // namespace
+
+std::chrono::steady_clock::time_point QueueClockNow()
+{
+    const int64_t mock{g_queue_clock_mock_ns.load()};
+    if (mock != 0) return std::chrono::steady_clock::time_point{std::chrono::nanoseconds{mock}};
+    return std::chrono::steady_clock::now();
+}
+
+void SetQueueClockMockForTest(std::optional<std::chrono::steady_clock::time_point> now)
+{
+    g_queue_clock_mock_ns.store(now ? std::max<int64_t>(1, std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                              now->time_since_epoch()).count())
+                                    : 0);
+}
+
 void CNode::MarkReceivedMsgsForProcessing()
 {
     AssertLockNotHeld(m_msg_process_queue_mutex);
@@ -5063,23 +5094,152 @@ void CNode::MarkReceivedMsgsForProcessing()
     }
 
     LOCK(m_msg_process_queue_mutex);
-    m_msg_process_queue.splice(m_msg_process_queue.end(), vRecvMsg);
+    // Each message is numbered in its order of arrival and goes to its list: the Sentinel reports to their own,
+    // everything else to the other. The scan's cursor, if it has visited every report, moves to the first new one.
+    // The watermark is published once the messages it covers are in their lists.
+    uint64_t seq{m_queue_seq_last.load()};
+    while (!vRecvMsg.empty()) {
+        const auto it = vRecvMsg.begin();
+        it->m_queue_seq = ++seq;
+        if (it->m_type == NetMsgType::POSEREPORT) {
+            const bool cursor_at_end{m_report_cursor == m_report_queue.end()};
+            m_report_queue.splice(m_report_queue.end(), vRecvMsg, it);
+            if (cursor_at_end) m_report_cursor = it;
+        } else {
+            if (IsMainListDSL(it->m_type)) ++m_main_dsl;
+            m_msg_process_queue.splice(m_msg_process_queue.end(), vRecvMsg, it);
+        }
+    }
+    m_queue_seq_last.store(seq);
     m_msg_process_queue_size += nSizeAdded;
     fPauseRecv = m_msg_process_queue_size > m_recv_flood_size;
 }
 
-std::optional<std::pair<CNetMessage, bool>> CNode::PollMessage()
+std::optional<std::pair<CNetMessage, bool>> CNode::PollMessage(const NetMessagePollGate* gate,
+                                                               NetMessagePollOutcome* outcome)
 {
     LOCK(m_msg_process_queue_mutex);
-    if (m_msg_process_queue.empty()) return std::nullopt;
+    NetMessagePollOutcome local;
+    NetMessagePollOutcome& out{outcome != nullptr ? *outcome : local};
+    out = NetMessagePollOutcome{}; // whatever an earlier poll left in it
+    if (m_msg_process_queue.empty() && m_report_queue.empty()) return std::nullopt;
+
+    // Which list's head is taken.
+    const auto take_main = [&]() -> bool {
+        if (m_report_queue.empty()) return true;
+        if (m_msg_process_queue.empty()) {
+            // Only reports: the gate may hold the head one.
+            if (gate == nullptr) return false;
+        } else if (m_msg_process_queue.front().m_queue_seq < m_report_queue.front().m_queue_seq) {
+            return true; // the other head arrived first
+        }
+        if (gate == nullptr) return false;
+        const CNetMessage& head{m_report_queue.front()};
+        // One read of the state decides, and is what the log reports.
+        const uint8_t head_state{head.m_prep ? head.m_prep->state.load() : uint8_t{NetMessagePrep::DONE}};
+        if (head_state != NetMessagePrep::PENDING && head_state != NetMessagePrep::RUNNING) return false;
+        if (QueueClockNow() - head.m_time_steady >= gate->young) return false;
+        if (!gate->window_open) return false;
+        out.head_state = head_state;
+        out.head_seq = head.m_queue_seq;
+        if (head.m_queue_seq > gate->watermark) {
+            out.stale = true;
+            return false;
+        }
+        if (m_msg_process_queue.empty()) {
+            out.gate_held = true;
+            return false;
+        }
+        CNetMessage& other{m_msg_process_queue.front()};
+        if (other.m_queue_seq > gate->watermark) {
+            out.stale = true;
+            return false;
+        }
+        if (other.m_overtake < 0) {
+            other.m_overtake = gate->classify ? gate->classify(other) : int8_t{NetMessagePollGate::NEVER};
+        }
+        const bool overtakes{other.m_overtake == NetMessagePollGate::ALWAYS ||
+                             (other.m_overtake == NetMessagePollGate::IF_SEND_ROOM && gate->getdata_ok)};
+        out.overtook = overtakes;
+        return overtakes;
+    }();
+    if (out.gate_held) return std::nullopt;
 
     std::list<CNetMessage> msgs;
-    // Just take one message
-    msgs.splice(msgs.begin(), m_msg_process_queue, m_msg_process_queue.begin());
+    if (take_main) {
+        // Just take one message
+        msgs.splice(msgs.begin(), m_msg_process_queue, m_msg_process_queue.begin());
+        if (IsMainListDSL(msgs.front().m_type)) --m_main_dsl;
+    } else {
+        if (m_report_cursor == m_report_queue.begin()) ++m_report_cursor;
+        msgs.splice(msgs.begin(), m_report_queue, m_report_queue.begin());
+        if (msgs.front().m_scanned) --m_report_scanned;
+        // Taken off the queue: its job may not start any more (PENDING -> TAKEN), unless it started, or was dropped,
+        // first. The state then says who waits out the report's test delay (PeerManagerImpl::ProcessMessages).
+        if (msgs.front().m_prep) msgs.front().m_prep->TryMove(NetMessagePrep::TAKEN);
+    }
     m_msg_process_queue_size -= msgs.front().m_raw_message_size;
     fPauseRecv = m_msg_process_queue_size > m_recv_flood_size;
 
-    return std::make_pair(std::move(msgs.front()), !m_msg_process_queue.empty());
+    return std::make_pair(std::move(msgs.front()), !m_msg_process_queue.empty() || !m_report_queue.empty());
+}
+
+bool CNode::HeadReportMayWait(std::chrono::steady_clock::duration young) const
+{
+    LOCK(m_msg_process_queue_mutex);
+    if (m_report_queue.empty()) return false;
+    const CNetMessage& report{m_report_queue.front()};
+    if (!report.m_prep || !report.m_prep->Unverified()) return false;
+    if (!m_msg_process_queue.empty() && m_msg_process_queue.front().m_queue_seq < report.m_queue_seq) return false;
+    if (QueueClockNow() - report.m_time_steady >= young) return false;
+    return true;
+}
+
+int8_t CNode::ClassifyMainHead(uint64_t watermark, const std::function<int8_t(const CNetMessage&)>& classify)
+{
+    LOCK(m_msg_process_queue_mutex);
+    if (m_msg_process_queue.empty()) return -1;
+    CNetMessage& head{m_msg_process_queue.front()};
+    if (head.m_queue_seq > watermark) return -1; // it came after the watermark: its content is not read
+    if (head.m_overtake < 0) head.m_overtake = classify ? classify(head) : int8_t{NetMessagePollGate::NEVER};
+    return head.m_overtake;
+}
+
+ReportScanBatch CNode::PeekUnscannedReports(size_t max, size_t exact_size,
+                                            const std::function<size_t(size_t main_dsl, size_t scanned)>& allowance) const
+{
+    LOCK(m_msg_process_queue_mutex);
+    ReportScanBatch batch;
+    batch.main_dsl = m_main_dsl;
+    batch.scanned = m_report_scanned;
+    const size_t asked{max};
+    if (allowance) max = std::min(max, allowance(m_main_dsl, m_report_scanned));
+    auto it = std::list<CNetMessage>::const_iterator{m_report_cursor};
+    for (; it != m_report_queue.end() && batch.items.size() < max; ++it) {
+        auto& item = batch.items.emplace_back();
+        item.seq = it->m_queue_seq;
+        item.size_ok = it->m_recv.size() == exact_size;
+        if (item.size_ok) {
+            const auto bytes = MakeUCharSpan(it->m_recv);
+            item.payload.assign(bytes.begin(), bytes.end());
+        }
+    }
+    batch.budget_short = it != m_report_queue.end() && max < asked;
+    return batch;
+}
+
+void CNode::MarkReportsScanned(size_t count,
+                               const std::vector<std::pair<uint64_t, std::shared_ptr<NetMessagePrep>>>& preps)
+{
+    LOCK(m_msg_process_queue_mutex);
+    auto prep = preps.begin();
+    for (; count > 0 && m_report_cursor != m_report_queue.end(); --count, ++m_report_cursor) {
+        CNetMessage& msg{*m_report_cursor};
+        msg.m_scanned = true;
+        ++m_report_scanned;
+        while (prep != preps.end() && prep->first < msg.m_queue_seq) ++prep;
+        if (prep != preps.end() && prep->first == msg.m_queue_seq) msg.m_prep = prep->second;
+    }
 }
 
 bool CConnman::NodeFullyConnected(const CNode* pnode)

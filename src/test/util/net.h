@@ -39,6 +39,9 @@ struct ConnmanTestMsg : public CConnman {
         m_peer_connect_timeout = timeout;
     }
 
+    //! The send buffer a connection may fill before its sending is paused (-maxsendbuffer); 0 by default here.
+    void SetSendBufferMaxSize(unsigned int size) { nSendBufferMaxSize = size; }
+
     std::vector<CNode*> TestNodes()
     {
         LOCK(m_nodes_mutex);
