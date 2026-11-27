@@ -6,6 +6,7 @@
 #include <consensus/params.h>
 #include <evo/deterministicmns.h>
 #include <evo/dmnstate.h>
+#include <evo/pose_service_metrics.h>
 #include <evo/pose_service_sentinels.h>
 #include <evo/pose_service_store.h>
 #include <hash.h>
@@ -17,6 +18,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstring>
 #include <map>
@@ -606,6 +608,181 @@ BOOST_AUTO_TEST_CASE(refuses_a_list_that_is_not_the_epoch_base_s)
 
     BOOST_CHECK(store.AddReport(report, BaseList(fx.list, fx.epoch), fx.epoch, params));
     BOOST_CHECK_EQUAL(store.Size(), 1u);
+}
+
+namespace {
+// What HaveIdenticalReport answered while it serialized the held signature each time it was asked: the answer the
+// bytes kept with a report have to agree with, for any payload and any state of the store. `current` and `keep` are
+// the store's epoch and window, which it does not hand out.
+bool IdenticalBySerializing(const dsl::CServiceReportStore& store, uint32_t current, uint32_t keep,
+                            const dsl::ReportWire& wire)
+{
+    const uint32_t oldest{current < keep ? 0 : current - keep + 1};
+    if (wire.nEpoch > current || wire.nEpoch < oldest) return false;
+    for (const auto& held : store.GetReportsForEpoch(wire.nEpoch)) {
+        if (held.targetProTxHash != wire.targetProTxHash || held.sentinelProTxHash != wire.sentinelProTxHash) continue;
+        if (held.status != wire.status) return false;
+        const auto sig = held.sig.ToBytes(/*specificLegacyScheme=*/false);
+        return std::equal(sig.begin(), sig.end(), wire.sig.begin(), wire.sig.end());
+    }
+    return false;
+}
+
+std::vector<unsigned char> WithSignature(std::vector<unsigned char> bytes, const std::array<uint8_t, 96>& sig)
+{
+    BOOST_REQUIRE_GE(bytes.size(), sig.size());
+    std::copy(sig.begin(), sig.end(), bytes.end() - static_cast<std::ptrdiff_t>(sig.size()));
+    return bytes;
+}
+
+struct MetricsScope {
+    bool old{dsl::PerfEnabled()};
+    MetricsScope() { dsl::TakePerfSnapshot(); dsl::SetPerfEnabled(true); }
+    ~MetricsScope() { dsl::SetPerfEnabled(old); dsl::TakePerfSnapshot(); }
+};
+uint64_t Calls(const dsl::PerfSnapshot& snapshot, dsl::PerfMetric metric)
+{
+    uint64_t count{0};
+    for (const auto& slot : snapshot.epochs) count += slot.values[static_cast<size_t>(metric)].count;
+    return count;
+}
+} // namespace
+
+// The store keeps the bytes of a report's signature beside the report and compares a copy with those. Whatever is
+// held and whatever is asked, the answer is the one that serializing the held signature gave -- and the kept bytes
+// go with their report: once another report is held under the key, it is that one's bytes a copy has to be.
+BOOST_AUTO_TEST_CASE(a_copy_is_recognised_exactly_as_when_the_held_signature_was_serialized_for_it)
+{
+    auto fx = MakeFixture(30);
+    Consensus::Params params;
+    const uint256 target = TaggedHash(3, 0, "protx");
+    const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, fx.epoch, 7);
+    constexpr uint32_t kKeep{8};
+    dsl::CServiceReportStore store(kKeep);
+    uint32_t current{500};
+    store.SetCurrentEpoch(current);
+
+    const auto first = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]);
+    // the same sentinel on the same target, honestly signed for the other status
+    const auto contradicting = SignedReport(500, target, sentinels[0], dsl::ServiceStatus::ONLINE, fx.opKeys[sentinels[0]]);
+    const auto other = SignedReport(500, target, sentinels[1], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[1]]);
+    auto flipped = first;
+    flipped.status = static_cast<uint8_t>(dsl::ServiceStatus::ONLINE);
+    std::array<uint8_t, 96> garbage;
+    garbage.fill(0xFF);
+
+    const std::vector<std::vector<unsigned char>> payloads{
+        WireOf(first),
+        WireOf(contradicting),
+        WireOf(other),
+        WireOf(flipped),                                                           // the held key and signature, another status
+        WithSignature(WireOf(first), other.sig.ToBytes(false)),                    // the held key, another real signature
+        WithSignature(WireOf(first), first.sig.ToBytes(/*specificLegacyScheme=*/true)), // the held signature, legacy encoded
+        WithSignature(WireOf(first), std::array<uint8_t, 96>{}),                   // no signature at all
+        WithSignature(WireOf(first), garbage),                                     // bytes that are no signature
+    };
+    size_t recognised{0};
+    const auto agrees = [&](const char* when) {
+        for (size_t i = 0; i < payloads.size(); ++i) {
+            const auto wire = PeekOf(payloads[i]);
+            const bool answer{store.HaveIdenticalReport(wire)};
+            BOOST_CHECK_MESSAGE(answer == IdenticalBySerializing(store, current, kKeep, wire),
+                                "payload " << i << " " << when << ": answered " << answer);
+            if (answer) ++recognised;
+        }
+    };
+    const auto move_to = [&](uint32_t epoch) {
+        current = epoch;
+        store.SetCurrentEpoch(epoch);
+    };
+
+    agrees("with nothing held");
+    BOOST_REQUIRE(store.AddReport(first, BaseList(fx.list, fx.epoch), fx.epoch, params));
+    agrees("with the first report held");
+    BOOST_CHECK_EQUAL(recognised, 1u);
+    BOOST_REQUIRE(store.AddReport(other, BaseList(fx.list, fx.epoch), fx.epoch, params));
+    agrees("with two reports held");
+    BOOST_CHECK_EQUAL(recognised, 3u);
+    move_to(499); // held, but from the future
+    agrees("behind the reports' epoch");
+    BOOST_CHECK_EQUAL(recognised, 3u);
+    move_to(500);
+    agrees("back in the reports' epoch");
+    move_to(507); // the last epoch they are kept for
+    agrees("at the end of the window");
+    BOOST_CHECK_EQUAL(recognised, 7u);
+    move_to(508); // aged out, and dropped
+    BOOST_REQUIRE_EQUAL(store.Size(), 0u);
+    agrees("after the window");
+    BOOST_CHECK_EQUAL(recognised, 7u);
+
+    // Another report under the first one's key: it is held with its own bytes.
+    move_to(500);
+    BOOST_REQUIRE(store.AddReport(contradicting, BaseList(fx.list, fx.epoch), fx.epoch, params));
+    agrees("with the contradicting report held instead");
+    BOOST_CHECK(store.HaveIdenticalReport(PeekOf(WireOf(contradicting))));
+    BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(WireOf(first))));
+    // And the first again, once its epoch has been dropped: the bytes kept for the other went with it.
+    store.DropEpoch(500);
+    agrees("with the epoch dropped");
+    BOOST_REQUIRE(store.AddReport(first, BaseList(fx.list, fx.epoch), fx.epoch, params));
+    agrees("with the first report held again");
+    BOOST_CHECK(store.HaveIdenticalReport(PeekOf(WireOf(first))));
+    BOOST_CHECK(!store.HaveIdenticalReport(PeekOf(WireOf(contradicting))));
+    BOOST_CHECK_EQUAL(recognised, 9u);
+}
+
+// The bytes are made when a report is taken, and at no other time: not for a report that is refused, and not when
+// the store is asked about a copy, however often.
+BOOST_AUTO_TEST_CASE(the_bytes_of_a_signature_are_made_once_for_each_report_taken)
+{
+    MetricsScope scope;
+    auto fx = MakeFixture(30);
+    Consensus::Params params;
+    const uint256 target = TaggedHash(3, 0, "protx");
+    const auto sentinels = dsl::CalcSentinelsForMN(fx.list, target, fx.epoch, 7);
+    BOOST_REQUIRE_GE(sentinels.size(), 4u);
+    dsl::CServiceReportStore store;
+    store.SetCurrentEpoch(500);
+
+    std::vector<dsl::CPoSeServiceReport> taken;
+    for (size_t i = 0; i < 3; ++i) {
+        taken.push_back(SignedReport(500, target, sentinels[i], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[i]]));
+        BOOST_REQUIRE(store.AddReport(taken.back(), BaseList(fx.list, fx.epoch), fx.epoch, params));
+    }
+    // refused: a duplicate, a signature by another key, and a sentinel the epoch did not assign
+    BOOST_CHECK(!store.AddReport(taken[0], BaseList(fx.list, fx.epoch), fx.epoch, params));
+    BOOST_CHECK(!store.AddReport(SignedReport(500, target, sentinels[3], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[0]]),
+                                 BaseList(fx.list, fx.epoch), fx.epoch, params));
+    uint256 outsider;
+    for (uint64_t i = 0; i < 30 && outsider.IsNull(); ++i) {
+        const uint256 candidate = TaggedHash(i, 0, "protx");
+        if (candidate != target && std::find(sentinels.begin(), sentinels.end(), candidate) == sentinels.end()) outsider = candidate;
+    }
+    BOOST_REQUIRE(!outsider.IsNull());
+    BOOST_CHECK(!store.AddReport(SignedReport(500, target, outsider, dsl::ServiceStatus::MISSED, fx.opKeys[outsider]),
+                                 BaseList(fx.list, fx.epoch), fx.epoch, params));
+    BOOST_REQUIRE_EQUAL(store.Size(), 3u);
+
+    // asked about each held report and about one that is not held, many times over
+    const auto unheld = WireOf(SignedReport(500, target, sentinels[3], dsl::ServiceStatus::MISSED, fx.opKeys[sentinels[3]]));
+    for (int round = 0; round < 200; ++round) {
+        for (const auto& report : taken) BOOST_REQUIRE(store.HaveIdenticalReport(PeekOf(WireOf(report))));
+        BOOST_REQUIRE(!store.HaveIdenticalReport(PeekOf(unheld)));
+    }
+    BOOST_CHECK_EQUAL(store.GetReportsForEpoch(500).size(), 3u);
+
+    auto snapshot = dsl::TakePerfSnapshot();
+    BOOST_CHECK_EQUAL(Calls(snapshot, dsl::PerfMetric::ACCEPTED), 3u);
+    BOOST_CHECK_EQUAL(Calls(snapshot, dsl::PerfMetric::STORE_SIG_BYTES), 3u);
+
+    // a report taken again after its epoch was dropped is a report taken
+    store.DropEpoch(500);
+    BOOST_REQUIRE(store.AddReport(taken[0], BaseList(fx.list, fx.epoch), fx.epoch, params));
+    BOOST_REQUIRE(store.HaveIdenticalReport(PeekOf(WireOf(taken[0]))));
+    snapshot = dsl::TakePerfSnapshot();
+    BOOST_CHECK_EQUAL(Calls(snapshot, dsl::PerfMetric::ACCEPTED), 1u);
+    BOOST_CHECK_EQUAL(Calls(snapshot, dsl::PerfMetric::STORE_SIG_BYTES), 1u);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -225,6 +225,10 @@ std::vector<NodeEvictionCandidate> GetRandomNodeEvictionCandidates(int n_candida
 /** Build a fully connected outbound peer with no socket, suitable for driving PeerManager message
  *  handling directly. Each id gets a distinct address so that per-peer state stays separate. */
 std::unique_ptr<CNode> MakeTestPeer(NodeId id);
+/** The same peer, speaking `version` instead of this node's own protocol version. */
+std::unique_ptr<CNode> MakeTestPeer(NodeId id, int version);
+/** The same peer, speaking `version`, on a connection of type `conn_type`. */
+std::unique_ptr<CNode> MakeTestPeer(NodeId id, int version, ConnectionType conn_type);
 
 /** Hand one message to PeerManager as if it had arrived from `peer`, taking the real dispatch path
  *  rather than calling a subsystem handler directly. */

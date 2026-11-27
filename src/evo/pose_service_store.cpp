@@ -97,7 +97,14 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
 
     if (!report.VerifySig(sdmn->pdmnState->pubKeyOperator.Get(), epochBlockHash)) return refuse("bad signature");
 
-    m_reports.emplace(key, report);
+    // The signature's bytes are made here, once, and kept with the report:
+    // HaveIdenticalReport compares every later copy with them.
+    HeldReport held{report, {}};
+    {
+        PerfTimer bytes_timer(report.nEpoch, epochBlockHash, PerfMetric::STORE_SIG_BYTES);
+        held.sig_bytes = report.sig.ToBytes(/*specificLegacyScheme=*/false);
+    }
+    m_reports.emplace(key, std::move(held));
     RecordPerf(report.nEpoch, epochBlockHash, PerfMetric::ACCEPTED);
     LogPrint(BCLog::DSL, "DSL -- report by %s on %s for epoch %u kept: %s (%d reports held)\n",
              report.sentinelProTxHash.ToString(), report.targetProTxHash.ToString(), report.nEpoch,
@@ -133,8 +140,8 @@ std::vector<CPoSeServiceReport> CServiceReportStore::GetReportsForEpoch(uint32_t
 {
     LOCK(m_mutex);
     std::vector<CPoSeServiceReport> out;
-    for (const auto& [key, report] : m_reports) {
-        if (std::get<0>(key) == nEpoch) out.push_back(report);
+    for (const auto& [key, held] : m_reports) {
+        if (std::get<0>(key) == nEpoch) out.push_back(held.report);
     }
     return out;
 }
@@ -153,10 +160,9 @@ bool CServiceReportStore::HaveIdenticalReport(const ReportWire& wire) const
     if (wire.nEpoch > m_currentEpoch || wire.nEpoch < OldestKeptEpoch()) return false;
     const auto it = m_reports.find(Key{wire.nEpoch, wire.targetProTxHash, wire.sentinelProTxHash});
     if (it == m_reports.end()) return false;
-    const CPoSeServiceReport& held = it->second;
-    if (held.status != wire.status) return false;
-    const auto held_sig = held.sig.ToBytes(/*specificLegacyScheme=*/false);
-    return std::equal(held_sig.begin(), held_sig.end(), wire.sig.begin(), wire.sig.end());
+    const HeldReport& held = it->second;
+    if (held.report.status != wire.status) return false;
+    return std::equal(held.sig_bytes.begin(), held.sig_bytes.end(), wire.sig.begin(), wire.sig.end());
 }
 
 void CServiceReportStore::SetCurrentEpoch(uint32_t nEpoch)

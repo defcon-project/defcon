@@ -6377,11 +6377,16 @@ void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj,
     // before this node first relays them has them and is left out; every other peer is sent them as before, and is
     // noted. Every relay is of something the store or the manager has just taken as new, so the same bytes relayed a
     // second time were forgotten in between, and the peers may have forgotten them too: BeginRelay then withholds them
-    // from nobody (pose_service_seen.h), and so does a relay while the tick follows a reorg (a ForgetWindow). The
-    // key's serialization is the bytes each peer is sent: the DSL serializers do not depend on the stream version.
-    CDataStream wire{SER_NETWORK, PROTOCOL_VERSION};
-    wire << obj;
-    const uint256 seen_key{dsl::SeenTable::Key(msg_type, MakeUCharSpan(wire))};
+    // from nobody (pose_service_seen.h), and so does a relay while the tick follows a reorg (a ForgetWindow).
+    //
+    // The message is serialized once. The DSL serializers do not depend on the stream version, so its payload is the
+    // bytes each recipient is sent, whatever version it speaks: the key is taken from it, and each recipient gets a
+    // copy of it.
+    const CSerializedNetMsg message = [&] {
+        dsl::PerfTimer serialize_timer(obj.nEpoch, perf_base, dsl::PerfMetric::RELAY_SERIALIZE);
+        return CNetMsgMaker{PROTOCOL_VERSION}.Make(msg_type, obj);
+    }();
+    const uint256 seen_key{dsl::SeenTable::Key(msg_type, MakeUCharSpan(message.data))};
     const std::vector<dsl::SeenTable::PeerId> holders{m_dsl_seen.BeginRelay(seen_key)};
     std::vector<dsl::SeenTable::PeerId> sent;
     m_connman.ForEachNode([&](CNode* pnode) {
@@ -6402,13 +6407,8 @@ void PeerManagerImpl::RelayDSLMessage(const std::string& msg_type, const T& obj,
         // where every one of the miner's seven peers was a quorum connection.
         if (pnode->IsBlockOnlyConn()) return;
         if (std::binary_search(holders.begin(), holders.end(), pnode->GetId())) return;
-        const CNetMsgMaker msgMaker(pnode->GetCommonVersion());
-        auto message = [&] {
-            dsl::PerfTimer serialize_timer(obj.nEpoch, perf_base, dsl::PerfMetric::RELAY_SERIALIZE);
-            return msgMaker.Make(msg_type, obj);
-        }();
         dsl::PerfTimer push_timer(obj.nEpoch, perf_base, dsl::PerfMetric::RELAY_PUSH);
-        m_connman.PushMessage(pnode, std::move(message));
+        m_connman.PushMessage(pnode, message.Copy());
         sent.push_back(pnode->GetId());
     });
     m_dsl_seen.NoteRelayed(seen_key, obj.nEpoch, sent);
@@ -6947,15 +6947,19 @@ void PeerManagerImpl::ProcessDSLMessage(CNode& pfrom, Peer& peer, const std::str
         // always was, and a payload that differs in any byte, is not exactly one
         // report long, or names an epoch the store would not look in goes down
         // the ordinary path below.
+        const bool copy_timed{dsl::PerfEnabled()};
+        const auto copy_start{copy_timed ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{}};
         if (const auto wire = dsl::PeekReportWire(MakeUCharSpan(vRecv)); wire) {
             const CBlockIndex* wire_base = epoch_base(wire->nEpoch);
             if (wire_base != nullptr && m_dslman->Store().HaveIdenticalReport(*wire)) {
                 const uint256 wire_base_hash = wire_base->GetBlockHash();
                 dsl::RecordPerf(wire->nEpoch, wire_base_hash, dsl::PerfMetric::DUPLICATE);
-                dsl::RecordPerf(wire->nEpoch, wire_base_hash, dsl::PerfMetric::DUPLICATE_UNDECODED);
                 note_seen(wire->nEpoch);
                 LogPrint(BCLog::NET, "DSL -- posereport epoch=%d target=%s accepted=%d, peer=%d\n",
                          wire->nEpoch, wire->targetProTxHash.ToString(), false, pfrom.GetId());
+                // with the time this copy took from the start of the report's handling above
+                dsl::RecordPerf(wire->nEpoch, wire_base_hash, dsl::PerfMetric::DUPLICATE_UNDECODED,
+                                copy_timed ? dsl::NanosSince(copy_start) : 0);
                 return;
             }
         }

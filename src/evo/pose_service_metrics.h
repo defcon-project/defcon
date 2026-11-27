@@ -31,7 +31,8 @@ enum class PerfMetric : size_t {
     EMIT_REPORTS, INVERSE_ASSIGNMENT, REPORT_SIGN, RELAY_SERIALIZE, RELAY_PUSH, TIP_QUEUE,
     ACTIVATION_REFUSED,
     // Reading a POSEREPORT off the wire (count and time, whether or not it read), and the copies of a
-    // held report dropped from their bytes without being read; the latter are also counted as DUPLICATE.
+    // held report dropped from their bytes without being read (count, and the time from the start of the
+    // report's handling to the drop); the latter are also counted as DUPLICATE.
     DECODE_REPORT, DUPLICATE_UNDECODED,
     // Where a block's processing waits (sentinelfix.md 4.1), each also kept per DKG-cycle position
     // (RecordLatency): the run of PeerManager's UpdatedBlockTip, from an UpdatedBlockTip event being
@@ -42,6 +43,8 @@ enum class PerfMetric : size_t {
     // liveness announcement dropped from their bytes without being read (none yet: that short circuit is
     // the next change's, SF1-A).
     DECODE_RESPONSE, DUPLICATE_RESPONSE_UNDECODED,
+    // The store making the bytes of a report's signature, once for each report it takes (count and time).
+    STORE_SIG_BYTES,
     COUNT
 };
 

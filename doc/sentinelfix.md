@@ -352,3 +352,10 @@ for after v23.1.0.
 
 SF1 was closed with a fourth pull request, #408, which makes Sentinel reports follow the epoch's
 own masternode list.
+
+One of the steps in 4.4 has been taken since, without a change to any message: a relayed
+Sentinel message is serialized once, and each recipient is sent a copy of those bytes. The report
+store likewise keeps the bytes of a held report's signature, so a copy that arrives later is
+compared with them and nothing is serialized for it. `-dslperf` now also gives the time spent on
+the copies dropped unread (`duplicate_undecoded`) and counts the signatures the store kept bytes
+for (`store_sig_bytes`).
