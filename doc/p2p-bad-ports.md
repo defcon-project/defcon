@@ -10,8 +10,7 @@ nodes.
 "Bad" ports are ones used by services which are usually not open to the public
 and usually require authentication. A connection attempt (by DeFCoN Core,
 trying to connect because it thinks there is a DeFCoN node on that
-address:port) to such service may be considered a malicious action by an
-ultra-paranoid administrator. An example for such a port is 22 (ssh).
+address:port) to such service may be logged as unexpected traffic by its administrator. An example for such a port is 22 (ssh).
 
 Additionally, ports below 1024 are classified as "system ports" by RFC 6335
 and on some platforms, require administrative privileges in order to use them.
@@ -39,11 +38,11 @@ incoming connections.
     6668:  Alternate IRC
     6669:  Alternate IRC
     6697:  IRC + TLS
-    8882:  Bitcoin RPC
-    8883:  Bitcoin P2P
+    8332:  Bitcoin RPC
+    8333:  Bitcoin P2P
     10080: Amanda
-    18882: Bitcoin testnet RPC
-    18883: Bitcoin testnet P2P
+    18332: Bitcoin testnet RPC
+    18333: Bitcoin testnet P2P
 
 For further information see:
 

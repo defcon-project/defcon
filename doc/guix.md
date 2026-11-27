@@ -1,3 +1,3 @@
-# Bootstrappable DeFCoN Core Builds
+# Guix build tooling
 
-See [contrib/guix/README.md](../contrib/guix/README.md)
+The repository retains [Guix build instructions](../contrib/guix/README.md) inherited from upstream. For the DeFCoN binary packages distributed on GitHub, follow the [DeFCoN release process](release-process.md).

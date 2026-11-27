@@ -10,6 +10,5 @@ The software is a community-driven open source project, released under the MIT l
 
 See https://github.com/defcon-project/defcon and https://www.dfcn.io/ for further information about the project.
 
-\section Navigation
+\section navigation Navigation
 Use <a href="modules.html"><code>Modules</code></a>, <a href="namespaces.html"><code>Namespaces</code></a>, <a href="classes.html"><code>Classes</code></a>, or <a href="files.html"><code>Files</code></a> at the top of the page to start navigating the code.
-

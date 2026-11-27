@@ -1,56 +1,15 @@
-Reduce Traffic
-==============
+# Reduce node bandwidth use
 
-Some node operators need to deal with bandwidth caps imposed by their ISPs.
+DeFCoN Core normally targets up to eight full-relay outbound peers and two block-relay-only peers. Manual peers, temporary service connections and connection probes can add connections beyond those targets.
 
-By default, DeFCoN Core allows up to 125 connections to different peers, 10 of
-which are outbound. You can therefore, have at most 115 inbound connections.
-Of the 10 outbound peers, there can be 8 full-relay connections and 2
-block-relay-only ones.
+## Limit historical block uploads
 
-The default settings can result in relatively significant traffic consumption.
+Set `-maxuploadtarget=<MiB per day>` to reduce historical block serving as usage approaches the target. This setting defaults to unlimited. The target is not a hard bandwidth cap. Historical blocks are more than seven days older than the best-known header. Peers with the `download` permission can continue requesting them.
 
-Ways to reduce traffic:
+## Limit regular peer connections
 
-## 1. Use `-maxuploadtarget=<MiB per day>`
+For a regular full node, `-listen=0` disables listening for inbound P2P connections, and `-maxconnections=<n>` limits regular peer connections. Retain enough independent peers to sync reliably. A masternode requires listening and a connection limit of at least 125.
 
-A major component of the traffic is caused by serving historic blocks to other nodes
-during the initial blocks download phase (syncing up a new node).
-This option can be specified in MiB per day and is turned off by default.
-This is *not* a hard limit; only a threshold to minimize the outbound
-traffic. When the limit is about to be reached, the uploaded data is cut by no
-longer serving historic blocks (blocks older than one week).
-Keep in mind that new nodes require other nodes that are willing to serve
-historic blocks.
+## Restrict transaction relay
 
-Peers with the `download` permission will never be disconnected, although their traffic counts for
-calculating the target.
-
-## 2. Disable "listening" (`-listen=0`)
-
-Disabling listening will result in fewer nodes connected (remember the maximum of 10
-outbound peers). Fewer nodes will result in less traffic usage as you are relaying
-blocks and transactions to fewer nodes.
-
-## 3. Reduce maximum connections (`-maxconnections=<num>`)
-
-Reducing the maximum connected nodes to a minimum could be desirable if traffic
-limits are tiny. Keep in mind that DeFCoN's trustless model works best if you are
-connected to a handful of nodes.
-
-## 4. Turn off transaction relay (`-blocksonly`)
-
-Forwarding transactions to peers increases the P2P traffic. To only sync blocks
-with other peers, you can disable transaction relay.
-
-Be reminded of the effects of this setting.
-
-- Fee estimation will no longer work.
-- It sets the flag "-walletbroadcast" to be "0", only if it is currently unset.
-  Doing so disables the automatic broadcasting of transactions from wallet. Not
-  relaying other's transactions could hurt your privacy if used while a wallet
-  is loaded or if you use the node to broadcast transactions.
-- If a peer has the forcerelay permission, we will still receive and relay
-  their transactions.
-- It makes block propagation slower because compact block relay can only be
-  used when transaction relay is enabled.
+Use `-blocksonly` to restrict transaction relay from peers. RPC transaction submission remains available. The wallet defaults to `-walletbroadcast=0` in this mode unless you set it explicitly. A node receiving few unconfirmed transactions will have less data for fee estimation. Broadcasting a wallet’s own transactions from a node that otherwise relays very few can reveal their origin.

@@ -3,11 +3,11 @@ Shared Libraries
 
 ## dashconsensus
 
-The purpose of this library is to make the verification functionality that is critical to Dash's consensus available to other applications, e.g. to language bindings.
+DeFCoN Core exposes its script verifier through `libdashconsensus`. Language bindings and existing applications use the inherited `dashconsensus_*` C ABI.
 
 ### API
 
-The interface is defined in the C header `bitcoinconsensus.h` located in  `src/script/bitcoinconsensus.h`.
+The [public header](../src/script/bitcoinconsensus.h) defines the exported functions, flags and error codes.
 
 #### Version
 
@@ -38,5 +38,5 @@ The interface is defined in the C header `bitcoinconsensus.h` located in  `src/s
 - `dashconsensus_ERR_OK` - No errors with input parameters *(see the return value of `dashconsensus_verify_script` for the verification status)*
 - `dashconsensus_ERR_TX_INDEX` - An invalid index for `txTo`
 - `dashconsensus_ERR_TX_SIZE_MISMATCH` - `txToLen` did not match with the size of `txTo`
-- `dashconsensus_ERR_DESERIALIZE` - An error deserializing `txTo`
+- `dashconsensus_ERR_TX_DESERIALIZE` - An error deserializing `txTo`
 - `dashconsensus_ERR_INVALID_FLAGS` - Script verification `flags` are invalid (i.e. not part of the libconsensus interface)

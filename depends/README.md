@@ -1,146 +1,37 @@
-### Usage
+# Build DeFCoN Core dependencies
 
-To build dependencies for the current arch+OS:
+The depends system builds pinned dependency versions for a selected host and writes a `config.site` file for Core's configure step. Run the following from the repository root on an x86-64 Linux build machine with the [Unix build prerequisites](../doc/build-unix.md) and `curl` installed (the depends build downloads its sources with `curl`):
 
-    make
+```sh
+make -C depends HOST=x86_64-pc-linux-gnu -j4
+./autogen.sh
+CONFIG_SITE="$PWD/depends/x86_64-pc-linux-gnu/share/config.site" ./configure
+make -j4
+```
 
-To build for another arch/OS:
+## Release targets
 
-    make HOST=host-platform-triplet
+| Host triplet | Target | Build notes |
+| --- | --- | --- |
+| `x86_64-pc-linux-gnu` | Linux x86-64 | [Unix](../doc/build-unix.md) |
+| `x86_64-w64-mingw32` | Windows x86-64 | [Windows cross-compilation](../doc/build-windows.md) |
+| `x86_64-apple-darwin` | Intel macOS | [macOS](../doc/build-osx.md) and [SDK extraction](../contrib/macdeploy/README.md#sdk-extraction) |
 
-For example:
+For a cross-build, use the same triplet for `HOST` and the path to `config.site`. The macOS cross-build needs Clang 18 or later, LLD and the LLVM tools (on Debian or Ubuntu: `apt install clang lld llvm g++ zip`) and the extracted macOS SDK in `depends/SDKs`, or in the directory set with `SDK_PATH`. The [host recipes](hosts/) include additional toolchains. The [release checklist](../doc/release-process.md) specifies which platforms receive project binaries.
 
-    make HOST=x86_64-w64-mingw32 -j4
+## Selected build options
 
-**Dash Core's `configure` script by default will ignore the depends output.** In
-order for it to pick up libraries, tools, and settings from the depends build,
-you must set the `CONFIG_SITE` environment variable to point to a `config.site` settings file.
-In the above example, a file named `depends/x86_64-w64-mingw32/share/config.site` will be
-created. To use it during compilation:
+Pass options to the depends make invocation, for example `make -C depends HOST=x86_64-pc-linux-gnu NO_QT=1`.
 
-    CONFIG_SITE=$PWD/depends/x86_64-w64-mingw32/share/config.site ./configure
+| Option | Effect |
+| --- | --- |
+| `SOURCES_PATH`, `BASE_CACHE` | Set the locations of source archives and built-package caches. |
+| `SDK_PATH` | Set the parent directory of the extracted macOS SDK. |
+| `NO_QT=1`, `NO_QR=1` | Omit Qt or the QR encoder and related dependencies. |
+| `NO_WALLET=1` | Omit wallet libraries and set the wallet-disabled configure default. |
+| `NO_BDB=1`, `NO_SQLITE=1` | Omit Berkeley DB or SQLite. |
+| `NO_ZMQ=1`, `NO_UPNP=1`, `NO_NATPMP=1`, `NO_USDT=1` | Omit the corresponding optional dependencies. |
+| `MULTIPROCESS=1` | Build Cap'n Proto and libmultiprocess for the [multiprocess](../doc/multiprocess.md) binaries. |
+| `LOG=1` | Keep a build log for each package. |
 
-The default install prefix when using `config.site` is `--prefix=depends/<host-platform-triplet>`,
-so depends build outputs will be installed in that location.
-
-Common `host-platform-triplet`s for cross compilation are:
-
-- `i686-pc-linux-gnu` for Linux 32 bit
-- `x86_64-pc-linux-gnu` for x86 Linux
-- `x86_64-w64-mingw32` for Win64
-- `x86_64-apple-darwin` for macOS
-- `arm64-apple-darwin` for ARM macOS
-- `arm-linux-gnueabihf` for Linux ARM 32 bit
-- `aarch64-linux-gnu` for Linux ARM 64 bit
-- `powerpc64-linux-gnu` for Linux POWER 64-bit (big endian)
-- `powerpc64le-linux-gnu` for Linux POWER 64-bit (little endian)
-- `riscv32-linux-gnu` for Linux RISC-V 32 bit
-- `riscv64-linux-gnu` for Linux RISC-V 64 bit
-- `s390x-linux-gnu` for Linux S390X
-- `armv7a-linux-android` for Android ARM 32 bit
-- `aarch64-linux-android` for Android ARM 64 bit
-- `x86_64-linux-android` for Android x86 64 bit
-
-The paths are automatically configured and no other options are needed unless targeting [Android](../doc/build-android.md).
-
-### Install the required dependencies: Ubuntu & Debian
-
-#### Common
-
-    apt install automake bison cmake curl libtool make patch pkg-config python3 xz-utils
-
-#### For macOS cross compilation
-
-    apt install clang lld llvm g++ zip
-
-Clang 18 or later is required. You must also obtain the macOS SDK before
-proceeding with a cross-compile. Under the depends directory, create a
-subdirectory named `SDKs`. Then, place the extracted SDK under this new directory.
-For more information, see [SDK Extraction](../contrib/macdeploy/README.md#sdk-extraction).
-
-#### For Win64 cross compilation
-
-- see [build-windows.md](../doc/build-windows.md#cross-compilation-for-ubuntu-and-windows-subsystem-for-linux)
-
-#### For linux (including i386, ARM) cross compilation
-
-Common linux dependencies:
-
-    sudo apt-get install g++-multilib binutils
-
-For linux ARM cross compilation:
-
-    sudo apt-get install g++-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
-
-For linux AARCH64 cross compilation:
-
-    sudo apt-get install g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
-
-For linux POWER 64-bit cross compilation (there are no packages for 32-bit):
-
-    sudo apt-get install g++-powerpc64-linux-gnu binutils-powerpc64-linux-gnu g++-powerpc64le-linux-gnu binutils-powerpc64le-linux-gnu
-
-For linux RISC-V 64-bit cross compilation (there are no packages for 32-bit):
-
-    sudo apt-get install g++-riscv64-linux-gnu binutils-riscv64-linux-gnu
-
-RISC-V known issue: gcc-7.3.0 and gcc-7.3.1 result in a broken `test_dash` executable (see https://github.com/bitcoin/bitcoin/pull/13543),
-this is apparently fixed in gcc-8.1.0.
-
-For linux S390X cross compilation:
-
-    sudo apt-get install g++-s390x-linux-gnu binutils-s390x-linux-gnu
-
-### Install the required dependencies: FreeBSD
-
-    pkg install bash
-
-### Install the required dependencies: OpenBSD
-
-    pkg_add bash gtar
-
-### Dependency Options
-
-The following can be set when running make: `make FOO=bar`
-
-- `SOURCES_PATH`: Downloaded sources will be placed here
-- `BASE_CACHE`: Built packages will be placed here
-- `SDK_PATH`: Path where SDKs can be found (used by macOS)
-- `FALLBACK_DOWNLOAD_PATH`: If a source file can't be fetched, try here before giving up
-- `C_STANDARD`: Set the C standard version used. Defaults to `c11`.
-- `CXX_STANDARD`: Set the C++ standard version used. Defaults to `c++17`.
-- `NO_QT`: Don't download/build/cache Qt and its dependencies
-- `NO_QR`: Don't download/build/cache packages needed for enabling qrencode
-- `NO_ZMQ`: Don't download/build/cache packages needed for enabling ZeroMQ
-- `NO_WALLET`: Don't download/build/cache libs needed to enable the wallet
-- `NO_BDB`: Don't download/build/cache BerkeleyDB
-- `NO_SQLITE`: Don't download/build/cache SQLite
-- `NO_UPNP`: Don't download/build/cache packages needed for enabling UPnP
-- `ALLOW_HOST_PACKAGES`: Packages that are missed in dependencies (due to `NO_*` option or
-  build script logic) are searched for among the host system packages using
-  `pkg-config`. It allows building with packages of other (newer) versions
-- `NO_NATPMP`: Don't download/build/cache packages needed for enabling NAT-PMP
-- `MULTIPROCESS`: build libmultiprocess (experimental, requires cmake)
-- `DEBUG`: Disable some optimizations and enable more runtime checking
-- `HOST_ID_SALT`: Optional salt to use when generating host package ids
-- `BUILD_ID_SALT`: Optional salt to use when generating build package ids
-- `LOG`: Use file-based logging for individual packages. During a package build its log file
-  resides in the `depends` directory, and the log file is printed out automatically in case
-  of build error. After successful build log files are moved along with package archives
-- `LTO`: Enable options needed for LTO. Does not add `-flto` related options to *FLAGS.
-
-If some packages are not built, for example `make NO_WALLET=1`, the appropriate
-options will be passed to Dash Core's configure. In this case, `--disable-wallet`.
-
-### Additional targets
-
-    download: run 'make download' to fetch all sources without building them
-    download-osx: run 'make download-osx' to fetch all sources needed for macOS builds
-    download-win: run 'make download-win' to fetch all sources needed for win builds
-    download-linux: run 'make download-linux' to fetch all sources needed for linux builds
-
-
-### Other documentation
-
-- [description.md](description.md): General description of the depends system
-- [packages.md](packages.md): Steps for adding packages
+`make -C depends download` fetches source archives. The platform-specific targets are `download-linux`, `download-win` and `download-osx`. See the [Makefile](Makefile) for the full option list, [build and cache design](description.md) for the dependency model, and [package recipes](packages.md) for adding a library.

@@ -1,9 +1,8 @@
-# Package Mempool Accept
+# Package mempool policy
 
 ## Definitions
 
-A **package** is an ordered list of transactions, representable by a connected Directed Acyclic
-Graph (a directed edge exists between a transaction that spends the output of another transaction).
+A **package** is an ordered list of transactions. A dependency exists when one transaction spends an output of another transaction in the list.
 
 For every transaction `t` in a **topologically sorted** package, if any of its parents are present
 in the package, they appear somewhere in the list before `t`.
@@ -16,10 +15,9 @@ tip or some preceding transaction in the package.
 
 ## Package Mempool Acceptance Rules
 
-The following rules are enforced for all packages:
+DeFCoN Core applies these policy checks to packages. The `testmempoolaccept` RPC evaluates transactions without submitting them.
 
-* Packages cannot exceed `MAX_PACKAGE_COUNT=25` count and `MAX_PACKAGE_SIZE=101KvB` total size
-   (#20833)
+* A package contains at most 25 transactions. For multiple transactions the combined policy size is limited to 101,000 bytes.
 
    - *Rationale*: This is already enforced as mempool ancestor/descendant limits. If
      transactions in a package are all related, exceeding this limit would mean that the package
@@ -28,15 +26,15 @@ The following rules are enforced for all packages:
    - Note that, if these mempool limits change, package limits should be reconsidered. Users may
      also configure their mempool limits differently.
 
-* Packages must be topologically sorted. (#20833)
+* Packages must be topologically sorted.
 
 * Packages cannot have conflicting transactions, i.e. no two transactions in a package can spend
-   the same inputs. Packages cannot have duplicate transactions. (#20833)
+   the same inputs. Packages cannot have duplicate transactions.
 
 * No transaction in a package can conflict with a mempool transaction.
 
 * When packages are evaluated against ancestor/descendant limits, the union of all transactions'
-  descendants and ancestors is considered. (#21800)
+  descendants and ancestors is considered.
 
    - *Rationale*: This is essentially a "worst case" heuristic intended for packages that are
      heavily connected, i.e. some transaction in the package is the ancestor or descendant of all
@@ -46,7 +44,7 @@ The following rules are only enforced for packages to be submitted to the mempoo
 test accepts):
 
 * Packages must be child-with-unconfirmed-parents packages. This also means packages must contain at
-  least 2 transactions. (#22674)
+  least 2 transactions.
 
 * Transactions in the package that have the same txid as another transaction already in the mempool
   will be removed from the package prior to submission ("deduplication").

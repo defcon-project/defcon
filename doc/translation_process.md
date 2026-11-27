@@ -5,11 +5,7 @@ DeFCoN Core can show its graphical interface in several languages. The translati
 files in `src/qt/locale/`. Their names, `dash_xx.ts` and `dash_xx_YY.ts`, are inherited from Dash Core
 and are kept so that the build and the translation tools keep working.
 
-DeFCoN Core translations are made in the DeFCoN Transifex project
-(https://app.transifex.com/defcon/defcon/), with `src/qt/locale/dash_en.ts` as the source file, and come
-back to the repository as pull requests. The `.tx/config` file and `contrib/devtools/update-translations.py`
-are inherited from Dash Core and point to the Dash Transifex project: do not use them, because they would
-import Dash's translations instead of DeFCoN's.
+Translators work in the [DeFCoN Qt Wallet project on Transifex](https://app.transifex.com/defcon/defcon/). The resource `o:defcon:p:defcon:r:defcon-qt-wallet` and the English source file are configured in [`.tx/config`](../.tx/config). Submit reviewed language changes through a pull request. The inherited `contrib/devtools/update-translations.py` post-processes the local catalogs in `src/qt/locale/`; its Transifex download step is disabled in this tree. Use a clean checkout if you need to run it.
 
 ### Writing code with translations
 We use automated scripts to help extract translations in both Qt, and non-Qt source files. It is rarely necessary to manually edit the files in `src/qt/locale/`. The translation source files must adhere to the following format:
@@ -80,7 +76,7 @@ When new plurals are added to the source file, it's important to do the followin
 </qresource>
 ```
 
-**Note:** that the language translation file **must end in `.qm`** (the compiled extension), and not `.ts`.
+Qt Linguist sources use the `.ts` extension. The resource manifest references the compiled `.qm` file.
 
 ### Questions and general assistance
 Ask on the [DeFCoN Discord](https://discord.gg/UpUq7V7Fg7).

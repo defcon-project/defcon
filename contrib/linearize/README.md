@@ -1,59 +1,29 @@
-# Linearize
-Construct a linear, no-fork, best version of the DeFCoN blockchain.
+# Export the active chain in block order
 
-## Step 0: Install dash_hash
+These tools use a DeFCoN node's RPC block hashes to copy matching blocks from local `blkNNNNN.dat` files in chain order. The source block files must contain the requested range from genesis. The data tool uses the [dash_hash module](https://github.com/dashpay/dash_hash) to compute X11 block hashes.
 
-https://github.com/dashpay/dash_hash
+## Configure the export
 
-## Step 1: Download hash list
+Start with [example-linearize.cfg](example-linearize.cfg). Use a separate destination for the export because the data tool opens its output files for writing. Set:
 
-    $ ./linearize-hashes.py linearize.cfg > hashlist.txt
+| Setting | Value |
+| --- | --- |
+| `datadir` | Directory containing the running node's RPC cookie. As an alternative, set both `rpcuser` and `rpcpassword`. |
+| `host`, `port` | RPC endpoint. The defaults are `127.0.0.1` and mainnet port `8193`. |
+| `min_height`, `max_height` | Inclusive RPC hash range. `linearize-data.py` exports only from a hash list that contains the genesis block, so use `min_height=0` and a `max_height` the node has reached. |
+| `input` | Directory containing the node's block files. |
+| `hashlist` | Path to the hash list generated below. The default is `hashlist.txt`. |
+| `output_file` or `output` | A single destination file or an existing output directory for numbered files. |
 
-Required configuration file settings for linearize-hashes:
-* RPC: `datadir` (Required if `rpcuser` and `rpcpassword` are not specified)
-* RPC: `rpcuser`, `rpcpassword` (Required if `datadir` is not specified)
+The sample contains example credentials, paths and a height. Replace those values for the local node.
 
-Optional config file setting for linearize-hashes:
-* RPC: `host`  (Default: `127.0.0.1`)
-* RPC: `port`  (Default: `8193`, the mainnet RPC port)
-* Blockchain: `min_height`, `max_height`
-* `rev_hash_bytes`: If true, the written block hash list will be
-byte-reversed. (In other words, the hash returned by getblockhash will have its
-bytes reversed.) False by default. Intended for generation of
-standalone hash lists but safe to use with linearize-data.py, which will output
-the same data no matter which byte format is chosen.
+## Run the export
 
-The `linearize-hashes` script requires a connection, local or remote, to a
-JSON-RPC server. Running `defcond` or `defcon-qt -server` will be sufficient.
+With the configuration saved as `linearize.cfg`, run both commands from this directory:
 
-## Step 2: Copy local block data
+```sh
+python3 linearize-hashes.py linearize.cfg > hashlist.txt
+python3 linearize-data.py linearize.cfg
+```
 
-    $ ./linearize-data.py linearize.cfg
-
-Required configuration file settings:
-* `output_file`: The file that will contain the final blockchain.
-      or
-* `output`: Output directory for linearized `blocks/blkNNNNN.dat` output.
-
-Optional config file setting for linearize-data:
-* `debug_output`: Some printouts may not always be desired. If true, such output
-will be printed.
-* `file_timestamp`: Set each file's last-accessed and last-modified times,
-respectively, to the current time and to the timestamp of the most recent block
-written to the script's blockchain.
-* `genesis`: The hash of the genesis block in the blockchain. (default is '2291f606f0402347e5d8b86fa2d4cea7408ded6071b1120cf8364101b5d5d712', mainnet)
-* `input`: defcond blocks/ directory containing blkNNNNN.dat
-* `hashlist`: text file containing list of block hashes created by
-linearize-hashes.py.
-* `max_out_sz`: Maximum size for files created by the `output_file` option.
-(Default: `1000*1000*1000 bytes`)
-* `netmagic`: Network magic number. (default is 'a1b2c3d4', mainnet)
-* `out_of_order_cache_sz`: If out-of-order blocks are being read, the block can
-be written to a cache so that the blockchain doesn't have to be sought again.
-This option specifies the cache size. (Default: `100*1000*1000 bytes`)
-* `rev_hash_bytes`: If true, the block hash list written by linearize-hashes.py
-will be byte-reversed when read by linearize-data.py. See the linearize-hashes
-entry for more information.
-* `split_timestamp`: Split blockchain files when a new month is first seen, in
-addition to reaching a maximum file size (`max_out_sz`). This needs `output`:
-`output_file` is a single file, so the script stops with an error.
+`netmagic` and `genesis` default to DeFCoN mainnet. `rev_hash_bytes` reverses the byte order in the intermediate list when both tools use the same setting. For directory output, `max_out_sz` controls file rotation and `split_timestamp=1` also starts a new file at a month boundary. The [data script](linearize-data.py) defines the remaining settings, including the out-of-order block cache and output timestamps.

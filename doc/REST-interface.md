@@ -14,14 +14,7 @@ apply.
 Limitations
 -----------
 
-There is a known issue in the REST interface that can cause a node to crash if
-too many http connections are being opened at the same time because the system runs
-out of available file descriptors. To prevent this from happening you might
-want to increase the number of maximum allowed file descriptors in your system
-and try to prevent opening too many connections to your rest interface at the
-same time if this is under your control. It is hard to give general advice
-since this depends on your system but if you make several hundred requests at
-once you are definitely at risk of encountering this issue.
+Keep client concurrency bounded. Each open HTTP connection uses a file descriptor.
 
 Supported API
 -------------
@@ -32,8 +25,7 @@ Supported API
 Given a transaction hash: returns a transaction in binary, hex-encoded binary, or JSON formats.
 Responds with 404 if the transaction doesn't exist.
 
-By default, this endpoint will only search the mempool.
-To query for a confirmed transaction, enable the transaction index via "txindex=1" command line / configuration option.
+The endpoint searches the mempool and, when available, the transaction index. DeFCoN Core enables the index by default. If you disabled it with `txindex=0`, this endpoint can only find mempool transactions.
 
 #### Blocks
 - `GET /rest/block/<BLOCK-HASH>.<bin|hex|json>`
@@ -77,17 +69,7 @@ Responds with 404 if block not found.
 
 Returns various state info regarding block chain processing.
 Only supports JSON as output format.
-* chain : (string) current network name (main, test, regtest)
-* blocks : (numeric) the current number of blocks processed in the server
-* headers : (numeric) the current number of headers we have validated
-* bestblockhash : (string) the hash of the currently best block
-* difficulty : (numeric) the current difficulty
-* mediantime : (numeric) the median time of the 11 blocks before the most recent block on the blockchain
-* verificationprogress : (numeric) estimate of verification progress [0..1]
-* chainwork : (string) total amount of work in active chain, in hexadecimal
-* pruned : (boolean) if the blocks are subject to pruning
-* pruneheight : (numeric) highest block available
-* softforks : (array) status of softforks in progress
+Use `defcon-cli help getblockchaininfo` for fields and types. For example, `blocks` is the active tip height and `bestblockhash` is its hash.
 
 #### Query UTXO set
 - `GET /rest/getutxos/<TXID>-<N>/<TXID>-<N>/.../<TXID>-<N>.<bin|hex|json>`
@@ -98,26 +80,10 @@ With the `/checkmempool/` option, the mempool is also taken into account.
 See [BIP64](https://github.com/bitcoin/bips/blob/master/bip-0064.mediawiki) for
 input and output serialization (relevant for `bin` and `hex` output formats).
 
-Example:
-```
-$ curl localhost:19998/rest/getutxos/checkmempool/b2cdfd7b89def827ff8af7cd9bff7627ff72e5e8b0f71210f92ea7a4000c5d75-0.json 2>/dev/null | json_pp
-{
-   "chainHeight" : 325347,
-   "chaintipHash" : "00000000fb01a7f3745a717f8caebee056c484e6e0bfe4a9591c235bb70506fb",
-   "bitmap": "1",
-   "utxos" : [
-      {
-         "height" : 2147483647,
-         "value" : 8.8687,
-         "scriptPubKey" : {
-            "asm" : "OP_DUP OP_HASH160 1c7cebb529b86a04c683dfa87be49de35bcf589e OP_EQUALVERIFY OP_CHECKSIG",
-            "hex" : "76a9141c7cebb529b86a04c683dfa87be49de35bcf589e88ac",
-            "type" : "pubkeyhash",
-            "address" : "mi7as51dvLJsizWnTMurtRmrP8hG2m1XvD"
-         }
-      }
-   ]
-}
+On mainnet, set `TXID` and `VOUT` to an outpoint from your node, then query it locally.
+
+```sh
+curl --fail "http://127.0.0.1:8193/rest/getutxos/checkmempool/${TXID}-${VOUT}.json"
 ```
 
 #### Memory pool
@@ -135,4 +101,4 @@ Refer to the `getrawmempool` RPC help for details.
 
 Risks
 -------------
-Running a web browser on the same node with a REST enabled defcond can be a risk. Accessing prepared XSS websites could read out tx/block data of your node by placing links like `<script src="http://127.0.0.1:19998/rest/tx/1234567890.json">` which might break the nodes privacy.
+The REST interface has no authentication. Bind it to a trusted interface and restrict which local users, applications and remote clients can reach it.

@@ -1,376 +1,67 @@
-This directory contains integration tests that test dashd and its
-utilities in their entirety. It does not contain unit tests, which
-can be found in [/src/test](/src/test), [/src/wallet/test](/src/wallet/test),
-etc.
+# Testing DeFCoN Core
 
-This directory contains the following sets of tests:
+[Build DeFCoN Core](../doc/README.md#building) before running tests that use its binaries. Run those tests from the configured build directory for an in-tree build. The configure tests below are the exception. The [hosted CI guide](../ci/README.md) describes which tests run on pull requests.
 
-- [configure](/test/configure) checks build option contracts using fresh out-of-tree configure runs.
-- [fuzz](/test/fuzz) A runner to execute all fuzz targets from
-  [/src/test/fuzz](/src/test/fuzz).
-- [functional](/test/functional) which test the functionality of
-dashd and dash-qt by interacting with them through the RPC and P2P
-interfaces.
-- [util](/test/util) which tests the utilities (dash-tx, ...).
-- [lint](/test/lint/) which perform various static analysis checks.
+| Suite | Where to start |
+| --- | --- |
+| C++ unit and utility tests | `make check`. Unit tests are in [src/test](../src/test/) and [src/wallet/test](../src/wallet/test/). |
+| Functional | [Python RPC and P2P tests](functional/README.md) against local `defcond` instances. |
+| GUI | Qt test runner and suite selection below. |
+| Fuzz | [Fuzzing guide](../doc/fuzzing.md). |
+| Configure | [Build-option contract tests](configure/test_configure.py). |
+| Source lints | [Lint guide](lint/README.md). |
 
-The util tests are run as part of `make check` target. The fuzz tests, functional
-tests and lint scripts can be run as explained in the sections below.
+## Functional tests
 
-# Running tests locally
+Use Python 3 and the `dash_hash` module for the project's X11 block hashes. The [CI image](../contrib/containers/ci/Dockerfile.linux64) pins the version and records the installation commands. ZMQ tests also require `pyzmq`. On Windows, set `PYTHONUTF8=1`.
 
-Before tests can be run locally, Dash Core must be built.  See the [building instructions](/doc#building) for help.
+```sh
+python3 test/functional/test_runner.py wallet_hd.py
+python3 test/functional/test_runner.py --jobs=4
+python3 test/functional/test_runner.py --help
+```
 
-## Fuzz tests
+The runner accepts multiple test names. Use `--extended` for the extended suite or `--coverage` to list the RPCs from `help` that no test called. The runner counts `generate`, `voteraw` and `debug` as covered without a call; with `--coverage` the run fails if any other RPC is left uncovered. Each test receives temporary node data directories and separate ports. Run one test directly to see its options, or select a family from the runner with a regular expression:
 
-See [/doc/fuzzing.md](/doc/fuzzing.md)
+```sh
+python3 test/functional/wallet_hd.py --help
+python3 test/functional/test_runner.py --filter '^wallet_' --jobs=2
+```
+
+The default is four parallel jobs. Use `--tmpdirprefix` on the runner to place temporary directories on another filesystem, including an existing RAM-backed test volume. Size it for the number of parallel nodes. `--keepcache` preserves the existing functional-test cache across runner invocations.
+
+Backward-compatibility tests need earlier release binaries in `releases/` or in the directory set by `PREVIOUS_RELEASES_DIR`. By default they run when that directory exists and is not empty, and are skipped otherwise; once they run, every release binary they start must be present. `test/get_previous_releases.py -b <tag>...` downloads upstream Dash Core release binaries from `dashpay/dash`; the inherited [Qt CI setup](../ci/test/00_setup_env_native_qt5.sh) lists tags in `PREVIOUS_RELEASES_TO_DOWNLOAD`. The hosted CI runs the functional tests in [functional_gate.txt](../ci/dash/functional_gate.txt), which does not include the backward-compatibility tests.
+
+### Test logging
+
+Each run prints its temporary directory. The test log is `test_framework.log` and node logs are under `nodeN/regtest/debug.log`. On failure the framework retains the data directory. To keep it after a successful test, pass `--nocleanup` to the individual test. Merge the logs with:
+
+```sh
+python3 test/functional/combine_logs.py /path/to/test-directory
+```
+
+For a failed run, identify the specific node by its test data directory before stopping it. A debugger in the test can inspect `self.nodes[i].process.pid`. Pass `--pdbonfailure` to an individual test for an interactive Python traceback, `--tracerpc` to trace calls, or `--combinedlogslen=100` to the runner for the last 100 merged log lines on failure. Linux node profiling is covered in the [functional guide](functional/README.md#benchmarking-with-perf).
 
 ## Qt tests
 
-With Qt and tests enabled, build and run the GUI test binary from the build directory:
+With Qt and tests enabled, run:
 
 ```sh
 make -C src qt/test/test_defcon-qt
 QT_QPA_PLATFORM=minimal ./src/qt/test/test_defcon-qt
+QT_QPA_PLATFORM=minimal ./src/qt/test/test_defcon-qt --suite=GUIUtilTests
 ```
 
-The default runs every compiled suite. To isolate a suite, pass its exact Qt class
-name with `--suite=`, for example `MasternodeListTests` or `GUIUtilTests`. The
-remaining arguments go to QTest, so individual test functions can also be selected:
+Wallet suites such as `MasternodeListTests` exist only in builds with wallet support.
+
+The default runs every compiled suite. Pass an exact Qt class name to select a suite. Additional QTest arguments select individual test functions. The Linux CI also repeats the masternode filtering and ordering cases with LeakSanitizer. A temporary `XDG_CONFIG_HOME` isolates desktop settings in a local test.
+
+## Configure tests
+
+The configure tests run fresh out-of-tree configure runs. Use a source tree prepared with `./autogen.sh` but not yet configured in place, and provide a new output directory:
 
 ```sh
-QT_QPA_PLATFORM=minimal ./src/qt/test/test_defcon-qt --suite=MasternodeListTests
-QT_QPA_PLATFORM=minimal ./src/qt/test/test_defcon-qt --suite=MasternodeListTests repeatedFiltering filteredRowsKeepOrderAndIdentity
+python3 test/configure/test_configure.py --output-dir /tmp/defcon-configure-tests
 ```
 
-An empty, repeated, unknown or unavailable suite selector fails. Selecting a suite
-that is not compiled (for example a wallet suite in a build without wallet support)
-does not silently pass. On Linux, use a temporary `XDG_CONFIG_HOME` to isolate the
-settings that GUI tests write.
-
-The linux64 CI gate runs every compiled Qt suite through the default runner,
-then repeats the two masternode filtering/ordering cases with LeakSanitizer.
-The leak check deliberately overrides the generic `libQt5Widgets` suppression so
-table-item leaks remain visible, and a separate intentional-leak canary verifies
-that detection is active.
-
-### Functional tests
-
-#### Dependencies and prerequisites
-
-Many Dash specific tests require dash_hash. To install it:
-
-- Clone the repo `git clone https://github.com/dashpay/dash_hash`
-- Install dash_hash `cd dash_hash && pip3 install -r requirements.txt .`
-
-The ZMQ functional test requires a python ZMQ library. To install it:
-
-- on Unix, run `sudo apt-get install python3-zmq`
-- on mac OS, run `pip3 install pyzmq`
-
-
-On Windows the `PYTHONUTF8` environment variable must be set to 1:
-
-```cmd
-set PYTHONUTF8=1
-```
-
-#### Running the tests
-
-Individual tests can be run by directly calling the test script, e.g.:
-
-```
-test/functional/wallet_hd.py
-```
-
-or can be run through the test_runner harness, eg:
-
-```
-test/functional/test_runner.py wallet_hd.py
-```
-
-You can run any combination (incl. duplicates) of tests by calling:
-
-```
-test/functional/test_runner.py <testname1> <testname2> <testname3> ...
-```
-
-Wildcard test names can be passed, if the paths are coherent and the test runner
-is called from a `bash` shell or similar that does the globbing. For example,
-to run all the wallet tests:
-
-```
-test/functional/test_runner.py test/functional/wallet*
-functional/test_runner.py functional/wallet* (called from the test/ directory)
-test_runner.py wallet* (called from the test/functional/ directory)
-```
-
-but not
-
-```
-test/functional/test_runner.py wallet*
-```
-
-Combinations of wildcards can be passed:
-
-```
-test/functional/test_runner.py ./test/functional/tool* test/functional/mempool*
-test_runner.py tool* mempool*
-```
-
-Run the regression test suite with:
-
-```
-test/functional/test_runner.py
-```
-
-Run all possible tests with
-
-```
-test/functional/test_runner.py --extended
-```
-
-In order to run backwards compatibility tests, download the previous node binaries:
-
-```
-test/get_previous_releases.py -b v19.3.0 v18.2.2 v0.17.0.3 v0.16.1.1 v0.15.0.0
-```
-
-By default, up to 4 tests will be run in parallel by test_runner. To specify
-how many jobs to run, append `--jobs=n`
-
-The individual tests and the test_runner harness have many command-line
-options. Run `test/functional/test_runner.py -h` to see them all.
-
-#### Speed up test runs with a ramdisk
-
-If you have available RAM on your system you can create a ramdisk to use as the `cache` and `tmp` directories for the functional tests in order to speed them up.
-Speed-up amount varies on each system (and according to your ram speed and other variables), but a 2-3x speed-up is not uncommon.
-
-To create a 4GB ramdisk on Linux at `/mnt/tmp/`:
-
-```bash
-sudo mkdir -p /mnt/tmp
-sudo mount -t tmpfs -o size=4g tmpfs /mnt/tmp/
-```
-
-Configure the size of the ramdisk using the `size=` option.
-The size of the ramdisk needed is relative to the number of concurrent jobs the test suite runs.
-For example running the test suite with `--jobs=100` might need a 16GB ramdisk, but running with `--jobs=4` will only need a 4GB ramdisk.
-
-To use, run the test suite specifying the ramdisk as the `cachedir` and `tmpdir`:
-
-```bash
-test/functional/test_runner.py --cachedir=/mnt/tmp/cache --tmpdir=/mnt/tmp
-```
-
-Once finished with the tests and the disk, and to free the ram, simply unmount the disk:
-
-```bash
-sudo umount /mnt/tmp
-```
-
-#### Troubleshooting and debugging test failures
-
-##### Resource contention
-
-The P2P and RPC ports used by the dashd nodes-under-test are chosen to make
-conflicts with other processes unlikely. However, if there is another dashd
-process running on the system (perhaps from a previous test which hasn't successfully
-killed all its dashd nodes), then there may be a port conflict which will
-cause the test to fail. It is recommended that you run the tests on a system
-where no other dashd processes are running.
-
-On linux, the test framework will warn if there is another
-dashd process running when the tests are started.
-
-If there are zombie dashd processes after test failure, you can kill them
-by running the following commands. **Note that these commands will kill all
-dashd processes running on the system, so should not be used if any non-test
-dashd processes are being run.**
-
-```bash
-killall dashd
-```
-
-or
-
-```bash
-pkill -9 dashd
-```
-
-
-##### Data directory cache
-
-A pre-mined blockchain with 200 blocks is generated the first time a
-functional test is run and is stored in test/cache. This speeds up
-test startup times since new blockchains don't need to be generated for
-each test. However, the cache may get into a bad state, in which case
-tests will fail. If this happens, remove the cache directory (and make
-sure dashd processes are stopped as above):
-
-```bash
-rm -rf test/cache
-killall dashd
-```
-
-##### Test logging
-
-The tests contain logging at five different levels (DEBUG, INFO, WARNING, ERROR
-and CRITICAL). From within your functional tests you can log to these different
-levels using the logger included in the test_framework, e.g.
-`self.log.debug(object)`. By default:
-
-- when run through the test_runner harness, *all* logs are written to
-  `test_framework.log` and no logs are output to the console.
-- when run directly, *all* logs are written to `test_framework.log` and INFO
-  level and above are output to the console.
-- when run by [our CI (Continuous Integration)](/ci/README.md), no logs are output to the console. However, if a test
-  fails, the `test_framework.log` and dashd `debug.log`s will all be dumped
-  to the console to help troubleshooting.
-
-These log files can be located under the test data directory (which is always
-printed in the first line of test output):
-  - `<test data directory>/test_framework.log`
-  - `<test data directory>/node<node number>/regtest/debug.log`.
-
-The node number identifies the relevant test node, starting from `node0`, which
-corresponds to its position in the nodes list of the specific test,
-e.g. `self.nodes[0]`.
-
-To change the level of logs output to the console, use the `-l` command line
-argument.
-
-`test_framework.log` and dashd `debug.log`s can be combined into a single
-aggregate log by running the `combine_logs.py` script. The output can be plain
-text, colorized text or html. For example:
-
-```
-test/functional/combine_logs.py -c <test data directory> | less -r
-```
-
-will pipe the colorized logs from the test into less.
-
-Use `--tracerpc` to trace out all the RPC calls and responses to the console. For
-some tests (eg any that use `submitblock` to submit a full block over RPC),
-this can result in a lot of screen output.
-
-By default, the test data directory will be deleted after a successful run.
-Use `--nocleanup` to leave the test data directory intact. The test data
-directory is never deleted after a failed test.
-
-##### Attaching a debugger
-
-A python debugger can be attached to tests at any point. Just add the line:
-
-```py
-import pdb; pdb.set_trace()
-```
-
-anywhere in the test. You will then be able to inspect variables, as well as
-call methods that interact with the dashd nodes-under-test.
-
-If further introspection of the dashd instances themselves becomes
-necessary, this can be accomplished by first setting a pdb breakpoint
-at an appropriate location, running the test to that point, then using
-`gdb` (or `lldb` on macOS) to attach to the process and debug.
-
-For instance, to attach to `self.node[1]` during a run you can get
-the pid of the node within `pdb`.
-
-```
-(pdb) self.node[1].process.pid
-```
-
-Alternatively, you can find the pid by inspecting the temp folder for the specific test
-you are running. The path to that folder is printed at the beginning of every
-test run:
-
-```bash
-2017-06-27 14:13:56.686000 TestFramework (INFO): Initializing test directory /tmp/user/1000/testo9vsdjo3
-```
-
-Use the path to find the pid file in the temp folder:
-
-```bash
-cat /tmp/user/1000/testo9vsdjo3/node1/regtest/dashd.pid
-```
-
-Then you can use the pid to start `gdb`:
-
-```bash
-gdb /home/example/dashd <pid>
-```
-
-Note: gdb attach step may require ptrace_scope to be modified, or `sudo` preceding the `gdb`.
-See this link for considerations: https://www.kernel.org/doc/Documentation/security/Yama.txt
-
-Often while debugging rpc calls from functional tests, the test might reach timeout before
-process can return a response. Use `--timeout-factor 0` to disable all rpc timeouts for that partcular
-functional test. Ex: `test/functional/wallet_hd.py --timeout-factor 0`.
-
-##### Profiling
-
-An easy way to profile node performance during functional tests is provided
-for Linux platforms using `perf`.
-
-Perf will sample the running node and will generate profile data in the node's
-datadir. The profile data can then be presented using `perf report` or a graphical
-tool like [hotspot](https://github.com/KDAB/hotspot).
-
-To generate a profile during test suite runs, use the `--perf` flag.
-
-To see render the output to text, run
-
-```sh
-perf report -i /path/to/datadir/send-big-msgs.perf.data.xxxx --stdio | c++filt | less
-```
-
-For ways to generate more granular profiles, see the README in
-[test/functional](/test/functional).
-
-### Util tests
-
-Util tests can be run locally by running `test/util/test_runner.py`.
-Use the `-v` option for verbose output.
-
-### Lint tests
-
-#### Dependencies
-
-| Lint test | Dependency |
-|-----------|:----------:|
-| [`lint-python.py`](lint/lint-python.py) | [flake8](https://gitlab.com/pycqa/flake8)
-| [`lint-python.py`](lint/lint-python.py) | [mypy](https://github.com/python/mypy)
-| [`lint-python.py`](lint/lint-python.py) | [pyzmq](https://github.com/zeromq/pyzmq)
-| [`lint-python-dead-code.py`](lint/lint-python-dead-code.py) | [vulture](https://github.com/jendrikseipp/vulture)
-| [`lint-shell.py`](lint/lint-shell.py) | [ShellCheck](https://github.com/koalaman/shellcheck)
-| [`lint-spelling.py`](lint/lint-spelling.py) | [codespell](https://github.com/codespell-project/codespell)
-
-In use versions and install instructions are available in the [CI setup](../ci/lint/04_install.sh).
-
-Please be aware that on Linux distributions all dependencies are usually available as packages, but could be outdated.
-
-#### Running the tests
-
-Individual tests can be run by directly calling the test script, e.g.:
-
-```
-test/lint/lint-files.py
-```
-
-You can run all the shell-based lint tests by running:
-
-```
-test/lint/all-lint.py
-```
-
-# Writing functional tests
-
-You are encouraged to write functional tests for new or existing features.
-Further information about the functional test framework and individual
-tests is found in [test/functional](/test/functional).
-
-# Configure tests
-
-After `./autogen.sh`, run `python3 test/configure/test_configure.py --output-dir /tmp/defcon-configure-tests` with native build dependencies available; the output directory must be new. Use `--prefix=/path/to/depends/x86_64-pc-linux-gnu` to select depends libraries. The tests check default, enabled and disabled branch coverage, explicit/default library-only targets, and rejection when all targets are disabled. Logs and generated Makefiles remain in the output directory. The script configures targets; the linux64 CI step also compiles an out-of-tree BLS object using the common Core include flags and builds the library-only target in its fresh build directory.
+Use `--prefix=/path/to/depends/x86_64-pc-linux-gnu` to select a depends prefix. The test records logs and generated Makefiles in the output directory.

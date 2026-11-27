@@ -12,8 +12,7 @@ the `fc00::/8` network (reserved IPv6 range). Installation and configuration is
 done outside of DeFCoN Core, similarly to a VPN (either in the host/OS or on
 the network router).
 
-Compared to IPv4/IPv6, CJDNS provides end-to-end encryption and protects nodes
-from traffic analysis and filtering.
+CJDNS encrypts traffic between endpoints. Intermediate routers can still observe routing metadata.
 
 Used with Tor and I2P, CJDNS is a complementary option that can enhance network
 redundancy and robustness for both the DeFCoN network and individual nodes.

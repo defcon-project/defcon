@@ -66,7 +66,7 @@ Coding Style (C++)
 
 - **Indentation and whitespace rules** as specified in
 [src/.clang-format](/src/.clang-format). You can use the provided
-[clang-format-diff script](/contrib/devtools/README.md#clang-format-diffpy)
+[clang-format-diff script](../contrib/devtools/clang-format-diff.py)
 tool to clean up patches automatically before submission.
   - Braces on new lines for classes, functions, methods.
   - Braces on the same line for everything else.
@@ -615,51 +615,51 @@ and its `cs_KeyStore` lock for example).
 Threads
 -------
 
-- [Main thread (`defcond`)](https://doxygen.bitcoincore.org/bitcoind_8cpp.html#a0ddf1224851353fc92bfbff6f499fa97)
+- [Main thread (`defcond`)](../src/bitcoind.cpp)
   : Started from `main()` in `bitcoind.cpp`. Responsible for starting up and
   shutting down the application.
 
-- [ThreadImport (`d-loadblk`)](https://doxygen.bitcoincore.org/init_8cpp.html#ae9e290a0e829ec0198518de2eda579d1)
+- [ThreadImport (`d-loadblk`)](../src/node/blockstorage.cpp)
   : Loads blocks from `blk*.dat` files or `-loadblock=<file>` on startup.
 
-- [ThreadScriptCheck (`d-scriptch.x`)](https://doxygen.bitcoincore.org/validation_8cpp.html#a925a33e7952a157922b0bbb8dab29a20)
+- [ThreadScriptCheck (`d-scriptch.x`)](../src/checkqueue.h)
   : Parallel script validation threads for transactions in blocks.
 
-- [ThreadHTTP (`d-http`)](https://doxygen.bitcoincore.org/httpserver_8cpp.html#abb9f6ea8819672bd9a62d3695070709c)
+- [ThreadHTTP (`d-http`)](../src/httpserver.cpp)
   : Libevent thread to listen for RPC and REST connections.
 
-- [HTTP worker threads(`d-httpworker.x`)](https://doxygen.bitcoincore.org/httpserver_8cpp.html#aa6a7bc27265043bc0193220c5ae3a55f)
+- [HTTP worker threads (`d-httpworker.x`)](../src/httpserver.cpp)
   : Threads to service RPC and REST requests.
 
-- [Indexer threads (`d-txindex`, etc)](https://doxygen.bitcoincore.org/class_base_index.html#a96a7407421fbf877509248bbe64f8d87)
+- [Indexer threads (`d-txindex`, etc)](../src/index/base.cpp)
   : One thread per indexer.
 
-- [SchedulerThread (`d-scheduler`)](https://doxygen.bitcoincore.org/class_c_scheduler.html#a14d2800815da93577858ea078aed1fba)
+- [SchedulerThread (`d-scheduler`)](../src/scheduler.cpp)
   : Does asynchronous background tasks like dumping wallet contents, dumping
   addrman and running asynchronous validationinterface callbacks.
 
-- [TorControlThread (`d-torcontrol`)](https://doxygen.bitcoincore.org/torcontrol_8cpp.html#a4faed3692d57a0d7bdbecf3b37f72de0)
+- [TorControlThread (`d-torcontrol`)](../src/torcontrol.cpp)
   : Libevent thread for tor connections.
 
 - Net threads:
 
-  - [ThreadMessageHandler (`d-msghand`)](https://doxygen.bitcoincore.org/class_c_connman.html#aacdbb7148575a31bb33bc345e2bf22a9)
+  - [ThreadMessageHandler (`d-msghand`)](../src/net.cpp)
     : Application level message handling (sending and receiving). Almost
     all net_processing and validation logic runs on this thread.
 
-  - [ThreadDNSAddressSeed (`d-dnsseed`)](https://doxygen.bitcoincore.org/class_c_connman.html#aa7c6970ed98a4a7bafbc071d24897d13)
+  - [ThreadDNSAddressSeed (`d-dnsseed`)](../src/net.cpp)
     : Loads addresses of peers from the DNS.
 
-  - [ThreadMapPort (`d-upnp`)](https://doxygen.bitcoincore.org/net_8cpp.html#a63f82a71c4169290c2db1651a9bbe249)
-    : Universal plug-and-play startup/shutdown.
+  - [ThreadMapPort (`d-mapport`)](../src/mapport.cpp)
+    : Manages enabled UPnP or NAT-PMP mappings.
 
-  - [ThreadSocketHandler (`d-net`)](https://doxygen.bitcoincore.org/class_c_connman.html#a765597cbfe99c083d8fa3d61bb464e34)
-    : Sends/Receives data from peers on port 8192.
+  - [ThreadSocketHandler (`d-net`)](../src/net.cpp)
+    : Sends and receives peer data. The default mainnet listening port is 8192.
 
-  - [ThreadOpenAddedConnections (`d-addcon`)](https://doxygen.bitcoincore.org/class_c_connman.html#a0b787caf95e52a346a2b31a580d60a62)
+  - [ThreadOpenAddedConnections (`d-addcon`)](../src/net.cpp)
     : Opens network connections to added nodes.
 
-  - [ThreadOpenConnections (`d-opencon`)](https://doxygen.bitcoincore.org/class_c_connman.html#a55e9feafc3bab78e5c9d408c207faa45)
+  - [ThreadOpenConnections (`d-opencon`)](../src/net.cpp)
     : Initiates new connections to peers.
 
   - ThreadOpenMasternodeConnections (`d-mncon`)
@@ -727,7 +727,7 @@ General DeFCoN Core
 - Make sure pull requests pass CI before merging.
 
   - *Rationale*: Makes sure that they pass thorough testing, and that the tester will keep passing
-     on the master branch. Otherwise, all new pull requests will start failing the tests, resulting in
+     on the development branch. Otherwise, all new pull requests will start failing the tests, resulting in
      confusion and mayhem.
 
   - *Explanation*: If the test suite is to be updated for a change, this has to
@@ -1140,7 +1140,7 @@ Others are external projects without a tight relationship with our project. Chan
 be sent upstream, but bugfixes may also be prudent to PR against DeFCoN Core so that they can be integrated
 quickly. Cosmetic changes should be purely taken upstream.
 
-There is a tool in `test/lint/git-subtree-check.sh` ([instructions](../test/lint#git-subtree-checksh)) to check a subtree directory for consistency with
+There is a tool in `test/lint/git-subtree-check.sh` ([instructions](../test/lint/README.md)) to check a subtree directory for consistency with
 its upstream repository.
 
 Current subtrees include:
@@ -1177,7 +1177,7 @@ you must be aware of.
 
 In most configurations, we use the default LevelDB value for `max_open_files`,
 which is 1000 at the time of this writing. If LevelDB actually uses this many
-file descriptors, it will cause problems with Bitcoin's `select()` loop, because
+file descriptors, it will cause problems with the node's `select()` loop, because
 it may cause new sockets to be created where the fd value is >= 1024. For this
 reason, on 64-bit Unix systems, we rely on an internal LevelDB optimization that
 uses `mmap()` + `close()` to open table files without actually retaining
@@ -1221,7 +1221,7 @@ For reformatting and refactoring commits where the changes can be easily automat
 scripted-diff commits. The bash script is included in the commit message and our CI job checks that
 the result of the script is identical to the commit. This aids reviewers since they can verify that the script
 does exactly what it is supposed to do. It is also helpful for rebasing (since the same script can just be re-run
-on the new master commit).
+on the new development branch commit).
 
 To create a scripted-diff:
 
@@ -1238,7 +1238,7 @@ commits that don't conform to the commit message format described above.
 For development, it might be more convenient to verify all scripted-diffs in a range `A..B`, for example:
 
 ```bash
-test/lint/commit-script-check.sh origin/master..HEAD
+test/lint/commit-script-check.sh origin/v22.1.x..HEAD
 ```
 
 ### Suggestions and examples

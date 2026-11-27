@@ -104,7 +104,7 @@ The option to set the PUB socket's outbound message high water mark
     -zmqpubrawgovernanceobjecthwm=n
     -zmqpubrawinstantsenddoublespendhwm=n
     -zmqpubrawrecoveredsighwm=n
-    -zmqpubsequencehwm=address
+    -zmqpubsequencehwm=n
 
 The high water mark value must be an integer greater than or equal to 0.
 
@@ -138,7 +138,7 @@ Where the 8-byte uints correspond to the mempool sequence number.
 
 `hashtx`: Notifies about all transactions, both when they are added to mempool or when a new block arrives. This means a transaction could be published multiple times. First, when it enters the mempool and then again in each block that includes it. The messages are ZMQ multipart messages with three parts. The first part is the topic (`hashtx`), the second part is the 32-byte transaction hash, and the last part is a sequence number (representing the message count to detect lost messages).
 
-    | hashtx | <32-byte transaction hash in Little Endian> | <uint32 sequence number in Little Endian>
+    | hashtx | <32-byte transaction hash in RPC display order> | <uint32 sequence number in Little Endian>
 
 
 `rawblock`: Notifies when the chain tip is updated. Messages are ZMQ multipart messages with three parts. The first part is the topic (`rawblock`), the second part is the serialized block, and the last part is a sequence number (representing the message count to detect lost messages).
@@ -147,12 +147,11 @@ Where the 8-byte uints correspond to the mempool sequence number.
 
 `hashblock`: Notifies when the chain tip is updated. Messages are ZMQ multipart messages with three parts. The first part is the topic (`hashblock`), the second part is the 32-byte block hash, and the last part is a sequence number (representing the message count to detect lost messages).
 
-    | hashblock | <32-byte block hash in Little Endian> | <uint32 sequence number in Little Endian>
+    | hashblock | <32-byte block hash in RPC display order> | <uint32 sequence number in Little Endian>
 
-**_NOTE:_**  Note that the 32-byte hashes are in Little Endian and not in the Big Endian format that the RPC interface and block explorers use to display transaction and block hashes.
+For `hashtx` and `hashblock`, hex-encoding the 32-byte body produces the ID shown by RPC. The final frame is a separate 32-bit little-endian sequence number.
 
-ZeroMQ endpoint specifiers for TCP (and others) are documented in the
-[ZeroMQ API](http://api.zeromq.org/4-0:_start).
+For TCP and IPC endpoint syntax, see the `zmq_tcp(7)` and `zmq_ipc(7)` manuals.
 
 Client side, then, the ZeroMQ subscriber socket must have the
 ZMQ_SUBSCRIBE option set to one or either of these prefixes (for
@@ -180,8 +179,7 @@ hosts as well. If needed, this option has to be set on the client side too.
 
 From the perspective of defcond, the ZeroMQ socket is write-only; PUB
 sockets don't even have a read function. Thus, there is no state
-introduced into defcond directly. Furthermore, no information is
-broadcast that wasn't already received from the public P2P network.
+introduced into defcond directly. Subscribers can observe local wallet and mempool activity.
 
 No authentication or authorization is done on connecting clients; it
 is assumed that the ZeroMQ port is exposed only to trusted entities,

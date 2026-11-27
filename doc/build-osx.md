@@ -1,10 +1,6 @@
 # macOS Build Guide
 
-**Updated for MacOS [11.2](https://www.apple.com/macos/big-sur/)**
-
-This guide describes how to build defcond, command-line utilities, and GUI on macOS
-
-**Note:** The following is for Intel Macs only!
+These instructions cover native Intel macOS builds of `defcond`, the command-line tools and `defcon-qt`. For the published macOS archive, see the [official releases](https://github.com/defcon-project/defcon/releases).
 
 ## Dependencies
 
@@ -15,6 +11,7 @@ Library                                                    | Purpose    | Descri
 [automake](https://formulae.brew.sh/formula/automake)      | Build      | Generate makefile
 [libtool](https://formulae.brew.sh/formula/libtool)        | Build      | Shared library support
 [pkg-config](https://formulae.brew.sh/formula/pkg-config)  | Build      | Configure compiler and linker flags
+[gmp](https://formulae.brew.sh/formula/gmp)                 | Arithmetic | Integer arithmetic required by configure
 [boost](https://formulae.brew.sh/formula/boost)            | Utility    | Library for threading, data structures, etc
 [libevent](https://formulae.brew.sh/formula/libevent)      | Networking | OS independent asynchronous networking
 
@@ -22,7 +19,6 @@ The following dependencies are **optional**:
 
 Library                                                         | Purpose          | Description
 --------------------------------------------------------------- |------------------|----------------------
-[berkeley-db@4](https://formulae.brew.sh/formula/berkeley-db@4) | Berkeley DB      | Wallet storage (only needed when wallet enabled)
 [qt@5](https://formulae.brew.sh/formula/qt@5)                   | GUI              | GUI toolkit (only needed when GUI enabled)
 [qrencode](https://formulae.brew.sh/formula/qrencode)           | QR codes in GUI  | Generating QR codes (only needed when GUI enabled)
 [zeromq](https://formulae.brew.sh/formula/zeromq)               | ZMQ notification | Allows generating ZMQ notifications (requires ZMQ version >= 4.0.0)
@@ -30,14 +26,6 @@ Library                                                         | Purpose       
 [miniupnpc](https://formulae.brew.sh/formula/miniupnpc)         | UPnP Support     | Firewall-jumping support (needed for port mapping support)
 [libnatpmp](https://formulae.brew.sh/formula/libnatpmp)         | NAT-PMP Support  | Firewall-jumping support (needed for port mapping support)
 [python3](https://formulae.brew.sh/formula/python@3.9)          | Testing          | Python Interpreter (only needed when running the test suite)
-
-The following dependencies are **optional** packages required for deploying:
-
-Library                                             | Purpose          | Description
-----------------------------------------------------|------------------|----------------------
-[librsvg](https://formulae.brew.sh/formula/librsvg) | Deploy Dependency| Library to render SVG files
-[ds_store](https://pypi.org/project/ds-store/)      | Deploy Dependency| Examine and modify .DS_Store files
-[mac_alias](https://pypi.org/project/mac-alias/)    | Deploy Dependency| Generate/Read binary alias and bookmark records
 
 See [dependencies.md](dependencies.md) for a complete overview.
 
@@ -93,6 +81,7 @@ All build scripts and commands will run from this directory.
 
 ``` bash
 git clone https://github.com/defcon-project/defcon.git
+cd defcon
 ```
 
 ### 5. Install Optional Dependencies
@@ -100,18 +89,7 @@ git clone https://github.com/defcon-project/defcon.git
 #### Wallet Dependencies
 
 It is not necessary to build wallet functionality to run `defcond` or  `defcon-qt`.
-To enable legacy wallets, you must install `berkeley-db@4`.
-To enable [descriptor wallets](descriptors.md), `sqlite` is required.
-Skip `berkeley-db@4` if you intend to *exclusively* use descriptor wallets.
-
-###### Legacy Wallet Support
-
-`berkeley-db@4` is required to enable support for legacy wallets.
-Skip if you don't intend to use legacy wallets.
-
-``` bash
-brew install berkeley-db@4
-```
+Descriptor wallets use SQLite. Legacy wallets compatible with the published binaries use Berkeley DB 4.8. The [included installer](../contrib/install_db4.sh) builds it in a prefix you choose and prints the flags to use with `./configure`.
 
 ###### Descriptor Wallet Support
 
@@ -138,15 +116,7 @@ Skip if you don't intend to use the GUI.
 brew install qt@5
 ```
 
-Ensure that the `qt@5` package is installed, not the `qt` package.
-If 'qt' is installed, the build process will fail.
-if installed, remove the `qt` package with the following command:
-
-``` bash
-brew uninstall qt
-```
-
-Note: Building with Qt binaries downloaded from the Qt website is not officially supported.
+If multiple major versions of Qt are installed, select the Qt 5 tools and libraries when configuring this build.
 See the notes in [bitcoin#7714](https://github.com/bitcoin/bitcoin/issues/7714).
 
 ###### qrencode
@@ -224,7 +194,7 @@ There are many ways to configure DeFCoN Core, here are a few common examples:
 
 ##### Wallet (BDB + SQlite) Support, No GUI:
 
-If `berkeley-db@4` is installed, then legacy wallet support will be built.
+If Berkeley DB 4.8 is available to configure, then legacy wallet support will be built.
 If `sqlite` is installed, then descriptor wallet support will also be built.
 Additionally, this explicitly disables the GUI.
 
@@ -246,7 +216,7 @@ like so:
 ##### Wallet (only SQlite) and GUI Support:
 
 This explicitly enables the GUI and disables legacy wallet support.
-If `qt` is not installed, this will throw an error.
+If Qt 5 is missing, this will throw an error.
 If `sqlite` is installed then descriptor wallet functionality will be built.
 If `sqlite` is not installed, then wallet functionality will be disabled.
 
@@ -259,7 +229,7 @@ If `sqlite` is not installed, then wallet functionality will be disabled.
 
 ``` bash
 ./autogen.sh
-./configure --without-wallet --with-gui=no
+./configure --disable-wallet --with-gui=no
 ```
 
 ##### Further Configuration
@@ -268,7 +238,7 @@ You may want to dig deeper into the configuration options to achieve your desire
 Examine the output of the following command for a full list of configuration options:
 
 ``` bash
-./configure -help
+./configure --help
 ```
 
 ### 2. Compile
@@ -283,7 +253,7 @@ make check  # Run tests if Python 3 is available
 
 ### 3. Deploy (optional)
 
-You can also create a  `.zip` containing the `.app` bundle by running the following command:
+To create `DeFCoN.zip` containing `Defcon-Qt.app`, run the following command:
 
 ``` bash
 make deploy

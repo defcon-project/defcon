@@ -1,41 +1,22 @@
 ---
 name: Bug report
-about: Create a report to help us improve (use this for suspected bugs only, if not sure, open a regular issue below)
+about: Report a problem with DeFCoN Core
 title: ''
 labels: Bug
 assignees: ''
 
 ---
 
-<!-- This issue tracker is only for technical issues related to DeFCoN Core.
+Report suspected security issues through the [private DeFCoN security form](https://github.com/defcon-project/defcon/security/advisories/new). For help using the wallet or node, visit [DeFCoN Discord](https://discord.gg/UpUq7V7Fg7).
 
-General questions and support requests are best directed to the DeFCoN Discord: https://discord.gg/UpUq7V7Fg7
+## What happened?
 
-Never report a security issue here. Report it privately: https://github.com/defcon-project/defcon/security/advisories/new
+Describe what you saw, what you expected and which steps led to the problem.
 
-If the node is "stuck" during sync or giving "block checksum mismatch" errors, please ensure your hardware is stable by running memtest and observe CPU temperature with a load-test tool such as linpack before creating an issue! -->
+## Environment
 
-<!-- Describe the issue -->
+Include the DeFCoN Core version or commit, where you obtained the build, and your operating system. For a wallet display issue, include the desktop environment if relevant.
 
-**Expected behavior**
+## Supporting information
 
-<!--- What behavior did you expect? -->
-
-**Actual behavior**
-
-<!--- What was the actual behavior (provide screenshots if the issue is GUI-related)? -->
-
-**To reproduce**
-
-<!--- How reliably can you reproduce the issue, what are the steps to do so? -->
-
-**System information**
-
-<!-- What version of DeFCoN Core are you using, where did you get it (website, self-compiled, etc)? -->
-
-<!-- What type of machine are you observing the error on (OS/CPU and disk type)? -->
-
-<!-- GUI-related issue? What is your operating system and its version? If Linux, what is your desktop environment and graphical shell? -->
-
-<!-- Any extra information that might be useful in the debugging process. -->
-<!--- This is normally the contents of a `debug.log` or `config.log` file. Raw text or a link to a pastebin type site are preferred. -->
+If a log excerpt or screenshot helps explain the problem, share only the relevant part. Remove credentials, private keys and personal information before posting.

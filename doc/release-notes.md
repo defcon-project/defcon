@@ -1,5 +1,8 @@
 # DeFCoN Core v23.0.0 — release notes
 
+These notes describe the September 2026 release. For current downloads and upgrade instructions, see the [official DeFCoN Core releases](https://github.com/defcon-project/defcon/releases).
+
+
 
 ---
 
@@ -404,4 +407,3 @@ f70ebe96dc400d53bfed18512d5bb720516dc41f7604e5bdf92c37011671d80d  defcon-apple.t
 Built from commit a06830fd4281a1da989bb788fdd427566060d663
 ```
 ---
-

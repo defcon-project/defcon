@@ -97,9 +97,13 @@ The fee-paying transaction was found in 139707, whose coinbase pays exactly
 
 ## How to repeat it
 
-1. Bring a copy of a mainnet data directory to the tip with the current
-   release. Work on the copy, never on the original, and remove `wallets/` and
-   `backups/` from it.
+1. The historical run started with a v22.1.4 copy at height 139554, before the v23 rules took effect. Reproducing that run requires a pre-v23 copy at the same point. Work on the copy, never on the original, and remove `wallets/` and
+   `backups/` from it. If the data directory itself holds wallets, remove those too
+   (`wallet.dat`, named wallet directories and older wallet files). Do not start
+   a test node with the original configuration or settings files: give each one
+   its own minimal configuration and a fresh settings file inside its copy, and
+   keep every wallet a test node uses inside that copy, so that no test node can
+   open a wallet outside it.
 2. Build the release commit with `V23_MAINNET_ACTIVATION_HEIGHT` set to a
    height H that is 24 mod 72, with H − 120 a few dozen blocks above the copy's
    tip. Change nothing else, and record the diff and the binary's sha256.

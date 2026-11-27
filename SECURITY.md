@@ -1,30 +1,13 @@
-# Security Policy
+# DeFCoN Core security policy
 
 ## Supported versions
 
-| Version | Supported |
-| ------- | --------- |
-| 23.x    | :white_check_mark: |
-| 22.x    | :x: — stops receiving the mainnet chain at block 144,768; upgrade to 23.x |
-| < 22    | :x: |
+DeFCoN Core maintains the 23.x release series. For mainnet, use the latest published stable release. The 22.x series and earlier versions are unsupported: 22.x nodes stopped receiving the mainnet chain at block 144,768. See [upgrading from 22.x](doc/release-notes.md#upgrading-downgrading-and-going-back). [Official DeFCoN Core releases](https://github.com/defcon-project/defcon/releases)
 
-## Reporting a vulnerability
+## Report a vulnerability
 
-**Please do not report security issues in public GitHub issues, pull requests or community channels.**
+[Report a vulnerability privately to DeFCoN Core](https://github.com/defcon-project/defcon/security/advisories/new). This form goes to the maintainers of the official repository, including when you follow the link from a fork. Keep the details private until disclosure is coordinated.
 
-Report them privately through GitHub:
-[**Report a vulnerability**](https://github.com/defcon-project/defcon/security/advisories/new)
-(the *Security* tab of this repository → *Report a vulnerability*).
+Include the affected version or commit, the observed behavior, the conditions under which it occurs and the potential impact. Remove credentials, private keys and wallet data from any attachments.
 
-Please include:
-
-- the affected version or commit;
-- what an attacker could do, and under which conditions;
-- how you found it, and anything that helps us confirm it.
-
-The report is visible only to the maintainers. We will acknowledge it, keep you informed while a fix is
-prepared, and coordinate the disclosure with you. A fix for a consensus or network issue may need a
-coordinated release before any detail is made public.
-
-This policy covers DeFCoN Core in this repository. Issues inherited unchanged from upstream Dash Core or
-Bitcoin Core should also be reported to those projects.
+The maintainers will acknowledge the report, keep you informed as they investigate and coordinate disclosure with you. If an issue also affects an upstream project, coordinate with the DeFCoN maintainers when reporting it privately to the upstream maintainers.

@@ -37,12 +37,12 @@ These dependencies are required:
  ------------|------------------|----------------------
  libboost    | Utility          | Library for threading, data structures, etc
  libevent    | Networking       | OS independent asynchronous networking
+ gmp         | Arithmetic       | Integer arithmetic required by the build
 
 Optional dependencies:
 
  Library     | Purpose          | Description
  ------------|------------------|----------------------
- gmp         | Optimized math routines | Arbitrary precision arithmetic library
  miniupnpc   | UPnP Support     | Firewall-jumping support
  libnatpmp   | NAT-PMP Support  | Firewall-jumping support
  libdb4.8    | Berkeley DB      | Wallet storage (only needed when legacy wallet enabled)
@@ -76,13 +76,13 @@ tuned to conserve memory with additional CXXFLAGS:
 Build requirements:
 
 ```sh
-sudo apt-get install build-essential libtool autotools-dev automake pkg-config bsdmainutils bison python3
+sudo apt-get install build-essential libtool autotools-dev automake pkg-config bsdmainutils bison cmake python3
 ```
 
 Now, you can either build from self-compiled [depends](/depends/README.md) or install the required dependencies:
 
 ```sh
-sudo apt-get install libevent-dev libboost-dev
+sudo apt-get install libevent-dev libboost-dev libgmp-dev
 ```
 
 SQLite is required for the descriptor wallet:
@@ -92,7 +92,7 @@ sudo apt-get install libsqlite3-dev
 ```
 
 Berkeley DB is required for the legacy wallet. Ubuntu and Debian have their own `libdb-dev` and `libdb++-dev` packages,
-but these will install Berkeley DB 5.1 or later. This will break binary wallet compatibility with the distributed
+but these will install Berkeley DB a newer major version. This will break binary wallet compatibility with the distributed
 executables, which are based on BerkeleyDB 4.8. If you do not care about wallet compatibility, pass
 `--with-incompatible-bdb` to configure. Otherwise, you can build Berkeley DB [yourself](#berkeley-db).
 
@@ -108,12 +108,6 @@ ZMQ dependencies (provides ZMQ API):
 
 ```sh
 sudo apt-get install libzmq3-dev
-```
-
-GMP dependencies (provides platform-optimized routines):
-
-```sh
-sudo apt-get install libgmp-dev
 ```
 
 User-Space, Statically Defined Tracing (USDT) dependencies:
@@ -157,13 +151,13 @@ built by default.
 Build requirements:
 
 ```sh
-sudo dnf install gcc-c++ libtool make autoconf automake python3
+sudo dnf install gcc-c++ libtool make autoconf automake bison cmake python3
 ```
 
 Now, you can either build from self-compiled [depends](/depends/README.md) or install the required dependencies:
 
 ```sh
-sudo dnf install libevent-devel boost-devel
+sudo dnf install libevent-devel boost-devel gmp-devel
 ```
 
 SQLite is required for the descriptor wallet:
@@ -195,12 +189,6 @@ ZMQ dependencies (provides ZMQ API):
 
 ```sh
 sudo dnf install zeromq-devel
-```
-
-GMP dependencies (provides platform-optimized routines):
-
-```sh
-sudo dnf install gmp-devel
 ```
 
 User-Space, Statically Defined Tracing (USDT) dependencies:
@@ -272,7 +260,7 @@ from the root of the repository.
 
 Otherwise, you can build DeFCoN Core from self-compiled [depends](/depends/README.md).
 
-**Note**: You only need Berkeley DB if the wallet is enabled (see [*Disable-wallet mode*](#disable-wallet-mode)).
+**Note**: You only need Berkeley DB for legacy wallet support (see [*Disable-wallet mode*](#disable-wallet-mode)).
 
 Security
 --------
@@ -298,7 +286,7 @@ Hardening enables the following features:
 
     To test that you have built PIE executable, install scanelf, part of paxutils, and use:
 
-        scanelf -e ./defcond
+        scanelf -e ./src/defcond
 
     The output should contain:
 
@@ -312,7 +300,7 @@ Hardening enables the following features:
     executable without the non-executable stack protection.
 
     To verify that the stack is non-executable after compiling use:
-    `scanelf -e ./defcond`
+    `scanelf -e ./src/defcond`
 
     The output should contain:
     STK/REL/PTL
@@ -329,7 +317,7 @@ disable-wallet mode with:
 
 In this case there is no dependency on Berkeley DB 4.8 and SQLite.
 
-Mining is also possible in disable-wallet mode using the `getblocktemplate` RPC call.
+A walletless mainnet node validates and relays blocks. Staking requires a build with wallet support.
 
 Additional Configure Flags
 --------------------------
@@ -345,7 +333,7 @@ Setup and Build Example: Arch Linux
 This example lists the steps necessary to setup and build a command line only, non-wallet distribution of the latest changes on Arch Linux:
 
 ```sh
-pacman -S git base-devel boost libevent python
+pacman -S git base-devel boost libevent gmp cmake python
 git clone https://github.com/defcon-project/defcon.git
 cd defcon
 ./autogen.sh
@@ -354,8 +342,7 @@ make check
 ```
 
 Note:
-Enabling wallet support requires either compiling against a Berkeley DB newer than 4.8 (package `db`) using `--with-incompatible-bdb`,
-or building and depending on a local version of Berkeley DB 4.8. The readily available Arch Linux packages are currently built using
-`--with-incompatible-bdb` according to the [PKGBUILD](https://projects.archlinux.org/svntogit/community.git/tree/bitcoin/trunk/PKGBUILD).
-As mentioned above, when maintaining portability of the wallet between the standard DeFCoN Core distributions and independently built
-node software is desired, Berkeley DB 4.8 must be used.
+Descriptor wallets need only SQLite (package `sqlite`). Legacy wallet support requires either compiling against a Berkeley DB newer than 4.8 (package `db`) using `--with-incompatible-bdb`,
+or building and depending on a local version of Berkeley DB 4.8.
+As mentioned above, when legacy wallet files must stay portable between the standard DeFCoN Core distributions and independently built
+node software, Berkeley DB 4.8 must be used.

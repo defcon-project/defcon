@@ -1,18 +1,14 @@
-Repository Tools
----------------------
+# DeFCoN Core repository tools
 
-### [Developer tools](/contrib/devtools) ###
-Specific tools for developers working on this repository.
-Contains the script `github-merge.py` for merging GitHub pull requests securely and signing them using GPG.
+| Task | Guide |
+| --- | --- |
+| Format patches, generate manual pages and inspect release binaries | [Developer tools](devtools/README.md) |
+| Export blocks in active-chain order | [Blockchain linearization](linearize/README.md) |
+| Regenerate the compiled mainnet seed list | [Fixed seeds](seeds/README.md) |
+| Configure a node as a system service | [Service templates](init/README.md) |
+| Inspect messages captured by a node | [Message capture](message-capture/message-capture-docs.md) |
+| Trace a running node on Linux | [Tracing examples](tracing/README.md) |
+| Build the CI and development images | [Containers](containers/README.md) |
+| Extract the macOS SDK or build an application bundle | [macOS deployment](macdeploy/README.md) |
 
-### [Linearize](/contrib/linearize) ###
-Construct a linear, no-fork, best version of the blockchain.
-
-### [Seeds](/contrib/seeds) ###
-Utility to generate the pnSeed[] array that is compiled into the client.
-
-Build Tools
----------------------
-
-### [MacDeploy](/contrib/macdeploy) ###
-Scripts and notes for Mac builds.
+Official release packages follow the [DeFCoN release process](../doc/release-process.md).

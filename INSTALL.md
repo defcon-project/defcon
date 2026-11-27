@@ -1,8 +1,5 @@
-Building DeFCoN Core
-====================
+# Install DeFCoN Core
 
-The quickest route is in the [README](README.md#building-from-source). Platform-specific notes are in
-[doc/build-unix.md](doc/build-unix.md), [doc/build-osx.md](doc/build-osx.md) and
-[doc/build-windows.md](doc/build-windows.md); the other guides are listed in [doc/README.md](doc/README.md).
+Download the archive for your platform and the matching checksum file from the [official releases page](https://github.com/defcon-project/defcon/releases/latest). The [wallet and node instructions](README.md#run-a-wallet-or-node) show which executable to start after verifying and extracting the archive.
 
-Ready-made binaries are on the [releases page](https://github.com/defcon-project/defcon/releases/latest).
+To build from source, follow the guide for [Unix](doc/build-unix.md), [macOS](doc/build-osx.md) or [Windows](doc/build-windows.md). The [documentation index](doc/README.md#building) lists additional platforms.

@@ -1,5 +1,6 @@
-BIPs that are implemented by Bitcoin Core, some of them are relevant for DeFCoN Core, some are just mentioned as a reference.
-Versions and PRs are relevant to Bitcoin's core if not mentioned other.
+# Bitcoin Improvement Proposals
+
+This index records upstream Bitcoin Core implementation history. Version numbers, activation dates and pull requests belong to Bitcoin Core unless an entry names a different project. Refer to [DeFCoN's chain parameters](../src/chainparams.cpp) for this network's activation rules.
 
 * [`BIP 9`](https://github.com/bitcoin/bips/blob/master/bip-0009.mediawiki): The changes allowing multiple soft-forks to be deployed in parallel have been implemented since **v0.12.1**  ([PR #7575](https://github.com/bitcoin/bitcoin/pull/7575))
 * [`BIP 11`](https://github.com/bitcoin/bips/blob/master/bip-0011.mediawiki): Multisig outputs are standard since **v0.6.0** ([PR #669](https://github.com/bitcoin/bitcoin/pull/669)).

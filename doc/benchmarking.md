@@ -56,6 +56,4 @@ More benchmarks are needed for, in no particular order:
 Going Further
 --------------------
 
-To monitor DeFCoN Core performance more in depth (like reindex or IBD): https://github.com/chaincodelabs/bitcoinperf
-
-To generate Flame Graphs for DeFCoN Core: https://github.com/eklitzke/bitcoin/blob/flamegraphs/doc/flamegraphs.md
+For node-level measurements, including initial block download and reindexing, [bitcoinperf](https://github.com/chaincodelabs/bitcoinperf) documents the workflow for Bitcoin Core. Its binary names, chain data and configuration need adapting for DeFCoN. Start with the [profiling instructions](developer-notes.md#performance-profiling-with-perf) for this repository.

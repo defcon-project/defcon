@@ -5,16 +5,11 @@ It is possible to run DeFCoN Core as a Tor onion service, and connect to such se
 The following directions assume you have a Tor proxy running on port 9050. Many
 distributions default to having a SOCKS proxy listening on port 9050, but others
 may not. In particular, the Tor Browser Bundle defaults to listening on port 9150.
-See [Tor Project FAQ:TBBSocksPort](https://www.torproject.org/docs/faq.html.en#TBBSocksPort)
-for how to properly configure Tor.
+Check the SOCKS port in your local Tor configuration.
 
 ## Compatibility
 
-- Since Dash Core 20.0, and so in every DeFCoN Core release, only Tor version 3 hidden
-  services (Tor v3). Tor v2 addresses are ignored by DeFCoN Core and neither
-  relayed nor stored.
-
-- Tor removed v2 support beginning with version 0.4.6.
+DeFCoN Core supports only Tor v3 onion services, as upstream Dash Core does since version 20.0. Tor v2 addresses are ignored and neither relayed nor stored.
 
 ## How to see information about your Tor configuration via DeFCoN Core
 
@@ -35,8 +30,7 @@ addresses, use the `getnodeaddresses 7 onion` RPC.
 
 ## 1. Run DeFCoN Core behind a Tor proxy
 
-The first step is running DeFCoN Core behind a Tor proxy. This will already anonymize all
-outgoing connections, but more is possible.
+Use a SOCKS5 proxy for outbound IPv4, IPv6 and onion peer connections.
 
     -proxy=ip:port  Set the proxy server. If SOCKS5 is selected (default), this proxy
                     server will be used to try to reach .onion addresses as well.
@@ -66,10 +60,9 @@ outgoing connections, but more is possible.
                     It can be specified multiple times to allow multiple networks,
                     e.g. onlynet=onion, onlynet=i2p, onlynet=cjdns.
 
-An example how to start the client if the Tor proxy is running on local host on
-port 9050 and only allows .onion nodes to connect:
+To restrict automatic outbound connections to onion peers and disable inbound connections:
 
-    ./defcond -onion=127.0.0.1:9050 -onlynet=onion -listen=0 -addnode=ssapp53tmftyjmjb.onion
+    ./defcond -onion=127.0.0.1:9050 -onlynet=onion -listen=0
 
 In a typical situation, this suffices to run behind a Tor proxy:
 
@@ -156,17 +149,14 @@ was used when generating the hashed password for the `HashedControlPassword`
 option in the Tor configuration file.
 
 The hashed password can be obtained with the command `tor --hash-password
-password` (refer to the [Tor Dev
-Manual](https://2019.www.torproject.org/docs/tor-manual.html.en) for more
-details).
+password` (see the installed `tor(1)` manual).
 
 
 ## 3. Manually create a DeFCoN Core onion service
 
 If you configure your Tor system accordingly, it is possible to make your node also
 reachable from the Tor network. Add these lines to your /etc/tor/torrc (or equivalent
-config file): *Needed for Tor version 0.2.7.0 and older versions of Tor only. For newer
-versions of Tor see [Section 2](#2-automatically-create-a-defcon-core-onion-service).*
+config file). This is an alternative to [automatic onion service setup](#2-automatically-create-a-defcon-core-onion-service).
 
     HiddenServiceDir /var/lib/tor/defcon-service/
     HiddenServicePort 8192 127.0.0.1:8189
@@ -198,27 +188,27 @@ should be equal to binding address and port for inbound Tor connections (127.0.0
                     Note that both addresses of a dual-stack system may be easily
                     linkable using traffic analysis.
 
-In a typical situation, where you're only reachable via Tor, this should suffice:
+For an onion service managed manually, read its hostname from your Tor service directory:
 
-    ./defcond -proxy=127.0.0.1:9050 -externalip=7zvj7a2imdgkdbg4f2dryd5rgtrn7upivr5eeij4cicjh65pooxeshid.onion -listen
+    ONION_ADDRESS=$(cat /var/lib/tor/defcon-service/hostname)
 
-(obviously, replace the .onion address with your own). It should be noted that you still
-listen on all devices and another node could establish a clearnet connection, when knowing
-your address. To mitigate this, additionally bind the address of your Tor proxy:
+    ./defcond -proxy=127.0.0.1:9050 -externalip="$ONION_ADDRESS" -listen
 
-    ./defcond ... -bind=127.0.0.1
+This example can also accept direct connections on ordinary network interfaces. To accept inbound connections only from your local Tor service, specify its loopback endpoint:
+
+    ./defcond -proxy=127.0.0.1:9050 -externalip="$ONION_ADDRESS" -listen -bind=127.0.0.1:8189=onion
 
 If you don't care too much about hiding your node, and want to be reachable on IPv4
 as well, use `discover` instead:
 
-    ./defcond ... -discover
+    ./defcond -proxy=127.0.0.1:9050 -externalip="$ONION_ADDRESS" -listen -discover
 
 and open port 8192 on your firewall (or use port mapping, i.e., `-upnp` or `-natpmp`).
 
 If you only want to use Tor to reach .onion addresses, but not use it as a proxy
 for normal IPv4/IPv6 communication, use:
 
-    ./defcond -onion=127.0.0.1:9050 -externalip=7zvj7a2imdgkdbg4f2dryd5rgtrn7upivr5eeij4cicjh65pooxeshid.onion -discover
+    ./defcond -onion=127.0.0.1:9050 -externalip="$ONION_ADDRESS" -discover
 
 
 ## 4. Privacy recommendations

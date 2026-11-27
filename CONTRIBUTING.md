@@ -5,7 +5,7 @@ document describes how changes get into the repository.
 
 ## Before you start
 
-- **Security issues are never reported or fixed in public.** Follow [`SECURITY.md`](SECURITY.md).
+- **Security issues are never reported or fixed in public.** Report suspected vulnerabilities privately through [`SECURITY.md`](SECURITY.md).
 - **Questions and support** belong on the [DeFCoN Discord](https://discord.gg/UpUq7V7Fg7), not in the
   issue tracker.
 - For anything larger than a small fix, open an issue first so the approach can be agreed before the
@@ -38,8 +38,7 @@ Common areas: `consensus`, `chainparams`, `validation`, `net`, `rpc`, `wallet`, 
 ### Consensus changes
 
 A change to what makes a block or transaction valid must be gated on an activation height, tested on
-both sides of that height, and must leave every existing block valid. Heights for mainnet and testnet
-are set together at release time, never piecemeal.
+both sides of that height, and must leave every existing block valid. Document and test the schedule for each network where the change applies. The network-specific settings are defined in [chainparams.cpp](src/chainparams.cpp).
 
 ### Backports from upstream
 
