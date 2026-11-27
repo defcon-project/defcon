@@ -79,6 +79,7 @@ BOOST_AUTO_TEST_CASE(summary_names_every_metric_to_the_end_of_the_table)
     ASSERT_DEBUG_LOG(" duplicate_undecoded=1/3ns");
     ASSERT_DEBUG_LOG(" block_msg_wait=1/3ns");
     ASSERT_DEBUG_LOG(" duplicate_response_undecoded=1/3ns");
+    ASSERT_DEBUG_LOG(" store_sig_bytes=1/3ns");
     dsl::LogPerfSummary();
     BOOST_CHECK(!dsl::TakePerfSnapshot().epochs[0].used); // the summary took the window with it
 }

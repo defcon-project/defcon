@@ -9,6 +9,7 @@
 #include <sync.h>
 #include <uint256.h>
 
+#include <array>
 #include <cstdint>
 #include <map>
 #include <tuple>
@@ -76,7 +77,9 @@ public:
      * equal the wire's: a copy that differs in any byte, however slightly, is
      * not recognised and takes the full path. Only held reports are compared,
      * and every one of them passed signature verification when it was stored,
-     * so its signature serializes. Never changes the store.
+     * so its signature serializes. The bytes compared are the ones kept with
+     * the report when it was stored (HeldReport), so asking serializes
+     * nothing. Never changes the store.
      */
     bool HaveIdenticalReport(const ReportWire& wire) const;
 
@@ -99,8 +102,16 @@ private:
     friend struct CServiceReportStoreTestAccess;
     using Key = std::tuple<uint32_t, uint256, uint256>; // (epoch, target, sentinel)
 
+    // A held report with the bytes its signature serializes to. The bytes are
+    // made once, when the report is stored, and go when it goes: every copy of
+    // the report that arrives later is compared with them (HaveIdenticalReport).
+    struct HeldReport {
+        CPoSeServiceReport report;
+        std::array<uint8_t, BLS_CURVE_SIG_SIZE> sig_bytes;
+    };
+
     mutable Mutex m_mutex;
-    std::map<Key, CPoSeServiceReport> m_reports GUARDED_BY(m_mutex);
+    std::map<Key, HeldReport> m_reports GUARDED_BY(m_mutex);
     uint32_t m_currentEpoch GUARDED_BY(m_mutex){0};
     const uint32_t m_keepEpochs;
 

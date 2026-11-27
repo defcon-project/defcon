@@ -16,6 +16,7 @@
 #include <evo/deterministicmns.h>
 #include <evo/dmnstate.h>
 #include <evo/evodb.h>
+#include <evo/pose_service.h>
 #include <evo/pose_service_manager.h>
 #include <evo/pose_service_metrics.h>
 #include <evo/pose_service_sentinels.h>
@@ -25,6 +26,7 @@
 #include <net.h>
 #include <net_processing.h>
 #include <netfulfilledman.h>
+#include <netmessagemaker.h>
 #include <primitives/block.h>
 #include <script/script.h>
 #include <streams.h>
@@ -56,11 +58,16 @@ using dsl::PerfMetric;
 // Counter totals over every epoch bucket of the perf window.
 struct Tally {
     std::array<uint64_t, static_cast<size_t>(PerfMetric::COUNT)> count{};
+    std::array<uint64_t, static_cast<size_t>(PerfMetric::COUNT)> nanos{};
     uint64_t operator[](PerfMetric metric) const { return count[static_cast<size_t>(metric)]; }
+    uint64_t Nanos(PerfMetric metric) const { return nanos[static_cast<size_t>(metric)]; }
     void Add(const dsl::PerfSnapshot& snapshot)
     {
         for (const auto& epoch : snapshot.epochs) {
-            for (size_t i = 0; i < count.size(); ++i) count[i] += epoch.values[i].count;
+            for (size_t i = 0; i < count.size(); ++i) {
+                count[i] += epoch.values[i].count;
+                nanos[i] += epoch.values[i].nanos;
+            }
         }
     }
 };
@@ -105,6 +112,7 @@ struct ReportWireSetup : RegTestingSetup {
     std::unique_ptr<CNode> peer_a;
     std::unique_ptr<CNode> peer_b;
     CNode* listener{nullptr}; // owned by connman
+    std::vector<CNode*> more_listeners; // owned by connman
     const CBlockIndex* base{nullptr}; // the base block of epoch 10
     Tally tally;
     bool previous_perf{dsl::PerfEnabled()};
@@ -158,6 +166,7 @@ struct ReportWireSetup : RegTestingSetup {
         peerman->FinalizeNode(*peer_a);
         peerman->FinalizeNode(*peer_b);
         peerman->FinalizeNode(*listener);
+        for (CNode* node : more_listeners) peerman->FinalizeNode(*node);
         connman.ClearTestNodes();
         dsl::SetPerfEnabled(previous_perf);
         dsl::TakePerfSnapshot();
@@ -318,6 +327,30 @@ struct ReportWireSetup : RegTestingSetup {
         LOCK(listener->cs_vSend);
         return static_cast<size_t>(std::count_if(listener->vSendMsg.begin(), listener->vSendMsg.end(),
                                                  [](const CSerializedNetMsg& msg) { return msg.m_type == NetMsgType::POSEREPORT; }));
+    }
+
+    // One more connected peer, speaking the given protocol version, on a connection of the given type.
+    CNode* AddListener(NodeId id, int version, ConnectionType conn_type = ConnectionType::OUTBOUND_FULL_RELAY)
+    {
+        CNode* node{MakeTestPeer(id, version, conn_type).release()};
+        connman.AddTestNode(*node);
+        {
+            LOCK(NetEventsInterface::g_msgproc_mutex);
+            peerman->InitializeNode(*node, NODE_NETWORK);
+        }
+        more_listeners.push_back(node);
+        return node;
+    }
+
+    // The payloads of the POSEREPORT messages relayed to `node`, in the order they were sent.
+    static std::vector<std::vector<unsigned char>> RelayedTo(CNode& node)
+    {
+        LOCK(node.cs_vSend);
+        std::vector<std::vector<unsigned char>> out;
+        for (const CSerializedNetMsg& msg : node.vSendMsg) {
+            if (msg.m_type == NetMsgType::POSEREPORT) out.push_back(msg.data);
+        }
+        return out;
     }
 
     int Score(const CNode& peer) const { return MisbehaviorScore(*peerman, peer); }
@@ -1017,6 +1050,166 @@ BOOST_AUTO_TEST_CASE(an_expired_entry_withholds_nothing)
     BOOST_CHECK_EQUAL(Held(), 1U);
     BOOST_CHECK_EQUAL(Relayed(), 1U);
     BOOST_CHECK_EQUAL(Score(*listener), 0);
+}
+
+// A relay makes the message's bytes once and hands each recipient a copy of them, whatever protocol version the
+// recipient speaks: the listeners here speak the newest version and the oldest one a node accepts, and each is sent
+// the bytes the report serializes to. The sender and a block-relay-only peer are connected too, and are not
+// recipients.
+BOOST_AUTO_TEST_CASE(a_relay_serializes_once_and_sends_every_peer_the_same_bytes)
+{
+    CNode* old_listener{AddListener(3, MIN_PEER_PROTO_VERSION)};
+    CNode* third_listener{AddListener(4, MN_DSL_PROTO_VERSION)};
+    CNode* block_only{AddListener(5, PROTOCOL_VERSION, ConnectionType::BLOCK_RELAY)};
+    CNode* sender{AddListener(6, PROTOCOL_VERSION)};
+    BOOST_REQUIRE_LT(old_listener->GetCommonVersion(), listener->GetCommonVersion());
+    BOOST_REQUIRE(block_only->IsBlockOnlyConn());
+    const uint256 target{Target()};
+    const auto sentinels = Sentinels(target);
+    const auto report = Report(target, sentinels.at(0));
+    const auto second = Report(target, sentinels.at(1));
+    Observe();
+
+    Send(report, *sender);
+    BOOST_REQUIRE_EQUAL(Held(), 1U);
+    for (CNode* node : {listener, old_listener, third_listener}) {
+        const auto sent = RelayedTo(*node);
+        BOOST_REQUIRE_EQUAL(sent.size(), 1U);
+        BOOST_CHECK(sent.front() == Wire(report));
+    }
+    BOOST_CHECK(RelayedTo(*block_only).empty());
+    BOOST_CHECK(RelayedTo(*sender).empty());
+    BOOST_CHECK_EQUAL(Poll()[PerfMetric::RELAY_SERIALIZE], 1U); // once for the three of them
+    BOOST_CHECK_EQUAL(tally[PerfMetric::RELAY_PUSH], 3U);
+
+    // a second report is a second relay, and every recipient's copy is its own: the first one's bytes are as they
+    // were. It arrives with trailing bytes, so the seen table does not hold the relayed bytes for the sender (they
+    // differ from the ones it sent): only the exclusion of the sender keeps it out, and the relay sends the bytes the
+    // report serializes to, without the trailing ones.
+    auto longer_second = Wire(second);
+    longer_second.insert(longer_second.end(), {0xDE, 0xAD});
+    Send(longer_second, *sender);
+    BOOST_REQUIRE_EQUAL(Held(), 2U);
+    for (CNode* node : {listener, old_listener, third_listener}) {
+        const auto sent = RelayedTo(*node);
+        BOOST_REQUIRE_EQUAL(sent.size(), 2U);
+        BOOST_CHECK(sent.at(0) == Wire(report));
+        BOOST_CHECK(sent.at(1) == Wire(second));
+    }
+    BOOST_CHECK(RelayedTo(*block_only).empty());
+    BOOST_CHECK(RelayedTo(*sender).empty());
+    BOOST_CHECK_EQUAL(Poll()[PerfMetric::RELAY_SERIALIZE], 2U);
+    BOOST_CHECK_EQUAL(tally[PerfMetric::RELAY_PUSH], 6U);
+}
+
+// What lets one serialization serve every peer: each of the three relayed Sentinel messages serializes to the same
+// bytes for every protocol version a peer can speak, and whichever BLS scheme is the node's default.
+BOOST_AUTO_TEST_CASE(a_relayed_message_serializes_alike_for_every_peer_version)
+{
+    const uint256 target{Target()};
+    const auto report = Report(target, Sentinels(target).at(0));
+
+    dsl::CPoSeServiceResponse response;
+    response.nEpoch = EPOCH;
+    response.proTxHash = target;
+    response.sig = dsl::SignChallengeResponse(KeyOf(target), base->GetBlockHash(), target);
+    BOOST_REQUIRE(response.sig.IsValid());
+
+    // The commitment in both of its formats. Its signature is a quorum's on the chain; any real signature will do
+    // for the bytes.
+    CPoSeServiceCommitment observed;
+    observed.nVersion = CPoSeServiceCommitment::OBSERVED_VERSION;
+    observed.nEpoch = EPOCH;
+    observed.epochBlockHash = base->GetBlockHash();
+    observed.llmqType = Params().GetConsensus().llmqTypeChainLocks;
+    observed.quorumHash = uint256::ONE;
+    observed.missed.assign(MN_COUNT, false);
+    observed.missed.at(3) = true;
+    observed.observed.assign(MN_COUNT, true);
+    observed.quorumSig = report.sig;
+    CPoSeServiceCommitment legacy{observed};
+    legacy.nVersion = CPoSeServiceCommitment::LEGACY_VERSION;
+    legacy.observed.clear();
+
+    const auto bytes_for = [](int version, const std::string& msg_type, const auto& obj) {
+        return CNetMsgMaker{version}.Make(msg_type, obj).data;
+    };
+    const auto stream_bytes = [](const auto& obj) {
+        CDataStream stream{SER_NETWORK, PROTOCOL_VERSION};
+        stream << obj;
+        return std::vector<unsigned char>{UCharCast(stream.data()), UCharCast(stream.data()) + stream.size()};
+    };
+    // The node's default BLS scheme is a global; it is put back whatever the checks below do.
+    struct SchemeRestorer {
+        const bool before{bls::bls_legacy_scheme.load()};
+        ~SchemeRestorer() { bls::bls_legacy_scheme.store(before); }
+    } restore_scheme;
+
+    // The reference of each message is made once, with the default scheme the modern one, and each of them ends
+    // with its signature in the modern encoding. Every version under either default is then held against that
+    // one reference, so a serializer that followed the default would differ from it under the other default.
+    bls::bls_legacy_scheme.store(false);
+    const auto ends_with = [](const std::vector<unsigned char>& bytes, const CBLSSignature& sig) {
+        const auto modern = sig.ToBytes(/*specificLegacyScheme=*/false);
+        return bytes.size() >= modern.size() && std::equal(modern.begin(), modern.end(), bytes.end() - static_cast<std::ptrdiff_t>(modern.size()));
+    };
+    const auto reference_report = stream_bytes(report);
+    const auto reference_response = stream_bytes(response);
+    const auto reference_observed = stream_bytes(observed);
+    const auto reference_legacy = stream_bytes(legacy);
+    BOOST_REQUIRE(reference_report == Wire(report));
+    BOOST_REQUIRE(ends_with(reference_report, report.sig));
+    BOOST_REQUIRE(ends_with(reference_response, response.sig));
+    BOOST_REQUIRE(ends_with(reference_observed, observed.quorumSig));
+    BOOST_REQUIRE(ends_with(reference_legacy, legacy.quorumSig));
+    BOOST_REQUIRE(report.sig.ToBytes(/*specificLegacyScheme=*/true) != report.sig.ToBytes(/*specificLegacyScheme=*/false));
+    BOOST_CHECK_EQUAL(reference_report.size(), dsl::CPoSeServiceReport::WIRE_SIZE);
+    BOOST_CHECK_EQUAL(reference_response.size(), dsl::CPoSeServiceResponse::WIRE_SIZE);
+    BOOST_CHECK(reference_observed.size() > reference_legacy.size());
+
+    const auto alike = [&](const std::string& msg_type, const auto& obj, const std::vector<unsigned char>& reference,
+                           bool legacy_default) {
+        for (int version = MIN_PEER_PROTO_VERSION; version <= PROTOCOL_VERSION; ++version) {
+            BOOST_CHECK_MESSAGE(bytes_for(version, msg_type, obj) == reference,
+                                msg_type << " serializes differently for version " << version
+                                         << " with the legacy scheme " << (legacy_default ? "the default" : "not the default"));
+        }
+        // and the bytes a stream gives, which a received copy is keyed by, are the same ones
+        BOOST_CHECK_MESSAGE(stream_bytes(obj) == reference, msg_type << " serializes differently to a stream");
+    };
+    for (const bool legacy_default : {false, true}) {
+        bls::bls_legacy_scheme.store(legacy_default);
+        alike(NetMsgType::POSEREPORT, report, reference_report, legacy_default);
+        alike(NetMsgType::POSERESPONSE, response, reference_response, legacy_default);
+        alike(NetMsgType::POSECOMMIT, observed, reference_observed, legacy_default);
+        alike(NetMsgType::POSECOMMIT, legacy, reference_legacy, legacy_default);
+    }
+}
+
+// The copies dropped unread are timed as well as counted, from the start of a report's handling to the drop; a
+// message that is read adds nothing under that name.
+BOOST_AUTO_TEST_CASE(the_time_of_the_copies_dropped_unread_is_kept)
+{
+    const uint256 target{Target()};
+    const uint256 sentinel{Sentinels(target).at(0)};
+    const auto report = Report(target, sentinel);
+    Send(report, *peer_a);
+    BOOST_REQUIRE_EQUAL(Held(), 1U);
+    Observe();
+
+    auto flipped = report;
+    flipped.status = static_cast<uint8_t>(dsl::ServiceStatus::MISSED);
+    Send(flipped, *peer_b); // not a copy: read, and a duplicate by its key
+    BOOST_CHECK_EQUAL(Poll()[PerfMetric::DECODE_REPORT], 1U);
+    BOOST_CHECK_EQUAL(tally[PerfMetric::DUPLICATE_UNDECODED], 0U);
+    BOOST_CHECK_EQUAL(tally.Nanos(PerfMetric::DUPLICATE_UNDECODED), 0U);
+
+    constexpr uint64_t kCopies{50};
+    for (uint64_t i = 0; i < kCopies; ++i) Send(report, *peer_b);
+    BOOST_CHECK_EQUAL(Poll()[PerfMetric::DUPLICATE_UNDECODED], kCopies);
+    BOOST_CHECK_GT(tally.Nanos(PerfMetric::DUPLICATE_UNDECODED), 0U);
+    BOOST_CHECK_EQUAL(tally[PerfMetric::DECODE_REPORT], 1U);
+    BOOST_CHECK_EQUAL(tally[PerfMetric::STORE_SIG_BYTES], 0U); // and the store made no bytes for any of them
 }
 
 BOOST_AUTO_TEST_SUITE_END()

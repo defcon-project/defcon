@@ -30,7 +30,8 @@ constexpr std::array<const char*, static_cast<size_t>(PerfMetric::COUNT)> names{
     "emit_reports", "inverse_assignment", "report_sign", "relay_serialize", "relay_push", "tip_queue",
     "activation_refused", "decode_report", "duplicate_undecoded",
     "peerman_tip_run", "dkg_tip_start", "dsl_tick_run", "block_msg_wait",
-    "decode_response", "duplicate_response_undecoded"
+    "decode_response", "duplicate_response_undecoded",
+    "store_sig_bytes"
 };
 constexpr std::array<PerfMetric, PERF_LATENCY_METRICS> latency_metrics{
     PerfMetric::TIP_QUEUE, PerfMetric::PEERMAN_TIP_RUN, PerfMetric::DKG_TIP_START, PerfMetric::DSL_TICK_RUN,

@@ -145,7 +145,14 @@ std::vector<NodeEvictionCandidate> GetRandomNodeEvictionCandidates(int n_candida
     return candidates;
 }
 
-std::unique_ptr<CNode> MakeTestPeer(NodeId id)
+std::unique_ptr<CNode> MakeTestPeer(NodeId id) { return MakeTestPeer(id, PROTOCOL_VERSION); }
+
+std::unique_ptr<CNode> MakeTestPeer(NodeId id, int version)
+{
+    return MakeTestPeer(id, version, ConnectionType::OUTBOUND_FULL_RELAY);
+}
+
+std::unique_ptr<CNode> MakeTestPeer(NodeId id, int version, ConnectionType conn_type)
 {
     in_addr peer_in_addr{};
     peer_in_addr.s_addr = htonl(0x01020304 + id);
@@ -156,10 +163,10 @@ std::unique_ptr<CNode> MakeTestPeer(NodeId id)
                                       /*nLocalHostNonceIn=*/0,
                                       /*addrBindIn=*/CAddress{},
                                       /*addrNameIn=*/std::string{},
-                                      /*conn_type_in=*/ConnectionType::OUTBOUND_FULL_RELAY,
+                                      /*conn_type_in=*/conn_type,
                                       /*inbound_onion=*/false)};
-    peer->nVersion = PROTOCOL_VERSION;
-    peer->SetCommonVersion(PROTOCOL_VERSION);
+    peer->nVersion = version;
+    peer->SetCommonVersion(version);
     peer->fSuccessfullyConnected = true;
     return peer;
 }
