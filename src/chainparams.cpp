@@ -196,8 +196,10 @@ std::optional<Consensus::LLMQParams> CChainParams::GetLLMQ(Consensus::LLMQType l
 static constexpr int V23_MAINNET_ACTIVATION_HEIGHT = 144888;
 //! Testnet's height. The v23 release leaves testnet unscheduled.
 static constexpr int V23_TESTNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
-// v23.1 release heights are deliberately unscheduled; set only by the release decision.
-static constexpr int V231_MAINNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
+//! The v23.1 height of mainnet, set by the release decision: a multiple of 576,
+//! about 14 December 2026 at the measured block time.
+static constexpr int V231_MAINNET_ACTIVATION_HEIGHT = 187200;
+//! Testnet and devnet stay unscheduled in v23.1.0; devnet takes -v231activationheight.
 static constexpr int V231_TESTNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
 static constexpr int V231_DEVNET_ACTIVATION_HEIGHT = std::numeric_limits<int>::max();
 
@@ -378,11 +380,11 @@ public:
         consensus.computePaymentWeight = 5;
         consensus.minStaticCollateral = 8064;
 
-        // The best chain should have at least this much work.
-        consensus.nMinimumChainWork = uint256S("0x00000000000000000000000000000000000000000000021fa68e72c9b84c57ac");
+        // The best chain should have at least this much work: the chain work of block 177408.
+        consensus.nMinimumChainWork = uint256S("0x0000000000000000000000000000000000000000000012cc290cd86d36d5230e");
 
-        // By default assume that the signatures in ancestors of this block are valid.
-        consensus.defaultAssumeValid = uint256S("0x7b9b767a13d10f2ffa012f8ca05aa80ad9df0719ae3f47cd66251c2a2044d863");
+        // By default assume that the signatures in ancestors of this block are valid: block 177408.
+        consensus.defaultAssumeValid = uint256S("0xb1cc57b2ab3863976420b5d4d0fc1c97c22b313d406bc35a4e92aa39a05eb977");
 
         /**
          * The message start string is designed to be unlikely to occur in normal data.
@@ -462,6 +464,7 @@ public:
             {
                 {0,    genesis.GetHash()},
                 {103536, consensus.hashForkRecoveryAnchor},
+                {177408, uint256S("0xb1cc57b2ab3863976420b5d4d0fc1c97c22b313d406bc35a4e92aa39a05eb977")},
             }
         };
 
@@ -469,12 +472,12 @@ public:
          // TODO to be specified in a future patch.
         };
 
-        // getchaintxstats 17280 000000000000001cf26547602d982dcaa909231bbcd1e70c0eb3c65de25473ba
+        // getchaintxstats 17280 b1cc57b2ab3863976420b5d4d0fc1c97c22b313d406bc35a4e92aa39a05eb977
         chainTxData = ChainTxData{
-                1732068694, // * UNIX timestamp of last known number of transactions (Block 1969000)
-                55191134,   // * total number of transactions between genesis and that timestamp
+                1795765640, // * UNIX timestamp of last known number of transactions (Block 177408)
+                380363,     // * total number of transactions between genesis and that timestamp
                             //   (the tx=... number in the ChainStateFlushed debug.log lines)
-                0.1528060985790164,      // * estimated number of transactions per second after that timestamp
+                0.01490746352722219, // * estimated number of transactions per second after that timestamp
         };
     }
 };

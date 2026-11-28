@@ -541,21 +541,68 @@ std::unique_ptr<const CChainParams> ScheduledV231Params(const std::string& netwo
     return params;
 }
 
-// These are fixture heights, not scheduled release heights. All network
-// defaults remain UNSET until the December release decision supplies H.
-BOOST_AUTO_TEST_CASE(v231_bundle_stays_dormant_until_a_height_is_supplied)
+// The release schedules mainnet at H = 187200 and leaves testnet dormant. The
+// other heights in this file are fixture heights, not scheduled ones.
+constexpr int MAINNET_V231_H = 187200;
+
+BOOST_AUTO_TEST_CASE(v231_bundle_is_scheduled_on_mainnet_and_dormant_on_testnet)
 {
-    for (const auto& network : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET}) {
-        auto params = CreateChainParams(gArgs, network);
+    {
+        const auto params = CreateChainParams(gArgs, CBaseChainParams::MAIN);
+        const auto& consensus = params->GetConsensus();
+        BOOST_CHECK_EQUAL(consensus.nV231ActivationHeight, MAINNET_V231_H);
+        BOOST_CHECK_EQUAL(MAINNET_V231_H % 576, 0);
+        BOOST_CHECK_EQUAL(consensus.llmqFormationEndHeights.at(Consensus::LLMQType::LLMQ_400_60), MAINNET_V231_H);
+        BOOST_CHECK_EQUAL(consensus.llmqFormationEndHeights.at(Consensus::LLMQType::LLMQ_400_85), MAINNET_V231_H);
+        BOOST_CHECK_EQUAL(consensus.nComputeNodeActivationHeight, std::numeric_limits<int>::max());
+        BOOST_CHECK_NO_THROW(CheckV23ActivationBundle(consensus, CBaseChainParams::MAIN));
+        BOOST_CHECK_NO_THROW(CheckV231ActivationBundle(consensus, CBaseChainParams::MAIN));
+        // CJ4: masternodes open the larger amounts from H, wallets mix them from H + 576.
+        BOOST_CHECK(!CoinJoin::DfcnScaleSessionsOpenAt(consensus.nV231ActivationHeight, MAINNET_V231_H - 2));
+        BOOST_CHECK(CoinJoin::DfcnScaleSessionsOpenAt(consensus.nV231ActivationHeight, MAINNET_V231_H - 1));
+        BOOST_CHECK(CoinJoin::DfcnScaleMixingHeight(consensus.nV231ActivationHeight, std::nullopt) == int64_t{MAINNET_V231_H + 576});
+    }
+    {
+        auto params = CreateChainParams(gArgs, CBaseChainParams::TESTNET);
         auto consensus = params->GetConsensus();
         BOOST_CHECK_EQUAL(consensus.nV231ActivationHeight, std::numeric_limits<int>::max());
         const auto ends = consensus.llmqFormationEndHeights;
         const int compute = consensus.nComputeNodeActivationHeight;
-        ApplyV231ActivationBundle(consensus, std::numeric_limits<int>::max(), network);
+        ApplyV231ActivationBundle(consensus, std::numeric_limits<int>::max(), CBaseChainParams::TESTNET);
         BOOST_CHECK(consensus.llmqFormationEndHeights == ends);
         BOOST_CHECK_EQUAL(consensus.nComputeNodeActivationHeight, compute);
-        BOOST_CHECK_NO_THROW(CheckV231ActivationBundle(consensus, network));
+        BOOST_CHECK_NO_THROW(CheckV231ActivationBundle(consensus, CBaseChainParams::TESTNET));
     }
+}
+
+// The release's mainnet data names one block: the newest checkpoint and the
+// default assumevalid block are block 177408, below H. The fork-recovery
+// anchor stays block 103536, a checkpoint too: the anchor must lie below its
+// activation height, because from there a chain whose tip is below the anchor
+// is refused (IsForkRecoveryAnchorValid).
+BOOST_AUTO_TEST_CASE(mainnet_release_data_names_one_block)
+{
+    const auto params = CreateChainParams(gArgs, CBaseChainParams::MAIN);
+    const auto& consensus = params->GetConsensus();
+    const auto& checkpoints = params->Checkpoints().mapCheckpoints;
+    BOOST_CHECK_EQUAL(params->Checkpoints().GetHeight(), 177408);
+    BOOST_CHECK(checkpoints.at(177408) == consensus.defaultAssumeValid);
+    BOOST_CHECK(consensus.defaultAssumeValid == uint256S("0xb1cc57b2ab3863976420b5d4d0fc1c97c22b313d406bc35a4e92aa39a05eb977"));
+    BOOST_CHECK_EQUAL(consensus.nForkRecoveryAnchorHeight, 103536);
+    BOOST_CHECK(checkpoints.at(consensus.nForkRecoveryAnchorHeight) == consensus.hashForkRecoveryAnchor);
+    BOOST_CHECK(consensus.hashForkRecoveryAnchor == uint256S("0x7b9b767a13d10f2ffa012f8ca05aa80ad9df0719ae3f47cd66251c2a2044d863"));
+    BOOST_CHECK(consensus.nForkRecoveryAnchorHeight < consensus.nForkRecoveryActivationHeight);
+    BOOST_CHECK_EQUAL(checkpoints.size(), 3U);
+    BOOST_CHECK(params->Checkpoints().GetHeight() < consensus.nV231ActivationHeight);
+    BOOST_CHECK_EQUAL(params->TxData().nTime, 1795765640);
+}
+
+// The fixture runs on mainnet: the payment changes at the release height itself.
+BOOST_AUTO_TEST_CASE(v231_mainnet_masternode_payment_changes_at_the_release_height)
+{
+    BOOST_REQUIRE_EQUAL(Params().NetworkIDString(), CBaseChainParams::MAIN);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(MAINNET_V231_H - 1), 10000 * COIN);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(MAINNET_V231_H), 5000 * COIN);
 }
 
 BOOST_AUTO_TEST_CASE(v231_bundle_uses_one_height_for_both_retirements_and_testnet_compute)
@@ -820,11 +867,17 @@ BOOST_AUTO_TEST_CASE(v231_argument_changes_no_other_network)
 {
     ArgsManager args;
     args.ForceSetArg("-v231activationheight", "576000");
-    for (const std::string& chain : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET, CBaseChainParams::REGTEST}) {
+    for (const std::string& chain : {CBaseChainParams::TESTNET, CBaseChainParams::REGTEST}) {
         const auto params = CreateChainParams(args, chain);
         BOOST_CHECK_EQUAL(params->GetConsensus().nV231ActivationHeight, std::numeric_limits<int>::max());
         BOOST_CHECK(params->GetConsensus().llmqFormationEndHeights.empty());
     }
+    // Mainnet keeps the release height and the two retirements at it.
+    const auto main = CreateChainParams(args, CBaseChainParams::MAIN);
+    BOOST_CHECK_EQUAL(main->GetConsensus().nV231ActivationHeight, MAINNET_V231_H);
+    BOOST_CHECK_EQUAL(main->GetConsensus().llmqFormationEndHeights.size(), 2U);
+    BOOST_CHECK_EQUAL(main->GetConsensus().llmqFormationEndHeights.at(Consensus::LLMQType::LLMQ_400_60), MAINNET_V231_H);
+    BOOST_CHECK_EQUAL(main->GetConsensus().llmqFormationEndHeights.at(Consensus::LLMQType::LLMQ_400_85), MAINNET_V231_H);
 }
 
 // Regtest has its own name for the height, and only regtest escapes the check

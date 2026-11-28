@@ -43,10 +43,17 @@ BOOST_AUTO_TEST_CASE(fixed_seeds_match_available_networks)
     const auto main_params = CreateChainParams(args, CBaseChainParams::MAIN);
     const auto test_params = CreateChainParams(args, CBaseChainParams::TESTNET);
 
-    // Keep the three mainnet BIP155 endpoints byte-for-byte while retiring the
-    // inherited testnet endpoints until DeFCoN testnet launches.
+    // The mainnet BIP155 endpoints byte-for-byte (contrib/seeds/nodes_main.txt:
+    // the three primary seed nodes first, then the masternodes chosen for
+    // v23.1.0), while the inherited testnet endpoints stay retired until
+    // DeFCoN testnet launches.
     BOOST_CHECK_EQUAL(HexStr(main_params->FixedSeeds()),
-                      "01049a0cf7c6200001049a0cf7d6200001049a1a9b422000");
+                      "01049a0cf7c6200001049a0cf7d6200001049a1a9b422000"
+                      "0104994be12a200001045b636cf6200001042ee1d7a92000"
+                      "01048ac7e9a8200001042ee08ab320000104bcf5f6c52000"
+                      "0104a2236bab20000104c04052d2200001044a3242de2000"
+                      "010444a8dec520000104a3f5d8cf20000104b9f3d8062000"
+                      "0104b0bc3aaa2000");
     BOOST_CHECK(test_params->FixedSeeds().empty());
 }
 
