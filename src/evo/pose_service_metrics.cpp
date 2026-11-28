@@ -31,7 +31,11 @@ constexpr std::array<const char*, static_cast<size_t>(PerfMetric::COUNT)> names{
     "activation_refused", "decode_report", "duplicate_undecoded",
     "peerman_tip_run", "dkg_tip_start", "dsl_tick_run", "block_msg_wait",
     "decode_response", "duplicate_response_undecoded",
-    "store_sig_bytes"
+    "store_sig_bytes",
+    "preverify_queue_full", "preverify_budget_short", "preverify_excluded", "preverify_cold_assign",
+    "preverify_evicted", "preverify_dup_pending", "preverify_wait", "preverify_run", "preverify_bls",
+    "gate_hold", "gate_snapshot", "gate_snapshot_stale", "msg_overtook", "overtake_wait", "wave_window_open",
+    "net_admit_cache_miss", "report_admit_lag"
 };
 constexpr std::array<PerfMetric, PERF_LATENCY_METRICS> latency_metrics{
     PerfMetric::TIP_QUEUE, PerfMetric::PEERMAN_TIP_RUN, PerfMetric::DKG_TIP_START, PerfMetric::DSL_TICK_RUN,

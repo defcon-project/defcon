@@ -83,6 +83,28 @@ enum class GetDataResponse {
     UNREQUESTED,
 };
 
+/** SF1-C2: the overtake policy on a queued message's content (NetMessagePollGate::Overtake) -- which messages may go
+ *  ahead of a Sentinel report whose pre-verification has not finished, in the wave window: a transaction, an
+ *  InstantSend lock, the signing-session messages, a pong, and an inventory (INV, NOTFOUND; GETDATA only while the
+ *  connection's send queue has room) all of whose entries are transactions, InstantSend locks or recovered
+ *  signatures. Reads only the message. */
+int8_t DSLOvertakePolicy(const CNetMessage& msg);
+
+/** Tests only: the report pre-verifier of each PeerManager made from now on -- 1 a thread of its own (the default), 0
+ *  none, 2 one without a thread, whose jobs PeerManager::RunReportPreverifyJobsForTest runs. */
+void SetDSLPreverifyModeForTest(int mode);
+/** Tests only: the overtake policy the receive queue's gate asks instead of DSLOvertakePolicy (nullptr: that one). */
+void SetDSLOvertakePolicyForTest(int8_t (*policy)(const CNetMessage&));
+/** Tests only: called by the Sentinel tick once it has reserved the epoch's emission, before its observation copy and
+ *  the emission, with no lock held (nullptr: none). */
+void SetDSLEmitTestHookForTest(void (*hook)());
+/** Tests only: called by the report pre-verification scan for a report it is about to give a job, before its last look
+ *  at the store, with no lock of the store or the pre-verifier held (nullptr: none). */
+void SetDSLScanTestHookForTest(void (*hook)());
+/** Tests only: called by the scan with the store's lock held, between its last look at the store (the key free) and
+ *  the offer (nullptr: none). */
+void SetDSLOfferTestHookForTest(void (*hook)());
+
 class PeerManager : public CValidationInterface, public NetEventsInterface
 {
 public:
@@ -192,6 +214,12 @@ public:
     virtual void RequestObject(NodeId nodeid, const CInv& inv, std::chrono::microseconds current_time,
                                bool is_masternode, bool fForce = false) = 0;
     virtual size_t GetRequestedObjectCount(NodeId nodeid) const = 0;
+
+    /** Tests only: with SetDSLPreverifyModeForTest(2) the report pre-verifier has no thread of its own. Runs up to `max` of its
+     *  waiting jobs on the calling thread, in turn, and returns how many ran. */
+    virtual size_t RunReportPreverifyJobsForTest(size_t max) = 0;
+    /** Tests only: the peer's stored Sentinel message budget, as if it had just been refilled at the best height. */
+    virtual void SetDSLTokensForTest(NodeId nodeid, double tokens) = 0;
 };
 
 #endif // BITCOIN_NET_PROCESSING_H

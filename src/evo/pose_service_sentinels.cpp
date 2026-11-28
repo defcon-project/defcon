@@ -126,11 +126,20 @@ void CPoSeServiceReport::Sign(const CBLSSecretKey& operatorKey, const uint256& e
     sig = operatorKey.Sign(GetSignHash(epochBlockHash), /*specificLegacyScheme=*/false);
 }
 
-bool CPoSeServiceReport::VerifySig(const CBLSPublicKey& operatorPubKey, const uint256& epochBlockHash) const
+namespace {
+CReportSignatureCache& ReportSignatureCache()
 {
     static CReportSignatureCache cache;
-    return cache.Verify(*this, operatorPubKey, epochBlockHash);
+    return cache;
 }
+} // namespace
+
+bool CPoSeServiceReport::VerifySig(const CBLSPublicKey& operatorPubKey, const uint256& epochBlockHash) const
+{
+    return ReportSignatureCache().Verify(*this, operatorPubKey, epochBlockHash);
+}
+
+void ClearReportSignatureCacheForTest() { ReportSignatureCache().Clear(); }
 
 std::optional<ReportWire> PeekReportWire(Span<const unsigned char> payload)
 {

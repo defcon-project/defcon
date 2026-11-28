@@ -45,6 +45,21 @@ enum class PerfMetric : size_t {
     DECODE_RESPONSE, DUPLICATE_RESPONSE_UNDECODED,
     // The store making the bytes of a report's signature, once for each report it takes (count and time).
     STORE_SIG_BYTES,
+    // SF1-C2, the report pre-verifier (ReportPreverifier and the scan of a connection's queued reports): a report
+    // refused a job because a limit was full, because the connection's stored budget would not cover it, or because
+    // a cheap check showed its processing would not reach the signature; the one cold assignment a scan may derive;
+    // a waiting job dropped to make room for another; a report given no job because the same bytes on the same base
+    // have one not yet taken; a job's wait from its offer to its start (count and time), its run (count and time),
+    // and the BLS check it ran (count and time; the thread's checks count nowhere else).
+    PREVERIFY_QUEUE_FULL, PREVERIFY_BUDGET_SHORT, PREVERIFY_EXCLUDED, PREVERIFY_COLD_ASSIGN, PREVERIFY_EVICTED,
+    PREVERIFY_DUP_PENDING, PREVERIFY_WAIT, PREVERIFY_RUN, PREVERIFY_BLS,
+    // The receive queue in the wave window: polls that held a connection's head report, snapshots taken for a
+    // poll, decisions made in arrival order because a message came after the snapshot, messages that overtook a
+    // head report (and their wait from arrival to processing, count and time), and the window opening.
+    GATE_HOLD, GATE_SNAPSHOT, GATE_SNAPSHOT_STALE, MSG_OVERTOOK, OVERTAKE_WAIT, WAVE_WINDOW_OPEN,
+    // A report admitted off the network whose signature check missed the cache, and a report's wait from its
+    // arrival to the start of its processing (count and time).
+    NET_ADMIT_CACHE_MISS, REPORT_ADMIT_LAG,
     COUNT
 };
 
@@ -142,8 +157,9 @@ std::optional<std::chrono::steady_clock::time_point> TipEventQueued();
 
 //! -dsltestprocessdelay (regtest and devnet only; startup is refused elsewhere, TestProcessDelayRefusal): a
 //! slow node for tests. TestProcessDelay sleeps for it where the work it stands for is done -- after reading
-//! a POSEREPORT or POSERESPONSE, after the tick checks a held liveness announcement, after signing an own
-//! report -- and returns at once when it is zero, as it is outside tests.
+//! a POSEREPORT or POSERESPONSE (a report whose pre-verification job the dslverify thread started waits there,
+//! before it is read, and only there: SF1-C2), after the tick checks a held liveness announcement, after signing an
+//! own report -- and returns at once when it is zero, as it is outside tests.
 void SetTestProcessDelay(std::chrono::milliseconds delay);
 void TestProcessDelay();
 

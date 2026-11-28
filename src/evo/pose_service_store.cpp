@@ -10,8 +10,16 @@
 #include <logging.h>
 
 #include <algorithm>
+#include <atomic>
 
 namespace dsl {
+
+namespace {
+//! Tests only (SetStoreInsertTestHookForTest): called by AddReport under the lock right after it holds a report.
+std::atomic<void (*)()> g_insert_test_hook{nullptr};
+} // namespace
+
+void SetStoreInsertTestHookForTest(void (*hook)()) { g_insert_test_hook = hook; }
 
 uint32_t CServiceReportStore::OldestKeptEpoch() const
 {
@@ -24,6 +32,13 @@ bool CServiceReportStore::ReportAgedOut(uint32_t nEpoch) const
 {
     LOCK(m_mutex);
     return nEpoch < OldestKeptEpoch();
+}
+
+bool CServiceReportStore::EpochInWindow(uint32_t nEpoch) const
+{
+    LOCK(m_mutex);
+    // The two tests AddReport begins with.
+    return nEpoch <= m_currentEpoch && nEpoch >= OldestKeptEpoch();
 }
 
 bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDeterministicMNList& epochList,
@@ -104,7 +119,11 @@ bool CServiceReportStore::AddReport(const CPoSeServiceReport& report, const CDet
         PerfTimer bytes_timer(report.nEpoch, epochBlockHash, PerfMetric::STORE_SIG_BYTES);
         held.sig_bytes = report.sig.ToBytes(/*specificLegacyScheme=*/false);
     }
+    // Nothing refuses it from here. The observers -- the report pre-verifiers -- hear of it under this same lock, before
+    // it is held: a job of its key has either started already, or never starts (SF1-C2).
+    NotifyInsert(report);
     m_reports.emplace(key, std::move(held));
+    if (const auto hook = g_insert_test_hook.load()) hook();
     RecordPerf(report.nEpoch, epochBlockHash, PerfMetric::ACCEPTED);
     LogPrint(BCLog::DSL, "DSL -- report by %s on %s for epoch %u kept: %s (%d reports held)\n",
              report.sentinelProTxHash.ToString(), report.targetProTxHash.ToString(), report.nEpoch,
@@ -203,6 +222,34 @@ size_t CServiceReportStore::Size() const
 {
     LOCK(m_mutex);
     return m_reports.size();
+}
+
+void CServiceReportStore::AddInsertObserver(std::weak_ptr<const InsertObserver> observer)
+{
+    LOCK(m_mutex);
+    m_insert_observers.push_back(std::move(observer));
+}
+
+void CServiceReportStore::NotifyInsert(const CPoSeServiceReport& report)
+{
+    AssertLockHeld(m_mutex);
+    for (auto it = m_insert_observers.begin(); it != m_insert_observers.end();) {
+        if (const auto observer = it->lock()) {
+            (*observer)(report.nEpoch, report.targetProTxHash, report.sentinelProTxHash);
+            ++it;
+        } else {
+            it = m_insert_observers.erase(it);
+        }
+    }
+}
+
+bool CServiceReportStore::IfAbsent(uint32_t nEpoch, const uint256& target, const uint256& sentinel,
+                                   const std::function<void()>& fn) const
+{
+    LOCK(m_mutex);
+    if (m_reports.count(Key{nEpoch, target, sentinel}) > 0) return false;
+    fn();
+    return true;
 }
 
 } // namespace dsl

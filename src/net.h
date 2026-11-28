@@ -279,6 +279,37 @@ public:
 };
 
 
+/**
+ * The state of the preparation of one queued message ahead of its processing, shared between the receive queue and
+ * whoever prepares it (a job of dsl::ReportPreverifier, for a Sentinel report). It is all the queue keeps of the
+ * preparation: the preparer's own data lives and dies with the preparer.
+ *
+ * PENDING -> RUNNING -> DONE: the preparation ran. PENDING -> TAKEN: the message thread took the message before
+ * the preparation started. PENDING -> DROPPED: the preparation was dropped before it started; the message goes on
+ * as a message that never had one.
+ */
+struct NetMessagePrep {
+    enum State : uint8_t { PENDING, RUNNING, DONE, TAKEN, DROPPED };
+    std::atomic<uint8_t> state{PENDING};
+    //! The preparation has not finished: it waits or runs.
+    bool Unverified() const
+    {
+        const uint8_t s{state.load()};
+        return s == PENDING || s == RUNNING;
+    }
+    //! Out of PENDING, to `to`: whoever gets there first decides what becomes of the preparation.
+    bool TryMove(uint8_t to)
+    {
+        uint8_t expected{PENDING};
+        return state.compare_exchange_strong(expected, to);
+    }
+};
+
+/** The monotonic time the receive queue stamps arrivals with and judges their age by: steady_clock, unless a
+ *  test set a time of its own (SetQueueClockMockForTest). */
+std::chrono::steady_clock::time_point QueueClockNow();
+void SetQueueClockMockForTest(std::optional<std::chrono::steady_clock::time_point> now);
+
 /** Transport protocol agnostic message container.
  * Ideally it should only contain receive time, payload,
  * type and size.
@@ -287,12 +318,22 @@ class CNetMessage {
 public:
     CDataStream m_recv;                  //!< received message data
     std::chrono::microseconds m_time{0}; //!< time of message receipt
-    //! Monotonic time of message receipt, for latency diagnostics only (dsl::PerfMetric::BLOCK_MSG_WAIT):
-    //! unlike m_time it is not mockable, so a measured wait is a real one.
+    //! Monotonic time of message receipt (QueueClockNow): unlike m_time it is not mockable by -mocktime, so a
+    //! measured wait is a real one (dsl::PerfMetric::BLOCK_MSG_WAIT), and the receive queue judges a queued
+    //! report's age by it (CNode::PollMessage).
     std::chrono::steady_clock::time_point m_time_steady{};
     uint32_t m_message_size{0};     //!< size of the payload
     uint32_t m_raw_message_size{0}; //!< used wire size of the message (including header/checksum)
     std::string m_type;
+    //! The order of arrival among the messages of the connection's receive queue (CNode::MarkReceivedMsgsForProcessing).
+    uint64_t m_queue_seq{0};
+    //! A report's preparation, if a scan gave it one while it was queued (CNode::MarkReportsScanned).
+    std::shared_ptr<NetMessagePrep> m_prep;
+    //! The scan visited it while it was queued.
+    bool m_scanned{false};
+    //! The overtake policy's verdict on the content, asked once (CNode::ClassifyMainHead, CNode::PollMessage): -1 not
+    //! asked yet.
+    int8_t m_overtake{-1};
 
     CNetMessage(CDataStream&& recv_in) : m_recv(std::move(recv_in)) {}
     // Only one CNetMessage object will exist for the same message on either
@@ -308,6 +349,49 @@ public:
     {
         m_recv.SetVersion(nVersionIn);
     }
+};
+
+/**
+ * What the receive queue needs to choose, in the Sentinel wave window, between a connection's head report and the
+ * head of its other messages (CNode::PollMessage). The caller takes it as a snapshot, before the poll and without
+ * the queue's mutex: the watermark first, then the window and the send occupancy.
+ */
+struct NetMessagePollGate {
+    //! The sequence number of the newest message queued when the snapshot was taken. Only messages up to it may be
+    //! held or overtake: a later one is taken in arrival order.
+    uint64_t watermark{0};
+    //! The wave window was open at the snapshot.
+    bool window_open{false};
+    //! The connection's send occupancy was below half its pause threshold at the snapshot (a GETDATA may overtake).
+    bool getdata_ok{false};
+    //! A head report younger than this, whose preparation has not finished, may be held or overtaken.
+    std::chrono::steady_clock::duration young{std::chrono::seconds{5}};
+    enum Overtake : int8_t { NEVER = 0, ALWAYS = 1, IF_SEND_ROOM = 2 };
+    //! The overtake policy on a message's content (Overtake), asked at most once per message, under the queue's
+    //! mutex: it reads only the message and takes no lock.
+    std::function<int8_t(const CNetMessage&)> classify;
+};
+
+/** What CNode::PollMessage decided under a gate. */
+struct NetMessagePollOutcome {
+    bool gate_held{false};  //!< nothing was taken: the head report was held
+    bool overtook{false};   //!< the message taken overtook the head report
+    bool stale{false};      //!< a message that came after the snapshot was taken in arrival order instead
+    uint8_t head_state{0};  //!< the head report's preparation state at the decision (NetMessagePrep::State)
+    uint64_t head_seq{0};   //!< and its sequence number
+};
+
+/** The unscanned reports at a connection's scan cursor (CNode::PeekUnscannedReports). */
+struct ReportScanBatch {
+    struct Item {
+        uint64_t seq{0};
+        bool size_ok{false};                //!< the payload is exactly the size asked for; only then is it copied
+        std::vector<unsigned char> payload;
+    };
+    std::vector<Item> items;  //!< oldest first
+    size_t main_dsl{0};       //!< challenges, announcements and commitments in the queue's other list
+    size_t scanned{0};        //!< reports in the queue the scan has visited (all of them in front of the cursor)
+    bool budget_short{false}; //!< more reports wait at the cursor than the allowance let through
 };
 
 /** The Transport converts one connection's sent messages to wire bytes, and received bytes back. */
@@ -834,8 +918,45 @@ public:
      *
      * Returns std::nullopt if the processing queue is empty, or a pair
      * consisting of the message and a bool that indicates if the processing
-     * queue has more entries. */
-    std::optional<std::pair<CNetMessage, bool>> PollMessage()
+     * queue has more entries.
+     *
+     * The queue keeps the Sentinel reports (POSEREPORT) in a list of their own; without a gate the message that
+     * arrived first of the two heads is taken, which is the order of arrival. With a gate (the snapshot of
+     * NetMessagePollGate), a head report that arrived first, has an unfinished preparation and is younger than
+     * gate->young, and was queued at the snapshot, while the window was open:
+     *  - gives way to the head of the other list, if that was queued at the snapshot and its content may overtake;
+     *  - or, with the other list empty, is held: nothing is taken, std::nullopt is returned and gate_held is set.
+     * A report taken off its list leaves with its preparation moved PENDING -> TAKEN, unless it started or was
+     * dropped first: its job no longer starts once the report is handed out.
+     * Its state and age are read again here; both only move one way. `outcome` is reset first, whatever an earlier
+     * poll left in it. Takes the queue's mutex only. */
+    std::optional<std::pair<CNetMessage, bool>> PollMessage(const NetMessagePollGate* gate = nullptr,
+                                                            NetMessagePollOutcome* outcome = nullptr)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_msg_process_queue_mutex);
+
+    //! The sequence number of the newest message queued (the watermark of a gate's snapshot).
+    uint64_t QueueWatermark() const { return m_queue_seq_last.load(); }
+    /** For a gate's snapshot, its first question: whether the head report may wait -- it arrived before the head of
+     *  the other list, its preparation waits or runs, and it is younger than `young`. Reads no message's content. */
+    bool HeadReportMayWait(std::chrono::steady_clock::duration young) const
+        EXCLUSIVE_LOCKS_REQUIRED(!m_msg_process_queue_mutex);
+    /** For a gate's snapshot, asked only once the window is known to be open: the overtake policy's verdict on the
+     *  head of the other list (asked once per message and kept), if that head was queued at `watermark`. -1 if there
+     *  is no such head, or it came after the watermark: it is then taken in arrival order, and its content is not
+     *  read. Takes the queue's mutex only, a leaf; PeerManager asks it without cs_main, as an inventory may be long. */
+    int8_t ClassifyMainHead(uint64_t watermark, const std::function<int8_t(const CNetMessage&)>& classify)
+        EXCLUSIVE_LOCKS_REQUIRED(!m_msg_process_queue_mutex);
+    /** Up to `max` reports from the scan cursor, oldest first, each payload copied if it is `exact_size` bytes; but no
+     *  more than `allowance` says the budget covers, asked with the queue's counts before anything is copied (the
+     *  batch is then marked budget_short). Only the message thread scans and takes, so these are still the first
+     *  unscanned reports when it marks them. */
+    ReportScanBatch PeekUnscannedReports(size_t max, size_t exact_size,
+                                         const std::function<size_t(size_t main_dsl, size_t scanned)>& allowance = {}) const
+        EXCLUSIVE_LOCKS_REQUIRED(!m_msg_process_queue_mutex);
+    /** The first `count` unscanned reports are scanned: the cursor moves past them, and those named in `preps` (by
+     *  sequence number) get their preparation. */
+    void MarkReportsScanned(size_t count,
+                            const std::vector<std::pair<uint64_t, std::shared_ptr<NetMessagePrep>>>& preps)
         EXCLUSIVE_LOCKS_REQUIRED(!m_msg_process_queue_mutex);
 
     /** Account for the total size of a sent message in the per msg type connection stats. */
@@ -1117,8 +1238,20 @@ private:
     const size_t m_recv_flood_size;
     std::list<CNetMessage> vRecvMsg; // Used only by SocketHandler thread
 
-    Mutex m_msg_process_queue_mutex;
+    mutable Mutex m_msg_process_queue_mutex;
+    //! Every queued message but the Sentinel reports, in arrival order.
     std::list<CNetMessage> m_msg_process_queue GUARDED_BY(m_msg_process_queue_mutex);
+    //! The queued Sentinel reports (POSEREPORT), in arrival order.
+    std::list<CNetMessage> m_report_queue GUARDED_BY(m_msg_process_queue_mutex);
+    //! The first report the scan has not visited; end() when it has visited all of them.
+    std::list<CNetMessage>::iterator m_report_cursor GUARDED_BY(m_msg_process_queue_mutex){m_report_queue.end()};
+    //! Reports in m_report_queue the scan has visited.
+    size_t m_report_scanned GUARDED_BY(m_msg_process_queue_mutex){0};
+    //! Challenges, announcements and commitments in m_msg_process_queue: the other Sentinel messages that cost budget.
+    size_t m_main_dsl GUARDED_BY(m_msg_process_queue_mutex){0};
+    //! The sequence number of the newest message queued; written under the mutex.
+    std::atomic<uint64_t> m_queue_seq_last{0};
+    //! The raw size of both lists.
     size_t m_msg_process_queue_size GUARDED_BY(m_msg_process_queue_mutex){0};
 
     // Our address, as reported by the peer
@@ -1570,6 +1703,10 @@ public:
 
     /** Return true if we should disconnect the peer for failing an inactivity check. */
     bool ShouldRunInactivityChecks(const CNode& node, std::chrono::seconds now) const;
+
+    /** The connection's queued sends (its send queue and its transport's buffer, as fPauseSend counts them) take
+     *  less than half of the send buffer it may fill before it is paused. Takes the node's cs_vSend. */
+    bool SendBelowHalfPause(CNode& node) const EXCLUSIVE_LOCKS_REQUIRED(!node.cs_vSend);
 
     bool MultipleManualOrFullOutboundConns(Network net) const EXCLUSIVE_LOCKS_REQUIRED(m_nodes_mutex);
 

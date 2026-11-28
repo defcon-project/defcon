@@ -194,6 +194,7 @@ BITCOIN_CORE_H = \
   evo/mnhftx.h \
   evo/pose_service.h \
   evo/pose_service_metrics.h \
+  evo/pose_service_preverify.h \
   evo/pose_service_sigcache.h \
   evo/pose_service_sentinels.h \
   evo/pose_service_store.h \
@@ -478,6 +479,7 @@ libbitcoin_server_a_SOURCES = \
   evo/mnhftx.cpp \
   evo/pose_service.cpp \
   evo/pose_service_metrics.cpp \
+  evo/pose_service_preverify.cpp \
   evo/pose_service_sigcache.cpp \
   evo/pose_service_sentinels.cpp \
   evo/pose_service_store.cpp \

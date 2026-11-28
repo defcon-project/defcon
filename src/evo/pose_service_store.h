@@ -11,7 +11,9 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <map>
+#include <memory>
 #include <tuple>
 #include <vector>
 
@@ -88,6 +90,9 @@ public:
     //! AddReport's own "epoch aged out" refusal, asked ahead of it: true for an epoch older than the retained
     //! window. The caller checks it before it builds the list of the epoch's base block.
     bool ReportAgedOut(uint32_t nEpoch) const;
+    //! AddReport's two window refusals together, asked ahead of it under the same lock: true for an epoch neither in
+    //! the future nor aged out. The report pre-verification scan asks it (SF1-C2).
+    bool EpochInWindow(uint32_t nEpoch) const;
 
     /**
      * Discard every report for one epoch. Used when a reorg swaps that epoch's
@@ -97,6 +102,26 @@ public:
     void DropEpoch(uint32_t nEpoch);
 
     size_t Size() const;
+
+    /**
+     * Called under the store's lock for every report AddReport is about to hold, once nothing can refuse it any
+     * more, with its (epoch, target, sentinel). The report pre-verifier's tie to the store (SF1-C2): it drops the jobs
+     * of that key that have not started in the same step, so that none starts once the store holds a report of the
+     * key. It must not call back into the store.
+     */
+    using InsertObserver = std::function<void(uint32_t nEpoch, const uint256& target, const uint256& sentinel)>;
+    /**
+     * Adds an observer, held weakly: every observer added is called, for as long as its owner keeps the shared pointer.
+     * An owner leaves by letting its pointer go -- without touching the store, so it may go after the store, or when
+     * its own construction stops half way -- and the store then forgets the observer.
+     */
+    void AddInsertObserver(std::weak_ptr<const InsertObserver> observer);
+    /**
+     * Runs `fn` under the store's lock if no report of (epoch, target, sentinel) is held, and says whether it ran.
+     * `fn` must not call back into the store. The pre-verification scan's last look at the store and its offer, as
+     * one step against AddReport (SF1-C2).
+     */
+    bool IfAbsent(uint32_t nEpoch, const uint256& target, const uint256& sentinel, const std::function<void()>& fn) const;
 
 private:
     friend struct CServiceReportStoreTestAccess;
@@ -114,6 +139,10 @@ private:
     std::map<Key, HeldReport> m_reports GUARDED_BY(m_mutex);
     uint32_t m_currentEpoch GUARDED_BY(m_mutex){0};
     const uint32_t m_keepEpochs;
+    std::vector<std::weak_ptr<const InsertObserver>> m_insert_observers GUARDED_BY(m_mutex);
+
+    // Every observer whose owner is still there hears of `report`; the others are forgotten.
+    void NotifyInsert(const CPoSeServiceReport& report) EXCLUSIVE_LOCKS_REQUIRED(m_mutex);
 
     // Sentinel assignments, memoised per retained epoch and target.
     //
@@ -145,6 +174,9 @@ private:
                                              const uint256& epochBlockHash,
                                              size_t count) EXCLUSIVE_LOCKS_REQUIRED(m_mutex);
 };
+
+/** Tests only: called by AddReport under the store's lock right after it holds a report (nullptr: none). */
+void SetStoreInsertTestHookForTest(void (*hook)());
 
 } // namespace dsl
 
