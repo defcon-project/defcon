@@ -60,15 +60,21 @@ bool FormsNextBlock(Consensus::LLMQType type, int prev_height)
 
 } // namespace
 
-// Mainnet, testnet and regtest retire nothing; devnet retires exactly the two
+// Testnet and regtest retire nothing; mainnet retires llmq_400_60 and
+// llmq_400_85 at its v23.1 height, 187200; devnet retires exactly the two
 // profiles mainnet never forms, at one height on both their grids.
 BOOST_AUTO_TEST_CASE(networks_retire_what_they_should)
 {
     ArgsManager args;
-    for (const std::string& chain : {CBaseChainParams::MAIN, CBaseChainParams::TESTNET, CBaseChainParams::REGTEST}) {
+    for (const std::string& chain : {CBaseChainParams::TESTNET, CBaseChainParams::REGTEST}) {
         const auto params = CreateChainParams(args, chain);
         BOOST_CHECK_MESSAGE(params->GetConsensus().llmqFormationEndHeights.empty(), chain + " retires a quorum profile");
     }
+    const auto main = CreateChainParams(args, CBaseChainParams::MAIN);
+    const auto& main_ends = main->GetConsensus().llmqFormationEndHeights;
+    BOOST_REQUIRE_EQUAL(main_ends.size(), 2U);
+    BOOST_CHECK_EQUAL(main_ends.at(Consensus::LLMQType::LLMQ_400_60), 187200);
+    BOOST_CHECK_EQUAL(main_ends.at(Consensus::LLMQType::LLMQ_400_85), 187200);
 
     DevNetArg devnet_arg;
     const auto devnet = CreateChainParams(args, CBaseChainParams::DEVNET);

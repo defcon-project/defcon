@@ -1,8 +1,11 @@
 # DeFCoN fixed seeds
 
-`nodes_main.txt` lists the three DeFCoN mainnet bootstrap nodes on port 8192,
+`nodes_main.txt` lists the DeFCoN mainnet bootstrap nodes on port 8192,
 in the same order as `chainparams_seed_main` in
-[`src/chainparamsseeds.h`](../../src/chainparamsseeds.h). The mainnet configuration also specifies DNS seeders for dynamic peer discovery.
+[`src/chainparamsseeds.h`](../../src/chainparamsseeds.h): the three primary seed nodes first, then
+masternodes that had kept their place for at least 30 days when the list was made (enabled, no PoSe
+penalty, registered and, if ever banned, revived 17,280 blocks or more before the tip), one per /16
+network. The mainnet configuration also specifies DNS seeders for dynamic peer discovery.
 
 `generate-seeds.py` uses only Python 3's standard library and reads
 `nodes_main.txt`. It emits the mainnet BIP155 seed array. Testnet has no compiled fixed seeds in this source tree. The generator emits no
@@ -33,5 +36,5 @@ rm "$candidate"
 
 For a seed update, review the endpoints and serialized bytes together. Preserve
 the hand-written comments in `src/chainparamsseeds.h`; do not replace that file
-wholesale with the generated candidate. The current data alignment leaves the
-compiled mainnet bytes unchanged.
+wholesale with the generated candidate. The checked-in header and the generator
+give the same mainnet bytes.

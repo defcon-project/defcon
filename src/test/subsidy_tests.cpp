@@ -107,13 +107,16 @@ BOOST_AUTO_TEST_CASE(the_boundary_is_the_only_thing_that_moves_the_subsidy)
 
 BOOST_AUTO_TEST_CASE(the_masternode_payment_is_flat)
 {
-    // 10,000 DFCN per paid block, at every height and whatever the block is
-    // worth. Dash scales this with the subsidy; this fork does not, which is
-    // why a proof-of-stake block mints 10,500 and not 500.
+    // 10,000 DFCN per paid block below the v23.1 height and 5,000 from it
+    // (mainnet: block 187200), whatever the block is worth. Dash scales this
+    // with the subsidy; this fork does not, which is why a proof-of-stake
+    // block mints 10,500 (5,500 from the height) and not 500.
     const CAmount payment = 10000 * COIN;
     BOOST_CHECK_EQUAL(GetMasternodePayment(1), payment);
     BOOST_CHECK_EQUAL(GetMasternodePayment(1000), payment);
-    BOOST_CHECK_EQUAL(GetMasternodePayment(1000000), payment);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(187199), payment);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(187200), 5000 * COIN);
+    BOOST_CHECK_EQUAL(GetMasternodePayment(1000000), 5000 * COIN);
     BOOST_CHECK_EQUAL(GetMasternodePayment(1000, 11000000 * COIN, /*fV20Active=*/false), payment);
     BOOST_CHECK_EQUAL(GetMasternodePayment(1000, 500 * COIN, /*fV20Active=*/true), payment);
 }
